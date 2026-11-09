@@ -158,6 +158,7 @@ A container reaches only what this table lists. Everything else is dropped at it
 | Preview | The Instance's Route on the Node's Caddy proxies to FrankenPHP in the container, at its bridge address |
 | Database | The Instance's own database server and port, on the Node or over WireGuard. A rule on the container's NIC, from the create flow. The server admits the Instance's role only |
 | Models | The forwarder at the bridge's gateway address |
+| Egress proxy | Only for a container with a [nested fleet](#egress-of-the-nested-fleet), and only from its nested Nodes |
 | DNS | The bridge's DNS |
 | Everything else | Dropped, including the Gateway and GitHub |
 
@@ -325,9 +326,24 @@ The state of a thread is the status of its latest run, from `t3_thread_wait` or 
 | `preparing`, `queued`, `starting`, `running` | `working` |
 | `waiting` | `asking_for_input` |
 | `completed` | `done` |
-| `failed`, `interrupted`, `cancelled`, `rolled_back` | `failed`, with T3's failure class and message as the error. Swamp decides assistance from the class |
+| `failed`, `interrupted`, `cancelled`, `rolled_back` | `failed`, with T3's class and message as the error and the [provider error](#provider-errors) that Swamp maps |
 
 `full-access` agents ask for no approval. A `waiting` run comes from a question that the agent asks, or from an MCP server of the project that asks for input.
+
+### Provider errors
+
+Swamp translates a failed run's T3 failure into Orbit's provider error codes, the `providerError` that a Pi thread reports. So retry, assistance and reports work as they do for Pi. Swamp reads the failure from the run's `error` item in `orchestration.getThreadProjection`: its `class`, `code`, `retryable` and `resetAt`. T3's `code` is an adapter string. Claude Code gives `api_error_<status>` or the SDK's error word, and Codex gives the name of its error variant.
+
+| T3 failure code | Orbit `providerError` |
+| --- | --- |
+| `api_error_529`, `overloaded`, `serverOverloaded` | `overloaded` |
+| `api_error_429`, `rate_limit`, `rateLimitExceeded` | `rate_limited` |
+| `api_error_5xx`, `server_error`, `internalServerError`, `responseTooManyFailedAttempts`, and Codex codes that start with `http` or `responseStream` | `server_error` |
+| `usageLimitExceeded`, and any other code | None |
+
+A rate limit whose `resetAt` lies more than 15 minutes ahead maps to None: that is a spent quota, which Pi does not treat as transient either. A `responseTooManyFailedAttempts` with HTTP status 429 maps to `rate_limited`.
+
+A failure with no mapping leaves `providerError` absent, as Pi does for a failure that is not transient: quota exhaustion, authentication errors and refusals. The thread is `failed`, and its error is T3's class and message, so a report shows the cause. An `interrupted` or `cancelled` run has no failure item and maps to None. A code that T3 adds later has no mapping until Orbit adds it to this table. PR 8 pins the table with fixtures taken from both adapters.
 
 ### Token metrics
 
@@ -348,7 +364,7 @@ A provider turn without `turnTokenUsage`, or whose `usageStatus` is `partial` or
 T3 and its agents own recovery inside a turn. Swamp only waits.
 
 - **Provider errors.** Claude Code and Codex retry a transient provider error inside the turn. T3 records each attempt, and the run stays `running`.
-- **No retry by Orbit.** Swamp and the Gateway retry none. An exhausted retry ends the run `failed` with its failure class.
+- **No retry by Orbit.** Swamp and the Gateway retry none. An exhausted retry ends the run `failed`, with the [provider error](#provider-errors) that Swamp maps.
 - **T3 restart.** A folder update or a crash restarts T3. T3's restart continuation continues the turn in a new run, and the wait follows that chain.
 - **Latest run.** Swamp uses the `runId` that each wait returns for its next wait, interrupt and state read.
 - **Lost wait.** A step that loses its connection calls `t3_thread_wait` again with the last run id it has. Native resume reuses completed steps, so the keyed send never repeats.
@@ -409,6 +425,25 @@ The agent reaches its fleet as on a task VM, with its own tunnel.
 - That makes the agent root-equivalent inside its own container, never on the Node.
 - `orbit` has no access to the inner Incus.
 - The nested Gateway and `app-dev` get `/srv/workspace` as the disk device `checkout`, so an edit reaches them at once.
+
+### Egress of the nested fleet
+
+The nested test Nodes have full access to the public internet, always through an Orbit egress proxy. The proxy is the one place where a rule can narrow that access, with no change to the containers.
+
+| Part | Rule |
+| --- | --- |
+| Where it sits | An Orbit Process on the Instance's Node, on its own port of the Instance bridge's gateway address, beside the model forwarder |
+| Bridge | A nested-fleet container sits on the same bridge `orbitinst0`, with port isolation |
+| Path | A nested Node sends through `oe-nested` and the outer container's NAT to the Node's bridge |
+| Admission | The container's bridge ACL admits the proxy's port, and an input rule on the Node admits it from the bridge. Nothing else outside the Node is reachable |
+| Public only | The proxy resolves each name itself. After that it refuses private, loopback, link-local, CGNAT, fleet, WireGuard and Node addresses |
+| Orbit names | The proxy refuses `.orbit` names, so a nested Node never reaches the Gateway or the fleet through the Node |
+| Scope | A forward proxy with `CONNECT`, open to every public host and port |
+| Other traffic | UDP, so also QUIC, and other protocols get no route out. Git over SSH does not work. DNS comes from the bridge |
+| Settings | The fleet build sets `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` for the nested Nodes, their package managers and their Docker daemons. Fleet and `.orbit` names stay off the proxy |
+| Record | The proxy logs each connection. The Node's agent reports those lines as egress facts of the Instance, by its bridge address, so `task:egress` shows them |
+
+Inside the outer container, a forward rule lets only traffic from `oe-nested` reach the proxy, and the output rule drops the proxy for `orbit`. `agent` drives the inner Incus, so it can reach the internet through a nested Node. That is accepted for a nested-fleet container; `orbit` cannot.
 
 ### Take and restore `base`
 
