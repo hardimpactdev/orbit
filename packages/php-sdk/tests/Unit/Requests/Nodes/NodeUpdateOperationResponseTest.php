@@ -28,3 +28,17 @@ it('returns the admitted Operation and preserves the idempotency key', function 
     $mock->assertSent(fn ($pending): bool => $pending->headers()->get('Idempotency-Key') === 'settings-proof'
         && $pending->body()->all() === ['apps' => ['path' => '/srv/apps']]);
 });
+
+it('carries the skip reason of a record-only update that wrote nothing', function (?string $skipped): void {
+    $mock = new MockClient([UpdateNodeRequest::class => MockResponse::make([
+        'data' => ['id' => 2, 'name' => 'beast', 'status' => 'active', 'public_ssh_host' => '192.0.2.2'],
+        'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844', ...($skipped === null ? [] : ['skipped' => $skipped])],
+    ])]);
+    $connector = new GatewayConnector('https://gateway.example.test');
+    $connector->withMockClient($mock);
+
+    $response = $connector->send(new UpdateNodeRequest(2, name: 'beast'))->dto();
+
+    expect($response)->toBeInstanceOf(NodeUpdateResponse::class)
+        ->and($response->skipped)->toBe($skipped);
+})->with(['unchanged' => ['node.unchanged'], 'saved' => [null]]);

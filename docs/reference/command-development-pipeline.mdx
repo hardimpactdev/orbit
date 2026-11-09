@@ -106,7 +106,7 @@ A task waits for a task place, starts from the base, and deletes its VM after it
 
 CI proofs wait in one first-come-first-served queue. The first PR takes every free CI place, with at least one VM and no more VMs than its batches. Each VM starts fresh from the base. Whole batches are balanced across VMs by measured case times. Each VM restores its fleet and runs its share. Orbit merges every case verdict into one report, then deletes the VMs.
 
-Full pools cause a wait, never a capacity refusal. A two-hour total admission budget ends a wait with a clear timeout. The proof job belongs to `Required checks`: every selected command needs case verdicts, and every case must pass. A PR that selects no command passes without starting a VM. There is no shared reserve, task VM cap layered over resource units, or CI preemption path.
+Full pools cause a wait, never a capacity refusal. A two-hour total admission budget ends a wait with a clear timeout. The proof job belongs to `Required checks`: every selected command needs case verdicts, and every case must pass. The repository variable `ORBIT_PROOF_BLOCKING` set to `false` keeps the proof running and reporting but takes it out of `Required checks`; unset it to make the proof block again. A PR that selects no command passes without starting a VM. There is no shared reserve, task VM cap layered over resource units, or CI preemption path.
 
 <div className="flow-at" data-chart="reference/pipeline/capacity-model"></div>
 

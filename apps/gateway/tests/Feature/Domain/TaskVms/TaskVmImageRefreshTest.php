@@ -11,6 +11,7 @@ use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Domain\TaskVms\TaskVmImageRefreshProjection;
 use App\Domain\TaskVms\TaskVmPromotedImage;
 use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmRuntime;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
@@ -186,7 +187,7 @@ it('uses only a refresh snapshot as the base: a promoted image of the retired bu
     // A promoted virtual-machine build is not a usable base.
     TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now(),
         'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => ImageRefreshImage]]]);
-    expect($images->recorded($host, $location))->toBeNull()
+    expect($images->recorded($host, $location, TaskVmRuntime::Vm))->toBeNull()
         ->and(imageRefreshRefusal(fn () => $images->forHost($host, $location)))->toBe('task_vm.image_unavailable')
         ->and(imageRefreshRefusal(fn () => $images->snapshot($host, $location)))->toBe('task_vm.image_unavailable');
 
@@ -196,7 +197,7 @@ it('uses only a refresh snapshot as the base: a promoted image of the retired bu
     TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-3', 'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now(),
         'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => ImageRefreshImage]]]);
 
-    expect($images->recorded($host, $location))->toBe(['recipe_identity' => 'recipe-2', 'snapshot' => ImageRefreshSnapshot])
+    expect($images->recorded($host, $location, TaskVmRuntime::Vm))->toBe(['recipe_identity' => 'recipe-2', 'snapshot' => ImageRefreshSnapshot])
         ->and($images->forHost($host, $location))->toBe(['recipe_identity' => 'recipe-2', 'snapshot' => ImageRefreshSnapshot])
         ->and($images->snapshot($host, $location)['snapshot'])->toBe(ImageRefreshSnapshot);
 });

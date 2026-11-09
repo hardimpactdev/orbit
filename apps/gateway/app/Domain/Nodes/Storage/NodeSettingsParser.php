@@ -71,6 +71,10 @@ final readonly class NodeSettingsParser
         if (array_key_exists('node_id', $object)) {
             $this->reject('task_vms must not contain node_id.');
         }
+        // The task container side is a JSON object too; its own validation rejects any other value.
+        if (($object['containers'] ?? null) instanceof stdClass) {
+            $object['containers'] = get_object_vars($object['containers']);
+        }
         try {
             return NodeTaskVmsData::validated($object, Ipv4Subnet::from(resolve(VpnSettings::class)->subnet()));
         } catch (TaskVmException $exception) {

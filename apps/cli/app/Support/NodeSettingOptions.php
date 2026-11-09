@@ -100,8 +100,12 @@ final readonly class NodeSettingOptions
         if (! $decoded instanceof stdClass || ! self::validTaskVms(get_object_vars($decoded))) {
             return self::invalidTaskVms();
         }
+        $host = get_object_vars($decoded);
+        if (($host['containers'] ?? null) instanceof stdClass) {
+            $host['containers'] = get_object_vars($host['containers']);
+        }
 
-        return ['ok' => true, 'value' => get_object_vars($decoded)];
+        return ['ok' => true, 'value' => $host];
     }
 
     public static function taskVms(mixed $value): ?TaskVmsSettings
@@ -123,6 +127,7 @@ final readonly class NodeSettingOptions
                 in_array($key, $integers, true) => is_int($item),
                 $key === 'zfs_dataset' => $item === null || is_string($item),
                 $key === 'operator_owned' => is_array($item) && array_is_list($item) && array_all($item, fn (mixed $resource): bool => is_string($resource)),
+                $key === 'containers' => $item instanceof stdClass && self::validContainers(get_object_vars($item)),
                 default => false,
             };
             if (! $valid) {
@@ -131,6 +136,24 @@ final readonly class NodeSettingOptions
         }
 
         return true;
+    }
+
+    /**
+     * The task container side: places and bridge network, with an optional project and bridge name.
+     *
+     * @param  array<string, mixed>  $value
+     */
+    private static function validContainers(array $value): bool
+    {
+        if (! is_string($value['cidr'] ?? null) || ! is_int($value['task_places'] ?? null) || ! is_int($value['ci_places'] ?? null)) {
+            return false;
+        }
+
+        return array_all($value, static fn (mixed $item, string $key): bool => match ($key) {
+            'cidr', 'project', 'network' => is_string($item),
+            'task_places', 'ci_places' => is_int($item),
+            default => false,
+        });
     }
 
     /** @return array{ok: false, code: string, message: string} */
