@@ -60,7 +60,7 @@ class RoleEffectsTest(unittest.TestCase):
         for case_id in ['required-only', 'application-repeat']:
             self.assertIn('ansible_changes', [step.name for stage in loaded.case(case_id).stages for step in stage.expect])
         self.assertEqual([case.id for case in loaded.cases if case.fails_on_base], [
-            'node-name-is-not-id', 'analytics-option-on-other-role[postgres]',
+            'analytics-option-on-other-role[postgres]',
             'analytics-option-on-other-role[clickhouse]', 'shared-node-authority'])
 
 
