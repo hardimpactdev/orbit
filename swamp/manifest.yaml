@@ -36,6 +36,7 @@ additionalFiles:
   - ansible/tasks/node-add-hub-peers.yml
   - ansible/tasks/node-hub-lan-proof.yml
   - ansible/tasks/node-converge-hub-switch.yml
+  - ansible/tasks/node-converge-hub-move.yml
   - ansible/tasks/node-hub-source.yml
   - ansible/tasks/node-converge-address.yml
   - ansible/tasks/node-converge-handshake.yml

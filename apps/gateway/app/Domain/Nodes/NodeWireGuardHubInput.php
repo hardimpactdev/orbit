@@ -45,7 +45,7 @@ final readonly class NodeWireGuardHubInput
      * snapshot: Node ids only grow, and a Node created after the snapshot, such as a task VM that joins meanwhile, has a higher one.
      * A gone Node above every remaining one keeps its leftover file until a later converge, after a newer Node exists.
      *
-     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,interface:string,source:array{address:string,mark:int,rules:list<string>,script_path:string,script:string,unit_path:string,unit_name:string,unit:string}|null,lan_ssh_argv:list<list<string>>,peers:list<array{node_id:int,file:string,content:string}>,prune:array{directory:string,keep:list<int>,newest:int},peer_keys:list<string>}
+     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,interface:string,source:array{address:string,mark:int,priorities:list<int>,rules:list<string>,script_path:string,script:string,unit_path:string,unit_name:string,unit:string,networkd_path:string,networkd:string}|null,lan_ssh_argv:list<list<string>>,peers:list<array{node_id:int,file:string,content:string}>,prune:array{directory:string,keep:list<int>,newest:int},peer_keys:list<string>}
      */
     public static function intent(Node $hub): array
     {
@@ -71,7 +71,7 @@ final readonly class NodeWireGuardHubInput
      * intent is a snapshot from admission, so a removal that listed the other Nodes would write back, or delete, the peer of a Node that
      * another run adds or takes away meanwhile. The apply step loads the files that remain.
      *
-     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,interface:string,source:array{address:string,mark:int,rules:list<string>,script_path:string,script:string,unit_path:string,unit_name:string,unit:string}|null,peers:list<array{node_id:int,file:string,content:string}>,prune_argv:list<string>,peer_keys:list<string>}
+     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,interface:string,source:array{address:string,mark:int,priorities:list<int>,rules:list<string>,script_path:string,script:string,unit_path:string,unit_name:string,unit:string,networkd_path:string,networkd:string}|null,peers:list<array{node_id:int,file:string,content:string}>,prune_argv:list<string>,peer_keys:list<string>}
      */
     public static function removal(Node $hub, Node $removed): array
     {
@@ -109,7 +109,7 @@ final readonly class NodeWireGuardHubInput
      * tunnel, never required, so a failing rule cannot keep the tunnel down. Null when the public endpoint is a hostname or
      * IPv6: then the hub cannot know the address.
      *
-     * @return array{address:string,mark:int,rules:list<string>,script_path:string,script:string,unit_path:string,unit_name:string,unit:string}|null
+     * @return array{address:string,mark:int,priorities:list<int>,rules:list<string>,script_path:string,script:string,unit_path:string,unit_name:string,unit:string,networkd_path:string,networkd:string}|null
      */
     public static function source(Node $hub): ?array
     {
@@ -123,7 +123,10 @@ final readonly class NodeWireGuardHubInput
         $private = self::privateRanges();
         $mark = sprintf('0x%x', $port);
 
-        return ['address' => $address, 'mark' => $port,
+        return ['address' => $address, 'mark' => $port, 'priorities' => [$main, $own],
+            // systemd-networkd deletes rules and routes it did not create when it configures a link; on the hub it keeps them.
+            'networkd_path' => '/etc/systemd/networkd.conf.d/orbit-hub-source.conf',
+            'networkd' => "[Network]\nManageForeignRoutingPolicyRules=no\nManageForeignRoutes=no\n",
             // Each rule as `ip -j rule show` reports it: priority, hexadecimal mark, destination and table.
             'rules' => [...array_map(static fn (string $range): string => "{$main}:{$mark}:{$range}:main", $private), "{$own}:{$mark}:all:{$port}"],
             'script_path' => self::SourceScript, 'unit_path' => '/etc/systemd/system/'.self::SourceUnit, 'unit_name' => self::SourceUnit,

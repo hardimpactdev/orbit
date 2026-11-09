@@ -12,6 +12,12 @@ final class LanAddress
         return is_string($first) && is_string($second)
             && filter_var($first, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
             && filter_var($second, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
-            && (ip2long($first) & 0xFFFFFF00) === (ip2long($second) & 0xFFFFFF00);
+            && self::network($first) === self::network($second);
+    }
+
+    /** The /24 of an IPv4 LAN address, such as `10.0.0.0/24` for `10.0.0.2`. */
+    public static function network(string $address): string
+    {
+        return long2ip(ip2long($address) & 0xFFFFFF00).'/24';
     }
 }

@@ -126,6 +126,8 @@ it('marks the hub\'s WireGuard packets, and leaves the source rule to its own un
         ->toContain("WantedBy=wg-quick@orbit.service systemd-networkd.service multi-user.target\n")->not->toContain('Requires=')->not->toContain('BindsTo=')
         // systemd-networkd deletes foreign rules when it starts; the unit runs again after it.
         ->toContain("PartOf=systemd-networkd.service\n")->toContain('After=network-online.target systemd-networkd.service')
+        ->and($intent['source']['networkd'])->toBe("[Network]\nManageForeignRoutingPolicyRules=no\nManageForeignRoutes=no\n")
+        ->and($intent['source']['priorities'])->toBe([31820, 31821])
         ->and($intent['lan_ssh_argv'])->toBe([['ufw', 'allow', 'in', 'proto', 'tcp', 'from', '10.0.0.0/24', 'to', '10.0.0.2', 'port', '22', 'comment', 'orbit:vpn-lan-ssh']]);
 });
 

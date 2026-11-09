@@ -8,7 +8,7 @@ covers:
   - apps/gateway/app/Domain/Nodes/{NodeNetworkConvergeInput,NodeNetworkInput,NodeNetworkParticipantInput,NodeNetworkProjection,NodeWireGuardInput,NodeWireGuardHubInput}.php
   - apps/gateway/app/Infrastructure/Nodes/NodeVpnConfigurationSource.php
   - apps/gateway/database/migrations/2027_02_02_000000_drop_node_wireguard_endpoint_override.php
-  - swamp/ansible/tasks/{node-hub-lan-proof,node-converge-hub,node-hub-source,node-converge-handshake,node-converge-hub-switch,node-add-hub-peers}.yml
+  - swamp/ansible/tasks/{node-hub-lan-proof,node-converge-hub,node-hub-source,node-converge-handshake,node-converge-hub-switch,node-converge-hub-move,node-add-hub-peers}.yml
   - apps/gateway/app/Domain/Nodes/NodeLanAddress.php
 ---
 
@@ -68,9 +68,17 @@ Orbit does not fall back to the public endpoint. Fix the network, or clear the w
 
 The hub admits the scan with the firewall rule `orbit:vpn-lan-ssh`: TCP port 22 from the /24 of its `lan_ip` to that address. The hub's network phase applies the rule and removes one left by an earlier LAN address. A `node:converge` of a peer runs the hub's network phase first; a `node:add` does not, so converge the hub before you add a Node on its private network.
 
-The converge decides that a Node moves to another hub endpoint from the `Endpoint` line of its previous `orbit.peers`, not from the live tunnel. `wg` shows a hostname endpoint resolved, and a peer that roamed shows the address it roamed to. On a move, the converge removes the hub peer from the live tunnel before it loads the new one, so the old session ends. The handshake check then accepts only a handshake at or after that moment, so a handshake through the old endpoint fails the check for the new one.
+The converge decides that a Node moves to another hub endpoint from the `Endpoint` line of its previous `orbit.peers`, not from the live tunnel. `wg` shows a hostname endpoint resolved, and a peer that roamed shows the address it roamed to.
 
-When no such handshake comes, the converge writes the previous `orbit.conf` and `orbit.peers` back and loads them, so the Node keeps the tunnel it had. The phase then fails with the assertion `node.hub_switch_no_handshake`. This is a rollback of the move, not a fallback: the Node stays on the endpoint it used before, and the converge reports the failure.
+Swamp reaches the Node through this tunnel, so the move runs as one detached job on the Node that does not depend on the SSH session. The converge stages the new `orbit.conf` and `orbit.peers` beside the live ones. The job then:
+
+1. installs the staged files and keeps the previous ones;
+2. removes the hub peer from the live tunnel and loads the new files, so the old session ends;
+3. waits up to a minute for a hub handshake at or after the move. A handshake through the old endpoint does not count.
+
+When no such handshake comes, the job puts the previous files back and loads them, so the Node keeps the tunnel it had. The phase then fails with the assertion `node.hub_switch_no_handshake`. This is a rollback of the move, not a fallback: the Node stays on the endpoint it used before, and the converge reports the failure.
+
+`node:add` has no such rollback. When it finds a live tunnel whose hub endpoint would move, it stops before any tunnel change with the assertion `node.hub_switch_by_converge`; run `node:converge` for that Node.
 
 Set the addresses in this order:
 
@@ -89,11 +97,11 @@ The hub therefore marks its WireGuard packets with `FwMark`, set to the WireGuar
 
 The private ranges are RFC 1918, plus the WireGuard subnet if it lies outside them. The hub's table has one default route. It copies the gateway, device and `onlink` flag of the first main default route and sets the source to the public endpoint address.
 
-One Orbit-owned unit, `orbit-hub-source.service`, owns the rules and the table. It runs the Gateway-rendered script `/etc/orbit/wireguard/hub-source`, which deletes the rules at both priorities, flushes the table and adds them again. Running it twice gives the same state. The unit starts before `wg-quick@orbit` and the tunnel wants it, but does not require it, so a failing rule never stops the tunnel.
+One Orbit-owned unit, `orbit-hub-source.service`, owns the rules and the table. It runs the Gateway-rendered script `/etc/orbit/wireguard/hub-source`, which deletes the rules at both priorities, flushes the table and adds them again. Running it twice gives the same state. The hub's network phase also writes a `systemd-networkd` drop-in that stops networkd from deleting rules and routes it did not create. The unit starts before `wg-quick@orbit` and the tunnel wants it, but does not require it, so a failing rule never stops the tunnel.
 
-When `systemd-networkd` starts, it deletes rules and routes that it did not create. The unit is therefore part of `systemd-networkd.service` and runs again after every start of it. `orbit.conf` holds only the mark. No writer of `orbit.conf` can drop the rules: not a converge, not either path of `node:add`, not a removal, and not the older native hub projection of [`node:wireguard-key`](/cli/node/wireguard-key).
+Without that drop-in, `systemd-networkd` deletes rules and routes it did not create when it starts or configures a link. The unit is also part of `systemd-networkd.service` and runs again after every start of it. `orbit.conf` holds only the mark. No writer of `orbit.conf` can drop the rules: not a converge, not either path of `node:add`, not a removal, and not the older native hub projection of [`node:wireguard-key`](/cli/node/wireguard-key).
 
-The hub's network phase writes the script and the unit. It restarts the unit when either changes, or when the live rules or the source of a marked packet differ from the rendered ones. It then checks that a marked packet to a public address leaves from the endpoint address. The table copies the default gateway when the unit runs; after the hub's default gateway changes, converge the hub.
+The hub's network phase writes the script and the unit. It restarts the unit when either changes, or when the live rules, the source of a marked packet or its gateway differ from the rendered rules and the main default route. It then checks that a marked packet to a public address leaves from the endpoint address. The table copies the default gateway when the unit runs; after the hub's default gateway changes, the next converge of the hub sees it and runs the unit again.
 
 A hub whose public endpoint is a hostname or an IPv6 address gets no source unit. Orbit does not remove a unit that an earlier IPv4 endpoint left. When you change the endpoint to a hostname, disable `orbit-hub-source.service`, delete rules 31820 and 31821, and flush the table by hand. In the network phase, failed assertions name these causes:
 

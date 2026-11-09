@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\Clusters\DetachClusterNodeAction;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -66,4 +68,14 @@ it('refuses a LAN address that another Node outside every Cluster has, and allow
     $home = Cluster::query()->create(['name' => 'dev']);
     lanRecordedNode('beast', '10.44.0.7', ['cluster_id' => $home->id, 'lan_ip' => '192.168.6.20']);
     $this->patchJson("/api/v1/nodes/{$this->node->id}", ['lan_ip' => '192.168.6.20'])->assertOk();
+});
+
+it('refuses to detach a Node from its Cluster onto a LAN address another Node outside every Cluster has', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'prod']);
+    $member = lanRecordedNode('app-prod', '10.44.0.4', ['cluster_id' => $cluster->id, 'lan_ip' => '10.0.0.5']);
+    lanRecordedNode('gateway', '10.44.0.2', ['lan_ip' => '10.0.0.5']);
+
+    expect(fn () => app(DetachClusterNodeAction::class)->execute($cluster, $member))
+        ->toThrow(fn (ResourceOperationException $refusal) => expect($refusal->errorCode)->toBe('cluster.lan_ip_conflict'));
+    expect($member->refresh()->cluster_id)->toBe($cluster->id);
 });

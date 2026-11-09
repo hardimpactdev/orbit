@@ -32,19 +32,24 @@
       check_mode: false
     - name: Require the endpoint address on the hub
       ansible.builtin.assert: { that: hub_source_local.stdout | trim | length > 0, fail_msg: vpn.endpoint_not_local, quiet: true }
-    - name: Create the source script folder
-      ansible.builtin.file: { path: "{{ hub_source.script_path | dirname }}", state: directory, owner: root, group: root, mode: "0755" }
+    - name: Create the source script and networkd folders
+      ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0755" }
+      loop: ["{{ hub_source.script_path | dirname }}", "{{ hub_source.networkd_path | dirname }}"]
     - name: Write the source script and unit
       ansible.builtin.copy: { dest: "{{ item.dest }}", content: "{{ item.content }}", owner: root, group: root, mode: "{{ item.mode }}" }
       loop:
         - { dest: "{{ hub_source.script_path }}", content: "{{ hub_source.script }}", mode: "0700" }
         - { dest: "{{ hub_source.unit_path }}", content: "{{ hub_source.unit }}", mode: "0644" }
+        - { dest: "{{ hub_source.networkd_path }}", content: "{{ hub_source.networkd }}", mode: "0644" }
       loop_control: { label: "{{ item.dest }}" }
       register: hub_source_files
     - name: Read the hub's WireGuard rules and source
       ansible.builtin.shell:
         executable: /bin/bash
-        cmd: ip -4 -j rule show; echo; ip -4 -o route get 192.0.2.1 mark {{ hub_source.mark | quote }} || true
+        cmd: |
+          ip -4 -j rule show
+          echo "marked: $(ip -4 -o route get 192.0.2.1 mark {{ hub_source.mark | quote }} || true)"
+          echo "main: $(ip -4 -o route get 192.0.2.1 || true)"
       register: hub_source_live
       changed_when: false
       check_mode: false
@@ -52,12 +57,17 @@
       vars:
         live: "{{ (hub_source_live.stdout.split('\n') | first) | from_json }}"
         ours: >-
-          {% for rule in live if rule.priority | default(-1) in [31820, 31821] %}{{ rule.priority }}:{{ rule.fwmark | default('') }}:{{
+          {% for rule in live if rule.priority | default(-1) in hub_source.priorities %}{{ rule.priority }}:{{ rule.fwmark | default('') }}:{{
           (rule.dst ~ '/' ~ rule.dstlen) if rule.dst is defined else 'all' }}:{{ rule.table | default('') }}
           {% endfor %}
+        marked: "{{ (hub_source_live.stdout | regex_search('(?m)^marked: (.*)$', '\\1') or ['']) | first }}"
+        main: "{{ (hub_source_live.stdout | regex_search('(?m)^main: (.*)$', '\\1') or ['']) | first }}"
+        hop: ' via (\S+) dev (\S+)'
+        # The table copies the main default gateway when the unit runs; a gateway that changed since is drift too.
         drift: >-
           {{ (ours.split() | sort) != (hub_source.rules | sort)
-          or (' src ' ~ hub_source.address ~ ' ') not in hub_source_live.stdout }}
+          or (' src ' ~ hub_source.address ~ ' ') not in marked
+          or (marked | regex_search(hop)) != (main | regex_search(hop)) }}
       ansible.builtin.systemd:
         name: "{{ hub_source.unit_name }}"
         daemon_reload: "{{ hub_source_files is changed }}"

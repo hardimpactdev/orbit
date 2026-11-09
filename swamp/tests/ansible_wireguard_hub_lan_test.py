@@ -6,7 +6,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from typing import ClassVar
@@ -23,8 +22,9 @@ echo "ip $*" >> "$STUB_DIR/calls.log"
 case "$*" in
   "-4 -j route get "*) cat "$STUB_DIR/route.json"; exit "$(cat "$STUB_DIR/route.rc" 2>/dev/null || echo 0)" ;;
   "-4 -o address show to "*) cat "$STUB_DIR/local.txt" ;;
-  "-4 -j rule show") if [ -f "$STUB_DIR/applied" ]; then cat "$STUB_DIR/rules.applied.json"; else cat "$STUB_DIR/rules.json"; fi ;;
+  "-4 -j rule show") if [ -f "$STUB_DIR/applied" ]; then cat "$STUB_DIR/rules.applied.json"; else cat "$STUB_DIR/rules.json"; fi; echo ;;
   "-4 -o route get 192.0.2.1 mark "*) if [ -f "$STUB_DIR/applied" ]; then cat "$STUB_DIR/source.applied.txt"; else cat "$STUB_DIR/source.txt"; fi ;;
+  "-4 -o route get 192.0.2.1") cat "$STUB_DIR/main.txt" 2>/dev/null || echo '192.0.2.1 via 85.9.216.1 dev eth0 src 85.9.218.89 uid 0' ;;
 esac
 """
 KEYSCAN = """#!/bin/sh
@@ -136,7 +136,8 @@ class WireGuardHubLanTest(unittest.TestCase):
                 self.assertIn('node.hub_lan_unreachable', output)
 
     def source(self, rules, source, local='2: eth0    inet 94.237.124.160/32 scope global eth0\n', script='#!/bin/sh\n', installed=None):
-        hub_source = {'address': '94.237.124.160', 'mark': 51820, 'rules': RULES, 'script': script, 'unit': '[Unit]\n',
+        hub_source = {'address': '94.237.124.160', 'mark': 51820, 'priorities': [31820, 31821], 'rules': RULES, 'script': script,
+                      'unit': '[Unit]\n', 'networkd_path': '@DIR@/etc/networkd/orbit-hub-source.conf', 'networkd': '[Network]\n',
                       'script_path': '@DIR@/etc/hub-source', 'unit_path': '@DIR@/etc/orbit-hub-source.service',
                       'unit_name': 'orbit-hub-source.service'}
         return self.run_tasks('node-hub-source.yml', {'hub_source': hub_source, 'hub_lan_ssh_argv': LAN_SSH}, {
@@ -144,6 +145,7 @@ class WireGuardHubLanTest(unittest.TestCase):
             **(installed or {})})
 
     INSTALLED: ClassVar[dict] = {'etc/hub-source': '#!/bin/sh\n', 'etc/orbit-hub-source.service': '[Unit]\n',
+                                 'etc/networkd/orbit-hub-source.conf': '[Network]\n',
                  'ufw.txt': 'Skipping adding existing rule\n'}
 
     def test_a_hub_with_the_old_suppress_rule_gets_the_private_range_rules_from_its_unit(self):
@@ -170,47 +172,11 @@ class WireGuardHubLanTest(unittest.TestCase):
         self.assertNotIn('restart', calls)
 
 
-    def handshake(self, latest, since):
-        wg = '#!/bin/sh\nprintf "HUBKEY\\t%s\\n" "$(cat "$STUB_DIR/latest.txt")"\n'
-        return self.run_tasks('node-converge-handshake.yml', {'peer_key': 'HUBKEY', 'handshake_since': since},
-                              {'latest.txt': str(latest), 'bin/wg': wg})
-
-    def test_after_an_endpoint_switch_only_a_handshake_at_or_after_it_counts(self):
-        switched = int(time.time()) - 10
-        code, output, _ = self.handshake(switched + 3, str(switched))
+    def test_a_default_gateway_that_changed_since_the_unit_ran_restarts_it(self):
+        moved = {**self.INSTALLED, 'main.txt': '192.0.2.1 via 85.9.216.9 dev eth0 src 85.9.218.89 uid 0\n'}
+        code, output, calls = self.source(LIVE, RIGHT, installed=moved)
         self.assertEqual(code, 0, output)
-        # A handshake from before the switch went through the old endpoint; the old 180-second window would accept it.
-        code, output, _ = self.handshake(switched - 30, str(switched))
-        self.assertNotEqual(code, 0)
-
-    def switch(self, previous, endpoint):
-        stubs = {'bin/wg': '#!/bin/sh\necho "wg $*" >> "$STUB_DIR/calls.log"\n',
-                 'bin/date': '#!/bin/sh\necho 1794240123\n'}
-        return self.run_tasks('node-converge-hub-switch.yml',
-                              {'hub_switch_previous': previous, 'hub_switch_endpoint': endpoint, 'hub_switch_key': 'HUBKEY'},
-                              stubs, after=[{'ansible.builtin.debug': {'msg': 'since={{ hub_switch_time }}'}}])
-
-    PEERS = '[Peer]\nPublicKey = HUBKEY\nEndpoint = {}\nAllowedIPs = 10.44.0.0/24\nPersistentKeepalive = 25\n'
-
-    def test_a_new_hub_endpoint_in_the_files_ends_the_old_session_and_sets_the_switch_time(self):
-        code, output, calls = self.switch(self.PEERS.format('94.237.124.160:51820'), '10.0.0.2:51820')
-        self.assertEqual(code, 0, output)
-        self.assertIn('wg set orbit peer HUBKEY remove', calls)
-        self.assertIn('since=1794240123', output)
-
-    def test_an_unchanged_endpoint_ends_nothing_even_as_a_hostname_or_after_the_peer_roamed(self):
-        # The files decide: `wg show` would print a hostname resolved, and the address a roamed peer moved to.
-        for endpoint in ('vpn.example.com:51820', '94.237.124.160:51820'):
-            with self.subTest(endpoint=endpoint):
-                code, output, calls = self.switch(self.PEERS.format(endpoint), endpoint)
-                self.assertEqual(code, 0, output)
-                self.assertNotIn('remove', calls)
-                self.assertIn('"msg": "since="', output)
-
-    def test_a_peer_without_previous_files_switches(self):
-        code, output, calls = self.switch('', '10.0.0.2:51820')
-        self.assertEqual(code, 0, output)
-        self.assertIn('remove', calls)
+        self.assertIn('restart', calls)
 
     def test_a_lan_ssh_rule_of_an_earlier_hub_lan_address_is_removed_and_the_current_one_kept(self):
         added = ("ufw allow from 10.1.1.0/24 to 10.1.1.2 port 22 proto tcp comment 'orbit:vpn-lan-ssh'\n"
@@ -223,23 +189,90 @@ class WireGuardHubLanTest(unittest.TestCase):
         self.assertNotIn('vpn-ssh', calls.replace('vpn-lan-ssh', ''))
 
 
+    def switch(self, previous, endpoint):
+        return self.run_tasks('node-converge-hub-switch.yml', {'hub_switch_previous': previous, 'hub_switch_endpoint': endpoint}, {},
+                              after=[{'ansible.builtin.debug': {'msg': 'switch={{ hub_switch | bool }}'}}])
+
+    PEERS = '[Peer]\nPublicKey = HUBKEY\nEndpoint = {}\nAllowedIPs = 10.44.0.0/24\nPersistentKeepalive = 25\n'
+
+    def test_a_new_hub_endpoint_in_the_files_is_a_switch(self):
+        for previous in (self.PEERS.format('94.237.124.160:51820'), ''):
+            with self.subTest(previous=previous):
+                code, output, _ = self.switch(previous, '10.0.0.2:51820')
+                self.assertEqual(code, 0, output)
+                self.assertIn('switch=True', output)
+
+    def test_an_unchanged_endpoint_is_no_switch_even_as_a_hostname_or_after_the_peer_roamed(self):
+        # The files decide: `wg show` would print a hostname resolved, and the address a roamed peer moved to.
+        for endpoint in ('vpn.example.com:51820', '94.237.124.160:51820'):
+            with self.subTest(endpoint=endpoint):
+                code, output, _ = self.switch(self.PEERS.format(endpoint), endpoint)
+                self.assertEqual(code, 0, output)
+                self.assertIn('switch=False', output)
+
+    def move(self, handshake):
+        """Move a tunnel from the public to the LAN endpoint with a stand-in `wg` whose hub handshake is `handshake`."""
+        wg = ('#!/bin/sh\necho "wg $*" >> "$STUB_DIR/calls.log"\n'
+              'case "$*" in\n'
+              '  "syncconf orbit "*) cat "$3" >> "$STUB_DIR/loaded.log"; echo --- >> "$STUB_DIR/loaded.log" ;;\n'
+              '  "show orbit latest-handshakes") printf "HUBKEY\\t%s\\n" "$(cat "$STUB_DIR/handshake.txt")" ;;\n'
+              'esac\n')
+        old = '[Interface]\nPrivateKey = OLD\n' + self.PEERS.format('94.237.124.160:51820')
+        files = {'bin/wg': wg, 'bin/ping': '#!/bin/sh\nexit 0\n', 'handshake.txt': str(handshake),
+                 'wg/orbit.key': 'KEY\n', 'wg/orbit.conf': 'old conf\n', 'wg/orbit.peers': old,
+                 'wg/orbit.conf.next': 'new conf\n', 'wg/orbit.peers.next': self.PEERS.format('10.0.0.2:51820')}
+        with tempfile.TemporaryDirectory() as keep:
+            variables = {'hub_move': {'dir': '@DIR@/wg', 'key': 'HUBKEY', 'probe_ip': '10.44.0.1', 'interval': 0}}
+            after = [{'ansible.builtin.command': {'argv': ['cp', '-R', '{{ hub_move.dir }}', keep]}},
+                     {'ansible.builtin.command': {'argv': ['cp', '{{ hub_move.dir }}/../loaded.log', keep]}}]
+            code, output, calls = self.run_tasks('node-converge-hub-move.yml', variables, files, after=after)
+            tunnel = {path.name: path.read_text() for path in (Path(keep) / 'wg').iterdir()} if (Path(keep) / 'wg').exists() else {}
+            loaded = (Path(keep) / 'loaded.log').read_text() if (Path(keep) / 'loaded.log').exists() else ''
+            return code, output, calls, tunnel, loaded
+
+    def test_a_move_with_a_fresh_handshake_keeps_the_new_files(self):
+        code, output, calls, tunnel, loaded = self.move(9_999_999_999)
+        self.assertEqual(code, 0, output)
+        self.assertIn('wg set orbit peer HUBKEY remove', calls)
+        self.assertIn('Endpoint = 10.0.0.2:51820', tunnel['orbit.peers'])
+        self.assertEqual(tunnel['orbit.conf'], 'new conf\n')
+        self.assertNotIn('orbit.peers.previous', tunnel)
+        self.assertIn('Endpoint = 10.0.0.2:51820', loaded)
+
+    def test_a_move_without_a_handshake_after_it_restores_and_loads_the_previous_files(self):
+        # A handshake from before the move went through the old endpoint and does not count. The playbook stops at the
+        # assert, so the files are read from the stand-in's log of what it loaded last.
+        code, output, calls, _, _ = self.move(1)
+        self.assertNotEqual(code, 0)
+        self.assertIn('node.hub_switch_no_handshake', output)
+        self.assertEqual(calls.count('remove'), 2)
+
+    def test_the_restore_loads_the_previous_peers_without_the_interface_section_node_add_wrote(self):
+        script = yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub-move.yml').read_text())[0]['ansible.builtin.shell']['cmd']
+        program = '/^\\[/ { skip = ($0 == "[Interface]") } !skip'
+        self.assertIn(f"awk '{program}'", script)
+        with tempfile.TemporaryDirectory() as folder:
+            peers = Path(folder) / 'peers'
+            peers.write_text('[Interface]\nPrivateKey = OLD\n' + self.PEERS.format('a:1'))
+            loaded = subprocess.run(['awk', program, str(peers)], capture_output=True, text=True, check=True).stdout
+        self.assertNotIn('[Interface]', loaded)
+        self.assertIn('Endpoint = a:1', loaded)
+
+
 class NetworkPhaseWiringTest(unittest.TestCase):
-    def test_the_peer_phase_reads_the_previous_files_ends_a_switched_session_before_the_sync_and_restores_without_a_handshake(self):
+    def test_the_peer_phase_decides_from_the_previous_file_stages_the_files_and_moves_in_one_job(self):
         block = yaml.safe_load((ANSIBLE / 'tasks/node-converge-network.yml').read_text())[1]['block']
         names = [task['name'] for task in block]
-        order = [names.index(name) for name in ('Prove the hub\'s LAN endpoint before any WireGuard change', 'Read the previous peer files',
-                                                'Reconcile recorded peer files', 'End the session to a previous hub endpoint',
+        order = [names.index(name) for name in ("Prove the hub's LAN endpoint before any WireGuard change", 'Read the previous hub peer file',
+                                                'Decide whether the hub endpoint changes', 'Reconcile recorded peer files',
+                                                'Move the tunnel to the new hub endpoint',
                                                 'Reconcile live peer state without copying its private key')]
         self.assertEqual(order, sorted(order))
-        switch = block[names.index('End the session to a previous hub endpoint')]
-        self.assertIn('peer_previous.results[1]', switch['vars']['hub_switch_previous'])
-        sync = block[names.index('Reconcile live peer state without copying its private key')]['ansible.builtin.shell']['cmd']
-        self.assertNotIn('wg show orbit endpoints', sync)
-        wait = block[names.index('Wait for the hub handshake, newer than a switch of its endpoint')]
-        self.assertEqual(wait['block'][0]['vars']['handshake_since'], '{{ hub_switch_time }}')
-        rescue = [task['name'] for task in wait['rescue']]
-        self.assertIn('Restore the previous peer files after a switch without a handshake', rescue)
-        self.assertEqual(wait['rescue'][-1]['ansible.builtin.fail']['msg'].count('node.hub_switch_no_handshake'), 1)
+        self.assertIn('.next', block[names.index('Reconcile recorded peer files')]['ansible.builtin.copy']['dest'])
+        self.assertEqual(block[names.index('Reconcile live peer state without copying its private key')]['when'], 'not hub_switch | bool')
+        move = yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub-move.yml').read_text())[0]
+        self.assertEqual((move['async'] > 60, move['poll'] > 0), (True, True))
+
 
 if __name__ == '__main__':
     unittest.main()

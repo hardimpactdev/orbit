@@ -112,6 +112,19 @@
       when: net.hub_lan is not none
       ansible.builtin.include_tasks: tasks/node-hub-lan-proof.yml
       vars: { hub_lan: "{{ net.hub_lan }}" }
+    # node:add has no rollback for a live tunnel; node:converge moves one and goes back without a handshake (ADR 0251).
+    - name: Read the previous hub peer file
+      when: net.hub_lan is not none
+      ansible.builtin.slurp: { src: /etc/wireguard/orbit.peers }
+      register: peer_previous
+      failed_when: false
+    - name: Decide whether the hub endpoint changes
+      when: net.hub_lan is not none and peer_previous.content is defined
+      ansible.builtin.include_tasks: tasks/node-converge-hub-switch.yml
+      vars: { hub_switch_previous: "{{ peer_previous.content | b64decode }}", hub_switch_endpoint: "{{ net.hub_endpoint }}" }
+    - name: Leave the move of a live tunnel to node:converge
+      when: net.hub_lan is not none and peer_previous.content is defined
+      ansible.builtin.assert: { that: not hub_switch | bool, fail_msg: node.hub_switch_by_converge, quiet: true }
     - name: Write the tunnel files
       ansible.builtin.copy:
         dest: "{{ item.path }}"

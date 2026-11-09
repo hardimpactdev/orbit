@@ -1,0 +1,42 @@
+---
+# Move a Node's tunnel to its new hub endpoint in one detached job on the Node (ADR 0251). Swamp reaches the Node through this
+# tunnel, so the move must not depend on the SSH session: Ansible's async job keeps running when the session drops, and later
+# polls reconnect through whichever tunnel the job left. The job installs the staged files, ends the old session, waits for a
+# handshake at or after the move and, without one, puts the previous files back and loads them. Then it exits 3.
+- name: Move the tunnel to the new hub endpoint, or back
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -u
+      d={{ hub_move.dir | quote }}; key={{ hub_move.key | quote }}
+      for f in orbit.conf orbit.peers; do
+        if [ -f "$d/$f" ]; then cp -p "$d/$f" "$d/$f.previous"; fi
+        mv "$d/$f.next" "$d/$f"
+      done
+      load() {
+        wg set orbit peer "$key" remove || true
+        # A file node:add wrote holds its own [Interface] section; only the peers are loaded.
+        wg syncconf orbit <(printf '[Interface]\nPrivateKey = '; cat "$d/orbit.key"; awk '/^\[/ { skip = ($0 == "[Interface]") } !skip' "$d/orbit.peers")
+      }
+      moved=$(date +%s)
+      load
+      for _ in $(seq 1 30); do
+        seen=$(wg show orbit latest-handshakes | awk -v k="$key" '$1 == k { print $2 }')
+        if [ "${seen:-0}" -ge "$moved" ]; then rm -f "$d/orbit.conf.previous" "$d/orbit.peers.previous"; echo "moved=$moved"; exit 0; fi
+        ping -c 1 -W 1 {{ hub_move.probe_ip | quote }} > /dev/null 2>&1 || true
+        sleep {{ hub_move.interval | default(2) }}
+      done
+      if [ -f "$d/orbit.peers.previous" ] && [ -f "$d/orbit.conf.previous" ]; then
+        mv "$d/orbit.conf.previous" "$d/orbit.conf"; mv "$d/orbit.peers.previous" "$d/orbit.peers"; load; echo restored
+      fi
+      exit 3
+  async: 180
+  poll: 5
+  register: hub_move_result
+  changed_when: true
+  failed_when: false
+- name: Require a handshake through the new hub endpoint
+  ansible.builtin.assert:
+    that: hub_move_result.rc | default(1) == 0
+    fail_msg: node.hub_switch_no_handshake
+    quiet: true

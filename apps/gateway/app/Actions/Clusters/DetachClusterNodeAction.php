@@ -8,6 +8,7 @@ use App\Actions\Routes\ConvergeRouteAction;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Nodes\NodeLanAddress;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Shared\ResourceOperationException;
@@ -31,6 +32,12 @@ final readonly class DetachClusterNodeAction
     {
         $node->refresh();
         $cluster->refresh();
+
+        // Outside every Cluster the Node joins the hub's network, where its LAN address must be free too (ADR 0251). This is
+        // checked before any reconciliation reaches a Node.
+        if ($node->cluster_id === $cluster->id && is_string($node->lan_ip)) {
+            NodeLanAddress::assertFree($node->lan_ip, null, $node->id);
+        }
 
         foreach ($this->routeReconciler()->membershipChanges(nodeOverrides: [$node->id => ['cluster_id' => null]]) as $change) {
             if ($change['route']->isAnalyticsTracking()) {

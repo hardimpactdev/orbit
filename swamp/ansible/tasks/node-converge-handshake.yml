@@ -1,13 +1,10 @@
 ---
-# `handshake_since` is the Node's time of a switch of the hub endpoint: then only a handshake at or after it counts, because one
-# from before the switch went through the old endpoint. Without it, a handshake from the last 180 seconds counts.
 - name: Wait for the recorded peer's recent handshake
   ansible.builtin.command: wg show orbit latest-handshakes
   changed_when: false
   register: handshake
   until: >-
     (dict(handshake.stdout_lines | map('split', '\t')).get(peer_key, '0') | int)
-    >= ((handshake_since | int) if (handshake_since | default(none)) not in [none, '', 'None']
-        else (lookup('pipe', 'date +%s') | int - 179))
+    > (lookup('pipe', 'date +%s') | int - 180)
   retries: 30
   delay: 2

@@ -12,6 +12,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressPolicy;
 use App\Domain\Nodes\RoleName;
+use App\Domain\WireGuard\LanAddress;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Shared\LifecycleStatus;
@@ -306,7 +307,7 @@ final readonly class NodeFirewallRuleCatalog
         if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
             return [];
         }
-        $network = long2ip(ip2long($address) & 0xFFFFFF00).'/24';
+        $network = LanAddress::network($address);
 
         return [new UfwManagedRule(
             new UfwRuleShape('orbit:vpn-lan-ssh', 'allow', 'in', $network, $address, '22', 'tcp', null, null, 'v4'),

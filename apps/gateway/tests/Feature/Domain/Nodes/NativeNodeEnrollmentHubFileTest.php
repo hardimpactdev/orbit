@@ -97,7 +97,9 @@ it('gives a Node on the hub\'s private network the hub\'s LAN endpoint and the a
 
     expect(collect($network['files'])->firstWhere('path', '/etc/wireguard/orbit.conf')['content'])->toContain("Endpoint = 10.0.0.2:51820\n")
         ->and($network['sync_body'])->toContain("Endpoint = 10.0.0.2:51820\n")
-        ->and($network['hub_lan'])->toBe(['address' => '10.0.0.2', 'source' => '10.0.0.4', 'fingerprint' => 'SHA256:fixture']);
+        ->and($network['hub_lan'])->toBe(['address' => '10.0.0.2', 'source' => '10.0.0.4', 'fingerprint' => 'SHA256:fixture'])
+        // node:add compares it with the previous orbit.peers and leaves a move of a live tunnel to node:converge.
+        ->and($network['hub_endpoint'])->toBe('10.0.0.2:51820');
 });
 
 it('keeps the public hub endpoint for a Node whose LAN is another private network', function (?string $lan): void {
