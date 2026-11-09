@@ -236,6 +236,9 @@ def select(paths, main=False, selection=None):
             jobs['sdk-static'] = True
         if path.startswith('apps/e2e/'):
             jobs['e2e-static'] = True
+        # The PHP job verifies the pin against the published Linux binary's contract.
+        if path.startswith('apps/gateway/resources/agent/'):
+            jobs['php'] = True
         if path.endswith('.php') or path.endswith(('composer.json', 'composer.lock')):
             jobs['php'] = True
         if path.startswith(('apps/cli/tests/', 'apps/gateway/tests/', 'packages/php-sdk/tests/')):
