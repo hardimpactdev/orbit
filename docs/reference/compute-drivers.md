@@ -1057,7 +1057,7 @@ The converge of a refresh is bounded at 5,400 s, and the converge of a task star
 
 The candidate proof claims one CI place on its own host. A full CI pool waits within the two-hour admission budget. Task work cannot consume a CI place. The refresh VM of the old design and its group in the proof Project are not part of this run.
 
-A refresh that fails before its proof leaves its slot `failed`, and the [sweep](#sweep-task-vm-hosts) releases it. The sweep leaves alone only the slot that an open refresh holds. A refresh that waits for a CI place holds no slot, so the slots that earlier failed refreshes left are freed for it.
+A refresh that fails before its proof leaves its place `failed`, and the [sweep](#sweep-task-vm-hosts) releases it. The sweep leaves alone only the place that an open refresh holds. A refresh that waits for a CI place holds no place, so the places that earlier failed refreshes left are freed for it.
 
 ##### Build the nested fleet in the converge
 

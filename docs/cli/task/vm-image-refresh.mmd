@@ -76,5 +76,5 @@ sequenceDiagram
     SW--xGW: Run failed<br/>failed step
     %%> On failure:
     %%> - the base VM is stopped and rolled back to the recorded snapshot, and a new snapshot is removed; task starts keep the recorded one
-    %%> - the slot of the proof is `failed` until the host sweep releases it; the sweep keeps only the slot of an open refresh, so a queued refresh that waits for a CI place does not keep the failed slots
+    %%> - the place of the proof is `failed` until the host sweep releases it; the sweep keeps only the place of an open refresh, so a queued refresh that waits for a CI place does not keep the failed places
   end
