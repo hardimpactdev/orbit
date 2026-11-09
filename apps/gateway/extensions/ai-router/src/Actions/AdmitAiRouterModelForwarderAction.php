@@ -39,8 +39,10 @@ final readonly class AdmitAiRouterModelForwarderAction
             throw new ResourceOperationException('ai_router.forwarder_refused',
                 "Node [{$node->name}] holds the real key, proves the guard's refusal or forwards task VM traffic; it cannot run a forwarder.", 409);
         }
-        // A forwarder run applies the guard; it must not bring back a guard that `ai-router:task-guard --remove` took off.
-        if (! $this->guard->applied($router)) {
+        // A forwarder run applies the guard; it must not bring back a guard that `ai-router:task-guard --remove` took off. A removal
+        // while the guard is off runs only the forwarder half and leaves the guard off.
+        $guard = $this->guard->applied($router);
+        if (! $guard && ! $remove) {
             throw new ResourceOperationException('ai_router.guard_absent', 'The guard is not in place; run `ai-router:task-guard` first.', 409);
         }
         if ($remove) {
@@ -56,6 +58,7 @@ final readonly class AdmitAiRouterModelForwarderAction
         return $this->start->execute(AiRouterModelForwarder::Kind, 'node', $node->id, $router->id, [
             'intent' => [
                 ...$this->guard->intent($router, $remove ? $others : $this->byId([...$others, $node]), false),
+                'state' => $guard ? 'present' : 'absent',
                 'forwarder' => [
                     'ssh' => $this->ssh->forNode($node),
                     'state' => $remove ? 'absent' : 'present',
@@ -68,6 +71,7 @@ final readonly class AdmitAiRouterModelForwarderAction
                     'caddyfile' => $this->forwarder->caddyfile($address, $this->guard->origin($router)),
                     'user' => AiRouterModelForwarder::User,
                     'table' => AiRouterModelForwarder::Table,
+                    'table_unit' => AiRouterModelForwarder::TableUnit,
                     'ruleset' => $this->forwarder->ruleset($this->guard->address($router)),
                     'firewall' => [
                         'desired' => $remove ? [] : [['ufw', ...array_slice($rule->arguments, 2)]],

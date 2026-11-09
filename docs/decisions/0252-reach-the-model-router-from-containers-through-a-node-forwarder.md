@@ -42,7 +42,7 @@ All traffic from the Node to the guard leaves from the Node's WireGuard address,
 - A forward chain drops every forwarded packet to the guard's address and port. It catches Incus and Docker containers alike. Docker accepts container traffic in its own `FORWARD` chains, ahead of UFW, so a UFW route rule would not stop a Docker container. The table's chain runs at priority `filter - 10`, before Docker and UFW, and a drop in any base chain is final.
 - An output chain resets every connection from the Node to the guard unless its socket belongs to the forwarder's user. Root, `orbit`, app-dev Instances that run on the Node and CI work get no model route.
 
-The unit loads the table as root before each start, so it is in place after a reboot before the forwarder listens.
+A oneshot unit loads the table early at boot, before WireGuard, Docker and Incus, and the forwarder runs only while that unit is up. An applying run installs the table before the guard admits the Node, so a run that fails halfway leaves no Node admitted without its table.
 
 The guard stays the one place that decides. A request through the forwarder meets the same key, method, path and query checks as a request from a task VM.
 
@@ -50,9 +50,9 @@ The guard stays the one place that decides. A request through the forwarder meet
 
 The guard admits two kinds of source: the task VM range, and the WireGuard address of every Node whose last forwarder run left a forwarder in place. Each such address gets its own UFW allow above the guard's deny.
 
-One run does both halves. `ai_router.model_forwarder` first applies the guard with the Node added (or removed), then applies (or removes) the forwarder on the Node. A run that applies ends with checks from a network namespace on the bridge, as a container. A request through the forwarder with no key must get 401. The guard answers 401 to a refused request from a source it admits, and 403 to any other source, so the 401 proves the bridge rule, the forwarder, and that the guard admits the Node and still demands the key. A request straight to the guard must fail while the forward chain's drop counter rises. A request from the Node as root must fail while the output chain's reset counter rises. A run that removes ends by showing that the router's Node answers SSH from the Node while the guard port does not.
+One run does both halves. An applying `ai_router.model_forwarder` run installs the forwarder and its table, then applies the guard with the Node added. A removing run applies the guard with the Node dropped, then removes the forwarder. A run that applies ends with checks from a network namespace on the bridge, as a container. A request through the forwarder with no key must get 401. The guard answers 401 to a refused request from a source it admits, and 403 to any other source, so the 401 proves the bridge rule, the forwarder, and that the guard admits the Node and still demands the key. A request straight to the guard must fail while the forward chain's drop counter rises. A request from the Node as root must fail while the output chain's reset counter rises. A run that removes ends by showing that the router's Node answers SSH from the Node while the guard port does not.
 
-A forwarder run applies the guard, so it runs only while the guard is in place. It never brings back a guard that `ai-router:task-guard --remove` took off.
+A forwarder run never brings back a guard that `ai-router:task-guard --remove` took off. While the guard is off, an applying run is refused, and a removing run skips the guard phase.
 
 The router's Node, the swamp Node and the vpn hub cannot run a forwarder. The router's Node holds the real key, so it is no agent host. The swamp Node is the outside source the guard run uses to prove its refusal. The hub forwards every task VM's traffic to the guard, which the forward chain would drop.
 

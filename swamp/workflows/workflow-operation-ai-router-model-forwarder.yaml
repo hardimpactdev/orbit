@@ -14,7 +14,8 @@ inputs:
       type: object
       properties:
         ssh: {type: object}
-        state: {type: string, const: present}
+        # absent: a forwarder removal while `ai-router:task-guard --remove` has the guard off; the guard phase is skipped.
+        state: {type: string, enum: [present, absent]}
         origin: {type: string, format: uri}
         directory: {type: string}
         unit: {type: string}
@@ -40,6 +41,7 @@ inputs:
             caddyfile: {type: string}
             user: {type: string, const: orbit-ai-router-forwarder}
             table: {type: string, const: orbit_ai_router_forwarder}
+            table_unit: {type: string, const: orbit-ai-router-forwarder-table.service}
             ruleset: {type: string}
             firewall:
               type: object
@@ -48,7 +50,7 @@ inputs:
                 remove: {type: array}
               required: [desired, remove]
               additionalProperties: false
-          required: [ssh, state, bridge, address, origin, guard_origin, directory, unit, caddyfile, user, table, ruleset, firewall]
+          required: [ssh, state, bridge, address, origin, guard_origin, directory, unit, caddyfile, user, table, table_unit, ruleset, firewall]
           additionalProperties: false
       required: [ssh, state, origin, directory, unit, caddyfile, firewall, forwarder]
       additionalProperties: false
@@ -89,12 +91,35 @@ jobs:
       inputs:
         intent: '${{ inputs.intent }}'
         path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
-    # The guard phase of `ai_router.task_guard`, always applied, with the Node's WireGuard address added to its sources or dropped. It
-    # ends with its own checks: from the router Node and from the swamp Node, a source outside the guard's sources is refused.
-  - name: 'Apply the guard'
+    # Before the guard admits the Node: its user, its nftables table and the forwarder, from the `forwarder` part of the intent; it gets
+    # no key. A run that fails later leaves no Node admitted without its table. A removal installs nothing here.
+  - name: 'Install the forwarder'
     labels: {role: swamp}
     dependsOn:
     - {step: 'input', condition: {type: succeeded}}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("ai-router-forwarder-install-" + string(inputs.node_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 150 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_TAGS" "$ORBIT_ANSIBLE/ai-router-model-forwarder.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+          ORBIT_TAGS: '${{ inputs.intent.forwarder.state == "absent" ? "skip-phase" : "apply" }}'
+    # The guard phase of `ai_router.task_guard`, with the Node's WireGuard address added to its sources or dropped. It ends with its own
+    # checks: from the router Node and from the swamp Node, a source outside the guard's sources is refused. While the guard is off, a
+    # removal leaves it off: the phase only addresses the Node.
+  - name: 'Apply the guard'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Install the forwarder', condition: {type: succeeded}}
     writes: true
     task:
       type: behavior
@@ -110,12 +135,12 @@ jobs:
           ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-          ORBIT_TAGS: apply
+          ORBIT_TAGS: '${{ inputs.intent.state == "absent" ? "skip-phase" : "apply" }}'
           ORBIT_TASK_KEY: '${{ vault.get(inputs.execution_secrets.task_key.vault, inputs.execution_secrets.task_key.key) }}'
           ORBIT_ANCHOR_KEY: '${{ vault.get(inputs.execution_secrets.anchor_key.vault, inputs.execution_secrets.anchor_key.key) }}'
-    # The forwarder on the agent Node, from the `forwarder` part of the same intent file; it gets no key. It ends with its check from the
-    # Node: from the bridge, through the forwarder, the guard answers 401 to no key and a direct packet to the guard is dropped; or,
-    # after a removal, the guard port does not answer the Node.
+    # After the guard phase: the checks from a namespace on the bridge, as a container, prove the guard answers 401 to no key through the
+    # forwarder, a direct packet to the guard is dropped, and root on the Node is reset. A removal takes the forwarder off and proves the
+    # guard port does not answer the Node.
   - name: 'Apply the forwarder'
     labels: {role: swamp}
     dependsOn:
@@ -135,7 +160,7 @@ jobs:
           ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-          ORBIT_TAGS: '${{ inputs.intent.forwarder.state == "absent" ? "remove" : "apply" }}'
+          ORBIT_TAGS: '${{ inputs.intent.forwarder.state == "absent" ? "remove" : "check" }}'
 - name: cleanup
   labels: {role: swamp}
   dependsOn:

@@ -20,27 +20,28 @@ sequenceDiagram
   %%> - takes the lock `ai_router_guard:<router Node>`, which guard runs share
   %%> Requirements:
   %%> - the ai-router extension is set up on its Node
-  %%> - the guard is in place: a forwarder run never brings back a removed guard
+  %%> - the guard is in place for an applying run: a forwarder run never brings back a removed guard
   %%> - the Node is active Linux with a WireGuard address, and is not the router's Node, the swamp Node or the vpn hub
   %%> - `--bridge` and `--address` name the container bridge and its IPv4 address; a removal reuses those of the last run
   GW->>SW: Start run, full intent<br/>ai_router.model_forwarder
+  SW->>N: Install the forwarder<br/>Ansible
+  %%> What it does:
+  %%> - before the guard admits the Node, so a run that fails later leaves no Node admitted without its table; a removal installs nothing here
+  %%> - checks that the address belongs to the bridge
+  %%> - makes the forwarder's system user and loads its nftables table from a oneshot unit that starts early at boot, before WireGuard, Docker and Incus: forwarded packets to the guard are dropped ahead of Docker and UFW, and only the forwarder's user may connect to the guard from the Node
+  %%> - runs its own Caddy, `orbit-ai-router-forwarder.service`, on the bridge address at port 8319, only while the table's unit is up: its own user, no admin endpoint, no saved config, no key
+  %%> - allows port 8319 in on the bridge only
   SW->>R: Apply the guard<br/>Ansible
   %%> What it does:
   %%> - the guard phase of `ai-router:task-guard`: keys, Caddyfile, unit, and the UFW allow of each forwarder Node above the deny; the allow of a Node the rules do not name goes
   %%> - its end checks: from the router Node and from the swamp Node, a source outside the admitted sources is refused
-  SW->>N: Apply the forwarder<br/>Ansible
-  %%> What it does:
-  %%> - checks that the address belongs to the bridge
-  %%> - runs its own Caddy, `orbit-ai-router-forwarder.service`, on the bridge address at port 8319: its own system user, no admin endpoint, no saved config, no key
-  %%> - allows port 8319 in on the bridge only
-  %%> - loads its nftables table before each start: forwarded packets to the guard are dropped ahead of Docker and UFW, and only the forwarder's user may connect to the guard from the Node
-  %%> - `--remove`: takes the unit, its folder and its UFW rule off the Node instead
+  %%> - a removal while the guard is off skips this phase and leaves the guard off
   SW->>N: Prove the path<br/>from the bridge
   %%> What it does:
   %%> - from a namespace whose veth is a port of the bridge, as a container: a POST through the forwarder with no key gets the guard's 401, which it gives only to a source it admits
   %%> - from that namespace, a request straight to the guard fails and the forward drop counter rises
   %%> - from the Node as root, a request to the guard fails and the output reset counter rises
-  %%> - remove: the router Node answers SSH, and the guard port does not answer the Node
+  %%> - `--remove`: takes the forwarder, its table, both units, its folder, its state, its UFW rule and its user off the Node, then checks that the router Node answers SSH and the guard port does not answer the Node
   alt the checks pass
     SW-->>GW: Run succeeded
     Note over GW: Record the forwarder<br/>http://10.251.33.1:8319

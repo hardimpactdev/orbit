@@ -104,7 +104,8 @@ it('admits the Node at the guard and records a forwarder with no key, as one run
             ['ufw', 'allow', 'in', 'on', 'orbitc0', 'proto', 'tcp', 'from', 'any', 'to', '10.251.33.1', 'port', '8319', 'comment', 'orbit:ai-router-forwarder'],
         ], 'remove' => []])
         // Its own table: forwarded packets to the guard dropped ahead of Docker and UFW, and only its user may connect from the Node.
-        ->and($intent['forwarder'])->toMatchArray(['user' => 'orbit-ai-router-forwarder', 'table' => 'orbit_ai_router_forwarder'])
+        ->and($intent['forwarder'])->toMatchArray(['user' => 'orbit-ai-router-forwarder', 'table' => 'orbit_ai_router_forwarder',
+            'table_unit' => 'orbit-ai-router-forwarder-table.service'])
         ->and($intent['forwarder']['ruleset'])
         ->toContain("type filter hook forward priority filter - 10; policy accept;\n\t\tip daddr 10.44.0.3 tcp dport 8318 counter drop\n")
         ->toContain("type filter hook output priority filter - 10; policy accept;\n\t\tip daddr 10.44.0.3 tcp dport 8318 meta skuid != \"orbit-ai-router-forwarder\" counter reject with tcp reset\n")
@@ -155,7 +156,7 @@ it('keeps a forwarder Node in every later guard run and firewall until a run rem
         ->toContain("remote_ip 10.44.0.128/25\n");
 });
 
-it('removes the guard with its pair, refuses forwarder runs until it is back, and admits the forwarders again', function (): void {
+it('removes the guard with its pair, refuses a forwarder until it is back, and removes one without bringing it back', function (): void {
     forwarderRouter();
     $beast = forwarderNode('beast', '10.44.0.7');
     forwarderSucceeded(app(AdmitAiRouterModelForwarderAction::class)->execute($beast, 'orbitc0', '10.251.33.1', triggeredBy: 'test'));
@@ -167,11 +168,17 @@ it('removes the guard with its pair, refuses forwarder runs until it is back, an
         ['ufw', '--force', 'delete', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', '10.44.0.128/25', 'to', '10.44.0.3', 'port', '8318', 'comment', 'orbit:ai-router-task-guard'],
         ['ufw', '--force', 'delete', 'deny', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', 'any', 'to', '10.44.0.3', 'port', '8318', 'comment', 'orbit:ai-router-task-guard-deny'],
     ])
-        // With the guard off, no forwarder run brings it back, a removal included.
-        ->and(fn () => app(AdmitAiRouterModelForwarderAction::class)->execute($beast, null, null, remove: true, triggeredBy: 'test'))
-        ->toThrow(ResourceOperationException::class, 'The guard is not in place')
+        // With the guard off, no forwarder run brings it back.
+        ->and(fn () => app(AdmitAiRouterModelForwarderAction::class)->execute($beast, 'orbitc0', '10.251.33.1', triggeredBy: 'test'))
+        ->toThrow(ResourceOperationException::class, 'The guard is not in place');
+
+    // A removal still runs, only its forwarder half: the guard stays off, and the next guard run admits no removed Node.
+    $offRemoval = forwarderSucceeded(app(AdmitAiRouterModelForwarderAction::class)->execute($beast, null, null, remove: true, triggeredBy: 'test'));
+    expect($offRemoval->input['intent']['state'])->toBe('absent')
+        ->and($offRemoval->input['intent']['forwarder']['state'])->toBe('absent')
+        ->and(app(AiRouterTaskGuard::class)->applied(Node::query()->where('name', 'services')->firstOrFail()))->toBeFalse()
         ->and(app(AdmitAiRouterTaskGuardAction::class)->execute(triggeredBy: 'test')->input['intent']['caddyfile'])
-        ->toContain("remote_ip 10.44.0.128/25 10.44.0.7\n");
+        ->toContain("remote_ip 10.44.0.128/25\n");
 });
 
 it('refuses a forwarder on the router Node, the swamp Node, an invalid Node or bridge, and a removal with no run', function (): void {

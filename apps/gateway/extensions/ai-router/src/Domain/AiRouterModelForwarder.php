@@ -35,6 +35,9 @@ final readonly class AiRouterModelForwarder
 
     public const string Table = 'orbit_ai_router_forwarder';
 
+    /** The oneshot unit that loads the table early at boot, before WireGuard, Docker and Incus; stopping it deletes the table. */
+    public const string TableUnit = 'orbit-ai-router-forwarder-table.service';
+
     /** The origin containers on the Node call. */
     public function origin(string $address): string
     {

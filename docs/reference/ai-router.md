@@ -251,7 +251,8 @@ A container on an agent Node reaches the router through a forwarder on its Node.
 | `orbit-ai-router-forwarder.service` | The agent Node | Its own Caddy on the container bridge address, port 8319. Its own system user `orbit-ai-router-forwarder`, no admin endpoint, no saved config, no key |
 | Proxy | The same Caddy | Passes every request to the guard origin, such as `http://10.44.0.3:8318`. It adds only Caddy's `X-Forwarded-*` headers, and nothing secret |
 | UFW `orbit:ai-router-forwarder` | The agent Node | Admits port 8319 on the bridge only |
-| nftables table `inet orbit_ai_router_forwarder` | The agent Node | Drops every forwarded packet to the guard, and resets every connection from the Node to the guard but the forwarder user's. The unit loads it as root before each start |
+| nftables table `inet orbit_ai_router_forwarder` | The agent Node | Drops every forwarded packet to the guard, and resets every connection from the Node to the guard but the forwarder user's |
+| `orbit-ai-router-forwarder-table.service` | The agent Node | Loads the table early at boot, before WireGuard, Docker and Incus. The forwarder runs only while it is up; stopping it deletes the table |
 | UFW `orbit:ai-router-task-guard-node-<id>` | The router's Node | Admits port 8318 from the agent Node's WireGuard address, above the guard's deny |
 
 The guard stays the one place that decides. The forwarder has no rule of its own: a request through it meets the same key, method, path and query checks as a request from a task VM.
@@ -277,10 +278,15 @@ php artisan ai-router:model-forwarder beast --remove
 
 `--bridge` is the Incus bridge of the Node's containers and `--address` its IPv4 gateway address, which containers use as the forwarder host. A removal reuses the bridge and address of the Node's last forwarder run.
 
-The command admits `ai_router.model_forwarder` on the Node. One run does both halves:
+The command admits `ai_router.model_forwarder` on the Node. An applying run has three phases:
 
-1. It applies the guard on the router's Node. The guard's sources gain the Node's WireGuard address, or lose it. This phase is the guard phase of `ai-router:task-guard`.
-2. It applies, or removes, the forwarder on the Node.
+1. It installs the forwarder's user, its table and the forwarder on the Node. The table is in place before the guard admits the Node.
+2. It applies the guard on the router's Node, with the Node's WireGuard address added to its sources. This phase is the guard phase of `ai-router:task-guard`.
+3. It runs the checks below.
+
+So a run that fails after phase 1 leaves no Node admitted without its table.
+
+A removing run applies the guard without the Node first, then takes the forwarder, its table, its units, its state and its user off the Node. A forwarder run never brings back a guard that `ai-router:task-guard --remove` took off: while the guard is off, an applying run is refused, and a removing run skips the guard phase and leaves the guard off.
 
 The run checks first that the address belongs to the bridge on the Node. An applying run ends with checks that act as a container: a network namespace whose veth is a port of the bridge, removed again afterwards.
 
@@ -290,17 +296,19 @@ Next, a request goes straight to the guard. It must fail, and the forward chain'
 
 Last, root on the Node sends a request to the guard. It must fail, and the output chain's reset counter must rise. SSH to the router's Node must still answer.
 
-A removing run deletes the table and the user, and ends by checking that the router's Node answers SSH from the Node while the guard port does not.
+A removing run ends by checking that the router's Node answers SSH from the Node while the guard port does not.
 
 | Code | Status | When |
 | --- | --- | --- |
 | `ai_router.disabled` | 409 | The ai-router is not set up. Each run applies the guard, so a removal needs it too |
-| `ai_router.guard_absent` | 409 | The guard is not in place: no guard run yet, or `ai-router:task-guard --remove` took it off. A forwarder run never brings it back; run `ai-router:task-guard` first |
+| `ai_router.guard_absent` | 409 | An applying run while the guard is not in place: no guard run yet, or `ai-router:task-guard --remove` took it off. Run `ai-router:task-guard` first |
 | `ai_router.node_invalid` | 422 | The Node is missing, inactive, not Linux, or has no WireGuard IPv4 address |
 | `ai_router.forwarder_refused` | 409 | The Node is the router's Node, or has the `swamp` or `vpn` role |
 | `validation.failed` | 422 | `--bridge` is not an interface name, or `--address` is not an IPv4 address |
 | `resource.not_found` | 404 | A removal for a Node that never had a forwarder run |
 | `operation.target_busy` | 409 | Another guard or forwarder run holds the guard |
+
+Two limits remain. Nothing notices when the table goes missing while the forwarder runs, for example after `nft flush ruleset`; a Doctor check for it is a follow-up. The output rule trusts the socket's uid, so it assumes no host-network container runs on an agent Node, which Orbit does not offer.
 
 The refused Nodes have reasons. The router's Node holds the real key. The guard run uses the swamp Node as its outside source. The vpn hub forwards task VM traffic to the guard, which the forward chain would drop.
 

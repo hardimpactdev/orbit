@@ -213,7 +213,10 @@ final readonly class AiRouterTaskGuard
         return self::LockPrefix.$node->id;
     }
 
-    /** Whether the last succeeded guard or forwarder run on the Node applied the guard, rather than removed it. A forwarder run always applies it. */
+    /**
+     * Whether the last succeeded guard or forwarder run on the Node left the guard in place. A forwarder run applies it, or, as a removal
+     * while the guard was off, records it as still off.
+     */
     public function applied(Node $node): bool
     {
         $last = Operation::query()->whereIn('kind', ['ai_router.task_guard', AiRouterModelForwarder::Kind])->where('node_id', $node->id)
