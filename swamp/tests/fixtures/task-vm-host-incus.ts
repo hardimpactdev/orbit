@@ -63,9 +63,11 @@ if (family === "query") {
   });
   state.profiles[name] = { config: {}, description: "", devices: {} };
 } else if (family === "project" && action === "set") {
-  const [key, value] = args[3].split("=");
-  state.projects.find((r: { name: string }) => r.name === name).config[key] =
-    value;
+  const row = state.projects.find((r: { name: string }) => r.name === name);
+  for (const pair of args.slice(3)) {
+    const [key, value] = pair.split("=");
+    row.config[key] = value;
+  }
 } else if (family === "network" && action === "acl") {
   if (name === "create") {
     state["network-acls"].push({ name: args[3], config: {} });

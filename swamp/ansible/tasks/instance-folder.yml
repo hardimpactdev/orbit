@@ -86,6 +86,18 @@
             mode: "0644"
           loop: "{{ folder.notes | dict2items }}"
           loop_control: { label: "{{ item.key }}" }
+    - name: Read the group of gid 2750
+      when: folder_name == 'agent'
+      ansible.builtin.command: { argv: [getent, group, "2750"] }
+      register: folder_agent_group
+      changed_when: false
+      failed_when: folder_agent_group.rc not in [0, 2]
+    - name: Require that no Node group holds gid 2750
+      when: folder_name == 'agent'
+      ansible.builtin.assert:
+        that: folder_agent_group.rc == 2
+        fail_msg: "instance.host_unavailable: the Node group {{ folder_agent_group.stdout | trim }} holds gid 2750, the gid of every container's agent"
+        quiet: true
     # Everyone reads the runtime folder. Only root and gid 2750, the `agent` of every container, open the agent's programs: no Node
     # account holds that gid, and an idmapped mount keeps it 2750 in every container.
     - name: Set the folder owners and modes
@@ -104,12 +116,21 @@
   ansible.builtin.stat: { path: "{{ folder.path }}/current", get_checksum: false, get_mime: false }
   register: folder_current
 
+# A run that fails between the flip and the last restart leaves this marker, so the next run restarts the containers again.
+- name: Mark the restart of what runs from the folder of {{ folder_name }}
+  when: folder_current.stat.exists and folder_current.stat.lnk_target != folder.version
+  ansible.builtin.file: { path: "{{ folder.path }}/.restart", state: touch, mode: "0644" }
+
+- name: Read the restart mark of {{ folder_name }}
+  ansible.builtin.stat: { path: "{{ folder.path }}/.restart", get_checksum: false, get_mime: false }
+  register: folder_restart
+
 - name: Flip the folder to the version of {{ folder_name }}
   ansible.builtin.file: { path: "{{ folder.path }}/current", src: "{{ folder.version }}", state: link, force: true, owner: root, group: root }
   register: folder_flip
 
 - name: Restart what runs from the folder in each running container of {{ folder_name }}
-  when: folder_flip is changed and folder_current.stat.exists
+  when: folder_restart.stat.exists
   block:
     - name: Read the running containers
       ansible.builtin.command: { argv: [incus, list, --project, "{{ instances.project }}", --format, json, status=running] }
@@ -122,6 +143,8 @@
              + (['t3.service'] if folder_name == 'agent' else ['orbit-*.service']) }}
       loop: "{{ folder_running.stdout | from_json | map(attribute='name') | list }}"
       changed_when: true
+    - name: Clear the restart mark
+      ansible.builtin.file: { path: "{{ folder.path }}/.restart", state: absent }
 
 # A process maps the files it runs, by their path inside its container, which is the path on the Node: a version that no process
 # names in its maps is unused.

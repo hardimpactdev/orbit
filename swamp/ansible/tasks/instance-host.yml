@@ -78,6 +78,7 @@
     container_acl_name: "{{ instances.network }}-egress"
     container_acl_rules: { description: Orbit Instance boundary, egress: [], ingress: [] }
     container_network_config:
+      ipv4.dhcp.ranges: "{{ instances.dhcp_range }}"
       ipv4.nat: 'true'
       ipv6.address: none
       security.acls: "{{ instances.network }}-egress"

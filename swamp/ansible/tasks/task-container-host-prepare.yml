@@ -91,11 +91,19 @@
   register: container_project_after
   changed_when: false
 
+# One call: Incus checks every profile against all restrictions at each change, with defaults for the keys not set yet, so an
+# Instance host's folder disks would fail a change that sets `restricted` before `restricted.devices.disk`.
 - name: Converge the container project restrictions
-  when: (container_project_after.stdout | from_json).config.get(item.key) != item.value
+  when: container_restrictions_changed | length > 0
   ansible.builtin.command:
-    argv: [incus, project, set, "{{ container_host.project }}", "{{ item.key }}={{ item.value }}"]
-  loop: "{{ container_restrictions | dict2items }}"
+    argv: "{{ ['incus', 'project', 'set', container_host.project] + container_restrictions_changed }}"
+  vars:
+    container_restrictions_changed: >-
+      {%- set out = [] -%}
+      {%- for key, value in container_restrictions.items() -%}
+        {%- if (container_project_after.stdout | from_json).config.get(key) != value -%}{%- set _ = out.append(key ~ '=' ~ value) -%}{%- endif -%}
+      {%- endfor -%}
+      {{ out }}
   changed_when: true
 
 - name: Read the container images

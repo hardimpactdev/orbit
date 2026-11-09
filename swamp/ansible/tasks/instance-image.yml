@@ -50,7 +50,8 @@
     - name: Create and start the build container
       ansible.builtin.command: { argv: "{{ ['incus', '--project', instances.project] + item }}" }
       loop:
-        - [init, "{{ instances.stock }}", "{{ build }}", --device, "eth0,ipv4.address={{ instances.build_address }}",
+        # The project allows only isolated ID maps, and Incus refuses a container that does not set it.
+        - [init, "{{ instances.stock }}", "{{ build }}", --config, security.idmap.isolated=true, --device, "eth0,ipv4.address={{ instances.build_address }}",
            --device, "eth0,security.acls={{ build_acl }}"]
         - [start, "{{ build }}"]
       changed_when: true

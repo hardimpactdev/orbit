@@ -84,6 +84,7 @@ const replacements = (folder: string): [string, string][] => [
   ["/var/cache/orbit/debs", `${folder}/debs`],
   ["/var/cache/orbit/instance-folders", `${folder}/cache`],
   ["/etc/modules-load.d/", `${folder}/modules-load/`],
+  ["cat /proc/[0-9]*/maps", `cat ${folder}/maps`],
 ];
 
 function writeTasks(folder: string) {
@@ -231,6 +232,8 @@ async function fixture({ pool = "zfs" }: { pool?: string | null } = {}) {
     "dpkg-query": 'printf "%s" "ii 1:7.0.1-ubuntu26.04"',
     modprobe: 'printf "install /bin/false \\n"',
     sysctl: 'printf "16384\\n128\\n65536\\n200\\n20000\\n1048576\\n"',
+    // No Node group holds gid 2750.
+    getent: "exit 2",
     // The pinned artifacts come from the fixture folder, by the URL's file name.
     curl: `out=; for a; do case "$prev" in --output) out=$a;; esac; prev=$a; done
 cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
@@ -260,6 +263,7 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
     cidr: "10.253.0.0/24",
     address: "10.253.0.1/24",
     build_address: "10.253.0.254",
+    dhcp_range: "10.253.0.2-10.253.0.253",
     stock: "ubuntu-26.04-instance-stock",
     ids: 201 * 65536,
     incus: { line: "7.0", packages: [] },
@@ -401,6 +405,7 @@ Deno.test({
       );
       assertEquals(bridge.config, {
         "ipv4.address": "10.253.0.1/24",
+        "ipv4.dhcp.ranges": "10.253.0.2-10.253.0.253",
         "ipv4.nat": "true",
         "ipv6.address": "none",
         "security.acls": "orbitinst0-egress",
@@ -478,6 +483,8 @@ Deno.test({
         "init",
         "ubuntu-26.04-instance-stock",
         "orbit-instance-build",
+        "--config",
+        "security.idmap.isolated=true",
         "--device",
         "eth0,ipv4.address=10.253.0.254",
         "--device",
@@ -567,6 +574,7 @@ Deno.test({
       ]]);
       // The agent folder did not change, so T3 keeps running.
       assert(!restarts.flat().includes("t3.service"));
+      assert(!f.has("opt/orbit-runtime/.restart"));
     } finally {
       f.cleanup();
     }
@@ -628,6 +636,59 @@ Deno.test({
       assert(!f.calls().some((c) => c.includes("orbit-clone-probe-copy")));
       // No ZFS, so no ARC cap.
       assert(!f.has("arc.conf"));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "an old folder version that a process still maps stays; a restart that failed runs again on the next converge",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture();
+    try {
+      let result = f.run();
+      assert(result.ok, result.output);
+      const parts = await f.artifacts("1.1");
+      f.write({
+        ...f.instances,
+        folders: {
+          ...f.instances.folders,
+          runtime: {
+            ...f.instances.folders.runtime,
+            version: "333333333333",
+            parts: parts.runtime,
+          },
+        },
+      });
+      // A queue worker of a stopped container's last run still maps the old Node binary.
+      Deno.writeTextFileSync(
+        `${f.folder}/maps`,
+        `7f00-7f01 r-xp 0 00:00 1 ${f.folder}/opt/orbit-runtime/111111111111/tool/tool-1.0/tool\n`,
+      );
+      // A run that stopped between the flip and the restarts leaves the mark.
+      const state = f.state();
+      state.instances.push({
+        name: "app-default",
+        project: "orbit-instances",
+        status: "Running",
+      });
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      result = f.run();
+      assert(result.ok, result.output);
+      assert(f.has("opt/orbit-runtime/111111111111"));
+      Deno.writeTextFileSync(`${f.folder}/opt/orbit-runtime/.restart`, "");
+      const before = f.calls().length;
+      result = f.run();
+      assert(result.ok, result.output);
+      assert(
+        f.calls().slice(before).some((c) =>
+          c.includes("exec") && c.includes("orbit-*.service")
+        ),
+      );
+      assert(!f.has("opt/orbit-runtime/.restart"));
     } finally {
       f.cleanup();
     }

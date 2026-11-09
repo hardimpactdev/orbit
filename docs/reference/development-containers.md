@@ -36,7 +36,7 @@ The container flows keep the kinds of today's Instance flows. Their charts sit o
 
 Every `app-dev` Node runs its Instances in containers. There is no setting to opt in. Task Nodes are the one exception: a task VM or task container keeps its checkout workspace until task containers move to T3.
 
-The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the Node's Incus pool must be ZFS.
+The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the pool of a real Node is ZFS; only a nested proof Node uses a directory pool, where a copy is a full copy.
 
 ### Prepare a Node
 
@@ -45,8 +45,8 @@ This part is built. The `app-dev` role converge of a Node on the [build list](#t
 - **Bridge.** The first intent allocates the Node's bridge.
 - **Pool.** The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge chooses no disk itself.
 - **Missing pool.** A Node without the pool is refused with `instance.host_unavailable`.
-- **Project.** Containers of `orbit-instances` get an isolated ID map each. They mount only the two shared folders, may have proxy devices, and cannot be VMs.
-- **Bridge.** `orbitinst0` has NAT and no IPv6. Its ACL reaches nothing; each Instance's own paths come with its create flow.
+- **Project.** Containers of `orbit-instances` must set an isolated ID map. They mount only the two shared folders, may have proxy devices, and cannot be VMs.
+- **Bridge.** `orbitinst0` has NAT and no IPv6. Its ACL reaches nothing; each Instance's own paths come with its create flow. DHCP leaves the last address free for the image build.
 - **Input rules.** The Node admits DHCP and DNS from the bridge, under `orbit:instances-dhcp`, `orbit:instances-dns-tcp` and `orbit:instances-dns-udp`.
 - **Image.** The converge builds the [container image](#inside-a-container) once per definition and names it with the stable alias `orbit-instance`.
 - **Folders.** It installs both [shared folders](#shared-folders).
@@ -83,7 +83,7 @@ Every development container has the same layout. The image and the create set it
 
 A container mounts no host checkout and no Incus socket. Root work, such as units, goes through Orbit from the Node.
 
-The Gateway renders the image: its packages, the setup script, its files and the units it enables. The image's alias is `orbit-instance-` with the first 12 hex digits of a digest of that definition, so a changed definition is a new image. A build container from the stock Ubuntu image runs the definition and is published under that alias. The stable alias `orbit-instance` then moves to it, and the older images go; a container keeps what it was made from.
+The Gateway renders the image: its packages, the setup script, its files and the units it enables. The script turns cloud-init off, so a new container never makes the stock `ubuntu` user and its sudo grant again. The image's alias is `orbit-instance-` with the first 12 hex digits of a digest of that definition, so a changed definition is a new image. A build container from the stock Ubuntu image runs the definition and is published under that alias. The stable alias `orbit-instance` then moves to it, and the older images go; a container keeps what it was made from.
 
 The build container is the only container that reaches the internet. It takes the bridge's last address, which no Instance gets. Its own ACL drops private ranges, and a route rule lets it out until the build removes the rule again.
 

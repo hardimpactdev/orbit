@@ -79,6 +79,8 @@ final readonly class InstanceHostIntent
             'address' => $gateway.'/'.$subnet->prefixLength(),
             // The image build container takes the bridge's last address, which no Instance gets, and only it reaches the internet.
             'build_address' => $last,
+            // DHCP never hands out the gateway's neighbour range end, so the build address stays free.
+            'dhcp_range' => long2ip((int) ip2long($gateway) + 1).'-'.long2ip((int) ip2long($last) - 1),
             'stock' => self::StockAlias,
             'ids' => (self::Containers + 1) * self::IdMapSize,
             'incus' => $incus,

@@ -1012,7 +1012,7 @@ The project gets these restrictions:
 - `restricted.containers.lowlevel=allow`, because `security.idmap.size` is a low-level key. That also allows `raw.*` keys, so the start refuses a copy that has one.
 - `restricted.snapshots=allow` and `limits.virtual-machines=0`.
 
-Host-path disks and privileged containers stay forbidden.
+Host-path disks and privileged containers stay forbidden. The phase sets every missing restriction in one call: Incus checks each profile against all of them at each change.
 
 The phase then proves that a copy is a clone:
 
@@ -1052,15 +1052,15 @@ The branch then:
 3. prepares the bridge, project and profile;
 4. builds the image (`tasks/instance-image.yml`).
 
-A folder version is built under a staging name and renamed last, so a version that exists is whole.
+A folder version is built under a staging name and renamed last, so a version that exists is whole. The agent folder refuses a Node whose own group holds gid 2750.
 
 Each artifact is fetched by its digest into `/var/cache/orbit/instance-folders`. A tarball or zip is unpacked into its part's folder; any other artifact is the part's one file. Each program in `bin` links to its path, and every link must reach an executable file.
 
-The runtime folder is readable by everyone. The agent folder's `agent/` is `root:2750` and closed to others; its notes stay public. Then `current` flips to the version. When it flips from an earlier version, each running container restarts `t3.service` for the agent folder, or every `orbit-*.service` for the runtime folder, one after another. A version that no process on the Node maps goes.
+The runtime folder is readable by everyone. The agent folder's `agent/` is `root:2750` and closed to others; its notes stay public. Then `current` flips to the version. When it flips from an earlier version, a mark `.restart` stays until each running container restarts `t3.service` for the agent folder, or every `orbit-*.service` for the runtime folder, one after another, so a failed run restarts them again next time. A version that no process on the Node maps goes.
 
 The image's alias is a digest of the definition that the Gateway sends. A Node without that alias builds it in the container `orbit-instance-build`, from the stock alias, at the bridge's last address. Its NIC uses the ACL `orbitinst0-build`, which drops private ranges, and the route rule `orbit:instances-build` lets it out.
 
-The build installs the packages, runs the setup script, writes the files with their owners and modes, enables the units, cleans the package lists, and publishes the container. The build container and the route rule go in every case. The stable alias `orbit-instance` then moves to the new image, and older images whose aliases are only digest aliases go.
+The build container sets an isolated ID map, as the project requires. The build installs the packages, runs the setup script, writes the files with their owners and modes, enables the units, cleans the package lists, and publishes the container. The build container and the route rule go in every case. The stable alias `orbit-instance` then moves to the new image, and older images whose aliases are only digest aliases go.
 
 ### The base VM and its snapshot
 

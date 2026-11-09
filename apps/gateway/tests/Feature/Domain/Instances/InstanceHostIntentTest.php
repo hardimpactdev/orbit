@@ -72,7 +72,7 @@ describe('the container branch of the app-dev converge', function (): void {
         expect($node->refresh()->instance_bridge)->toBe('10.253.0.0/24')
             ->and(array_diff_key($intent, array_flip(['incus', 'image', 'folders'])))->toBe([
                 'project' => 'orbit-instances', 'network' => 'orbitinst0', 'pool' => 'orbit-instances', 'cidr' => '10.253.0.0/24',
-                'address' => '10.253.0.1/24', 'build_address' => '10.253.0.254', 'stock' => 'ubuntu-26.04-instance-stock',
+                'address' => '10.253.0.1/24', 'build_address' => '10.253.0.254', 'dhcp_range' => '10.253.0.2-10.253.0.253', 'stock' => 'ubuntu-26.04-instance-stock',
                 'ids' => 201 * 65536,
             ])
             ->and($intent['incus'])->toBe($recipe->incus('amd64'))
@@ -135,7 +135,7 @@ describe('the Instance image', function (): void {
         $files = array_column($image['files'], null, 'path');
 
         expect($image['prepare'])->toContain(
-            'useradd --uid 2750 --gid agent', 'useradd --uid 1000 --gid orbit', 'groupadd --gid 2760 work', 'passwd --lock agent',
+            "touch /etc/cloud/cloud-init.disabled\n", 'useradd --uid 2750 --gid agent', 'useradd --uid 1000 --gid orbit', 'groupadd --gid 2760 work', 'passwd --lock agent',
             "find /etc/sudoers.d -mindepth 1 ! -name README -delete\n", 'install -d -o agent -g work -m 2770 /srv/workspace',
             'd:u::rwX,d:g::rwX,d:g:work:rwX,d:o::---', 'hidepid=invisible',
         )
@@ -195,7 +195,7 @@ describe('the shared folders', function (): void {
     })->with(['web-app', 'monorepo', 'package']);
 });
 
-describe('the bridge lock', function (): void {
+describe('the bridge check and write', function (): void {
     /** @return list<array{sql: string, level: int}> */
     function bridgeQueries(Closure $run): array
     {
@@ -208,22 +208,22 @@ describe('the bridge lock', function (): void {
         return $queries;
     }
 
-    function bridgeLockedBeforeRead(array $queries): bool
-    {
-        $lock = array_find_key($queries, static fn (array $q): bool => str_starts_with($q['sql'], 'update "nodes" set "instance_bridge" = instance_bridge'));
-        $read = array_find_key($queries, static fn (array $q, int $index): bool => $index > ($lock ?? PHP_INT_MAX)
-            && str_contains($q['sql'], 'select "id", "settings", "instance_bridge" from "nodes"'), );
-
-        return $lock !== null && $read !== null && $queries[$lock]['level'] > 0 && $queries[$read]['level'] === $queries[$lock]['level'];
-    }
-
-    it('takes the writer lock before an allocation reads the recorded bridges', function (): void {
-        $node = instanceHostNode();
-
-        expect(bridgeLockedBeforeRead(bridgeQueries(fn () => app(AllocateInstanceBridgeAction::class)->execute($node))))->toBeTrue();
+    it('begins every transaction IMMEDIATE, so a transaction that reads the bridges holds the writer lock from its start', function (): void {
+        expect(config('database.connections.'.config('database.default').'.transaction_mode'))->toBe('IMMEDIATE');
     });
 
-    it('takes the writer lock before provisioning checks and stores a task host\'s bridges, in one transaction', function (): void {
+    it('allocates a bridge in one transaction with the read of the recorded bridges', function (): void {
+        $node = instanceHostNode();
+        $base = DB::transactionLevel();
+
+        $queries = bridgeQueries(fn () => app(AllocateInstanceBridgeAction::class)->execute($node));
+        $read = array_find(array_reverse($queries), static fn (array $q): bool => str_contains($q['sql'], 'select "id", "settings", "instance_bridge" from "nodes"'));
+        $write = array_find($queries, static fn (array $q): bool => str_starts_with($q['sql'], 'update "nodes" set "instance_bridge"'));
+
+        expect($read['level'])->toBeGreaterThan($base)->and($write['level'])->toBe($read['level']);
+    });
+
+    it('checks and stores a task host\'s bridges during provisioning in one transaction, after the SSH work', function (): void {
         $node = instanceHostNode();
         // The roots are inspected over SSH before the transaction; this fixture has no Node to reach.
         app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
@@ -235,12 +235,16 @@ describe('the bridge lock', function (): void {
         });
         $settings = new NodeSettingsData(task_vms: NodeTaskVmsData::validated(['cidr' => '10.252.10.0/24', 'task_places' => 1, 'ci_places' => 0], Ipv4Subnet::from('10.44.0.0/24')));
 
+        $base = DB::transactionLevel();
         $queries = bridgeQueries(fn () => app(UpdateNodeAction::class)->persistDuringProvisioning($node, $settings));
         $write = array_find_key($queries, static fn (array $q): bool => str_starts_with($q['sql'], 'update "nodes" set "settings"'));
+        $reads = array_keys(array_filter($queries, static fn (array $q): bool => str_contains($q['sql'], 'select "id", "settings", "instance_bridge" from "nodes"')));
+        $lastRead = max(array_filter($reads, static fn (int $index): bool => $index < $write));
 
-        expect(bridgeLockedBeforeRead($queries))->toBeTrue()
-            ->and($write)->not->toBeNull()
-            ->and($queries[$write]['level'])->toBeGreaterThan(0)
+        // The last bridge check before the write runs in the write's own transaction; before this change the write had none.
+        expect($queries[$write]['level'])->toBeGreaterThan($base)
+            ->and($queries[$lastRead]['level'])->toBe($queries[$write]['level'])
+            ->and(array_filter(array_slice($queries, $lastRead, $write - $lastRead), static fn (array $q): bool => $q['level'] <= $base))->toBe([])
             ->and($node->refresh()->settings['task_vms']['cidr'])->toBe('10.252.10.0/24');
     });
 

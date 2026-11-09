@@ -76,7 +76,6 @@ final readonly class UpdateNodeAction
             if ($settings->isEmpty()) {
                 return $node;
             }
-            NodeBridges::lock($node);
             $merged = $settings->merge($this->normalizer->fromStored($node->settings));
             $normalized = $this->normalizer->normalize($merged);
             $this->validateHostBridge($node, $normalized);
@@ -161,7 +160,7 @@ final readonly class UpdateNodeAction
 
     /**
      * The Node's roots are prepared or inspected first, over SSH and outside any transaction. The bridge check and the write then
-     * run in one transaction under the bridge lock, so an Instance bridge allocation cannot slip between them.
+     * run in one transaction, which the connection begins IMMEDIATE, so an Instance bridge allocation cannot slip between them.
      */
     public function persistDuringProvisioning(Node $node, ?NodeSettingsData $settings): void
     {
@@ -176,7 +175,6 @@ final readonly class UpdateNodeAction
             $this->inspectConfiguredRoots($node, $normalized);
         }
         DB::transaction(function () use ($node, $normalized): void {
-            NodeBridges::lock($node);
             $node->refresh();
             $this->validateHostBridge($node, $normalized);
             $this->keepLiveContainers($node, $this->normalizer->fromStored($node->settings)?->task_vms, $normalized?->task_vms);

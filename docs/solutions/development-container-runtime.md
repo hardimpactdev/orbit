@@ -108,7 +108,7 @@ The Gateway decides which Node gets the branch:
 - A container branch of the `app-dev` role converge runs in `node-role-runtime.yml`.
 - It runs only for a Node of the build list that is not a task VM. Every other Node gets the same intent as before.
 - The first intent allocates the Node's Instance bridge.
-- The allocation and a task host's new bridges take the bridge lock, so they cannot interleave.
+- The allocation and a task host's new bridges are each one transaction, which the connection begins IMMEDIATE, so they cannot interleave.
 
 The host side reuses the container host tasks of the task containers (#3279):
 
@@ -130,7 +130,7 @@ The image and the folders:
 
 A folder update installs the new version beside the old one and flips `current`. Then it restarts T3 or the Processes (`orbit-*.service`) in each running container, one after another. It runs with the converge of each Node. A version that no process maps goes.
 
-Tests: the Ansible fixture tests for the Instance host phase and the task container host phase, which share their tasks; Pest for the recipe pins, the intent, the image files, the notes, the firewall catalog and the bridge lock. Live on the test Node:
+Tests: the Ansible fixture tests for the Instance host phase and the task container host phase, which share their tasks; Pest for the recipe pins, the intent, the image files, the notes, the firewall catalog and the bridge transactions. Live on the test Node:
 
 1. The converge runs twice; the second changes nothing.
 2. In a test container, `orbit` cannot run `t3`, `claude` or `codex`, and cannot read `/home/agent`.

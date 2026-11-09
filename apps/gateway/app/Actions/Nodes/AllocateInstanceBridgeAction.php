@@ -26,7 +26,6 @@ final readonly class AllocateInstanceBridgeAction
     public function execute(Node $node): string
     {
         return DB::transaction(function () use ($node): string {
-            NodeBridges::lock($node);
             $current = Node::query()->whereKey($node->id)->value('instance_bridge');
             if (is_string($current)) {
                 $node->forceFill(['instance_bridge' => $current])->syncOriginalAttribute('instance_bridge');
