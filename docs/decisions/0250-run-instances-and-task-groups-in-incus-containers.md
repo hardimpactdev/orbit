@@ -40,18 +40,23 @@ Orbit has one runtime kind for agent work: an unprivileged Incus container on th
 - **Task group.** One outer container per group, owned by a task group runtime. Its topology (Gateway, app-dev, app-prod, database) runs as nested containers under an Incus inside it.
 - **Node.** The machine Orbit runs on: a bare-metal host or a VPS. Containers are runtimes of Instances and task groups, never Nodes. They get no WireGuard identity, no roles and no exporter.
 
+**Temporary exception, until step 6.** A task container keeps the Node identity of a task VM: the Node with its `app-dev` role, a WireGuard address, an SSH host key, the agent and the Pi server. The task workspace is an Instance on a Node, and the agent runner, Git transfers, Pi, the hub filter and the model router guard use that Node's WireGuard address. Step 6 gives Instances their own runtime and removes the exception. Decided on 2026-11-09.
+
 ### Nested topology
 
 The spike of 2026-11-09 settled how a task group's outer container runs its fleet:
 
-- The outer container is unprivileged with `security.nesting=true` and intercepted `mknod` and `setxattr`.
+- The outer container is unprivileged with `security.nesting=true`, intercepted `mknod` and `setxattr`, and an isolated ID map. Its Incus project allows low-level keys (`restricted.containers.lowlevel=allow`), because `security.idmap.size` is one, and the start refuses `raw.*` keys.
+- The host's pool is ZFS. A copy of the outer container is a clone only with idmapped mounts, which a test copy proves with `zfs get written`.
 - The inner Incus gets a subordinate ID range that fits inside the outer one (`/etc/subuid` and `/etc/subgid`, for example `root:1000000:100000000`).
 - The inner storage pool is a directory pool inside the outer container's filesystem. An outer snapshot and copy then carry the whole fleet: 0.3 s and 0.5 s in the spike. A ZFS dataset delegated to the outer container is not used, because `incus copy` does not copy its child datasets.
 - A nested container that runs Docker gets nesting and a read-only device that presents `N` at `/sys/module/apparmor/parameters/enabled`. Docker then skips its own AppArmor profile, which cannot load two levels below the host. The host's profile for the outer container stays in force.
-- WireGuard between nested containers is set up with `ip` and `wg`, not `wg-quick`, whose AppArmor profile crashes in nested containers on Ubuntu 26.04.
-- Units that need secrets use `SetCredential` or files, not `LoadCredential`, which fails silently in nested containers.
+- Only the outer container needs `ip` and `wg` for its tunnels: Ubuntu 26.04's AppArmor profile makes `wg-quick` segfault there. The nested Nodes keep `wg-quick` from the shared Node converge, which works with the AppArmor-off device above and a cloud-init `bootcmd` that turns off the `wg` and `wg-quick` profiles.
+- Units that need secrets use `SetCredential` or files, not `LoadCredential`. In nested containers systemd reports no credential error, but the unit gets no credential and fails.
 
 A base snapshot is taken after the fleet converges, with its nested containers stopped, so the snapshot holds no half-written database pages.
+
+A second spike on 2026-11-09 ran the same setup on an UpCloud server, which has no nested KVM, with the same results. Its findings are in the [UpCloud report](/solutions/task-container-runtime#upcloud-report).
 
 ### Users and kernel surface
 
@@ -82,7 +87,7 @@ The Node's agent reads per-container metrics from Incus (`/1.0/metrics`) and per
 
 1. **This ADR.**
 2. **Host hardening** on Beast and Shark: current kernels, SCTP off, an explicit container egress model and bridge DNS, and secrets moved off.
-3. **Task container runtime** next to the task VM runtime, selected by a Node setting. Nothing switches.
+3. **Task container runtime** next to the task VM runtime, added to a host by a Node setting. Nothing switches. Beast is the test host and keeps its task VMs. [Task containers](/reference/task-containers) specifies it, and [Task container runtime](/solutions/task-container-runtime#decided) records the decisions it rests on.
 4. **Parity gate.** The command proof cases run on task containers and must match their task VM results.
 5. **Switch** Beast, then Shark, in a window with no proofs or merges in flight. Running task VMs finish first.
 6. **Development Instances** directly on the Node, reworking the development container work to drop the Project VM.
@@ -108,5 +113,5 @@ The Node's agent reads per-container metrics from Incus (`/1.0/metrics`) and per
 
 - Components: apps/gateway, apps/cli, apps/docs
 - ADRs: replaces the outer task VM boundary of task groups and the Project VM of the development container plan
-- Detail: [Compute drivers](/reference/compute-drivers), [Tasks](/reference/tasks), [Pi server](/reference/pi-server), [Node provisioning](/reference/node-provisioning), [Metrics](/reference/metrics), and the plan in [Container instances and releases](/solutions/container-instances-and-releases). The change also touches `swamp/` (task VM provision, image, snapshot and power workflows, the proof fleet setup and the development container workflows) and the Node agent (container and Process metrics).
-- Verify: the command proof cases on task containers match their task VM results on Beast; a feature copy with its database boots in a container on the Node; kernel, SCTP and secret checks pass on every agent Node
+- Detail: [Task containers](/reference/task-containers) and its plan [Task container runtime](/solutions/task-container-runtime), [Compute drivers](/reference/compute-drivers), [Tasks](/reference/tasks), [Pi server](/reference/pi-server), [Node provisioning](/reference/node-provisioning), [Metrics](/reference/metrics), and the plan in [Container instances and releases](/solutions/container-instances-and-releases). The change also touches `swamp/` (task VM provision, image, snapshot and power workflows, the proof fleet setup and the development container workflows) and the Node agent (container and Process metrics).
+- Verify: the command proof cases on task containers match their task VM results on a container host: Beast first, and an UpCloud host before it switches; a feature copy with its database boots in a container on the Node; kernel, SCTP and secret checks pass on every agent Node

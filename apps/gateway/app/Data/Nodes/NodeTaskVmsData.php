@@ -7,6 +7,7 @@ namespace App\Data\Nodes;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\WireGuard\Ipv4Subnet;
 use Spatie\LaravelData\Data;
+use Spatie\LaravelData\Optional;
 
 final class NodeTaskVmsData extends Data
 {
@@ -27,6 +28,8 @@ final class NodeTaskVmsData extends Data
         public array $operator_owned = [],
         public string $pool_size = '640GiB',
         public int $ci_places = 0,
+        // Absent on a host that runs only task VMs, so its stored settings and responses keep their shape.
+        public NodeTaskVmContainersData|Optional $containers = new Optional,
     ) {}
 
     /** @param array<string, mixed> $value */
@@ -40,6 +43,7 @@ final class NodeTaskVmsData extends Data
             network: $host->network, pool: $host->pool, image_alias: $host->imageAlias,
             zfs_dataset: $host->zfsDataset, cpus: $host->cpus, memory: $host->memory,
             disk: $host->disk, operator_owned: $host->operatorOwned, pool_size: $host->poolSize, ci_places: $host->ciPlaces,
+            containers: $host->containers === null ? new Optional : NodeTaskVmContainersData::fromContainers($host->containers),
         );
     }
 }

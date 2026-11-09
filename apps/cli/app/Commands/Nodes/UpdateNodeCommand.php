@@ -7,6 +7,8 @@ namespace App\Commands\Nodes;
 use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ProgressOutcome;
+use App\Support\Console\ProgressState;
 use App\Support\NodeSettingOptions;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\UpdateNodeRequest;
@@ -107,6 +109,9 @@ final class UpdateNodeCommand extends NodeCommand
             ),
             NodeUpdateResponse::class,
             ['Update Node', 'Updating Node', 'Node updated'],
+            static fn (NodeUpdateResponse $response): ProgressOutcome|ProgressState => $response->skipped === null
+                ? ProgressState::Success
+                : new ProgressOutcome(ProgressState::Skipped, "Skipped — already set ({$response->skipped})"),
         );
 
         if (! $response instanceof NodeUpdateResponse) {
@@ -123,12 +128,12 @@ final class UpdateNodeCommand extends NodeCommand
         }
 
         if ($this->option('json') === true) {
-            $this->writeJson($node->toArray());
+            $this->writeJson([...$node->toArray(), ...($response->skipped === null ? [] : ['skipped' => $response->skipped])]);
 
             return self::SUCCESS;
         }
 
-        $this->writeHumanMessage("Node #{$node->id} [{$node->name}] updated.");
+        $this->writeHumanMessage($response->skipped === null ? "Node #{$node->id} [{$node->name}] updated." : "Node #{$node->id} [{$node->name}]: Skipped — already set ({$response->skipped})");
         $this->writeHumanMessage("Request ID: {$node->requestId}");
 
         return self::SUCCESS;

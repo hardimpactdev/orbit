@@ -36,6 +36,14 @@ describe(NodeSettings::class, function (): void {
             ]);
     });
 
+    it('maps the task container side and leaves it out when absent or malformed', function (): void {
+        $containers = ['cidr' => '10.251.78.0/24', 'task_places' => 1, 'ci_places' => 0, 'project' => 'orbit-task-containers', 'network' => 'orbittaskc0'];
+        $settings = NodeSettings::fromGatewayData(['task_vms' => ['cidr' => '10.251.77.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => $containers]]);
+        expect($settings->task_vms?->containers)->toBe($containers)
+            ->and($settings->toArray()['task_vms']['containers'] ?? null)->toBe($containers)
+            ->and(NodeSettings::fromGatewayData(['task_vms' => ['cidr' => '10.251.77.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => ['cidr' => '10.251.78.0/24']]])->toArray()['task_vms'])->not->toHaveKey('containers');
+    });
+
     it('preserves separate pool sizes, including zero', function (): void {
         $settings = NodeSettings::fromGatewayData(['task_vms' => ['cidr' => '10.251.77.0/24', 'task_places' => 0, 'ci_places' => 2]]);
         expect($settings->task_vms?->task_places)->toBe(0)->and($settings->task_vms?->ci_places)->toBe(2);

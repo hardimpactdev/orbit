@@ -56,6 +56,8 @@ use App\Domain\Tasks\TaskTurnIntent;
 use App\Domain\Tasks\TaskTurnProjection;
 use App\Domain\Tasks\TaskVmAdmission;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
+use App\Domain\TaskVms\TaskVmCapacity;
+use App\Domain\TaskVms\TaskVmContainers;
 use App\Domain\TaskVms\TaskVmConvergeInput;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -64,6 +66,7 @@ use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Domain\TaskVms\TaskVmPromotedImage;
 use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmRuntime;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmSlotIdentity;
@@ -548,10 +551,10 @@ it('withdraws the recorded base for a rebuild, and refuses a rebuild while a ref
     [$host, $project] = slotPoolHost();
     $images = app(TaskVmPromotedImage::class);
 
-    expect($images->latest($host))->not->toBeNull();
-    $images->withdraw($host);
+    expect($images->latest($host, TaskVmRuntime::Vm))->not->toBeNull();
+    $images->withdraw($host, TaskVmRuntime::Vm);
     // No start copies a withdrawn base; the pool skips a host without one.
-    expect($images->latest($host))->toBeNull()
+    expect($images->latest($host, TaskVmRuntime::Vm))->toBeNull()
         ->and(fn () => app(TaskVmSlotPool::class)->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
 
     Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
@@ -1352,3 +1355,89 @@ it('lets task cancellation take precedence over a capacity wait or admitted task
             ->and($cancel->input['release'])->not->toBeNull();
     }
 })->with([true, false]);
+
+/**
+ * The slot pool host with a container side of `$containerTask` task and `$containerCi` CI places, normal placement of
+ * containers switched by `$placement`, and a promoted container base unless `$containerBase` is false.
+ *
+ * @return array{Node, Project}
+ */
+function containerPoolHost(bool $placement, bool $containerBase = true, int $taskPlaces = 0, int $ciPlaces = 0, int $containerTask = 1, int $containerCi = 1): array
+{
+    [$host, $project] = slotPoolHost($taskPlaces, ciPlaces: $ciPlaces);
+    $settings = app(TaskVmSettings::class);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
+        [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', $taskPlaces, 4, '8GiB', '20GiB', ciPlaces: $ciPlaces,
+            containers: new TaskVmContainers($containerTask, $containerCi, 'orbit-task-containers', 'orbittaskc0', '10.252.8.0/24'))],
+        '/pi', str_repeat('a', 64), ['gpt-6'], containerPlacement: $placement));
+    if ($containerBase) {
+        TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'runtime' => TaskVmRuntime::Container, 'recipe_identity' => 'recipe-1',
+            'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now()->addMinute(),
+            'images' => ['base' => ['project' => 'orbit-task-containers', 'type' => 'snapshot', 'vm' => 'beast-base', 'snapshot' => 'c20261109120000']]]);
+    }
+
+    return [$host, $project];
+}
+
+it('skips container places until the switch', function (): void {
+    [, $project] = containerPoolHost(placement: false);
+    $pool = app(TaskVmSlotPool::class);
+
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class)
+        ->and(fn () => $pool->take(slotPoolGroup($project), proof: true))->toThrow(TaskCapacityException::class)
+        ->and(fn () => $pool->freeCiPlaces())->toThrow(TaskCapacityException::class);
+});
+
+it('takes container places after the switch on a host with a container base, and records their runtime', function (): void {
+    [, $project] = containerPoolHost(placement: true);
+    $pool = app(TaskVmSlotPool::class);
+    expect($pool->freeCiPlaces())->toBe(1);
+
+    $task = $pool->take(slotPoolGroup($project));
+    $ci = $pool->take(slotPoolGroup($project), proof: true);
+    expect([$task->refresh()->runtime, $task->capacity_pool, $ci->refresh()->runtime, $ci->capacity_pool])->toBe([TaskVmRuntime::Container, 'task', TaskVmRuntime::Container, 'ci'])
+        ->and(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+});
+
+it('takes no container place after the switch on a host without a container base', function (): void {
+    [, $project] = containerPoolHost(placement: true, containerBase: false);
+
+    expect(fn () => app(TaskVmSlotPool::class)->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+});
+
+it('counts container places apart from VM places', function (): void {
+    [$host, $project] = containerPoolHost(placement: true, taskPlaces: 1);
+    $pool = app(TaskVmSlotPool::class);
+    $location = app(TaskVmSettings::class)->host($host->id);
+    $free = static fn (TaskVmRuntime $runtime): int => app(TaskVmCapacity::class)->freeSlots([[$location, $host]], false, $runtime)[$host->id];
+
+    // Equal room keeps the runtime order, so the VM place goes first.
+    expect($pool->take(slotPoolGroup($project))->runtime)->toBe(TaskVmRuntime::Vm)
+        ->and([$free(TaskVmRuntime::Vm), $free(TaskVmRuntime::Container)])->toBe([0, 1])
+        ->and($pool->take(slotPoolGroup($project))->runtime)->toBe(TaskVmRuntime::Container)
+        ->and([$free(TaskVmRuntime::Vm), $free(TaskVmRuntime::Container)])->toBe([0, 0])
+        ->and(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+});
+
+it('has a base refresh take a VM CI place, never a container one', function (): void {
+    [$host] = containerPoolHost(placement: true, ciPlaces: 1);
+    $pool = app(TaskVmSlotPool::class);
+
+    expect($pool->take(null, $host->id)->runtime)->toBe(TaskVmRuntime::Vm)
+        ->and(fn () => $pool->take(null, $host->id))->toThrow(TaskCapacityException::class);
+});
+
+it('keeps one recorded base per runtime, so a newer container base never replaces the VM base', function (): void {
+    [$host] = containerPoolHost(placement: true);
+    $location = app(TaskVmSettings::class)->host($host->id);
+    $images = app(TaskVmPromotedImage::class);
+
+    expect($images->recorded($host, $location, TaskVmRuntime::Vm)['snapshot'] ?? null)->toBe('r20261107120000')
+        ->and($images->recorded($host, $location, TaskVmRuntime::Container)['snapshot'] ?? null)->toBe('c20261109120000')
+        ->and(app(TaskVmSlotPool::class)->currentImage($host, $location)['snapshot'] ?? null)->toBe('r20261107120000');
+
+    // A rebuild of one runtime's base from stock withdraws only that base.
+    $images->withdraw($host, TaskVmRuntime::Vm);
+    expect($images->recorded($host, $location, TaskVmRuntime::Vm))->toBeNull()
+        ->and($images->recorded($host, $location, TaskVmRuntime::Container)['snapshot'] ?? null)->toBe('c20261109120000');
+});

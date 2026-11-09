@@ -1,14 +1,14 @@
 ---
 title: "Agent runtime and manual mode"
-description: "Plan from 9 November 2026: one Pi Durable runtime in an Incus container with two drivers, Swamp for automatic tasks and an outside agent for manual work, plus the steps to get there."
+description: "Plan from 9 November 2026: one agent runtime in an Incus container with two drivers, Swamp for automatic tasks and an outside agent for manual work, plus the steps to get there."
 ---
 
 # Agent runtime and manual mode
 
-Nick's direction of 9 November 2026: a task group or a development Instance gets one isolated runtime, an Incus container with Pi Durable inside. Two drivers can work in it:
+Nick's direction of 9 November 2026: a task group or a development Instance gets one isolated runtime, an Incus container with an agent engine inside. Which engine is open: Pi Durable or a T3 server inside the container ([open question 5](#open-questions)). Two drivers can work in it:
 
 - **Automatic mode.** Swamp orchestrates the task, as task groups do today.
-- **Manual mode.** Nick talks to an agent in any harness, such as T3 on the Mac mini or Claude Code. That agent drives the Pi Durable agent in the container through the Orbit MCP.
+- **Manual mode.** Nick talks to an agent in any harness, such as T3 on the Mac mini or Claude Code. That agent drives the agent in the container through the Orbit MCP.
 
 Both drivers use the same sessions, so work can pass from one to the other. [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) decides the runtime. This page records the agent and client direction and the order of work. It is a plan, not a contract: each step changes the owning reference pages when it lands.
 
@@ -22,7 +22,6 @@ These decisions are settled. Later steps build on them without asking again.
 | 2026-11-09 | Pi and Pi Durable are used through their native features and public extension points. Orbit does not fork or patch them. |
 | 2026-11-09 | Skills, prompt templates, system prompts and MCP servers come from the project. The runtime injects none of its own. |
 | 2026-11-09 | A container reaches models as task VMs do today: through a placeholder key that the model router guard accepts. No personal provider login enters a container. |
-| 2026-11-09 | No T3 server per container. Measured idle memory: T3 about 390 MB, pi-server 88 MB, and 97 MB with one session. |
 | 2026-11-09 | T3 threads live on the always-on Mac mini, which drives the agent in a container from outside. |
 | 2026-11-09 | Development containers run as an unprivileged `orbit` user without sudo. The name can still change. |
 
@@ -60,6 +59,9 @@ These need Nick's decision before the step that depends on them.
 2. **The handover contract.** Which driver holds a session. How a task attaches to an existing runtime and hands it back.
 3. **MCP from the project.** Which file lists a project's MCP servers. How the runtime offers their tools through `pi-mcp`.
 4. **Subagents.** Leave them out, or let the orchestrator start more Pi sessions in parallel containers.
+5. **The agent engine in a container.** Reopened on 2026-11-09: Pi Durable, or a T3 server inside the container. A spike is running.
+
+   The earlier measurement still holds: idle T3 used about 390 MB, pi-server 88 MB, and 97 MB with one session. Until this is decided, task containers run the Pi server as task VMs do.
 
 ## Steps
 
@@ -77,8 +79,8 @@ Track A replaces task VMs and the Project VM with containers, in the order ADR 0
 | 2c | Define the container egress and DNS model on Beast. | Open |
 | 2d | Keep secrets off agent hosts. | Open |
 | 2e | Patch kernels automatically, with planned reboots. | Open |
-| 3 | Build the task container runtime next to the task VM runtime, selected by a Node setting. It needs a container base image, the nested setup of ADR 0250, and `SetCredential` units. | Open |
-| 4 | Parity gate: the command proof cases on task containers match their task VM results. Time it with the operations migration thread. | Open |
+| 3 | Build the task container runtime next to the task VM runtime, selected by a Node setting. It needs a container base image, the nested setup of ADR 0250, and `SetCredential` units. | Specified in [Task containers](/reference/task-containers); plan and decisions in [Task container runtime](/solutions/task-container-runtime#decided) |
+| 4 | Parity gate: the command proof cases on task containers match their task VM results. Time it with the operations migration thread. | Specified in [Parity gate](/solutions/task-container-runtime#parity-gate) |
 | 5 | Switch Beast, then Shark, in a window with no proofs or merges in flight. | Open |
 | 6 | Run development Instances on the Node. Rework the unpushed `task-4193` branch to drop the Project VM; a bundle is kept at `~/apps/orbit-container-plan/.backup/proof-4193.bundle`. | Open |
 | 7 | Remove the task VM runtime. | Open |
@@ -89,7 +91,7 @@ Track B gives the runtime its second driver. Steps 1 and 2 can start now; steps 
 
 1. **pi-server on Pi 1.5.0.** Fix what 1.5.0 breaks. The task VM and Swamp Pi driver keep passing.
 2. **Manual mode on today's task VMs.** Drive an external task group from a T3 thread on the mini through the Orbit MCP. Record what gets in the way.
-3. **A runtime without a task.** Create, list and remove an Instance runtime with Pi Durable and no task. Orbit returns its URL and the driver's access.
+3. **A runtime without a task.** Create, list and remove an Instance runtime with the agent engine of open question 5 and no task. Orbit returns its URL and the driver's access.
 4. **Handover.** A task attaches to an existing runtime without provisioning. Pausing the task hands the session back. One driver holds a session at a time.
 5. **Conn view.** Settle open question 1. The spike for the changed-files option is an SSH-backed `VcsProcess` against one container.
 6. **Project MCP.** Decide open question 3 and wire it into the runtime.

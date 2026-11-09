@@ -44,9 +44,12 @@ final class UpdateNodeRequest extends GatewayRequest implements HasBody
         $data = $this->unwrapData($response);
         $requestId = $this->successRequestId($response);
 
-        return new NodeUpdateResponse($response->status() === 202
-            ? OperationResponse::fromGatewayData($data, $requestId)
-            : NodeResponse::fromGatewayData($data, $requestId));
+        if ($response->status() === 202) {
+            return new NodeUpdateResponse(OperationResponse::fromGatewayData($data, $requestId));
+        }
+        $meta = $this->successMeta($response);
+
+        return new NodeUpdateResponse(NodeResponse::fromGatewayData($data, $requestId), is_string($meta['skipped'] ?? null) ? $meta['skipped'] : null);
     }
 
     /** @return array<string, string> */

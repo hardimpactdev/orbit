@@ -200,10 +200,13 @@ abstract class GatewayRequest extends Request
 
     protected function successRequestId(#[SensitiveParameter] Response $response): string
     {
-        $body = $this->decodeBody($response);
-        $meta = $this->stringKeyedArray($body['meta'] ?? []);
+        return GatewayRequestId::fromTransport($this->successMeta($response)['request_id'] ?? null) ?? '';
+    }
 
-        return GatewayRequestId::fromTransport($meta['request_id'] ?? null) ?? '';
+    /** @return array<string, mixed> the `meta` member of a success response */
+    protected function successMeta(#[SensitiveParameter] Response $response): array
+    {
+        return $this->stringKeyedArray($this->decodeBody($response)['meta'] ?? []);
     }
 
     protected function successHeaderRequestId(#[SensitiveParameter] Response $response): string
