@@ -11,11 +11,12 @@ sequenceDiagram
   T->>TP: Claim a task place<br/>wait when full
   TP-->>T: Fresh task VM<br/>from the base
   opt no Operation on the group for 30 minutes
-    T->>TP: Delete the idle task VM<br/>approved work on origin
+    T->>PR: Save the workspace<br/>task-<id>-idle branch
+    T->>TP: Delete the idle task VM<br/>after the save passed
   end
   T->>PR: Publish the PR
   T->>TP: Delete the task VM
-  Note over T,TP: Later work claims again<br/>base + task branch
+  Note over T,TP: Later work claims again<br/>base + task branch or save
   PR->>Q: Prove the PR head
   Q->>CP: Take every free place<br/>at least 1 · up to batches
   CP-->>VM: Fresh VMs<br/>from the base

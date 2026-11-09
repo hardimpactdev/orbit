@@ -7,9 +7,9 @@ covers:
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskPullRequestController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{TaskPullRequestGateCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskReviewRound,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/{publish,transcript}.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-review-round,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
+  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/{publish,transcript}.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-idle-save,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-review-round,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
-  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000000_add_task_idle_save}.php"
 ---
 
 # Tasks
@@ -170,22 +170,24 @@ A holder is one live task VM: `vm`, `pool` (`task` or `ci`), and the group it se
 
 A group's `last_activity_at` is the newest time any Operation on the group was created, started or ended, or null when it has none. `active_operation_id` is the Operation on the group that has not ended, or null. A holder with no active Operation is idle.
 
+A waiting Operation on a group, and `task:show` of its group, return `capacity_wait`: `operation_id`, `position`, and `holders`, the holders of the task pool on every host. `capacity_wait` is null when the group or Operation is not waiting for a task place.
+
 #### Release an idle task VM
 
-This section owns the rule. A task VM holds its place only while its group works. Between two steps, such as a build and the driver's check, the VM stays for the next step. A group whose task-pool VM is `ready` or `parked`, that has no active Operation, and whose `last_activity_at` is more than 30 minutes old loses its VM. Every five minutes the Gateway job `ReleaseIdleTaskVms` finds such a group and admits the [release](/reference/compute-drivers#release-a-task-vm) of its VM, as publication does. The group keeps its status, subtasks and threads.
+This section owns the rule. A task VM holds its place only while its group works. Between two steps, such as a build and the driver's check, the VM stays for the next step. A group whose task-pool VM is `ready`, that has no active Operation, and whose last Operation other than an idle save ended more than 30 minutes ago gives its place back. An idle release never loses work: it saves the workspace to origin first. Every five minutes the Gateway job `ReleaseIdleTaskVms` finds such a group and admits `tasks.idle_save` ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/idle-save.mmd)). The group keeps its status, subtasks and threads.
 
 Thirty minutes is longer than the pause of a driver that is working, and short enough that a stalled driver does not starve the task queue. Group 4118 held a place for hours after its build while preps waited.
 
-The release keeps what the next step needs:
+The save runs only when the next claim can use it:
 
-- Origin must have the task branch, because the next turn restores it on a fresh VM. A group that never pushed keeps its VM.
-- Origin's task branch must reach the group's latest approved commit, as for [cancel](#cancel-a-stuck-task).
-- A group whose approved commit is not on origin keeps its VM until `task:publish` pushes it. A review-and-merge group keeps it until its reviewed commit is pushed.
-- An open Operation on the VM itself, such as a resume, makes the release admission refuse.
+- Origin must have the task branch, because the next claim starts from it or from the save. A group that never pushed keeps its VM.
+- Origin's task branch must reach the group's latest approved commit, as for [cancel](#cancel-a-stuck-task). Until `task:publish` pushes that commit, the group keeps its VM.
+- An open Operation on the VM itself, such as a resume, keeps the VM.
+- A `parked` VM gets its resume admitted. A later pass saves it once it runs.
 
-Work that no review approved goes with the VM. That covers the output of a `tasks.build` run that no check and publish followed, and the work of a subtask that waits for an answer. A build runs once, so its driver rebuilds that work with a `task:turn`. The next turn, fix or review round claims a fresh place and restores the published task branch on a copy of the base. A check or a publish needs that workspace first and returns `tasks.no_workspace` until a turn restores it.
+The save commits uncommitted changes in the workspace as `Save the idle workspace`, by Orbit, and pushes the head to the save branch `task-<id>-idle`. Each save replaces the one before. The push token is minted when the push runs and never reaches the VM. CI and the repository rulesets do not run on that branch. The Gateway records the saved commit on the group, then admits the [release](/reference/compute-drivers#release-a-task-vm) of the VM, as publication does. A failed save keeps the VM. It is no activity of the group, so the next pass saves again.
 
-A waiting Operation on a group, and `task:show` of its group, return `capacity_wait`: `operation_id`, `position`, and `holders`, the holders of the task pool on every host. `capacity_wait` is null when the group or Operation is not waiting for a task place.
+The next turn, build, fix or review round claims a fresh place. It starts from the saved commit when that commit holds the task branch head, so the following check, publish or turn continues where the group stopped. Otherwise it starts from the task branch, and the save stays on `task-<id>-idle`, where a person can merge it. When GitHub cannot compare the two, the claim refuses with `tasks.idle_save_unreadable` (503) and starts nothing; try again. A check or a publish needs that fresh workspace first and returns `tasks.no_workspace` until a turn claims it.
 
 #### Keep command output out of run history
 

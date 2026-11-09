@@ -63,7 +63,7 @@ sequenceDiagram
     %%> Result:
     %%> - the task VM is recorded as ready, the metrics of the thread are recorded, and the result is the branch and the approved head
     %%> - the group stays `running` for its driver, which goes on with the check and the publish; the VM stays for that next step
-    %%> - a driver that starts no Operation on the group for 30 minutes loses the VM to the idle release (docs/reference/tasks.md#release-an-idle-task-vm); this run's output goes with it, and the driver rebuilds it with a turn on a fresh place
+    %%> - a driver that starts no Operation on the group for 30 minutes loses the VM to the idle release (docs/reference/tasks.md#release-an-idle-task-vm): its save keeps this run's output on `task-<id>-idle`, and the next turn starts from that save on a fresh place
   else a step failed
     SW--xGW: Native failed result<br/>failed step · error code
     %%> Result:

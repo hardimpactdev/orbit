@@ -18,6 +18,7 @@ sequenceDiagram
   %%> - the host is a configured task VM host (otherwise `task_vm.unknown_host`), and the VM's Node records the WireGuard public key that names its hub peer (otherwise `task_vm.slot_refused`)
   %%> - a sweep release locks the row and checks the host again: a refresh that opened after the selection leaves the row alone
   %%> - a VM of the old pool, with no slot number, is released the same way: its seed clone is `<name>-topology-seed`
+  %%> - a passed idle save admits it for an open group (`docs/cli/task/idle-save.mmd`); the group stays open
   GW->>SW: Start run, full intent<br/>operation-task-vm-slot-release
   SW->>H: Delete the VM<br/>and its seed clone
   %%> What it does:
