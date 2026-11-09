@@ -365,6 +365,8 @@ Tracking a live PPA would make it a second owner of Git, and an exact APT versio
 
 ## Task VMs
 
+[Task containers](/reference/task-containers) specify a second runtime for task groups, selected per host. It is not built; every host runs task VMs.
+
 Publication releases the task VM. Later work claims a fresh task place and restores its published branch. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
 A task VM is an Ubuntu 26.04 VM on an Incus host. It is a copy of the [base snapshot](#the-base-vm-and-its-snapshot) of its host, which each host refreshes to the same recipe and which holds the `app-dev` tool set. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the normal Instance and task paths, pinned to that Node. Task VMs run only on the Incus hosts Beast and Shark. When neither host has capacity, the group waits.

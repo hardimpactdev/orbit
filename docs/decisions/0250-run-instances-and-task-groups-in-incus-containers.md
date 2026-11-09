@@ -82,7 +82,7 @@ The Node's agent reads per-container metrics from Incus (`/1.0/metrics`) and per
 
 1. **This ADR.**
 2. **Host hardening** on Beast and Shark: current kernels, SCTP off, an explicit container egress model and bridge DNS, and secrets moved off.
-3. **Task container runtime** next to the task VM runtime, selected by a Node setting. Nothing switches.
+3. **Task container runtime** next to the task VM runtime, selected by a Node setting. Nothing switches. [Task containers](/reference/task-containers) specifies it; [Task container runtime](/solutions/task-container-runtime#open-questions) lists the open questions, the first of which proposes that a task container keeps a Node identity until step 6.
 4. **Parity gate.** The command proof cases run on task containers and must match their task VM results.
 5. **Switch** Beast, then Shark, in a window with no proofs or merges in flight. Running task VMs finish first.
 6. **Development Instances** directly on the Node, reworking the development container work to drop the Project VM.
@@ -108,5 +108,5 @@ The Node's agent reads per-container metrics from Incus (`/1.0/metrics`) and per
 
 - Components: apps/gateway, apps/cli, apps/docs
 - ADRs: replaces the outer task VM boundary of task groups and the Project VM of the development container plan
-- Detail: [Compute drivers](/reference/compute-drivers), [Tasks](/reference/tasks), [Pi server](/reference/pi-server), [Node provisioning](/reference/node-provisioning), [Metrics](/reference/metrics), and the plan in [Container instances and releases](/solutions/container-instances-and-releases). The change also touches `swamp/` (task VM provision, image, snapshot and power workflows, the proof fleet setup and the development container workflows) and the Node agent (container and Process metrics).
+- Detail: [Task containers](/reference/task-containers) and its plan [Task container runtime](/solutions/task-container-runtime), [Compute drivers](/reference/compute-drivers), [Tasks](/reference/tasks), [Pi server](/reference/pi-server), [Node provisioning](/reference/node-provisioning), [Metrics](/reference/metrics), and the plan in [Container instances and releases](/solutions/container-instances-and-releases). The change also touches `swamp/` (task VM provision, image, snapshot and power workflows, the proof fleet setup and the development container workflows) and the Node agent (container and Process metrics).
 - Verify: the command proof cases on task containers match their task VM results on Beast; a feature copy with its database boots in a container on the Node; kernel, SCTP and secret checks pass on every agent Node

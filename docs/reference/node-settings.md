@@ -115,6 +115,8 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 | `disk` | No | `20GiB` | Positive size in `MiB` or `GiB` for root disks |
 | `operator_owned` | No | `[]` | List of Incus instances and custom volumes excluded from stray reports, as `<project>/<name>` or `<project>/*` |
 
+[Task containers](/reference/task-containers#select-the-runtime) add a `runtime` field that selects task containers for a host. It is not built, and the Gateway refuses it today.
+
 Unknown fields, invalid names, wrong types, and out-of-range values are rejected before storage. Integer fields are integers in JSON, not strings. Invalid configuration leaves the stored setting unchanged. The apps-root filesystem checks below apply only to `apps.path`, not to this object.
 
 Task provision, prep, build, fix turns, review rounds and operator proofs use the task pool. Only an active caller Node with an active `ci-runner` role grants access to the CI pool. A full pool records a wait for up to two hours. Failed VMs still hold their place until deletion succeeds. Publishing the PR releases the VM, Node and keys. Later work claims a fresh VM from the base and the task branch.
