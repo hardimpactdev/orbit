@@ -5,7 +5,7 @@ description: "Partly built. The task container runtime of ADR 0250: a task group
 
 # Task containers
 
-**Partly built.** This page specifies the runtime that step 3 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) builds. It describes the target. The build PRs in [Task container runtime](/solutions/task-container-runtime) make it true, one part at a time, and remove this note. Built so far: the host setting, its records and the separate container places. Until the runtime is complete, every task group runs on a [task VM](/reference/compute-drivers#task-vms).
+**Partly built.** This page specifies the runtime that step 3 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) builds. It describes the target. The build PRs in [Task container runtime](/solutions/task-container-runtime) make it true, one part at a time, and remove this note. Built so far: the host setting, its records, the separate container places, and the [host preparation](/reference/compute-drivers#prepare-a-container-host) with the egress log of the container bridge. Until the runtime is complete, every task group runs on a [task VM](/reference/compute-drivers#task-vms).
 
 A task container is an unprivileged Incus system container on a container host. It takes the place of a task VM for one task group. It is a copy of the host's base container snapshot. The base holds the same software as the base VM: the agent, the Pi server, the tools, Swamp and a warm checkout of main. It also holds the nested fleet of three containers (Gateway, app-dev, app-prod) under an Incus inside the container. A host can run task containers beside its task VMs, in their own project, bridge and places. Task VMs do not change.
 
@@ -54,34 +54,9 @@ On UpCloud the template's root disk is ext4 on the whole disk, so the ZFS pool n
 
 ## Prepare a container host
 
-The first phase of every refresh prepares the host, as for a [VM host](/reference/compute-drivers#prepare-an-incus-host). On a container host it sets up these parts:
+The first phase of every refresh prepares the host, as for a VM host. [Prepare a container host](/reference/compute-drivers#prepare-a-container-host) owns what it does on a container host. It covers the kernel and Incus side, the bridge, the project, the stock image and the input rules. It also checks that a copy is a clone. The operator upgrades and reboots a host before first use.
 
-| Part | On a container host |
-| --- | --- |
-| Pool | The ZFS pool, as for a VM host, shared by task containers and the base. It must be ZFS: a base copy took 55 s on a directory pool |
-| ZFS ARC | `zfs_arc_max` capped to the host's size, now and after reboot. The ARC took 2.6 GB of an 8 GB UpCloud host |
-| Incus | The Incus package from the channel that the recipe pins, the same channel as the inner Incus. A fresh host otherwise gets the newest stable release |
-| Bridge | `orbittaskc0` with IPv4 NAT, no IPv6 and the egress ACL |
-| NIC | `security.port_isolation=true` on the profile's NIC |
-| Forwarding | The existing UFW rule `route allow in on orbittask+`, which covers every bridge whose name starts with `orbittask` |
-| Egress log | The [egress log](/reference/compute-drivers#log-task-vm-egress) part, run on the bridge that `host.network` names |
-| Input rules | DHCP and DNS to the bridge address, under the existing catalog names |
-| Project | `orbit-task-containers` with `features.networks=false` |
-| Restrictions | `restricted=true`, `restricted.networks.access=orbittaskc0`, `restricted.containers.nesting=allow`, `restricted.containers.interception=allow`, `restricted.containers.privilege=isolated`, `restricted.snapshots=allow`, `restricted.containers.lowlevel=allow` and `limits.virtual-machines=0`. Host-path disks and privileged containers stay forbidden |
-| Stock image | The alias `ubuntu-26.04-ct` from `images:ubuntu/26.04/cloud`, the container variant |
-| Kernel modules | `wireguard`, `overlay` and `br_netfilter`, which containers cannot load themselves, in `/etc/modules-load.d/orbit-task-containers.conf` |
-| SCTP | `install sctp /bin/false` in `/etc/modprobe.d/orbit-no-sctp.conf`. SCTP loads by default on the UpCloud template |
-| Sysctls | The limits that nested systemd, Docker and file watchers need, such as `fs.inotify.max_user_instances`, in `/etc/sysctl.d/60-orbit-task-containers.conf` |
-
-The phase checks root's subordinate ID range in `/etc/subuid` and `/etc/subgid` on the host. It must hold one [isolated range](#the-outer-container) per container place and one for the base: `(containers.task_places + containers.ci_places + 1) × 101,000,000` IDs. The default Incus range of 1,000,000,000 IDs fits nine. A range that is too small fails the phase with the numbers it needs, and changes nothing.
-
-`security.idmap.size` is a low-level key, so the project needs `restricted.containers.lowlevel=allow`. That also allows `raw.*` keys, so the start refuses a copy with any `raw.*` key, as it refuses an extra device.
-
-The phase proves that a copy is a clone. It copies a small isolated test container and requires `zfs get written` on the copy to stay under a few MB, then deletes it. Without idmapped mounts, Incus would shift the owner of every file, and a start would rewrite the whole root disk. Incus 7 reports empty `kernel_features` on Beast and on UpCloud, so `incus info` cannot answer this.
-
-The phase requires the host hardening of ADR 0250 step 2: a full upgrade and a reboot into the current kernel before first use, and the SCTP block. It checks that `sctp` cannot load.
-
-`incus` reads standard input as YAML when it is not a terminal. So every Ansible task and Swamp script that runs `incus` closes standard input, unless it passes input on purpose.
+A container host caps the ZFS ARC at one eighth of its memory, at least 1 GiB, but never above a cap it already runs: [the ARC cap](/reference/compute-drivers#the-arc-cap-of-a-container-host). A loop pool such as Beast's keeps its 2 GiB.
 
 ### Egress and DNS
 
@@ -91,7 +66,7 @@ A task container has the egress of a task VM:
 - No traffic to other containers or VMs on the bridge: port isolation.
 - Forwarding through the UFW rule `route allow in on orbittask+`.
 - No rule per address: the UFW rule matches the interface. This holds on Beast too, which denies forwarding by default.
-- Public DNS from the bridge's dnsmasq on the host. The input rules admit it.
+- Public DNS from the bridge's dnsmasq on the host. The input rules `orbit:task-containers-dhcp` and `orbit:task-containers-dns-*` admit it.
 - `.orbit` names from the VPN DNS address, over the container's own WireGuard tunnel, as on a task VM.
 - The fleet network over that tunnel. The [hub filter](/reference/compute-drivers#limit-fleet-traffic-on-the-hub) limits it.
 - The tunnel itself: UDP to the hub's public endpoint, which the ACL allows.

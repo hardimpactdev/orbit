@@ -133,16 +133,27 @@ pub struct WatchFacts {
     pub awake_markers: Vec<String>,
     /// The `.env` of each Instance on the Node; the agent reports their key names, never values.
     pub environments: Vec<String>,
-    /// The Incus bridge of the task VMs on a task VM host; the agent then reports each VM's egress.
-    pub egress: Option<String>,
+    /// The Incus bridges of a task VM host: its task VMs' and, on a container host, its task containers'. The agent
+    /// reports the egress of each guest on them.
+    pub egress: Vec<String>,
 }
 
-/// Parses the `egress` of `GET /api/v1/agent/watch`: the bridge name, only when it is a valid task bridge name.
-pub fn parse_watch_egress(body: &Value) -> Option<String> {
-    body.pointer("/data/egress/network")
-        .and_then(Value::as_str)
-        .filter(|network| crate::egress::valid_network(network))
-        .map(str::to_owned)
+/// Parses the `egress` of `GET /api/v1/agent/watch`: the VM bridge `network` and the container bridge
+/// `container_network`, each only when it is a valid task bridge name, in that order and once each.
+pub fn parse_watch_egress(body: &Value) -> Vec<String> {
+    let mut networks = Vec::new();
+    for member in ["network", "container_network"] {
+        if let Some(network) = body
+            .pointer(&format!("/data/egress/{member}"))
+            .and_then(Value::as_str)
+            .filter(|network| crate::egress::valid_network(network))
+        {
+            if !networks.iter().any(|known| known == network) {
+                networks.push(network.to_owned());
+            }
+        }
+    }
+    networks
 }
 
 /// Parses the `awake_markers` of `GET /api/v1/agent/watch`: plain names below the hibernation directory only.

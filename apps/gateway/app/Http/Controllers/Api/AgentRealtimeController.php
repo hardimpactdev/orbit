@@ -96,8 +96,8 @@ final class AgentRealtimeController extends Controller
         }
         // The kind's rules require named fields, so a list never reaches the object read below.
         $envelope = Validator::make($request->all(), $rules)->validate();
-        // Only a task VM host reports an egress fact, for its own bridge; any other report would only fill the table.
-        if ($kind === NodeFactKind::Egress && (AgentWatchListAction::egress($node)['network'] ?? null) !== (is_array($envelope['data']) ? ($envelope['data']['network'] ?? null) : null)) {
+        // Only a task VM host reports an egress fact, for one of its own bridges; any other report would only fill the table.
+        if ($kind === NodeFactKind::Egress && ! in_array(is_array($envelope['data']) ? ($envelope['data']['network'] ?? null) : null, AgentWatchListAction::egressNetworks($node), true)) {
             throw new ResourceOperationException('agent.fact_not_expected', 'Only a task VM host reports egress.', 422);
         }
         $data = ValidatedData::object($envelope['data']);

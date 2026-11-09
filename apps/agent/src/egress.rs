@@ -1153,50 +1153,54 @@ pub struct Step {
     pub known: BTreeSet<String>,
 }
 
-/// The lifecycle of the observer: it exists while the watch list names a bridge.
+/// The lifecycle of the observers: one per bridge that the watch list names, each with its own files, offsets and state.
 #[derive(Default)]
 pub struct Runner {
-    observer: Option<Observer>,
+    observers: BTreeMap<String, Observer>,
     complaints: Complaints,
 }
 
 impl Runner {
     /// Whether the runner holds state.
     pub fn active(&self) -> bool {
-        self.observer.is_some()
+        !self.observers.is_empty()
     }
 
-    /// One tick for the bridge the watch list names, or None when it names none: then all state is dropped.
-    pub fn step(&mut self, network: Option<&str>, now: Instant, stamp: &str) -> Step {
-        self.step_with(network, now, stamp, Observer::new)
+    /// One tick for the bridges the watch list names. A bridge it no longer names drops its state; with none, all state goes.
+    pub fn step(&mut self, networks: &[String], now: Instant, stamp: &str) -> Step {
+        self.step_with(networks, now, stamp, Observer::new)
     }
 
     pub fn step_with(
         &mut self,
-        network: Option<&str>,
+        networks: &[String],
         now: Instant,
         stamp: &str,
-        make: impl FnOnce(&str) -> Observer,
+        make: impl Fn(&str) -> Observer,
     ) -> Step {
-        let Some(network) = network else {
+        self.observers
+            .retain(|network, _| networks.contains(network));
+        if self.observers.is_empty() && networks.is_empty() {
             *self = Self::default();
             return Step::default();
-        };
-        if self.observer.as_ref().map(Observer::network) != Some(network) {
-            self.observer = Some(make(network));
         }
-        let Some(observer) = self.observer.as_mut() else {
-            return Step::default();
-        };
-        for problem in observer.observe(now, stamp) {
-            if let Some(line) = self.complaints.note(&problem, now) {
-                eprintln!("{line}");
+        let mut step = Step::default();
+        for network in networks {
+            let observer = self
+                .observers
+                .entry(network.clone())
+                .or_insert_with(|| make(network));
+            for problem in observer.observe(now, stamp) {
+                if let Some(line) = self.complaints.note(&problem, now) {
+                    eprintln!("{line}");
+                }
             }
+            // The facts of one tick share the limit; a bridge that gets none this tick has its due facts built on the next.
+            step.facts
+                .extend(observer.due(MAX_SENDS - step.facts.len()));
+            step.known.extend(observer.known());
         }
-        Step {
-            facts: observer.due(MAX_SENDS),
-            known: observer.known(),
-        }
+        step
     }
 }
 

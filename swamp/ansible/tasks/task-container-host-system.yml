@@ -1,0 +1,137 @@
+---
+# The kernel and Incus side of a task container host (docs/reference/compute-drivers.md#the-host-system). It runs before the VM part,
+# which needs Incus, and only on a host with `host.containers`. It never upgrades a running Incus and never reboots the host: the full
+# upgrade and the reboot before first use are the operator's. The VM part applies the ARC cap that it sizes (`container_arc_max`).
+# `ii ` is installed. A package removed with its config files left (`rc `) still has a version, so it counts as missing.
+- name: Read the installed Incus package
+  ansible.builtin.command: { argv: [dpkg-query, --show, --showformat, "${db:Status-Abbrev}${Version}", incus] }
+  register: container_incus_package
+  changed_when: false
+  failed_when: container_incus_package.rc not in [0, 1]
+
+# Only a host without Incus gets it here, from the recipe's pinned packages (the mirror first, then upstream, checked by SHA-256).
+- name: Install Incus from the recipe
+  when: not container_incus_package.stdout.startswith('ii ')
+  vars:
+    container_incus_debs: >-
+      {{ host.containers.incus.packages | map(attribute='name') | zip(host.containers.incus.packages | map(attribute='sha256'))
+         | map('join', '_') | map('regex_replace', '^', '/var/cache/orbit/debs/') | map('regex_replace', '$', '.deb') | list }}
+  block:
+    - name: Create the package cache
+      ansible.builtin.file: { path: /var/cache/orbit/debs, state: directory, owner: root, group: root, mode: "0755" }
+    - name: Fetch the Incus packages
+      ansible.builtin.include_tasks: artifact-fetch.yml
+      vars:
+        artifact:
+          urls: "{{ item.urls }}"
+          path: "{{ container_incus_debs[index] }}"
+          sha256: "{{ item.sha256 }}"
+      loop: "{{ host.containers.incus.packages }}"
+      loop_control: { label: "{{ item.name }}", index_var: index }
+    - name: Read the package index
+      ansible.builtin.apt: { update_cache: true, cache_valid_time: 3600 }
+    - name: Install the Incus packages
+      ansible.builtin.command:
+        argv: "{{ ['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--'] + container_incus_debs }}"
+      environment: { DEBIAN_FRONTEND: noninteractive }
+      changed_when: true
+
+# The host and the inner Incus of the base run one line, such as 7.0, so a host never runs a newer Incus than its fleet.
+- name: Read the Incus server
+  ansible.builtin.command: { argv: [incus, query, /1.0] }
+  register: container_incus_server
+  changed_when: false
+
+- name: Require the recipe's Incus line
+  ansible.builtin.assert:
+    that: ((container_incus_server.stdout | from_json).environment.server_version ~ '.').startswith(host.containers.incus.line ~ '.')
+    fail_msg: task_vm.setup_failed
+    quiet: true
+
+# The kernel policy of every managed Linux Node (`node:add`, `node:converge`) blocks SCTP; this phase only checks the result.
+- name: Read how sctp would load
+  ansible.builtin.command: { argv: [modprobe, --dry-run, --verbose, sctp] }
+  register: container_sctp_rule
+  changed_when: false
+  failed_when: false
+
+- name: Read whether sctp is loaded
+  ansible.builtin.stat: { path: /sys/module/sctp, get_checksum: false, get_mime: false }
+  register: container_sctp_loaded
+
+- name: Require that sctp cannot load
+  ansible.builtin.assert:
+    that:
+      - container_sctp_rule.stdout is search('(?m)^install /bin/false')
+      - not container_sctp_loaded.stat.exists
+    fail_msg: task_vm.setup_failed
+    quiet: true
+
+# A container cannot load a module itself: the host loads what WireGuard, Docker's overlay storage and its bridges need.
+- name: Load the container kernel modules at boot
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/orbit-task-containers.conf
+    content: "wireguard\noverlay\nbr_netfilter\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Load the container kernel modules now
+  community.general.modprobe: { name: "{{ item }}", state: present }
+  loop: [wireguard, overlay, br_netfilter]
+
+# At least the Incus production values for nested systemd, Docker and file watchers: a host value that is higher stays, such as
+# Ubuntu's own vm.max_map_count of 1048576.
+- name: Read the container sysctls
+  ansible.builtin.command: { argv: "{{ ['sysctl', '-n'] + container_sysctls.keys() | list }}" }
+  register: container_sysctls_now
+  changed_when: false
+
+- name: Set the container sysctls
+  ansible.posix.sysctl:
+    name: "{{ item.0.key }}"
+    value: "{{ [item.0.value, item.1 | int] | max }}"
+    sysctl_file: /etc/sysctl.d/60-orbit-task-containers.conf
+    reload: true
+  loop: "{{ container_sysctls | dict2items | zip(container_sysctls_now.stdout_lines) | list }}"
+  loop_control: { label: "{{ item.0.key }}" }
+
+# Each place and the base get an isolated range of 101,000,000 IDs, from root's range; a smaller range changes nothing.
+- name: Read the subordinate IDs
+  ansible.builtin.slurp: { src: "{{ item }}" }
+  loop: [/etc/subuid, /etc/subgid]
+  register: container_subids
+
+- name: Require a subordinate range for every place and the base
+  ansible.builtin.assert:
+    that: have | int >= need | int
+    fail_msg: "task_vm.setup_failed: root needs {{ need }} subordinate IDs in {{ item.item }}, and its largest range has {{ have }}"
+    quiet: true
+  loop: "{{ container_subids.results }}"
+  loop_control: { label: "{{ item.item }}" }
+  vars:
+    need: "{{ (host.containers.places + 1) * 101000000 }}"
+    have: >-
+      {{ (item.content | b64decode).splitlines() | select('match', '^root:[0-9]+:[0-9]+$') | map('split', ':') | map('last') | map('int')
+         | list | max | default(0) }}
+
+# One eighth of the host's memory, at least 1 GiB: the ARC took 2.6 GB of an 8 GB host and left the places short. The rule never
+# raises a cap the host already runs, such as the 2 GiB of a loop pool: a higher cap takes memory from the host's guests and services.
+- name: Read the host memory
+  ansible.builtin.slurp: { src: /proc/meminfo }
+  register: container_meminfo
+
+# A host that has not loaded ZFS yet runs no cap; 0 is ZFS's own "no cap".
+- name: Read the running ARC cap
+  ansible.builtin.command: { argv: [cat, /sys/module/zfs/parameters/zfs_arc_max] }
+  register: container_arc_now
+  changed_when: false
+  failed_when: false
+
+- name: Size the ZFS ARC cap
+  ansible.builtin.set_fact:
+    container_arc_max: >-
+      {{ ([[1073741824, ((container_meminfo.content | b64decode | regex_findall('MemTotal:\s+([0-9]+) kB') | first | int) * 1024 // 8)] | max]
+          + ([running] if running > 0 else [])) | min }}
+  vars:
+    running: "{{ (container_arc_now.stdout | trim | int) if container_arc_now.rc == 0 else 0 }}"

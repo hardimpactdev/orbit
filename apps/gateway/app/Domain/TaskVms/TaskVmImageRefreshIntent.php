@@ -36,7 +36,8 @@ final readonly class TaskVmImageRefreshIntent
     public const string Next = 'refresh_next';
 
     public function __construct(private StartOperationAction $operations, private OperationStore $store, private TaskVmSettings $settings, private TaskVmPromotedImage $images,
-        private SwampSshExecutionInput $ssh, private SwampCommandStep $shared, private TaskVmConvergeInput $converge, private TaskVmSlotRuns $runs, private TaskVmSlotPool $slots) {}
+        private SwampSshExecutionInput $ssh, private SwampCommandStep $shared, private TaskVmConvergeInput $converge, private TaskVmSlotRuns $runs, private TaskVmSlotPool $slots,
+        private TaskContainerHostIntent $containers) {}
 
     /**
      * The refresh that is open on `$host`, if any: a second admission returns it.
@@ -168,6 +169,8 @@ final readonly class TaskVmImageRefreshIntent
                     'cidr' => $location->cidr, 'zfs_dataset' => $location->zfsDataset, 'pool_size' => $location->poolSize,
                     'image' => TaskVmHost::SourceImage, 'current' => $base['snapshot'] ?? null, 'snapshot' => $snapshot, 'rebuild' => $fromStock,
                     'clean' => TaskVmHostLeftovers::intent(),
+                    // The task container side that host preparation sets up beside the VM side; null on a host without containers.
+                    'containers' => $this->containers->for($host, $location),
                     'base' => ['vm' => TaskVmPromotedImage::baseVm($host), 'seed' => TaskVmPromotedImage::baseSeed($host), 'seed_size' => TaskVmVolumes::SeedSize,
                         'cpus' => $large->cpus, 'memory' => $large->memory, 'disk' => $location->disk,
                         'launch_config' => TaskVmLaunchConfig::for($identity['public_key']), 'club_key' => self::ClubKey]],

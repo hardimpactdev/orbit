@@ -12,6 +12,9 @@ use App\Domain\WireGuard\Ipv4Subnet;
  */
 final readonly class TaskVmContainers
 {
+    /** The stock image alias of the container project, which host preparation copies and the base starts from. */
+    public const string SourceImage = 'ubuntu-26.04-ct';
+
     private const array Keys = ['task_places', 'ci_places', 'project', 'network', 'cidr'];
 
     public function __construct(

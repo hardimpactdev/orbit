@@ -21,12 +21,32 @@ SAFETY = {'egress.bridge_dual_stack', 'egress.acl_changed'}
 WARNINGS = {'egress.rules_missing', 'egress.dnsmasq_unset', 'egress.log_unreadable', 'egress.service_inactive', 'egress.setup_failed'}
 
 
+# The files of the part for a host without containers, as the part rendered them before container hosts. A host that keeps them
+# reloads nothing in its next refresh.
+VM_ONLY_NFT = 'table inet orbit_egress\ndelete table inet orbit_egress\ntable inet orbit_egress {\n    set seen {\n        type ipv4_addr . ipv4_addr . inet_proto . inet_service\n        flags dynamic,timeout\n        timeout 10m\n        size 262144\n    }\n    set flood {\n        type ipv4_addr\n        flags dynamic,timeout\n        timeout 1m\n        size 4096\n    }\n    chain forward {\n        type filter hook forward priority filter + 10; policy accept;\n        iifname "orbittask0" oifname != "orbittask0" ct state new meta l4proto { tcp, udp } ip daddr != { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4 } ip saddr . ip daddr . meta l4proto . th dport @seen return\n        iifname "orbittask0" oifname != "orbittask0" ct state new meta l4proto { tcp, udp } ip daddr != { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4 } add @flood { ip saddr limit rate over 50/second burst 200 packets } counter return\n        iifname "orbittask0" oifname != "orbittask0" ct state new meta l4proto { tcp, udp } ip daddr != { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4 } log prefix "orbit-egress " flags ether add @seen { ip saddr . ip daddr . meta l4proto . th dport }\n    }\n}\n'
+VM_ONLY_ROTATION = '/var/log/orbit/task-egress.log {\n    daily\n    rotate 7\n    maxsize 200M\n    compress\n    missingok\n    notifempty\n    create 0644 syslog adm\n    sharedscripts\n    postrotate\n        /usr/lib/rsyslog/rsyslog-rotate\n    endscript\n}\n\n/var/log/orbit/dnsmasq-orbittask0.log {\n    daily\n    rotate 7\n    maxsize 200M\n    compress\n    missingok\n    notifempty\n    copytruncate\n}\n'
+
+
 def command():
     return shutil.which('ansible-playbook') or str(Path(sys.executable).parent / 'ansible-playbook')
 
 
 def have_ansible():
     return bool(shutil.which('ansible-playbook') or (Path(sys.executable).parent / 'ansible-playbook').exists())
+
+
+def nft_check():
+    """The argv prefix that runs `nft -c -f` here: as root, or in a user and network namespace of its own; None when neither works."""
+    nft = shutil.which('nft') or ('/usr/sbin/nft' if Path('/usr/sbin/nft').exists() else None)
+    if nft is None:
+        return None
+    if hasattr(os, 'geteuid') and os.geteuid() == 0:
+        return [nft, '-c', '-f']
+    unshare = shutil.which('unshare')
+    if unshare is None:
+        return None
+    probe = subprocess.run([unshare, '-rn', nft, '-c', '-f', '/dev/null'], check=False, capture_output=True, timeout=30)
+    return [unshare, '-rn', nft, '-c', '-f'] if probe.returncode == 0 else None
 
 
 def egress_play():
@@ -60,20 +80,26 @@ def run_local(folder, tasks, variables):
                           text=True, timeout=120, env={**os.environ, 'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg')})
 
 
-def bridge_config(raw=None, **changes):
+def bridge_config(raw=None, bridge='orbittask0', **changes):
     """The `config` of the bridge as `incus query` returns it: as `prepare-host` makes it, with `raw.dnsmasq` when `raw` is given."""
-    config = {'ipv6.address': 'none', 'security.acls': 'orbittask0-egress', **({'raw.dnsmasq': raw} if raw is not None else {}), **changes}
+    config = {'ipv6.address': 'none', 'security.acls': f'{bridge}-egress', **({'raw.dnsmasq': raw} if raw is not None else {}), **changes}
     return json.dumps({'config': config})
 
 
-def render(folder, raw=None, bridge='orbittask0'):
-    """Render the files of the part through Ansible itself, from the vars of the play, a host intent and the bridge as it was before."""
+def reads(*configs, bridges=('orbittask0',)):
+    """A register of a loop over the bridges, as `incus query` answers for each: `configs` in the order of `bridges`."""
+    return {'results': [{'item': bridge, 'stdout': config} for bridge, config in zip(bridges, configs)]}
+
+
+def render(folder, raw=None, bridge='orbittask0', containers=None):
+    """Render the files of the part through Ansible itself, from the vars of the play, a host intent and one bridge as it was before."""
     texts = ('nft_rules', 'rsyslog_rules', 'logrotate_rules', 'egress_unit', 'dnsmasq_raw')
     data = ('dnsmasq_missing', 'dnsmasq_taken')
     tasks = [{'name': name, 'ansible.builtin.copy': {'dest': str(folder / name), 'content': '{{ ' + name + ' }}', 'mode': '0644'}} for name in texts]
     tasks += [{'name': name, 'ansible.builtin.copy': {'dest': str(folder / name), 'content': '{{ ' + name + ' | to_json }}', 'mode': '0644'}}
               for name in data]
-    return run_local(folder, tasks, {'host': {'network': bridge}, 'bridge_before': {'stdout': bridge_config(raw)}})
+    host = {'network': bridge, **({'containers': {'network': containers}} if containers else {})}
+    return run_local(folder, tasks, {'host': host, 'bridge_read': {'item': containers or bridge, 'stdout': bridge_config(raw)}})
 
 
 def local_file_tasks(root, validator=('test', '-s')):
@@ -113,8 +139,9 @@ def local_file_tasks(root, validator=('test', '-s')):
                     args.pop(gone, None)
                 if 'validate' in args:
                     args['validate'] = 'test -s %s'
-                for item in task.get('loop', []):
-                    item['path'] = moved(item['path'])
+                if isinstance(task.get('loop'), str):
+                    task['loop'] = task['loop'].replace("'/var/log/orbit/", f"'{root}/var/log/orbit/").replace(
+                        "'path': log", f"'path': '{root}' ~ log")
             elif module != 'ansible.builtin.set_fact':
                 continue
             task.pop('notify', None)
@@ -151,8 +178,8 @@ def files(**changes):
 def end_state(**changes):
     """What the reads of the part leave in the registers, for a bridge `orbittask0` that is as the part expects; `changes` damages it."""
     acl = {'egress': [{'action': 'drop', 'destination': PRIVATE.replace(' ', ''), 'state': 'enabled'}, {'action': 'allow', 'state': 'enabled'}]}
-    state = {'host': {'network': 'orbittask0'}, 'bridge_before': {'stdout': bridge_config(OURS)},
-             'egress_bridge': {'stdout': bridge_config(OURS)}, 'egress_acl': {'stdout': json.dumps(acl)}, 'egress_end_table': {'stdout': TABLE},
+    state = {'host': {'network': 'orbittask0'}, 'bridge_before': reads(bridge_config(OURS)),
+             'egress_bridge': reads(bridge_config(OURS)), 'egress_acl': reads(json.dumps(acl)), 'egress_end_table': {'stdout': TABLE},
              'egress_units': {'results': [{'status': {'ActiveState': 'active'}}] * 2}, 'egress_files': files(),
              'egress_config_files': {'results': [{'stat': {'exists': True}}] * 2}}
     state.update(changes)
@@ -164,7 +191,9 @@ class TaskVmHostEgressTest(unittest.TestCase):
         play = egress_play()
         self.assertEqual(play['tags'], ['egress-log'])
         self.assertIs(play['force_handlers'], True)
-        self.assertEqual(play['vars']['bridge'], '{{ host.network }}')
+        self.assertEqual(play['vars']['bridges'],
+                         "{{ [host.network] + ([host.containers.network] if (host.containers | default(none)) is not none else []) }}")
+        self.assertEqual(play['vars']['bridge'], '{{ bridge_read.item }}')
         self.assertNotRegex(yaml.safe_dump(play), r'orbittask[a-z0-9]')
         # A handler that fails must not fail the part: the end checks report the state.
         self.assertTrue(all(handler['failed_when'] is False for handler in play['handlers']))
@@ -344,17 +373,17 @@ class TaskVmHostEgressTest(unittest.TestCase):
     def test_the_checks_pass_on_the_expected_end_state_safety_damage_fails_and_the_rest_warns(self):
         checks = [task for task in egress_play()['tasks']
                   if task['name'].startswith(('Warn about', 'Check that', 'Print the warnings'))]
-        acl = json.loads(end_state()['egress_acl']['stdout'])
+        acl = json.loads(end_state()['egress_acl']['results'][0]['stdout'])
 
         def with_acl(rules):
-            return {'stdout': json.dumps({'egress': rules})}
+            return reads(json.dumps({'egress': rules}))
 
         def without(text):
             return end_state(egress_end_table={'stdout': TABLE.replace(text, 'x')})
 
         safety = [
-            ('egress.bridge_dual_stack', end_state(egress_bridge={'stdout': bridge_config(OURS, **{'ipv6.address': 'fd42:1::1/64'})})),
-            ('egress.acl_changed', end_state(egress_bridge={'stdout': bridge_config(OURS, **{'security.acls': 'other'})})),
+            ('egress.bridge_dual_stack', end_state(egress_bridge=reads(bridge_config(OURS, **{'ipv6.address': 'fd42:1::1/64'})))),
+            ('egress.acl_changed', end_state(egress_bridge=reads(bridge_config(OURS, **{'security.acls': 'other'})))),
             ('egress.acl_changed', end_state(egress_acl=with_acl([{**acl['egress'][0], 'destination': '10.0.0.0/8'}, acl['egress'][1]]))),
             ('egress.acl_changed', end_state(egress_acl=with_acl([acl['egress'][1], acl['egress'][0]]))),
         ]
@@ -368,10 +397,10 @@ class TaskVmHostEgressTest(unittest.TestCase):
             ('egress.rules_missing', without('log prefix "orbit-egress "')),
             ('egress.rules_missing', end_state(egress_end_table={'stdout': TABLE.replace('add @seen', 'drop')})),
             ('egress.rules_missing', end_state(egress_end_table={'stdout': TABLE.replace('counter return', 'counter reject')})),
-            ('egress.dnsmasq_unset', end_state(egress_bridge={'stdout': bridge_config()})),
-            ('egress.dnsmasq_unset', end_state(egress_bridge={'stdout': bridge_config('log-queries=extra')})),
-            ('egress.dnsmasq_unset', end_state(bridge_before={'stdout': bridge_config('log-facility=/tmp/mine.log')},
-                                               egress_bridge={'stdout': bridge_config('log-facility=/tmp/mine.log')})),
+            ('egress.dnsmasq_unset', end_state(egress_bridge=reads(bridge_config()))),
+            ('egress.dnsmasq_unset', end_state(egress_bridge=reads(bridge_config('log-queries=extra')))),
+            ('egress.dnsmasq_unset', end_state(bridge_before=reads(bridge_config('log-facility=/tmp/mine.log')),
+                                               egress_bridge=reads(bridge_config('log-facility=/tmp/mine.log')))),
             ('egress.log_unreadable', end_state(egress_files=files(folder={'xoth': False}))),
             ('egress.log_unreadable', end_state(egress_files=files(dnsmasq={'roth': False}))),
             ('egress.log_unreadable', end_state(egress_files=files(dnsmasq={'mode': '0660'}))),
@@ -404,7 +433,7 @@ class TaskVmHostEgressTest(unittest.TestCase):
                     self.assertIn(f'WARNING {code}', warned.stdout)
                     self.assertEqual(code in SAFETY, False)
             # A safety failure still prints the observation warnings first.
-            both = run(end_state(egress_bridge={'stdout': bridge_config(OURS, **{'ipv6.address': 'fd42:1::1/64'})}, egress_end_table={'stdout': ''}))
+            both = run(end_state(egress_bridge=reads(bridge_config(OURS, **{'ipv6.address': 'fd42:1::1/64'})), egress_end_table={'stdout': ''}))
             self.assertNotEqual(both.returncode, 0)
             self.assertIn('WARNING egress.rules_missing', both.stdout)
 
@@ -532,13 +561,15 @@ class TaskVmHostEgressTest(unittest.TestCase):
             self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
             self.assertRegex(second.stdout, r'changed=0\s')
 
-    @unittest.skipUnless(shutil.which('nft') and hasattr(os, 'geteuid') and os.geteuid() == 0 and have_ansible(), 'needs root, nft and ansible')
+    @unittest.skipUnless(nft_check() is not None and have_ansible(), 'needs nft, as root or in a user namespace, and ansible')
     def test_the_rendered_rules_pass_nft_check_mode(self):
-        with tempfile.TemporaryDirectory() as folder:
-            folder = Path(folder)
-            self.assertEqual(render(folder).returncode, 0)
-            result = subprocess.run(['nft', '-c', '-f', str(folder / 'nft_rules')], check=False, capture_output=True, text=True, timeout=30)
-            self.assertEqual(result.returncode, 0, result.stderr)
+        # The two-bridge table names its bridges as a set, `iifname { "orbittask0", "orbittaskc0" }`: the kernel's parser checks it.
+        for containers in (None, 'orbittaskc0'):
+            with self.subTest(containers=containers), tempfile.TemporaryDirectory() as folder:
+                folder = Path(folder)
+                self.assertEqual(render(folder, containers=containers).returncode, 0)
+                result = subprocess.run([*nft_check(), str(folder / 'nft_rules')], check=False, capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
     @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
     def test_the_playbook_passes_the_ansible_syntax_check_for_the_part(self):
@@ -548,6 +579,93 @@ class TaskVmHostEgressTest(unittest.TestCase):
                                  str(PLAYBOOK)], check=False, capture_output=True, text=True, timeout=60,
                                 env={**os.environ, 'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg')})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
+    def test_a_host_without_containers_renders_the_files_it_had_before(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            result = render(folder)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual((folder / 'nft_rules').read_text(), VM_ONLY_NFT)
+            self.assertEqual((folder / 'logrotate_rules').read_text(), VM_ONLY_ROTATION)
+
+    @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
+    def test_a_container_host_logs_both_bridges_with_one_table_and_one_rotation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            result = render(folder, containers='orbittaskc0')
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            rules = (folder / 'nft_rules').read_text()
+            both = '{ "orbittask0", "orbittaskc0" }'
+            lines = [line.strip() for line in rules.splitlines() if 'iifname' in line]
+            self.assertEqual(len(lines), 3)
+            for line in lines:
+                self.assertTrue(line.startswith(f'iifname {both} oifname != {both} ct state new '), line)
+            self.assertEqual(rules.count('table inet orbit_egress {'), 1)
+            rotation = (folder / 'logrotate_rules').read_text()
+            for bridge in ('orbittask0', 'orbittaskc0'):
+                self.assertIn(f'/var/log/orbit/dnsmasq-{bridge}.log {{', rotation)
+            self.assertEqual(rotation.count('copytruncate'), 2)
+            self.assertEqual(rotation.count('/var/log/orbit/task-egress.log {'), 1)
+            # Each bridge's dnsmasq logs to its own file: the bridge of the loop item, here the container bridge.
+            self.assertEqual((folder / 'dnsmasq_raw').read_text(), 'log-queries=extra\nlog-facility=/var/log/orbit/dnsmasq-orbittaskc0.log')
+
+    def test_the_bridge_tasks_loop_over_both_bridges(self):
+        tasks = tasks_by_name(egress_play())
+        for name in ('Read the bridge', 'Read the bridge at the end', 'Read the ACL at the end'):
+            self.assertEqual(tasks[name]['loop'], '{{ bridges }}', name)
+        self.assertEqual(tasks['Log the DNS queries of the bridge']['loop'], '{{ bridge_before.results }}')
+        self.assertEqual(tasks['Log the DNS queries of the bridge']['loop_control']['loop_var'], 'bridge_read')
+        self.assertEqual(tasks['Warn about the DNS log setting']['loop'], '{{ egress_bridge.results }}')
+        for name in ('Check that the bridge has no IPv6', 'Check that the bridge keeps its ACL'):
+            self.assertEqual(tasks[name]['loop_control']['loop_var'], 'end_pair', name)
+
+    @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
+    def test_the_end_checks_cover_the_container_bridge(self):
+        checks = [task for task in egress_play()['tasks']
+                  if task['name'].startswith(('Warn about', 'Check that', 'Print the warnings'))]
+        bridges = ('orbittask0', 'orbittaskc0')
+        container_log = 'log-queries=extra\nlog-facility=/var/log/orbit/dnsmasq-orbittaskc0.log'
+        acl = end_state()['egress_acl']['results'][0]['stdout']
+
+        def state(container=None, acls=None, **changes):
+            config = container or bridge_config(container_log, bridge='orbittaskc0')
+            three = files()
+            three['results'].append({'stat': {'exists': True, 'roth': True, 'xoth': False, 'mode': '0664', **changes.pop('dnsmasq', {})}})
+            return end_state(host={'network': 'orbittask0', 'containers': {'network': 'orbittaskc0'}},
+                             egress_bridge=reads(bridge_config(OURS), config, bridges=bridges),
+                             egress_acl=reads(acl, acls or acl, bridges=bridges), egress_files=three, **changes)
+
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            passed = run_local(folder, checks, state())
+            self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
+            self.assertNotIn('WARNING', passed.stdout)
+            dual = run_local(folder, checks, state(bridge_config(container_log, bridge='orbittaskc0', **{'ipv6.address': 'fd42:1::1/64'})))
+            self.assertNotEqual(dual.returncode, 0)
+            self.assertIn('egress.bridge_dual_stack', dual.stdout + dual.stderr)
+            moved = run_local(folder, checks, state(acls=json.dumps({'egress': [{'action': 'allow', 'state': 'enabled'}]})))
+            self.assertNotEqual(moved.returncode, 0)
+            self.assertIn('egress.acl_changed', moved.stdout + moved.stderr)
+            unset = run_local(folder, checks, state(bridge_config(bridge='orbittaskc0')))
+            self.assertEqual(unset.returncode, 0, unset.stdout + unset.stderr)
+            self.assertIn('WARNING egress.dnsmasq_unset: raw.dnsmasq of orbittaskc0 lacks', unset.stdout)
+            self.assertNotIn('raw.dnsmasq of orbittask0 lacks', unset.stdout)
+            unreadable = run_local(folder, checks, state(dnsmasq={'mode': '0660'}))
+            self.assertEqual(unreadable.returncode, 0, unreadable.stdout + unreadable.stderr)
+            self.assertIn('WARNING egress.log_unreadable', unreadable.stdout)
+
+    @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
+    def test_a_container_host_touches_a_world_readable_dns_log_per_bridge(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            root = folder / 'root'
+            variables = {'host': {'network': 'orbittask0', 'containers': {'network': 'orbittaskc0'}}}
+            result = run_local(folder, local_file_tasks(root), variables)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for bridge in ('orbittask0', 'orbittaskc0'):
+                self.assertEqual((root / f'var/log/orbit/dnsmasq-{bridge}.log').stat().st_mode & 0o777, 0o664, bridge)
+            self.assertIn('dnsmasq-orbittaskc0.log {', (root / 'etc/logrotate.d/orbit-egress').read_text())
 
 
 if __name__ == '__main__':

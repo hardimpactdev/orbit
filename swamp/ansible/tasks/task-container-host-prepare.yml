@@ -1,0 +1,189 @@
+---
+# The task container side of a host (docs/reference/compute-drivers.md#the-container-side): its bridge, ACL, project, profile, stock
+# image and input rules beside the VM side, which ran first and made the shared ZFS pool. Read incompatible resources before any change.
+- name: Read the container resources
+  ansible.builtin.command:
+    argv: [incus, query, "--", "/1.0/{{ item }}?project=default&recursion=1"]
+  loop: [projects, networks, network-acls]
+  register: container_read
+  changed_when: false
+
+- name: Select the container resources
+  ansible.builtin.set_fact:
+    container_project: "{{ (container_read.results[0].stdout | from_json | selectattr('name', 'equalto', host.containers.project) | first) | default({}) }}"
+    container_network: "{{ (container_read.results[1].stdout | from_json | selectattr('name', 'equalto', host.containers.network) | first) | default({}) }}"
+    container_acl: "{{ (container_read.results[2].stdout | from_json | selectattr('name', 'equalto', container_acl_name) | first) | default({}) }}"
+
+- name: Refuse incompatible container resources
+  ansible.builtin.assert:
+    that:
+      - container_project == {} or container_project.config.get('features.networks', 'true') == 'false'
+      - container_project == {} or container_project.config.get('features.profiles', 'true') == 'true'
+      - container_project == {} or container_project.config.get('features.images', 'true') == 'true'
+      - >-
+        container_network == {} or (container_network.type == 'bridge' and container_network.managed
+        and container_network.config['ipv4.address'] == host.containers.address)
+    fail_msg: task_vm.setup_failed
+
+- name: Create the container project
+  when: container_project == {}
+  ansible.builtin.command:
+    argv: [incus, project, create, "{{ host.containers.project }}", -c, features.images=true, -c, features.profiles=true, -c, features.networks=false]
+  changed_when: true
+
+- name: Create the container egress ACL
+  when: container_acl == {}
+  ansible.builtin.command:
+    argv: [incus, network, acl, create, "{{ container_acl_name }}", --project, default]
+  changed_when: true
+
+- name: Converge the container egress ACL
+  when: container_acl.get('egress', []) != container_acl_rules.egress or container_acl.get('ingress', []) != container_acl_rules.ingress
+  ansible.builtin.command:
+    argv: [incus, network, acl, edit, "{{ container_acl_name }}", --project, default]
+    stdin: "{{ container_acl_rules | to_json }}"
+  changed_when: true
+
+- name: Create the container bridge with its ACL attached
+  when: container_network == {}
+  ansible.builtin.command:
+    argv: "{{ ['incus', 'network', 'create', host.containers.network, '--project', 'default', '--type=bridge', 'ipv4.address=' ~ host.containers.address]
+              + container_network_args }}"
+  changed_when: true
+
+- name: Converge the existing container bridge
+  when: container_network != {} and container_network.config.get(item.key) != item.value
+  ansible.builtin.command:
+    argv: [incus, network, set, "{{ host.containers.network }}", --project, default, "{{ item.key }}={{ item.value }}"]
+  loop: "{{ container_network_config | dict2items }}"
+  changed_when: true
+
+- name: Read the container profile
+  ansible.builtin.command:
+    argv: [incus, query, "--", "/1.0/profiles/default?project={{ host.containers.project }}"]
+  register: container_profile
+  changed_when: false
+
+- name: Refuse incompatible container profile devices
+  ansible.builtin.assert:
+    that:
+      - "(container_profile.stdout | from_json).devices.get('root', {}).get('type', 'disk') == 'disk'"
+      - "(container_profile.stdout | from_json).devices.get('eth0', {}).get('type', 'nic') == 'nic'"
+    fail_msg: task_vm.setup_failed
+
+- name: Converge the container profile
+  when: >-
+    (container_profile.stdout | from_json).devices !=
+    ((container_profile.stdout | from_json).devices | combine(container_devices, recursive=true))
+  ansible.builtin.command:
+    argv: [incus, profile, edit, default, --project, "{{ host.containers.project }}"]
+    stdin: >-
+      {{ (container_profile.stdout | from_json)
+         | combine({'devices': (container_profile.stdout | from_json).devices | combine(container_devices, recursive=true)}) | to_json }}
+  changed_when: true
+
+- name: Read the container project restrictions
+  ansible.builtin.command:
+    argv: [incus, query, "--", "/1.0/projects/{{ host.containers.project }}"]
+  register: container_project_after
+  changed_when: false
+
+- name: Converge the container project restrictions
+  when: (container_project_after.stdout | from_json).config.get(item.key) != item.value
+  ansible.builtin.command:
+    argv: [incus, project, set, "{{ host.containers.project }}", "{{ item.key }}={{ item.value }}"]
+  loop: "{{ container_restrictions | dict2items }}"
+  changed_when: true
+
+- name: Read the container images
+  ansible.builtin.command:
+    argv: [incus, --project, "{{ host.containers.project }}", image, list, --format, json]
+  register: container_images
+  changed_when: false
+
+- name: Copy the stock Ubuntu container image
+  when: host.containers.alias not in (container_images.stdout | from_json | map(attribute='aliases') | flatten | map(attribute='name') | list)
+  ansible.builtin.command:
+    argv: [incus, image, copy, images:ubuntu/26.04/cloud, "local:", --alias, "{{ host.containers.alias }}", --target-project, "{{ host.containers.project }}"]
+  changed_when: true
+
+# The container bridge has its own catalog names: the withdrawal of a bridge's rules deletes them by comment.
+- name: Allow task container DHCP requests to the host
+  community.general.ufw:
+    rule: allow
+    interface_in: "{{ host.containers.network }}"
+    proto: udp
+    from_port: '68'
+    to_port: '67'
+    comment: orbit:task-containers-dhcp
+
+- name: Allow task container DNS to the bridge address
+  community.general.ufw:
+    rule: allow
+    interface_in: "{{ host.containers.network }}"
+    proto: "{{ item }}"
+    to_ip: "{{ host.containers.address.split('/')[0] }}"
+    to_port: '53'
+    comment: "orbit:task-containers-dns-{{ item }}"
+  loop: [udp, tcp]
+
+# A copy of the base must be a ZFS clone that Incus never shifts: without idmapped mounts it would rewrite every file of a copy at its
+# first start, with its own isolated ID range. Incus 7 reports empty `kernel_features`, so the phase measures it: a copy of a small
+# isolated container, started once, must have written under 8 MiB. The probe leaves nothing behind, so it reports no change.
+- name: Prove that a copy is a clone
+  vars:
+    probe: [incus, --project, "{{ host.containers.project }}"]
+    probe_names: [orbit-clone-probe, orbit-clone-probe-copy]
+  block:
+    - name: Remove a leftover clone probe
+      ansible.builtin.command: { argv: "{{ probe + ['delete', '--force', '--', item] }}" }
+      loop: "{{ probe_names }}"
+      register: container_probe_leftover
+      changed_when: false
+      failed_when: container_probe_leftover.rc != 0 and 'not found' not in container_probe_leftover.stderr
+    - name: Make the clone probe and its copy, and start the copy once
+      ansible.builtin.command: { argv: "{{ probe + item }}" }
+      loop:
+        - [init, "{{ host.containers.alias }}", orbit-clone-probe, --config, security.idmap.isolated=true]
+        - [copy, orbit-clone-probe, orbit-clone-probe-copy]
+        - [start, orbit-clone-probe-copy]
+        - [stop, --force, orbit-clone-probe-copy]
+      changed_when: false
+    - name: Read the dataset root of the pool
+      ansible.builtin.command: { argv: [incus, storage, get, "{{ host.pool }}", zfs.pool_name] }
+      register: container_probe_root
+      changed_when: false
+    - name: Read what the copy wrote
+      ansible.builtin.command:
+        argv: [zfs, get, -Hp, -o, value, written, "{{ container_probe_root.stdout | trim }}/containers/{{ host.containers.project }}_orbit-clone-probe-copy"]
+      register: container_probe_written
+      changed_when: false
+    - name: Require that the copy is a clone
+      ansible.builtin.assert:
+        that: container_probe_written.stdout | trim | int < 8388608
+        fail_msg: task_vm.setup_failed
+  always:
+    - name: Remove the clone probe
+      ansible.builtin.command: { argv: "{{ probe + ['delete', '--force', '--', item] }}" }
+      loop: "{{ probe_names | reverse | list }}"
+      register: container_probe_removed
+      changed_when: false
+      failed_when: container_probe_removed.rc != 0 and 'not found' not in container_probe_removed.stderr
+
+- name: Check the container bridge and project
+  ansible.builtin.command:
+    argv: [incus, query, "--", "/1.0/{{ item }}"]
+  loop: ["networks/{{ host.containers.network }}?project=default", "projects/{{ host.containers.project }}"]
+  register: container_check
+  changed_when: false
+
+- name: Confirm the container side
+  ansible.builtin.assert:
+    that:
+      - (container_check.results[0].stdout | from_json).config['ipv4.address'] == host.containers.address
+      - (container_check.results[0].stdout | from_json).config['security.acls'] == container_acl_name
+      - (container_check.results[0].stdout | from_json).config['ipv6.address'] == 'none'
+      - >-
+        (container_check.results[1].stdout | from_json).config | dict2items | selectattr('key', 'in', container_restrictions) | items2dict
+        == container_restrictions
+    fail_msg: task_vm.setup_failed

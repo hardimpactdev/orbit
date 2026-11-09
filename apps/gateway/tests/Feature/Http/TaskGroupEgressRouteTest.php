@@ -97,4 +97,14 @@ describe('POST /api/v1/agent/facts for the egress kind', function (): void {
 
         egress_http_report($host, ['network' => 'orbittaskb'] + $fact)->assertStatus(422)->assertJsonPath('error.code', 'agent.fact_not_expected');
     });
+
+    it('accepts a report for the container bridge only from a host with task containers', function () use ($fact): void {
+        $vms = ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2];
+        $host = egress_http_node('shark', '10.44.0.11', ['task_vms' => $vms + ['containers' => ['cidr' => '10.251.79.0/24', 'task_places' => 1, 'ci_places' => 1]]]);
+        $plain = egress_http_node('beast', '10.44.0.9', ['task_vms' => ['cidr' => '10.251.80.0/24'] + $vms]);
+
+        egress_http_report($host, ['network' => 'orbittaskc0'] + $fact)->assertNoContent();
+        egress_http_report($host, $fact)->assertNoContent();
+        egress_http_report($plain, ['network' => 'orbittaskc0'] + $fact)->assertStatus(422)->assertJsonPath('error.code', 'agent.fact_not_expected');
+    });
 });

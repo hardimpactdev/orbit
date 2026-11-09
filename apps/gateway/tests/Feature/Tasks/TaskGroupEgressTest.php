@@ -198,11 +198,23 @@ it('names the bridge in the watch list of a task VM host only', function (): voi
     $other = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'apps', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.5',
         'public_ssh_host' => '10.44.0.5', 'user' => 'orbit']));
 
-    expect(app(AgentWatchListAction::class)->execute($host)['egress'])->toBe(['network' => 'orbittask0'])
+    expect(app(AgentWatchListAction::class)->execute($host)['egress'])->toBe(['network' => 'orbittask0', 'container_network' => null])
         ->and(app(AgentWatchListAction::class)->execute($other)['egress'])->toBeNull();
 
     $host->update(['settings' => ['task_vms' => ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2, 'network' => 'orbittaskb']]]);
-    expect(app(AgentWatchListAction::class)->execute($host->refresh())['egress'])->toBe(['network' => 'orbittaskb']);
+    expect(app(AgentWatchListAction::class)->execute($host->refresh())['egress'])->toBe(['network' => 'orbittaskb', 'container_network' => null]);
+});
+
+it('names the container bridge beside the VM bridge on a host with task containers', function (): void {
+    [$host] = egress_world();
+    $vms = ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2];
+
+    $host->update(['settings' => ['task_vms' => $vms + ['containers' => ['cidr' => '10.251.79.0/24', 'task_places' => 1, 'ci_places' => 1]]]]);
+    expect(app(AgentWatchListAction::class)->execute($host->refresh())['egress'])->toBe(['network' => 'orbittask0', 'container_network' => 'orbittaskc0'])
+        ->and(AgentWatchListAction::egressNetworks($host))->toBe(['orbittask0', 'orbittaskc0']);
+
+    $host->update(['settings' => ['task_vms' => $vms + ['containers' => ['cidr' => '10.251.79.0/24', 'task_places' => 1, 'ci_places' => 1, 'network' => 'orbittaskd']]]]);
+    expect(app(AgentWatchListAction::class)->execute($host->refresh())['egress'])->toBe(['network' => 'orbittask0', 'container_network' => 'orbittaskd']);
 });
 
 it('writes nothing for a report that adds nothing, and merges two rows with one key', function (): void {
