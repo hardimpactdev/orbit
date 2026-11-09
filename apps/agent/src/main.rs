@@ -687,6 +687,8 @@ async fn report_facts(
         Retry,
     }
     let mut reporter = facts::Reporter::new(client, &gateway);
+    let mut metrics = orbit_agent::metrics::Sampler::new();
+    let disks = orbit_agent::metrics::watch_disks();
     let mut retry = facts::RetryTimer::default();
     let mut egress = orbit_agent::egress::Runner::default();
     let mut units_tick = tokio::time::interval(facts::UNITS_INTERVAL);
@@ -767,6 +769,10 @@ async fn report_facts(
                 }
             }
             Due::Host => {
+                let snapshot = metrics.observe(&disks.borrow());
+                if let Some(snapshot) = snapshot {
+                    reporter.report("metrics", None, &snapshot).await;
+                }
                 // Package facts ride the host tick; each is sent only when it changed or at the resync.
                 let tools = listed.borrow().tools.clone();
                 let read = tokio::task::spawn_blocking(move || {
@@ -832,6 +838,11 @@ async fn report_facts(
                 if let Some(accounts) = accounts {
                     reporter.report("accounts", None, &accounts).await;
                 }
+                let filesystems: Vec<_> = disks
+                    .borrow()
+                    .iter()
+                    .filter_map(|disk| disk.filesystem())
+                    .collect();
                 reporter
                     .report(
                         "host",
@@ -839,7 +850,7 @@ async fn report_facts(
                         &facts::host_data(
                             std::env::consts::OS,
                             std::env::consts::ARCH,
-                            &observed_filesystems(),
+                            &filesystems,
                         ),
                     )
                     .await;
@@ -904,22 +915,6 @@ async fn observed_units(
         );
     }
     Ok((units, available))
-}
-
-/// The size and free space of every data filesystem; one that cannot be read is left out.
-fn observed_filesystems() -> Vec<facts::Filesystem> {
-    let mounts = std::fs::read_to_string("/proc/self/mounts").unwrap_or_default();
-    facts::data_mounts(&mounts)
-        .into_iter()
-        .filter_map(|mount| {
-            let stat = rustix::fs::statvfs(mount.as_str()).ok()?;
-            Some(facts::Filesystem {
-                size: stat.f_blocks.saturating_mul(stat.f_frsize),
-                free: stat.f_bavail.saturating_mul(stat.f_frsize),
-                mount,
-            })
-        })
-        .collect()
 }
 
 async fn docker_watcher(tx: mpsc::UnboundedSender<DockerUpdate>) {
