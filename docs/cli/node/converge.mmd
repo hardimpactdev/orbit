@@ -75,7 +75,7 @@ sequenceDiagram
     %%> - writes private inventory, vars and known_hosts from schema-validated inputs
     SW->>N: Install Orbit's layer<br/>Ansible phase: agent
     %%> What it does:
-    %%> - applies the agent, CLI, Orbit-owned files and units; restarts only changed services
+    %%> - applies the agent, CLI, Orbit-owned files and units, and the kernel policy (SCTP blocked, non-local bind); restarts only changed services
     SW->>N: Install pinned software<br/>Ansible phase: software
     %%> What it does:
     %%> - reads recipe.json and holds its selected packages at their pins

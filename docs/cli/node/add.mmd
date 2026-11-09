@@ -74,6 +74,7 @@ sequenceDiagram
   %%> - pins the Node for later operations and appends the Swamp control public key to the bootstrap account when it is absent
   %%> - base packages (read through the package cache of the task VM for a Node of its nested fleet, else from the archive; `apt_proxy` in the intent), the managed account, a sudo rule that is validated before it replaces the old one, so no staged file stays, and the Orbit SSH keys
   %%> - the public recovery SSH rule, then the firewall
+  %%> - the kernel policy that `node:converge` also applies: SCTP blocked, non-local bind for Docker publications
   SW->>N: Set up the tunnel<br/>Ansible phase: tunnel
   %%> What it does:
   %%> - creates the WireGuard key and requires its public key to be unique, before any tunnel change: two Nodes with the same public key cannot both be peers, and an existing hub must keep its peer-facing key

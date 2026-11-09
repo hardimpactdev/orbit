@@ -362,7 +362,7 @@ The native Swamp workflow runs these phases in order. Input preparation writes p
 | Phase | Work |
 | --- | --- |
 | `input` | Prepare this attempt's recorded roles, Tools, network and release pins, plus vault key references. Require the CLI pin before machine work. |
-| `agent` | Reconcile the pinned agent, versioned CLI, selection link, Orbit-owned configuration and units. Restart services only for managed changes. |
+| `agent` | Reconcile the pinned agent, versioned CLI, selection link, Orbit-owned configuration and units, and the [kernel policy](#kernel-policy). Restart services only for managed changes. |
 | `software` | Read the selected pins from `recipe.json`, install them and hold the selected packages at those pins. |
 | `roles` | Repair the selected roles' configuration without changing an Instance or assignment. |
 | `tools` | Apply recorded Tools within scope, recording each Tool's own result and continuing after an individual Tool failure. |
@@ -378,6 +378,21 @@ Agent and CLI replacements share the existing Node-local update lock with self-u
 Metrics exporters, cAdvisor and the FPM exporter stay outside this footprint; Metrics fleet reconciliation owns them. Convergence does not publish Instances, Routes or Process units.
 
 Earlier Gateways published the annotator server in `/opt/orbit/annotator` and kept its stores in `/var/lib/orbit/annotator`. Orbit leaves these paths unmanaged; the machine recipe does not remove them. After destroying the removed preset Processes through the old Gateway, an operator may remove unused files by hand. Cleanup of both paths remains pending a dependency check for ordinary Processes 168 and 127. Preserve these Processes and their files. Check every ordinary Process dependency and obtain cleanup authorization before deleting retained files.
+
+### Kernel policy
+
+Every managed Linux Node gets the same kernel policy. The Gateway renders it once, and two paths apply it: the `baseline` phase of [`node:add`](/cli/node/add) and the `agent` phase of `node:converge`. So a new Node and an existing one end in the same state.
+
+| File | Content |
+| --- | --- |
+| `/etc/modprobe.d/orbit-no-sctp.conf` | `install sctp /bin/false` |
+| `/etc/sysctl.d/60-orbit-nonlocal-bind.conf` | `net.ipv4.ip_nonlocal_bind=1` |
+
+Nothing in Orbit uses SCTP, so the kernel never loads its module (decision of 2026-11-09). A module that is already loaded stays loaded until the next boot.
+
+Docker publishes [Database server](/reference/database-servers#private-publication) ports on the explicit WireGuard and LAN addresses. At boot, Docker can start a container before that address exists. Without the non-local bind, the bind fails with `cannot assign requested address`, and Docker does not retry.
+
+Both phases write the module file as root, mode `0644`. A file that already holds the same content, such as one an operator wrote by hand, stays unchanged. The phases also set `net.ipv4.ip_nonlocal_bind` on the running kernel, and `systemd-sysctl` sets it at every boot before Docker starts.
 
 ### Break-glass recovery for Services and Swamp 209
 
@@ -429,7 +444,7 @@ With `--operator-ip`, `orbit:bootstrap` also records the Node `operator`: no rol
 
 ### The Swamp control plane
 
-The `control` job gives the Gateway its own Swamp, with the Ansible `swamp` phase of `gateway-bootstrap.yml` and a local connection. `orbit:bootstrap-control-plan` prints the plan: the serve and worker units for the machine's `swamp/` checkout, the release grants, and the units of the scheduler and Horizon. The phase writes them and starts the scheduler and Horizon after serve and the workers. So the Gateway records its first run, the converge of its own Node, before its role.
+The `control` job gives the Gateway its own Swamp, with the Ansible `swamp` phase of `gateway-bootstrap.yml` and a local connection. `orbit:bootstrap-control-plan` prints the plan: the serve and worker units for the machine's `swamp/` checkout, the release grants, the units of the scheduler and Horizon, and the tmpfiles rule that creates `/run/orbit` for the [Documents cleanup state](/reference/project-documents#local-state-and-startup-ordering). The phase writes them, applies the rule, and starts the scheduler and Horizon after serve and the workers. So the Gateway records its first run, the converge of its own Node, before its role.
 
 The phase also mints the serve driver token, the two worker tokens and the Gateway's run and read tokens with the Swamp CLI, and places each in a file of its owner or in the Gateway `.env`. The play `remint` of the same playbook renews them later, with `swamp access token rotate` and a new worker enrollment token, when the fleet phase of the converge of a task VM renews them.
 
