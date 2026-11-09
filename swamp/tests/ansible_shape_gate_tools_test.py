@@ -92,7 +92,7 @@ class ShapeGateToolsTest(unittest.TestCase):
     def test_each_deno_test_file_is_its_own_parallel_step(self):
         steps = self.gate.plan('HEAD', self.system, self.system, self.system / 'collections')
         files = sorted(str(path.relative_to(ROOT / 'swamp')) for path in (ROOT / 'swamp/tests').glob('*_test.ts'))
-        planned = [step.argv[-1] for step in steps if step.argv[:3] == ['deno', 'test', '-A'] and step.argv[-1].startswith('tests/')]
+        planned = [step.argv[-1] for step in steps if step.group == 'shape' and step.argv[:3] == ['deno', 'test', '-A'] and step.argv[-1].startswith('tests/')]
         elsewhere = [step.argv[-1] for step in steps if step.group == 'validate' and step.argv[-1].startswith('tests/')]
         self.assertTrue(set(elsewhere) <= set(self.gate.DENO_TESTS_ELSEWHERE))
         self.assertEqual(planned, [file for file in files if file not in self.gate.DENO_TESTS_ELSEWHERE])
