@@ -77,6 +77,32 @@
       restricted.devices.disk: allow
       restricted.devices.disk.paths: /var/lib/orbit/package-cache
       restricted.snapshots: allow
+    # A loop pool keeps 2 GiB of ARC; a container host sizes its cap from its memory (task-container-host-system.yml); a native pool
+    # without containers keeps its ARC as it is.
+    prepare_arc_max: "{{ container_arc_max if (host.containers | default(none)) is not none else (2147483648 if prepare_loop | bool else none) }}"
+    prepare_arc_reason: "{{ 'task container host' if (host.containers | default(none)) is not none else 'loop-backed task VM storage' }}"
+    # The task container side (tasks/task-container-host-prepare.yml): its own bridge, ACL, project and profile, with the VM side's rules.
+    container_acl_name: "{{ host.containers.network }}-egress"
+    container_acl_rules:
+      description: Orbit task container boundary
+      egress: "{{ prepare_acl_rules.egress }}"
+      ingress:
+        - {action: allow, source: "{{ host.containers.address.split('/')[0] }}/32", protocol: tcp, destination_port: '22', state: enabled}
+    container_network_config: "{{ prepare_network_config | combine({'security.acls': container_acl_name}) }}"
+    container_network_args: >-
+      {{ container_network_config | dict2items | map(attribute='key') | zip(container_network_config.values()) | map('join', '=') | list }}
+    container_devices:
+      root: {type: disk, path: /, pool: "{{ host.pool }}"}
+      eth0: {type: nic, name: eth0, network: "{{ host.containers.network }}", security.port_isolation: 'true'}
+    container_restrictions:
+      restricted: 'true'
+      restricted.networks.access: "{{ host.containers.network }}"
+      restricted.containers.nesting: allow
+      restricted.containers.interception: allow
+      restricted.containers.privilege: isolated
+      restricted.containers.lowlevel: allow
+      restricted.snapshots: allow
+      limits.virtual-machines: '0'
   tasks:
     - name: Prepare storage and isolated networking
       ansible.builtin.include_tasks: tasks/task-vm-host-prepare.yml
@@ -411,7 +437,9 @@
 
 
 # The egress log (docs/reference/compute-drivers.md#log-task-vm-egress). Nothing here blocks a packet: the table's base chain accepts, and
-# the bridge and its ACL are read and checked, never changed. `host.network` is the only input.
+# each bridge and its ACL are read and checked, never changed. `host.network` and, on a container host, `host.containers.network` are the
+# only inputs. The table, its unit, the rsyslog rule and the rotation are host-wide, so one run covers both bridges; a run per bridge would
+# replace the other bridge's rules. With one bridge, every file is as it was before container hosts.
 # Only a safety check fails the part, and with it the image refresh: a table that does not load (`nft -c`), a bridge with IPv6, an ACL that
 # lost its drop rule. Everything else only observes. A failed action or a failed observation check prints a warning and the part goes on,
 # because a broken log must not stop the base refresh.
@@ -422,19 +450,22 @@
   force_handlers: true
   tags: [egress-log]
   vars:
-    bridge: "{{ host.network }}"
+    bridges: "{{ [host.network] + ([host.containers.network] if (host.containers | default(none)) is not none else []) }}"
+    # The bridge of a per-bridge task, which loops over a read of the bridges (`bridge_before`, `egress_bridge`) with `bridge_read`.
+    bridge: "{{ bridge_read.item }}"
     # The ranges the bridge ACL drops, as the host preparation phase lists them (a test holds the two equal).
     # The log skips them, so it records only a connection that can leave the host.
     private_ranges: *task_vm_private_ranges
     # Our own file, never Incus's: `dnsmasq.<bridge>.log` in /var/log/incus is the capture of dnsmasq's stderr that Incus truncates at every
     # start. dnsmasq appends to this one, so a restart of the bridge's dnsmasq loses nothing.
     dnsmasq_log: "/var/log/orbit/dnsmasq-{{ bridge }}.log"
+    dnsmasq_logs: "{{ bridges | map('regex_replace', '^', '/var/log/orbit/dnsmasq-') | map('regex_replace', '$', '.log') | list }}"
     dnsmasq_lines: ["log-queries=extra", "log-facility={{ dnsmasq_log }}"]
     # `raw.dnsmasq` is the only way to switch on `log-queries`. While it is set, Incus runs the bridge's dnsmasq without its AppArmor profile
     # and shows the warning AppArmorDisabledDueToRawDnsmasq; dnsmasq still runs as the unprivileged user `incus`. Unsetting `raw.dnsmasq`
     # reverses it. `incus network set` runs the whole setup of the bridge again (firewall rules, then a dnsmasq kill and start), so the part
     # sets it once per bridge. It may hold lines of the operator: they stay, and only the lines that are missing are added.
-    raw_current: "{{ (bridge_before.stdout | from_json).config['raw.dnsmasq'] | default('') | trim }}"
+    raw_current: "{{ (bridge_read.stdout | from_json).config['raw.dnsmasq'] | default('') | trim }}"
     raw_lines: "{{ raw_current.splitlines() | map('trim') | list }}"
     dnsmasq_missing: "{{ dnsmasq_lines | reject('in', raw_lines) | list }}"
     # The operator already logs to another file: the part leaves the setting alone and says so.
@@ -442,7 +473,9 @@
     # Ansible leaves `\n` inside a template string as two characters; the variable holds the line break.
     newline: "\n"
     dnsmasq_raw: "{{ (([raw_current] if raw_current else []) + dnsmasq_missing) | join(newline) }}"
-    outside_match: 'iifname "{{ bridge }}" oifname != "{{ bridge }}" ct state new meta l4proto { tcp, udp }
+    # One bridge is named as it stands, two as a set: `iifname { "orbittask0", "orbittaskc0" }`.
+    bridge_match: "{{ bridges | map('to_json') | join(', ') if bridges | length == 1 else '{ ' ~ bridges | map('to_json') | join(', ') ~ ' }' }}"
+    outside_match: 'iifname {{ bridge_match }} oifname != {{ bridge_match }} ct state new meta l4proto { tcp, udp }
       ip daddr != { {{ private_ranges | join(", ") }} }'
     # `ct state new` logs a flow when it starts; a long-lived flow is logged once, never again. One entry per (VM address, outside address,
     # protocol, port) and ten minutes: the first rule returns for a tuple that is in the set. The second rule returns for a source address
@@ -512,8 +545,9 @@
               /usr/lib/rsyslog/rsyslog-rotate
           endscript
       }
+      {% for log in dnsmasq_logs %}
 
-      {{ dnsmasq_log }} {
+      {{ log }} {
           daily
           rotate 7
           maxsize 200M
@@ -522,10 +556,11 @@
           notifempty
           copytruncate
       }
+      {% endfor %}
     forbidden: [drop, reject, dnat, snat, masquerade]
-    end_bridge: "{{ egress_bridge.stdout | from_json }}"
-    end_raw_lines: "{{ (end_bridge.config['raw.dnsmasq'] | default('')).splitlines() | map('trim') | list }}"
-    end_acl: "{{ egress_acl.stdout | from_json }}"
+    # The end checks loop over the end reads of each bridge and its ACL with `end_pair`.
+    end_bridge: "{{ end_pair.0.stdout | from_json }}"
+    end_acl: "{{ end_pair.1.stdout | from_json }}"
     # The first egress rule of the ACL drops the private ranges, ahead of the rule that allows the rest.
     dropped: "{{ ((end_acl.egress | first).destination | default('')).split(',') if (end_acl.egress | first).action == 'drop' else [] }}"
     # What the end check expects of the table: the forward hook, new flows only, the dedupe return, the log, the policy `accept`, and no
@@ -539,7 +574,8 @@
   tasks:
     # The bridge belongs to the shared host preparation phase. A host without it is not ready for this part, and nothing below runs.
     - name: Read the bridge
-      ansible.builtin.command: { argv: [incus, query, "/1.0/networks/{{ bridge }}?project=default"] }
+      ansible.builtin.command: { argv: [incus, query, "/1.0/networks/{{ item }}?project=default"] }
+      loop: "{{ bridges }}"
       register: bridge_before
       changed_when: false
       check_mode: false
@@ -595,9 +631,10 @@
             mode: "{{ item.mode }}"
             modification_time: preserve
             access_time: preserve
-          loop:
-            - { path: /var/log/orbit/task-egress.log, owner: syslog, group: adm, mode: "0644" }
-            - { path: "{{ dnsmasq_log }}", mode: "0664" }
+          loop: >-
+            {%- set files = [{'path': '/var/log/orbit/task-egress.log', 'owner': 'syslog', 'group': 'adm', 'mode': '0644'}] -%}
+            {%- for log in dnsmasq_logs -%}{%- set _ = files.append({'path': log, 'mode': '0664'}) -%}{%- endfor -%}
+            {{ files }}
           loop_control: { label: "{{ item.path }}" }
       rescue:
         - name: Record that the log files failed
@@ -668,14 +705,16 @@
             egress_warnings: "{{ egress_warnings | default([]) + [warning] }}"
           vars:
             warning: "WARNING egress.setup_failed: {{ ansible_failed_task.name }}: {{ ansible_failed_result.msg | default('') }}"
-    # DNS lookups of the task VMs, to our own file. A value with the lines already in it sets nothing, so a rerun does not run the setup
-    # of the bridge again. It waits for the log files, so dnsmasq does not make its own file with mode 0640.
+    # DNS lookups of the guests of each bridge, to our own file. A value with the lines already in it sets nothing, so a rerun does not run
+    # the setup of the bridge again. It waits for the log files, so dnsmasq does not make its own file with mode 0640.
     - name: Set up the DNS log
       when: not (egress_logs_failed | default(false) | bool)
       block:
         - name: Log the DNS queries of the bridge
           when: (dnsmasq_missing | length > 0) and not (dnsmasq_taken | bool)
           ansible.builtin.command: { argv: [incus, network, set, "{{ bridge }}", "raw.dnsmasq={{ dnsmasq_raw }}", --project, default] }
+          loop: "{{ bridge_before.results }}"
+          loop_control: { loop_var: bridge_read, label: "{{ bridge_read.item }}" }
           changed_when: true
           timeout: 120
       rescue:
@@ -707,12 +746,14 @@
       failed_when: false
       check_mode: false
     - name: Read the bridge at the end
-      ansible.builtin.command: { argv: [incus, query, "/1.0/networks/{{ bridge }}?project=default"] }
+      ansible.builtin.command: { argv: [incus, query, "/1.0/networks/{{ item }}?project=default"] }
+      loop: "{{ bridges }}"
       register: egress_bridge
       changed_when: false
       check_mode: false
     - name: Read the ACL at the end
-      ansible.builtin.command: { argv: [incus, query, "/1.0/network-acls/{{ bridge }}-egress?project=default"] }
+      ansible.builtin.command: { argv: [incus, query, "/1.0/network-acls/{{ item }}-egress?project=default"] }
+      loop: "{{ bridges }}"
       register: egress_acl
       changed_when: false
       check_mode: false
@@ -725,7 +766,7 @@
       timeout: 60
     - name: Read the log files at the end
       ansible.builtin.stat: { path: "{{ item }}" }
-      loop: [/var/log/orbit, /var/log/orbit/task-egress.log, "{{ dnsmasq_log }}"]
+      loop: "{{ ['/var/log/orbit', '/var/log/orbit/task-egress.log'] + dnsmasq_logs }}"
       register: egress_files
       check_mode: false
     - name: Read the setup files at the end
@@ -740,22 +781,24 @@
         egress_warnings: >-
           {{ egress_warnings | default([]) + ['WARNING egress.rules_missing: the table orbit_egress is missing or not as the part writes it'] }}
     - name: Warn about the DNS log setting
-      when: [not ansible_check_mode, "dnsmasq_lines | reject('in', end_raw_lines) | list | length > 0"]
+      when: [not ansible_check_mode, "dnsmasq_missing | length > 0"]
       ansible.builtin.set_fact:
         egress_warnings: "{{ egress_warnings | default([]) + [warning] }}"
       vars:
         warning: >-
-          WARNING egress.dnsmasq_unset: raw.dnsmasq of {{ bridge }} lacks {{ dnsmasq_lines | reject('in', end_raw_lines) | list }}
+          WARNING egress.dnsmasq_unset: raw.dnsmasq of {{ bridge }} lacks {{ dnsmasq_missing }}
           {{ '(it logs to another file: egress.dnsmasq_log_taken)' if dnsmasq_taken | bool else '' }}
+      loop: "{{ egress_bridge.results }}"
+      loop_control: { loop_var: bridge_read, label: "{{ bridge_read.item }}" }
     # The agent reads the logs as other, without a capability: each file exists and others may read it, and others may enter the folder.
-    # The DNS log keeps mode 0664 whoever owns it (dnsmasq gives it to `incus`); the connection log is 0644 for rsyslog.
+    # Each DNS log keeps mode 0664 whoever owns it (dnsmasq gives it to `incus`); the connection log is 0644 for rsyslog.
     - name: Warn about the log files
       when:
         - not ansible_check_mode
         - >-
-          (egress_files.results | map(attribute='stat') | selectattr('exists') | selectattr('roth') | list | length != 3)
+          (egress_files.results | map(attribute='stat') | selectattr('exists') | selectattr('roth') | list | length != egress_files.results | length)
           or not egress_files.results[0].stat.xoth
-          or egress_files.results[2].stat.mode | default('') != '0664'
+          or egress_files.results[2:] | map(attribute='stat') | map(attribute='mode', default='') | reject('equalto', '0664') | list | length > 0
       ansible.builtin.set_fact:
         egress_warnings: >-
           {{ egress_warnings | default([]) + ['WARNING egress.log_unreadable: a log file is missing, has the wrong mode, or its folder is closed'] }}
@@ -779,19 +822,23 @@
     - name: Print the warnings
       when: egress_warnings | default([]) | length > 0
       ansible.builtin.debug: { msg: "{{ egress_warnings }}" }
-    # Safety: the log must change nothing for a task VM. The bridge has no IPv6, and the ACL still drops the private ranges.
+    # Safety: the log must change nothing for a guest. Each bridge has no IPv6, and its ACL still drops the private ranges.
     - name: Check that the bridge has no IPv6
       when: not ansible_check_mode
       ansible.builtin.assert:
         that: (end_bridge.config['ipv6.address'] | default('')) == 'none'
         fail_msg: egress.bridge_dual_stack
+      loop: "{{ egress_bridge.results | zip(egress_acl.results) | list }}"
+      loop_control: { loop_var: end_pair, label: "{{ end_pair.0.item }}" }
     - name: Check that the bridge keeps its ACL
       when: not ansible_check_mode
       ansible.builtin.assert:
         that:
-          - (bridge ~ '-egress') in (end_bridge.config['security.acls'] | default('')).split(',')
+          - (end_pair.0.item ~ '-egress') in (end_bridge.config['security.acls'] | default('')).split(',')
           - private_ranges | difference(dropped) | length == 0
         fail_msg: egress.acl_changed
+      loop: "{{ egress_bridge.results | zip(egress_acl.results) | list }}"
+      loop_control: { loop_var: end_pair, label: "{{ end_pair.0.item }}" }
   handlers:
     # A handler that fails would fail the part; the end checks report the state instead.
     - name: Restart rsyslog

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Firewall;
 
+use App\Data\Nodes\NodeTaskVmContainersData;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageConnection;
@@ -25,7 +26,11 @@ use App\Models\Process;
 
 final readonly class NodeFirewallRuleCatalog
 {
+    /** The DHCP, DNS over TCP and DNS over UDP input rules of a task VM host's VM bridge, in that order. */
     public const array TaskHostInputComments = ['orbit:task-vms-dhcp', 'orbit:task-vms-dns-tcp', 'orbit:task-vms-dns-udp'];
+
+    /** The same rules for the bridge of a host's task containers. Each bridge has its own names: a withdrawal deletes rules by comment. */
+    public const array TaskContainerInputComments = ['orbit:task-containers-dhcp', 'orbit:task-containers-dns-tcp', 'orbit:task-containers-dns-udp'];
 
     /** @return list<UfwManagedRule> */
     public function taskHostInput(Node $node): array
@@ -34,12 +39,27 @@ final readonly class NodeFirewallRuleCatalog
         if ($host === null) {
             return [];
         }
-        $network = $host->network;
-        [$bridge] = Ipv4Subnet::from($host->cidr)->usableRange();
+
+        return [
+            ...$this->bridgeInput($host->network, $host->cidr, self::TaskHostInputComments),
+            ...($host->containers instanceof NodeTaskVmContainersData
+                ? $this->bridgeInput($host->containers->network, $host->containers->cidr, self::TaskContainerInputComments) : []),
+        ];
+    }
+
+    /**
+     * DHCP from the bridge, and DNS over TCP and UDP to its address, under `$comments` in that order.
+     *
+     * @param  list<string>  $comments
+     * @return list<UfwManagedRule>
+     */
+    private function bridgeInput(string $network, string $cidr, array $comments): array
+    {
+        [$bridge] = Ipv4Subnet::from($cidr)->usableRange();
         $rules = [];
-        foreach (self::TaskHostInputComments as $comment) {
-            $dhcp = $comment === 'orbit:task-vms-dhcp';
-            $protocol = $comment === 'orbit:task-vms-dns-tcp' ? 'tcp' : 'udp';
+        foreach (array_combine(['dhcp', 'tcp', 'udp'], $comments) as $kind => $comment) {
+            $dhcp = $kind === 'dhcp';
+            $protocol = $kind === 'tcp' ? 'tcp' : 'udp';
             $destination = $dhcp ? 'any' : $bridge;
             $port = $dhcp ? '67' : '53';
             $rules[] = new UfwManagedRule(

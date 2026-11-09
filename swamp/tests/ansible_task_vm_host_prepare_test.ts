@@ -38,7 +38,7 @@ function fixture(
     projects: [],
     networks: [],
     "network-acls": [],
-    profile: { config: {}, devices: {} },
+    profiles: {},
     images: [],
   };
   Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify(state));
@@ -215,7 +215,7 @@ Deno.test({
       assertEquals(state.networks[0].config["ipv4.address"], "10.252.10.1/24");
       assertEquals(state.networks[0].config["ipv4.nat"], "true");
       assertEquals(
-        state.profile.devices.eth0["security.port_isolation"],
+        state.profiles["orbit-tasks"].devices.eth0["security.port_isolation"],
         "true",
       );
       assertEquals(state.projects[0].config["restricted.snapshots"], "allow");

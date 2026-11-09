@@ -1,5 +1,11 @@
 ---
 # One host phase for native datasets and Incus-managed loop files. Read incompatible resources before changing any of them.
+# A host with `containers` also prepares its task container side (docs/reference/compute-drivers.md#prepare-a-container-host): the
+# kernel and Incus before this part, which needs Incus, and the bridge, project and clone check after it, which need the pool.
+- name: Prepare the host system for task containers
+  when: (host.containers | default(none)) is not none
+  ansible.builtin.include_tasks: task-container-host-system.yml
+
 - name: Read the host resources
   ansible.builtin.command:
     argv: [incus, query, "--", "/1.0/{{ item }}?project=default&recursion=1"]
@@ -77,11 +83,12 @@
     cache_valid_time: 3600
     fail_on_autoremove: true
 
+# The ARC cap of a loop pool, or of a container host, which sizes it from the host's memory (`prepare_arc_max`).
 - name: Keep a host memory margin for loop storage after reboot
-  when: prepare_loop
+  when: prepare_arc_max is not none
   ansible.builtin.copy:
     dest: /etc/modprobe.d/orbit-task-vm-zfs.conf
-    content: "# Orbit loop-backed task VM storage: reserve RAM for host services.\noptions zfs zfs_arc_max=2147483648\n"
+    content: "# Orbit {{ prepare_arc_reason }}: reserve RAM for host services.\noptions zfs zfs_arc_max={{ prepare_arc_max }}\n"
     owner: root
     group: root
     mode: "0644"
@@ -92,16 +99,16 @@
     state: present
 
 - name: Read the running ARC limit
-  when: prepare_loop
+  when: prepare_arc_max is not none
   ansible.builtin.slurp:
     src: /sys/module/zfs/parameters/zfs_arc_max
   register: prepare_arc
 
 - name: Keep the running ARC inside the loop host budget
-  when: prepare_loop and (prepare_arc.content | b64decode | trim) != '2147483648'
+  when: prepare_arc_max is not none and (prepare_arc.content | b64decode | trim) != (prepare_arc_max | string)
   ansible.builtin.command:
     argv: [tee, /sys/module/zfs/parameters/zfs_arc_max]
-    stdin: '2147483648'
+    stdin: "{{ prepare_arc_max }}"
   changed_when: true
 
 - name: Read datasets before creating a native pool
@@ -240,3 +247,7 @@
       - (prepare_check.results[1].stdout | from_json).config['security.acls'] == prepare_acl_name
       - (prepare_check.results[1].stdout | from_json).config['ipv6.address'] == 'none'
     fail_msg: task_vm.setup_failed
+
+- name: Prepare the task container side
+  when: (host.containers | default(none)) is not none
+  ansible.builtin.include_tasks: task-container-host-prepare.yml

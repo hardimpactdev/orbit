@@ -79,11 +79,18 @@ final readonly class UpdateNodeAction
             $create = $this->hasActiveAppDevRole($node);
             $previousHost = $this->normalizer->fromStored($node->settings)?->task_vms;
             $this->keepLiveContainers($node, $previousHost, $normalized?->task_vms);
-            $retireHostInput = $settings->hasTaskVms && $previousHost !== null
-                && ($normalized?->task_vms === null || $previousHost->network !== $normalized->task_vms->network
-                    || $previousHost->cidr !== $normalized->task_vms->cidr);
+            $nextHost = $normalized?->task_vms;
+            // Each bridge's input rules go when the bridge goes or moves; the next base refresh prepares the new one.
+            $retireVmInput = $settings->hasTaskVms && $previousHost !== null
+                && ($nextHost === null || $previousHost->network !== $nextHost->network || $previousHost->cidr !== $nextHost->cidr);
+            $before = $previousHost?->containers;
+            $after = $nextHost?->containers;
+            $retireContainerInput = $settings->hasTaskVms && $before instanceof NodeTaskVmContainersData
+                && (! $after instanceof NodeTaskVmContainersData || [$before->network, $before->cidr] !== [$after->network, $after->cidr]);
+            $retireComments = [...($retireVmInput ? NodeFirewallRuleCatalog::TaskHostInputComments : []),
+                ...($retireContainerInput ? NodeFirewallRuleCatalog::TaskContainerInputComments : [])];
             $prepareStorage = $settings->hasApps && ($create || $normalized?->appsPath() !== null);
-            if (! $prepareStorage && ! $retireHostInput) {
+            if (! $prepareStorage && $retireComments === []) {
                 $written = $this->persist($node, $normalized) || $written;
 
                 return $node;
@@ -100,7 +107,7 @@ final readonly class UpdateNodeAction
                 'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
                 'node_id' => $node->id, 'caller_node_id' => $caller?->id,
                 'root' => $root?->value, 'user' => $account->user, 'group' => $account->group, 'settings' => $this->normalizer->stored($normalized),
-                'task_host_input_comments' => $retireHostInput ? NodeFirewallRuleCatalog::TaskHostInputComments : [],
+                'task_host_input_comments' => $retireComments,
                 'settings_patch' => ['apps' => $settings->hasApps, 'task_vms' => $settings->hasTaskVms],
             ], 'operator', $requestId, expectedWriter: 'direct');
         });

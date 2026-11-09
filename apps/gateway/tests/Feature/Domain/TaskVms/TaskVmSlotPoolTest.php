@@ -567,7 +567,7 @@ it('rebuilds the base from stock only when asked: the run deletes the base first
         File::deleteDirectory($home);
     }
 
-    expect($refresh['host'])->toMatchArray(['rebuild' => false, 'current' => 'r20261107120000', 'image' => 'ubuntu-26.04-vm'])
+    expect($refresh['host'])->toMatchArray(['rebuild' => false, 'current' => 'r20261107120000', 'image' => 'ubuntu-26.04-vm', 'containers' => null])
         ->and($rebuild['host'])->toMatchArray(['rebuild' => true, 'current' => null])->and($rebuild['with_pi'])->toBeTrue()
         ->and($refresh['host']['clean'])->toBe(['keep_images' => ['ubuntu-26.04-vm'], 'prefixes' => ['orbit-topology-seed-', 'orbit-baseline-'],
             'retired_projects' => ['orbit-baselines', 'orbit-measure-nr'], 'image_projects' => ['orbit-proto']]);

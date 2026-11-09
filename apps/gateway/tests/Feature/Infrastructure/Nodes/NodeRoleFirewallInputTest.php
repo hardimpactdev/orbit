@@ -67,3 +67,29 @@ it('keeps prepared task host DHCP and DNS owned independently of role add and re
         expect(in_array($rule['comment'], $catalog::TaskHostInputComments, true))->toBeFalse();
     }
 });
+
+it('gives the container bridge of a host its own DHCP and DNS input rules, apart from the VM bridge', function (): void {
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => 'container-host', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.3',
+        'public_ssh_host' => '10.44.0.3', 'user' => 'orbit',
+        'settings' => ['task_vms' => ['cidr' => '10.252.42.0/24', 'task_places' => 2,
+            'containers' => ['cidr' => '10.252.43.0/24', 'task_places' => 1, 'ci_places' => 1]]],
+    ]));
+    $catalog = app(NodeFirewallRuleCatalog::class);
+    $input = $catalog->taskHostInput($node);
+
+    expect(array_map(fn ($rule) => $rule->shape->comment, $input))->toBe([...$catalog::TaskHostInputComments, ...$catalog::TaskContainerInputComments]);
+    [, , , $dhcp, $tcp, $udp] = $input;
+    expect([$dhcp->shape->inInterface, $tcp->shape->inInterface, $udp->shape->inInterface])->toBe(['orbittaskc0', 'orbittaskc0', 'orbittaskc0'])
+        ->and([$dhcp->shape->sourcePort, $dhcp->shape->port, $dhcp->shape->protocol])->toBe(['68', '67', 'udp'])
+        ->and([$tcp->shape->destination, $tcp->shape->port, $tcp->shape->protocol])->toBe(['10.252.43.1', '53', 'tcp'])
+        ->and([$udp->shape->destination, $udp->shape->protocol])->toBe(['10.252.43.1', 'udp'])
+        ->and($tcp->arguments[array_key_last($tcp->arguments)])->toBe('orbit:task-containers-dns-tcp');
+    foreach (array_slice($input, 0, 3) as $rule) {
+        expect($rule->shape->inInterface)->toBe('orbittask0');
+    }
+    $desired = app(NodeFirewallDesiredRules::class)->forNode($node);
+    foreach ($catalog::TaskContainerInputComments as $comment) {
+        expect(array_values(array_filter($desired, fn ($rule) => $rule->name === $comment)))->toHaveCount(1);
+    }
+});

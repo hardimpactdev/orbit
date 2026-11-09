@@ -709,13 +709,13 @@ async fn report_facts(
         match due {
             Due::Retry => reporter.retry().await,
             Due::Egress => {
-                // Only a task VM host's watch list names a bridge. Without one the agent reads no egress file.
-                let network = listed.borrow().egress.clone();
-                if network.is_some() || egress.active() {
+                // Only a task VM host's watch list names bridges. Without one the agent reads no egress file.
+                let networks = listed.borrow().egress.clone();
+                if !networks.is_empty() || egress.active() {
                     let mut runner = std::mem::take(&mut egress);
                     let stepped = tokio::task::spawn_blocking(move || {
                         let step = runner.step(
-                            network.as_deref(),
+                            &networks,
                             std::time::Instant::now(),
                             &facts::observed_at(),
                         );
