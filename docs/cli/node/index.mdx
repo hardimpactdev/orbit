@@ -33,6 +33,8 @@ Node list and detail responses keep `roles` as a list of role names. Their share
 
 A collection read is refused with `node_access.required` only when the caller has neither Gateway authority nor any direct Node grant. A target read requires Gateway authority or a direct grant to that target.
 
+Grant administration requires Gateway authority. [`node:access:add`](/cli/node/access-add) records one directed grant without contacting either Node or starting an Operation.
+
 Removing task-host settings or changing the bridge or CIDR withdraws the owned DHCP/DNS input rules before saving the patch. Other task-host settings remain record-only. See [Node settings](/reference/node-settings).
 
 ## Commands

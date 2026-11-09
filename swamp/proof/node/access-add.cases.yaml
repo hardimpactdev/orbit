@@ -93,7 +93,6 @@ cases:
     exclusive: true
     covers: [main, gateway-authority, active-nodes, eligible-consumer, grant-exists, refused-caller]
     summary: An offline grant repeats without writes, but target-only authority cannot administer grants.
-    fails_today: Repeat output exposes already_exists but omits the node_access.exists skip reason and the documented human skip explanation.
     fails_on_base: true
     setup:
       - use: restored-grant

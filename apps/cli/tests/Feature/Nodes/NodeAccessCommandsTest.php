@@ -136,10 +136,39 @@ it('shows deterministic human output for an existing node access edge', function
 
     $this
         ->artisan('node:access:add', ['consumer' => '2', 'serving' => '3'])
-        ->expectsOutput('Access from [operator] (#2) to [app-dev] (#3) already exists.')
+        ->expectsOutput('Skipped — already granted (node_access.exists)')
         ->expectsOutput('Request ID: '.node_access_command_request_id())
         ->assertExitCode(0);
 });
+
+it('includes the stable skip reason in machine output for an existing grant', function (): void {
+    $payload = [...added_node_access_payload(), 'already_exists' => true];
+    MockClient::global([
+        AddNodeAccessRequest::class => MockResponse::make([
+            'data' => $payload,
+            'meta' => ['request_id' => node_access_command_request_id()],
+        ]),
+    ]);
+
+    $this->artisan('node:access:add', ['consumer' => '2', 'serving' => '3', '--json' => true])
+        ->expectsOutput(json_encode([
+            ...$payload,
+            'request_id' => node_access_command_request_id(),
+            'skipped' => 'node_access.exists',
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->assertExitCode(0);
+});
+
+it('refuses an omitted access endpoint without prompting or gateway io', function (array $arguments, string $code): void {
+    $mock = MockClient::global();
+    $this->artisan('node:access:add', [...$arguments, '--json' => true])
+        ->expectsOutputToContain($code)
+        ->assertExitCode(1);
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with([
+    [[], 'node_access.consumer_id_invalid'],
+    [['consumer' => '2'], 'node_access.serving_id_invalid'],
+]);
 
 it('renders gateway api failures through the shared boundary and exits one', function (): void {
     $expected = json_encode([

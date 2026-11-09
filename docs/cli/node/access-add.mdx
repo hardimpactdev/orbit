@@ -35,7 +35,7 @@ Both Nodes must be active. A [task VM](/reference/compute-drivers#placement-inva
 
 A new grant creates exactly one `node_access` row with `consumer_node_id` and `serving_node_id` for the selected pair and preserves unrelated grants. It authorizes Gateway commands from the consumer to the serving Node, not the reverse direction or a network path. The result includes both Nodes' names and IDs as `consumer_node` and `serving_node`, with `already_exists: false`.
 
-Repeating an existing grant succeeds with `Skipped — already granted (node_access.exists)` and `already_exists: true`. It writes nothing and creates no duplicate access row.
+Repeating an existing grant succeeds with `Skipped — already granted (node_access.exists)` and `already_exists: true`. JSON output includes `skipped: "node_access.exists"`. It writes no access row and creates no duplicate grant.
 
 ## Errors
 
