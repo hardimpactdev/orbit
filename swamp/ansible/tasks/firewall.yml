@@ -22,13 +22,23 @@
       {{ firewall_added.stdout_lines | select('search', " comment '" ~ (rule[-1] | regex_escape) ~ "'$") | list }}
   loop: "{{ firewall_commands | select('contains', 'from') | select('contains', 'on') | select('contains', 'port') | list }}"
   loop_control: { loop_var: rule, index_var: firewall_index, label: "{{ rule[-1] }}" }
+# A pair may have per-Node allows of the same source kind, commented `<allow comment>-node-<id>`, such as the model router guard's
+# forwarder Nodes. They sit above the deny too: when the pair is re-placed they are re-placed with it, and an installed one that the
+# commands do not name is removed.
 - name: Find misplaced service isolation rules
   ansible.builtin.set_fact:
     firewall_retire: >-
-      {{ firewall_retire + ([rule[-1], allow_comment] if
+      {{ firewall_retire + node_strays + ([rule[-1], allow_comment] + node_comments if
          not ordered or rule[-1] in firewall_retire or allow_comment in firewall_retire else []) }}
   vars:
     allow_comment: "{{ firewall_commands[firewall_index + 1][-1] }}"
+    node_pattern: "{{ (allow_comment | regex_escape) ~ '-node-[0-9]+' }}"
+    node_comments: "{{ firewall_commands | map('last') | select('match', '^' ~ node_pattern ~ '$') | list }}"
+    node_installed: >-
+      {{ firewall_numbered.stdout | regex_findall('(?m)^\[\s*\d+\].*# (' ~ node_pattern ~ ')\s*$') | unique | list }}
+    node_strays: "{{ node_installed | difference(node_comments) }}"
+    node_indices: >-
+      {{ firewall_numbered.stdout | regex_findall('(?m)^\[\s*(\d+)\].*# ' ~ node_pattern ~ '\s*$') | map('int') | list }}
     deny_indices: >-
       {{ firewall_numbered.stdout | regex_findall('(?m)^\[\s*(\d+)\].*# ' ~
          (rule[-1] | regex_escape) ~ '\s*$') | map('int') | list }}
@@ -41,6 +51,7 @@
     ordered: >-
       {{ allow_indices | length == 1 and deny_indices | length == 1
       and allow_indices[0] < deny_indices[0]
+      and (node_indices | length == 0 or node_indices | max < deny_indices[0])
       and (trust_indices | length == 0 or deny_indices[0] < trust_indices | min) }}
   loop: "{{ firewall_commands }}"
   loop_control: { loop_var: rule, index_var: firewall_index, label: "{{ rule[-1] }}" }

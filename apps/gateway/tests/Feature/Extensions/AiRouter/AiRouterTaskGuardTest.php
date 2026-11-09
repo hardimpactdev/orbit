@@ -79,6 +79,8 @@ it('records the guard intent without a key: the Caddyfile, the UFW pair and vaul
         ->toContain('header Authorization "Bearer {file./run/credentials/orbit-ai-router-guard.service/task.key}"')
         ->toContain("reverse_proxy 127.0.0.1:8317 {\n")
         ->toContain('header_up Authorization "Bearer {file./run/credentials/orbit-ai-router-guard.service/anchor.key}"')
+        ->toContain("@source remote_ip 10.44.0.128/25\n")
+        ->toContain("respond 401\n")
         ->toContain("respond 403\n")
         // The trust first, then the deny and its allow, each at the top: the allow ends above the deny, both above the trust.
         ->and($intent['firewall'])->toBe(['desired' => [

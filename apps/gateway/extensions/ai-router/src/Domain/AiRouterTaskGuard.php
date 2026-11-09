@@ -20,8 +20,8 @@ use App\Support\ValidatedData;
  * The model router's task VM guard ([Credentials in task VMs](/reference/tasks#credentials-in-task-vms)): its own Caddy on the router's
  * Node, on the WireGuard address at port 8318. It passes a request on only when it comes from the task VM WireGuard range or a
  * [forwarder Node](/reference/ai-router#container-model-forwarder), is a POST to exactly one of the inference routes, with no query or
- * Claude Code's `beta=true` on the messages routes, and carries the task key; it then swaps in the anchor key. Every other request gets
- * 403. The unit loads both keys as systemd credentials, so its Caddyfile holds no secret and no other user reads them; UFW admits port
+ * Claude Code's `beta=true` on the messages routes, and carries the task key; it then swaps in the anchor key. Any other request from
+ * those sources gets 401, and every request from elsewhere 403. The unit loads both keys as systemd credentials, so its Caddyfile holds no secret and no other user reads them; UFW admits port
  * 8318 from those sources only.
  */
 final readonly class AiRouterTaskGuard
@@ -48,7 +48,8 @@ final readonly class AiRouterTaskGuard
     /** Guard and forwarder runs share it: two at once could each drop the other's forwarder Node from the guard. */
     public const string LockPrefix = 'ai_router_guard:';
 
-    public function __construct(private AiRouterState $state, private TaskVmSettings $settings, private AiRouterModelForwarder $forwarder) {}
+    public function __construct(private AiRouterState $state, private TaskVmSettings $settings, private AiRouterModelForwarder $forwarder,
+        private AiRouterSecrets $secrets, private SwampSshExecutionInput $ssh) {}
 
     /** The router's Node once the extension was set up, or null. */
     public function node(): ?Node
@@ -102,6 +103,11 @@ final readonly class AiRouterTaskGuard
             			header_up -X-Goog-Api-Key
             		}
             	}
+            	# An admitted source with a refused request: a forwarder run's end check tells this from a source the guard refuses.
+            	@source remote_ip {$sources}
+            	handle @source {
+            		respond 401
+            	}
             	handle {
             		respond 403
             	}
@@ -154,13 +160,12 @@ final readonly class AiRouterTaskGuard
 
     /**
      * The intent of the guard phase (docs/cli/ai-router/task-guard.mmd): its Caddyfile and its UFW rules. With `$remove`, the phase takes
-     * the guard off the Node; `$retired` names forwarder allows the phase removes while it keeps the guard.
+     * the guard off the Node. While it keeps the guard, `tasks/firewall.yml` removes a forwarder Node's allow that the rules no longer name.
      *
      * @param  list<Node>  $forwarders
-     * @param  list<UfwManagedRule>  $retired
      * @return array<string, mixed>
      */
-    public function intent(Node $node, array $forwarders, bool $remove, array $retired = []): array
+    public function intent(Node $node, array $forwarders, bool $remove): array
     {
         $rules = $this->rules($node);
         $allows = array_map(fn (Node $forwarder): UfwManagedRule => $this->forwarderRule($node, $forwarder), $forwarders);
@@ -168,7 +173,7 @@ final readonly class AiRouterTaskGuard
         $insert = static fn (UfwManagedRule $rule): array => ['ufw', 'insert', '1', ...array_slice($rule->arguments, 2)];
 
         return [
-            'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
+            'ssh' => $this->ssh->forNode($node),
             'state' => $remove ? 'absent' : 'present',
             'origin' => $this->origin($node),
             'directory' => self::Directory,
@@ -176,12 +181,13 @@ final readonly class AiRouterTaskGuard
             'caddyfile' => $this->caddyfile($node, $forwarders),
             // The shape `tasks/firewall.yml` keeps: the WireGuard member trust first, then each deny inserted at the top and its allow
             // after it, so the allow ends above the deny and both above the trust; it re-places a pair it finds out of order. Each
-            // forwarder Node's allow follows, inserted at the top too.
+            // forwarder Node's allow follows, inserted at the top too, and moves with its pair.
             'firewall' => [
+                // The catalog reads the contributed rules, this guard's among them, so it resolves when used.
                 'desired' => [$ufw(app(NodeFirewallRuleCatalog::class)->forNode($node)[1]->arguments),
                     ...($remove ? [] : [$insert($rules['deny']), $insert($rules['allow']), ...array_map($insert, $allows)])],
-                'remove' => array_map(static fn (UfwManagedRule $rule): array => $rule->removalArguments(),
-                    $remove ? [$rules['allow'], $rules['deny'], ...$allows] : $retired),
+                'remove' => $remove ? array_map(static fn (UfwManagedRule $rule): array => $rule->removalArguments(),
+                    [$rules['allow'], $rules['deny'], ...$allows]) : [],
             ],
         ];
     }
@@ -195,12 +201,11 @@ final readonly class AiRouterTaskGuard
     {
         $vault = 'orbit-control-inputs';
         $shared = app(SwampCommandStep::class);
-        $secrets = app(AiRouterSecrets::class);
 
         return [
-            'task_key' => $shared->executionCopy($vault, 'ai-router-task-key-node-'.$node->id, $secrets->task()),
+            'task_key' => $shared->executionCopy($vault, 'ai-router-task-key-node-'.$node->id, $this->secrets->task()),
             'anchor_key' => $shared->executionCopy($vault, 'ai-router-anchor-key-node-'.$node->id,
-                $secrets->anchor(rtrim((string) $this->state->routerUrl(), '/'))),
+                $this->secrets->anchor(rtrim((string) $this->state->routerUrl(), '/'))),
         ];
     }
 
@@ -229,6 +234,7 @@ final readonly class AiRouterTaskGuard
         return [$this->settings->wireguardRange, ...array_map($this->address(...), $forwarders)];
     }
 
+    /** The Node's WireGuard IPv4 address; `ai_router.node_invalid` when it has none. */
     public function address(Node $node): string
     {
         $address = $node->wireguard_ip;

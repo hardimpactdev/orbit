@@ -23,8 +23,8 @@ sequenceDiagram
   %%> What it does:
   %%> - writes the two keys as root-only files and the Caddyfile into /etc/orbit/ai-router-guard, validated by `caddy validate`
   %%> - runs its own Caddy, `orbit-ai-router-guard.service`, on 10.44.0.3:8318: a dynamic user that loads the keys with `LoadCredential`, no admin endpoint, no saved config
-  %%> - passes a POST with the task key to an inference route, with no query or only `beta=true` on the two messages routes, for Claude Code
-  %%> - places the UFW rules above the WireGuard member trust, re-placing a pair out of order: allow 8318 from the task VM range and from each forwarder Node, deny it from every other member
+  %%> - passes a POST with the task key to an inference route, with no query or only `beta=true` on the two messages routes, for Claude Code; answers 401 to any other request from its sources and 403 to every other source
+  %%> - places the UFW rules above the WireGuard member trust, re-placing a pair out of order: allow 8318 from the task VM range and from each forwarder Node, deny it from every other member; each forwarder Node's allow moves with the pair, and the allow of a Node the rules do not name goes
   %%> - from the Node itself, outside the range: the task key gets 403
   SW->>N: Prove the refusal<br/>from Node 209
   %%> What it does:

@@ -1,7 +1,8 @@
 ---
 # The container model forwarder on an agent Node (docs/cli/ai-router/model-forwarder.mmd, /reference/ai-router#container-model-forwarder):
-# its own Caddy on the container bridge address at port 8319, which passes every request unchanged to the guard, and its UFW rule on the
-# bridge. It holds no key. The guard phase of the same run has already admitted the Node's WireGuard address, or dropped it.
+# its own Caddy on the container bridge address at port 8319, which passes every request to the guard, its UFW rule on the bridge,
+# and a UFW route deny to the guard, so a container reaches the guard only through the forwarder. It holds no key. The guard phase
+# of the same run has already admitted the Node's WireGuard address, or dropped it.
 # Tag `apply` puts the forwarder in place, tag `remove` takes it off. Both end with a check from the Node against the guard.
 - name: Pin the Node and address it
   hosts: localhost
@@ -98,17 +99,17 @@
         state: "{{ 'restarted' if (unit.changed or caddyfile.changed) else 'started' }}"
     - name: Wait for the forwarder
       ansible.builtin.wait_for: { host: "{{ intent.address }}", port: "{{ intent.origin | urlsplit('port') }}", timeout: 15 }
-    - name: Place the UFW rule
+    - name: Place the UFW rules
       ansible.builtin.import_tasks: tasks/firewall.yml
       vars:
         firewall_commands: "{{ intent.firewall.desired + intent.firewall.remove }}"
-    # Through the forwarder with no key: the guard's 403 proves it admits the Node and still demands the key. Without the admission the
-    # guard's UFW deny drops the request and the forwarder answers 502.
-    - name: Check that the guard answers through the forwarder
+    # Through the forwarder with no key: the guard answers 401 only to a source it admits, so this proves it admits the Node and still
+    # demands the key. A source it refuses gets 403, and without the UFW allow the request is dropped and the forwarder answers 502.
+    - name: Check that the guard admits the Node and demands the key
       ansible.builtin.uri:
         url: "{{ intent.origin }}/v1/responses"
         method: POST
-        status_code: 403
+        status_code: 401
         timeout: 10
         use_proxy: false
 
@@ -120,7 +121,7 @@
   vars:
     intent: "{{ (lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json).forwarder }}"
   tasks:
-    - name: Remove the UFW rule
+    - name: Remove the UFW rules
       ansible.builtin.import_tasks: tasks/firewall.yml
       vars:
         firewall_commands: "{{ intent.firewall.desired + intent.firewall.remove }}"
@@ -132,7 +133,10 @@
       loop: ["/etc/systemd/system/{{ intent.unit }}", "{{ intent.directory }}"]
     - name: Reload systemd
       ansible.builtin.systemd_service: { daemon_reload: true }
-    # The guard phase dropped the Node's address, so the guard's UFW deny now drops it.
+    # The guard phase dropped the Node's address, so the guard's UFW deny drops it. SSH to the router's Node answers first, so a silent
+    # guard port means the deny, not a broken tunnel.
+    - name: Check that the router's Node answers on SSH
+      ansible.builtin.wait_for: { host: "{{ intent.guard_origin | urlsplit('hostname') }}", port: 22, timeout: 5 }
     - name: Check that the guard port does not answer the Node
       ansible.builtin.wait_for:
         host: "{{ intent.guard_origin | urlsplit('hostname') }}"

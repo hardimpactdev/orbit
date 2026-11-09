@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\AiRouter\Domain;
 
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Models\Node;
@@ -13,8 +14,9 @@ use App\Support\ValidatedData;
 
 /**
  * The container model forwarder ([ADR 0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder)): its own
- * Caddy on an agent Node's container bridge address at port 8319, which proxies every request unchanged to the task VM guard. It holds
- * no key and has no rule of its own; the guard admits the Node's WireGuard address and still demands the placeholder.
+ * Caddy on an agent Node's container bridge address at port 8319, which proxies every request to the task VM guard with only Caddy's
+ * `X-Forwarded-*` headers added. It holds no key and has no rule of its own; the guard admits the Node's WireGuard address and still
+ * demands the placeholder. UFW drops forwarded traffic to the guard on the Node, so a container reaches it only through the forwarder.
  */
 final readonly class AiRouterModelForwarder
 {
@@ -27,6 +29,8 @@ final readonly class AiRouterModelForwarder
     public const string Unit = 'orbit-ai-router-forwarder.service';
 
     public const string Comment = 'orbit:ai-router-forwarder';
+
+    public const string RouteComment = 'orbit:ai-router-forwarder-route';
 
     /** The origin containers on the Node call. */
     public function origin(string $address): string
@@ -64,7 +68,20 @@ final readonly class AiRouterModelForwarder
     }
 
     /**
-     * The forwarder part of each Node whose last succeeded run on the router's guard left a forwarder in place, keyed by Node ID.
+     * Forwarded traffic to the guard dropped on the Node, from any bridge: a container's packets would leave from the Node's WireGuard
+     * address, which the guard admits, so without it a container could skip the forwarder. The Node's own processes are not forwarded.
+     */
+    public function routeRule(string $guardAddress): UfwManagedRule
+    {
+        $port = (string) AiRouterTaskGuard::Port;
+
+        return new UfwManagedRule(new UfwRuleShape(self::RouteComment, 'deny', 'fwd', 'any', $guardAddress, $port, 'tcp', null, null, 'v4'),
+            ['sudo', 'ufw', 'route', 'deny', 'proto', 'tcp', 'from', 'any', 'to', $guardAddress, 'port', $port, 'comment', self::RouteComment]);
+    }
+
+    /**
+     * The forwarder part of each Node whose last succeeded run on the router's guard left a forwarder in place, keyed and ordered by
+     * Node ID.
      *
      * @return array<int, array{node: Node, bridge: string, address: string}>
      */
@@ -73,10 +90,14 @@ final readonly class AiRouterModelForwarder
         $present = [];
         foreach ($this->latest($router, succeeded: true) as $nodeId => $forwarder) {
             $node = Node::query()->find($nodeId);
-            if ($node !== null && $forwarder['state'] === 'present') {
+            // A Node that went away or lost its address drops out; the next guard run removes its allow.
+            if ($node !== null && $node->status === LifecycleStatus::Active && $forwarder['state'] === 'present'
+                && is_string($node->wireguard_ip) && filter_var($node->wireguard_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
                 $present[$nodeId] = ['node' => $node, 'bridge' => $forwarder['bridge'], 'address' => $forwarder['address']];
             }
         }
+
+        ksort($present);
 
         return $present;
     }

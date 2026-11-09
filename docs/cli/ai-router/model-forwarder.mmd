@@ -25,18 +25,18 @@ sequenceDiagram
   GW->>SW: Start run, full intent<br/>ai_router.model_forwarder
   SW->>R: Apply the guard<br/>Ansible
   %%> What it does:
-  %%> - the guard phase of `ai-router:task-guard`: keys, Caddyfile, unit, and the UFW allow of each forwarder Node above the deny
+  %%> - the guard phase of `ai-router:task-guard`: keys, Caddyfile, unit, and the UFW allow of each forwarder Node above the deny; the allow of a Node the rules do not name goes
   %%> - its end checks: from the router Node and from the swamp Node, a source outside the admitted sources is refused
   SW->>N: Apply the forwarder<br/>Ansible
   %%> What it does:
   %%> - checks that the address belongs to the bridge
   %%> - runs its own Caddy, `orbit-ai-router-forwarder.service`, on the bridge address at port 8319: a dynamic user, no admin endpoint, no saved config, no key
-  %%> - allows port 8319 in on the bridge only
+  %%> - allows port 8319 in on the bridge only, and puts a UFW route deny to the guard at the top, so a container on any bridge reaches the guard only through the forwarder
   %%> - `--remove`: takes the unit, its folder and its UFW rule off the Node instead
   SW->>N: Prove the path<br/>from the agent Node
   %%> What it does:
-  %%> - apply: a POST through the forwarder with no key gets the guard's 403, so the guard admits the Node and still demands the key
-  %%> - remove: the guard port does not answer the Node
+  %%> - apply: a POST through the forwarder with no key gets the guard's 401, which it gives only to a source it admits: the guard admits the Node and still demands the key
+  %%> - remove: the router Node answers SSH, and the guard port does not answer the Node
   alt the checks pass
     SW-->>GW: Run succeeded
     Note over GW: Record the forwarder<br/>http://10.251.33.1:8319

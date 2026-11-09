@@ -46,11 +46,11 @@ final readonly class AdmitAiRouterModelForwarderAction
         }
         $others = array_values(array_filter($this->guard->forwarders($router), static fn (Node $other): bool => $other->id !== $node->id));
         $rule = $this->forwarder->rule($bridge, $address);
+        $route = $this->forwarder->routeRule($this->guard->address($router));
 
         return $this->start->execute(AiRouterModelForwarder::Kind, 'node', $node->id, $router->id, [
             'intent' => [
-                ...$this->guard->intent($router, $remove ? $others : [...$others, $node], false,
-                    $remove ? [$this->guard->forwarderRule($router, $node)] : []),
+                ...$this->guard->intent($router, $remove ? $others : $this->byId([...$others, $node]), false),
                 'forwarder' => [
                     'ssh' => $this->ssh->forNode($node),
                     'state' => $remove ? 'absent' : 'present',
@@ -61,13 +61,27 @@ final readonly class AdmitAiRouterModelForwarderAction
                     'directory' => AiRouterModelForwarder::Directory,
                     'unit' => AiRouterModelForwarder::Unit,
                     'caddyfile' => $this->forwarder->caddyfile($address, $this->guard->origin($router)),
+                    // The route deny goes to the top, above any route allow such as a CI runner bridge's.
                     'firewall' => [
-                        'desired' => $remove ? [] : [['ufw', ...array_slice($rule->arguments, 2)]],
-                        'remove' => $remove ? [$rule->removalArguments()] : [],
+                        'desired' => $remove ? [] : [['ufw', ...array_slice($rule->arguments, 2)], ['ufw', 'route', 'insert', '1', ...array_slice($route->arguments, 3)]],
+                        'remove' => $remove ? [$rule->removalArguments(), $route->removalArguments()] : [],
                     ],
                 ],
             ],
             'execution_secrets' => $this->guard->executionSecrets($router),
         ], $triggeredBy, $requestId, lockKey: $this->guard->lock($router));
+    }
+
+    /**
+     * In the order of every other guard run, so UFW and the managed rules list the allows alike.
+     *
+     * @param  list<Node>  $nodes
+     * @return list<Node>
+     */
+    private function byId(array $nodes): array
+    {
+        usort($nodes, static fn (Node $a, Node $b): int => $a->id <=> $b->id);
+
+        return $nodes;
     }
 }

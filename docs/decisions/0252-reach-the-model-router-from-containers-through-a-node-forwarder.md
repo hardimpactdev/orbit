@@ -33,7 +33,9 @@ Containers reach the router through a forwarder with no key on their Node, and t
 
 ### A forwarder with no key on each agent Node
 
-Each agent Node runs its own Caddy, `orbit-ai-router-forwarder.service`. It listens on the Node's container bridge address at port 8319 and proxies every request to the guard origin. It adds no header, removes no header, holds no key and has no rule of its own. UFW admits port 8319 only on the bridge.
+Each agent Node runs its own Caddy, `orbit-ai-router-forwarder.service`. It listens on the Node's container bridge address at port 8319 and proxies every request to the guard origin. It adds only Caddy's `X-Forwarded-*` headers, holds no key and has no rule of its own. UFW admits port 8319 only on the bridge.
+
+A container's traffic leaves the Node from the Node's WireGuard address, which the guard admits. So UFW on the Node drops forwarded traffic to the guard's address and port, from any bridge, with a route deny at the top. A container reaches the guard only through the forwarder. The Node's own processes are not forwarded and reach the guard directly; on an agent Node these are Orbit's own: the forwarder, the Node agent, Incus and root.
 
 The guard stays the one place that decides. A request through the forwarder meets the same key, method, path and query checks as a request from a task VM.
 
@@ -41,7 +43,7 @@ The guard stays the one place that decides. A request through the forwarder meet
 
 The guard admits two kinds of source: the task VM range, and the WireGuard address of every Node whose last forwarder run left a forwarder in place. Each such address gets its own UFW allow above the guard's deny.
 
-One run does both halves. `ai_router.model_forwarder` first applies the guard with the Node added (or removed), then applies (or removes) the forwarder on the Node. A run that applies ends with a request through the forwarder with no key. The guard's 403 proves both that the guard admits the Node and that it still demands the key. A run that removes ends by showing that the guard port no longer answers the Node.
+One run does both halves. `ai_router.model_forwarder` first applies the guard with the Node added (or removed), then applies (or removes) the forwarder on the Node. A run that applies ends with a request through the forwarder with no key. The guard answers 401 to a refused request from a source it admits, and 403 to any other source. So the 401 proves both that the guard admits the Node and that it still demands the key. A run that removes ends by showing that the router's Node answers SSH from the Node while the guard port does not.
 
 The router's Node and Nodes with the `swamp` role cannot run a forwarder. The router's Node holds the real key, so it is no agent host. The swamp Node is the outside source the guard run uses to prove its refusal.
 
@@ -69,7 +71,7 @@ The guard sees the Node's address, not the container's. These are the options:
 
 ## Rejected alternatives
 
-- **Admit agent Node addresses at the guard, with no forwarder.** Containers would need a route to `services` through the Node. Each container bridge would need NAT and forwarding rules for one destination, which is the forwarder's job done in the firewall, with no single listener to check.
+- **Admit agent Node addresses at the guard, with no forwarder.** Containers would call the guard directly, through the Node's NAT. Every bridge on the Node, such as a CI runner bridge, would reach the guard too, and the container runtime's rule for the `agent` uid would need the guard's address, which can move. The forwarder gives one local listener per Node that the runtime's rule names, and the route deny closes the direct path.
 - **A guard on each agent Node.** It needs the real key on the Node. ADR 0250 rule 3 forbids it.
 - **Give containers WireGuard identities.** Every container becomes a WireGuard peer with its own address, hub filter and enrolment. Too much for one route.
 - **Allow any query on the messages routes.** The rule against queries keeps clients from passing router options. One fixed value is enough for Claude Code.
@@ -77,7 +79,8 @@ The guard sees the Node's address, not the container's. These are the options:
 ## Consequences
 
 - A container needs only the placeholder and the forwarder origin, `http://<bridge address>:8319`.
-- Any root process on a forwarder Node can use the guard with the placeholder. The placeholder is no secret: it works only from an admitted source. Root on the Node already reaches every container.
+- Any process of the Node itself can use the guard with the placeholder; containers cannot, except through the forwarder. The placeholder is no secret: it works only from an admitted source. Root on the Node already reaches every container.
+- The guard answers 401 instead of 403 to a refused request from an admitted source, task VMs included. Nothing reads the difference except the forwarder run's end check.
 - Removing the guard with `ai-router:task-guard --remove` also removes every forwarder Node's allow. The forwarders stay; the next guard run admits them again.
 - Task VMs see no change until an operator runs the guard again. Then they also gain `?beta=true` and `count_tokens`.
 
@@ -86,4 +89,4 @@ The guard sees the Node's address, not the container's. These are the options:
 - Components: apps/gateway, apps/docs
 - ADRs: applies rules 3 and 5 of ADR 0250 (in review) to containers
 - Detail: [Task VM guard](/reference/ai-router#task-vm-guard), [Container model forwarder](/reference/ai-router#container-model-forwarder), [Credentials in task VMs](/reference/tasks#credentials-in-task-vms), and the charts `docs/cli/ai-router/task-guard.mmd` and `docs/cli/ai-router/model-forwarder.mmd`. The change also touches `swamp/`: the `ai_router.model_forwarder` workflow and its Ansible phase
-- Verify: the Gateway tests run the rendered guard and forwarder on real Caddy, chained; a first run on an agent Node ends with the guard's 403 through the forwarder
+- Verify: the Gateway tests run the rendered guard and forwarder on real Caddy, chained; a first run on an agent Node ends with the guard's 401 through the forwarder

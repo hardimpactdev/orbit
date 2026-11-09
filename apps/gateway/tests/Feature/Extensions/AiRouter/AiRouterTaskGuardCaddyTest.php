@@ -67,8 +67,15 @@ it('passes only a POST of the task key from the range to the inference routes, w
             ['POST', '/v1/chat/completions?beta=true', 'task-key'], ['POST', '/v1/messages?beta=true&key=x', 'task-key'],
             ['POST', '/v1/messages?beta=false', 'task-key'], ['POST', '/v1/messages?key=x', 'task-key'],
             ['POST', '/v1/messages?beta=true', 'wrong']] as [$method, $uri, $key]) {
-            expect($send($method, $uri, $key)[0])->toBe(403, "{$method} {$uri} with ".($key ?? 'no key'));
+            expect($send($method, $uri, $key)[0])->toBe(401, "{$method} {$uri} with ".($key ?? 'no key'));
         }
+        $caddy->stop(2);
+
+        // From a source outside the range, the task key gets 403.
+        file_put_contents("{$directory}/Caddyfile", strtr($caddyfile, ['remote_ip 127.0.0.1/32' => 'remote_ip 10.44.0.128/25']));
+        $caddy = Process::start(['caddy', 'run', '--adapter', 'caddyfile', '--config', "{$directory}/Caddyfile"]);
+        retry(50, static fn () => Http::post("http://127.0.0.1:{$guard}/"), 100);
+        expect($send('POST', '/v1/responses')[0])->toBe(403);
     } finally {
         $caddy->stop(2);
         Process::run(['rm', '-rf', $directory]);

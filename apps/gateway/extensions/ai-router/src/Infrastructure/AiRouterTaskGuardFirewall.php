@@ -10,8 +10,9 @@ use Orbit\Extensions\AiRouter\Domain\AiRouterModelForwarder;
 use Orbit\Extensions\AiRouter\Domain\AiRouterTaskGuard;
 
 /**
- * The guard's UFW rules on the router's Node, while the last applied guard or forwarder run left the guard in place: the task VM range,
- * each forwarder Node, and the deny. On a forwarder Node, the forwarder's bridge rule while its last succeeded run left it in place.
+ * The guard's UFW rules on the router's Node, in UFW's order, while the last guard or forwarder run left the guard in place: each
+ * forwarder Node's allow (each inserted at the top, so the last one first), the task VM range, and the deny. On a forwarder Node, while
+ * its last succeeded run left the forwarder in place: the route deny to the guard, and the bridge rule.
  */
 final readonly class AiRouterTaskGuardFirewall implements ContributedNodeFirewallRules
 {
@@ -27,13 +28,15 @@ final readonly class AiRouterTaskGuardFirewall implements ContributedNodeFirewal
         if ($router->id !== $node->id) {
             $own = $present[$node->id] ?? null;
 
-            return $own === null ? [] : [$this->forwarder->rule($own['bridge'], $own['address'])];
+            return $own === null ? [] : [$this->forwarder->routeRule($this->guard->address($router)), $this->forwarder->rule($own['bridge'], $own['address'])];
         }
         if (! $this->guard->applied($node)) {
             return [];
         }
         $rules = $this->guard->rules($node);
 
-        return [$rules['allow'], ...array_map(fn (array $own) => $this->guard->forwarderRule($node, $own['node']), array_values($present)), $rules['deny']];
+        $allows = array_map(fn (array $own) => $this->guard->forwarderRule($node, $own['node']), array_values($present));
+
+        return [...array_reverse($allows), $rules['allow'], $rules['deny']];
     }
 }

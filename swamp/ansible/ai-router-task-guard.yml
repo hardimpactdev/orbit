@@ -119,7 +119,7 @@
       ansible.builtin.import_tasks: tasks/firewall.yml
       vars:
         firewall_commands: "{{ intent.firewall.desired + intent.firewall.remove }}"
-    # From the Node itself, a source outside the task VM range: even the task key gets 403.
+    # From the Node itself, a source outside the guard's sources: even the task key gets 403.
     - name: Check that a source outside the range is refused
       no_log: true
       ansible.builtin.uri:
