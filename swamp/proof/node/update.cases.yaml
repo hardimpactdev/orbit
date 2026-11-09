@@ -22,7 +22,6 @@ uncovered:
   "code:node.provisioning_busy": "Need a fixture that holds the Node's lifecycle name lock while the update arrives."
   "code:validation.failed": "Name and platform refusals; build work of the record fields. The LAN address refusal has its case."
   "code:cluster.lan_ip_conflict": "Need two Node fixtures with the same LAN address, in one Cluster or both outside every Cluster."
-  "flag:--lan-ip:skip-reason": "The repeat should print the skip reason node.unchanged; node:update does not report it yet."
   "code:node.settings_platform_unsupported": "Need a non-Linux Node fixture with task VM host settings whose bridge change starts the run."
   "code:task_vm.runtime_in_use": "Same need as path:runtime-in-use."
 
@@ -132,8 +131,7 @@ cases:
       - act:
           - cli:
               run: [node:update, "${lan.id}", --lan-ip=10.0.0.42]
-              forms: [json, human]
-              expect: {exit: 0, request: none}
+              expect: {exit: 0, request: none, skipped: node.unchanged}
         expect:
           - unchanged: {since: act, what: [operations, node_records]}
       - act:
