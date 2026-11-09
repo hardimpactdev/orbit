@@ -8,7 +8,7 @@ covers:
   - apps/gateway/app/Domain/Nodes/{NodeNetworkConvergeInput,NodeNetworkInput,NodeNetworkParticipantInput,NodeNetworkProjection,NodeWireGuardInput,NodeWireGuardHubInput}.php
   - apps/gateway/app/Infrastructure/Nodes/NodeVpnConfigurationSource.php
   - apps/gateway/database/migrations/2027_02_02_000000_drop_node_wireguard_endpoint_override.php
-  - swamp/ansible/tasks/{node-hub-lan-proof,node-converge-hub,node-hub-source,node-converge-handshake,node-converge-hub-switch,node-converge-hub-move,node-add-hub-peers}.yml
+  - swamp/ansible/tasks/{node-hub-lan-proof,node-converge-hub,node-hub-source,node-converge-handshake,node-converge-hub-peers,node-converge-hub-switch,node-converge-hub-move,node-add-hub-peers}.yml
   - apps/gateway/app/Domain/Nodes/NodeLanAddress.php
 ---
 
@@ -176,10 +176,15 @@ One file per peer lets a run that adds one Node, such as task VM enrollment, wri
 
 The converge's Ansible `network` phase reaches the hub over SSH as root:
 
-1. It writes `orbit.conf` and each peer file (0600, root).
-2. The prune deletes the peer files of Nodes that are gone or being removed. Every other Node keeps its file.
-3. It runs `wg syncconf` on input it composes on the Node: `PrivateKey` read from `orbit.key`, the port and the mark, then every peer file.
-4. The source unit is written, restarted on change or drift, and checked.
+1. It reads the live peers: those with a handshake in the last 180 seconds.
+2. It writes `orbit.conf` and each peer file (0600, root).
+3. The prune deletes the peer files of Nodes that are gone or being removed. Every other Node keeps its file.
+4. It runs `wg syncconf` on input it composes on the Node: `PrivateKey` read from `orbit.key`, the port and the mark, then every peer file.
+5. The source unit is written, restarted on change or drift, and checked.
+6. It requires every recorded peer on the interface, or fails with the assertion `vpn.hub_peer_missing`.
+7. It waits up to a minute for each peer that was live in step 1 to have a handshake in the last 180 seconds.
+
+An offline peer, such as a laptop or a parked task VM, has no handshake to give, so the hub does not wait for it. Waiting for every recorded peer failed the hub's converge whenever one was offline (Operation 15006, 2026-11-09). The `check` phase only requires every recorded peer on the interface; with no change it has no handshake to prove.
 
 A Node keeps its peer file even before the Gateway records its key, because its own run may have written it.
 

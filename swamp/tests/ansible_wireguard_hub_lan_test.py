@@ -326,9 +326,13 @@ class WireGuardHubLanTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertEqual(self.left['loaded.log'].count('[Interface]'), 1)
 
+def peer_block():
+    return next(task for task in yaml.safe_load((ANSIBLE / 'tasks/node-converge-network.yml').read_text())
+                if task['name'] == 'Reconcile the peer after its hub has completed')['block']
+
 class NetworkPhaseWiringTest(unittest.TestCase):
     def test_the_peer_phase_decides_from_the_previous_file_stages_the_files_and_moves_in_one_job(self):
-        block = yaml.safe_load((ANSIBLE / 'tasks/node-converge-network.yml').read_text())[1]['block']
+        block = peer_block()
         names = [task['name'] for task in block]
         order = [names.index(name) for name in ("Prove the hub's LAN endpoint before any WireGuard change",
                                                 'Decide whether the hub endpoint changes', 'Reconcile recorded peer files',
@@ -348,7 +352,7 @@ class NetworkPhaseWiringTest(unittest.TestCase):
         self.assertIn('hub_move_outcome', tasks[-1]['ansible.builtin.assert']['that'])
 
     def test_the_peer_phase_drops_the_copies_of_a_cut_off_move_when_it_no_longer_moves(self):
-        block = yaml.safe_load((ANSIBLE / 'tasks/node-converge-network.yml').read_text())[1]['block']
+        block = peer_block()
         names = [task['name'] for task in block]
         drop = block[names.index('Drop the copies of a cut-off move that no longer moves')]
         self.assertEqual(drop['when'], 'not hub_switch | bool')

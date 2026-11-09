@@ -40,6 +40,7 @@ additionalFiles:
   - ansible/tasks/node-hub-source.yml
   - ansible/tasks/node-converge-address.yml
   - ansible/tasks/node-converge-handshake.yml
+  - ansible/tasks/node-converge-hub-peers.yml
   - extensions/behaviors/operations/ansible-input/converge_tool.ts
   - extensions/behaviors/operations/tools/native.ts
   - extensions/behaviors/operations/tools/contract.ts

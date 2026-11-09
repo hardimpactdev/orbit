@@ -130,13 +130,13 @@
         apply: { tags: [check] }
       vars: { peer_key: "{{ intent.network.apply.peer.server_public_key }}" }
       tags: [check]
-    - name: Check the recorded hub handshakes without writes
+    # Without a change there is nothing to prove by a handshake; the check requires every recorded peer on the hub.
+    - name: Check the recorded hub peers without writes
       when: intent.network != None and intent.network.mode == 'hub'
       ansible.builtin.include_tasks:
-        file: tasks/node-converge-handshake.yml
+        file: tasks/node-converge-hub-peers.yml
         apply: { tags: [check] }
-      loop: "{{ intent.network.hub.peer_keys if intent.network != None and intent.network.mode == 'hub' else [] }}"
-      loop_control: { loop_var: peer_key }
+      vars: { hub_peer_keys: "{{ intent.network.hub.peer_keys }}", hub_live_keys: [] }
       tags: [check]
     - name: Check the selected role runtime
       ansible.builtin.include_tasks:
