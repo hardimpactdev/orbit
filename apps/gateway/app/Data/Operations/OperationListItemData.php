@@ -33,6 +33,8 @@ final class OperationListItemData extends Data
         public ?string $startedAt,
         public ?string $finishedAt,
         public ?int $pollAfterSeconds,
+        /** @var array{error_code:string}|null */
+        public ?array $assistance = null,
         /** @var array{code:?string,detail:string,stderr_recorded?:bool}|null */
         public ?array $error = null,
         public ?string $currentStepStartedAt = null,
@@ -63,6 +65,7 @@ final class OperationListItemData extends Data
             startedAt: $record->startedAt,
             finishedAt: $record->finishedAt,
             pollAfterSeconds: $record->pollAfterSeconds,
+            assistance: $record->assistance,
             error: $record->error,
             currentStepStartedAt: $record->currentStepStartedAt,
             currentStepObservedAt: $record->currentStepObservedAt,

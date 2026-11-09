@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
@@ -69,4 +70,22 @@ it('cancels the provision that waits for a place first, then ends the task at ad
 
     expect($provision->refresh()->status)->toBe(OperationStatus::Cancelled)
         ->and($this->group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
+});
+
+it('finishes a no-change maintenance group whose VM is gone at admission, and the continuation keeps it completed', function (): void {
+    $this->subtask->update(['status' => TaskStatus::Completed]);
+    $check = Operation::query()->create(['kind' => 'tasks.check', 'target_type' => 'task_group', 'target_id' => $this->group->id, 'node_id' => null,
+        'input' => [], 'status' => OperationStatus::Succeeded, 'result' => ['outcome' => 'passed']]);
+    $this->group->update(['status' => TaskGroupStatus::Settling, 'capacity_wait_reason' => null,
+        'maintenance' => ['changed' => false, 'check_operation_id' => $check->id, 'stage' => 'tasks.check']]);
+
+    $finish = app(TaskCancelIntent::class)->finishMaintenance($this->group);
+    // TaskMaintenanceContinuation records the next stage on the model it already holds.
+    $this->group->update(['maintenance' => [...$this->group->maintenance, 'stage' => $finish->kind, 'operation_id' => $finish->id]]);
+
+    expect($finish->kind)->toBe('tasks.maintenance_finish')
+        ->and($finish->status)->toBe(OperationStatus::Succeeded)
+        ->and($finish->state['swamp_run_id'] ?? null)->toBeNull()
+        ->and($this->group->refresh()->status)->toBe(TaskGroupStatus::Completed)
+        ->and($this->subtask->refresh()->status)->toBe(TaskStatus::Completed);
 });

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Data\Operations\OperationData;
+use App\Data\Operations\OperationListItemData;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Models\Node;
@@ -65,4 +67,12 @@ it('refuses a limit or cursor out of form', function (string $query, string $fie
 it('keeps input, result and steps on operation:show', function (): void {
     expect(test()->withServerVariables(['REMOTE_ADDR' => '10.44.0.2'])->getJson('/api/v1/operations/'.$this->ids[0])->assertOk()->json('data'))
         ->toHaveKeys(['input', 'result', 'steps']);
+});
+
+it('lists every field of the record except input, result and steps', function (): void {
+    $operation = Operation::query()->withCallerNodeName()->findOrFail($this->ids[0]);
+    $record = array_keys(OperationData::summary($operation, $operation->caller_node_name)->toArray());
+
+    expect(array_keys(OperationListItemData::fromModel($operation, $operation->caller_node_name)->toArray()))
+        ->toEqualCanonicalizing(array_values(array_diff($record, ['input', 'result', 'steps'])));
 });
