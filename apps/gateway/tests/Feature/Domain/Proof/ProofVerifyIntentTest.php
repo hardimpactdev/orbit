@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Proof\ProofObserverRelease;
 use App\Domain\Proof\ProofVerifyIntent;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -21,6 +22,21 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(ProofObserverRelease::class, new readonly class implements ProofObserverRelease
+    {
+        public function forCommit(string $commit): string
+        {
+            return 'admitted-observer-'.$commit;
+        }
+
+        public function forGateway(): string
+        {
+            return 'admitted-gateway-observer';
+        }
+    });
+});
 
 beforeEach(fn () => SwampNodeFixture::ensure());
 

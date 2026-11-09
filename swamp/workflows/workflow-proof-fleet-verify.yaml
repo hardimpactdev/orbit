@@ -159,6 +159,7 @@ jobs:
       inputs:
         ssh_execution: ${{ inputs.intent.ssh_execution }}
         checkout_path: ${{ inputs.intent.checkout_path }}
+        observer_release: ${{ inputs.intent.observer_release }}
         group_id: ${{ inputs.intent.group_id }}
         file: ${{ inputs.intent.file }}
         batch: ${{ self.batch.batch }}
@@ -285,6 +286,7 @@ jobs:
       inputs:
         ssh_execution: ${{ inputs.intent.ssh_execution }}
         checkout_path: ${{ inputs.intent.checkout_path }}
+        observer_release: ${{ inputs.intent.base_observer_release }}
         group_id: ${{ inputs.intent.group_id }}
         file: ${{ inputs.intent.file }}
         batch: ${{ self.batch.batch }}

@@ -60,7 +60,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. Required checks requires its success, including the outside proof for a fork; see [the proof run job](#the-proof-run-job) |
 | Required checks | Require every selected build, static check and PR proof to succeed; only an explicitly untouched job may skip |
 
-The Swamp gate production-lints the candidate observer preparation play. Its fixture tests verify all three nested Nodes against a changed candidate pin and reject a bad checksum.
+The Swamp gate production-lints the observer preparation play. Its fixture tests install the admitted artifact on all three nested Nodes and reject a bad checksum. Gateway tests exercise real release provenance and byte equality, and require new presence versions and host facts after a controlled restart. Runner tests give preparation and batch setup separate bounded budgets.
 
 The Swamp gate rejects a new behavior name that carries a run id. A task workflow names its local and data steps by the address of the task VM, as [Behavior names](/reference/tasks#behavior-names) says.
 

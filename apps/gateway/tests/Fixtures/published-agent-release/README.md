@@ -1,0 +1,1 @@
+These are byte copies of the published cli-v0.10003.0 release metadata. They test the real release admission verifier offline. The bundle must verify against the checked-in Sigstore trust root and the exact manifest and checksum bytes.

@@ -126,4 +126,4 @@ A restored proof Gateway keeps the base image's installed collections and genera
 
 `command` expands `~user` even with `argv`. Set `expand_argument_vars: false` for literal arguments such as DNS routing domain `~orbit`; otherwise it becomes the account's home path and drifts on every run. Test with a domain that names an existing account and read back the arguments before checking a zero-change repeat.
 
-A proof candidate must install its own frozen observer pin after every base restore. A copied delivery manifest does not update running binaries. Share the normal checksum-verified installer and fail preparation before cases if a download, service or digest check fails.
+A proof candidate must install its own frozen observer pin after every base restore. A copied delivery manifest does not update running binaries. The trusted Gateway must admit the pin through the release admission verifier before a VM is allocated; never trust a URL and matching hash from a checkout. Share the normal checksum-verified installer and require the expected agent version and a new stored host fact before cases. Give preparation a separate bounded budget from batch setup.

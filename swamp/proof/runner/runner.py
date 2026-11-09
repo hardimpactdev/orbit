@@ -313,8 +313,8 @@ def command_setup(args):
     root = Path(args.evidence or fleet_module.evidence_root())
     try:
         items = spec_module.expand_steps(spec.batches[args.batch].get('setup') or [], 'setup', f'batch {args.batch} setup', {}, {}, {})
-        run = Run(fleet_module.from_environment(), spec, root / ('batch-' + args.batch))
-        run_steps(run, items, 'setup', failures, started + 120)
+        run = Run(fleet_module.prepare(args.observer_release), spec, root / ('batch-' + args.batch))
+        run_steps(run, items, 'setup', failures, time.time() + 120)
     except steps.Unrun as error:
         failures.append(str(error))
     except Exception as error:
@@ -340,6 +340,7 @@ def main(argv=None):
     setup = commands.add_parser('setup', help='run the setup steps of one batch on the fleet')
     setup.add_argument('batch')
     setup.add_argument('--evidence')
+    setup.add_argument('--observer-release', help='exact published manifest admitted by the trusted Gateway')
     batch = commands.add_parser('batch', help='run every case of one batch on the fleet, several at a time')
     batch.add_argument('batch')
     batch.add_argument('--evidence')
