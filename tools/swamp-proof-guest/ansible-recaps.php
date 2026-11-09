@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 // Test support only: read exact native artifacts on the nested Gateway, never latest behavior output.
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Operation;
 use Illuminate\Contracts\Console\Kernel;
@@ -37,6 +38,16 @@ function roleAnsibleRecaps(SwampCommandStep $reader, string $runId, array $phase
     return $result;
 }
 
+function roleAnsibleRecapFailure(Throwable $error): string
+{
+    $code = $error instanceof ResourceOperationException ? $error->errorCode : (string) $error->getCode();
+    $caller = $error->getTrace()[0] ?? [];
+
+    return 'Ansible recap '.get_class($error).' at '.basename($error->getFile()).':'.$error->getLine()
+        .' ['.$code.']: '.$error->getMessage()
+        .(isset($caller['file'], $caller['line']) ? ' (caller '.basename($caller['file']).':'.$caller['line'].')' : '')."\n";
+}
+
 if (realpath($_SERVER['SCRIPT_FILENAME']) === __FILE__) {
     try {
         require __DIR__.'/../../apps/gateway/vendor/autoload.php';
@@ -49,8 +60,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME']) === __FILE__) {
         }
         echo json_encode(roleAnsibleRecaps(app(SwampCommandStep::class), $operation->state['swamp_run_id'], $input['phases']), JSON_THROW_ON_ERROR)."\n";
     } catch (Throwable $error) {
-        // Never print exception messages, arguments or native stdout: they may contain credentials.
-        fwrite(STDERR, 'Ansible recap '.get_class($error).' at '.basename($error->getFile()).':'.$error->getLine()."\n");
+        // Include the error contract and caller location, never trace arguments or native stdout.
+        fwrite(STDERR, roleAnsibleRecapFailure($error));
         exit(1);
     }
 }

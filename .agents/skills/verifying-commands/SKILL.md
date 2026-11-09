@@ -53,4 +53,4 @@ Runner, selection code and selection-list changes disable narrowing for commands
 
 Exercise a case's JSON selectors against the shared runner before running the fleet. A rejected selector does not prove a missing record. Test native-output readers against complete recorded artifacts, and report safe exception types and locations when a guest helper fails; never print raw output or exception arguments.
 
-Match fixtures to the native behavior's artifact contract: `command/shell` writes structured stdout in `result` and plain text in `log`. Resolve the recorded `result` data ID and version; an invented `output` artifact can make a mock test pass while the real reader fails.
+Match fixtures to the native behavior and transport contracts: `command/shell` writes structured stdout in `result` and plain text in `log`. Resolve the recorded `result` data ID and version. A native WebSocket `data.query` with a map `select` returns values in `projected.rows` with an empty `results`, unlike the flattened CLI JSON. Capture the actual transport envelope before mocking it. An invented artifact name or response shape can make a mock test pass while the real reader fails.

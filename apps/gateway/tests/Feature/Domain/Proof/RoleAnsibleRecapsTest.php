@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
@@ -19,7 +20,11 @@ beforeEach(function (): void {
     });
     $socket->shouldReceive('receive')->andReturnUsing(function (): array {
         $request = end($this->requests);
-        $data = $request['type'] === 'workflow.history.get' ? $this->history : ['results' => [$this->artifact]];
+        $data = $request['type'] === 'workflow.history.get' ? $this->history : [
+            'results' => [],
+            'projected' => ['shape' => 'map', 'columns' => ['id', 'name', 'version', 'content'], 'rows' => [$this->artifact]],
+            'total' => 1, 'limited' => false,
+        ];
 
         return [['type' => $request['type'], 'id' => $request['id'], 'payload' => ['data' => $data]]];
     });
@@ -27,6 +32,21 @@ beforeEach(function (): void {
 });
 
 afterEach(fn () => app(SwampConnection::class)->release());
+
+it('reports the resource error code and message with the failing reader location', function (): void {
+    $this->history = ['jobs' => [['steps' => [
+        ['name' => 'Check the role', 'status' => 'succeeded', 'dataArtifacts' => [['name' => 'log']]],
+    ]]]];
+
+    try {
+        roleAnsibleRecaps(app(SwampCommandStep::class), 'role-run', ['Check the role']);
+        $this->fail('The missing result must fail the recap read.');
+    } catch (ResourceOperationException $error) {
+        expect(roleAnsibleRecapFailure($error))
+            ->toContain('[swamp.terminal_result_unavailable]: The native terminal result is unavailable.', 'caller SwampCommandStep.php:')
+            ->not->toContain('role-run');
+    }
+});
 
 it('reads the command shell result artifact by identity rather than its text log or history summary', function (): void {
     $artifactId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';

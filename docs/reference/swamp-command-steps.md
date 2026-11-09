@@ -52,7 +52,7 @@ A projection that implements `DirectOperationChildProjection` can also record it
 
 A running parent can record child evidence before its own terminal result; a timed-out parent can retain that evidence while awaiting native settlement. Timeout settlement releases the hold without projecting new root evidence. Native cancellation can skip finalization; a cancelled task turn keeps its previous transcript.
 
-When a capture exceeds inline output limits, the shared reader loads the capture’s declared `artifact` resource by its recorded data ID and version (`result` when omitted). Task settlement captures name `state`, `verdict` or `fix`, matching the producer. The artifact lookup must return exactly one row with the declared ID, name and version. Missing or mismatched evidence leaves the child unprojected. The reader never selects the latest version.
+When a capture exceeds inline output limits, the shared reader loads the capture’s declared `artifact` resource by its recorded data ID and version (`result` when omitted). Task settlement captures name `state`, `verdict` or `fix`, matching the producer. Native WebSocket map selections return their rows in `projected.rows` and leave `results` empty. The artifact lookup must return exactly one row with the declared ID, name and version. Missing or mismatched evidence leaves the child unprojected. The reader never selects the latest version.
 
 A successful run requires its public JSON object; a kind without a result step declares `native` instead (below).
 
