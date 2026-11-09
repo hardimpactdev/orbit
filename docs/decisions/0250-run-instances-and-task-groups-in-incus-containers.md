@@ -75,7 +75,7 @@ The spikes of 2026-11-09 settled how an Instance container with a nested fleet r
 - The inner storage pool is a directory pool inside the container's filesystem. A snapshot and a clone of the default Instance then carry the whole fleet: 0.3 s and 0.5 s in the spike. A ZFS dataset delegated to the container is not used, because `incus copy` does not copy its child datasets.
 - A nested container that runs Docker gets nesting and a read-only device that presents `N` at `/sys/module/apparmor/parameters/enabled`. Docker then skips its own AppArmor profile, which cannot load two levels below the host. The host's profile for the outer container stays in force.
 - Only the Instance container needs `ip` and `wg` for its tunnel to the nested fleet: Ubuntu 26.04's AppArmor profile makes `wg-quick` segfault there. The nested Nodes keep `wg-quick` from the shared Node converge, which works with the AppArmor-off device above and a cloud-init `bootcmd` that turns off the `wg` and `wg-quick` profiles.
-- The nested test Nodes have full access to the public internet, always through an Orbit egress proxy on the Node. A rule in that proxy can narrow the access with no change to the containers. The proxy refuses private and fleet addresses. `agent`, which drives the inner Incus, can reach the internet through a nested Node; `orbit` cannot. [Egress of the nested fleet](/reference/development-containers#egress-of-the-nested-fleet) describes it.
+- Containers and their nested test Nodes have full access to the public internet, always through an Orbit egress proxy on the Node. A rule in that proxy can narrow the access with no change to the containers. The proxy refuses private and fleet addresses, and containers get no DNS of their own. [Egress and DNS](/reference/development-containers#egress-and-dns) describes it.
 - Units that need secrets use `SetCredential` or files, not `LoadCredential`. In nested containers systemd reports no credential error, but the unit gets no credential and fails.
 
 The default Instance holds the fleet's ready copies, with each nested container stopped and snapshotted, so a clone holds no half-written database pages.
@@ -149,7 +149,7 @@ The Node's agent reads per-container metrics from Incus (`/1.0/metrics`) and per
 Task work is the critical path. The Swamp migration waits until step 6 passes, and the CI proof becomes a required check again then.
 
 1. **This ADR.**
-2. **Host hardening** on Beast and Shark: current kernels, SCTP off, an explicit container egress model and bridge DNS, and secrets moved off.
+2. **Host hardening** on Beast and Shark: current kernels, SCTP off, an explicit container egress model with names resolved at the proxy, and secrets moved off.
 3. **Instance containers** on the Nodes of a build list: Node preparation with the shared folders, the default Instance, clones with T3, and destroy. [Instance containers](/reference/development-containers) specifies them, and [Container runtime](/solutions/development-container-runtime) orders the PRs.
 4. **Tasks in Instance containers.** A task starts in a clone or attaches to an Instance, and Swamp drives the container's T3.
 5. **Nested fleet** as an optional feature, and command proofs in an Orbit Instance container.
@@ -189,7 +189,7 @@ Task work is the critical path. The Swamp migration waits until step 6 passes, a
 - Each running Instance container costs about 400 MB for its T3 server before any agent runs. Development containers stop after an hour idle, and a wake takes about 3 s.
 - A new Instance starts at the default Instance's commit and data. A template copy of the default database briefly refuses the default Instance's connections.
 - The default Instance cannot be destroyed while it has clones.
-- Containers reach neither the Gateway nor GitHub. Orbit moves Git branches in and out from the host. Nested test Nodes, and so the `agent` of a nested-fleet container, reach the public internet only through the Orbit egress proxy.
+- Containers reach neither the Gateway nor any other private service, and hold no GitHub credentials. Orbit moves Git branches in and out from the host. Containers and nested test Nodes reach the public internet only through the Orbit egress proxy.
 - The task container host setting, places and bridge that the first plan built are removed in step 9. Its host preparation stays, as the container host part of the `app-dev` role.
 
 ## Affects

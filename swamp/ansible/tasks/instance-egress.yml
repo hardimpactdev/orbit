@@ -1,0 +1,144 @@
+---
+# The egress proxy of an Instance container host (docs/reference/development-containers.md#egress-and-dns): Squid as `proxy` on the
+# Instance bridge's gateway address, the containers' one way out, and its own nftables table, which keeps `proxy` off the Node itself,
+# WireGuard and every private address. The table loads first and the proxy runs only while it is there. The package's own Squid unit is
+# masked before the package installs, so it never starts with the stock configuration, which listens on every address.
+- name: Mask the package's own Squid unit
+  ansible.builtin.file: { src: /dev/null, dest: /etc/systemd/system/squid.service, state: link, force: true }
+  register: egress_mask
+
+- name: Install Squid
+  ansible.builtin.apt: { name: squid, state: present, install_recommends: false, update_cache: true, cache_valid_time: 3600 }
+
+- name: Make the folder of the proxy
+  ansible.builtin.file: { path: "{{ instances.egress.directory }}", state: directory, owner: root, group: root, mode: "0755" }
+
+- name: Write the nftables table
+  ansible.builtin.copy:
+    dest: "{{ instances.egress.directory }}/egress.nft"
+    content: "{{ instances.egress.ruleset }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: nft --check --file %s
+  register: egress_ruleset
+
+# The table loads early at boot, before WireGuard, Docker and Incus bring anything up, and after `nftables.service`, whose
+# `/etc/nftables.conf` may start with `flush ruleset`. Stopping the unit deletes the table, and the proxy stops with it.
+- name: Write the unit of the table
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ instances.egress.table_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Orbit Instance egress proxy: its nftables table
+      DefaultDependencies=no
+      After=local-fs.target nftables.service
+      Before=network-pre.target wg-quick@orbit.service docker.service incus.service {{ instances.egress.unit }}
+      Wants=network-pre.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/sbin/nft --file {{ instances.egress.directory }}/egress.nft
+      ExecReload=/usr/sbin/nft --file {{ instances.egress.directory }}/egress.nft
+      ExecStop=/usr/sbin/nft delete table inet {{ instances.egress.table }}
+
+      [Install]
+      WantedBy=sysinit.target
+  register: egress_table_unit
+
+# Never a restart: its stop deletes the table. The file replaces the table atomically.
+- name: Load the table
+  ansible.builtin.systemd_service:
+    name: "{{ instances.egress.table_unit }}"
+    daemon_reload: "{{ egress_table_unit.changed or egress_mask.changed }}"
+    enabled: true
+    state: started
+  register: egress_table_started
+
+- name: Load a changed table in place
+  ansible.builtin.command: { argv: [nft, --file, "{{ instances.egress.directory }}/egress.nft"] }
+  when: egress_ruleset.changed and not egress_table_started.changed
+  changed_when: true
+
+- name: Write the Squid configuration
+  ansible.builtin.copy:
+    dest: "{{ instances.egress.directory }}/squid.conf"
+    content: "{{ instances.egress.squid }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: squid -k parse -f %s
+  register: egress_squid
+
+# Squid as `proxy` from the start: port 3128 needs no privilege, and it holds no state, no cache and no PID file. It runs only while the
+# table's unit is up (`BindsTo`), and each start refuses when the table is missing, deleted by hand included. Incus brings the bridge
+# up; until then the bind fails and systemd restarts the unit.
+- name: Write the unit of the proxy
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ instances.egress.unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Orbit Instance egress proxy
+      After=network-online.target incus.service {{ instances.egress.table_unit }}
+      Wants=network-online.target
+      BindsTo={{ instances.egress.table_unit }}
+
+      [Service]
+      User={{ instances.egress.user }}
+      Group={{ instances.egress.user }}
+      ExecStartPre=+/usr/sbin/nft list table inet {{ instances.egress.table }}
+      ExecStart=/usr/sbin/squid -N -d 1 -f {{ instances.egress.directory }}/squid.conf
+      Restart=always
+      RestartSec=2
+      CapabilityBoundingSet=
+      AmbientCapabilities=
+      NoNewPrivileges=true
+      ProtectSystem=strict
+      ProtectHome=true
+      PrivateTmp=true
+      PrivateDevices=true
+      ProtectKernelTunables=true
+      ProtectKernelModules=true
+      ProtectKernelLogs=true
+      ProtectControlGroups=true
+      ProtectClock=true
+      ProtectHostname=true
+      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+      RestrictNamespaces=true
+      RestrictRealtime=true
+      LockPersonality=true
+      SystemCallArchitectures=native
+
+      [Install]
+      WantedBy=multi-user.target
+  register: egress_unit
+
+- name: Run the proxy
+  ansible.builtin.systemd_service:
+    name: "{{ instances.egress.unit }}"
+    daemon_reload: "{{ egress_unit.changed }}"
+    enabled: true
+    state: "{{ 'restarted' if (egress_unit.changed or egress_squid.changed) else 'started' }}"
+
+- name: Admit the containers to the proxy
+  community.general.ufw:
+    rule: "{{ instances.egress.rule.action }}"
+    direction: "{{ instances.egress.rule.direction }}"
+    interface_in: "{{ instances.egress.rule.in_interface }}"
+    proto: "{{ instances.egress.rule.protocol }}"
+    to_ip: "{{ instances.egress.rule.destination }}"
+    to_port: "{{ instances.egress.rule.port }}"
+    comment: "{{ instances.egress.rule.comment }}"
+
+- name: Wait for the proxy
+  ansible.builtin.wait_for:
+    host: "{{ instances.egress.origin | urlsplit('hostname') }}"
+    port: "{{ instances.egress.port }}"
+    timeout: 30

@@ -11,6 +11,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Models\TaskVm;
 
@@ -62,6 +63,7 @@ final readonly class InstanceHostIntent
         private ContainerNodes $nodes,
         private AllocateInstanceBridgeAction $bridges,
         private RecipeImageBuilds $recipes,
+        private PeerDnsPolicy $privateDns,
     ) {}
 
     /** Allocates the Node's bridge in the admission transaction of a role add or converge, before the intent is captured. */
@@ -104,8 +106,10 @@ final readonly class InstanceHostIntent
             // DHCP never hands out the gateway's neighbour range end, so the build address stays free.
             'dhcp_range' => long2ip((int) ip2long($gateway) + 1).'-'.long2ip((int) ip2long($last) - 1),
             'stock' => self::StockAlias,
-            // The bridge ACL lets containers reach only the model forwarder (docs/reference/ai-router.md#container-model-forwarder).
+            // The bridge ACL lets containers reach only the model forwarder (docs/reference/ai-router.md#container-model-forwarder) and
+            // the egress proxy, their one way out (docs/reference/development-containers.md#egress-and-dns).
             'forwarder_port' => self::ModelForwarderPort,
+            'egress' => InstanceEgress::for(self::Network, $gateway, $cidr, $this->privateDns->domains()),
             'ids' => (self::Containers + 1) * self::IdMapSize + $taskIds,
             // A task VM host sizes the ARC for its task side, or keeps the Node's own (task-vm-host-prepare.yml): the Instance side
             // never changes it there.
@@ -113,12 +117,12 @@ final readonly class InstanceHostIntent
             'incus' => $incus,
             'image' => InstanceImage::for($gateway),
             'folders' => InstanceFolderPlan::for($folders),
-            // `incus exec` sessions get the runtime folder's environment from the profile; the image gives it to units and login shells.
+            // `incus exec` sessions get the container environment from the profile; the image gives it to units and login shells.
             'profile_config' => [
                 'environment.PATH' => InstanceImage::Path,
                 ...array_combine(
-                    array_map(static fn (string $name): string => "environment.{$name}", array_keys(InstanceImage::RuntimeEnvironment)),
-                    InstanceImage::RuntimeEnvironment,
+                    array_map(static fn (string $name): string => "environment.{$name}", array_keys(InstanceImage::environment($gateway))),
+                    InstanceImage::environment($gateway),
                 ),
             ],
         ];

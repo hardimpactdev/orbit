@@ -101,13 +101,15 @@
 
 # The project lets containers mount only the two folders, read-only and idmapped, and publish T3 with a proxy device. Every
 # container gets an isolated ID map. The bridge reaches nothing by default: each Instance's own paths come with its create flow.
+# Containers get no DNS: the egress proxy resolves every name.
 - name: Prepare the Instance bridge, project and profile
   ansible.builtin.include_tasks: task-container-host-prepare.yml
   vars:
     container_host: *instance_host
     container_acl_name: "{{ instances.network }}-egress"
-    # Incus applies a bridge ACL to traffic to the Node too: the one way out is the model forwarder on the bridge's own address,
-    # which the image's nftables admits only for `agent`.
+    container_dns: false
+    # Incus applies a bridge ACL to traffic to the Node too: the ways out are the model forwarder, which the image's nftables admits
+    # only for `agent`, and the egress proxy, both on the bridge's own address.
     container_acl_rules:
       description: Orbit Instance boundary
       egress:
@@ -115,6 +117,11 @@
           destination: "{{ instances.address.split('/')[0] }}/32"
           protocol: tcp
           destination_port: "{{ instances.forwarder_port | string }}"
+          state: enabled
+        - action: allow
+          destination: "{{ instances.address.split('/')[0] }}/32"
+          protocol: tcp
+          destination_port: "{{ instances.egress.port | string }}"
           state: enabled
       ingress: []
     container_network_config:
@@ -126,7 +133,8 @@
       security.acls.default.egress.action: reject
     container_network_args: >-
       {{ container_network_config | dict2items | map(attribute='key') | zip(container_network_config.values()) | map('join', '=') | list }}
-    # Every process in a container gets the runtime folder's environment: `incus exec` sessions, units and login shells alike.
+    # Every process in a container gets the runtime folder's environment and the egress proxy: `incus exec` sessions, units and login
+    # shells alike.
     container_profile_config: "{{ instances.profile_config }}"
     container_devices:
       root: { type: disk, path: /, pool: "{{ instances.pool }}" }
@@ -144,6 +152,9 @@
       restricted.devices.proxy: allow
       restricted.snapshots: allow
       limits.virtual-machines: '0'
+
+- name: Run the egress proxy
+  ansible.builtin.include_tasks: instance-egress.yml
 
 - name: Build the Instance image
   ansible.builtin.include_tasks: instance-image.yml

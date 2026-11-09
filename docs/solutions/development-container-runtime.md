@@ -30,7 +30,7 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 | Pause | An explicit pause and resume on the group. A paused group admits no Swamp turn, and the user drives from Conn |
 | Task capacity | Each Node has task and CI place counts, with the queue and two-hour wait of task places. The parity gate's peak memory sets the counts |
 | Inner Incus | `agent` joins the inner Incus admin group: root-equivalent inside its own container, with no sudo. `orbit` gets no access |
-| Nested-fleet egress | Changed by Nick, after review, 2026-11-09. Nested test Nodes get full public internet access through an [Orbit egress proxy](/reference/development-containers#egress-of-the-nested-fleet). `orbit` keeps the shared package path |
+| Container egress | Changed by Nick, 2026-11-10. Every container and the nested test Nodes get full public internet access through the Node's [egress proxy](/reference/development-containers#egress-and-dns). Rollout step 2c built it |
 | Task Nodes before the switch | Task clones and container CI proofs run on Beast and Shark, as `app-dev` Nodes on the build list, beside their task VMs |
 | Models | Through the per-Node [forwarder](/reference/ai-router#container-model-forwarder) to the model router guard. A container holds only the placeholder key |
 | Registration | A step in the Instance-create flow issues and checks the T3 sessions. The Gateway records the server from that step's result |
@@ -85,7 +85,7 @@ The build list, the Gateway setting `instances.container_nodes` (`ORBIT_INSTANCE
 These come from other work and must land first.
 
 - **The model forwarder and guard change.** [#3290](https://github.com/hardimpactdev/orbit/pull/3290) built the per-Node forwarder and lets the model router guard accept agent Nodes and the `?beta=true` query. Merged.
-- **Container egress for dependencies.** [Step 2c of the rollout](/solutions/agent-runtime-and-manual-mode) names the package path that dependency installs use. PR 4 needs it. The image build of PR 3 has its own way out, for its build container only.
+- **Container egress for dependencies.** [Step 2c of the rollout](/solutions/agent-runtime-and-manual-mode) built the [egress proxy](/reference/development-containers#egress-and-dns) that dependency installs and the image build use. PR 4 needs it.
 - **Pairing works.** The spike's pairings failed at the vault step. The pairing fix on `main` must pair with a container's server before PR 5 ends.
 
 ## Build PRs
@@ -169,14 +169,14 @@ The host side reuses the container host tasks of the task containers (#3279):
 - The project, bridge, ACL, profile, stock image, input rules and clone probe.
 - The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge refuses a Node without it.
 - The project mounts only the two folders, read-only and idmapped, and allows proxy devices for T3.
-- Every container gets an isolated ID map. The bridge `orbitinst0` reaches only the model forwarder by default.
+- Every container gets an isolated ID map. The bridge `orbitinst0` reaches only the model forwarder and, since step 2c, the egress proxy.
 
 The image and the folders:
 
 - The image: Ubuntu 26.04, `agent` 2750, `orbit` 1000, `work` 2760, no sudo, `nftables` with the two uid rules, `hidepid`, `acl`, and the T3 unit.
 - The T3 unit has its condition on `/etc/orbit/instance`.
 - The image's alias is a digest of its definition. The stable alias `orbit-instance` names the newest.
-- The build container alone reaches the internet. It takes the bridge's last address, with its own ACL and a route rule that the build removes.
+- The build container takes the bridge's last address. Since step 2c it reaches the internet through the egress proxy, as every container does.
 - The recipe pins the runtime folder: Composer, Node, Bun and rg. Node and Bun reuse the recipe's own pins.
 - The recipe pins the agent folder: T3, Claude Code and Codex. The Gateway adds the three environment notes.
 - The converge installs both folders with their `current` links. A folder's version is a digest of its content.
@@ -202,7 +202,7 @@ No fixture can prove these claims; only real Incus on the first test Node can.
 
 10. As `orbit` in a test container, `ps -u agent` lists nothing: `hidepid=invisible` holds after a container restart.
 11. The restricted project accepts the two folder disks, read-only and shifted, under `restricted.devices.disk.paths`.
-12. The build container reaches the internet through its own NIC ACL. A test container on the bridge reaches only the forwarder.
+12. The build container reaches the internet through the egress proxy. A test container on the bridge reaches only the forwarder and the proxy.
 13. As `orbit`, `10.253.x.1:8319` and T3's port 3773 answer with a reset; as `agent`, both answer.
 14. The published image has no `ubuntu` user and no sudo grant.
 15. Cloud-init stays off in a new container.
@@ -410,7 +410,7 @@ This PR adds the [nested fleet](/reference/development-containers#nested-fleet) 
 - **Refusals.** The create flow refuses a `raw.*` key and any device beyond the root disk, the NIC, the shared folders and the T3 proxy.
 - **Fleet rules.** The AppArmor-off device on each nested container, and a fleet check that fails on any `LoadCredential` unit.
 
-The PR also adds the Node's [egress proxy](/reference/development-containers#egress-of-the-nested-fleet): the Process on the Node, the bridge ACL and input rules for a nested-fleet container, the container's forward-only rule, the proxy's egress facts, and the proxy settings of the nested Nodes.
+The PR also points the nested fleet at the Node's [egress proxy](/reference/development-containers#egress-of-the-nested-fleet), which step 2c built: the proxy settings of the nested Nodes, and the proxy's lines as egress facts of the Instance.
 
 Tests: Pest for the setting, the project choice, the refusals and the proxy rules; Ansible fixture tests for the inner Incus, the tunnel unit, the fleet check and the proxy settings. Live on Beast:
 
@@ -423,7 +423,7 @@ Tests: Pest for the setting, the project choice, the refusals and the proxy rule
 The egress proxy checks follow.
 
 7. A nested Node fetches a public package through the proxy, and the proxy logs the connection.
-8. A nested Node with the proxy unset reaches nothing outside, and `orbit` cannot reach the proxy.
+8. A nested Node with the proxy unset reaches nothing outside.
 9. The proxy refuses `CONNECT` to the Gateway, to `127.0.0.1` and to a `.orbit` name.
 
 ### PR 11: command proofs in an Instance container

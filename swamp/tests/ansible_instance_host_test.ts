@@ -52,7 +52,14 @@ function transform(task: Task, folder: string): Task {
       mode: "0600",
     };
   }
-  for (const module of ["ansible.builtin.apt", "community.general.modprobe"]) {
+  for (
+    const module of [
+      "ansible.builtin.apt",
+      "community.general.modprobe",
+      "ansible.builtin.systemd_service",
+      "ansible.builtin.wait_for",
+    ]
+  ) {
     if (module in task) {
       delete task[module];
       task["ansible.builtin.debug"] = { msg: module };
@@ -75,6 +82,7 @@ function transform(task: Task, folder: string): Task {
 
 const replacements = (folder: string): [string, string][] => [
   ["/etc/modprobe.d/orbit-instances-zfs.conf", `${folder}/arc.conf`],
+  ["/etc/systemd/system/", `${folder}/systemd/`],
   ["/sys/module/zfs/parameters/zfs_arc_max", `${folder}/arc`],
   ["/etc/subuid", `${folder}/subuid`],
   ["/etc/subgid", `${folder}/subgid`],
@@ -91,6 +99,7 @@ function writeTasks(folder: string) {
   for (
     const name of [
       "instance-host.yml",
+      "instance-egress.yml",
       "instance-folder.yml",
       "instance-vite-plus-home.yml",
       "instance-image.yml",
@@ -210,6 +219,7 @@ async function fixture(
       "artifacts",
       "cache",
       "modules-load",
+      "systemd",
     ]
   ) {
     Deno.mkdirSync(`${folder}/${dir}`);
@@ -250,6 +260,9 @@ async function fixture(
     sysctl: 'printf "16384\\n128\\n65536\\n200\\n20000\\n1048576\\n"',
     // No Node group holds gid 2750.
     getent: "exit 2",
+    // The egress table and Squid configuration validate; the real-kernel check and the live check prove them.
+    nft: "exit 0",
+    squid: "exit 0",
     // The pinned artifacts come from the fixture folder, by the URL's file name.
     curl:
       `out=; for a; do case "$prev" in --output) out=$a;; esac; prev=$a; done
@@ -283,10 +296,34 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
     dhcp_range: "10.253.0.2-10.253.0.253",
     stock: "ubuntu-26.04-instance-stock",
     forwarder_port: 8319,
+    egress: {
+      port: 3128,
+      user: "proxy",
+      directory: `${folder}/egress`,
+      unit: "orbit-instance-egress.service",
+      table_unit: "orbit-instance-egress-table.service",
+      table: "orbit_instance_egress",
+      origin: "http://10.253.0.1:3128",
+      squid: "http_port 10.253.0.1:3128\n",
+      ruleset: "table inet orbit_instance_egress\n",
+      rule: {
+        comment: "orbit:instances-egress",
+        action: "allow",
+        direction: "in",
+        source: "any",
+        destination: "10.253.0.1",
+        port: "3128",
+        protocol: "tcp",
+        in_interface: "orbitinst0",
+        out_interface: null,
+        family: "v4",
+      },
+    },
     ids: 201 * 65536,
     profile_config: {
       "environment.VP_HOME": "/opt/orbit-runtime/current/vite-plus-home",
       "environment.VP_NO_UPDATE_CHECK": "1",
+      "environment.HTTPS_PROXY": "http://10.253.0.1:3128",
     },
     incus: { line: "7.0", packages: [] },
     image: {
@@ -399,10 +436,11 @@ Deno.test({
         "restricted.snapshots": "allow",
         "limits.virtual-machines": "0",
       });
-      // Every process in a container, `incus exec` sessions too, gets the runtime folder's environment.
+      // Every process in a container, `incus exec` sessions too, gets the runtime folder's environment and the egress proxy.
       assertEquals(state.profiles["orbit-instances"].config, {
         "environment.VP_HOME": "/opt/orbit-runtime/current/vite-plus-home",
         "environment.VP_NO_UPDATE_CHECK": "1",
+        "environment.HTTPS_PROXY": "http://10.253.0.1:3128",
       });
       assertEquals(state.profiles["orbit-instances"].devices, {
         root: { type: "disk", path: "/", pool: "orbit-instances" },
@@ -442,28 +480,74 @@ Deno.test({
       const acls = Object.fromEntries(
         state["network-acls"].map((a: { name: string }) => [a.name, a]),
       );
-      // The bridge reaches only the model forwarder on its own address; only the build container's own ACL lets it out, and never
-      // to a private address.
+      // The bridge reaches only the model forwarder and the egress proxy on its own address. The build container has no ACL and no
+      // route of its own: it goes out through the proxy, as every container does.
       assertEquals(acls["orbitinst0-egress"].egress, [{
         action: "allow",
         destination: "10.253.0.1/32",
         protocol: "tcp",
         destination_port: "8319",
         state: "enabled",
-      }]);
-      assertEquals(acls["orbitinst0-build"].egress.at(-1), {
+      }, {
         action: "allow",
+        destination: "10.253.0.1/32",
+        protocol: "tcp",
+        destination_port: "3128",
         state: "enabled",
-      });
-      assertStringIncludes(
-        acls["orbitinst0-build"].egress[0].destination,
-        "10.0.0.0/8",
-      );
-      // The input rules have the names of the firewall catalog; the build route rule is gone again.
-      for (const name of ["dhcp", "dns-udp", "dns-tcp"]) {
+      }]);
+      assertEquals(acls["orbitinst0-build"], undefined);
+      // The input rules have the names of the firewall catalog: DHCP and the proxy, and no DNS.
+      for (const name of ["dhcp", "egress"]) {
         assert(f.has(`firewall-orbit_instances-${name}.json`), name);
       }
-      assert(!f.has("firewall-orbit_instances-build.json"));
+      for (const name of ["dns-udp", "dns-tcp", "build"]) {
+        assert(!f.has(`firewall-orbit_instances-${name}.json`), name);
+      }
+      assertEquals(
+        JSON.parse(
+          Deno.readTextFileSync(`${f.folder}/firewall-orbit_instances-egress.json`),
+        ),
+        {
+          rule: "allow",
+          direction: "in",
+          interface_in: "orbitinst0",
+          proto: "tcp",
+          to_ip: "10.253.0.1",
+          to_port: "3128",
+          comment: "orbit:instances-egress",
+        },
+      );
+      // The proxy: the package's own unit masked, the table and Squid's configuration in place, and Squid as `proxy` only while
+      // its table is loaded.
+      assertEquals(
+        Deno.readLinkSync(`${f.folder}/systemd/squid.service`),
+        "/dev/null",
+      );
+      assertEquals(
+        Deno.readTextFileSync(`${f.folder}/egress/egress.nft`),
+        "table inet orbit_instance_egress\n",
+      );
+      assertEquals(
+        Deno.readTextFileSync(`${f.folder}/egress/squid.conf`),
+        "http_port 10.253.0.1:3128\n",
+      );
+      const proxyUnit = Deno.readTextFileSync(
+        `${f.folder}/systemd/orbit-instance-egress.service`,
+      );
+      for (
+        const line of [
+          "User=proxy\n",
+          "BindsTo=orbit-instance-egress-table.service\n",
+          "ExecStartPre=+/usr/sbin/nft list table inet orbit_instance_egress\n",
+          `ExecStart=/usr/sbin/squid -N -d 1 -f ${f.folder}/egress/squid.conf\n`,
+        ]
+      ) assertStringIncludes(proxyUnit, line);
+      assertStringIncludes(
+        Deno.readTextFileSync(
+          `${f.folder}/systemd/orbit-instance-egress-table.service`,
+        ),
+        "ExecStop=/usr/sbin/nft delete table inet orbit_instance_egress\n",
+      );
       // No modules to load: an Instance container runs no WireGuard or Docker.
       assertEquals([...Deno.readDirSync(`${f.folder}/modules-load`)], []);
       assertEquals(
@@ -524,8 +608,6 @@ Deno.test({
         "security.idmap.isolated=true",
         "--device",
         "eth0,ipv4.address=10.253.0.254",
-        "--device",
-        "eth0,security.acls=orbitinst0-build",
       ]);
       assert(
         f.calls().some((c) =>
@@ -760,7 +842,6 @@ Deno.test({
       const after = f.state();
       assert(!f.calls().some((c) => c.includes("publish")));
       assertEquals(after.instances, []);
-      assert(!f.has("firewall-orbit_instances-build.json"));
     } finally {
       f.cleanup();
     }
