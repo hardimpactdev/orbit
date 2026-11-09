@@ -25,11 +25,46 @@ cases:
     fails_today: The reader queries another system live and the CLI has no Observed at or Agent fields.
     setup:
       - agent_report: {node: app-dev}
+      - cli: &capture-snapshot
+          run: [node:metrics, "${app-dev.id}"]
+          save:
+            observed_at: snapshot-observed-at
+            memory.total: memory-total
+            swap.total: swap-total
+            disks[0].total: disk-total
+            disks[0].observed_at: disk-observed-at
+          expect: {exit: 0, request: none}
     act:
       - cli:
           run: [node:metrics, "${app-dev.id}"]
           forms: [human, json]
-          expect: {exit: 0, request: none, human: ["Observed at", "Agent", "Memory", "Uptime"]}
+          expect:
+            exit: 0
+            request: none
+            human: ["Observed at", "Agent", "Memory", "Uptime"]
+            json: &snapshot-json
+              - {path: node_id, equals: "${app-dev.id}"}
+              - {path: node_name, equals: app-dev}
+              - {path: observed_at, equals: "${snapshot-observed-at}"}
+              - {path: "cores[0]", at_most: 1}
+              - {path: memory.used, at_most: "${memory-total}"}
+              - {path: memory.total, equals: "${memory-total}"}
+              - {path: swap.used, at_most: "${swap-total}"}
+              - {path: swap.total, equals: "${swap-total}"}
+              - {path: load.one, at_most: 18446744073709551615}
+              - {path: load.five, at_most: 18446744073709551615}
+              - {path: load.fifteen, at_most: 18446744073709551615}
+              - {path: uptime_seconds, at_most: 18446744073709551615}
+              - {path: pressure.cpu.some_avg10, at_most: 100}
+              - {path: pressure.memory.some_avg10, at_most: 100}
+              - {path: pressure.io.some_avg10, at_most: 100}
+              - {path: "disks[0].mount", equals: /}
+              - {path: "disks[0].used", at_most: "${disk-total}"}
+              - {path: "disks[0].total", equals: "${disk-total}"}
+              - {path: "disks[0].observed_at", equals: "${disk-observed-at}"}
+              - {path: "disks[0].stale", equals: false}
+              - {path: agent.state, equals: online}
+              - {path: possibly_outdated, equals: false}
     expect:
       - unchanged: {since: act, what: [operations]}
 
@@ -40,19 +75,28 @@ cases:
     fails_today: The CLI has no observation time or agent state and the reader does not use agent-reported snapshots.
     setup:
       - agent_report: {node: app-dev}
+      - cli: *capture-snapshot
     stages:
       - act:
           - cli:
               run: [node:metrics, "${app-dev.id}"]
               forms: [human, json]
-              expect: {exit: 0, request: none, human: ["Observed at", "Agent"]}
+              expect:
+                exit: 0
+                request: none
+                human: ["Observed at", "Agent"]
+                json: *snapshot-json
         expect:
           - unchanged: {since: act, what: [operations]}
       - act:
           - cli:
               run: [node:metrics, "${app-dev.id}"]
               forms: [human, json]
-              expect: {exit: 0, request: none, human: ["Observed at", "Agent"]}
+              expect:
+                exit: 0
+                request: none
+                human: ["Observed at", "Agent"]
+                json: *snapshot-json
         expect:
           - unchanged: {since: act, what: [operations]}
 
@@ -64,11 +108,38 @@ cases:
     setup:
       - agent_report: {node: app-dev}
       - node_down: {node: app-dev}
+      - cli: *capture-snapshot
     act:
       - cli:
           run: [node:metrics, "${app-dev.id}"]
           forms: [human, json]
-          expect: {exit: 0, request: none, human: ["Observed at", "possibly outdated", "offline since"]}
+          expect:
+            exit: 0
+            request: none
+            human: ["Observed at", "possibly outdated", "offline since"]
+            json:
+              - {path: node_id, equals: "${app-dev.id}"}
+              - {path: node_name, equals: app-dev}
+              - {path: observed_at, equals: "${snapshot-observed-at}"}
+              - {path: "cores[0]", at_most: 1}
+              - {path: memory.used, at_most: "${memory-total}"}
+              - {path: memory.total, equals: "${memory-total}"}
+              - {path: swap.used, at_most: "${swap-total}"}
+              - {path: swap.total, equals: "${swap-total}"}
+              - {path: load.one, at_most: 18446744073709551615}
+              - {path: load.five, at_most: 18446744073709551615}
+              - {path: load.fifteen, at_most: 18446744073709551615}
+              - {path: uptime_seconds, at_most: 18446744073709551615}
+              - {path: pressure.cpu.some_avg10, at_most: 100}
+              - {path: pressure.memory.some_avg10, at_most: 100}
+              - {path: pressure.io.some_avg10, at_most: 100}
+              - {path: "disks[0].mount", equals: /}
+              - {path: "disks[0].used", at_most: "${disk-total}"}
+              - {path: "disks[0].total", equals: "${disk-total}"}
+              - {path: "disks[0].observed_at", equals: "${disk-observed-at}"}
+              - {path: "disks[0].stale", equals: false}
+              - {path: agent.state, equals: offline}
+              - {path: possibly_outdated, equals: true}
     expect:
       - unchanged: {since: act, what: [operations]}
 
