@@ -106,5 +106,5 @@ Deno.test("only the swamp Node schedules its own reboot, behind a path unit that
         ["systemd-run", "--unit=orbit-planned-reboot", "--collect", "--path-property=PathExists={{ run }}.reboot"]);
     assertEquals(reboot.find((t) => t.name === "Reboot and wait for the Node")!["ansible.builtin.reboot"], { reboot_timeout: 600, msg: "Orbit fleet reboot (ADR 0251)" });
     const cleanup = workflow("operation-fleet-reboot").jobs.find((job: Record<string, unknown>) => job.name === "pass").steps.find((step: Record<string, unknown>) => step.name === "cleanup");
-    assertMatch(cleanup.task.inputs.run, /rm -rf -- "\$1"; if systemctl is-active --quiet orbit-planned-reboot\.path; then touch -- "\$1\.reboot"; fi/);
+    assertEquals(cleanup.task.inputs.run, 'timeout 30 rm -rf -- "$ORBIT_RUN"\nif timeout 10 systemctl is-active --quiet orbit-planned-reboot.path; then timeout 10 touch -- "$ORBIT_RUN.reboot"; fi');
 });

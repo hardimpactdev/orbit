@@ -95,5 +95,5 @@ jobs:
       behaviorName: fleet-reboot-cleanup
       methodName: execute
       inputs:
-        run: timeout 30 sh -c 'rm -rf -- "$1"; if systemctl is-active --quiet orbit-planned-reboot.path; then touch -- "$1.reboot"; fi' sh "$ORBIT_RUN"
+        run: "timeout 30 rm -rf -- \"$ORBIT_RUN\"\nif timeout 10 systemctl is-active --quiet orbit-planned-reboot.path; then timeout 10 touch -- \"$ORBIT_RUN.reboot\"; fi"
         env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
