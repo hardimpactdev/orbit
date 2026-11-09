@@ -62,15 +62,9 @@ final readonly class TaskVmReentry
         $group = Task::topLevel()->find($operation->target_id);
         $vm = $group instanceof Task ? TaskVm::forGroup($group) : null;
         if ($vm instanceof TaskVm) {
-            self::free($vm, $group);
+            $vm->update(['state' => TaskVmState::Releasing]);
+            ReleaseTaskVmSlot::dispatch($vm->id, $group->id)->afterCommit();
             $group->update(['status' => TaskGroupStatus::WaitingForReview, 'settled_at' => now()]);
         }
-    }
-
-    /** Releases the group's VM, workspace and identity after the transaction commits; the group keeps its status and later work claims again. */
-    public static function free(TaskVm $vm, Task $group): void
-    {
-        $vm->update(['state' => TaskVmState::Releasing]);
-        ReleaseTaskVmSlot::dispatch($vm->id, $group->id)->afterCommit();
     }
 }

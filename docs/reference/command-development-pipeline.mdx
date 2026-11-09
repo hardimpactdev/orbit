@@ -102,7 +102,7 @@ Task work and CI proofs use separate fixed pools on every host. Beast and Shark 
 
 The pool migration converts the existing Beast and Shark hosts to two task and two CI places each, and Sabre to zero task and two CI places. It removes the replaced host capacity keys. No manual settings change is required.
 
-A task waits for a task place, starts from the base, and deletes its VM after it publishes its PR. A build, fix turn or review round that needs a VM claims a task place again and restores the task branch on a fresh VM from the base. A published PR holds no VM, identity, workspace or place through review. Between two steps the VM stays for the next one, but a group that runs no Operation for 30 minutes loses it, once origin has its approved work ([Release an idle task VM](/reference/tasks#release-an-idle-task-vm)).
+A task waits for a task place, starts from the base, and deletes its VM after it publishes its PR. A build, fix turn or review round that needs a VM claims a task place again and restores the task branch on a fresh VM from the base. A published PR holds no VM, identity, workspace or place through review. Between two steps the VM stays for the next one, until the [idle release](/reference/tasks#release-an-idle-task-vm) takes it.
 
 CI proofs wait in one first-come-first-served queue. The first PR takes every free CI place, with at least one VM and no more VMs than its batches. Each VM starts fresh from the base. Whole batches are balanced across VMs by measured case times. Each VM restores its fleet and runs its share. Orbit merges every case verdict into one report, then deletes the VMs.
 
