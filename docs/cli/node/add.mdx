@@ -68,9 +68,9 @@ A failed run retains the work it finished and does not roll back. A new Node sta
 | `node.macos_account_required`, `node.macos_account_mismatch`, `node.wireguard_required` | A macOS Node needs `--user` and `--orbit-user` naming the same existing account, and an existing WireGuard address. |
 | `node.tld_required`, `node.tld_invalid`, `node.tld_taken`, `node.tld_conflict` | `app-dev` has no TLD, or the TLD is malformed, reserved, in use, or conflicts with another name Orbit serves. |
 | `node.role_conflict` | A requested role cannot be assigned during enrollment or conflicts with the Node's roles. |
-| `cluster.not_found`, `cluster.membership_conflict`, `cluster.lan_ip_conflict` | The Cluster does not exist, the Node cannot join it, or the LAN address is already used in it. |
+| `cluster.not_found`, `cluster.membership_conflict`, `cluster.lan_ip_conflict` | The Cluster does not exist, the Node cannot join it, or the LAN address is already used on the same network: in the Cluster, or, for a Node outside every Cluster, by another Node outside every Cluster. |
 | `node.invalid_linux_user`, `node.user_change_unsupported` | The managed user is not a valid Linux account name, or an existing Node's managed user cannot change. |
-| `node.ssh_host_key_scan_failed`, `node.bootstrap_account_unavailable`, `node.enrollment_failed` | The run could not read the host key, log in to the bootstrap account, or finish enrollment. When the hub's [LAN endpoint](/reference/wireguard-endpoints#the-lan-endpoint) is not directly routed from the Node's `lan_ip` or does not answer, the `tunnel` step fails before any tunnel change and its failed assertion reads `node.hub_lan_unreachable`. |
+| `node.ssh_host_key_scan_failed`, `node.bootstrap_account_unavailable`, `node.enrollment_failed` | The run could not read the host key, log in to the bootstrap account, or finish enrollment. When the hub's [LAN endpoint](/reference/wireguard-endpoints#the-lan-endpoint) is not directly routed from the Node's `lan_ip` or does not answer SSH, the `tunnel` step fails before any tunnel change and its failed assertion reads `node.hub_lan_unreachable`. When the machine there does not have the hub's host key, it reads `node.hub_lan_identity_mismatch`. |
 | `node.provisioning_busy` | Another lifecycle operation holds the Node's name lock. Nothing changes. |
 
 ## How it works

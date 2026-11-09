@@ -30,7 +30,7 @@ sequenceDiagram
   %%> - the optional `task_vms.containers` member has its own `task_places` and `ci_places`, counted apart from the VM places, and its own Incus project, bridge and CIDR
   %%> - lowering either count removes no claim; task work and operator proofs share FIFO task admission, while authenticated CI proofs and base refresh use CI places
   %%> - every value passes the checks that the Node settings reference lists; a failed check changes nothing
-  %%> - a LAN address is IPv4 and no other Node in the Node's Cluster has it (`cluster.lan_ip_conflict`)
+  %%> - a LAN address is IPv4 and no other Node of the same network has it (`cluster.lan_ip_conflict`): the Node's Cluster, or every Node outside a Cluster
   %%> - no other lifecycle change runs for the target; the Gateway holds the Node's name lock, and the new name's lock for a rename
   %%> Decides:
   %%> - whether the apps folder changes and needs Node work, so a run starts

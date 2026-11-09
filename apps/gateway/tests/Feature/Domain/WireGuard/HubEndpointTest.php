@@ -18,10 +18,11 @@ function endpointNode(int $id, ?string $lan): Node
 it('uses the hub\'s LAN endpoint only for a Node in the hub\'s recorded /24', function (?string $hubLan, ?string $nodeLan, string $endpoint): void {
     app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', port: 51820, endpoint: '94.237.124.160:51820');
 
-    $resolved = HubEndpoint::for(endpointNode(4, $nodeLan), endpointNode(1, $hubLan), app(VpnSettings::class));
+    $hub = endpointNode(1, $hubLan)->forceFill(['ssh_host_fingerprint' => 'SHA256:hub']);
+    $resolved = HubEndpoint::for(endpointNode(4, $nodeLan), $hub, app(VpnSettings::class));
 
     expect($resolved->endpoint)->toBe($endpoint)
-        ->and($resolved->lan)->toBe($endpoint === '10.0.0.2:51820' ? ['address' => '10.0.0.2', 'source' => $nodeLan] : null);
+        ->and($resolved->lan)->toBe($endpoint === '10.0.0.2:51820' ? ['address' => '10.0.0.2', 'source' => $nodeLan, 'fingerprint' => 'SHA256:hub'] : null);
 })->with([
     'same data centre' => ['10.0.0.2', '10.0.0.4', '10.0.0.2:51820'],
     'last address of the /24' => ['10.0.0.2', '10.0.0.255', '10.0.0.2:51820'],

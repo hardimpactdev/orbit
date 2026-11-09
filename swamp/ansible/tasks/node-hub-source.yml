@@ -1,42 +1,61 @@
 ---
-# Send the hub's WireGuard packets to public peers from its public endpoint address (ADR 0251). `hub_source.commands` are
-# the PostUp lines of the hub's orbit.conf; here they reach the running hub, and only on drift. A marked packet to a
-# public test address (192.0.2.1, never sent) must leave from `hub_source.address`.
-- name: Read the hub's endpoint address
-  ansible.builtin.command: { argv: [ip, -4, -o, address, show, to, "{{ hub_source.address }}/32"] }
-  register: hub_source_local
-  changed_when: false
-  check_mode: false
-- name: Require the endpoint address on the hub
-  ansible.builtin.assert: { that: hub_source_local.stdout | trim | length > 0, fail_msg: vpn.endpoint_not_local, quiet: true }
-- name: Read the hub's WireGuard rules
-  ansible.builtin.command: { argv: [ip, -4, -j, rule, show] }
-  register: hub_source_rules
-  changed_when: false
-  check_mode: false
-- name: Read the hub's WireGuard source
-  ansible.builtin.command: { argv: [ip, -4, -o, route, get, 192.0.2.1, mark, "{{ hub_source.mark }}"] }
-  register: hub_source_route
-  changed_when: false
-  failed_when: false
-  check_mode: false
-- name: Apply the hub's WireGuard source
-  vars:
-    live_rules: >-
-      {% for rule in hub_source_rules.stdout | from_json %}{{ rule.priority | default('') }}:{{ rule.fwmark | default('') }}:{{ rule.table | default('') }}
-      {% endfor %}
-  when: >-
-    hub_source.rules | difference(live_rules.split()) | length > 0
-    or (' src ' ~ hub_source.address ~ ' ') not in hub_source_route.stdout
-  ansible.builtin.shell: { executable: /bin/bash, cmd: "{{ hub_source.commands | join('\n') }}" }
-  changed_when: true
-- name: Read the hub's WireGuard source again
-  ansible.builtin.command: { argv: [ip, -4, -o, route, get, 192.0.2.1, mark, "{{ hub_source.mark }}"] }
-  register: hub_source_check
-  changed_when: false
-  check_mode: false
-- name: Require the endpoint address as the source of public WireGuard packets
-  ansible.builtin.assert:
-    that: (' src ' ~ hub_source.address ~ ' ') in hub_source_check.stdout
-    fail_msg: vpn.source_route_failed
-    quiet: true
+# The hub's Orbit-owned network extras (ADR 0251). `hub_source` (null for a hostname or IPv6 endpoint) is the script and the
+# oneshot unit that send marked WireGuard packets to public peers from the endpoint address; the unit, not orbit.conf, owns the
+# rules, so no writer of orbit.conf can drop them and a failing rule cannot keep the tunnel down. `hub_lan_ssh_argv` opens SSH
+# on the hub's LAN address to its private network, so a Node there can read the hub's host key before it moves to the LAN.
+- name: Open SSH on the hub's LAN address to its private network
+  ansible.builtin.command: { argv: "{{ item }}" }
+  loop: "{{ hub_lan_ssh_argv }}"
+  register: hub_lan_ssh
+  changed_when: hub_lan_ssh.stdout is not search('Skipping')
+- name: Send public WireGuard packets from the endpoint address
+  when: hub_source is not none
+  block:
+    - name: Read the hub's endpoint address
+      ansible.builtin.command: { argv: [ip, -4, -o, address, show, to, "{{ hub_source.address }}/32"] }
+      register: hub_source_local
+      changed_when: false
+      check_mode: false
+    - name: Require the endpoint address on the hub
+      ansible.builtin.assert: { that: hub_source_local.stdout | trim | length > 0, fail_msg: vpn.endpoint_not_local, quiet: true }
+    - name: Create the source script folder
+      ansible.builtin.file: { path: "{{ hub_source.script_path | dirname }}", state: directory, owner: root, group: root, mode: "0755" }
+    - name: Write the source script and unit
+      ansible.builtin.copy: { dest: "{{ item.dest }}", content: "{{ item.content }}", owner: root, group: root, mode: "{{ item.mode }}" }
+      loop:
+        - { dest: "{{ hub_source.script_path }}", content: "{{ hub_source.script }}", mode: "0700" }
+        - { dest: "{{ hub_source.unit_path }}", content: "{{ hub_source.unit }}", mode: "0644" }
+      loop_control: { label: "{{ item.dest }}" }
+      register: hub_source_files
+    - name: Read the hub's WireGuard rules and source
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: ip -4 -j rule show; echo; ip -4 -o route get 192.0.2.1 mark {{ hub_source.mark | quote }} || true
+      register: hub_source_live
+      changed_when: false
+      check_mode: false
+    - name: Start the source unit, again after a change or drift
+      vars:
+        live: "{{ (hub_source_live.stdout.split('\n') | first) | from_json }}"
+        ours: >-
+          {% for rule in live if rule.priority | default(-1) in [31820, 31821] %}{{ rule.priority }}:{{ rule.fwmark | default('') }}:{{
+          (rule.dst ~ '/' ~ rule.dstlen) if rule.dst is defined else 'all' }}:{{ rule.table | default('') }}
+          {% endfor %}
+        drift: >-
+          {{ (ours.split() | sort) != (hub_source.rules | sort)
+          or (' src ' ~ hub_source.address ~ ' ') not in hub_source_live.stdout }}
+      ansible.builtin.systemd:
+        name: "{{ hub_source.unit_name }}"
+        daemon_reload: "{{ hub_source_files is changed }}"
+        enabled: true
+        state: "{{ 'restarted' if hub_source_files is changed or drift | bool else 'started' }}"
+    - name: Read the hub's WireGuard source again
+      ansible.builtin.command: { argv: [ip, -4, -o, route, get, 192.0.2.1, mark, "{{ hub_source.mark }}"] }
+      register: hub_source_check
+      changed_when: false
+      check_mode: false
+    - name: Require the endpoint address as the source of public WireGuard packets
+      ansible.builtin.assert:
+        that: (' src ' ~ hub_source.address ~ ' ') in hub_source_check.stdout
+        fail_msg: vpn.source_route_failed
+        quiet: true

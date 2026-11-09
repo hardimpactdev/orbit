@@ -60,9 +60,8 @@ final readonly class NodeEnrollmentPolicy
             throw $this->refuse('cluster.not_found', 'The selected Cluster does not exist.', 404);
         }
         $lan = $data->lanIpProvided ? $data->lanIp : ($node->exists ? $node->lan_ip : null);
-        if ($clusterId !== null && $lan !== null && Node::query()->where('cluster_id', $clusterId)->where('lan_ip', $lan)
-            ->when($node->exists, static fn ($q) => $q->whereKeyNot($node->id))->exists()) {
-            throw $this->refuse('cluster.lan_ip_conflict', 'The LAN address is already assigned in the Cluster.', 409);
+        if ($lan !== null) {
+            NodeLanAddress::assertFree($lan, $clusterId, $node->exists ? $node->id : null);
         }
         $tld = $data->tldProvided || $data->tld !== null ? $data->tld : ($node->exists ? $node->tld : null);
         $appDev = in_array(RoleName::AppDev, $data->roles, true) || ($node->exists && $node->roles()->where('role', RoleName::AppDev)->exists());

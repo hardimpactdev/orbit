@@ -20,7 +20,7 @@ final readonly class VpnConfiguration
         public string $peerAddress,
         public string $serverPrivateKey,
         public string $serverPublicKey,
-        /** @var array{address:string,source:string}|null The LAN addresses to prove when the endpoint is the hub's LAN address. */
+        /** @var array{address:string,source:string,fingerprint:string|null}|null The LAN addresses to prove when the endpoint is the hub's LAN address. */
         public ?array $lan = null,
     ) {}
 }

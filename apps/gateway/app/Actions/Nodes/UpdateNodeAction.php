@@ -13,6 +13,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeLanAddress;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\RoleName;
@@ -144,9 +145,8 @@ final readonly class UpdateNodeAction
             $node->platform = $platform;
         }
         if ($hasLanIp && $lanIp !== $node->lan_ip) {
-            if ($lanIp !== null && $node->cluster_id !== null
-                && Node::query()->where('cluster_id', $node->cluster_id)->where('lan_ip', $lanIp)->whereKeyNot($node->id)->exists()) {
-                throw new ResourceOperationException('cluster.lan_ip_conflict', "LAN IP [{$lanIp}] is already assigned in the Cluster.", 409);
+            if ($lanIp !== null) {
+                NodeLanAddress::assertFree($lanIp, $node->cluster_id, $node->id);
             }
             $node->lan_ip = $lanIp;
         }

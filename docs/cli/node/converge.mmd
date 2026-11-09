@@ -91,10 +91,11 @@ sequenceDiagram
       %%> What it does:
       %%> - applies the recorded hub side before the peer; matching configuration is unchanged
       %%> - prunes only the peer files of Nodes that are gone or being removed, decided when the prune runs: it keeps every Node of the snapshot and every file above the snapshot's newest Node id, so a task VM that joins while the run waits keeps its peer
-      %%> - on the hub: carries the mark in `wg syncconf`, applies the source rule and checks that a marked packet to a public address leaves from the public endpoint address; an IPv4 endpoint the hub does not hold fails the phase with the assertion `vpn.endpoint_not_local`
+      %%> - on the hub: carries the mark in `wg syncconf`, opens SSH on its LAN address to its /24, writes the source unit (`orbit-hub-source.service`), restarts it on change or drift, and checks that a marked packet to a public address leaves from the public endpoint address; an IPv4 endpoint the hub does not hold fails the phase with the assertion `vpn.endpoint_not_local`
       SW->>N: Apply peer, wait<br/>Ansible phase: network
       %%> What it does:
-      %%> - when the rendered hub endpoint is the hub's LAN address, first proves that the kernel routes it directly from the Node's `lan_ip` and that it answers; a failed proof fails the phase before any WireGuard change, with the assertion `node.hub_lan_unreachable`, with no fallback to the public endpoint
+      %%> - when the rendered hub endpoint is the hub's LAN address, first proves that the kernel routes it directly from the Node's `lan_ip` and that an SSH host key there has the hub's recorded fingerprint; a failed proof fails the phase before any WireGuard change, with the assertion `node.hub_lan_unreachable` or `node.hub_lan_identity_mismatch`, with no fallback to the public endpoint
+      %%> - a changed hub endpoint ends the old session first, and the handshake check then accepts only a handshake from after the change
       %%> - applies the recorded Node side and waits for the tunnel handshake
       %%> - both arrows are one phase; the peer arrow is only for a peer target
       %%> - a target hub is applied once and needs no handshake without peers

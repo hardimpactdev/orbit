@@ -35,10 +35,9 @@
       [ "$before" = "$(wg showconf orbit | sha256sum)" ] || echo changed
   register: hub_sync
   changed_when: hub_sync.stdout is search('changed')
-- name: Send public WireGuard packets from the endpoint address
-  when: hub_plan.source is not none
+- name: Apply the hub's source unit and LAN SSH
   ansible.builtin.include_tasks: node-hub-source.yml
-  vars: { hub_source: "{{ hub_plan.source }}" }
+  vars: { hub_source: "{{ hub_plan.source }}", hub_lan_ssh_argv: "{{ hub_plan.lan_ssh_argv }}" }
 - name: Read the hub key
   ansible.builtin.command: wg show orbit public-key
   register: hub_key

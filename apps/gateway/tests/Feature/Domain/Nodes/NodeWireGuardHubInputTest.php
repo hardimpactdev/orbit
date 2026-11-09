@@ -75,16 +75,15 @@ it('removes one Node from the hub by deleting its own file, and writes or keeps 
     expect(array_column(NodeWireGuardHubInput::intent($hub)['peers'], 'node_id'))->toBe([$other->id]);
 });
 
-it('marks the hub\'s WireGuard packets and sends them to public peers from the public endpoint address', function (): void {
+it('marks the hub\'s WireGuard packets, and leaves the source rule to its own unit, outside orbit.conf', function (): void {
     $hub = SwampNodeFixture::ensure();
     $hub->forceFill(['public_ssh_host' => '94.237.124.160', 'lan_ip' => '10.0.0.2'])->saveQuietly();
     app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', port: 51820);
 
     $intent = NodeWireGuardHubInput::intent($hub);
 
-    // The 2026-11-09 incident: the hub started handshakes from its DHCP primary address and peers roamed to it. The rules
-    // send every marked packet through the main table without its default route, then through the hub's own table, whose
-    // default route leaves from the floating endpoint address; private networks keep their route and source.
+    // The 2026-11-09 incident: the hub started handshakes from its DHCP primary address and peers roamed to it. orbit.conf only
+    // marks the packets: node:wireguard-key rewrites it without PostUp lines, so the rules cannot live there.
     expect($intent['config'])->toBe(<<<'CONF'
         [Interface]
         Address = 10.44.0.209/24
@@ -92,15 +91,46 @@ it('marks the hub\'s WireGuard packets and sends them to public peers from the p
         FwMark = 51820
         PostUp = wg set %i private-key /etc/wireguard/orbit.key
         PostUp = for f in /etc/wireguard/orbit-peers.d/*.conf; do [ -e "$f" ] && wg addconf %i "$f"; done; true
-        PostUp = ip -4 rule del priority 31820 2>/dev/null; ip -4 rule add priority 31820 fwmark 51820 lookup main suppress_prefixlength 0
-        PostUp = ip -4 rule del priority 31821 2>/dev/null; ip -4 rule add priority 31821 fwmark 51820 lookup 51820
-        PostUp = r=$(ip -4 route show default | awk '{for (i = 1; i < NF; i++) if ($i == "via" || $i == "dev") printf "%s %s ", $i, $(i + 1); exit}'); [ -z "$r" ] || ip -4 route replace default $r src 94.237.124.160 table 51820 || true
 
         CONF)
-        ->and($intent['source'])->toBe(['address' => '94.237.124.160', 'mark' => 51820,
-            'rules' => ['31820:0xca6c:main', '31821:0xca6c:51820'],
-            'commands' => array_map(static fn (string $line): string => substr($line, strlen('PostUp = ')),
-                array_slice(explode("\n", trim($intent['config'])), 6))]);
+        ->and($intent['source']['rules'])->toBe(['31820:0xca6c:10.0.0.0/8:main', '31820:0xca6c:172.16.0.0/12:main',
+            '31820:0xca6c:192.168.0.0/16:main', '31821:0xca6c:all:51820'])
+        ->and($intent['source']['script'])->toBe(<<<'SH'
+            #!/bin/sh
+            # Managed by Orbit (ADR 0251): the hub sends WireGuard packets to public peers from 94.237.124.160.
+            set -eu
+            while ip -4 rule del priority 31820 2>/dev/null; do :; done
+            while ip -4 rule del priority 31821 2>/dev/null; do :; done
+            ip -4 route flush table 51820 2>/dev/null || true
+            ip -4 rule add priority 31820 fwmark 51820 to 10.0.0.0/8 lookup main
+            ip -4 rule add priority 31820 fwmark 51820 to 172.16.0.0/12 lookup main
+            ip -4 rule add priority 31820 fwmark 51820 to 192.168.0.0/16 lookup main
+            ip -4 rule add priority 31821 fwmark 51820 lookup 51820
+            # The table copies the default gateway of the main table and leaves from the endpoint address.
+            set -- $(ip -4 route show default)
+            route=
+            while [ "$#" -gt 1 ]; do
+              case "$1" in via|dev) route="$route $1 $2"; shift ;; esac
+              shift
+            done
+            ip -4 route replace default $route src 94.237.124.160 table 51820
+
+            SH)
+        // Wanted by the tunnel, never required: a failing rule cannot keep the tunnel down.
+        ->and($intent['source']['unit'])->toContain("Before=wg-quick@orbit.service\n")->toContain("ExecStart=/bin/sh /etc/orbit/wireguard/hub-source\n")
+        ->toContain("WantedBy=wg-quick@orbit.service multi-user.target\n")->not->toContain('Requires=')->not->toContain('BindsTo=')
+        ->and($intent['lan_ssh_argv'])->toBe([['ufw', 'allow', 'in', 'proto', 'tcp', 'from', '10.0.0.0/24', 'to', '10.0.0.2', 'port', '22', 'comment', 'orbit:vpn-lan-ssh']]);
+});
+
+it('keeps only private ranges on the main table, so the hub\'s own public prefix leaves from the endpoint too', function (): void {
+    $hub = SwampNodeFixture::ensure();
+    $hub->forceFill(['public_ssh_host' => '94.237.124.160'])->saveQuietly();
+    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', port: 51820);
+    expect(NodeWireGuardHubInput::source($hub)['script'])->not->toContain('suppress_prefixlength')->not->toContain('85.9.216.0/22');
+
+    // A WireGuard subnet outside RFC 1918 keeps the main table as well.
+    app(VpnSettings::class)->configure(subnet: '100.64.7.0/24', port: 51820);
+    expect(NodeWireGuardHubInput::source($hub)['rules'])->toContain('31820:0xca6c:100.64.7.0/24:main');
 });
 
 it('takes the source address from the stored Gateway endpoint, and pins none for a hostname endpoint', function (): void {
@@ -112,7 +142,7 @@ it('takes the source address from the stored Gateway endpoint, and pins none for
 
     // A hostname leaves the hub nothing to pin, but every syncconf still carries the mark, so the interface keeps it.
     expect(NodeWireGuardHubInput::source($hub))->toBeNull()
-        ->and(NodeWireGuardHubInput::config($hub))->toContain("FwMark = 51820\n")->not->toContain('ip -4 rule')
+        ->and(NodeWireGuardHubInput::config($hub))->toContain("FwMark = 51820\n")
         ->and(NodeWireGuardHubInput::interface(51820))->toBe("ListenPort = 51820\nFwMark = 51820\n");
 });
 
@@ -128,5 +158,6 @@ it('fits the closed intent schema of the hub workflow that a removal runs, and c
     expect(array_keys($intent))->toEqualCanonicalizing(array_keys($schema['properties']))
         ->and(array_diff($schema['required'], array_keys($intent)))->toBe([])
         ->and($intent['interface'])->toBe(NodeWireGuardHubInput::interface(51820))
+        ->and(array_key_exists('source', $intent))->toBeTrue()
         ->and(json_encode($workflow, JSON_THROW_ON_ERROR))->toContain('inputs.intent.interface');
 });

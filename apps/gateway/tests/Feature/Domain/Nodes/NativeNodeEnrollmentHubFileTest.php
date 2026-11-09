@@ -43,7 +43,7 @@ it('writes the hub file the hub converge writes, and keeps the hub\'s peers out 
         ->and($file['content'])->toContain('wg addconf %i')->not->toContain($peer->wireguard_public_key)
         // The hub loads the peer files it has at apply time: the run writes each recorded peer's file and carries no snapshot to load.
         ->and(collect($network['files'])->firstWhere('path', NodeWireGuardHubInput::peerFile($peer->id))['content'])->toContain($peer->wireguard_public_key)
-        ->and($network['sync_body'])->toBe('')->and($network['port'])->toBe(NodeWireGuardHubInput::intent($hub)['port']);
+        ->and($network['sync_body'])->toBe('')->and($network['interface'])->toBe(NodeWireGuardHubInput::intent($hub)['interface']);
 });
 
 it('rewrites the hub file of a joining Node as the hub converge does, and gives every peer its own file', function (): void {
@@ -65,7 +65,7 @@ it('rewrites the hub file of a joining Node as the hub converge does, and gives 
     }
 
     // The hub loads the peer files it has at apply time, so the run carries the port and no snapshot of the peers.
-    expect($network['hubs'][0])->toHaveKey('port', NodeWireGuardHubInput::intent($hub)['port'])->not->toHaveKey('sync_body')
+    expect($network['hubs'][0])->toHaveKey('interface', NodeWireGuardHubInput::intent($hub)['interface'])->not->toHaveKey('sync_body')
         ->and($files['/etc/wireguard/orbit.conf']['content'])->toBe(NodeWireGuardHubInput::config($hub))
         ->and($files[NodeWireGuardHubInput::peerFile($node->id)]['content'])->toContain('10.44.0.30/32')
         ->and($files[NodeWireGuardHubInput::peerFile($peer->id)]['content'])->toContain($peer->wireguard_public_key);
@@ -97,7 +97,7 @@ it('gives a Node on the hub\'s private network the hub\'s LAN endpoint and the a
 
     expect(collect($network['files'])->firstWhere('path', '/etc/wireguard/orbit.conf')['content'])->toContain("Endpoint = 10.0.0.2:51820\n")
         ->and($network['sync_body'])->toContain("Endpoint = 10.0.0.2:51820\n")
-        ->and($network['hub_lan'])->toBe(['address' => '10.0.0.2', 'source' => '10.0.0.4']);
+        ->and($network['hub_lan'])->toBe(['address' => '10.0.0.2', 'source' => '10.0.0.4', 'fingerprint' => 'SHA256:fixture']);
 });
 
 it('keeps the public hub endpoint for a Node whose LAN is another private network', function (?string $lan): void {
@@ -111,6 +111,8 @@ it('carries the hub\'s mark in every syncconf on the hub, so a joining peer neve
     $joining = joiningOnLan('10.0.0.4');
     $hub = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn))->sole();
 
-    expect(enrollmentNetwork($hub)['sync_body'])->toStartWith("ListenPort = 51820\nFwMark = 51820\n\n")
-        ->and($joining['hubs'][0]['sync_body'])->toStartWith("ListenPort = 51820\nFwMark = 51820\n\n");
+    // Both node:add hub loads print these interface lines before the peer files (tasks/node-add-hub-peers.yml).
+    expect(enrollmentNetwork($hub)['interface'])->toBe("ListenPort = 51820\nFwMark = 51820\n")
+        ->and($joining['hubs'][0]['interface'])->toBe("ListenPort = 51820\nFwMark = 51820\n")
+        ->and(enrollmentNetwork($hub)['source'])->not->toBeNull();
 });

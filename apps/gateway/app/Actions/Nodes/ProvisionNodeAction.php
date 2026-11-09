@@ -17,6 +17,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Nodes\LinuxUserName;
+use App\Domain\Nodes\NodeLanAddress;
 use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -172,20 +173,8 @@ final readonly class ProvisionNodeAction
             );
         }
 
-        if (
-            $clusterId !== null
-            && $lanIp !== null
-            && Node::query()
-                ->where('cluster_id', $clusterId)
-                ->where('lan_ip', $lanIp)
-                ->when($node->exists, static fn ($query) => $query->whereKeyNot($node->id))
-                ->exists()
-        ) {
-            throw new ResourceOperationException(
-                errorCode: 'cluster.lan_ip_conflict',
-                message: "LAN IP [{$lanIp}] is already assigned in the Cluster.",
-                status: 409,
-            );
+        if ($lanIp !== null) {
+            NodeLanAddress::assertFree($lanIp, $clusterId, $node->exists ? $node->id : null);
         }
 
         $managedUser = $data->orbitUser ?? ($node->exists ? $node->user : 'orbit');

@@ -25,10 +25,15 @@
         cmd: |
           set -euo pipefail
           before=$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)
+          # A new hub endpoint drops the old session, so the handshake check below proves the new endpoint (ADR 0251).
+          if [ "$(wg show orbit endpoints | awk -v key={{ intent.network.apply.peer.server_public_key | quote }} '$1 == key { print $2 }')" != {{ intent.network.apply.peer.endpoint | quote }} ]; then
+            echo "switched=$(date +%s)"
+            wg set orbit peer {{ intent.network.apply.peer.server_public_key | quote }} remove
+          fi
           wg syncconf orbit <(printf '[Interface]\nPrivateKey = '; cat /etc/wireguard/orbit.key; cat /etc/wireguard/orbit.peers)
           [ "$before" = "$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)" ] || echo changed
       register: peer_sync
-      changed_when: peer_sync.stdout is search('changed')
+      changed_when: peer_sync.stdout is search('changed|switched=')
     - name: Repair the peer interface address
       ansible.builtin.include_tasks: node-converge-address.yml
       vars: { tunnel_address: "{{ intent.network.apply.peer.address }}" }
@@ -60,9 +65,11 @@
       ansible.builtin.command: { argv: [ping, -c, '1', -W, '2', "{{ intent.network.probe_ip }}"] }
       changed_when: false
       failed_when: false
-    - name: Wait for the hub handshake
+    - name: Wait for the hub handshake, newer than a switch of its endpoint
       ansible.builtin.include_tasks: node-converge-handshake.yml
-      vars: { peer_key: "{{ intent.network.apply.peer.server_public_key }}" }
+      vars:
+        peer_key: "{{ intent.network.apply.peer.server_public_key }}"
+        handshake_since: "{{ (peer_sync.stdout | regex_search('switched=([0-9]+)', '\\1') or [none]) | first }}"
 - name: Wait for a target hub's recorded peer handshakes
   when: intent.network.mode == 'hub'
   ansible.builtin.include_tasks: node-converge-handshake.yml

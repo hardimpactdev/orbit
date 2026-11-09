@@ -59,7 +59,7 @@ final readonly class NativeNodeEnrollmentInput
             'identity' => $identity,
             'packages' => [], 'apt_proxy' => null, 'kernel' => ['files' => [], 'sysctl' => []], 'sudo' => ['path' => '', 'content' => ''],
             'agent' => ['url' => '', 'sha256' => '', 'unit' => '', 'environment_group' => NodeAgentSshExecutor::EnvGroup, 'files' => []],
-            'network' => ['is_hub' => false, 'sync_path' => '', 'private_key_file' => '', 'sync_body' => '', 'interface' => null, 'hub_lan' => null, 'source' => null, 'address' => '', 'retired_address' => null, 'other_public_keys' => [], 'required_public_key' => null,
+            'network' => ['is_hub' => false, 'sync_path' => '', 'private_key_file' => '', 'sync_body' => '', 'interface' => null, 'hub_lan' => null, 'source' => null, 'lan_ssh_argv' => [], 'address' => '', 'retired_address' => null, 'other_public_keys' => [], 'required_public_key' => null,
                 'files' => [], 'hubs' => [], 'hub_files' => [], 'trust_argv' => []],
             'public_ssh_argv' => [], 'roles' => [], 'dns' => [], 'private_dns' => [], 'cli' => null,
             'authorized_keys' => [$identity['public_key']], 'known_hosts_path' => '/home/orbit/.ssh/known_hosts'];
@@ -181,7 +181,7 @@ final readonly class NativeNodeEnrollmentInput
             return ['is_hub' => true, 'files' => [['path' => '/etc/wireguard/orbit.conf', 'content' => ValidatedData::string($hub['config'])],
                 ['path' => '/etc/wireguard/orbit.peers', 'content' => ''], ...$peerFiles],
                 'sync_path' => '/etc/wireguard/orbit.peers', 'private_key_file' => '/etc/wireguard/orbit.key',
-                'sync_body' => '', 'interface' => $hub['interface'], 'hub_lan' => null, 'source' => $hub['source'],
+                'sync_body' => '', 'interface' => $hub['interface'], 'hub_lan' => null, 'source' => $hub['source'], 'lan_ssh_argv' => $hub['lan_ssh_argv'],
                 'trust_argv' => ['timeout', '60', 'ufw', ...array_slice($trust->arguments, 2)],
                 'hubs' => [], 'hub_files' => [], 'participant_node_ids' => []];
         }
@@ -204,9 +204,9 @@ final readonly class NativeNodeEnrollmentInput
 
         return ['is_hub' => false, 'files' => $files, 'sync_path' => '/etc/wireguard/orbit.peers',
             'private_key_file' => '/etc/wireguard/orbit.key', 'sync_body' => ValidatedData::string($network['peers']), 'interface' => null,
-            'hub_lan' => ValidatedData::object($network['peer'])['hub_lan'], 'source' => null, 'trust_argv' => ['timeout', '60', ...ValidatedData::stringList($network['trust_argv'])],
+            'hub_lan' => ValidatedData::object($network['peer'])['hub_lan'], 'source' => null, 'lan_ssh_argv' => [], 'trust_argv' => ['timeout', '60', ...ValidatedData::stringList($network['trust_argv'])],
             'hubs' => [['ssh' => $ssh, 'sync_path' => '/etc/wireguard/orbit.enrollment-sync',
-                'private_key_file' => '/etc/wireguard/orbit.key', 'public_key' => $hub->wireguard_public_key, 'port' => $hubPlan['port']]],
+                'private_key_file' => '/etc/wireguard/orbit.key', 'public_key' => $hub->wireguard_public_key, 'interface' => $hubPlan['interface']]],
             'hub_files' => [...$peerFiles, ['ssh' => $ssh, 'path' => $joining['file'], 'content' => $joining['section']],
                 ['ssh' => $ssh, 'path' => '/etc/wireguard/orbit.conf', 'content' => ValidatedData::string($hubPlan['config'])],
                 ['ssh' => $ssh, 'path' => '/etc/wireguard/orbit.enrollment-sync', 'content' => '']],

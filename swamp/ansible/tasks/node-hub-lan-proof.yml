@@ -1,6 +1,7 @@
 ---
-# Prove the recorded LAN before any WireGuard file names the hub's LAN endpoint (ADR 0251). `hub_lan.address` is the hub's
-# lan_ip and `hub_lan.source` this Node's. No fallback: a failed proof stops the phase before a change.
+# Prove, before any WireGuard file names the hub's LAN endpoint, that the LAN address is the hub (ADR 0251). `hub_lan.address`
+# is the hub's lan_ip, `hub_lan.source` this Node's and `hub_lan.fingerprint` the hub's recorded SSH host key. A host that only
+# answers at the address is not enough: its host key must be the hub's. No fallback: a failed proof stops before a change.
 - name: Read the route to the hub's LAN address
   ansible.builtin.command: { argv: [ip, -4, -j, route, get, "{{ hub_lan.address }}"] }
   register: hub_lan_route
@@ -18,11 +19,24 @@
       - route.dev | default('orbit') != 'orbit'
     fail_msg: node.hub_lan_unreachable
     quiet: true
-- name: Reach the hub's LAN address from the recorded LAN address
-  ansible.builtin.command: { argv: [ping, -c, "3", -W, "2", -I, "{{ hub_lan.source }}", "{{ hub_lan.address }}"] }
-  register: hub_lan_ping
+- name: Read the SSH host keys at the hub's LAN address
+  ansible.builtin.command: { argv: [ssh-keyscan, -T, "5", -p, "22", "{{ hub_lan.address }}"] }
+  register: hub_lan_keys
   changed_when: false
   failed_when: false
   check_mode: false
-- name: Require an answer from the hub's LAN address
-  ansible.builtin.assert: { that: hub_lan_ping.rc == 0, fail_msg: node.hub_lan_unreachable, quiet: true }
+- name: Require an SSH answer at the hub's LAN address
+  ansible.builtin.assert: { that: hub_lan_keys.stdout | trim | length > 0, fail_msg: node.hub_lan_unreachable, quiet: true }
+- name: Fingerprint the keys at the hub's LAN address
+  ansible.builtin.command: { argv: [ssh-keygen, -l, -E, sha256, -f, "-"], stdin: "{{ hub_lan_keys.stdout }}" }
+  register: hub_lan_fingerprints
+  changed_when: false
+  failed_when: false
+  check_mode: false
+- name: Require the hub's recorded host key at its LAN address
+  ansible.builtin.assert:
+    that:
+      - hub_lan.fingerprint is not none
+      - hub_lan.fingerprint in (hub_lan_fingerprints.stdout | regex_findall('SHA256:[A-Za-z0-9+/=]+'))
+    fail_msg: node.hub_lan_identity_mismatch
+    quiet: true

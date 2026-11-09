@@ -56,3 +56,14 @@ it('refuses a LAN address that is not IPv4, or that another Node of its Cluster 
         ->assertStatus(409)->assertJsonPath('error.code', 'cluster.lan_ip_conflict');
     expect($this->node->refresh()->lan_ip)->toBeNull();
 });
+
+it('refuses a LAN address that another Node outside every Cluster has, and allows one a Cluster member has', function (): void {
+    // The hub, gateway, services and swamp belong to no Cluster and share the hub's private network.
+    lanRecordedNode('gateway', '10.44.0.2', ['lan_ip' => '10.0.0.5']);
+    $this->patchJson("/api/v1/nodes/{$this->node->id}", ['lan_ip' => '10.0.0.5'])
+        ->assertStatus(409)->assertJsonPath('error.code', 'cluster.lan_ip_conflict');
+
+    $home = Cluster::query()->create(['name' => 'dev']);
+    lanRecordedNode('beast', '10.44.0.7', ['cluster_id' => $home->id, 'lan_ip' => '192.168.6.20']);
+    $this->patchJson("/api/v1/nodes/{$this->node->id}", ['lan_ip' => '192.168.6.20'])->assertOk();
+});
