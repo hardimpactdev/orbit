@@ -28,7 +28,7 @@ sequenceDiagram
   %%> - Pi calls the guard with the fixed key from the VM's own WireGuard address; the start makes no model router call and registers no key
   %%> - at boot, the base's `orbit-identity` unit applies the identity volume before sshd, WireGuard and the agent start, then unmounts it; sshd answers over WireGuard about 12 s after the start (measured 2026-11-07)
   %%> - the containers start by themselves (`boot.autostart`) and already hold the proof Swamp Club key of the base
-  %%> - converge part: the same Ansible converge as the release refresh, with the address and host key of the admission; it starts as soon as sshd answers and reads nothing back from the host
+  %%> - converge part: the same Ansible converge as the release refresh, with the address and host key of the admission; it waits up to 300 s for a successful SSH connection over WireGuard, polling every second, then waits for cloud-init; a fast boot continues at once
   %%> - the glue is one write of the intent and the step that builds the playbook input and starts Ansible; nothing is read from the host
   %%> - with no delta every part is skipped, each phase as one skipped task (a dynamic include), and it catches up a small delta when main moved since the last release
   %%> - the nested Gateway's services restart only when `apps/gateway` changed since the base, and its agent delivery manifest is placed only when the pinned agent build changed; a commit that changes neither does neither
