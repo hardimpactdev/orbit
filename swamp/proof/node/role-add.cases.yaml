@@ -90,7 +90,6 @@ cases:
     batch: fresh-fleet
     covers: []
     summary: A recorded name is not an explicit numeric record selector.
-    fails_on_base: true
     fails_today: The CLI resolves Node names and sends the role request instead of refusing a nonnumeric selector with node.id_invalid.
     act:
       - cli: {run: [node:role:add, app-dev, database], expect: {exit: 1, code: node.id_invalid, request: none}}
