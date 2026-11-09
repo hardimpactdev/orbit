@@ -55,7 +55,7 @@ function containerSettingsWithdrawal(Node $node, ?array $taskVms): Operation
 {
     SwampNodeFixture::ensure();
     DB::beginTransaction();
-    $operation = app(UpdateNodeAction::class)->execute($node, null, null, new NodeSettingsPatch(false, null, true, $taskVms === null ? null : NodeTaskVmsData::from($taskVms)));
+    $operation = app(UpdateNodeAction::class)->execute($node, null, null, new NodeSettingsPatch(false, null, true, $taskVms === null ? null : NodeTaskVmsData::from($taskVms)))->result;
     expect($operation)->toBeInstanceOf(Operation::class);
 
     return $operation;
