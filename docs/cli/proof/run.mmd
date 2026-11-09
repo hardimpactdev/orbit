@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% status: reviewed
+  %% status: draft
   %% command: proof:run
   %% kind: proof.run
   autonumber
@@ -27,9 +27,9 @@ sequenceDiagram
   GW->>Q: Join by proof Operation id
   %%> Earlier open CI proofs without admitted runs block later proofs, including while selection is being read. Cancellation, failure and no selection remove a proof from admission.
   Q->>GW: Admit the front proof
-  %%> Under the admission lock, take every currently free usable CI place, at least one and at most the batch count. A full pool or stale base waits, up to two hours, then fails clearly. Never refuse capacity or skip green.
+  %%> Under the admission lock, take every currently free usable CI place, at least one and at most the batch count. A full pool or stale base waits, up to two hours, then fails clearly. Never refuse capacity or skip green. A plan in which a shard of more than one batch needs more than the longest run budget of a shard, two hours, waits for another place.
   GW->>GW: Balance whole batches<br/>by measured time
-  %%> Longest measured batch first; assign each to the least loaded VM. Selected cases of a batch stay together. Record expected cases and all shard operations atomically.
+  %%> Longest measured batch first; assign each to the least loaded VM. Selected cases of a batch stay together. Record expected cases and all shard operations atomically. Each shard records its run budget: 600 s for the shard, 180 s for each batch and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
   GW->>SW: Start one run per VM
   SW->>VM: Claim a slot
   %%> Fresh VM from the host base at the trusted commit. No CI keep-failed option.
@@ -63,6 +63,7 @@ sequenceDiagram
       %%> Each replay must fail with cause assertion. A pass, another cause or missing evidence fails the proof with a CASE@merge-base verdict. Keep flags after merge; only a later case change opts them into another replay.
     end
     VM-->>SW: Verdict lines
+    %%> The Gateway records the verdict lines of each batch on its shard as the batch ends. A shard that ends at its run budget keeps them; only the cases of the batches that did not end are unrun.
   end
   SW->>VM: Release the slot
   %%> Delete after every outcome. Failed or missing cleanup schedules normal group cancellation. A live or releasing VM holds its place until confirmed deletion.

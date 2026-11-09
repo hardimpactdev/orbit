@@ -460,6 +460,8 @@ The capacity migration sets existing Beast and Shark hosts to two task and two C
 
 CI proofs join one first-come-first-served queue. The front proof takes every free CI place with a usable base, up to its batch count. Each place gets a fresh VM. Whole batches are balanced by measured case times; each VM restores its fleet and runs its assigned batches. Orbit merges the case verdicts into one report and deletes every VM before the proof finishes. A failed case or missing verdict fails the proof; a full pool never produces a passing report with no cases run.
 
+Each shard records its [run budget](/reference/operations#native-run-budgets) at admission: 600 seconds for the shard, 180 seconds for each batch and the measured case seconds, times 1.5, rounded up to five minutes, at most 7,200 seconds. A plan in which a shard of more than one batch needs more waits for another CI place, within the two-hour admission budget; a single batch is never split. The Gateway records the verdict lines of each batch on its shard as the batch ends. A shard that reaches its budget keeps the verdicts of the batches that ended; only the cases of the other batches are `unrun`.
+
 Every task VM copies the base, which carries only the proof Project's checkout. When a group of any other Project needs a new VM, admission refuses it with `task_vm.project_unsupported` before it checks the queue or a pool, so the refusal never becomes a wait.
 
 When the chosen pool is full, admission waits without allocating a VM, Node identity or workspace. `task:status` shows each host's places and their holders, and a waiting task shows its position in the queue ([Task places](/reference/tasks#task-places)). The wait ends after a two-hour admission budget with a clear timeout. Lowering a pool size deletes no VM; new claims wait until the pool has room. A task publishes its PR and releases its VM, workspace, keys and peer. Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
@@ -600,7 +602,9 @@ Parking retains the disk, workspace and sessions. It releases CPU and memory. It
 
 The Gateway scheduler queues `SweepTaskVmHosts` every thirty minutes. It runs while task VMs are enabled.
 
-For each active configured Incus host, the job releases the task VMs that a failed start or a failed release left, old-pool VMs included: a row with no group whose release failed, or whose Operation ended without its projection. Before each release it locks the row and checks again; a refresh of the host that opened after the selection leaves the row alone, because its group-less VM is still starting. The release is the run of `task_vm.slot_release` ([release chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-release.mmd)). A task start or a refresh proof that still uses the VM keeps it.
+For each active configured Incus host, the job releases the task VMs that a failed start or a failed release left, old-pool VMs included: a row with no group whose release failed, or whose Operation ended without its projection. Before each release it locks the row and checks again; a refresh that holds the row as the slot of its proof leaves it alone, because its group-less VM is still starting. The release is the run of `task_vm.slot_release` ([release chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-release.mmd)).
+
+A task start or a refresh proof that still uses the VM keeps it. Another open refresh of the host, such as one that waits for a CI place, does not hold the other rows of the host.
 
 An Incus host has no sweep of its own: no `task_vm.sweep_host` Operation runs for it, and the job reads no instance or volume of the host. A Node named `tvm-<number>` that no task VM row owns gets one log warning per run.
 
@@ -1050,6 +1054,8 @@ A failed run runs `Roll the base VM back` (phase `base-discard`): the base VM st
 The converge of a refresh is bounded at 5,400 s, and the converge of a task start at 3,300 s, because a new host builds the whole base. Both callers use the same 300-second SSH readiness budget in `task-vm-ready.yml`, polling every second and continuing as soon as the connection succeeds. A task start waits for SSH over WireGuard, including the guest's early boot and identity setup. A direct connection does not imply the guest has finished booting. The converge waits for the nested Gateway only while it builds the fleet.
 
 The candidate proof claims one CI place on its own host. A full CI pool waits within the two-hour admission budget. Task work cannot consume a CI place. The refresh VM of the old design and its group in the proof Project are not part of this run.
+
+A refresh that fails before its proof leaves its slot `failed`, and the [sweep](#sweep-task-vm-hosts) releases it. The sweep leaves alone only the slot that an open refresh holds. A refresh that waits for a CI place holds no slot, so the slots that earlier failed refreshes left are freed for it.
 
 ##### Build the nested fleet in the converge
 
