@@ -86,7 +86,7 @@ final readonly class RecipeLoader
     {
         $data = json_decode($json, false, 64, JSON_THROW_ON_ERROR);
         $this->rejectDuplicateKeys($json);
-        $root = $this->object($data, '$', ['schema_version', 'ubuntu', 'architectures', 'tools', 'common', 'php', 'roles', 'base', 'artifact_mirror', 'git', 'agent']);
+        $root = $this->object($data, '$', ['schema_version', 'ubuntu', 'architectures', 'tools', 'common', 'php', 'roles', 'base', 'artifact_mirror', 'git', 'agent', 'instances']);
         $rawAgent = $root->agent === null ? [] : get_object_vars($this->object($root->agent, 'agent'));
         $this->require($root->agent === null || $rawAgent !== [], 'agent: expected the resolved Linux x86_64 digest or null source intent.');
         $agent = [];
@@ -147,32 +147,7 @@ final readonly class RecipeLoader
             $this->require($keys === $architectures, "tools.{$name}.artifacts: expected exactly one amd64 pin.");
             $artifacts = [];
             foreach (get_object_vars($rawArtifacts) as $architecture => $rawArtifact) {
-                $field = "tools.{$name}.artifacts.{$architecture}";
-                $artifact = $this->object($rawArtifact, $field);
-                $algorithm = isset($artifact->sha256) ? 'sha256' : 'sha512';
-                $locationKey = $source === 'internal' ? 'filename' : 'url';
-                $this->object($artifact, $field, [$locationKey, $algorithm, ...(isset($artifact->version) ? ['version'] : [])]);
-                $artifactVersion = isset($artifact->version) ? $this->text($artifact->version, "{$field}.version") : null;
-                $this->require($artifactVersion === null || preg_match('/^[0-9][0-9A-Za-z.+:~_-]*$/D', $artifactVersion) === 1, "{$field}.version: expected an exact version.");
-                $this->require($source !== 'internal' || $algorithm === 'sha256', "{$field}: internal pins require sha256.");
-                $digest = $this->text($artifact->{$algorithm}, "{$field}.{$algorithm}");
-                $length = $algorithm === 'sha256' ? 64 : 128;
-                $this->require(preg_match('/^[a-f0-9]{'.$length.'}$/D', $digest) === 1, "{$field}.{$algorithm}: expected {$length} lowercase hexadecimal characters.");
-                $location = $this->text($artifact->{$locationKey}, "{$field}.{$locationKey}");
-                if ($name === 'chrome-headless-shell') {
-                    $this->require(preg_match('/\A[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\z/D', $version) === 1
-                        && $algorithm === 'sha256' && $artifactVersion === null
-                        && $location === "https://storage.googleapis.com/chrome-for-testing-public/{$version}/linux64/chrome-headless-shell-linux64.zip",
-                        "{$field}: expected the exact official Chrome headless-shell version, URL and SHA-256 pin.");
-                }
-                if ($source === 'internal') {
-                    $this->require(preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]*$/D', $location) === 1, "{$field}.filename: expected a simple filename, not a path.");
-                } else {
-                    $url = parse_url($location);
-                    $this->require(is_array($url) && ($url['scheme'] ?? '') === 'https' && isset($url['host']) && ! isset($url['user']) && ! isset($url['pass']) && ! isset($url['fragment']), "{$field}.url: expected an HTTPS release URL.");
-                    $this->require(preg_match('~(?:latest|stable|/lts(?:/|$)|/install(?:[./]|$))~i', $location) !== 1 && preg_match('~(?:^|[/_-])v?'.preg_quote(str_ends_with($location, '.deb') ? (preg_replace('/^[0-9]+:/', '', $artifactVersion ?? $version) ?? $version) : ($artifactVersion ?? $version), '~').'(?=$|[/_]|-(?:linux|x86_64)(?:[-./]|$)|\\.tar\\.|\\.tgz$|\\.zip$|\\.deb$)~D', rawurldecode($location)) === 1, "{$field}.url: expected the exact version in an immutable release URL, not an installer/channel.");
-                }
-                $artifacts[$architecture] = new ArtifactPin($location, $algorithm, $digest, $artifactVersion);
+                $artifacts[$architecture] = $this->artifact($rawArtifact, "tools.{$name}.artifacts.{$architecture}", $name, $source, $version);
             }
             $lock = $name === 'vp' ? $this->text($pin->lock_sha256, 'tools.vp.lock_sha256') : null;
             $this->require($lock === null || preg_match('/\A[0-9a-f]{64}\z/', $lock) === 1, 'tools.vp.lock_sha256: expected a SHA-256 digest.');
@@ -215,9 +190,11 @@ final readonly class RecipeLoader
             $this->require(in_array((string) $version, $usedPhp, true), "php.versions.{$version}: no profile names php:{$version}.");
         }
         $this->require(array_diff(array_keys($tools), $used) === [], 'tools: unused tool entries.');
+        $instances = $this->instanceFolders($root->instances, $tools, $architectures);
         // Locations of internal bytes and the Orbit agent are deliberately not software identity: a task image holds no agent.
+        // Nor does it hold the shared Instance folders, so a new T3 or Claude Code rebuilds no image.
         $identityData = $root;
-        unset($identityData->agent);
+        unset($identityData->agent, $identityData->instances);
         foreach ($identityData->tools as $pin) {
             if ($pin->source === 'internal') {
                 foreach ($pin->artifacts as $artifact) {
@@ -228,7 +205,7 @@ final readonly class RecipeLoader
         $canonical = json_encode($this->canonical($identityData), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 
         return new MachineRecipe('sha256:'.hash('sha256', $canonical), $snapshot, $architectures, $tools, $profiles, $canonical, $json, $php, $phpSets['ci'],
-            new PhpPolicy($phpSets['rollback'], $phpSets['pcov'], $phpSets['opentelemetry']), $mirror, $gitPackages, $agent);
+            new PhpPolicy($phpSets['rollback'], $phpSets['pcov'], $phpSets['opentelemetry']), $mirror, $gitPackages, $agent, $instances);
     }
 
     /**
@@ -311,6 +288,61 @@ final readonly class RecipeLoader
         return $builds;
     }
 
+    /**
+     * The two shared Instance folders. A part pins its own artifact, or names a recipe tool so that Node and its container share
+     * one pin. `bin` maps each program the part gives the folder to a relative path inside the unpacked artifact; no program name
+     * repeats in a folder.
+     *
+     * @param  array<string, ToolPin>  $tools
+     * @param  list<string>  $architectures
+     */
+    private function instanceFolders(mixed $value, array $tools, array $architectures): InstanceFolders
+    {
+        $raw = $this->object($value, 'instances', ['runtime', 'agent']);
+        $folders = [];
+        foreach (['runtime', 'agent'] as $folder) {
+            $parts = [];
+            $programs = [];
+            foreach (get_object_vars($this->object($raw->{$folder}, "instances.{$folder}")) as $name => $rawPart) {
+                $field = "instances.{$folder}.{$name}";
+                $this->require(preg_match('/^[a-z][a-z0-9-]*$/D', (string) $name) === 1, "{$field}: expected a lower-case part name.");
+                $part = $this->object($rawPart, $field);
+                $rawBin = get_object_vars($this->object($part->bin ?? null, "{$field}.bin"));
+                $this->require($rawBin !== [], "{$field}.bin: expected at least one program.");
+                $bin = [];
+                foreach ($rawBin as $program => $rawPath) {
+                    $program = (string) $program;
+                    $path = $this->text($rawPath, "{$field}.bin.{$program}");
+                    $this->require(preg_match('/^[a-z][a-z0-9-]*$/D', (string) $program) === 1 && ! isset($programs[$program]), "{$field}.bin: [{$program}] is not a new lower-case program name.");
+                    $this->require(preg_match('~^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$~D', $path) === 1 && ! in_array('..', explode('/', $path), true), "{$field}.bin.{$program}: expected a relative path inside the artifact.");
+                    $programs[$program] = true;
+                    $bin[$program] = $path;
+                }
+                if (isset($part->tool)) {
+                    $this->object($part, $field, ['tool', 'bin']);
+                    $tool = $tools[$this->text($part->tool, "{$field}.tool")] ?? null;
+                    $this->require($tool instanceof ToolPin && $tool->source === 'artifact', "{$field}.tool: expected an artifact tool of the recipe.");
+                    if (! $tool instanceof ToolPin) {
+                        continue;
+                    }
+                    $parts[$name] = new FolderPin($tool->version, $tool->artifacts[$architectures[0]], $bin);
+
+                    continue;
+                }
+                $this->object($part, $field, ['version', 'artifacts', 'bin']);
+                $version = $this->text($part->version, "{$field}.version");
+                $this->require(preg_match('/^[0-9][0-9A-Za-z.+:~_-]*$/D', $version) === 1, "{$field}.version: expected an exact version, not a channel or constraint.");
+                $artifacts = $this->object($part->artifacts, "{$field}.artifacts");
+                $this->require(array_keys(get_object_vars($artifacts)) === $architectures, "{$field}.artifacts: expected exactly one amd64 pin.");
+                $parts[$name] = new FolderPin($version, $this->artifact($artifacts->{$architectures[0]}, "{$field}.artifacts.{$architectures[0]}", $name, 'artifact', $version), $bin);
+            }
+            $this->require($parts !== [], "instances.{$folder}: expected at least one part.");
+            $folders[$folder] = $parts;
+        }
+
+        return new InstanceFolders($folders['runtime'], $folders['agent']);
+    }
+
     /** @param array<string, ToolPin> $tools */
     private function incusBuild(array $tools, string $release): void
     {
@@ -357,6 +389,37 @@ final readonly class RecipeLoader
         if (! $condition) {
             throw new InvalidArgumentException($message);
         }
+    }
+
+    /** One architecture's pin of an artifact or internal tool: its location, digest and the exact version in an immutable URL. */
+    private function artifact(mixed $raw, string $field, string $name, string $source, string $version): ArtifactPin
+    {
+        $artifact = $this->object($raw, $field);
+        $algorithm = isset($artifact->sha256) ? 'sha256' : 'sha512';
+        $locationKey = $source === 'internal' ? 'filename' : 'url';
+        $this->object($artifact, $field, [$locationKey, $algorithm, ...(isset($artifact->version) ? ['version'] : [])]);
+        $artifactVersion = isset($artifact->version) ? $this->text($artifact->version, "{$field}.version") : null;
+        $this->require($artifactVersion === null || preg_match('/^[0-9][0-9A-Za-z.+:~_-]*$/D', $artifactVersion) === 1, "{$field}.version: expected an exact version.");
+        $this->require($source !== 'internal' || $algorithm === 'sha256', "{$field}: internal pins require sha256.");
+        $digest = $this->text($artifact->{$algorithm}, "{$field}.{$algorithm}");
+        $length = $algorithm === 'sha256' ? 64 : 128;
+        $this->require(preg_match('/^[a-f0-9]{'.$length.'}$/D', $digest) === 1, "{$field}.{$algorithm}: expected {$length} lowercase hexadecimal characters.");
+        $location = $this->text($artifact->{$locationKey}, "{$field}.{$locationKey}");
+        if ($name === 'chrome-headless-shell') {
+            $this->require(preg_match('/\A[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\z/D', $version) === 1
+                && $algorithm === 'sha256' && $artifactVersion === null
+                && $location === "https://storage.googleapis.com/chrome-for-testing-public/{$version}/linux64/chrome-headless-shell-linux64.zip",
+                "{$field}: expected the exact official Chrome headless-shell version, URL and SHA-256 pin.");
+        }
+        if ($source === 'internal') {
+            $this->require(preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]*$/D', $location) === 1, "{$field}.filename: expected a simple filename, not a path.");
+        } else {
+            $url = parse_url($location);
+            $this->require(is_array($url) && ($url['scheme'] ?? '') === 'https' && isset($url['host']) && ! isset($url['user']) && ! isset($url['pass']) && ! isset($url['fragment']), "{$field}.url: expected an HTTPS release URL.");
+            $this->require(preg_match('~(?:latest|stable|/lts(?:/|$)|/install(?:[./]|$))~i', $location) !== 1 && preg_match('~(?:^|[/_-])v?'.preg_quote(str_ends_with($location, '.deb') ? (preg_replace('/^[0-9]+:/', '', $artifactVersion ?? $version) ?? $version) : ($artifactVersion ?? $version), '~').'(?=$|[/_]|-(?:linux|x86_64)(?:[-./]|$)|\\.tar\\.|\\.tgz$|\\.zip$|\\.deb$)~D', rawurldecode($location)) === 1, "{$field}.url: expected the exact version in an immutable release URL, not an installer/channel.");
+        }
+
+        return new ArtifactPin($location, $algorithm, $digest, $artifactVersion);
     }
 
     /** @param ?list<string> $keys */

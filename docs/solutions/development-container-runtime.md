@@ -58,12 +58,12 @@ The build list, the Gateway setting `instances.container_nodes` (`ORBIT_INSTANCE
 These come from other work and must land first.
 
 - **The model forwarder and guard change.** A separate PR builds the per-Node forwarder and lets the model router guard accept agent Nodes and the `?beta=true` query. The live checks of PR 3 and later need it.
-- **Container egress for dependencies.** Step 2c of ADR 0250 names the package path that dependency installs use. PR 3 needs it.
+- **Container egress for dependencies.** Step 2c of ADR 0250 names the package path that dependency installs use. PR 4 needs it. The image build of PR 3 has its own way out, for its build container only.
 - **Pairing works.** The spike's pairings failed at the vault step. The pairing fix on `main` must pair with a container's server before PR 5 ends.
 
 ## Build PRs
 
-The PRs land in this order. PR 7 can run beside PR 6, and PR 12 can land any time after PR 9.
+The PRs land in this order. PR 3b lands before PR 4, PR 7 can run beside PR 6, and PR 12 can land any time after PR 9.
 
 ### PR 1: this specification
 
@@ -103,31 +103,78 @@ These points stay open after PR 2. Each named PR settles its point.
 
 This PR prepares a Node; it creates no Instance.
 
-- A container branch of the `app-dev` role converge sets up the Incus project `orbit-instances` on a ZFS pool, the bridge and the firewall rules.
-- The branch runs only on Nodes of the build list, never on task Nodes.
-- The container image: Ubuntu 26.04, `agent` 2750, `orbit` 1000, `work` 2760, no sudo, `nftables` with the two uid rules, `hidepid`, `acl`, and the T3 unit with its condition on `/etc/orbit/instance`.
-- The recipe pins the runtime folder: the static FrankenPHP and PHP CLI build with its extension list, Composer, Node, Bun and rg.
-- The recipe pins the agent folder: T3, Claude Code and Codex, with the three environment notes.
-- The converge installs both folders with their `current` links.
-- A folder update installs the new version and flips `current`. Then it restarts T3 or the Processes in each running container, one after another. It runs with the release refresh of each Node.
+The Gateway decides which Node gets the branch:
 
-Tests: Molecule `unit` cases for the nftables and unit templates and the notes, `ansible-lint`, Pest for the recipe pins and the extension check. Live on the test Node:
+- A container branch of the `app-dev` role converge runs in `node-role-runtime.yml`.
+- It runs only for a Node of the build list that is not a task VM. Every other Node gets the same intent as before.
+- The admission of a role add or converge allocates the Node's Instance bridge. The capture only reads it.
+- The allocation and a task host's new bridges are each one transaction, which the connection begins IMMEDIATE, so they cannot interleave.
+
+The host side reuses the container host tasks of the task containers (#3279):
+
+- Incus from the recipe, the SCTP check, the sysctl floors, the subordinate IDs and the ARC cap.
+- The project, bridge, ACL, profile, stock image, input rules and clone probe.
+- The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge refuses a Node without it.
+- The project mounts only the two folders, read-only and idmapped, and allows proxy devices for T3.
+- Every container gets an isolated ID map. The bridge `orbitinst0` reaches only the model forwarder by default.
+
+The image and the folders:
+
+- The image: Ubuntu 26.04, `agent` 2750, `orbit` 1000, `work` 2760, no sudo, `nftables` with the two uid rules, `hidepid`, `acl`, and the T3 unit.
+- The T3 unit has its condition on `/etc/orbit/instance`.
+- The image's alias is a digest of its definition. The stable alias `orbit-instance` names the newest.
+- The build container alone reaches the internet. It takes the bridge's last address, with its own ACL and a route rule that the build removes.
+- The recipe pins the runtime folder: Composer, Node, Bun and rg. Node and Bun reuse the recipe's own pins.
+- The recipe pins the agent folder: T3, Claude Code and Codex. The Gateway adds the three environment notes.
+- The converge installs both folders with their `current` links. A folder's version is a digest of its content.
+
+A folder update installs the new version beside the old one and flips `current`. Then it restarts T3 or the Processes (`orbit-*.service`) in each running container, one after another. It runs with the converge of each Node. A version that no process maps goes.
+
+Tests: the Ansible fixture tests for the Instance host phase and the task container host phase, which share their tasks; Pest for the recipe pins, the intent, the image files, the notes, the firewall catalog and the bridge transactions. Live on the test Node:
 
 1. The converge runs twice; the second changes nothing.
 2. In a test container, `orbit` cannot run `t3`, `claude` or `codex`, and cannot read `/home/agent`.
 3. As `orbit`, the forwarder port and T3's port reset, `ps` shows no agent process, and `sudo -n true` fails.
 4. As `agent`, the three binaries run at the pinned versions.
-5. `php -v`, `php -i`, `php -d memory_limit=1G -r 1;` and a `composer install` with scripts all work; FrankenPHP's and the CLI's extension lists match.
 
 The isolation and update checks follow.
 
-6. A second container with another isolated ID map shows the same: `agent` runs `t3`, `orbit` cannot.
-7. From the second container, the first container's bridge address is unreachable.
-8. T3's published port answers from a WireGuard peer and refuses a task VM.
-9. An agent folder update during a `sleep 40` tool call restarts T3, and the turn completes.
-10. From a test container, a database server on the Node and one on another Node answer on their port. Every other address on those Nodes is dropped.
-11. A nested `app-dev` Node of the proof fleet runs a container Instance on its directory pool, where a copy is a full copy.
-12. The PR stops and asks where the `instance:*` proof cases run, if check 11 fails.
+5. A second container with another isolated ID map shows the same: `agent` runs `t3`, `orbit` cannot.
+6. From the second container, the first container's bridge address is unreachable.
+7. An agent folder update during a `sleep 40` tool call restarts T3, and the turn completes.
+8. A nested `app-dev` Node of the proof fleet runs a container on its directory pool, where a copy is a full copy.
+9. The PR stops and asks where the `instance:*` proof cases run, if check 8 fails.
+
+No fixture can prove these claims; only real Incus on the first test Node can.
+
+10. As `orbit` in a test container, `ps -u agent` lists nothing: `hidepid=invisible` holds after a container restart.
+11. The restricted project accepts the two folder disks, read-only and shifted, under `restricted.devices.disk.paths`.
+12. The build container reaches the internet through its own NIC ACL. A test container on the bridge reaches only the forwarder.
+13. As `orbit`, `10.253.x.1:8319` and T3's port 3773 answer with a reset; as `agent`, both answer.
+14. The published image has no `ubuntu` user and no sudo grant.
+15. Cloud-init stays off in a new container.
+
+Three points of the first plan moved, because the code showed they belong elsewhere:
+
+- **The static PHP build** moved to PR 3b. No published artifact gives FrankenPHP and a PHP CLI from one build.
+- **Database access** moved to PR 5. A container reaches only its Instance's own database server, which only the create flow knows. That access is a rule on the container's NIC.
+- **T3's published port** moved to PR 5, with the proxy device of each container.
+
+The firewall uses no Molecule cases: the repository tests Ansible with fixture tests that run the shipped tasks against a stateful Incus stand-in.
+
+### PR 3b: the static PHP build
+
+This PR adds PHP to the runtime folder; it creates no Instance.
+
+- A build job makes `frankenphp` and `php` from one static-php-cli build per PHP version that Orbit supports, with the recipe's extension list. It publishes both to the artifact mirror.
+- The recipe pins them in the runtime folder as `php/<php-version>/bin`, with the extension list.
+- The converge checks that both binaries load exactly the listed extensions.
+- The environment notes name PHP and Composer from the runtime folder. Until then they name only Node, npm, Bun and rg.
+
+Tests: Pest for the pins and the extension check; a fixture test for the check. Live on the test Node:
+
+1. `php -v`, `php -i`, `php -d memory_limit=1G -r 1;` and a `composer install` with scripts all work in a test container.
+2. FrankenPHP's and the CLI's extension lists match.
 
 ### PR 4: the first default Instance and its deployments
 
@@ -154,6 +201,8 @@ This PR changes `instance:create`, so its spec commit updates the create page an
 - The branch from the Node, the workspace, `.env`, the agent settings, the note links and `/etc/orbit/instance`.
 - The first start of T3, the Processes and the Route.
 - The registration step and the Gateway's record of the server from its result. The record names the Instance.
+- The container's NIC rule to its Instance's database server and port.
+- The T3 proxy device and its route rule.
 - The daily renewal run.
 
 Tests: Pest for the intent, the projection, the registration record from a result, `instance.default_missing`; Ansible `unit` cases; tests of the template clone and of the dump path; the `instance:create` cases for a container Node. Live on the test Node:
@@ -172,6 +221,8 @@ The disk, agent and failure checks follow.
 9. A message that the user sends in Conn during a turn is queued, not steered.
 10. A failed step leaves a stopped container; the same create resumes it.
 11. The PR records the clone, database clone, first T3 start and whole create times, for a small and a 1 GB database.
+12. The clone reaches its database server on its port, on the Node and on another Node. Every other address on those Nodes is dropped.
+13. T3's published port answers from a WireGuard peer and refuses a task VM.
 
 ### PR 6: destroy a container Instance
 
@@ -351,9 +402,9 @@ Each PR moves its part into these pages. The specification stays on [Development
 | Page | Change | PR |
 | --- | --- | --- |
 | [Concepts](/concepts) | Container Instance, default Instance as clone source | 2 |
-| [Compute drivers](/reference/compute-drivers) | The container image, the runtime and agent folders in the recipe, the static PHP build, the folder update | 3 |
+| [Compute drivers](/reference/compute-drivers) | The container image, the runtime and agent folders in the recipe, the folder update; the static PHP build | 3, 3b |
 | [Node provisioning](/reference/node-provisioning) | What the `app-dev` and `app-prod` roles install | 3, 11, 14, 17 |
-| [Database servers](/reference/database-servers) | Access from a container, the template clone and the dump path | 3, 5 |
+| [Database servers](/reference/database-servers) | Access from a container, the template clone and the dump path | 5 |
 | [Model router](/reference/ai-router) | The forwarder and agent Node admission | Separate PR |
 | [Applications](/domains/applications) | Instances in containers, the default Instance as clone source, migration | 4, 5, 10 |
 | [Instance releases](/reference/deployments) | Development deployment in the default container; later production releases in containers | 4, 16 |

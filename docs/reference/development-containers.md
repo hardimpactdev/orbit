@@ -2,18 +2,15 @@
 title: "Development containers"
 description: "Step 6 of ADR 0250, built only as records: every development Instance runs in an Incus container cloned from the Project's default Instance. The app runs as `orbit` on FrankenPHP, T3 and its agents as `agent`."
 covers:
-  - apps/gateway/app/Models/InstanceRuntime.php
-  - apps/gateway/app/Domain/Instances/InstanceRuntimePowerState.php
-  - apps/gateway/app/Domain/Instances/ContainerNodes.php
-  - apps/gateway/app/Actions/Nodes/AllocateInstanceBridgeAction.php
-  - apps/gateway/app/Domain/Nodes/NodeBridges.php
-  - apps/gateway/config/instances.php
-  - apps/gateway/database/migrations/2027_02_03_000000_create_instance_runtimes.php
+  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes}.php
+  - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/notes/**}
+  - swamp/ansible/tasks/{instance-host,instance-folder,instance-image}.yml
 ---
 
 # Development containers
 
-**Not built, except the [records](#records).** This page specifies step 6 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order). It describes the target. The PRs in [Development container runtime](/solutions/development-container-runtime) build it, one part at a time, and move each part into its owning page. Until then, development Instances run from checkouts on their Node, as [Applications](/domains/applications) describes.
+**Not built, except the [records](#records) and the [Node preparation](#prepare-a-node).** This page specifies step 6 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order). It describes the target. The PRs in [Development container runtime](/solutions/development-container-runtime) build it, one part at a time, and move each part into its owning page. Until then, development Instances run from checkouts on their Node, as [Applications](/domains/applications) describes.
 
 Every development Instance runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
 
@@ -39,7 +36,26 @@ The container flows keep the kinds of today's Instance flows. Their charts sit o
 
 Every `app-dev` Node runs its Instances in containers. There is no setting to opt in. Task Nodes are the one exception: a task VM or task container keeps its checkout workspace until task containers move to T3.
 
-The `app-dev` role installs the container setup: the ZFS-backed Incus pool and project `orbit-instances`, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the Node's Incus pool must be ZFS.
+The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the pool of a real Node is ZFS; only a nested proof Node uses a directory pool, where a copy is a full copy.
+
+### Prepare a Node
+
+This part is built. The `app-dev` role converge of a Node on the [build list](#the-build-list) runs a container branch; a task VM never does. The Gateway sends the branch's intent only for such a Node, so every other Node gets the same intent as before. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
+
+- **Allocation.** The admission of a role add or converge allocates the Node's bridge. The captured intent only reads it.
+- **Pool.** The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge chooses no disk itself.
+- **Missing pool.** A Node without the pool is refused with `instance.host_unavailable`.
+- **Project.** Containers of `orbit-instances` must set an isolated ID map. They mount only the two shared folders, may have proxy devices, and cannot be VMs.
+- **Bridge.** `orbitinst0` has NAT and no IPv6. DHCP leaves the last address free for the image build.
+- **Bridge ACL.** A container reaches only the model forwarder, at port 8319 of the bridge address. Each Instance's own paths come with its create flow.
+- **Input rules.** The Node admits DHCP and DNS from the bridge, under `orbit:instances-dhcp`, `orbit:instances-dns-tcp` and `orbit:instances-dns-udp`.
+
+The converge then installs what the containers run:
+
+- **Image.** The converge builds the [container image](#inside-a-container) once per definition and names it with the stable alias `orbit-instance`.
+- **Folders.** It installs both [shared folders](#shared-folders).
+
+The converge creates no Instance.
 
 The Gateway gives each Node a bridge network, a `/24` of the fleet range `10.253.0.0/16`, and records it on the Node. It takes the first `/24` that overlaps no recorded bridge and not the VPN subnet. A Node keeps its bridge. When no `/24` is free, the allocation fails with `node.instance_bridge_exhausted` (409). A task VM host's bridges may not overlap an Instance bridge either: `node:update` refuses them with `node.settings_invalid`. T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address.
 
@@ -71,6 +87,10 @@ Every development container has the same layout. The image and the create set it
 
 A container mounts no host checkout and no Incus socket. Root work, such as units, goes through Orbit from the Node.
 
+The Gateway renders the image: its packages, the setup script, its files and the units it enables. The script turns cloud-init off, so a new container never makes the stock `ubuntu` user and its sudo grant again. The image's alias is `orbit-instance-` with the first 12 hex digits of a digest of that definition, so a changed definition is a new image. A build container from the stock Ubuntu image runs the definition and is published under that alias. The stable alias `orbit-instance` then moves to it, and the older images go; a container keeps what it was made from.
+
+The build container is the only container that reaches the internet. It takes the bridge's last address, which no Instance gets. Its own ACL drops private ranges, and a route rule lets it out until the build removes the rule again.
+
 ### Who runs what
 
 The app runs as `orbit`: FrankenPHP, queue workers, development servers and every Orbit Process. `orbit` cannot run the agent binaries, read `/home/agent`, reach the model route or T3's port, or see agent processes. A preview URL reaches only an Orbit Process, so an attacker who comes in through it lands as `orbit`.
@@ -91,33 +111,39 @@ The software that the app and the agents run lives once per Node, in two version
 
 | Path | Content | Access |
 | --- | --- | --- |
-| `/opt/orbit-runtime/<version>/php/<php-version>/bin` | `frankenphp` and `php` of one PHP version | Everyone |
+| `/opt/orbit-runtime/<version>/php/<php-version>/bin` | `frankenphp` and `php` of one PHP version. Not built yet: [PR 3b](/solutions/development-container-runtime#pr-3b-the-static-php-build) adds them | Everyone |
 | `/opt/orbit-runtime/<version>/bin` | `composer`, Node, npm, npx, Bun, rg | Everyone |
 | `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex` | `root:2750`, mode 0750 |
 | `/opt/orbit-agent/<version>/agent/{t3,claude-code,codex}` | The releases | `root:2750`, mode 0750 |
 | `/opt/orbit-agent/<version>/notes/<type>.md` | The [environment notes](#environment-notes) | Everyone |
 
-The folders live on the Node's root filesystem. The idmapped mount keeps gid 2750 the same in every container, whatever its ID map. The spike proved this with one container; PR 3 proves it with two containers whose ID maps differ. `orbit` sees the folder `agent`, but not what is in it.
+The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)): T3, Claude Code and Codex in the agent folder; Composer, Node, Bun and rg in the runtime folder, where Node and Bun reuse the recipe's own pins. A folder's version is the first 12 hex digits of a digest of everything in it, the notes included, so any change is a new version. Each program in `bin` links to its path in its part.
 
-An update installs the new version beside the old one and flips `current`. For the agent folder, Orbit then restarts T3 in each running container, one after another; T3 continues a running turn after its restart. For the runtime folder, Orbit restarts the FrankenPHP Process and the other Processes of each running container. A stopped container uses the new versions when it wakes. An old version stays until no process uses it. The CLI self-updaters are off: `DISABLE_AUTOUPDATER=1` for Claude Code, `check_for_update_on_startup = false` for Codex, and T3's own update check off.
+The idmapped mount keeps gid 2750 the same in every container, whatever its ID map. The spike proved this with one container; PR 3 proves it with two containers whose ID maps differ. `orbit` sees the folder `agent`, but not what is in it.
+
+An update installs the new version beside the old one and flips `current`. It runs with the converge of each Node, so a recipe change reaches the Node with its release refresh.
+
+For the agent folder, Orbit then restarts T3 in each running container, one after another; T3 continues a running turn after its restart. For the runtime folder, Orbit restarts the FrankenPHP Process and the other Processes of each running container: every unit named `orbit-*.service`, so the Process units of a container carry that prefix. A stopped container uses the new versions when it wakes. An old version stays until no process maps a file of it.
+
+The CLI self-updaters are off: `DISABLE_AUTOUPDATER=1` in the T3 unit, which Claude Code inherits, and `check_for_update_on_startup = false` in the image's Codex configuration. The T3 server has no self-updater; it runs from the read-only folder.
 
 The OS packages of the image change rarely. The Node's patch run of ADR 0250 upgrades them in each running container from the Node; a sleeping container gets the upgrade when it next wakes.
 
 ## Environment notes
 
-Each Project type has one note in the agent folder:
+Each Project type has one note in the agent folder, at `notes/<note>.md`. The notes live in the Gateway's `resources/instances/notes`:
 
 | Project type | Note |
 | --- | --- |
-| `laravel-app`, `symfony-app` | Web app with previews |
-| `monorepo` | Monorepo |
-| `laravel-package`, `node-package` | Package |
+| `laravel-app`, `symfony-app` | `web-app`: a web app with previews |
+| `monorepo` | `monorepo` |
+| `laravel-package`, `node-package` | `package` |
 
 When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says how previews work and how an agent views its own server. It says that there is no sudo and no direct internet, and how Git leaves the container. It gives no instructions about the work. Instructions, skills and MCP servers come from the project's own files.
 
 ## Model access
 
-A container holds only a placeholder key, in `/home/agent/.config/orbit/model.env`. Claude Code and Codex send model calls to a forwarder on the bridge's gateway address. The [forwarder](/reference/ai-router#container-model-forwarder) passes them to the model router guard, which admits the agent Node and swaps in the real key. The real key stays off the Node. While the forwarder's table is loaded, only containers on the bridge reach the guard, through the forwarder. The guard accepts the `?beta=true` query that Claude Code sends.
+A container holds only a placeholder key, in `/home/agent/.config/orbit/model.env`. Claude Code and Codex send model calls to a forwarder at port 8319 of the bridge's gateway address. The [forwarder](/reference/ai-router#container-model-forwarder) passes them to the model router guard, which admits the agent Node and swaps in the real key. The real key stays off the Node. While the forwarder's table is loaded, only containers on the bridge reach the guard, through the forwarder. The guard accepts the `?beta=true` query that Claude Code sends. On a prepared Node, `ai-router:model-forwarder NODE --bridge=orbitinst0 --address=<bridge address>` places the forwarder.
 
 ## Network
 
@@ -128,7 +154,7 @@ A container reaches only what this table lists. Everything else is dropped at it
 | T3 | An Incus proxy device in NAT mode publishes T3 at a port from 3800 to 3999 on the Node's WireGuard address. A firewall route rule admits WireGuard peers, but not task VMs |
 | Other containers | None. Each NIC has `security.port_isolation`, so containers on the bridge cannot reach each other |
 | Preview | The Instance's Route on the Node's Caddy proxies to FrankenPHP in the container, at its bridge address |
-| Database | The Instance's database server and port only: at the bridge's gateway address on the Node, or over WireGuard through the Node. The server admits the Instance's own role only |
+| Database | The Instance's own database server and port, on the Node or over WireGuard. A rule on the container's NIC, from the create flow. The server admits the Instance's role only |
 | Models | The forwarder at the bridge's gateway address |
 | DNS | The bridge's DNS |
 | Everything else | Dropped, including the Gateway and GitHub |
@@ -272,6 +298,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `conn.environment_asleep` | 409 | A pairing with a sleeping Instance's T3 server |
 | `node.instance_bridge_exhausted` | 409 | No `/24` of the fleet range is free for a Node's Instance bridge |
 | `instance.container_nodes_invalid` | 500 | `ORBIT_INSTANCES_CONTAINER_NODES` is not a JSON list of Node ids |
+| `instance.host_unavailable` | 409 | A build-list Node cannot be prepared: it lacks the pool `orbit-instances` or enough subordinate IDs, or the recipe has no pin for it |
 
 ## Why it works this way
 

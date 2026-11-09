@@ -1,7 +1,9 @@
 ---
-# The kernel and Incus side of a task container host (docs/reference/compute-drivers.md#the-host-system). It runs before the VM part,
-# which needs Incus, and only on a host with `host.containers`. It never upgrades a running Incus and never reboots the host: the full
-# upgrade and the reboot before first use are the operator's. The VM part applies the ARC cap that it sizes (`container_arc_max`).
+# The kernel and Incus side of a container host (docs/reference/compute-drivers.md#the-host-system): a task container host before its
+# VM part, which needs Incus, and an Instance container host (tasks/instance-host.yml). `container_host` names the kind of host, its
+# error code, its Incus pins, the subordinate IDs it needs and the kernel modules its containers need. It never upgrades a running Incus
+# and never reboots the host: the full upgrade and the reboot before first use are the operator's. The caller applies the ARC cap that
+# it sizes (`container_arc_max`).
 # `ii ` is installed. A package removed with its config files left (`rc `) still has a version, so it counts as missing.
 - name: Read the installed Incus package
   ansible.builtin.command: { argv: [dpkg-query, --show, --showformat, "${db:Status-Abbrev}${Version}", incus] }
@@ -14,7 +16,7 @@
   when: not container_incus_package.stdout.startswith('ii ')
   vars:
     container_incus_debs: >-
-      {{ host.containers.incus.packages | map(attribute='name') | zip(host.containers.incus.packages | map(attribute='sha256'))
+      {{ container_host.incus.packages | map(attribute='name') | zip(container_host.incus.packages | map(attribute='sha256'))
          | map('join', '_') | map('regex_replace', '^', '/var/cache/orbit/debs/') | map('regex_replace', '$', '.deb') | list }}
   block:
     - name: Create the package cache
@@ -26,7 +28,7 @@
           urls: "{{ item.urls }}"
           path: "{{ container_incus_debs[index] }}"
           sha256: "{{ item.sha256 }}"
-      loop: "{{ host.containers.incus.packages }}"
+      loop: "{{ container_host.incus.packages }}"
       loop_control: { label: "{{ item.name }}", index_var: index }
     - name: Read the package index
       ansible.builtin.apt: { update_cache: true, cache_valid_time: 3600 }
@@ -44,8 +46,8 @@
 
 - name: Require the recipe's Incus line
   ansible.builtin.assert:
-    that: ((container_incus_server.stdout | from_json).environment.server_version ~ '.').startswith(host.containers.incus.line ~ '.')
-    fail_msg: task_vm.setup_failed
+    that: ((container_incus_server.stdout | from_json).environment.server_version ~ '.').startswith(container_host.incus.line ~ '.')
+    fail_msg: "{{ container_host.fail }}"
     quiet: true
 
 # The kernel policy of every managed Linux Node (`node:add`, `node:converge`) blocks SCTP; this phase only checks the result.
@@ -64,21 +66,22 @@
     that:
       - container_sctp_rule.stdout is search('(?m)^install /bin/false')
       - not container_sctp_loaded.stat.exists
-    fail_msg: task_vm.setup_failed
+    fail_msg: "{{ container_host.fail }}"
     quiet: true
 
 # A container cannot load a module itself: the host loads what WireGuard, Docker's overlay storage and its bridges need.
 - name: Load the container kernel modules at boot
+  when: container_host.modules | length > 0
   ansible.builtin.copy:
-    dest: /etc/modules-load.d/orbit-task-containers.conf
-    content: "wireguard\noverlay\nbr_netfilter\n"
+    dest: "/etc/modules-load.d/orbit-{{ container_host.kind }}.conf"
+    content: "{{ container_host.modules | join('\n') }}\n"
     owner: root
     group: root
     mode: "0644"
 
 - name: Load the container kernel modules now
   community.general.modprobe: { name: "{{ item }}", state: present }
-  loop: [wireguard, overlay, br_netfilter]
+  loop: "{{ container_host.modules }}"
 
 # At least the Incus production values for nested systemd, Docker and file watchers: a host value that is higher stays, such as
 # Ubuntu's own vm.max_map_count of 1048576.
@@ -91,26 +94,26 @@
   ansible.posix.sysctl:
     name: "{{ item.0.key }}"
     value: "{{ [item.0.value, item.1 | int] | max }}"
-    sysctl_file: /etc/sysctl.d/60-orbit-task-containers.conf
+    sysctl_file: "/etc/sysctl.d/60-orbit-{{ container_host.kind }}.conf"
     reload: true
   loop: "{{ container_sysctls | dict2items | zip(container_sysctls_now.stdout_lines) | list }}"
   loop_control: { label: "{{ item.0.key }}" }
 
-# Each place and the base get an isolated range of 101,000,000 IDs, from root's range; a smaller range changes nothing.
+# Each container gets an isolated ID map from root's range, which must hold `container_host.ids`; a smaller range changes nothing.
 - name: Read the subordinate IDs
   ansible.builtin.slurp: { src: "{{ item }}" }
   loop: [/etc/subuid, /etc/subgid]
   register: container_subids
 
-- name: Require a subordinate range for every place and the base
+- name: Require a subordinate range for every container
   ansible.builtin.assert:
     that: have | int >= need | int
-    fail_msg: "task_vm.setup_failed: root needs {{ need }} subordinate IDs in {{ item.item }}, and its largest range has {{ have }}"
+    fail_msg: "{{ container_host.fail }}: root needs {{ need }} subordinate IDs in {{ item.item }}, and its largest range has {{ have }}"
     quiet: true
   loop: "{{ container_subids.results }}"
   loop_control: { label: "{{ item.item }}" }
   vars:
-    need: "{{ (host.containers.places + 1) * 101000000 }}"
+    need: "{{ container_host.ids }}"
     have: >-
       {{ (item.content | b64decode).splitlines() | select('match', '^root:[0-9]+:[0-9]+$') | map('split', ':') | map('last') | map('int')
          | list | max | default(0) }}

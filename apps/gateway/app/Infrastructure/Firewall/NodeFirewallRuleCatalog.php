@@ -11,6 +11,8 @@ use App\Domain\Analytics\AnalyticsStorageConnection;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressPolicy;
+use App\Domain\Instances\ContainerNodes;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\WireGuard\LanAddress;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -32,6 +34,19 @@ final readonly class NodeFirewallRuleCatalog
 
     /** The same rules for the bridge of a host's task containers. Each bridge has its own names: a withdrawal deletes rules by comment. */
     public const array TaskContainerInputComments = ['orbit:task-containers-dhcp', 'orbit:task-containers-dns-tcp', 'orbit:task-containers-dns-udp'];
+
+    /** The same rules for the Instance bridge of a Node on the build list (docs/reference/development-containers.md#network). */
+    public const array InstanceInputComments = ['orbit:instances-dhcp', 'orbit:instances-dns-tcp', 'orbit:instances-dns-udp'];
+
+    /** @return list<UfwManagedRule> */
+    public function instanceHostInput(Node $node): array
+    {
+        if ($node->instance_bridge === null || ! app(ContainerNodes::class)->includes($node)) {
+            return [];
+        }
+
+        return $this->bridgeInput(InstanceHostIntent::Network, $node->instance_bridge, self::InstanceInputComments);
+    }
 
     /** @return list<UfwManagedRule> */
     public function taskHostInput(Node $node): array

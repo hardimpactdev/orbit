@@ -6,6 +6,7 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Metrics\MetricsContainerPlan;
 use App\Domain\Processes\ProcessLifecycleInput;
 use App\Domain\Processes\ProcessOperationAdmission;
@@ -50,6 +51,11 @@ final readonly class NativeNodeRoleRuntimeInput
             $runtime['gateway_dns'] = ['unit' => "# Managed by Orbit.\n[Unit]\nDescription=Orbit Gateway DNS routing\nAfter=wg-quick@orbit.service\nConditionPathExists=/sys/class/net/orbit\nConditionPathExists=!/etc/wireguard/orbit.dns-link\n\n[Service]\nType=oneshot\nExecStart=/usr/bin/resolvectl domain orbit ~{$domain}\nExecStart=/usr/bin/resolvectl default-route orbit false\nExecStart=/usr/bin/resolvectl dns orbit {$address}\n\n[Install]\nWantedBy=wg-quick@orbit.service\n"];
             $runtime['files'][] = ['path' => '/etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf',
                 'ensure' => 'absent', 'content' => '', 'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
+        }
+        // Only a Node on the build list gets the key, so the intent of every other app-dev Node stays as it was.
+        $instances = $assignment->role === RoleName::AppDev ? app(InstanceHostIntent::class)->for($node) : null;
+        if ($instances !== null) {
+            $runtime['instances'] = $instances;
         }
         if (! in_array($assignment->role, [RoleName::WebSocket, RoleName::Metrics, RoleName::Analytics], true)) {
             return ['intent' => $runtime, 'execution_secrets' => $copies];

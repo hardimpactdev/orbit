@@ -25,6 +25,12 @@ if (family === "query") {
   const [route, query = ""] = path.slice(5).split("?");
   const [resource, item] = route.split("/");
   const rows = state[resource];
+  if (
+    item && Array.isArray(rows) &&
+    !rows.find((r: { name: string }) => r.name === item)
+  ) {
+    fail(`${resource} not found`);
+  }
   if (path === "/1.0") {
     console.log(
       JSON.stringify({
@@ -57,9 +63,11 @@ if (family === "query") {
   });
   state.profiles[name] = { config: {}, description: "", devices: {} };
 } else if (family === "project" && action === "set") {
-  const [key, value] = args[3].split("=");
-  state.projects.find((r: { name: string }) => r.name === name).config[key] =
-    value;
+  const row = state.projects.find((r: { name: string }) => r.name === name);
+  for (const pair of args.slice(3)) {
+    const [key, value] = pair.split("=");
+    row.config[key] = value;
+  }
 } else if (family === "network" && action === "acl") {
   if (name === "create") {
     state["network-acls"].push({ name: args[3], config: {} });
@@ -88,10 +96,51 @@ if (family === "query") {
   console.log(JSON.stringify(state.images));
 } else if (family === "image" && action === "copy") {
   state.images.push({
+    fingerprint: `fp-${args[args.indexOf("--alias") + 1]}`,
     aliases: [{ name: args[args.indexOf("--alias") + 1] }],
     source: args[2],
     vm: args.includes("--vm"),
   });
+} else if (family === "image" && action === "alias") {
+  const [, , verb, alias, fingerprint] = args;
+  for (const image of state.images) {
+    image.aliases = image.aliases.filter((a: { name: string }) =>
+      a.name !== alias
+    );
+  }
+  if (verb === "create") {
+    state.images.find((i: { fingerprint: string }) =>
+      i.fingerprint === fingerprint
+    ).aliases.push({ name: alias });
+  }
+} else if (family === "image" && action === "delete") {
+  state.images = state.images.filter((i: { fingerprint: string }) =>
+    i.fingerprint !== name
+  );
+} else if (family === "publish") {
+  const alias = args[args.indexOf("--alias") + 1];
+  state.images.push({ fingerprint: `fp-${alias}`, aliases: [{ name: alias }] });
+} else if (family === "exec") {
+  if (!instance(action)) fail("Instance not found");
+  const command = args.slice(args.indexOf("--") + 1);
+  // The audit of the image's sudo paths reads what the fixture says the build left; a clean image prints nothing.
+  if (command[0] === "sh" && command[2]?.includes("sudoers.d")) {
+    if (state.sudo_paths) console.log(state.sudo_paths);
+  }
+} else if (family === "file" && action === "push") {
+  state.files ??= {};
+  state.files[args.at(-1)!] = {
+    content: await new Response(Deno.stdin.readable).text(),
+    mode: args[args.indexOf("--mode") + 1],
+    uid: args[args.indexOf("--uid") + 1],
+    gid: args[args.indexOf("--gid") + 1],
+  };
+} else if (family === "list") {
+  console.log(JSON.stringify(
+    state.instances.filter((r: { project: string; status: string }) =>
+      r.project === project && r.status === "Running"
+    ),
+  ));
 } else if (family === "init") {
   state.instances.push({ name: args[2], project, status: "Stopped" });
 } else if (family === "copy") {

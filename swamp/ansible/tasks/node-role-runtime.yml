@@ -88,6 +88,11 @@
   register: runtime_units
   notify: Reload units
 - { name: Reload units before services start, ansible.builtin.meta: flush_handlers }
+# Only the intent of an app-dev Node on the build list has `instances` (docs/reference/development-containers.md#the-build-list).
+- name: Prepare the Instance container host
+  when: rt.instances is defined
+  ansible.builtin.include_tasks: instance-host.yml
+  vars: { instances: "{{ rt.instances }}" }
 - name: Start role services
   ansible.builtin.systemd:
     name: "{{ item.name }}"

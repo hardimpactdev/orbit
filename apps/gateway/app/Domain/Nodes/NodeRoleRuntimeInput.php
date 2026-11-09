@@ -10,6 +10,7 @@ use App\Domain\Analytics\AnalyticsSecretManager;
 use App\Domain\Analytics\AnalyticsStorageConnection;
 use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Analytics\PlausibleProcess;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Processes\DesiredProcessState;
@@ -45,7 +46,9 @@ final readonly class NodeRoleRuntimeInput
     public function prepare(Node $node, NodeRole $assignment): void
     {
         $this->assignment($node, $assignment);
-        if ($assignment->role === RoleName::Metrics) {
+        if ($assignment->role === RoleName::AppDev) {
+            app(InstanceHostIntent::class)->prepare($node);
+        } elseif ($assignment->role === RoleName::Metrics) {
             $this->metricsSecrets->passwordForConvergence($node);
         } elseif ($assignment->role === RoleName::WebSocket) {
             $this->websocketSecrets->ensure($node);

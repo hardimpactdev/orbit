@@ -1,0 +1,742 @@
+/** Run the shipped Instance container host phase against a stateful Incus boundary: folders, image, reruns and updates. */
+import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
+import { parse, stringify } from "jsr:@std/yaml@1";
+
+const hasAnsible =
+  new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
+    .outputSync().success;
+const root = new URL("../ansible/", import.meta.url);
+const GiB = 1073741824;
+
+type Task = Record<string, unknown>;
+
+/**
+ * The task files as an unprivileged user can run them here, written beside the play so each include finds its fixture copy.
+ * Package, kernel-module, sysctl and firewall modules need Linux and root: they become files in the fixture folder.
+ */
+function transform(task: Task, folder: string): Task {
+  for (const part of ["block", "always"]) {
+    if (Array.isArray(task[part])) {
+      task[part] = (task[part] as Task[]).map((inner) =>
+        transform(inner, folder)
+      );
+    }
+  }
+  if ("community.general.ufw" in task) {
+    task.vars = {
+      ...(task.vars as object ?? {}),
+      fixture_rule: task["community.general.ufw"],
+    };
+    const remove = (task["community.general.ufw"] as Task).delete === true;
+    delete task["community.general.ufw"];
+    const dest =
+      `${folder}/firewall-{{ fixture_rule.comment | regex_replace('[^a-z-]', '_') }}.json`;
+    if (remove) task["ansible.builtin.file"] = { path: dest, state: "absent" };
+    else {
+      task["ansible.builtin.copy"] = {
+        dest,
+        content: "{{ fixture_rule | to_json }}",
+        mode: "0600",
+      };
+    }
+  }
+  if ("ansible.posix.sysctl" in task) {
+    task.vars = {
+      ...(task.vars as object ?? {}),
+      fixture_sysctl: task["ansible.posix.sysctl"],
+    };
+    delete task["ansible.posix.sysctl"];
+    task["ansible.builtin.copy"] = {
+      dest: `${folder}/sysctl/{{ fixture_sysctl.name }}`,
+      content: "{{ fixture_sysctl.value }} {{ fixture_sysctl.sysctl_file }}",
+      mode: "0600",
+    };
+  }
+  for (const module of ["ansible.builtin.apt", "community.general.modprobe"]) {
+    if (module in task) {
+      delete task[module];
+      task["ansible.builtin.debug"] = { msg: module };
+    }
+  }
+  for (const module of ["ansible.builtin.copy", "ansible.builtin.file"]) {
+    const args = task[module] as Record<string, unknown> | undefined;
+    if (args) {
+      delete args.owner;
+      delete args.group;
+    }
+  }
+  // Ownership needs root; the modes stay.
+  const command = task["ansible.builtin.command"] as Task | undefined;
+  if (task.name === "Set the folder owners and modes" && command) {
+    command.argv = "{{ item if item[0] != 'chown' else ['true'] }}";
+  }
+  return task;
+}
+
+const replacements = (folder: string): [string, string][] => [
+  ["/etc/modprobe.d/orbit-instances-zfs.conf", `${folder}/arc.conf`],
+  ["/sys/module/zfs/parameters/zfs_arc_max", `${folder}/arc`],
+  ["/etc/subuid", `${folder}/subuid`],
+  ["/etc/subgid", `${folder}/subgid`],
+  ["/proc/meminfo", `${folder}/meminfo`],
+  ["/sys/module/sctp", `${folder}/sys/sctp`],
+  ["/var/cache/orbit/debs", `${folder}/debs`],
+  ["/var/cache/orbit/instance-folders", `${folder}/cache`],
+  ["/etc/modules-load.d/", `${folder}/modules-load/`],
+  ["cat /proc/[0-9]*/maps", `cat ${folder}/maps`],
+];
+
+function writeTasks(folder: string) {
+  Deno.mkdirSync(`${folder}/tasks`, { recursive: true });
+  for (
+    const name of [
+      "instance-host.yml",
+      "instance-folder.yml",
+      "instance-image.yml",
+      "task-container-host-system.yml",
+      "task-container-host-prepare.yml",
+    ]
+  ) {
+    const tasks = (parse(
+      Deno.readTextFileSync(new URL(`tasks/${name}`, root)),
+    ) as Task[]).map((task) => transform(structuredClone(task), folder));
+    let text = JSON.stringify(tasks);
+    for (const [from, to] of replacements(folder)) {
+      text = text.replaceAll(from, to);
+    }
+    Deno.writeTextFileSync(
+      `${folder}/tasks/${name}`,
+      stringify(JSON.parse(text)),
+    );
+  }
+  Deno.copyFileSync(
+    new URL("transport-exit-codes.json", root),
+    `${folder}/transport-exit-codes.json`,
+  );
+}
+
+const sha256 = async (path: string) =>
+  Array.from(
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", Deno.readFileSync(path)),
+    ),
+  ).map((b) => b.toString(16).padStart(2, "0")).join("");
+
+/** A tarball with one program that prints its version, and a single-file artifact. */
+async function artifacts(folder: string, version: string) {
+  const work = Deno.makeTempDirSync();
+  Deno.mkdirSync(`${work}/tool-${version}`);
+  Deno.writeTextFileSync(
+    `${work}/tool-${version}/tool`,
+    `#!/bin/sh\necho tool ${version}\n`,
+  );
+  Deno.chmodSync(`${work}/tool-${version}/tool`, 0o755);
+  new Deno.Command("tar", {
+    args: [
+      "-czf",
+      `${folder}/artifacts/tool-${version}.tar.gz`,
+      "-C",
+      work,
+      `tool-${version}`,
+    ],
+  }).outputSync();
+  Deno.writeTextFileSync(
+    `${folder}/artifacts/single-1.0.phar`,
+    "#!/bin/sh\necho single\n",
+  );
+  Deno.mkdirSync(`${work}/package`);
+  Deno.writeTextFileSync(`${work}/package/claude`, "#!/bin/sh\necho 2.0\n");
+  Deno.chmodSync(`${work}/package/claude`, 0o755);
+  new Deno.Command("tar", {
+    args: [
+      "-czf",
+      `${folder}/artifacts/claude-2.0.tgz`,
+      "-C",
+      work,
+      "package",
+    ],
+  }).outputSync();
+  Deno.removeSync(work, { recursive: true });
+  return {
+    runtime: [{
+      name: "tool",
+      version,
+      url: `https://example.test/tool-${version}.tar.gz`,
+      archive: "tar",
+      sha256: await sha256(`${folder}/artifacts/tool-${version}.tar.gz`),
+      bin: { tool: `tool-${version}/tool` },
+    }, {
+      name: "single",
+      version: "1.0",
+      url: "https://example.test/download/1.0/single-1.0.phar",
+      archive: "file",
+      sha256: await sha256(`${folder}/artifacts/single-1.0.phar`),
+      bin: { single: "single-1.0.phar" },
+    }],
+    agent: [{
+      name: "claude-code",
+      version: "2.0",
+      url: "https://example.test/claude-2.0.tgz",
+      archive: "tar",
+      sha256: await sha256(`${folder}/artifacts/claude-2.0.tgz`),
+      bin: { claude: "package/claude" },
+    }],
+  };
+}
+
+async function fixture({ pool = "zfs" }: { pool?: string | null } = {}) {
+  const folder = Deno.makeTempDirSync();
+  for (
+    const dir of [
+      "bin",
+      "sysctl",
+      "debs",
+      "sys",
+      "artifacts",
+      "cache",
+      "modules-load",
+    ]
+  ) {
+    Deno.mkdirSync(`${folder}/${dir}`);
+  }
+  Deno.writeTextFileSync(`${folder}/arc`, "0\n");
+  Deno.writeTextFileSync(
+    `${folder}/meminfo`,
+    `MemTotal:       ${32 * GiB / 1024} kB\n`,
+  );
+  for (const ids of ["subuid", "subgid"]) {
+    Deno.writeTextFileSync(`${folder}/${ids}`, "root:1000000:1000000000\n");
+  }
+  Deno.writeTextFileSync(
+    `${folder}/state.json`,
+    JSON.stringify({
+      "storage-pools": pool === null
+        ? []
+        : [{ name: "orbit-instances", driver: pool, config: {} }],
+      projects: [],
+      networks: [],
+      "network-acls": [],
+      profiles: {},
+      images: [],
+      instances: [],
+      server_version: "7.0.1",
+      zfs_pool_name: "fast/orbit-instances",
+    }),
+  );
+  const scripts: Record<string, string> = {
+    incus: `exec '${Deno.execPath()}' run -A '${
+      new URL("fixtures/task-vm-host-incus.ts", import.meta.url).pathname
+    }' "$@"`,
+    zfs: 'printf "%s\\n" 307200',
+    "dpkg-query": 'printf "%s" "ii 1:7.0.1-ubuntu26.04"',
+    modprobe: 'printf "install /bin/false \\n"',
+    sysctl: 'printf "16384\\n128\\n65536\\n200\\n20000\\n1048576\\n"',
+    // No Node group holds gid 2750.
+    getent: "exit 2",
+    // The pinned artifacts come from the fixture folder, by the URL's file name.
+    curl:
+      `out=; for a; do case "$prev" in --output) out=$a;; esac; prev=$a; done
+cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
+  };
+  for (const [name, body] of Object.entries(scripts)) {
+    Deno.writeTextFileSync(`${folder}/bin/${name}`, `#!/bin/sh\n${body}\n`);
+    Deno.chmodSync(`${folder}/bin/${name}`, 0o755);
+  }
+  writeTasks(folder);
+  Deno.writeTextFileSync(
+    `${folder}/play.yml`,
+    stringify([{
+      name: "Prepare the Instance container host",
+      hosts: "localhost",
+      gather_facts: false,
+      tasks: [{
+        name: "Prepare the Instance container host",
+        "ansible.builtin.include_tasks": "tasks/instance-host.yml",
+      }],
+    }]),
+  );
+  const parts = await artifacts(folder, "1.0");
+  const instances = {
+    project: "orbit-instances",
+    network: "orbitinst0",
+    pool: "orbit-instances",
+    cidr: "10.253.0.0/24",
+    address: "10.253.0.1/24",
+    build_address: "10.253.0.254",
+    dhcp_range: "10.253.0.2-10.253.0.253",
+    stock: "ubuntu-26.04-instance-stock",
+    forwarder_port: 8319,
+    ids: 201 * 65536,
+    incus: { line: "7.0", packages: [] },
+    image: {
+      alias: "orbit-instance-aaaaaaaaaaaa",
+      packages: ["acl", "git", "nftables"],
+      prepare: "set -eu\n",
+      files: [{
+        path: "/etc/nftables.conf",
+        content: "flush ruleset\n",
+        uid: 0,
+        gid: 0,
+        mode: "0640",
+      }],
+      finish: [["systemctl", "enable", "nftables.service", "t3.service"]],
+    },
+    folders: {
+      runtime: {
+        path: `${folder}/opt/orbit-runtime`,
+        version: "111111111111",
+        parts: parts.runtime,
+      },
+      agent: {
+        path: `${folder}/opt/orbit-agent`,
+        version: "222222222222",
+        parts: parts.agent,
+        notes: { "web-app": "# This environment\n" },
+      },
+    },
+  };
+  const write = (value: unknown) =>
+    Deno.writeTextFileSync(
+      `${folder}/intent.json`,
+      JSON.stringify({ instances: value }),
+    );
+  write(instances);
+  return {
+    folder,
+    instances,
+    write,
+    artifacts: (version: string) => artifacts(folder, version),
+    run() {
+      const done = new Deno.Command("ansible-playbook", {
+        args: [
+          "-i",
+          "localhost,",
+          "-c",
+          "local",
+          "-e",
+          `@${folder}/intent.json`,
+          "-e",
+          "ansible_python_interpreter={{ ansible_playbook_python }}",
+          `${folder}/play.yml`,
+        ],
+        env: {
+          HOST_FIXTURE: folder,
+          PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
+          ANSIBLE_NOCOLOR: "1",
+          ANSIBLE_HOME: `${folder}/home`,
+          ANSIBLE_LOCAL_TEMP: `${folder}/tmp`,
+          ANSIBLE_LIBRARY: new URL("library", root).pathname,
+        },
+      }).outputSync();
+      return {
+        ok: done.success,
+        output: new TextDecoder().decode(done.stdout) +
+          new TextDecoder().decode(done.stderr),
+      };
+    },
+    state: () => JSON.parse(Deno.readTextFileSync(`${folder}/state.json`)),
+    calls: () =>
+      Deno.readTextFileSync(`${folder}/calls`).trim().split("\n").map((
+        line,
+      ) => JSON.parse(line) as string[]),
+    has: (name: string) => {
+      try {
+        Deno.lstatSync(`${folder}/${name}`);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    cleanup: () => Deno.removeSync(folder, { recursive: true }),
+  };
+}
+
+Deno.test({
+  name:
+    "a build-list Node gets the Instance project, bridge, folders and image, then a rerun changes nothing",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture();
+    try {
+      let result = f.run();
+      assert(result.ok, result.output);
+      const state = f.state();
+      const project = state.projects.find((p: { name: string }) =>
+        p.name === "orbit-instances"
+      );
+      assertEquals(project.config, {
+        "features.images": "true",
+        "features.profiles": "true",
+        "features.networks": "false",
+        restricted: "true",
+        "restricted.networks.access": "orbitinst0",
+        "restricted.containers.privilege": "isolated",
+        "restricted.devices.disk": "allow",
+        "restricted.devices.disk.paths":
+          `${f.folder}/opt/orbit-runtime,${f.folder}/opt/orbit-agent`,
+        "restricted.devices.proxy": "allow",
+        "restricted.snapshots": "allow",
+        "limits.virtual-machines": "0",
+      });
+      assertEquals(state.profiles["orbit-instances"].devices, {
+        root: { type: "disk", path: "/", pool: "orbit-instances" },
+        eth0: {
+          type: "nic",
+          name: "eth0",
+          network: "orbitinst0",
+          "security.port_isolation": "true",
+        },
+        "orbit-runtime": {
+          type: "disk",
+          source: `${f.folder}/opt/orbit-runtime`,
+          path: `${f.folder}/opt/orbit-runtime`,
+          readonly: "true",
+          shift: "true",
+        },
+        "orbit-agent": {
+          type: "disk",
+          source: `${f.folder}/opt/orbit-agent`,
+          path: `${f.folder}/opt/orbit-agent`,
+          readonly: "true",
+          shift: "true",
+        },
+      });
+      const bridge = state.networks.find((n: { name: string }) =>
+        n.name === "orbitinst0"
+      );
+      assertEquals(bridge.config, {
+        "ipv4.address": "10.253.0.1/24",
+        "ipv4.dhcp.ranges": "10.253.0.2-10.253.0.253",
+        "ipv4.nat": "true",
+        "ipv6.address": "none",
+        "security.acls": "orbitinst0-egress",
+        "security.acls.default.ingress.action": "reject",
+        "security.acls.default.egress.action": "reject",
+      });
+      const acls = Object.fromEntries(
+        state["network-acls"].map((a: { name: string }) => [a.name, a]),
+      );
+      // The bridge reaches only the model forwarder on its own address; only the build container's own ACL lets it out, and never
+      // to a private address.
+      assertEquals(acls["orbitinst0-egress"].egress, [{
+        action: "allow",
+        destination: "10.253.0.1/32",
+        protocol: "tcp",
+        destination_port: "8319",
+        state: "enabled",
+      }]);
+      assertEquals(acls["orbitinst0-build"].egress.at(-1), {
+        action: "allow",
+        state: "enabled",
+      });
+      assertStringIncludes(
+        acls["orbitinst0-build"].egress[0].destination,
+        "10.0.0.0/8",
+      );
+      // The input rules have the names of the firewall catalog; the build route rule is gone again.
+      for (const name of ["dhcp", "dns-udp", "dns-tcp"]) {
+        assert(f.has(`firewall-orbit_instances-${name}.json`), name);
+      }
+      assert(!f.has("firewall-orbit_instances-build.json"));
+      // No modules to load: an Instance container runs no WireGuard or Docker.
+      assertEquals([...Deno.readDirSync(`${f.folder}/modules-load`)], []);
+      assertEquals(
+        Deno.readTextFileSync(`${f.folder}/sysctl/fs.inotify.max_user_watches`),
+        "1048576 /etc/sysctl.d/60-orbit-instances.conf",
+      );
+      assertEquals(
+        Deno.readTextFileSync(`${f.folder}/arc`).trim(),
+        String(4 * GiB),
+      );
+
+      // The folders: each program links into its part, `current` names the version, and the agent's notes are beside it.
+      const runtime = `${f.folder}/opt/orbit-runtime`;
+      assertEquals(Deno.readLinkSync(`${runtime}/current`), "111111111111");
+      assertEquals(
+        Deno.readLinkSync(`${runtime}/111111111111/bin/tool`),
+        "../tool/tool-1.0/tool",
+      );
+      assertEquals(
+        new TextDecoder().decode(
+          new Deno.Command(`${runtime}/current/bin/tool`).outputSync().stdout,
+        ),
+        "tool 1.0\n",
+      );
+      assertEquals(
+        Deno.readLinkSync(`${runtime}/111111111111/bin/single`),
+        "../single/single-1.0.phar",
+      );
+      assertEquals(
+        Deno.statSync(`${runtime}/111111111111/single/single-1.0.phar`).mode! &
+          0o777,
+        0o755,
+      );
+      const agent = `${f.folder}/opt/orbit-agent/222222222222`;
+      assertEquals(
+        Deno.readLinkSync(`${agent}/agent/bin/claude`),
+        "../claude-code/package/claude",
+      );
+      // Others cannot open the agent's programs; the notes are public.
+      assertEquals(Deno.statSync(`${agent}/agent`).mode! & 0o007, 0);
+      assertEquals(
+        Deno.readTextFileSync(`${agent}/notes/web-app.md`),
+        "# This environment\n",
+      );
+      assertEquals(Deno.statSync(`${agent}/notes/web-app.md`).mode! & 0o004, 4);
+
+      // The image: built once from the stock image at the build address, published, and named by the stable alias.
+      const project_calls = f.calls().filter((c) =>
+        c.includes("orbit-instances") && c.includes("orbit-instance-build")
+      );
+      assertEquals(project_calls[1], [
+        "--project",
+        "orbit-instances",
+        "init",
+        "ubuntu-26.04-instance-stock",
+        "orbit-instance-build",
+        "--config",
+        "security.idmap.isolated=true",
+        "--device",
+        "eth0,ipv4.address=10.253.0.254",
+        "--device",
+        "eth0,security.acls=orbitinst0-build",
+      ]);
+      assert(
+        f.calls().some((c) =>
+          c.includes("install") && c.includes("nftables") && c.includes("acl")
+        ),
+      );
+      // Cloud-init's first boot ends before anything runs in the build container, so it cannot add a sudo user after the setup.
+      const inBuild = f.calls().filter((c) =>
+        c[0] === "exec" || c.includes("exec")
+      ).map((c) => c.slice(c.indexOf("--") + 1).join(" "));
+      assertEquals(inBuild[0], "cloud-init status --wait");
+      assert(inBuild.indexOf("apt-get update") > 0);
+      assertEquals(state.files["orbit-instance-build/etc/nftables.conf"], {
+        content: "flush ruleset\n",
+        mode: "0640",
+        uid: "0",
+        gid: "0",
+      });
+      assertEquals(
+        state.images.map((i: { aliases: unknown }) => i.aliases).at(-1),
+        [
+          { name: "orbit-instance-aaaaaaaaaaaa" },
+          { name: "orbit-instance" },
+        ],
+      );
+      assertEquals(
+        state.instances.map((i: { name: string }) => i.name),
+        [],
+      );
+
+      const before = f.calls().length;
+      result = f.run();
+      assert(result.ok, result.output);
+      assertStringIncludes(result.output, "changed=0");
+      // A rerun builds and publishes nothing; only the clone probe runs again.
+      assert(
+        !f.calls().slice(before).some((c) =>
+          c.includes("publish") || c.includes("orbit-instance-build")
+        ),
+      );
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "a new runtime version installs beside the old one, flips current, restarts each running container's Processes and drops the old",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture();
+    try {
+      let result = f.run();
+      assert(result.ok, result.output);
+      const state = f.state();
+      state.instances.push(
+        { name: "app-default", project: "orbit-instances", status: "Running" },
+        { name: "app-asleep", project: "orbit-instances", status: "Stopped" },
+      );
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const parts = await f.artifacts("1.1");
+      f.write({
+        ...f.instances,
+        folders: {
+          ...f.instances.folders,
+          runtime: {
+            ...f.instances.folders.runtime,
+            version: "333333333333",
+            parts: parts.runtime,
+          },
+        },
+      });
+      const before = f.calls().length;
+      result = f.run();
+      assert(result.ok, result.output);
+      const runtime = `${f.folder}/opt/orbit-runtime`;
+      assertEquals(Deno.readLinkSync(`${runtime}/current`), "333333333333");
+      assert(!f.has("opt/orbit-runtime/111111111111"));
+      const restarts = f.calls().slice(before).filter((c) =>
+        c.includes("exec")
+      );
+      assertEquals(restarts, [[
+        "exec",
+        "--project",
+        "orbit-instances",
+        "app-default",
+        "--",
+        "systemctl",
+        "try-restart",
+        "orbit-*.service",
+      ]]);
+      // The agent folder did not change, so T3 keeps running.
+      assert(!restarts.flat().includes("t3.service"));
+      assert(!f.has("opt/orbit-runtime/.restart"));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "a new image definition is built, takes the stable alias and replaces the old image",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture();
+    try {
+      let result = f.run();
+      assert(result.ok, result.output);
+      f.write({
+        ...f.instances,
+        image: { ...f.instances.image, alias: "orbit-instance-bbbbbbbbbbbb" },
+      });
+      result = f.run();
+      assert(result.ok, result.output);
+      const images = f.state().images.filter((i: { source?: string }) =>
+        !i.source
+      );
+      assertEquals(images.map((i: { aliases: unknown }) => i.aliases), [[
+        { name: "orbit-instance-bbbbbbbbbbbb" },
+        { name: "orbit-instance" },
+      ]]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a Node without its Instance pool is refused before anything changes",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture({ pool: null });
+    try {
+      const result = f.run();
+      assert(!result.ok);
+      assertStringIncludes(result.output, "instance.host_unavailable");
+      assertEquals(f.state().projects, []);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a directory pool skips the clone probe: a copy there is a full copy",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture({ pool: "dir" });
+    try {
+      const result = f.run();
+      assert(result.ok, result.output);
+      assert(!f.calls().some((c) => c.includes("orbit-clone-probe-copy")));
+      // No ZFS, so no ARC cap.
+      assert(!f.has("arc.conf"));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "an old folder version that a process still maps stays; a restart that failed runs again on the next converge",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture();
+    try {
+      let result = f.run();
+      assert(result.ok, result.output);
+      const parts = await f.artifacts("1.1");
+      f.write({
+        ...f.instances,
+        folders: {
+          ...f.instances.folders,
+          runtime: {
+            ...f.instances.folders.runtime,
+            version: "333333333333",
+            parts: parts.runtime,
+          },
+        },
+      });
+      // A queue worker of a stopped container's last run still maps the old Node binary.
+      Deno.writeTextFileSync(
+        `${f.folder}/maps`,
+        `7f00-7f01 r-xp 0 00:00 1 ${f.folder}/opt/orbit-runtime/111111111111/tool/tool-1.0/tool\n`,
+      );
+      // A run that stopped between the flip and the restarts leaves the mark.
+      const state = f.state();
+      state.instances.push({
+        name: "app-default",
+        project: "orbit-instances",
+        status: "Running",
+      });
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      result = f.run();
+      assert(result.ok, result.output);
+      assert(f.has("opt/orbit-runtime/111111111111"));
+      Deno.writeTextFileSync(`${f.folder}/opt/orbit-runtime/.restart`, "");
+      const before = f.calls().length;
+      result = f.run();
+      assert(result.ok, result.output);
+      assert(
+        f.calls().slice(before).some((c) =>
+          c.includes("exec") && c.includes("orbit-*.service")
+        ),
+      );
+      assert(!f.has("opt/orbit-runtime/.restart"));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "an image that keeps a sudo path is never published",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture();
+    try {
+      const state = f.state();
+      state.sudo_paths =
+        "user:ubuntu\nsudoers:/etc/sudoers.d/90-cloud-init-users\nmember:ubuntu";
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const result = f.run();
+      assert(!result.ok);
+      assertStringIncludes(
+        result.output,
+        "the image keeps a sudo path: user:ubuntu, sudoers:/etc/sudoers.d/90-cloud-init-users, member:ubuntu",
+      );
+      const after = f.state();
+      assert(!f.calls().some((c) => c.includes("publish")));
+      assertEquals(after.instances, []);
+      assert(!f.has("firewall-orbit_instances-build.json"));
+    } finally {
+      f.cleanup();
+    }
+  },
+});

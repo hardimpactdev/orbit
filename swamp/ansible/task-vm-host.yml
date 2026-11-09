@@ -93,6 +93,20 @@
       kernel.keys.maxbytes: 2000000
       vm.max_map_count: 262144
     # The task container side (tasks/task-container-host-prepare.yml): its own bridge, ACL, project and profile, with the VM side's rules.
+    # The host tasks it shares with an Instance container host read this: each place and the base get an isolated range of
+    # 101,000,000 IDs, and the containers run WireGuard, Docker's overlay storage and its bridges.
+    container_host:
+      kind: task-containers
+      fail: task_vm.setup_failed
+      incus: "{{ host.containers.incus }}"
+      ids: "{{ (host.containers.places + 1) * 101000000 }}"
+      modules: [wireguard, overlay, br_netfilter]
+      project: "{{ host.containers.project }}"
+      network: "{{ host.containers.network }}"
+      address: "{{ host.containers.address }}"
+      alias: "{{ host.containers.alias }}"
+      pool: "{{ host.pool }}"
+      probe: true
     container_acl_name: "{{ host.containers.network }}-egress"
     container_acl_rules:
       description: Orbit task container boundary

@@ -309,6 +309,10 @@ The enrollment steps are the same as for any Node. When the first active role cl
 
 A failure keeps an existing Node's earlier recorded identity, settings and status. It retains completed Node changes and completed role convergence. Newly created assignments that did not finish remain failed for a rerun. There is no restoration chain. A new Node becomes active only after `Check the Node` passes.
 
+### Instance containers on an app-dev Node
+
+An `app-dev` Node on the Gateway's build list of [development containers](/reference/development-containers#the-build-list) also gets the container setup with each role converge: Incus, the project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image and the two shared folders. A task VM never does, and every other `app-dev` Node installs what it did before. The Node must provide the Incus storage pool `orbit-instances`. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
+
 ## PHP packages for production children
 
 `node.prepare_php_packages` prepares PHP packages on one managed Linux Node that is active or marked failed. Its input is `{versions: [version], profile: "app-prod"}`. The Swamp deploy and rollback composition starts it as a child before activation on its serving Node. Standalone admission is refused. The current retained production, rollback and Route callers keep their synchronous package installer until their own cutover.
