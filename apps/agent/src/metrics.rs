@@ -1,0 +1,257 @@
+//! Read-only Linux metrics observations. CPU ratios compare per-core counters between host ticks;
+//! every other value comes from procfs or statvfs. No collector program or network request is run.
+
+use serde_json::{json, Value};
+use std::collections::BTreeMap;
+use std::fs;
+
+#[derive(Default)]
+pub struct Sampler {
+    previous: BTreeMap<u32, (u64, u64)>,
+}
+
+impl Sampler {
+    pub fn new() -> Self {
+        Self {
+            previous: fs::read_to_string("/proc/stat")
+                .map(|stat| cpu_counters(&stat))
+                .unwrap_or_default(),
+        }
+    }
+
+    /// An incomplete reading sends nothing and leaves the Gateway's last good snapshot intact.
+    pub fn observe(&mut self) -> Option<Value> {
+        let stat = fs::read_to_string("/proc/stat").ok()?;
+        let meminfo = fs::read_to_string("/proc/meminfo").ok()?;
+        let loadavg = fs::read_to_string("/proc/loadavg").ok()?;
+        let uptime = fs::read_to_string("/proc/uptime").ok()?;
+        let mut data = self.snapshot(&stat, &meminfo, &loadavg, &uptime)?;
+        data["pressure"] = json!({
+            "cpu": {"some_avg10": pressure(&fs::read_to_string("/proc/pressure/cpu").unwrap_or_default())},
+            "memory": {"some_avg10": pressure(&fs::read_to_string("/proc/pressure/memory").unwrap_or_default())},
+            "io": {"some_avg10": pressure(&fs::read_to_string("/proc/pressure/io").unwrap_or_default())},
+        });
+        let mounts = fs::read_to_string("/proc/self/mounts").ok()?;
+        data["disks"] = Value::Array(disks(&mounts));
+        Some(data)
+    }
+
+    fn snapshot(
+        &mut self,
+        stat: &str,
+        meminfo: &str,
+        loadavg: &str,
+        uptime: &str,
+    ) -> Option<Value> {
+        let counters = cpu_counters(stat);
+        if counters.is_empty() {
+            return None;
+        }
+        let cores: Vec<f64> = counters
+            .iter()
+            .map(|(core, (total, idle))| {
+                // A newly online core starts a new interval rather than using counters since boot.
+                let (old_total, old_idle) = self
+                    .previous
+                    .get(core)
+                    .unwrap_or(&(*total, *idle))
+                    .to_owned();
+                let elapsed = total.saturating_sub(old_total);
+                if elapsed == 0 {
+                    0.0
+                } else {
+                    let idle = idle.saturating_sub(old_idle).min(elapsed);
+                    (elapsed - idle) as f64 / elapsed as f64
+                }
+            })
+            .collect();
+        self.previous = counters;
+        let memory: BTreeMap<&str, u64> = meminfo
+            .lines()
+            .filter_map(|line| {
+                let (key, value) = line.split_once(':')?;
+                Some((
+                    key,
+                    value
+                        .split_whitespace()
+                        .next()?
+                        .parse::<u64>()
+                        .ok()?
+                        .saturating_mul(1024),
+                ))
+            })
+            .collect();
+        let total = *memory.get("MemTotal")?;
+        let available = *memory.get("MemAvailable")?;
+        let swap = *memory.get("SwapTotal")?;
+        let free_swap = *memory.get("SwapFree")?;
+        let load: Vec<f64> = loadavg
+            .split_whitespace()
+            .take(3)
+            .map(str::parse)
+            .collect::<Result<_, _>>()
+            .ok()?;
+        if load.len() != 3 || load.iter().any(|value| !value.is_finite() || *value < 0.0) {
+            return None;
+        }
+        let uptime = uptime.split_whitespace().next()?.parse::<f64>().ok()?;
+        if !uptime.is_finite() || uptime < 0.0 {
+            return None;
+        }
+        Some(json!({
+            "cores": cores,
+            "memory": {"used": total.saturating_sub(available), "total": total},
+            "swap": {"used": swap.saturating_sub(free_swap), "total": swap},
+            "load": {"one": load[0], "five": load[1], "fifteen": load[2]},
+            "uptime_seconds": uptime as u64,
+        }))
+    }
+}
+
+fn disks(mounts: &str) -> Vec<Value> {
+    let mut mounts = crate::facts::data_mounts(mounts);
+    mounts.sort_by_key(|mount| mount != "/");
+    mounts
+        .into_iter()
+        .filter_map(|mount| {
+            let stat = rustix::fs::statvfs(mount.as_str()).ok()?;
+            Some(json!({
+                "mount": mount,
+                "used": stat.f_blocks.saturating_sub(stat.f_bfree).saturating_mul(stat.f_frsize),
+                "total": stat.f_blocks.saturating_mul(stat.f_frsize),
+            }))
+        })
+        .collect()
+}
+
+fn cpu_counters(stat: &str) -> BTreeMap<u32, (u64, u64)> {
+    stat.lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let core = fields.next()?.strip_prefix("cpu")?.parse::<u32>().ok()?;
+            // guest and guest_nice are already counted in user and nice.
+            let times = fields
+                .take(8)
+                .map(str::parse)
+                .collect::<Result<Vec<u64>, _>>()
+                .ok()?;
+            if times.len() < 4 {
+                return None;
+            }
+            let total = times.iter().copied().fold(0_u64, u64::saturating_add);
+            Some((
+                core,
+                (total, times[3].saturating_add(*times.get(4).unwrap_or(&0))),
+            ))
+        })
+        .collect()
+}
+
+fn pressure(input: &str) -> f64 {
+    input
+        .lines()
+        .find_map(|line| {
+            let mut fields = line.split_whitespace();
+            if fields.next()? != "some" {
+                return None;
+            }
+            fields.find_map(|field| field.strip_prefix("avg10=")?.parse::<f64>().ok())
+        })
+        .filter(|value| value.is_finite())
+        .unwrap_or(0.0)
+        .clamp(0.0, 100.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MEMORY: &str =
+        "MemTotal: 1024 kB\nMemAvailable: 400 kB\nSwapTotal: 512 kB\nSwapFree: 500 kB\n";
+
+    #[test]
+    fn ratios_use_per_core_deltas_without_double_counting_guest_time() {
+        let mut sampler = Sampler::default();
+        sampler
+            .snapshot(
+                "cpu0 10 0 0 90 0 0 0 0 8 0\ncpu1 0 0 0 100",
+                MEMORY,
+                "0 0 0",
+                "40",
+            )
+            .unwrap();
+        let data = sampler
+            .snapshot(
+                "cpu0 30 0 0 170 0 0 0 0 12 0\ncpu1 40 0 10 140",
+                MEMORY,
+                "0.2 0.3 0.4 1/2 20",
+                "101.9 40",
+            )
+            .unwrap();
+        assert_eq!(data["cores"], json!([0.2, 50.0 / 90.0]));
+        assert_eq!(
+            data["memory"],
+            json!({"used": 624 * 1024, "total": 1024 * 1024})
+        );
+        assert_eq!(
+            data["swap"],
+            json!({"used": 12 * 1024, "total": 512 * 1024})
+        );
+        assert_eq!(
+            data["load"],
+            json!({"one": 0.2, "five": 0.3, "fifteen": 0.4})
+        );
+        assert_eq!(data["uptime_seconds"], 101);
+    }
+
+    #[test]
+    fn new_reset_and_idle_counters_stay_in_range() {
+        let mut sampler = Sampler::default();
+        for stat in [
+            "cpu0 40 0 10 140",
+            "cpu0 1 0 1 1\ncpu1 100 0 0 0",
+            "cpu0 1 0 1 1\ncpu1 100 0 0 50",
+        ] {
+            let data = sampler.snapshot(stat, MEMORY, "0 0 0", "1").unwrap();
+            assert_eq!(
+                data["cores"],
+                if stat.contains("cpu1") {
+                    json!([0.0, 0.0])
+                } else {
+                    json!([0.0])
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn disks_put_root_first_when_mount_input_lists_a_data_mount_before_it() {
+        let data = disks("/dev/data /tmp ext4 rw 0 0\n/dev/root / ext4 rw 0 0\n");
+        let mounts: Vec<_> = data.iter().map(|disk| disk["mount"].as_str()).collect();
+        assert_eq!(mounts, vec![Some("/"), Some("/tmp")]);
+    }
+
+    #[test]
+    fn pressure_reads_some_avg10_and_is_zero_without_kernel_data() {
+        assert_eq!(
+            pressure("some avg10=1.25 avg60=2.5 total=123\nfull avg10=0.2"),
+            1.25
+        );
+        for input in ["", "full avg10=2.3", "some avg10=NaN", "some total=3"] {
+            assert_eq!(pressure(input), 0.0);
+        }
+    }
+
+    #[test]
+    fn missing_or_invalid_required_readings_do_not_produce_a_zero_snapshot() {
+        let mut sampler = Sampler::default();
+        assert!(sampler.snapshot("", MEMORY, "0 0 0", "1").is_none());
+        assert!(sampler.snapshot("cpu0 1 2 3 4", "", "0 0 0", "1").is_none());
+        assert!(sampler
+            .snapshot("cpu0 1 2 3 4", MEMORY, "NaN 0 0", "1")
+            .is_none());
+        assert!(sampler
+            .snapshot("cpu0 1 2 3 4", MEMORY, "0 0 0", "bad")
+            .is_none());
+    }
+}

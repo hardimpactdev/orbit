@@ -356,13 +356,19 @@ fn key(kind: &str, subject: Option<&str>) -> (String, String) {
     (kind.to_owned(), subject.unwrap_or_default().to_owned())
 }
 
+struct PendingFact {
+    subject: Option<String>,
+    data: Value,
+    observed_at: String,
+}
+
 /// Sends facts and remembers the ones the Gateway did not accept, so [`Reporter::retry`] sends exactly those again
-/// with the data they had, without reading the Node again.
+/// with their original data and observation time, without reading the Node again.
 pub struct Reporter {
     client: reqwest::Client,
     url: String,
     sender: FactSender,
-    failed: BTreeMap<(String, String), (Option<String>, Value)>,
+    failed: BTreeMap<(String, String), PendingFact>,
     last_error: Option<String>,
 }
 
@@ -380,8 +386,18 @@ impl Reporter {
     /// Sends the fact when it changed or is due. A failure is kept for [`Reporter::retry`] and logged once until the
     /// next success.
     pub async fn report(&mut self, kind: &str, subject: Option<&str>, data: &Value) {
+        self.report_at(kind, subject, data, &observed_at()).await;
+    }
+
+    async fn report_at(
+        &mut self,
+        kind: &str,
+        subject: Option<&str>,
+        data: &Value,
+        observed_at: &str,
+    ) {
         let now = Instant::now();
-        let Some(body) = self.sender.body(kind, subject, data, &observed_at(), now) else {
+        let Some(body) = self.sender.body(kind, subject, data, observed_at, now) else {
             self.failed.remove(&key(kind, subject));
             return;
         };
@@ -395,7 +411,11 @@ impl Reporter {
                 if error.retry {
                     self.failed.insert(
                         key(kind, subject),
-                        (subject.map(str::to_owned), data.clone()),
+                        PendingFact {
+                            subject: subject.map(str::to_owned),
+                            data: data.clone(),
+                            observed_at: observed_at.to_owned(),
+                        },
                     );
                 } else {
                     self.failed.remove(&key(kind, subject));
@@ -412,8 +432,14 @@ impl Reporter {
 
     /// Keeps a fact for [`Reporter::retry`] without sending it now, for a caller that stops sending after a failure.
     pub fn defer(&mut self, kind: &str, subject: Option<&str>, data: Value) {
-        self.failed
-            .insert(key(kind, subject), (subject.map(str::to_owned), data));
+        self.failed.insert(
+            key(kind, subject),
+            PendingFact {
+                subject: subject.map(str::to_owned),
+                data,
+                observed_at: observed_at(),
+            },
+        );
     }
 
     /// Whether a report is waiting to be sent again.
@@ -423,8 +449,14 @@ impl Reporter {
 
     /// Sends the facts that failed again.
     pub async fn retry(&mut self) {
-        for ((kind, _), (subject, data)) in std::mem::take(&mut self.failed) {
-            self.report(&kind, subject.as_deref(), &data).await;
+        for ((kind, _), pending) in std::mem::take(&mut self.failed) {
+            self.report_at(
+                &kind,
+                pending.subject.as_deref(),
+                &pending.data,
+                &pending.observed_at,
+            )
+            .await;
         }
     }
 
@@ -611,6 +643,40 @@ mod tests {
         reporter.report("host", None, &data).await;
         reporter.retry().await;
         assert_eq!(seen.load(Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test]
+    async fn a_retried_snapshot_keeps_its_original_observation_time() {
+        let received = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+        let captured = received.clone();
+        let app = axum::Router::new().route(
+            "/api/v1/agent/facts",
+            axum::routing::post(move |axum::Json(body): axum::Json<Value>| {
+                let mut captured = captured.lock().unwrap();
+                captured.push(body);
+                let status = if captured.len() == 1 {
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE
+                } else {
+                    axum::http::StatusCode::NO_CONTENT
+                };
+                async move { status }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut reporter = Reporter::new(client(), &url);
+
+        let observed_at = "2026-01-01T00:00:00Z";
+        reporter
+            .report_at("metrics", None, &json!({"uptime_seconds": 42}), observed_at)
+            .await;
+        reporter.retry().await;
+
+        let received = received.lock().unwrap();
+        assert_eq!(received.len(), 2);
+        assert_eq!(received[0]["observed_at"], observed_at);
+        assert_eq!(received[0], received[1]);
     }
 
     #[tokio::test]

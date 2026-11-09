@@ -49,7 +49,7 @@ The agent watches two sources and reports each Orbit Process unit or container b
 | systemd over D-Bus | Units named `orbit-process-*.service` | The unit's `ActiveState`, such as `active`, `inactive`, or `failed`. A missing unit reads as `inactive`. |
 | The Docker socket `/run/docker.sock` | Containers named `orbit-process-*` | The container state, such as `running`, `exited`, or `restarting`. A missing container reads as `exited`. |
 
-The values use the same words as the `runtime_state` field of the Process API. The agent does not know which Process owns a name. The Gateway matches the name to a Process, so a candidate container such as `orbit-process-42-web-candidate` never matches. The agent does not read Schedules, role services, CPU, or memory.
+The values use the same words as the `runtime_state` field of the Process API. The agent does not know which Process owns a name. The Gateway matches the name to a Process, so a candidate container such as `orbit-process-42-web-candidate` never matches. The Process presence report carries no CPU or memory metrics; the agent sends them as facts.
 
 Without Docker, the agent watches systemd only and reports Docker as `absent`. It checks for the socket every 10 seconds and sends a new snapshot when it appears. When the Docker event stream ends, the agent reconnects and sends a new snapshot. It merges changes to one unit that arrive within 250 milliseconds and sends only the latest state. It sends a heartbeat every 5 seconds and a complete snapshot at least every 60 seconds.
 
@@ -68,6 +68,7 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 | Kind | Data | Read |
 | --- | --- | --- |
 | `host` | `os`, `arch`, and the `mount`, `size` and `free` bytes of each data filesystem (ext2–4, XFS, Btrfs, ZFS, F2FS; no snap mounts; at most 64) | every 60 seconds |
+| `metrics` | Per-core busy ratios, memory and swap bytes, load averages, uptime, pressure and data disks | every 60 seconds |
 | `units` | `docker`, `awake`, and each watched unit and container with its `runtime` and `state`. See below. | every 10 seconds |
 | `checkout` | One Git checkout at `<apps_root>/<project>/<name>`, named by its path in `subject`. See [Checkouts](#checkouts). | on change |
 | `checkouts` | `paths`: the path of every checkout the agent found under the apps root | on change |
@@ -87,7 +88,11 @@ The Gateway stores a host's `free` bytes rounded down to 256 MiB. Free space mov
 
 The agent sends a fact when it changed, and again every 10 minutes.
 
-A report the Gateway does not accept, for example while a Node boots before the Gateway answers, is kept and sent again after 1, 2 and 4 seconds, and then every 4 seconds until the Gateway accepts it. A refusal that sending again cannot change, such as a `422` for a kind an older Gateway does not know, is not sent again before the next regular read. The retry sends the data of the failed read and reads the Node again only at the next regular read. A new [watch list](#watch-list) makes the agent read and send `units` at once.
+`metrics` reads `/proc/stat`, `/proc/meminfo`, `/proc/loadavg`, `/proc/uptime`, `/proc/pressure/*` and data filesystem sizes with `statvfs`. CPU ratios compare per-core counters between readings; guest time is not counted twice. Used memory is total minus available, and used swap is total minus free. Missing kernel pressure data reads as zero. Disks use the same data filesystem filter as `host`, with `/` first; pseudo filesystems are excluded. An incomplete required reading sends nothing. The agent only reads Node state; it runs no collector program and changes nothing on the Node.
+
+A report the Gateway does not accept, for example while a Node boots before the Gateway answers, is kept and sent again after 1, 2 and 4 seconds, and then every 4 seconds until the Gateway accepts it. A refusal that sending again cannot change, such as a `422` for a kind an older Gateway does not know, is not sent again before the next regular read.
+
+The retry keeps both the data and `observed_at` of the failed read, so delayed delivery cannot make an old snapshot look newly observed. It reads the Node again only at the next regular read. A new [watch list](#watch-list) makes the agent read and send `units` at once.
 
 The Gateway answers `204`. It stores one row per Node, kind and `subject` in `node_facts`. Only `checkout`, `packages`, `env_keys` and `egress` have a subject; the other kinds refuse one and store `''`. Each row keeps the agent's `observed_at` and the Gateway's own `received_at`. A report whose content is unchanged reads one row and writes nothing. A change compares and writes in one short transaction with no remote call inside. A request over 1 MiB fails with `agent.fact_too_large` (413), and invalid data fails with `validation.failed` (422).
 

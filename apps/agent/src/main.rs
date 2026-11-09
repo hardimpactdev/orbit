@@ -687,6 +687,7 @@ async fn report_facts(
         Retry,
     }
     let mut reporter = facts::Reporter::new(client, &gateway);
+    let mut metrics = orbit_agent::metrics::Sampler::new();
     let mut retry = facts::RetryTimer::default();
     let mut egress = orbit_agent::egress::Runner::default();
     let mut units_tick = tokio::time::interval(facts::UNITS_INTERVAL);
@@ -767,6 +768,9 @@ async fn report_facts(
                 }
             }
             Due::Host => {
+                if let Some(snapshot) = metrics.observe() {
+                    reporter.report("metrics", None, &snapshot).await;
+                }
                 // Package facts ride the host tick; each is sent only when it changed or at the resync.
                 let tools = listed.borrow().tools.clone();
                 let read = tokio::task::spawn_blocking(move || {
