@@ -6,6 +6,8 @@ namespace Orbit\Extensions\Conn\Http\Controllers;
 
 use App\Actions\Operations\CancelOperationAction;
 use App\Data\Operations\OperationData;
+use App\Http\Authorization\RequiresNodeAccess;
+use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Requests\Operations\EmptyOperationRequest;
@@ -16,6 +18,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /** Conn callers can follow their own effects without access to the Gateway Node. */
+#[RequiresNodeAccess(ServingNode::Collection)]
 final class ConnOperationsController extends Controller
 {
     public function show(ShowOperationRequest $request, Operation $operation): JsonResponse

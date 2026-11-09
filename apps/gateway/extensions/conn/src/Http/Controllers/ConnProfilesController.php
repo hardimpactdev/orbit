@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Http\Controllers;
 
+use App\Http\Authorization\RequiresNodeAccess;
+use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
@@ -18,6 +20,7 @@ use Orbit\Extensions\Conn\Http\Requests\ReplaceConnProfileSettingsRequest;
 use Orbit\Extensions\Conn\Http\Requests\StoreConnProfileRequest;
 use Orbit\Extensions\Conn\Models\ConnProfile;
 
+#[RequiresNodeAccess(ServingNode::Collection)]
 final class ConnProfilesController extends Controller
 {
     public function index(Request $request): JsonResponse
