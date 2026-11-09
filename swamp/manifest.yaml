@@ -32,6 +32,7 @@ additionalFiles:
   - ansible/tasks/node-converge-tool-repository.yml
   - ansible/tasks/node-converge-network.yml
   - ansible/tasks/node-converge-hub.yml
+  - ansible/tasks/node-converge-hub-prune.yml
   - ansible/tasks/node-converge-address.yml
   - ansible/tasks/node-converge-handshake.yml
   - extensions/behaviors/operations/ansible-input/converge_tool.ts

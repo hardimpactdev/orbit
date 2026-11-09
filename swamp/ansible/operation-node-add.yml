@@ -183,6 +183,8 @@
         force: "{{ item.content | length > 0 }}"
       loop: "{{ files }}"
       loop_control: { label: "{{ item.path }}" }
+    # The hub loads every peer file it has when this runs, not the peers of the admitted snapshot: a Node that joined
+    # after admission, such as a task VM, has only its file, and a load without it would drop its live peer.
     - name: Apply the hub peers
       ansible.builtin.shell:
         executable: /bin/bash
@@ -190,11 +192,13 @@
           set -euo pipefail
           umask 077
           before=$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)
-          { printf '[Interface]\nPrivateKey = '; cat {{ hub.private_key_file | quote }}; cat; } > {{ hub.sync_path | quote }}
+          {
+            printf '[Interface]\nPrivateKey = '; cat {{ hub.private_key_file | quote }}
+            printf '\nListenPort = %s\n\n' {{ hub.port | quote }}
+            for f in /etc/wireguard/orbit-peers.d/*.conf; do [ ! -f "$f" ] || cat "$f"; done
+          } > {{ hub.sync_path | quote }}
           wg syncconf orbit {{ hub.sync_path | quote }}
           [ "$before" = "$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)" ] || echo changed
-        stdin: "{{ hub.sync_body | replace('@KEY@', node_public_key) }}"
-        stdin_add_newline: false
       register: hub_peers
       changed_when: hub_peers.stdout is search('changed')
     - name: Read the hub public key

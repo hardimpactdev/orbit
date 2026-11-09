@@ -1,6 +1,6 @@
 id: be0fb735-5420-4c04-aa82-b33a8a9ce8fa
 name: node-network-hub
-description: Write the Gateway-rendered hub file and one file per peer with cfgmgmt, prune stale peer files and load them with wg syncconf over official SSH from 209; the hub private key never leaves the Node.
+description: Write the Gateway-rendered hub file and one file per peer with cfgmgmt, delete the removed Node's peer file and load them with wg syncconf over official SSH from 209; the hub private key never leaves the Node.
 vaults: []
 queueTimeout: 30
 inputs:
@@ -109,7 +109,7 @@ jobs:
           port: '${{ inputs.intent.ssh.target.port }}'
           identityFile: '${{ inputs.intent.ssh.identity_file }}'
         hosts: [{name: hub, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]
-      # A rewrite deletes the files of Nodes that are gone or being removed and keeps every other Node's file, because its own run may have written it. A removal deletes only its own Node's file.
+      # Only node:remove runs this workflow: it deletes its own Node's file and no other, so a Node that joins meanwhile keeps its peer.
       inputs: {hosts: 'name:hub', sudo: true, argv: '${{ inputs.intent.prune_argv }}'}
 - name: apply
   dependsOn: [{job: files, condition: {type: succeeded}}]
