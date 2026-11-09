@@ -6,6 +6,9 @@
 # Then it exits 3. Either way it records the outcome in `orbit.move-result`, which the converge reads after it reaches the
 # Node again, so a lost connection still reports node.hub_switch_no_handshake. Previous files that an aborted move left are
 # kept, and the converge decides the next move from them.
+# While it moves, the Node takes WireGuard packets only from the new endpoint's address. The hub still sends to the Node's
+# old address until it hears from the new one, and may start a handshake there; the Node then roams back, and both ends stay
+# on the old path (Operation 15254). The pin goes when the job ends; a reboot drops it too.
 - name: Move the tunnel to the new hub endpoint, or back
   ansible.builtin.shell:
     executable: /bin/bash
@@ -14,6 +17,20 @@
       umask 077
       d={{ hub_move.dir | quote }}; key={{ hub_move.key | quote }}
       rm -f "$d/orbit.move-result"
+      unpin() {
+        iptables -w -S INPUT | awk '/--comment orbit:hub-move/ { $1 = "-D"; print }' | while read -r rule; do iptables -w $rule; done
+      }
+      unpin
+      ep={{ hub_move.endpoint | quote }}
+      case "$ep" in
+        *[!0-9.:]*) ;;
+        *)
+          if ! iptables -w -I INPUT 1 -p udp --dport "$(wg show orbit listen-port)" ! -s "${ep%:*}" -m comment --comment orbit:hub-move -j DROP; then
+            echo unpinned > "$d/orbit.move-result"; exit 3
+          fi
+          trap unpin EXIT
+          ;;
+      esac
       # Keep what runs now before anything changes: the previous files, unless an aborted move left them, and the live
       # configuration, which also covers a Node whose previous files were missing.
       # After a cut-off move the live tunnel may already run the new files, so its rollback loads the previous files instead.
@@ -67,6 +84,11 @@
   changed_when: false
 - name: Remove the recorded outcome
   ansible.builtin.file: { path: "{{ hub_move.dir }}/orbit.move-result", state: absent }
+- name: Require the pin to the new hub endpoint
+  ansible.builtin.assert:
+    that: hub_move_outcome.stdout | trim != 'unpinned'
+    fail_msg: node.hub_switch_unpinned
+    quiet: true
 - name: Require a handshake through the new hub endpoint
   ansible.builtin.assert:
     that: hub_move_outcome.stdout | trim == 'moved'

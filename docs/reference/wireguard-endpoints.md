@@ -72,11 +72,16 @@ The converge decides that a Node moves to another hub endpoint from the `Endpoin
 
 Swamp reaches the Node through this tunnel, so the move runs as one detached job on the Node that does not depend on the SSH session. The converge stages the new `orbit.conf` and `orbit.peers` beside the live ones. The job then:
 
-1. installs the staged files and keeps the previous ones;
-2. removes the hub peer from the live tunnel and loads the new files, so the old session ends;
-3. waits up to a minute for a hub handshake at or after the move, with the live hub endpoint equal to the rendered one.
+1. pins the tunnel to the new endpoint's IPv4 address: the Node takes WireGuard packets only from that address;
+2. installs the staged files and keeps the previous ones;
+3. removes the hub peer from the live tunnel and loads the new files, so the old session ends;
+4. waits up to a minute for a hub handshake at or after the move, with the live hub endpoint equal to the rendered one.
 
 A handshake through the old endpoint does not count. Neither does one that the hub started to an old address.
+
+The pin keeps that from happening. Until the hub hears from the new address, it sends to the Node's old one. A busy peer gets that traffic at once, and the hub may also start a handshake there. Without the pin the Node roams back to the old address, both ends then stay on the old path, and the move fails (Operation 15254, the `swamp` Node, 2026-11-09).
+
+A hostname endpoint gets no pin. The pin is one `iptables` rule with the comment `orbit:hub-move`. The job removes it when it ends, removes a pin that an earlier, killed job left before it starts, and a reboot drops it. When the rule cannot be added, nothing changes and the phase fails with the assertion `node.hub_switch_unpinned`.
 
 When no such handshake comes, the job puts the previous files back and sets the live configuration it saved before the move. The Node keeps the tunnel it had, also when a previous file was missing. After a cut-off move the job loads the previous files instead, because the live tunnel may already run the new ones. A new file without a previous copy is deleted, so the next converge reads no endpoint and moves again with the same rollback.
 
