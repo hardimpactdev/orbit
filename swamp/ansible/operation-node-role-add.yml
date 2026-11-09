@@ -17,150 +17,7 @@
     - name: Reload units
       ansible.builtin.systemd: { daemon_reload: true }
   tasks:
-    - name: Configure PHP-FPM
-      ansible.builtin.include_tasks: tasks/php.yml
-      loop: "{{ intent.php }}"
-      loop_control: { loop_var: php, label: "{{ php.version }}" }
-    - name: Write role files
-      ansible.builtin.copy:
-        dest: "{{ item.path }}"
-        content: "{{ item.content }}"
-        owner: "{{ item.owner }}"
-        group: "{{ item.group }}"
-        mode: "{{ item.mode }}"
-      loop: "{{ intent.files }}"
-      loop_control: { label: "{{ item.path }}" }
-      notify: Reload units
-    - name: Create runtime groups
-      ansible.builtin.group: { name: "{{ item.name }}", gid: "{{ item.gid }}", system: true }
-      loop: "{{ rt.groups }}"
-    - name: Create runtime users
-      ansible.builtin.user:
-        name: "{{ item.name }}"
-        uid: "{{ item.uid }}"
-        group: "{{ item.gid }}"
-        shell: /usr/sbin/nologin
-        system: true
-        create_home: false
-      loop: "{{ rt.users }}"
-    - name: Create runtime folders
-      ansible.builtin.file:
-        path: "{{ item.path }}"
-        state: directory
-        owner: "{{ item.owner }}"
-        group: "{{ item.group }}"
-        mode: "{{ item.mode }}"
-      loop: "{{ rt.directories }}"
-      loop_control: { label: "{{ item.path }}" }
-    - { name: Prepare Reverb, when: rt.websocket is not none, ansible.builtin.import_tasks: tasks/websocket.yml }
-    - { name: Stop the retired release units, when: rt.gateway is not none, ansible.builtin.import_tasks: tasks/gateway-retire.yml }
-    - name: Write runtime files
-      ansible.builtin.copy:
-        dest: "{{ item.path }}"
-        content: "{{ item.content }}"
-        owner: "{{ item.owner }}"
-        group: "{{ item.group }}"
-        mode: "{{ item.mode }}"
-        # The Gateway pool is tested alone, under a minimal global section, before it replaces the live one.
-        validate: "{{ gateway_pool_check if rt.gateway is not none and item.path == rt.gateway.pool else omit }}"
-      vars:
-        gateway_pool_check: >-
-          /bin/sh -c 'c=$(mktemp); printf "[global]\npid = %%s.pid\nerror_log = /proc/self/fd/2\ninclude = %%s\n" "$c" "$0" > "$c";
-          /usr/sbin/php-fpm8.5 -t -y "$c"; r=$?; rm -f "$c" "$c.pid"; exit $r' %s
-      loop: "{{ rt.files }}"
-      loop_control: { label: "{{ item.path }}" }
-      when:
-        - item.ensure | default('present') == 'present'
-        - kind != 'node.role_converge' or item.path != '/etc/orbit/metrics/prometheus.yml'
-      register: runtime_files
-      notify: Reload units
-    - name: Remove retired runtime files
-      ansible.builtin.file: { path: "{{ item.path }}", state: absent }
-      loop: "{{ rt.files }}"
-      loop_control: { label: "{{ item.path }}" }
-      when: item.ensure | default('present') == 'absent'
-      notify: Reload units
-    - { name: Apply the Gateway runtime, when: rt.gateway is not none, ansible.builtin.import_tasks: tasks/gateway-runtime.yml }
-    - name: Write private files
-      ansible.builtin.copy:
-        dest: "{{ item.path }}"
-        content: "{{ secrets[item.secret] }}"
-        owner: "{{ item.owner }}"
-        group: "{{ item.group }}"
-        mode: "0600"
-      loop: "{{ rt.secret_files }}"
-      loop_control: { label: "{{ item.path }}" }
-      register: private_files
-      no_log: true
-    - name: Repair the Swamp start cache
-      when: rt.swamp is not none
-      ansible.builtin.import_tasks: tasks/swamp-start-cache.yml
-      vars: { swamp_start_cache: /tmp/deno-compile-swamp.cache, swamp_cache_check_only: false }
-    - name: Install Swamp worker renewal
-      when: rt.swamp is not none
-      ansible.builtin.import_tasks: tasks/swamp-worker-renewal.yml
-    - name: Write runtime units
-      ansible.builtin.copy: { dest: "/etc/systemd/system/{{ item.name }}", content: "{{ item.unit }}", mode: "0644" }
-      loop: "{{ rt.units }}"
-      loop_control: { label: "{{ item.name }}" }
-      register: runtime_units
-      notify: Reload units
-    - { name: Reload units before services start, ansible.builtin.meta: flush_handlers }
-    - name: Start role services
-      ansible.builtin.systemd:
-        name: "{{ item.name }}"
-        state: >-
-          {{ 'restarted' if (rt.websocket is not none and
-          (reverb_checkout is changed or reverb_link is changed or
-          private_files is changed or runtime_units is changed)) or
-          (rt.gateway is not none and item.name in (runtime_units.results | selectattr('changed') | map(attribute='item.name'))) else 'started' }}
-        enabled: true
-      loop: "{{ intent.services + rt.units }}"
-      loop_control: { label: "{{ item.name }}" }
-    - name: Apply Gateway DNS policy
-      when: rt.gateway_dns is not none
-      ansible.builtin.import_tasks: tasks/gateway-dns.yml
-    - name: Apply CI host resources
-      when: rt.ci_host
-      ansible.builtin.import_tasks: tasks/ci.yml
-      vars: { ci_check_only: false }
-    - name: Run Metrics
-      when: rt.metrics is not none
-      ansible.builtin.import_tasks: tasks/metrics.yml
-      vars: { metrics_check_only: false, metrics_config_changed: "{{ runtime_files is changed or private_files is changed }}" }
-    - name: Wait for Metrics
-      when: rt.metrics is not none
-      ansible.builtin.uri: { url: "{{ item.url }}" }
-      loop: "{{ rt.probes }}"
-      register: metrics_ready
-      until: metrics_ready is succeeded
-      retries: 60
-      delay: 1
-    - name: Set the Grafana password
-      when: rt.metrics is not none and (metrics_runtime is changed or private_files is changed)
-      ansible.builtin.command:
-        argv:
-          - docker
-          - exec
-          - -i
-          - orbit-metrics-grafana
-          - grafana
-          - cli
-          - --homepath
-          - /usr/share/grafana
-          - admin
-          - reset-admin-password
-          - --password-from-stdin
-        stdin: "{{ secrets.metrics_password }}"
-      no_log: true
-      changed_when: true
-    - name: Wait for Reverb
-      when: rt.websocket is not none
-      ansible.builtin.uri: { url: "{{ rt.websocket.health_url }}", status_code: "{{ range(100, 600) | list }}" }
-      register: reverb_health
-      until: reverb_health is succeeded
-      retries: 60
-      delay: 1
+    - { name: Reconcile the role runtime, ansible.builtin.import_tasks: tasks/node-role-runtime.yml }
 - name: ClickHouse configuration
   hosts: clickhouse_node
   tags:
@@ -364,3 +221,79 @@
           - incus.service
       changed_when: false
   vars: { rt: "{{ intent.runtime }}" }
+
+- name: Observe Tool Manager accounts
+  hosts: role_node
+  tags: [tools-read]
+  become: true
+  tasks:
+    - name: Read the enrolled account
+      ansible.builtin.getent: { database: passwd, key: "{{ intent.ssh.target.user }}" }
+    - name: Capture the Tool Manager account
+      ansible.builtin.copy:
+        dest: "{{ run_folder }}/tools-account.json"
+        content: "{{ ansible_facts.getent_passwd | to_json }}"
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+- name: Set up Tool Managers
+  hosts: role_node
+  tags: [tools]
+  become: true
+  tasks:
+    - name: Apply pinned Tool Managers
+      ansible.builtin.include_tasks: tasks/role-tool-manager.yml
+      loop: "{{ plans.managers }}"
+      loop_control: { loop_var: manager }
+- name: Initialize and run Analytics
+  hosts: role_node
+  tags: [analytics]
+  become: true
+  vars: { analytics: "{{ intent.runtime.analytics }}" }
+  tasks:
+    - name: Apply Analytics initialization and runtime
+      when: analytics is not none and kind != 'node.role_converge'
+      ansible.builtin.import_tasks: tasks/role-analytics.yml
+- name: Run Swamp
+  hosts: role_node
+  tags: [swamp]
+  become: true
+  vars: { rt: "{{ intent.runtime }}" }
+  tasks:
+    - name: Apply the Swamp runtime
+      when: rt.swamp is not none
+      ansible.builtin.import_tasks: tasks/role-swamp.yml
+  handlers:
+    - name: Reload units
+      ansible.builtin.systemd: { daemon_reload: true }
+- name: Observe role publications
+  hosts: publication_nodes
+  tags: [publication-read]
+  become: true
+  tasks:
+    - name: Read PHP and DNS state
+      ansible.builtin.import_tasks: tasks/role-publication-read.yml
+- name: Publish role PHP pools
+  hosts: publication_nodes
+  tags: [php]
+  become: true
+  tasks:
+    - name: Apply composed PHP pools
+      ansible.builtin.import_tasks: tasks/role-publication-php.yml
+- name: Publish role DNS
+  hosts: publication_nodes
+  tags: [dns]
+  become: true
+  tasks:
+    - name: Apply composed private DNS
+      ansible.builtin.import_tasks: tasks/role-publication-dns.yml
+- name: Remove Analytics initialization containers
+  hosts: role_node
+  tags: [cleanup]
+  become: true
+  tasks:
+    - name: Remove init containers
+      community.docker.docker_container: { name: "{{ item.name }}", state: absent, force_kill: true }
+      loop: "{{ (intent.runtime.analytics or {}).get('initialize', []) }}"
+      loop_control: { label: "{{ item.name }}" }
+      when: kind != 'node.role_converge'

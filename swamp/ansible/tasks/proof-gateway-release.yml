@@ -1,0 +1,37 @@
+---
+# The tested CLI still runs from source. This published binary supplies the installable release that a real Gateway has.
+- name: Read the tested Gateway revision
+  ansible.builtin.command:
+    argv: [timeout, "60", git, -C, "{{ control.repository | dirname }}", rev-parse, HEAD]
+  become_user: "{{ control.user }}"
+  become: true
+  register: proof_gateway_revision
+  changed_when: false
+- name: Require a full tested revision
+  ansible.builtin.assert:
+    that: proof_gateway_revision.stdout is match('^[0-9a-f]{40}$')
+    quiet: true
+- name: Record the tested Gateway revision
+  ansible.builtin.copy:
+    dest: "{{ control.repository | dirname }}/REVISION"
+    content: "{{ proof_gateway_revision.stdout }}\n"
+    owner: "{{ control.user }}"
+    group: "{{ control.user }}"
+    mode: "0644"
+  notify: Restart proof Gateway application services
+- name: Configure the disposable Gateway's pinned CLI release catalog
+  ansible.builtin.lineinfile:
+    path: "{{ control.repository | dirname }}/apps/gateway/.env"
+    regexp: '^ORBIT_CLI_RELEASE_STATIC_MANIFEST='
+    line: "ORBIT_CLI_RELEASE_STATIC_MANIFEST={{ control.repository }}/proof/cli-release.json"
+    # The nested .env is a file bind mount, so atomic replacement cannot replace its inode.
+    unsafe_writes: true
+    owner: "{{ control.user }}"
+    group: "{{ control.user }}"
+    mode: "0600"
+  notify: Restart proof Gateway application services
+- name: Clear the disposable Gateway's cached configuration
+  ansible.builtin.command: { argv: [timeout, "30", php, artisan, config:clear], chdir: "{{ control.repository | dirname }}/apps/gateway" }
+  become_user: "{{ control.user }}"
+  become: true
+  changed_when: false

@@ -20,3 +20,15 @@ it('preserves absent liveness without manufacturing an online agent', function (
     expect($response->toArray()['agent'])->toBeNull()
         ->and($response->possiblyOutdated)->toBeTrue()->and($response->observedAt)->toBe('2026-11-06T10:00:00Z');
 });
+
+it('preserves per-mount stale readings and unknown values without turning them into zero', function (): void {
+    $disks = [
+        ['mount' => '/', 'used' => 123, 'total' => 456, 'observed_at' => '2026-11-06T10:00:00Z', 'stale' => false],
+        ['mount' => '/slow', 'used' => 12, 'total' => 45, 'observed_at' => '2026-11-06T09:58:00Z', 'stale' => true],
+        ['mount' => '/hung', 'used' => null, 'total' => null, 'observed_at' => null, 'stale' => true],
+    ];
+
+    $response = NodeMetricsResponse::fromGatewayData(['disks' => $disks], 'read-id');
+
+    expect($response->disks)->toBe($disks)->and($response->toArray()['disks'])->toBe($disks);
+});

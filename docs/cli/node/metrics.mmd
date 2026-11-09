@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: a synchronous read of the Node agent's metrics snapshot from Gateway records. Node family read rules and docs/reference/node-agent.md#liveness.
-  %% status: draft
+  %% status: reviewed
   %% command: node:metrics
   %% kind: node.metrics
   autonumber
@@ -8,10 +8,15 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
+  opt Node omitted in an interactive terminal
+    CLI->>GW: List registered Nodes
+    GW-->>CLI: IDs and names
+    Note over CLI: Search and select one Node<br/>Empty list or cancel stops the command
+  end
   CLI->>GW: node:metrics NODE
   %%> Command:
-  %%> - `orbit node:metrics NODE`
-  %%> - syntax: `<node> [--json]`
+  %%> - `orbit node:metrics [NODE]`
+  %%> - syntax: `[node] [--json]`
   Note over GW: Resolve and authorize
   %%> Requirements:
   %%> - apply the shared Node authority rule (`NodeAccessAuthorizer`), linked from `docs/cli/node/metrics.mdx` to the Node family page
@@ -46,7 +51,7 @@ sequenceDiagram
       %% path: current-snapshot
       GW-->>CLI: 200 OK<br/>snapshot · observation time
       %%> Result:
-      %%> - returns the snapshot with Node name and ID, observation time and agent state; `possibly_outdated` is false
+      %%> - returns the snapshot with Node name and ID, observation time, per-mount observation times and stale flags, and agent state; `possibly_outdated` is false
     end
   end
   Note over GW: Leave state unchanged

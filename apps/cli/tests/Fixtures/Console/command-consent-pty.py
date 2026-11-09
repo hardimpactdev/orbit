@@ -30,7 +30,6 @@ process = subprocess.Popen(sys.argv[1:4], stdin=slave, stdout=slave, stderr=slav
 output = bytearray()
 keys = [base64.b64decode(key) for key in configuration['keys']]
 ready = False
-awaiting_output = False
 idle_timeout = configuration.get('idle_timeout', 10)
 last_output = time.monotonic()
 while process.poll() is None:
@@ -40,7 +39,6 @@ while process.poll() is None:
             if chunk:
                 output.extend(chunk)
                 last_output = time.monotonic()
-                awaiting_output = False
         except OSError as error:
             if error.errno != errno.EIO:
                 raise
@@ -49,8 +47,10 @@ while process.poll() is None:
         process.wait()
         raise RuntimeError('Command fixture timed out: ' + output.decode(errors='replace'))
     ready = ready or configuration['prompt'].encode() in output
+    # Consumption, not a repaint, acknowledges a key: without color an arrow can
+    # change the selection without changing the rendered bytes.
     pending_input = struct.unpack('i', fcntl.ioctl(slave, termios.FIONREAD, struct.pack('i', 0)))[0]
-    if ready and keys and not awaiting_output and pending_input == 0:
+    if ready and keys and pending_input == 0:
         # PTY input delivery is asynchronous. An empty FIONREAD snapshot can
         # precede delivery, so first observe the complete key queued while the
         # reader is stopped. After resuming, zero proves it has consumed it.
@@ -79,7 +79,6 @@ while process.poll() is None:
                                        repr(termios.tcgetattr(slave)) + '\n' + output.decode(errors='replace'))
         finally:
             os.kill(process.pid, signal.SIGCONT)
-        awaiting_output = True
 while select.select([master], [], [], 0)[0]:
     try:
         chunk = os.read(master, 65536)

@@ -1,7 +1,7 @@
 """Keep expensive jobs on the managed pool without sending fork code to it."""
-from pathlib import Path
 import re
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 POOL = "${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('[\"self-hosted\",\"orbit-shard\"]') || 'ubuntu-26.04' }}"
@@ -29,24 +29,23 @@ class RunnerPolicyTest(unittest.TestCase):
                 with self.subTest(job=name):
                     self.assertIn('runs-on: ubuntu-26.04', job(workflow, name))
 
-    def test_proof_run_is_report_only_and_never_runs_fork_code_on_a_node(self):
+    def test_required_proof_never_runs_fork_code_on_a_node(self):
         block = job("ci.yml", "proof-run")
         self.assertIn("github.event_name == 'pull_request'", block)
         self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", block)
         self.assertIn("cancel-in-progress: true", block)
         required = job("ci.yml", "required")
-        self.assertNotIn("proof-run", required)
+        self.assertIn("proof-run", required)
 
-    def test_capacity_skips_assertions_but_never_changes_the_required_gate(self):
+    def test_required_gate_includes_proof_and_has_no_capacity_skip(self):
         request = job('ci.yml', 'proof-run')
-        assertions = job('ci.yml', 'proof-assertions')
-        self.assertIn('outcome: ${{ steps.report.outputs.outcome }}', request)
+        required = job('ci.yml', 'required')
         self.assertIn('PROOF_RECEIPT:', request)
         self.assertIn('if: always()', request)
-        self.assertIn("needs.proof-run.outputs.outcome != 'not_run_capacity'", assertions)
-        self.assertIn("needs.proof-run.result != 'skipped'", assertions)
-        self.assertIn('test "$REPORT_RESULT" = success && test "$OUTCOME" = passed', assertions)
-        self.assertNotIn('proof-assertions', job('ci.yml', 'required'))
+        self.assertIn("selected['proof-run']", required)
+        self.assertIn('PROOF_REQUIRED:', required)
+        self.assertNotIn('not_run_capacity', (ROOT / '.github/workflows/ci.yml').read_text())
+        self.assertNotIn('PROOF_REPORT_ONLY', request)
 
     def test_self_hosted_php_is_verified_from_the_repository_root(self):
         action = (ROOT / '.github/actions/php/action.yml').read_text()

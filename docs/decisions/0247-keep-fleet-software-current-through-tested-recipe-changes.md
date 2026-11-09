@@ -43,7 +43,7 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
 - Each chart path has one case, kept in `docs/cli/<family>/<command>.cases.yaml`: the main path, each `--flag`, and the error paths. `bin/check-flows` fails when an `opt` block has no case.
 - `proof:run <commit>` takes a VM, builds its nested test fleet (Gateway with Swamp, app-dev, app-prod) from the ready snapshot, applies the commit and runs the cases. [`proof:run`](/cli/proof/run) owns the contract.
 - A case passes when Doctor finds no drift on the records it touched and a second run changes nothing. An error case passes when the command refuses and changes nothing.
-- A CI job calls `proof:run` for every pull request that changes command code, and its result is the required check `Proofs`. A commit that changes `recipe.json` runs every case.
+- A CI job calls `proof:run` for every pull request that changes command code, and its result is the required check `Proofs`. A commit that changes `recipe.json` runs every case. (Amended 2026-11-08: a proof runs only for commands whose own code or cases change; shared code selects none.)
 
 **Rollout.**
 

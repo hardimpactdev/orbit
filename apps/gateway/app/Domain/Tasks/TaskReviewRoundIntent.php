@@ -8,6 +8,7 @@ use App\Data\Tasks\StartTaskCheckData;
 use App\Data\Tasks\TaskTurnData;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmProviderWorkflowInput;
 use App\Domain\TaskVms\TaskVmResumeIntent;
@@ -42,8 +43,8 @@ final readonly class TaskReviewRoundIntent
     public function start(Task $group, string $head, string $caller, ?string $request): Operation
     {
         return DB::transaction(function () use ($group, $head, $caller, $request): Operation {
-            $operation = $this->operations->start($group, OperationKinds::TasksReviewRound, [], static function (Task $group): void {}, $caller, $request, fn (Task $group): array => $this->capture($group, $head));
-            if ($operation->wasRecentlyCreated) {
+            $operation = $this->operations->start($group, OperationKinds::TasksReviewRound, ['head' => $head], static function (Task $group): void {}, $caller, $request, fn (Task $group): array => $this->capture($group, $head));
+            if ($operation->wasRecentlyCreated && $operation->status !== OperationStatus::Waiting) {
                 $check = $operation->input['check'] ?? null;
                 TaskReviewRound::query()->create(['task_group_id' => $group->id, 'head_sha' => $head, 'round' => $operation->input['round'], 'operation_id' => $operation->id,
                     'check_id' => is_array($check) ? $check['check_id'] : null]);
@@ -54,7 +55,7 @@ final readonly class TaskReviewRoundIntent
     }
 
     /** @return array<string,mixed> */
-    private function capture(Task $group, string $head): array
+    public function capture(Task $group, string $head): array
     {
         $target = $this->evidence->round($group, $head);
         $round = TaskReviewRound::query()->where('task_group_id', $group->id)->count() + 1;
@@ -66,6 +67,7 @@ final readonly class TaskReviewRoundIntent
         if (! $subtask instanceof Task || ! $candidate instanceof TaskCheck) {
             throw new ResourceOperationException('tasks_pr.no_checked_candidate', 'The head is not a passed handoff candidate of the current subtask, or a head that an earlier round pushed.', 409);
         }
+        $provision = TaskVmReentry::capture($group, $head);
         $group->load('project', 'taskable');
         $instance = $group->taskable;
         $vm = TaskVm::forGroup($group);
@@ -73,20 +75,21 @@ final readonly class TaskReviewRoundIntent
         if (! $instance instanceof Instance || $instance->task_workspace_owner_id !== $group->id || ! $vm instanceof TaskVm || $vm->node_id !== $instance->node_id || $instance->checkout_path === '' || $repository === null) {
             throw new ResourceOperationException('tasks.no_workspace', 'The group requires its owned task VM workspace.', 409);
         }
-        if (! in_array($vm->state, [TaskVmState::Parked, TaskVmState::Ready], true)) {
+        if (! in_array($vm->state, [TaskVmState::Parked, TaskVmState::Ready, TaskVmState::Provisioning], true)) {
             throw new ResourceOperationException('tasks_pr.vm_unavailable', 'The round needs the task VM of the group parked or running.', 409);
         }
-        $author = $round < TaskReviewRound::Limit ? ($subtask->implementer_agent_thread_id ?? throw new ResourceOperationException('tasks_pr.no_author_thread', 'The current subtask has no author thread.', 409)) : null;
+        $author = $round < TaskReviewRound::Limit ? ($provision !== null ? 'new' : ($subtask->implementer_agent_thread_id ?? throw new ResourceOperationException('tasks_pr.no_author_thread', 'The current subtask has no author thread.', 409))) : null;
         $resume = $vm->state === TaskVmState::Parked ? TaskVmProviderWorkflowInput::envelope($this->resume->capture($vm)) : null;
         $turn = fn (TaskTurnData $data): array => array_diff_key($this->turns->capture($group, $data, static fn (): string => $head), ['execution_secrets' => true]);
         $fix = $author === null ? [] : [
-            'fix' => $turn(new TaskTurnData($subtask->id, 'implementer', TaskReviewFixPrompt::for($round, $head), (string) $author, null, null)),
+            'fix' => $turn(new TaskTurnData($subtask->id, 'implementer', TaskReviewFixPrompt::for($round, $head), $provision === null ? (string) $author : 'new', null, null)),
             'check' => $this->checks->capture($group, new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), hostedCi: false),
         ];
 
         return [
             ...$target->intent($group), 'node_id' => $instance->node_id, 'round' => $round, 'head' => $head,
             'task_vm_id' => $vm->id,
+            ...($provision === null ? [] : ['provision' => $provision]),
             'review_evidence' => ['head' => $head, 'tree' => $candidate->tree_after,
                 'handoff' => ['check_id' => $candidate->id, 'outcome' => $candidate->status->value, 'commit' => $candidate->commit_sha, 'tree' => $candidate->tree_after, 'exit_code' => $candidate->exit_code],
                 'hosted_checks' => $target->checks],

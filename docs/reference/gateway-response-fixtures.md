@@ -15,9 +15,9 @@ The `database-server-update` fixtures replay [`database:server:update --require-
 
 Node enrollment fixtures record the real HTTP 202 admission and a separate terminal Operation read. The CLI replays both, so a queued response cannot be mistaken for an active Node. Native identity observations supply the completion fixture.
 
-The `node-show` and `project-show` fixtures hold the record, and for a Node its `access`. They carry no exclusion lists. Node list and show also carry `cluster_name` and the same `assignments` projection as `node:role:list`. `NodeQueryFixturesTest` records these two responses from the Gateway; the CLI contract tests replay them.
+The `node-show` and `project-show` fixtures hold the record, and for a Node its `access`. They carry no exclusion lists. Node list and show keep `roles` as a list of names and also carry `cluster_name` and the same `assignments` projection as `node:role:list`. `NodeQueryFixturesTest` records these two responses from the Gateway; the CLI contract tests replay them.
 
-The `nodes/node-metrics` fixture carries a retained agent snapshot with its original `observed_at`, shared `agent` state, and `possibly_outdated` flag. SDK and CLI tests replay the whole snapshot. Gateway tests cover offline retention, missing snapshots, access refusals, and replacement by later agent reports.
+The `nodes/node-metrics` fixture carries a retained agent snapshot with its original `observed_at`, shared `agent` state, and `possibly_outdated` flag. Each disk retains its own observation time and stale flag, with null values before its first reading. SDK and CLI tests replay the whole snapshot. The selector PTY fixture waits for each key to be consumed, rather than for a repaint: an arrow can move the selection without changing the rendered bytes when color is off. Gateway tests cover offline retention, missing snapshots, access refusals, and replacement by later agent reports.
 
 The `proof-run` fixtures record a result as rows of `command`, `file` (the cases file), `case`, `verdict` and `seconds`. A refusal for a disabled execution lists the selected cases files.
 
@@ -151,3 +151,5 @@ The directories under `packages/php-sdk/fixtures` list the families that have re
 Node update fixtures under `nodes/node-update` record an unmanaged peer set to `ipados` and the `node.platform_managed` refusal. The SDK and `node:update` CLI tests replay both responses.
 
 Automatic Gateway release fixtures use the `gateway-auto-release-*` directories under `gateway-releases`, matching the public commands.
+
+Task publication fixtures cover deletion of the VM and its identity. The public `task:park` command has no response fixture. Node host settings expose separate `task_places` and `ci_places` counts.

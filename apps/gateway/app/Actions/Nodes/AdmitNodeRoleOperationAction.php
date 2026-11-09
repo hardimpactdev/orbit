@@ -72,6 +72,9 @@ final readonly class AdmitNodeRoleOperationAction
             if ($converge && $existing === null) {
                 throw new RoleAssignmentException("Role [{$role->value}] is not assigned; add it before convergence.");
             }
+            if ($converge && ! $existing->canClaimConvergence()) {
+                throw new RoleAssignmentException("Role [{$role->value}] cannot converge from status [{$existing->status->value}].");
+            }
             if ($existing !== null && ! $converge && ! ($role === RoleName::Ingress && $existing->status === LifecycleStatus::Active)) {
                 throw new RoleAssignmentException("Role [{$role->value}] is already assigned; explicit convergence is required.");
             }

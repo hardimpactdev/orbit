@@ -112,9 +112,9 @@ final readonly class NodeRoleAssignmentResponse
         return
             $value === null
             || is_string($value)
-            && $value !== ''
             && strlen($value) <= self::MAX_FAILED_STEP_LENGTH
-            && preg_match('/\A[^\p{Cc}\p{Cf}]+\z/uD', $value) === 1
+            && preg_match('/[^\s\p{Z}]/u', $value) === 1
+            && preg_match('/[\p{C}\p{Zl}\p{Zp}]/u', $value) === 0
             && new CredentialRedactor()->redactText($value) === $value;
     }
 }

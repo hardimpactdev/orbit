@@ -51,7 +51,7 @@ describe('node metrics contract', function (): void {
             'home' => $directory.'/home',
             'trace' => $directory.'/requests.jsonl',
             'arguments' => ['node:metrics'],
-            'prompt' => 'Node',
+            'prompt' => '/ Search',
             'keys' => array_map(base64_encode(...), $keys),
             'columns' => 120,
             'replies' => [
@@ -70,7 +70,7 @@ describe('node metrics contract', function (): void {
         ];
         file_put_contents($directory.'/case.json', json_encode($configuration, JSON_THROW_ON_ERROR));
         $fixtures = base_path('tests/Fixtures/Console/');
-        $process = new Process(['python3', $fixtures.'command-consent-pty.py', PHP_BINARY, $fixtures.'command-consent.php', $directory.'/case.json'], env: ['PAO_DISABLE' => '1'], timeout: 15);
+        $process = new Process(['python3', $fixtures.'command-consent-pty.py', PHP_BINARY, $fixtures.'command-consent.php', $directory.'/case.json'], env: ['PAO_DISABLE' => '1', 'NO_COLOR' => '1'], timeout: 15);
         $process->mustRun();
         $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
         $raw = base64_decode($result['raw'], strict: true);
@@ -110,6 +110,21 @@ describe('node metrics contract', function (): void {
     it('renders node:metrics from the recorded response', function (): void {
         run_contract('nodes/node-metrics/default', 'node:metrics', ['node' => '1'], 'nodes/node-metrics/default.human.txt', 0);
         run_contract('nodes/node-metrics/default', 'node:metrics', ['node' => '1', '--json' => true], 'nodes/node-metrics/default.json', 0);
+    });
+
+    it('shows each stale disk and keeps never-observed values unknown', function (): void {
+        $body = json_decode(gateway_fixture('nodes/node-metrics/default')['body'], true, flags: JSON_THROW_ON_ERROR);
+        $body['data']['disks'] = [
+            ['mount' => '/', 'used' => 1024, 'total' => 2048, 'observed_at' => '2026-11-06T10:00:00Z', 'stale' => false],
+            ['mount' => '/slow', 'used' => 1024, 'total' => 2048, 'observed_at' => '2026-11-06T09:58:00Z', 'stale' => true],
+            ['mount' => '/hung', 'used' => null, 'total' => null, 'observed_at' => null, 'stale' => true],
+        ];
+        MockClient::global([ShowNodeMetricsRequest::class => MockResponse::make($body)]);
+
+        expect(Artisan::call('node:metrics', ['node' => '1']))->toBe(0);
+        expect(Artisan::output())->toContain('/: 1.0 KiB / 2.0 KiB', '/slow: 1.0 KiB / 2.0 KiB (stale)', '/hung: — (stale)');
+        expect(Artisan::call('node:metrics', ['node' => '1', '--json' => true]))->toBe(0);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['disks'])->toBe($body['data']['disks']);
     });
 
     it('resolves a failed Node by name before looking up metrics with its numeric ID', function (string $label): void {

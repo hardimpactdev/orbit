@@ -29,7 +29,16 @@
                     "kind": "gateway_release",
                     "since": "2026-01-02T09:58:00+00:00",
                     "release": 31
-                }
+                },
+                "assignments": [
+                    {
+                        "id": 1,
+                        "role": "gateway",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null
+                    }
+                ]
             },
             {
                 "id": 2,
@@ -52,7 +61,23 @@
                 "error_code": null,
                 "roles": ["app-dev", "database"],
                 "settings": null,
-                "updating": null
+                "updating": null,
+                "assignments": [
+                    {
+                        "id": 2,
+                        "role": "app-dev",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null
+                    },
+                    {
+                        "id": 3,
+                        "role": "database",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null
+                    }
+                ]
             },
             {
                 "id": 3,
@@ -75,7 +100,16 @@
                 "error_code": "node.provisioning_failed",
                 "roles": ["app-prod"],
                 "settings": null,
-                "updating": null
+                "updating": null,
+                "assignments": [
+                    {
+                        "id": 4,
+                        "role": "app-prod",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null
+                    }
+                ]
             },
             {
                 "id": 4,
@@ -98,7 +132,8 @@
                 "error_code": null,
                 "roles": [],
                 "settings": null,
-                "updating": null
+                "updating": null,
+                "assignments": []
             }
         ],
         "meta": {

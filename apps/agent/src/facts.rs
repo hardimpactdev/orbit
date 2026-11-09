@@ -7,6 +7,7 @@
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::{BufRead, BufReader, Read};
 use std::time::{Duration, Instant};
 
 /// How often the agent reads its units and sends them when they changed.
@@ -30,25 +31,47 @@ pub const GROUP: &str = "/etc/group";
 const MAX_ACCOUNTS: usize = 512;
 /// Filesystems that hold data; pseudo, network and snap mounts are left out.
 const DATA_FILESYSTEMS: [&str; 7] = ["ext2", "ext3", "ext4", "xfs", "btrfs", "zfs", "f2fs"];
-const MAX_FILESYSTEMS: usize = 64;
+pub(crate) const MAX_FILESYSTEMS: usize = 64;
 
-/// The mount points of data filesystems in `/proc/self/mounts`, in order, each once.
-pub fn data_mounts(mounts: &str) -> Vec<String> {
+/// Maximum mount-table input, including entries excluded by the filesystem filter.
+const MAX_MOUNT_TABLE_BYTES: u64 = 256 * 1024;
+
+/// Stream at most 256 KiB and stop once 64 distinct data mounts have been found.
+pub fn data_mounts(input: impl Read) -> Vec<String> {
+    let mut input = BufReader::new(input.take(MAX_MOUNT_TABLE_BYTES));
     let mut seen = BTreeSet::new();
+    let mut mounts = Vec::new();
+    let mut line = String::new();
+    let mut bytes = 0;
+    while mounts.len() < MAX_FILESYSTEMS {
+        line.clear();
+        let Ok(read) = input.read_line(&mut line) else {
+            break;
+        };
+        if read == 0 {
+            break;
+        }
+        bytes += read as u64;
+        // A line cut off by the byte bound is not a complete mount entry.
+        if bytes == MAX_MOUNT_TABLE_BYTES && !line.ends_with('\n') {
+            break;
+        }
+        let mut fields = line.split_whitespace();
+        let (Some(_device), Some(mount), Some(kind)) =
+            (fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+        let mount = unescape_mount(mount);
+        if DATA_FILESYSTEMS.contains(&kind)
+            && mount.starts_with('/')
+            && !mount.starts_with("/snap/")
+            && seen.insert(mount.clone())
+        {
+            mounts.push(mount);
+        }
+    }
     mounts
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.split_whitespace();
-            let (_device, mount, kind) = (fields.next()?, fields.next()?, fields.next()?);
-            let mount = unescape_mount(mount);
-            (DATA_FILESYSTEMS.contains(&kind)
-                && mount.starts_with('/')
-                && !mount.starts_with("/snap/"))
-            .then_some(mount)
-        })
-        .filter(|mount| seen.insert(mount.clone()))
-        .take(MAX_FILESYSTEMS)
-        .collect()
 }
 
 /// `/proc/self/mounts` writes a space, tab, newline or backslash in a path as an octal escape.
@@ -66,6 +89,8 @@ pub struct Filesystem {
     pub mount: String,
     pub size: u64,
     pub free: u64,
+    pub observed_at: String,
+    pub stale: bool,
 }
 
 pub fn host_data(os: &str, arch: &str, filesystems: &[Filesystem]) -> Value {
@@ -74,7 +99,7 @@ pub fn host_data(os: &str, arch: &str, filesystems: &[Filesystem]) -> Value {
         "arch": arch,
         "filesystems": filesystems
             .iter()
-            .map(|fs| json!({"mount": fs.mount, "size": fs.size, "free": fs.free}))
+            .map(|fs| json!({"mount": fs.mount, "size": fs.size, "free": fs.free, "observed_at": fs.observed_at, "stale": fs.stale}))
             .collect::<Vec<_>>(),
     })
 }
@@ -667,14 +692,15 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let mut reporter = Reporter::new(client(), &url);
 
+        let observed_at = "2026-01-01T00:00:00Z";
         reporter
-            .report("metrics", None, &json!({"uptime_seconds": 42}))
+            .report_at("metrics", None, &json!({"uptime_seconds": 42}), observed_at)
             .await;
-        tokio::time::sleep(Duration::from_millis(1100)).await;
         reporter.retry().await;
 
         let received = received.lock().unwrap();
         assert_eq!(received.len(), 2);
+        assert_eq!(received[0]["observed_at"], observed_at);
         assert_eq!(received[0], received[1]);
     }
 
@@ -772,9 +798,49 @@ mod tests {
             /dev/vda1 / ext4 rw 0 0\n";
 
         assert_eq!(
-            data_mounts(mounts),
+            data_mounts(mounts.as_bytes()),
             vec!["/".to_owned(), "/var/lib/my data".to_owned()]
         );
+    }
+
+    #[test]
+    fn mount_table_read_stops_at_the_byte_bound_even_in_one_unterminated_line() {
+        struct Counted {
+            bytes: usize,
+        }
+        impl Read for Counted {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                buffer.fill(b'x');
+                if self.bytes == 0 {
+                    let prefix = b"/dev/root /truncated ext4 ";
+                    buffer[..prefix.len()].copy_from_slice(prefix);
+                }
+                self.bytes += buffer.len();
+                assert!(self.bytes <= MAX_MOUNT_TABLE_BYTES as usize);
+                Ok(buffer.len())
+            }
+        }
+        let mut input = Counted { bytes: 0 };
+        assert!(data_mounts(&mut input).is_empty());
+        assert_eq!(input.bytes, MAX_MOUNT_TABLE_BYTES as usize);
+    }
+
+    #[test]
+    fn mount_table_read_stops_after_64_unique_data_mounts() {
+        let mut table = String::from("tmpfs /run tmpfs rw 0 0\n");
+        for index in 0..MAX_FILESYSTEMS {
+            table.push_str(&format!("/dev/data /data/{index} ext4 rw 0 0\n"));
+            table.push_str(&format!("/dev/data /data/{index} ext4 rw 0 0\n"));
+        }
+        let prefix = table.len();
+        table.push_str(&"tmpfs /ignored tmpfs rw 0 0\n".repeat(100_000));
+        let mut input = std::io::Cursor::new(table.as_bytes());
+        let mounts = data_mounts(&mut input);
+        assert_eq!(mounts.len(), MAX_FILESYSTEMS);
+        assert_eq!(mounts[0], "/data/0");
+        assert_eq!(mounts[63], "/data/63");
+        // BufReader can read ahead by one buffer, never the remaining mount table.
+        assert!(input.position() <= (prefix + 8192) as u64);
     }
 
     #[test]
@@ -908,11 +974,13 @@ mod tests {
             mount: "/".into(),
             size: 100,
             free: 40,
+            observed_at: "2026-11-09T00:00:00Z".into(),
+            stale: true,
         }];
 
         assert_eq!(
             host_data("linux", "x86_64", &fs),
-            json!({"os": "linux", "arch": "x86_64", "filesystems": [{"mount": "/", "size": 100, "free": 40}]})
+            json!({"os": "linux", "arch": "x86_64", "filesystems": [{"mount": "/", "size": 100, "free": 40, "observed_at": "2026-11-09T00:00:00Z", "stale": true}]})
         );
     }
 

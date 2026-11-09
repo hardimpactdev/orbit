@@ -11,7 +11,7 @@ use App\Models\TaskVm;
 /**
  * Guards workspace ownership on task VMs: a Node with a live task VM serves only its group's
  * workspace, and a `vm` group works only in that workspace. A live task VM is any row that is
- * not Destroyed. Placement of the VMs themselves is {@see TaskVmPlacementPolicy}.
+ * not Destroyed. Placement of the VMs themselves is {@see TaskVmCapacity}.
  */
 final class TaskVmWorkspaceGuard
 {

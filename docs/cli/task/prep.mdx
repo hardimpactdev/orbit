@@ -23,7 +23,7 @@ The route needs a Node with an access grant to the Gateway and a required `Idemp
 | `brief` | Optional, up to 8,000 characters. What to change, for every agent of the run. |
 | `reference` | Optional, up to 80,000 characters. Text for the author only, such as the files of a sibling spec that is not on the default branch yet. |
 
-The run takes its mode from the review mode of the group, `manual` or `automatic`, at admission. In manual mode a succeeded run parks the task VM while the spec waits for the owner; in automatic mode nothing parks.
+The run takes its mode from the review mode of the group, `manual` or `automatic`, at admission. In both modes a succeeded run deletes the task VM while the spec waits for review. The build claims a fresh task place.
 
 ## How it works
 

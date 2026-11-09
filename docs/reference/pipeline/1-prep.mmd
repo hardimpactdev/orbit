@@ -103,12 +103,10 @@ sequenceDiagram
   %%> Why:
   %%> - the spec commit changes documentation only, so CI runs the docs checks and never the proof CI; the proof CI starts with the code
   alt manual mode
-    Note over GW: Park the VM<br/>the spec waits for the owner
+    Note over GW: Release the VM<br/>the spec waits for the owner
     %%> What it does:
-    %%> - when the run ends, the Gateway records the draft PR and admits `task:park` for the group, which stops the VM; the workspace stays
-    %%> - a refused park is kept in the result as `park_refused`
+      %%> - after publication, release the VM, workspace, identity, keys and peer; later work claims a task place again
     %%> Decided by the orchestrator, for Nick's review:
-    %%> - the park follows the mode and needs no step in the run, like the park after `task:prep-fix`
     opt spec checkpoint
       opt Nick reviews in an Instance
         NK->>GW: Create an Instance<br/>instance:create --branch=BRANCH
@@ -127,7 +125,7 @@ sequenceDiagram
       %%> - a wrong spec is cheapest to fix before code follows it
       GW->>GH: Read the reviews<br/>gate check · every minute
       %%> What it does:
-      %%> - the gate check of stage 4 reads the reviews of a draft PR whose group has a succeeded prep run, a parked VM and a build that has not started, when the owner has not approved the head, with a read-only App token; a group that is coding, or whose automatic mode parked nothing, is not read
+      %%> - the gate check of stage 4 reads the reviews of a draft PR whose group has a succeeded prep run, no active work and a build that has not started, when the owner has not approved the head, with a read-only App token; a group that is coding, or whose automatic mode parked nothing, is not read
       %%> - Nick's latest decision on exactly this head, a request for changes, is the request for corrections; his review text and his inline comments are the corrections
       %%> - a comment, an approval, a dismissed review, a review of an older head or no review is a quiet skip until the next tick
       %%> Why:
@@ -139,8 +137,8 @@ sequenceDiagram
       %%> When:
       %%> - only when Nick asks for corrections
       %%> Result:
-      %%> - the parked prep group resumes: the author agent gets the review as its prompt and applies it as a new commit, the runner plan and a review round check it, and the App pushes it to the same draft PR
-      %%> - the group then parks again
+      %%> - the prep group claims a fresh task place: the author agent gets the review as its prompt and applies it as a new commit, the runner plan and a review round check it, and the App pushes it to the same draft PR
+      %%> - the group then releases its VM again
       %%> Built or not:
       %%> - built: `task:prep-fix`, with the review of the owner as its input (`docs/cli/task/prep-fix.mmd`)
       %%> - built: the gate check admits this run when the owner requests changes on the current head of a spec whose build has not started; it detects the approval too, which starts the build (below)
@@ -156,7 +154,7 @@ sequenceDiagram
     %%> Why:
     %%> - the review agents' clean pass is the spec approval; the final self-review in stage 4 reads the whole PR
     %%> What it does:
-    %%> - parks nothing: the VM keeps running
+    %%> - releases the VM; the build claims a fresh task place
   end
   SW-->>GW: Record the outcome<br/>spec in draft PR
   %%> Result:

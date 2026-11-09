@@ -965,7 +965,7 @@ it('registers one task family with direct selectors and no old aliases', functio
     sort($names);
     expect($names)->toBe([
         'task:agent:list', 'task:agent:show', 'task:cancel', 'task:check', 'task:comment:create', 'task:comment:list',
-        'task:complete', 'task:create', 'task:destroy', 'task:egress', 'task:list', 'task:park', 'task:publish',
+        'task:complete', 'task:create', 'task:destroy', 'task:egress', 'task:list', 'task:publish',
         'task:question:close', 'task:question:list', 'task:show', 'task:start', 'task:status', 'task:turn', 'task:update',
     ])->and(array_filter(array_keys($commands), static fn (string $name): bool => str_starts_with($name, 'tasks:')))->toBe([]);
     foreach (['task:check', 'task:turn', 'task:cancel', 'task:destroy', 'task:show', 'task:update', 'task:comment:create', 'task:comment:list'] as $name) {

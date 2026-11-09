@@ -101,7 +101,7 @@ final class ShowNodeMetricsCommand extends NodeCommand
         return self::SUCCESS;
     }
 
-    /** @param list<array{mount: string, used: int, total: int}> $disks */
+    /** @param list<array{mount: string, used: int|null, total: int|null, observed_at: string|null, stale: bool}> $disks */
     private function disksSummary(array $disks): string
     {
         if ($disks === []) {
@@ -109,7 +109,9 @@ final class ShowNodeMetricsCommand extends NodeCommand
         }
 
         return implode(', ', array_map(
-            fn (array $disk): string => "{$disk['mount']}: ".$this->bytesFraction($disk['used'], $disk['total']),
+            fn (array $disk): string => "{$disk['mount']}: "
+                .($disk['used'] === null || $disk['total'] === null ? '—' : $this->bytesFraction($disk['used'], $disk['total']))
+                .($disk['stale'] ? ' (stale)' : ''),
             $disks,
         ));
     }

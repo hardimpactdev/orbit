@@ -4,59 +4,64 @@ sidebarTitle: "node:role:add"
 description: "Add one role to a Node, or converge an existing role again."
 ---
 
+Add a role's packages, files, services, ports and Metrics membership to a Node. Use `--converge` to repair an existing assignment without removing it first.
+
 ```bash
-orbit node:role:add <node> <role> [--converge] [--postgres-process=ID] [--clickhouse-process=ID] [--json]
+orbit node:role:add <node> <role> [--converge] [--postgres-process=ID] [--clickhouse-process=ID] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `node` | yes | Numeric Node ID. |
+| `node` | yes | Positive numeric Node ID. |
 | `role` | yes | `app-dev`, `app-prod`, `ingress`, `database`, `websocket`, `analytics`, `ci-runner`, `metrics`, `gateway`, or `swamp`. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--converge` | off | Converge a role the Node already has. It works for a role that is `active`, `failed` at a `converge:` step, or `provisioning` for more than 11 minutes with no operation holding the Node's role lock. |
-| `--postgres-process=ID` | none | For `analytics` only, also with `--converge`: the PostgreSQL 16 Process that holds the Plausible accounts. |
-| `--clickhouse-process=ID` | none | For `analytics` only, also with `--converge`: the ClickHouse Process that holds the events. |
-| `--json` | off | Print the final Operation as JSON. |
+| `--converge` | off | Repair an assignment that is `active`, `failed` at a `converge:` step, or `provisioning` for at least 11 minutes with no Operation holding the Node. |
+| `--postgres-process=ID` | none | For `analytics`, including convergence: the storage Process for PostgreSQL 16 or managed PostgreSQL 18. See [Analytics storage requirements](/reference/analytics#prepare-the-database-processes). |
+| `--clickhouse-process=ID` | none | For `analytics`, including convergence: the ClickHouse storage Process. See [Analytics storage requirements](/reference/analytics#prepare-the-database-processes). |
+| `--idempotency-key=KEY` | generated | [Shared request replay rules](/reference/operations#retry-a-start-with-a-key). |
+| `--json` | off | [Shared machine-output rules](/reference/cli-ux#input-and-output-modes). |
 
 ```bash
 orbit node:role:add 7 database
-orbit node:role:add 7 metrics --converge
+orbit node:role:add 7 database --converge
 orbit node:role:add 9 analytics --postgres-process=41 --clickhouse-process=42
 ```
 
-In a terminal, an omitted Node is chosen from an interactive list and an omitted role from the roles you can add. For `analytics`, the terminal lists the Docker Processes that run the right image and asks for each missing option. A noninteractive or `--json` call that omits one is refused with `node.id_invalid` for the Node, or `validation.failed` for the role, or `node_role.storage_process_required` for a missing Analytics Process, and sends no request. The [Analytics role](/reference/analytics) page describes that role.
+[Shared input rules](/reference/cli-ux#input-and-output-modes) govern omitted arguments and Analytics storage options. Access follows the [Node family's shared authority rule](/cli/node#authority). [Role compatibility](/reference/node-provisioning#role-compatibility) owns conflicts, singleton roles and ingress Cluster requirements; the [CI runner reference](/reference/node-provisioning#ci-runner-role) describes that role's host boundary.
 
-`vpn` and `router` fail with `validation.failed` and `Role [ROLE] is protected from generic mutation.` A role that conflicts with one the Node holds fails with `validation.failed` before anything changes. [Role compatibility](/reference/node-provisioning#role-compatibility) lists the pairs. A singleton role such as `gateway`, `websocket`, `metrics`, `analytics` or `swamp` that already has a holder is refused. [`node:role:relocate`](/cli/node/role-relocate) moves `gateway`, `websocket` and `metrics`; `swamp` cannot be moved. A role that is already on the Node is refused unless you pass `--converge`, except an `active` `ingress` role, which may be added again. Converging a role the Node does not hold is refused. `ingress` needs Cluster membership and allows one per Cluster, and `database` needs a WireGuard address.
-
-Adding or converging roles on one Node runs one Operation at a time. A second call while the Node is held fails with `operation.target_busy` (HTTP 409) before role state changes. The CLI follows the Operation and prints the final result with the request ID.
-
-The role's packages, files, services, ports, firewall rules and Metrics configuration are applied as idempotent state, and a final check must pass before the assignment becomes `active`. A second convergence reports no changes. Application roles converge the configured storage directory's owner and mode. Protected paths, including the managed user's home itself, are refused before host work. Role addition and convergence install no Node agent or Orbit CLI; [`node:converge`](/cli/node/converge) owns them.
-
-A `provisioning` assignment with no operation holding the Node for 11 minutes is a stale claim, left by an interrupted run; `--converge` takes it over. A failed first add leaves the assignment recorded as `failed`; fix its cause and use `--converge`. Running services keep their last valid configuration, and Caddy never reloads one that fails validation. A failed `--converge` of an `active` role leaves it `active`, so a role such as `gateway` is never taken out of service by a failed run. The failed step and its error code stay on the Operation, and `doctor` shows the drift. Finished host changes remain.
-
-Run files that hold the intent, role credentials and private configuration are mode `0600` and are removed after success or failure. Grafana's file belongs to the `orbit-grafana` system account at its container UID and GID, `472`. Neither the Operation inputs nor command arguments contain these values.
-
-The [`ci-runner` role](/reference/node-provisioning#ci-runner-role) prepares the Incus host boundary without creating or registering containers. It cannot share `gateway` or `vpn`. Add it to CI-only hosts and alongside a build host's existing roles through this command.
-
-Metrics firewall rules use the admitted interface, source, destination and ownership comment. Convergence repairs changed owned rules and puts each specific allow before its isolation deny and the broader peer trust rule. It preserves unrelated rules.
-
-Adding `gateway` grants the new Gateway Node access to the active `vpn` and `metrics` Nodes, when they are other Nodes. Adding or converging `gateway` installs the Gateway's static runtime: its PHP-FPM pool, the agent-view and hibernator units, and the host log-retention files. It also stops and removes the old release unit timer and services, and the Documents PHP-FPM start hook. Converge the gateway role only while the current release runs the automatic tick from the scheduler. Prefer [`node:role:relocate`](/cli/node/role-relocate) to move `gateway`, `websocket`, or `metrics`.
-
-## Errors
-
-| Code | Meaning |
-| --- | --- |
-| `node.id_invalid` | The Node is missing or is not a positive integer, and the CLI cannot prompt. |
-| `validation.failed` | The role is unknown, protected, already on the Node, not on the Node when converging, in conflict with another role, or a singleton that has a holder. Nothing changes. |
-| `node_role.storage_process_required`, `analytics.settings_missing` | An Analytics Process option or setting is missing. |
-| `database.wireguard_ip_missing` | A `database` role needs a Node with a WireGuard address. |
-| `operation.kind_unavailable` | The Node is not active, not Linux, or not managed over SSH. |
-| `operation.target_busy` | Another add or converge holds the Node. |
-| `node_access.required` | The caller has no access grant to the Node. |
+A repeat without `--converge` is refused with `validation.failed`, except for an `active` `ingress` assignment, which reapplies its configuration. A successful second convergence reports no changes when the Node already matches. To move `gateway`, `websocket` or `metrics`, use [`node:role:relocate`](/cli/node/role-relocate).
 
 ## How it works
 
 <div className="flow-at" data-chart="node/role-add"></div>
 <div className="flow-at" data-chart="node/role-converge"></div>
+
+Orbit checks recorded preconditions before changing the Node and allows one add or convergence at a time on it. The final check must pass before a new assignment becomes `active`. Role work does not install the Node agent or Orbit CLI; [`node:converge`](/cli/node/converge) owns them.
+
+Application roles apply the configured storage directory's owner and mode. Orbit refuses protected storage paths before changing the Node. Tool Manager setup reruns its commands only when the admitted pin or lock changes.
+
+For `swamp`, convergence keeps serve and active workers running. Its renewal timer drains one of three permanent workers at a time while two serve. It also repairs an existing compile cache's ownership and readability, then checks it without running a compilation.
+
+For `gateway`, [Node provisioning](/reference/node-provisioning#add-a-node) lists the runtime this role owns. Converge it only with a release whose scheduler owns the automatic tick. Adding the role grants that Node access to active `vpn` and `metrics` Nodes on other machines.
+
+A failed first add leaves the assignment `failed`, with its failed step and error code. Finished changes remain; after correcting the cause, use `--converge`. A failed convergence of an `active` assignment leaves it active. Orbit validates Caddy configuration before reloading it. Use [`node:role:list`](/cli/node/role-list) for recorded assignment state and [`doctor`](/cli/doctor) for drift.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `node.id_invalid` | The supplied Node selector is not a positive numeric ID. |
+| `http.404` | The Node is not recorded. |
+| `node_access.required` | The shared Node authority rule refuses the caller. |
+| `validation.failed` | Invalid role, protected `vpn` or `router`, incompatible assignment, singleton or Cluster violation, ineligible convergence, a repeat that requires convergence, or Analytics options supplied for another role. |
+| `operation.kind_unavailable` | The Node is not active Linux with recorded SSH management. |
+| `operation.target_busy` | Another Operation holds the Node; the refused call creates no Operation and changes no assignment. |
+| `database.wireguard_ip_missing` | `database` requires the Node's recorded WireGuard address. |
+| `node_role.storage_process_required`, `analytics.settings_missing` | An Analytics storage selector or setting is missing or invalid. |
+| `analytics.*`, `process.wireguard_ip_missing` | A storage Process does not meet the [Analytics requirements](/reference/analytics#assign-the-role). |
+| `node.settings_path_invalid`, `node.settings_path_protected`, `node.settings_path_managed` | The configured storage path is invalid, protected, or overlaps a managed checkout. |
+| `role.os_unsupported` | The Node does not run an admitted Ubuntu release. |
+
+An execution failure reports the failed step and its error code on the Operation, rather than an admission refusal.

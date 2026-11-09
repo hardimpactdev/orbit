@@ -24,7 +24,7 @@ orbit node:update <node> [--name=NAME] [--platform=PLATFORM] [--apps-path=PATH] 
 orbit node:update 3 --name=vpn
 orbit node:update 5 --platform=ipados
 orbit node:update 7 --apps-path=/mnt/apps
-orbit node:update 9 --task-vms='{"cidr":"10.251.77.0/24","max_vms":4,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
+orbit node:update 9 --task-vms='{"cidr":"10.251.77.0/24","task_places":2,"ci_places":2,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
 ```
 
 The command needs at least one option. In a terminal, an omitted Node is chosen from an interactive list; without a terminal, or with `--json`, it is refused with `node.id_invalid`. Only an apps folder change runs on the Node. Every other change is a record that Orbit saves at once without contacting the machine.

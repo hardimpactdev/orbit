@@ -196,6 +196,12 @@ export function classifyCi(
             : "configuration";
     if (!named.length) {
         if (
+            rows.some((row) =>
+                row.app.slug === "github-actions" && row.head_sha === commit &&
+                row.status !== "completed"
+            )
+        ) return reply("pending", null);
+        if (
             suiteRows.length &&
             suiteRows.every((row) => row.status === "completed")
         ) return reply("failed", suiteFault());

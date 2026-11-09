@@ -15,6 +15,7 @@ use App\Domain\Proof\ProofRunWatch;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Operation;
+use App\Models\Task;
 use Illuminate\Support\Facades\DB;
 
 /** Cancels unstarted intent; a bound native workflow owns its terminal result, and Swamp stops it. */
@@ -40,6 +41,9 @@ final readonly class CancelOperationAction
         });
 
         $operation->refresh();
+        if ($operation->status === OperationStatus::Cancelled && isset($operation->input['capacity_request']) && $operation->target_type === 'task_group') {
+            Task::topLevel()->whereKey($operation->target_id)->update(['capacity_wait_reason' => null]);
+        }
         // A kind that left the registry has no run to stop and no reconciler read: the request ends it here.
         if (! $operation->status->terminal() && RetiredOperationSettlement::retired($operation)) {
             return app(RetiredOperationSettlement::class)->settle($operation);

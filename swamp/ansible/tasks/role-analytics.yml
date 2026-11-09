@@ -1,0 +1,36 @@
+---
+- name: Pull the Analytics image
+  community.docker.docker_image:
+    name: "{{ analytics.intent.installation.definition.image }}"
+    source: pull
+- name: Initialize the Analytics database
+  ansible.builtin.command: { argv: "{{ item.argv }}" }
+  loop: "{{ analytics.initialize }}"
+  loop_control: { label: "{{ item.name }}" }
+  changed_when: true
+  no_log: true
+- name: Select Analytics runtime mounts
+  ansible.builtin.set_fact: { analytics_mounts: [] }
+- name: Compose Analytics runtime mounts
+  ansible.builtin.set_fact:
+    analytics_mounts: "{{ analytics_mounts + [item.source ~ ':' ~ item.target ~ (':ro' if item.read_only else '')] }}"
+  loop: "{{ analytics.intent.installation.definition.mounts }}"
+- name: Apply the Analytics runtime
+  community.docker.docker_container:
+    name: "{{ analytics.intent.control.name }}"
+    image: "{{ analytics.intent.installation.definition.image }}"
+    state: started
+    restart_policy: "{{ analytics.intent.installation.definition.restart }}"
+    command: "{{ analytics.intent.installation.definition.command }}"
+    command_handling: correct
+    working_dir: "{{ analytics.intent.installation.definition.working_directory | default(omit, true) }}"
+    env_file: "{{ analytics.intent.installation.environment_path }}"
+    volumes: "{{ analytics_mounts }}"
+    published_ports: "{{ analytics.intent.installation.definition.ports }}"
+    labels:
+      orbit.managed: 'true'
+      orbit.container.kind: process
+      orbit.process.id: "{{ analytics.process_id | string }}"
+      orbit.process.spec: "{{ analytics.intent.installation.spec }}"
+    comparisons: { volumes: strict, published_ports: strict }
+  no_log: true

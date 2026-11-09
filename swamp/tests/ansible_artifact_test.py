@@ -15,7 +15,7 @@ spec.loader.exec_module(artifact)
 
 
 class ArtifactTest(unittest.TestCase):
-    def download(self, codes, bodies=None, existing=None):
+    def download(self, codes, bodies=None, existing=None, algorithm="sha256"):
         with tempfile.TemporaryDirectory() as folder:
             dest = Path(folder) / 'package.deb'
             if existing is not None:
@@ -28,7 +28,7 @@ class ArtifactTest(unittest.TestCase):
                 return codes[index], '', ''
             module = SimpleNamespace(params={
                 'urls': ['https://mirror.test/pin.deb', 'https://upstream.test/pin.deb'],
-                'dest': str(dest), 'sha256': hashlib.sha256(b'pinned').hexdigest(),
+                'dest': str(dest), algorithm: hashlib.new(algorithm, b'pinned').hexdigest(),
                 'transport_exit_codes': json.loads((ROOT / 'ansible/transport-exit-codes.json').read_text()),
             }, check_mode=False, run_command=run)
             result = artifact.fetch(module)
@@ -70,6 +70,19 @@ class ArtifactTest(unittest.TestCase):
         self.assertTrue(result['failed'])
         self.assertEqual(len(calls), 1)
         self.assertEqual(content, b'old')
+
+    def test_tool_manager_sha512_fetches_keep_transport_only_fallback_and_integrity(self):
+        result, calls, content = self.download([22, 0], algorithm='sha512')
+        self.assertTrue(result['published'])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(content, b'pinned')
+        result, calls, content = self.download([0], [b'corrupt'], existing=b'old', algorithm='sha512')
+        self.assertTrue(result['failed'])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(content, b'old')
+        result, calls, content = self.download([], existing=b'pinned', algorithm='sha512')
+        self.assertFalse(result['changed'])
+        self.assertEqual(calls, [])
 
     def test_local_publication_failure_stops_and_cleans_staging(self):
         with patch.object(artifact.os, 'replace', side_effect=OSError('write failed')):

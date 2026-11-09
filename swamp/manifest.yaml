@@ -1,16 +1,40 @@
 manifestVersion: 1
 name: '@nckrtl/ansible-input'
-version: 2026.11.08.3
+version: 2026.11.09.1
 visibility: private
 license: MIT
 description: Private intent files and shipped playbooks for Ansible phases.
 behaviors:
   - operations/ansible-input/write.ts
 additionalFiles:
+  - ansible/proof-gateway.yml
+  - ansible/tasks/proof-gateway-release.yml
+  - proof/cli-release.json
   - ansible/library/orbit_artifact.py
   - ansible/tasks/artifact-fetch.yml
   - ansible/transport-exit-codes.json
   - ansible/operation-node-role-add.yml
+  - ansible/operation-node-converge.yml
+  - ansible/tasks/node-role-runtime.yml
+  - ansible/tasks/node-converge-base.yml
+  - ansible/tasks/node-converge-replace.yml
+  - ansible/tasks/node-converge-software.yml
+  - ansible/tasks/node-converge-software-plan.yml
+  - ansible/tasks/node-converge-software-check.yml
+  - ansible/tasks/javascript-version.yml
+  - ansible/tasks/node-converge-browser.yml
+  - ansible/tasks/node-converge-role.yml
+  - ansible/tasks/node-converge-role-check.yml
+  - ansible/tasks/node-converge-tool.yml
+  - ansible/tasks/node-converge-tool-repository.yml
+  - ansible/tasks/node-converge-network.yml
+  - ansible/tasks/node-converge-hub.yml
+  - ansible/tasks/node-converge-address.yml
+  - ansible/tasks/node-converge-handshake.yml
+  - extensions/behaviors/operations/ansible-input/converge_tool.ts
+  - extensions/behaviors/operations/tools/native.ts
+  - extensions/behaviors/operations/tools/contract.ts
+  - extensions/behaviors/operations/tools/constraints.ts
   - ansible/operation-instance-create.yml
   - ansible/route-create-site.yml
   - ansible/route-withdraw.yml
@@ -25,7 +49,15 @@ additionalFiles:
   - ansible/tasks/apt-proxy.yml
   - ansible/tasks/gateway-swamp.yml
   - ansible/tasks/gateway-swamp-remint.yml
+  - ansible/tasks/gateway-swamp-grants.yml
+  - ansible/tasks/gateway-ansible-collections.yml
   - ansible/tasks/php.yml
+  - ansible/tasks/role-tool-manager.yml
+  - ansible/tasks/role-analytics.yml
+  - ansible/tasks/role-swamp.yml
+  - ansible/tasks/role-publication-read.yml
+  - ansible/tasks/role-publication-php.yml
+  - ansible/tasks/role-publication-dns.yml
   - ansible/tasks/exporter.yml
   - ansible/tasks/exporter-pool.yml
   - ansible/tasks/metrics.yml
@@ -39,6 +71,8 @@ additionalFiles:
   - ansible/tasks/firewall.yml
   - ansible/tasks/ci.yml
   - ansible/task-vm-role.yml
+  - ansible/task-host-firewall-remove.yml
+  - ansible/tasks/task-host-firewall-remove.yml
   - ansible/task-vm-host.yml
   - ansible/tasks/task-vm-host-prepare.yml
   - ansible/task-vm-start.yml

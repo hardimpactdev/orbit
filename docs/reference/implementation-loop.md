@@ -3,7 +3,7 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,test,ci-cache-ref,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
+  - bin/{review-check,test,ci-build-plan,ci-cache-ref,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy}.py,swamp/bin/check-swamp-shape.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
@@ -35,6 +35,8 @@ The review records enough evidence for another maintainer to assess the result.
 
 Store detailed logs in CI artifacts or in shared evidence outside the checkout, and link them from the review. Share only sanitized records. When no machines are available, the reviewer returns code findings and marks the Incus review as pending. For documentation and tooling changes, verify the behavior that the change affects.
 
+CI compares proof case definitions at the merge base and head before starting the proof job. The runner expands both files once; CI publishes its selection for the Gateway to consume. Missing or invalid results select whole files. [Choose the cases](/reference/feature-flow#choose-the-cases) defines those rules.
+
 ## After review
 
 Address the blocking findings. Reviewers check the fixes and repeat the affected checks on the updated pull request. The final review must cover the head that the gate reads. The gate and the merge are [stage 4](/reference/command-development-pipeline#4-pr-and-ci). After the merge, keep the review evidence and release the resources allocated to the feature. For a local worktree, run `bin/worktree-remove ISSUE`.
@@ -55,8 +57,8 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and every night, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Only for changes under `swamp/proof/` or shared CI inputs: run the case runner unit tests and lint the proof programs with `ruff` |
-| Proof request and assertions (optional) | Prove a pull request head with `orbit proof:run` when a changed path selects a command. Not in Required checks yet, see [the proof run job](#the-proof-run-job) |
-| Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
+| CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. Required checks requires its success, including the outside proof for a fork; see [the proof run job](#the-proof-run-job) |
+| Required checks | Require every selected build, static check and PR proof to succeed; only an explicitly untouched job may skip |
 
 The Swamp gate rejects a new behavior name that carries a run id. A task workflow names its local and data steps by the address of the task VM, as [Behavior names](/reference/tasks#behavior-names) says.
 
@@ -66,44 +68,17 @@ Runner containers are unprivileged. Install or repair their toolchain with `tool
 
 ### The proof run job
 
-`proof-run` in `.github/workflows/ci.yml` is the CI job of [the proof CI](/reference/feature-flow#the-proof-ci). It is **report-only**. It is not in the `needs` of `Required checks`, so a red proof run does not block a merge. One firewall run has passed end to end. Complete coverage and reliable admission still need review; Nick decides when proof becomes required.
+`proof-run` in `.github/workflows/ci.yml` is part of `Required checks` when a pull request's changed paths select commands. It passes only the full head SHA and an idempotency key to Orbit. A new push cancels the previous proof. A fork needs the trusted base-branch workflow, a maintainer's approval of the head and the `run-proofs` label; fork code never runs on the managed runner. That workflow publishes `Orbit outside proof` on the exact head. Required checks reads its latest trusted status and fails if it is missing, pending or failed. After the outside proof succeeds, rerun the failed Required job.
 
-**When it runs**
+CI proofs join one FIFO admission queue. Its front takes every free usable CI place up to its number of batches. Orbit balances whole batches by measured case time, runs them on fresh VMs, merges the verdicts and deletes the VMs. Capacity waits within a two-hour admission budget and then fails clearly. See [proof:run](/cli/proof/run).
 
-- `bin/ci-build-plan` reads `swamp/proof/selection.txt`, the list that `orbit proof:run` reads. It uses the same glob rules, and the last matching line wins.
-- A path that selects a command or `*` starts the job.
-- A `skip` or `none:` line never starts it. Documentation, charts and case descriptions never start it.
-- A path that matches no line starts it. Then `proof:run` refuses the path with `proof.path_unmapped`.
-- The plan prints the result as the output `proof_run`. It stays out of `jobs`, because `Required checks` reads every entry of `jobs`.
+A clean CLI exit is insufficient: the job requires a passing result with case verdicts for every selected command. A failed case, an unrun case, a missing result or a selected command with no verdict fails. A result with no selected command passes. A capacity message with no cases always fails; it has no successful skip classification.
 
-The job follows these rules for pull requests:
+The job summary lists case verdicts and uncovered paths. The `proof-receipt` artifact records the commit, operation, selected commands, outcome and idempotency key. It excludes execution input and host settings. Reports use full Swamp output artifacts because native history summaries keep only 4 KiB.
 
-- The job runs on every push of a pull request from a branch of this repository.
-- A fork pull request never runs it. There is no merge queue, so no `merge_group` run, and no run after the merge.
-- A new push cancels the proof run of the previous push on the same pull request. The job uses `concurrency` with `cancel-in-progress`.
-- A cancelled job signals `bin/ci-proof-run`. The script passes the signal to `orbit`, and Orbit cancels its run.
+The job holds no secret. The runner's CLI acts as its enrolled Node from its WireGuard address, with an access grant to the Gateway. Only an active authenticated `ci-runner` Node gets the CI pool. The default labels are `self-hosted, hardimpact, orbit-shard`; `ORBIT_PROOF_RUNNER` can supply a JSON list of labels. The 195-minute job timeout covers two hours of admission, execution and cancellation.
 
-**What it does**
-
-The authenticated caller Node needs an active `ci-runner` role to use CI capacity. Orbit records this eligibility before queueing admission and binds idempotency to the caller. CI prefers `ci_only` hosts, then shared hosts with a CI/refresh reserve. Task work and operator proofs cannot use either. Busy CI admission retries every 20 seconds for up to 200 seconds. Another proof cannot preempt CI.
-
-- The job checks out only `bin/ci-proof-run`.
-- The script passes the full SHA of the pull request head to `orbit proof:run --json`. It also passes the idempotency key `ci-proof.<run id>.<attempt>`. It chooses no cases.
-- The script follows the operation until it ends.
-- Explicit report-only admission refusals for `tasks.capacity_unavailable`, with no case rows and a known command selection, record **not run: capacity unavailable**.
-- The request report succeeds and the separate optional assertion check skips. This is never a passing proof.
-- Other nonzero exits, missing results and case verdicts other than `passed` stay red.
-- The `proof-receipt` artifact records the commit, operation, selected commands, outcome and idempotency key. It excludes execution input and host details.
-- The job summary lists the cases, the uncovered paths and the receipt link. It holds no command output.
-
-**Where it runs**
-
-- The job holds no secret.
-- The `orbit` CLI on the runner calls the Gateway from the runner's WireGuard address. It acts as the enrolled Node of that address. That Node needs an access grant to the Gateway Node.
-- The job uses the labels `self-hosted, hardimpact, orbit-shard`. Set the repository variable `ORBIT_PROOF_RUNNER` to a JSON list of labels to move it.
-- The timeout is 45 minutes.
-
-`bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds.
+`bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. A change under `apps/gateway/resources/agent/` also selects that job: it downloads the pinned Linux agent, verifies its checksum, and checks that its `contract` output exactly matches the frozen command file. Shared workflow, script and tooling changes select all builds.
 
 Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. A run whose token the Gateway writes to a vault key, such as `task:sync` with `task-sync-token-<uuid>`, adds its key pattern there. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp). The CI run on `main` selects builds the same way.
 
@@ -125,7 +100,7 @@ The gate requires `passed`, `wouldStart` and the full grant-file count; a refusa
 
 Swamp check selection follows their inputs. Shape policy changes select the shape gate; baseline and analyser inputs also select the Operation tests that read them. Ansible changes also select Operation tests that read the playbooks. Workflows, grants, extension sources and shared runtime pins select shape, native validation and Operation tests. Swamp prose and skills select Docs only; shared CI or unclassified tooling changes keep the broad check set. New application, package or top-level source roots fail planning until their checks are declared.
 
-Inside the shape job, pinned tool and collection setup runs first. Independent Ansible lint, Python fixtures and Deno checker tests then share at most four command slots, with one Deno worker per command and separate temporary files. Baseline and ratchet checks stay serial, and every failure remains in the final result.
+Inside the shape job, pinned tool and collection setup runs first. Independent Ansible lint, Python fixtures and Deno checker tests then share at most four command slots, with one Deno worker per command and separate temporary files. Ansible lint and the Deno fixtures receive the same pinned collection path, so a role include does not depend on collections installed in the worker's home. Baseline and ratchet checks stay serial, and every failure remains in the final result.
 
 
 Unit tests run in one job with four Deno workers. Keeping one job avoids five separate waits for the shared runner pool.
@@ -161,7 +136,7 @@ Rust CI caches the Cargo registry, Git dependencies and `apps/agent/target`. An 
 
 Run `bin/check-operation-kinds` to repeat the registry check locally. It uses the real Gateway container, loads every family declaration and resolves its PHP executor or Swamp completion and execution handlers plus its named transports. Any loading or resolution failure exits nonzero. CI supplies a public fixture encryption key and requires no Gateway database. Constructor dependencies defer resource reads until their first use. The check runs no Operation, reads no resource records and contacts no Node. Families register a kind only after the Gateway enforces its required contracts.
 
-The planned proof CI job `Proofs` will be part of the one CI result and is not built yet; [the proof CI](/reference/feature-flow#the-proof-ci) describes it. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies include the selected Pi and Rust checks. The complete CI run must also finish successfully before the CLI release workflow publishes.
+The proof CI is part of the one CI result; [the proof CI](/reference/feature-flow#the-proof-ci) describes it. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies include the selected Pi and Rust checks. The complete CI run must also finish successfully before the CLI release workflow publishes.
 
 Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 

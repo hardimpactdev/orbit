@@ -19,8 +19,8 @@ sequenceDiagram
   %%> - changes nothing on GitHub
   Note over GW: Admit the build<br/>prep group · head
   %%> Requirements:
-  %%> - the group is open and external, with a succeeded `tasks.prep` run and no other subtask than its completed spec subtask: `waiting_for_review` after a manual prep, `running` after an automatic one or after a park that was refused
-  %%> - its task VM is parked or ready with its Pi credential, and no build was admitted for it before
+  %%> - the group is open and external, with a succeeded `tasks.prep` run and no other subtask than its completed spec subtask: `waiting_for_review` after publication
+  %%> - a task place is available, or admission waits, and no build was admitted for it before
   %%> - the PR is open and a draft, and its head is the approved head
   %%> - no other task runs on the group; the Gateway holds one lock per group
   %%> What it does:
@@ -35,6 +35,12 @@ sequenceDiagram
   %%> - the whole intent above and the vault key names of the Pi, VM and read-token credentials, never their values
   %%> Decided by the orchestrator, for Nick's review:
   %%> - no step of the run calls the Gateway: as it starts the run, the Gateway mints the read token of the sync child, writes it and the Pi token to their vault keys, and passes only the key names
+  opt the previous VM was released
+    SW->>VM: Claim a task place<br/>operation-task-provision
+    %%> What it does:
+    %%> - waits for a task place, up to two hours, then creates a fresh VM from the base at the published task head
+    %%> - records a fresh identity, workspace and Pi session; no review holds a VM
+  end
   opt the VM is parked
     SW->>VM: Resume the VM<br/>operation-task-vm-resume
     %%> What it does:

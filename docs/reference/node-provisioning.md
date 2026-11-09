@@ -83,6 +83,8 @@ Admission records a provisioning Node and freezes its public resource plan. Boot
 
 Each role in the intent names its execution copies as a record: `{}` for a role without any.
 
+Generated Ansible vars preserve literal intent values. Only strings containing Jinja syntax receive `!unsafe`; quoted shell arguments such as `!` and scalar strings such as `on` keep their string types.
+
 The execution copies of task runs are not role records. Their vault key patterns are declared in `swamp/config/gateway-workflow-grants.json`; the [implementation loop](/reference/implementation-loop) says how.
 
 The `baseline` phase replaces the Node pin on 209, and it validates the sudo rule before the rule replaces the old one. The `tunnel` phase requires the WireGuard public key to be unique, and an existing hub to keep its peer-facing key, before it changes any tunnel file, interface or peer.
@@ -349,76 +351,41 @@ To install, `@swamp/cfgmgmt/fetch` downloads the binary to `/usr/local/bin/orbit
 
 ## Converge the Orbit footprint
 
-The native workflow for `orbit node:converge <node> [--force]` records one immutable converge intent and starts one native Swamp DAG. The Gateway validates the target, captures safe desired footprint data and projects the bounded result. Swamp owns the Node-local effects, placement, dependencies and recovery. Fleet release rollout updates the observer and CLI separately; it does not run footprint convergence.
+`orbit node:converge <node> [--base | --roles=a,b] [--idempotency-key=KEY] [--json]` repairs one active, managed Linux Node against the release. It never runs `node:add`, changes an Instance, or adds or removes a role assignment, so a Node that owns Instances can converge. Fleet release rollout remains a separate CLI and observer publication path.
 
-Footprint convergence never changes an Instance, a Process unit, or a role, and it never runs `node:add`, so it works on a Node that owns Instances. Unsupported extension artifacts refuse before any Node effect, including when their recorded digest matches; a matching digest does not supply a missing native action.
+With no scope flag, the attempt includes Orbit's base and every recorded role. `--base` selects only the agent, CLI and Orbit-owned files and units. `--roles=a,b` selects the base plus the named existing assignments, and refuses an empty, unknown or unassigned role. The two flags are mutually exclusive. There is no `--force` or `--full` option.
 
-| Artifact | On which Node | Re-apply |
-| --- | --- | --- |
-| `agent` | Every managed Linux Node | The [agent converge](/reference/node-agent#install-and-upgrade). It restarts the agent only when a file changed |
-| `caddy-package` | A Node with a Caddy role or Caddy sites | The [Caddy package step](#package-sources). It installs Caddy only when it is missing or below the floor, so a running Caddy is not restarted |
-| `caddy` | A Node with a Caddy role or Caddy sites | The [Caddy build](/reference/caddy-configuration). Caddy validates a candidate first; a refused Caddyfile fails the part and the published one stays. It reloads Caddy gracefully, only when the Caddyfile changed |
-| `network` | Managed Linux Nodes with an active VPN hub | [WireGuard and split DNS](/reference/wireguard-endpoints#native-peer-convergence), applied last and guarded by its digest plus live public state |
-| `private-dns` | The `vpn` Node, when it is not the Gateway's | The [private-DNS](/reference/private-dns) listener release, units, records, and catalog. It restarts dnsmasq and the listener, then asserts that the listener loaded the new catalog |
-| `route-residue` | A Node that an [offline Route removal](/reference/routes#remove-a-route-from-an-unreachable-node) skipped | Caddy and PHP-FPM without the removed Route, then its certificates and firewall rules. A failure is `skipped` and retried later |
-| `php-runtime` | Every Linux Node with an active `app-dev` or `app-prod` role | The [managed PHP-FPM module](/reference/php-runtime#request-and-upload-limits) for the profile and active Instances. A change gracefully reloads valid active masters; `local.conf` stays unchanged |
-| `tmpfiles` | Every Linux Node with an active `app-dev` role | `/etc/tmpfiles.d/orbit.conf`, written with `@swamp/cfgmgmt/file`. The daily `systemd-tmpfiles-clean` run empties each `/tmp/orbit-*` and `/dev/shm/orbit-*` directory a day after its contents last changed. It removes no other path and restarts nothing |
-| `ai-router` | The [AI router](/reference/ai-router) collector's Node | The collector script. A changed script restarts the collector, a Node-owned Process |
+The Gateway validates recorded state without a live preflight, reserves the target and its first recorded VPN hub until settlement, and captures an immutable intent. Another converge that owns either reservation causes `operation.target_busy`. Unreachable machines fail during execution, not admission. The CLI validates inputs, calls the SDK and renders the Operation; the Gateway admits, records and projects; Swamp executes.
 
-Each role part runs in its own converge step, beside the others, so one part's failure never stops another. `Install Caddy`, `Publish Caddy sites`, `Install private DNS`, `Configure PHP-FPM` (once per PHP version) and `Clear Route residue` each call one child workflow of official `@swamp/cfgmgmt` steps. `Write the tmpfiles rule` is one `@swamp/cfgmgmt/file` step. The Gateway reads each part's outcome from its step in Swamp's run data. A failed residue cleanup is reported as `skipped` and never fails the task. No part rolls back.
+The native Swamp workflow runs these phases in order. Input preparation writes private inventory, variables and pinned SSH known hosts. Each machine phase invokes one tagged Ansible playbook, within the admitted scope.
 
-The native DAG runs on the workers on Node 209 and reaches each admitted target through pinned SSH. Role assignments stay unchanged. The network part starts only after the other required parts succeed. Admission reserves the Node and hub against another `node.converge`. A timed-out native run keeps that reservation until its terminal result is confirmed. A failed network part keeps its previous recorded digest for a later fix forward.
+| Phase | Work |
+| --- | --- |
+| `input` | Prepare this attempt's recorded roles, Tools, network and release pins, plus vault key references. Require the CLI pin before machine work. |
+| `agent` | Reconcile the pinned agent, versioned CLI, selection link, Orbit-owned configuration and units. Restart services only for managed changes. |
+| `software` | Read the selected pins from `recipe.json`, install them and hold the selected packages at those pins. |
+| `roles` | Repair the selected roles' configuration without changing an Instance or assignment. |
+| `tools` | Apply recorded Tools within scope, recording each Tool's own result and continuing after an individual Tool failure. |
+| `network` | Apply the recorded hub before the Node and wait for the handshake. A target hub is applied once; without peers it needs no handshake. |
+| `check` | Read back selected software, units, role configuration and recorded tunnel state. |
 
-The table lists the footprint artifacts in contract order. The native DAG installs the pinned agent first and refreshes its observer and persistent worker after the other footprint stages. The artifacts that [extensions contribute](/reference/extensions#plug-in-points), such as `ai-router`, come after core's. Each artifact has its own name.
+No recorded network in scope means no network mutation. DNS routing domains stay literal, including a domain such as `~orbit` that also names a local account. Every new attempt starts at input and runs all seven phases again, even when recorded intent matches. Matching tasks report zero target changes and the attempt must complete within 120 seconds; hub changes are excluded from that target count. A repeat is not a digest-based admission skip. Reusing an idempotency key follows the [keyed-start contract](/reference/operations#retry-a-start-with-a-key), rather than starting a second attempt.
 
-Each artifact has a digest that the Gateway computes from its own code and pins, without SSH. The footprint combines every artifact digest with the agent pin for that Node. A change to native code therefore re-applies the artifacts even when their PHP sources have not changed; an unchanged pin and artifact digest leave the matching live artifact unchanged. The native steps also inspect the agent, Caddy and peer DNS locally to repair drift. Manifest locations and other platforms do not change this identity.
+A failed phase stops later phases and fails the Operation with its failed step and error code. Completed and partial machine changes remain; there is no rollback. Fix the cause and start a new attempt from input. An individual Tool failure is different: it marks only that Tool failed, lets other Tools continue, and does not alone fail an otherwise successful parent. Temporary private run files are removed after work stops on success or failure. Incomplete cleanup is exposed without replacing the original failure, and interruption proves no cleanup.
 
-The Caddy package digest covers the package program and the `CaddyRelease` floor. The Caddy digest covers every Gateway source file the Caddy build renders from: the build, its site sources, the site sources that [extensions contribute](/reference/extensions#plug-in-points), and the classes they use, such as `DevelopmentSite` and the `CaddyRelease` pin.
+Agent and CLI replacements share the existing Node-local update lock with self-update. Only each final atomic rename holds it, not the whole phase. [One update at a time](/reference/self-update#one-update-at-a-time) owns the staging, timeout and failure rules. Converge checks the existing agent secret against the admitted verifier without rotating it or changing the Gateway's hash.
 
-The private-DNS digest covers the listener release, the publication code, and each private DNS record source that an extension contributes, with the classes it uses, such as the AI router state that decides the collector record. The other digests cover the inputs the agent unit renders from, the collector script, and the tmpfiles rule. The shared footprint boundary adds the agent pin to all of them.
+Metrics exporters, cAdvisor and the FPM exporter stay outside this footprint; Metrics fleet reconciliation owns them. Convergence does not publish Instances, Routes or Process units.
 
-A user's sites and Routes do not change the code digests. The PHP runtime digest includes the versions selected by active Instances, so a version outside the Node's recipe profile also receives the module. This digest never reads live inventory. Converge skips a version whose FPM binary is absent. The `peer-dns` digest includes the rendered private domains and server, so namespace changes also reach peers through convergence. Their own native operations publish and verify them.
-
-The `route-residue` digest also covers state: it covers the residues of offline Route removals, which are Orbit's own unfinished work, so the Node drifts until a converge removes them. The Gateway keeps the digests each Node last received, and a converge re-applies only the artifacts whose digest changed. Its native binary installers own their update locks; it starts no separate SSH lock holder.
-
-Removing a registered artifact changes the aggregate footprint digest. Converge invokes only artifacts that are still registered and apply to the Node. Unless forced, it skips unchanged artifacts that need no live repair check. After a successful converge, the Gateway drops the removed name from the stored artifact metadata. Removal itself does not delete or rewrite any Node files; files left by the removed artifact stay untouched.
-
-Earlier Gateways published the annotator server in `/opt/orbit/annotator` and kept its stores in `/var/lib/orbit/annotator`. Orbit leaves these paths unmanaged. Convergence forgets the removed artifact but leaves its files in place; the machine recipe does not remove them. After destroying the removed preset Processes through the old Gateway, an operator may remove unused files by hand. Cleanup of both paths remains pending a dependency check for ordinary Processes 168 and 127. Preserve these Processes and their files. Check every ordinary Process dependency and obtain cleanup authorization before deleting retained files.
-
-`--force` re-applies every artifact; each one still leaves a matching live copy alone. A Caddyfile that the render or the validation refuses is `skipped`, not failed; the [fleet rollout](/reference/gateway-recovery#one-node) fails a refused validation on its first Node. A failed artifact fails the command with its own error code and `details.artifact`, and the next converge applies it again. The digest of all artifacts is the Node's footprint digest.
-
-Standalone convergence uses one native DAG on Linux workers selected through `ORBIT_SWAMP_WORKER_NODES` when `swamp.direct_writers["node.converge"]` is `direct`. Nodes 1 and 18 retain their polled path. Initial worker enrollment and existing enrollment and role parents retain their current contracts. Admission derives this scope from stored Node state and worker selection; callers cannot select it. Applicable contributions without a native action refuse before effects, even if their digest matches. Rollback reverts the owning PR. Only the Gateway start response binds a direct root run; worker input reads refuse before that binding.
-
-Private agent hashes and staged worker credentials pass through the shared private-material callback on the exact admitted Node. Native arguments, resources and public outcomes contain no private bytes. Direct converge refuses secret rotation under the agent’s existing update lock and never writes the Gateway hash. Synchronous enrollment and explicit recovery retain their owner checks while those parents remain on their current path. A missing or mismatched secret fails before configuration; the operator uses the existing recovery entrypoint. Native recovery reuses completed steps; uncertain external effects require inspection before recovery.
-
-A canary that needs released code runs immediately after the owning merge and normal source load, against a disposable Node. Exact run/read permission and a serving worker must exist before the Gateway writer release. A Task VM cannot install its own first worker through a workflow that already requires that worker. Lane 21 owns that bootstrap and announces the actual serving identity before the canary. Source and fixture tests do not establish live takeover.
-
-Metrics exporters, cAdvisor, and the FPM exporter are not part of the footprint: their converge always restarts them, and the Metrics fleet reconcile owns them. Reverb and the third-party pins keep their own update paths.
+Earlier Gateways published the annotator server in `/opt/orbit/annotator` and kept its stores in `/var/lib/orbit/annotator`. Orbit leaves these paths unmanaged; the machine recipe does not remove them. After destroying the removed preset Processes through the old Gateway, an operator may remove unused files by hand. Cleanup of both paths remains pending a dependency check for ordinary Processes 168 and 127. Preserve these Processes and their files. Check every ordinary Process dependency and obtain cleanup authorization before deleting retained files.
 
 ### Break-glass recovery for Services and Swamp 209
 
-Standalone `node:converge` starts a native workflow on Services or Swamp 209 through that Node’s worker. A stopped target worker cannot execute the workflow that would repair it. Use the Node's existing managed SSH access or provider console to restore its existing worker first; do not admit another converge while the original is queued or uncertain.
+Standalone convergence runs on a `swamp`-role worker and reaches the admitted target and hub through Ansible over pinned SSH. It does not require the target's persistent Node worker to execute its own repair. If Swamp's serve or control workers are down, restore their existing operator-managed units and protected configuration through existing managed SSH access or the provider console before requesting execution. Do not replace them with a Gateway PHP executor.
 
-On that Node, check the existing unit and correct the failure cause. Clear its systemd start limit, then restart it as the configured Node user with existing sudo access:
+Preserve the installed credentials, their ownership and mode, the recorded agent secret hash and the configured Node identity. Do not print or copy credential files into commands, logs or an Operation. Missing or damaged protected files require the approved recovery procedure and retained backup with the enrollment or credential owner; convergence does not rotate an agent secret or remint worker credentials.
 
-```sh
-sudo -n systemctl is-active orbit-node-worker.service
-sudo -n systemctl reset-failed orbit-node-worker.service
-sudo -n systemctl restart --no-block orbit-node-worker.service
-```
-
-This uses the installed configuration and credentials. Preserve their ownership and mode, the recorded agent secret hash, and the configured Node identity. Do not print or copy credential files into commands, logs or an Operation. If Swamp 209's serve or control workers are also down, restore their existing operator-managed units and protected configuration before requesting a native run. Do not replace those units with a Gateway PHP executor.
-
-Once the worker reconnects, verify its exact `orbit-node-<id>` target and matching Node label. Inspect the existing native run. A queued run can continue through native dispatch; a run that ended while waiting for its worker needs native recovery of that same run. Reconcile an uncertain effect before recovery. A second admission does not repair the first intent.
-
-Missing or damaged protected files require their approved recovery procedure and retained backup. A missing or mismatched agent secret deliberately refuses direct configuration without writing a replacement. The [owner-checked rekey command](/reference/node-agent#recover-a-lost-agent-secret-reply) applies only to its retained uncertain `footprint-agent` contract; a direct root Operation is not that contract. Keep the original outcome uncertain and coordinate with the enrollment or credential owner. Do not remint worker credentials or rotate an agent secret as an automatic retry.
-
-| Code | HTTP | Meaning |
-| --- | --- | --- |
-| `node.converge_unsupported` | 422 | The Node is not an active, managed Linux Node |
-| `node.footprint_caddy_failed` | 502 | The Caddyfile could not be published |
-| `node.footprint_caddy_package_failed` | 502 | The Caddy package step failed, for example because the download does not match the pin. The message names the cause |
-| `node.footprint_tmpfiles_failed` | 502 | The tmpfiles rule could not be written. The message names the cause |
+Inspect the original Operation and native run before admitting another attempt. A queued or uncertain run keeps its reservations until settlement; a second admission does not repair its intent. Reconcile an uncertain machine effect before recovery. After a phase failure, a new attempt starts from input, not from the failed phase. The [command page](/cli/node/converge#errors) lists admission and execution errors.
 
 ## Task VM role phases
 
@@ -430,7 +397,9 @@ The nested guests are Incus system containers. The role serves them nothing: eac
 
 Before starting a base VM, the host playbook converges its [firmware boot setting](/reference/compute-drivers#size-of-a-task-vm). Task copies inherit it from the base snapshot, so the OVMF menu adds no delay.
 
-On a base snapshot refresh or a template build the role first waits until SSH answers and cloud-init has finished. The `clean` phase leaves the temporary files of Ansible itself alone. The `template` phase checks the firewall of the template that a template build made. A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
+A host without a recorded base snapshot first discards any unpromoted base VM and seed and builds from stock. This also removes the cached cloud-init state of a failed first boot, whose one-shot package installation does not run again on a restart. Recorded bases are preserved unless the refresh requests `--from-stock`.
+
+On a base snapshot refresh or a task start the role first waits until SSH answers and cloud-init has finished. Both callers share the [SSH readiness budget](/reference/compute-drivers#refresh-the-base-snapshot); a task start reaches the VM over WireGuard. The `clean` phase leaves the temporary files of Ansible itself alone. The `template` phase checks the firewall of the template that a template build made. A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
 
 The role reads the package indexes of the Ubuntu snapshot with the `apt` module's own retry (`update_cache_retries`: twelve attempts, backing off to 30 seconds, about four minutes). It installs packages with the task keywords `retries`, `until` and `delay`: four retries, 30 seconds apart. The retries also apply to a permanent failure such as a missing pin, which then fails after two more minutes. The snapshot service answers 503 now and then, for an index and for a package. Rule 6 of the Swamp shape allows this tool-native retry and no shell loop.
 
@@ -535,7 +504,7 @@ For Caddy, the Gateway pins a release and the SHA-512 digest of its `amd64` `.de
 
 ### Role prerequisites
 
-New assignments from `node:role:add` run through one Swamp workflow. A native SSH step checks the Ubuntu release. Ansible phases apply prerequisites, role state, publications, firewall rules and Metrics changes, then check the result.
+New assignments from `node:role:add` run through one Swamp workflow. A native SSH step checks the Ubuntu release. Ansible phases apply prerequisites, role state, publications, firewall rules and Metrics changes, then check the result. Tool Manager commands and runtime copies run only when the admitted pin or lock differs from the last successful setup. The pin is recorded after its checks pass, so a failed setup retries.
 
 A Node inside the nested subnet of a [task VM](/reference/compute-drivers) (`10.232.2.0/24`) reads its apt packages through the `apt-cacher-ng` of that VM, at `http://10.232.2.1:3142`. The Gateway puts that address in the `apt_proxy` field of the intent of the Node enrollment (`node.add`), of each role add and converge, and of each metrics exporter.
 
@@ -616,7 +585,7 @@ The unit carries only token paths. Missing receipts log that renewal stopped and
 
 Orbit uses no worker-affinity groups. Later steps can queue on either survivor during a drain. Swamp fails an affinity group when its worker drains, so adding affinity requires a different renewal design.
 
-After the credentials are placed, release the Gateway and load Swamp, then converge with `orbit node:role:add swamp swamp --converge`. The Ansible `node` phase installs the renewal playbook, tasks and Gateway-rendered service/timer. The native **Apply Swamp worker unit** `@swamp/cfgmgmt/systemd` step applies the worker template. The worker-start job enables all three permanent workers; its dependent native job starts the timer. Swamp load alone does not apply host files. Convergence leaves active workers running and starts c; serve needs no restart.
+After the credentials are placed, release the Gateway and load Swamp, then converge with `orbit node:role:add swamp swamp --converge`. The Ansible `node` phase installs the renewal playbook, tasks and Gateway-rendered service/timer. The Ansible `swamp` phase applies the worker template, enables all three permanent workers without restarting live processes, then starts the timer. Swamp load alone does not apply host files. Convergence leaves active workers running and starts c; serve needs no restart.
 
 Watch `orbit-swamp-worker-renewal.service`, workers a/b/c and serve. Require all three connected before a drain, two workers/eight configured slots accepting throughout it, and the renewed instance accepting before another round. Keep long work and queued follow-on operations active across renewals. At the old eight-hour boundary, require no code 4002 or write-then-drop failure. All three workers remain enabled and running between successful rounds.
 
@@ -792,19 +761,9 @@ The `.deb` on the GitHub release is the Caddy project's own build, and a digest 
 
 ### The footprint converge, not node:add
 
-`orbit node:converge <node>` records a `node.converge` Operation and returns its ID for a workload Node. Every accepted request returns HTTP 202 with an Operation. Standalone targets with a selected worker start the native DAG directly. Nodes 1 and 18 and existing parent or bootstrap contexts retain the polled Operation path. Fleet children retain the declared Operation contract. Swamp re-applies one managed Linux Node's Gateway-rendered footprint. The input is `{force_artifacts: bool, first_visit: bool}`. The serving Node comes from the Operation. The Gateway records the plan, command payloads and optional child intents before effects. Child admission prepares this snapshot before the shared kit stamps its immutable input.
+Enrollment and repair have different contracts. `node:add` refuses an existing Node with Instances; `node:converge` repairs managed state without re-enrollment or assignment changes. Its admission returns HTTP 202 with an Operation and freezes the desired state before any machine effect, so later record edits cannot alter an in-flight attempt.
 
-The native Node converge run owns its captured Caddy, private DNS, residue and role steps. Required contributions must finish before its native end check succeeds. Unchanged contributions are skipped by guards. Private DNS uses `route-dns-publish` inside this run and starts no separate publication Operation.
-
-Caddy render or validation refusals and residue cleanup failures may be skipped. If Caddy refuses validation on the first visit and managed code changed, the footprint fails. An owned drift repair keeps the skip. Other child failures stop later artifacts. Completion derives its results from transport receipts and stamped children, then records only proven artifact digests.
-
-For a required `php-runtime` artifact, the Gateway records one `php.configure-runtime` input per recipe-profile or active Instance PHP version, sorted by version. Swamp applies those inputs in order. The Gateway records the artifact digest only after every version has a successful receipt with a boolean `changed` result. Missing runtimes remain a native no-op. Deferred PHP-FPM master names stay in the declared run and step results and the Gateway warning log. Retained synchronous callers use the same runtime input renderer.
-
-If `ai_router.collector_converge` is not registered, preparation keeps the required AI-router artifact in its ordered plan with `operation.kind_unavailable` and records no collector child intent. Earlier artifacts still need their normal proof, so protected agent configuration can install the selected Node worker before the unsupported collector boundary. At that boundary the footprint fails; it neither skips the collector nor records its digest. This does not report a successful full converge or invoke the retained PHP collector executor.
-
-On the active VPN owner, the Swamp footprint stages the private DNS listener release and units before publication. It restarts an active listener against its existing catalog. A fresh install stays inactive until the publication child atomically writes its first catalog and enables the socket. The footprint does not write DNS records itself. Retained synchronous fleet convergence keeps its existing private DNS scope and digests. A Gateway-only Node uses VPN DNS as a resolver client and receives no listener installation or publication child. A Node that holds both roles remains a DNS owner through its active VPN role.
-
-Agent configuration stores its returned hash through the encrypted Node owner store. Target receipts retain only a presence marker. A lost live reply leaves the run uncertain and cannot prove storage or completion. Use the [operator re-key command](/reference/node-agent#recover-a-lost-agent-secret-reply) to restore authentication, then cancel the uncertain Operation and start a fresh converge.
+Admission cannot prove that a matching machine is healthy without contacting it. Every new attempt therefore inspects and reapplies all seven phases rather than trusting a stored digest or a force flag. Ansible's matching tasks supply the no-change result. Ordered phase failures stop dependent work, while independent Tool results stay on their own records. Keeping partial changes and starting the next attempt from input makes repair fix forward, not a rollback or a hidden resume chain.
 
 ### A Mac needs no service role
 
@@ -850,7 +809,7 @@ a nonempty cache owned by root or a symlink. Credential ownership stays the same
 
 ## Native role additions
 
-Adding `gateway`, `ingress`, `app-dev`, `app-prod`, `metrics`, `database`, `websocket`, `analytics`, or `ci-runner` records one `node.role_add` Operation and returns HTTP 202. `node:role:add` follows that Operation. `--converge` records `node.role_converge` for an existing assignment and uses its role convergence DAG. VPN and Router retain their protected-role policy.
+Adding `gateway`, `ingress`, `app-dev`, `app-prod`, `metrics`, `database`, `websocket`, `analytics`, `ci-runner`, or `swamp` records one `node.role_add` Operation and returns HTTP 202. `node:role:add` follows that Operation. `--converge` records `node.role_converge` for an eligible existing assignment and uses its role convergence DAG. Eligibility is recorded state: active, failed at a `converge:` step, or provisioning for at least 11 minutes without an Operation holding the Node. Recent provisioning, removal and unrelated failures are refused before host contact or mutation. Native initial-add failures retain a `converge:` failure marker, so explicit convergence can repair partial work. VPN and Router retain their protected-role policy.
 
 The Gateway freezes the role's public packages, files, services, certificate requests, publications and Metrics changes at admission. The control worker on Node 209 applies them over pinned SSH. Neither additions nor role convergence require a worker on the target. Both use the shared Swamp workflow and Ansible phases; Node convergence separately owns the observer and Orbit CLI.
 
@@ -924,4 +883,4 @@ The withdrawal playbook `route-withdraw.yml` keeps its remote tasks few, because
 
 The Route playbooks `route-create-site.yml` and `route-withdraw.yml` work the same way. The withdrawal has two phases, `read` and `apply`: between them Swamp composes the result and writes `read.json` and `plan.json` into the run folder, because a Caddyfile is too large for a step output or an environment value.
 
-Task VM host preparation belongs to the [base refresh](/reference/compute-drivers#prepare-an-incus-host). Its shared Ansible phase prepares both native-ZFS and loop-backed pools; loop hosts receive a 2 GiB ARC cap to retain memory for their own services.
+Task VM host preparation belongs to the [base refresh](/reference/compute-drivers#prepare-an-incus-host). Its shared Ansible phase prepares both native-ZFS and loop-backed pools; loop hosts receive a 2 GiB ARC cap to retain memory for their own services. Before the first guest boot, it opens catalog-owned DHCP input on the task bridge and DNS input to the bridge address, as well as forwarding. Settings removal and reachable Node removal withdraw the three input rules through the same Ansible phase. This lets a guest obtain its address and resolve package servers on a host with default-deny input.

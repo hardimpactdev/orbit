@@ -40,6 +40,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Mockery\MockInterface;
 use Tests\Support\SwampNodeFixture;
 
@@ -104,7 +105,7 @@ it('never acts on a group that has more than its spec subtask, no prep run, or a
     $extra->delete();
     expect(TaskBuildIntent::waiting($group))->toBeTrue();
 
-    $build = Operation::query()->create(['kind' => OperationKinds::TasksBuild, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null, 'status' => OperationStatus::Failed, 'input' => []]);
+    $build = Operation::query()->create(['kind' => OperationKinds::TasksBuild, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null, 'status' => OperationStatus::Succeeded, 'input' => []]);
     expect(TaskBuildIntent::waiting($group))->toBeFalse();
 
     $build->delete();
@@ -183,14 +184,14 @@ it('refuses a build that has no workspace of its own and leaves the group as it 
         ->and(Operation::query()->where('kind', OperationKinds::TasksBuild)->count())->toBe(0);
 });
 
-it('writes nothing when the VM is neither ready nor parked', function (): void {
-    [$group] = buildWorld(vmState: TaskVmState::Provisioning);
-
-    expect(fn () => app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null))->toThrow(ResourceOperationException::class, 'parked or running')
+it('waits for deletion before a build can claim its next VM', function (): void {
+    Queue::fake();
+    [$group] = buildWorld(vmState: TaskVmState::Releasing);
+    $operation = app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null);
+    expect($operation->status)->toBe(OperationStatus::Waiting)
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(1)
-        ->and(AgentThread::query()->count())->toBe(0)
-        ->and(Operation::query()->where('kind', OperationKinds::TasksBuild)->count())->toBe(0);
+        ->and(AgentThread::query()->count())->toBe(0);
 });
 
 it('clears the settled time of the group when the build starts', function (): void {
@@ -417,3 +418,12 @@ it('starts the build from the gate on an approved head, appends the subtask once
         ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(2)
         ->and(Operation::query()->where('kind', OperationKinds::TasksBuild)->count())->toBe(1);
 });
+
+it('lets a build retry after an expired or cancelled admission but blocks a live or succeeded build', function (OperationStatus $status, bool $waiting): void {
+    [$group] = buildWorld();
+    Operation::query()->create(['kind' => OperationKinds::TasksBuild, 'target_type' => OperationKinds::TaskGroupTarget,
+        'target_id' => $group->id, 'status' => $status, 'input' => ['capacity_request' => ['head' => str_repeat('a', 40)]]]);
+
+    expect(TaskBuildIntent::waiting($group))->toBe($waiting);
+})->with([[OperationStatus::Failed, true], [OperationStatus::Cancelled, true], [OperationStatus::Interrupted, true],
+    [OperationStatus::Waiting, false], [OperationStatus::Queued, false], [OperationStatus::Running, false], [OperationStatus::Succeeded, false]]);

@@ -5,12 +5,12 @@ description: "Show the latest recorded metrics snapshot reported by a Node's age
 ---
 
 ```bash
-orbit node:metrics <node> [--json]
+orbit node:metrics [node] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `node` | yes | Numeric Node ID. |
+| `node` | machine mode | Numeric Node ID. In an interactive terminal, omit it to search the registered Nodes by ID or name. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
@@ -37,9 +37,9 @@ Orbit answers only from the latest metrics snapshot that the Node's agent report
 | `load` | The 1, 5, and 15-minute load averages. |
 | `uptime_seconds` | Time since boot at the observation time. |
 | `pressure` | The `some` `avg10` value for CPU, memory, and I/O. `0` when the kernel has no pressure data. |
-| `disks` | Mount, used bytes, and total bytes. Pseudo filesystems such as `tmpfs` and `proc` are left out. `/` comes first. |
+| `disks` | Mount, used and total bytes, `observed_at`, and `stale`. Each mount keeps its last good reading when a sample times out. Values and time are null until its first successful sample. Pseudo and network filesystems are left out. `/` comes first. |
 
-Human output shows the Node's name and ID, `Observed at` time, `Agent` state, and readable byte and duration values. A retained snapshot with `possibly_outdated: true` still succeeds, but is labeled `possibly outdated`; an offline agent is shown as `offline since <time>`, as in `node:show`. No snapshot yet is a distinct refusal, not an all-zero snapshot.
+Human output marks stale disks and shows unknown disk values as `—`. Disk freshness is separate from the snapshot’s `possibly_outdated` flag. Human output shows the Node's name and ID, `Observed at` time, `Agent` state, and readable byte and duration values. A retained snapshot with `possibly_outdated: true` still succeeds, but is labeled `possibly outdated`; an offline agent is shown as `offline since <time>`, as in `node:show`. No snapshot yet is a distinct refusal, not an all-zero snapshot.
 
 <div className="flow-at" data-chart="node/metrics"></div>
 

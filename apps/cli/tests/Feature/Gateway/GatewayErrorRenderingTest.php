@@ -809,6 +809,12 @@ it('renders local validation failures through the exact json boundary', function
         'node_role.role_required',
         'Role is required.',
     ],
+    'node role add omitted arguments without prompts' => [
+        'node:role:add',
+        [],
+        'node_role.role_required',
+        'Role is required.',
+    ],
     'node role remove id' => [
         'node:role:remove',
         ['node' => '0', 'role' => 'app-dev', '--force' => true],
@@ -913,10 +919,6 @@ it('renders console input failures through the exact json boundary', function (a
         ],
         'The "--unknown-option" option does not exist.',
     ],
-    'node role list missing required argument' => [
-        ['command' => 'node:role:list', '--json' => true],
-        'Not enough arguments (missing: "node").',
-    ],
     'node role list unknown option' => [
         [
             'command' => 'node:role:list',
@@ -925,10 +927,6 @@ it('renders console input failures through the exact json boundary', function (a
             '--unknown-option' => true,
         ],
         'The "--unknown-option" option does not exist.',
-    ],
-    'node role add missing required arguments' => [
-        ['command' => 'node:role:add', '--json' => true],
-        'Not enough arguments (missing: "node, role").',
     ],
     'node role add unknown option' => [
         [

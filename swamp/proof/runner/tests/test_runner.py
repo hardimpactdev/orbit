@@ -78,6 +78,26 @@ class RunnerTest(unittest.TestCase):
         self.assertTrue(result['failed'][0].startswith('act[0] cli firewall:allow: exit 1'))
         self.assertTrue(any(step['step'].startswith('expect') for step in receipt['steps']))
 
+    def test_operation_diagnostics_survive_setup_receipts_and_ci_verdict_lines(self):
+        case = self.spec.case(CASE)
+        case.setup.append(spec.Step('cli', {'run': ['firewall:allow', '80'], 'expect': {'exit': 0}}))
+        operation = {'id': 17, 'status': 'failed', 'failed_step': 'Converge input', 'error_code': 'operation.native_failed',
+                     'error': {'detail': 'private-error-sentinel'}}
+        original = self.fleet.cli
+
+        def cli(args, **kwargs):
+            if args[0] == 'firewall:allow':
+                return {'rc': 1, 'json': operation, 'stdout': json.dumps(operation), 'stderr': ''}
+            return original(args, **kwargs)
+
+        with patch.object(self.fleet, 'cli', side_effect=cli):
+            result = runner.run_case(case, self.fleet, self.spec, Path(self.directory.name))
+        receipt = json.loads(next(Path(self.directory.name).glob(CASE + '/*/receipt.json')).read_text())
+        self.assertEqual((result['verdict'], result['cause']), ('unrun', 'precondition'))
+        for failures in (receipt['failed'], json.loads(runner.verdict_line(result))['failed']):
+            self.assertIn("failed_step='Converge input', error_code='operation.native_failed'", failures[0])
+            self.assertNotIn('private-error-sentinel', failures[0])
+
     def test_a_port_that_is_not_blocked_before_the_command_is_unrun_not_a_pass(self):
         self.fleet.deny_ignored = True
         result, _ = self.execute()
@@ -163,6 +183,16 @@ class CommandTest(unittest.TestCase):
         self.assertIn('  new-restricted-allow', out)
         self.assertIn('  protocols[udp]', out)
 
+    def test_json_plan_exposes_the_expanded_definition_without_diagnostic_locations(self):
+        code, out, _ = self.call(['plan', '--json', '--file', str(CASES)])
+        self.assertEqual(code, 0)
+        definitions = json.loads(out)
+        self.assertIn('new-restricted-allow', definitions)
+        case = definitions['new-restricted-allow']['case']
+        self.assertEqual(case['id'], 'new-restricted-allow')
+        self.assertNotIn('where', case['stages'][0]['act'][0])
+        self.assertIn('args', case['stages'][0]['act'][0])
+
     def test_plan_with_steps_prints_the_resolved_steps(self):
         _, out, _ = self.call(['plan', '--file', str(CASES), '--steps'])
         self.assertIn('listener {"family": 4, "on": "app-dev", "ports": ["port", "control"], "proto": ["tcp"]}', out)
@@ -185,6 +215,15 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(json.loads(out)['verdict'], 'passed')
         self.assertEqual(len(out.strip().splitlines()), 1)
         self.assertIn('evidence', err)
+
+    def test_line_plan_uses_the_original_arguments_and_preserves_whole_batches(self):
+        loaded = runner.spec_module.load(CASES, runner.BATCHES)
+        code, out, err = self.call(['plan', '--lines', '--file', str(CASES)])
+        self.assertEqual(code, 0, err)
+        batches = {line.split()[0]: set(line.split()[2:]) for line in out.strip().splitlines()}
+        self.assertEqual(set(batches), {case.batch for case in loaded.cases})
+        for batch, cases in batches.items():
+            self.assertEqual(cases, {case.id for case in loaded.cases if case.batch == batch})
 
     def test_an_unknown_case_is_refused(self):
         code, _, err = self.call(['case', 'nope', '--file', str(CASES)])

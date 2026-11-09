@@ -21,6 +21,7 @@ use Throwable;
  * One disposable VM that serves one task group as a normal `app-dev` Node. An `incus` row runs on
  * its Incus host Node.
  *
+ * @property string $capacity_pool
  * @property int $id
  * @property int|null $group_id
  * @property int|null $slot_project_id the Project whose checkout the base VM carries, on a row that takes a slot
@@ -66,7 +67,7 @@ final class TaskVm extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'group_id', 'slot_project_id', 'host_node_id', 'node_id', 'provider', 'size',
+        'capacity_pool', 'group_id', 'slot_project_id', 'host_node_id', 'node_id', 'provider', 'size',
         'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_error_code', 'publish_queued_at', 'publish_started_at', 'name', 'state', 'address', 'wireguard_ip',
         'pi_token', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity', 'image_build_id', 'image_fallback',
         'error_code', 'error_message', 'ready_at', 'destroyed_at', 'stop_confirmed_at', 'slot_number', 'wireguard_private_key', 'ssh_host_private_key', 'agent_secret',
@@ -78,7 +79,7 @@ final class TaskVm extends Model
 
     /** @var array<string, mixed> */
     #[\Override]
-    protected $attributes = ['size' => 'normal', 'image_fallback' => false];
+    protected $attributes = ['capacity_pool' => 'task', 'size' => 'normal', 'image_fallback' => false];
 
     /** @return array<string, string> */
     #[\Override]
@@ -112,21 +113,6 @@ final class TaskVm extends Model
     protected function live(Builder $query): void
     {
         $query->where('state', '!=', TaskVmState::Destroyed);
-    }
-
-    /**
-     * The live VMs of the provider that count against its `max_vms`: every one but a failed VM, which counts only when
-     * a failed proof run kept it (`proof:run --keep-failed`): a kept VM holds the CPU and
-     * memory of its host whatever its state says, until its group is cancelled and it is destroyed.
-     *
-     * @param  Builder<self>  $query
-     */
-    #[Scope]
-    protected function countedAgainstCap(Builder $query, TaskVmProviderKind $provider): void
-    {
-        $query->where('state', '!=', TaskVmState::Destroyed)->where('provider', $provider)
-            ->where(static fn (Builder $query) => $query->where('state', '!=', TaskVmState::Failed)
-                ->orWhereIn('group_id', Operation::query()->where('kind', 'proof.command')->whereNotNull('result->kept')->select('target_id')));
     }
 
     /**

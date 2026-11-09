@@ -4,9 +4,10 @@
 - name: Wait for a new server
   when: intent.image
   block:
-    # A task start reaches its Incus guest over WireGuard after the host wrote its identity and hub peer.
+    # Direct task starts still include firmware boot and identity setup before SSH answers over WireGuard.
+    # Use the same readiness budget as the base refresh; a successful connection returns at once.
     - name: Wait until SSH answers
-      ansible.builtin.wait_for_connection: { timeout: "{{ 60 if intent.direct | default(false) else 300 }}", sleep: 1 }
+      ansible.builtin.wait_for_connection: { timeout: 300, sleep: 1 }
     - name: Wait for cloud-init
       ansible.builtin.command: { argv: [timeout, "900", cloud-init, status, --wait, --long] }
       register: ready_cloud_init

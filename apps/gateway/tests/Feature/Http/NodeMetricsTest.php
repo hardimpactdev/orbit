@@ -36,7 +36,7 @@ function metrics_read_snapshot(): array
         'load' => ['one' => 0.52, 'five' => 0.61, 'fifteen' => 0.58],
         'uptime_seconds' => 1053784,
         'pressure' => ['cpu' => ['some_avg10' => 0.4], 'memory' => ['some_avg10' => 0], 'io' => ['some_avg10' => 1.1]],
-        'disks' => [['mount' => '/', 'used' => 6442450944, 'total' => 85899345920]],
+        'disks' => [['mount' => '/', 'used' => 6442450944, 'total' => 85899345920, 'observed_at' => '2026-11-06T09:59:59Z', 'stale' => false]],
     ];
 }
 
@@ -84,6 +84,19 @@ describe('GET /api/v1/nodes/{node}/metrics', function (): void {
 
         expect($writes)->toBe([])->and(NodeFact::query()->get()->toArray())->toBe($before);
         expect(Operation::query()->count())->toBe(0);
+    });
+
+    it('keeps healthy, stale and never-observed mounts separate through report admission and reads', function (): void {
+        $snapshot = metrics_read_snapshot();
+        $snapshot['disks'][] = ['mount' => '/slow', 'used' => 123, 'total' => 456, 'observed_at' => '2026-11-06T09:58:00Z', 'stale' => true];
+        $snapshot['disks'][] = ['mount' => '/hung', 'used' => null, 'total' => null, 'observed_at' => null, 'stale' => true];
+        metrics_read_report($this->node, $snapshot);
+
+        $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+            ->getJson('/api/v1/nodes/'.$this->node->id.'/metrics')->assertOk()
+            ->assertJsonPath('data.disks', $snapshot['disks'])
+            ->assertJsonPath('data.possibly_outdated', false);
+        expect(NodeFact::query()->firstOrFail()->data['disks'])->toBe($snapshot['disks']);
     });
 
     it('retains the original snapshot after the disposable view expires', function (): void {

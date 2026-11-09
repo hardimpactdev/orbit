@@ -1,0 +1,138 @@
+---
+- name: Create manager directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    mode: "{{ item.mode }}"
+  loop: "{{ manager.directories }}"
+- name: Write manager files
+  ansible.builtin.copy:
+    dest: "{{ item.path }}"
+    content: "{{ item.content }}"
+    owner: "{{ item.owner }}"
+    mode: "{{ item.mode }}"
+  loop: "{{ manager.files }}"
+- name: Read the last successfully configured manager pin
+  ansible.builtin.stat:
+    path: "/var/cache/orbit/tool-setup/{{ manager.setup.manager }}/configured.json"
+    checksum_algorithm: sha256
+  register: manager_configured
+- name: Select changed manager pins or lock
+  ansible.builtin.set_fact:
+    manager_configuration_changed: "{{ manager_configured.stat.checksum | default('') != (manager.setup.input | to_json | hash('sha256')) }}"
+- name: Read pinned manager packages
+  ansible.builtin.command: { argv: [dpkg-query, -W, '-f=${Version}', "{{ item.name }}"] }
+  loop: "{{ manager.apt_packages }}"
+  register: manager_packages
+  changed_when: false
+  failed_when: false
+- name: Select packages missing their pin
+  ansible.builtin.set_fact:
+    manager_missing_indexes: []
+- name: Find packages requiring installation
+  ansible.builtin.set_fact:
+    manager_missing_indexes: "{{ manager_missing_indexes + [package_index] }}"
+  when: item.rc != 0 or item.stdout != item.item.version
+  loop: "{{ manager_packages.results }}"
+  loop_control: { index_var: package_index }
+- name: Download SHA256 pinned Tool Manager packages
+  orbit_artifact:
+    urls: "{{ item.urls }}"
+    dest: "{{ item.path }}"
+    sha256: "{{ item.checksum.split(':')[1] }}"
+    transport_exit_codes: "{{ lookup('ansible.builtin.file', playbook_dir + '/transport-exit-codes.json') | from_json }}"
+  loop: "{{ manager.sha256_fetches }}"
+  when: item.package_index is none or item.package_index in manager_missing_indexes
+  loop_control: { label: "{{ item.path }}" }
+- name: Download SHA512 pinned Tool Manager packages
+  orbit_artifact:
+    urls: "{{ item.urls }}"
+    dest: "{{ item.path }}"
+    sha512: "{{ (manager.sha512 | selectattr('path', 'equalto', item.path) | first).stdin.split()[0] }}"
+    transport_exit_codes: "{{ lookup('ansible.builtin.file', playbook_dir + '/transport-exit-codes.json') | from_json }}"
+  loop: "{{ manager.sha512_fetches }}"
+  when: item.package_index is none or item.package_index in manager_missing_indexes
+  loop_control: { label: "{{ item.path }}" }
+- name: Read DEB package identities
+  ansible.builtin.command:
+    argv: [dpkg-deb, --show, '--showformat=${Package}\n${Version}', "{{ item.path }}"]
+  loop: "{{ manager.apt_artifacts }}"
+  when: item.package_index in manager_missing_indexes
+  register: manager_debs
+  changed_when: false
+- name: Require admitted DEB package identities
+  ansible.builtin.assert:
+    that: item.stdout == item.item.name ~ '\n' ~ item.item.version
+    quiet: true
+  when: not item.skipped | default(false)
+  loop: "{{ manager_debs.results }}"
+- name: Refresh pinned manager package indexes
+  ansible.builtin.command: { argv: "{{ manager.apt_update }}" }
+  when: manager_missing_indexes | length > 0
+  changed_when: true
+- name: Install the pinned manager packages
+  ansible.builtin.command:
+    argv: "{{ manager.apt_install_prefix + (manager.apt_arguments | selectattr('index', 'in', manager_missing_indexes) | map(attribute='argv') | list) }}"
+  when: manager_missing_indexes | length > 0
+  changed_when: true
+- name: Initialize an absent Composer manifest
+  ansible.builtin.copy:
+    dest: /opt/orbit/composer/composer.json
+    content: "{\"require\":{}}\n"
+    owner: "{{ manager.setup.input.user }}"
+    mode: '0644'
+    force: false
+  when: manager.setup.manager == 'composer'
+- name: Unpack manager artifacts
+  ansible.builtin.unarchive:
+    src: "{{ item.source }}"
+    dest: "{{ item.dest }}"
+    remote_src: true
+    creates: "{{ item.creates }}"
+  loop: "{{ manager.archives }}"
+- name: Copy manager runtimes
+  ansible.builtin.command: { argv: "{{ item.argv }}" }
+  loop: "{{ manager.copies }}"
+  when: manager_configuration_changed
+  changed_when: true
+- name: Link manager resources
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    src: "{{ item.target }}"
+    state: link
+    force: true
+    owner: "{{ item.owner }}"
+    follow: false
+  loop: "{{ manager.links }}"
+- name: Configure the pinned manager
+  ansible.builtin.command: { argv: "{{ item.argv }}" }
+  loop: "{{ manager.commands }}"
+  when: manager_configuration_changed
+  changed_when: true
+- name: Publish manager launchers
+  ansible.builtin.copy:
+    dest: "{{ item.path }}"
+    content: "{{ item.content }}"
+    owner: "{{ item.owner }}"
+    mode: "{{ item.mode }}"
+  loop: "{{ manager.launchers }}"
+- name: Check pinned manager packages
+  ansible.builtin.command: { argv: [dpkg-query, -W, '-f=${Version}', "{{ item.name }}"] }
+  loop: "{{ manager.apt_packages }}"
+  register: manager_package_check
+  changed_when: false
+  failed_when: manager_package_check.stdout != item.version
+- name: Check the Tool Manager
+  become: true
+  become_user: "{{ manager.setup.input.user }}"
+  ansible.builtin.command:
+    argv: "{{ ['/usr/local/bin/vp', '--version'] if manager.setup.manager == 'javascript' else ['composer', '--version'] }}"
+  changed_when: false
+- name: Record the successfully configured manager pin and lock
+  ansible.builtin.copy:
+    dest: "/var/cache/orbit/tool-setup/{{ manager.setup.manager }}/configured.json"
+    content: "{{ manager.setup.input | to_json }}"
+    owner: root
+    group: root
+    mode: '0644'

@@ -11,7 +11,7 @@ use UnexpectedValueException;
  * comment `orbit` or `orbit <label>` and match by tuple first, then by label to detect drift. Other rules match by comment.
  * IPv6 rules are left out, as Orbit intends only IPv4 rules.
  *
- * @phpstan-type Shape array{comment: string, action: string, direction: string, source: string, destination: string, port: string, protocol: string, in_interface: ?string, out_interface: ?string, family: ?string}
+ * @phpstan-type Shape array{comment: string, action: string, direction: string, source: string, source_port: string, destination: string, port: string, protocol: string, in_interface: ?string, out_interface: ?string, family: ?string}
  * @phpstan-type Row array{name: string, comment: string, action: string, source: string, destination: string, port: string, protocol: string, interface: ?string, family: string, match: string}
  */
 final readonly class LiveFirewallSnapshot
@@ -139,6 +139,7 @@ final readonly class LiveFirewallSnapshot
         $optional = static fn (string $key): ?string => is_string($shape[$key] ?? null) ? $shape[$key] : null;
 
         return ['comment' => $text('comment'), 'action' => $text('action'), 'direction' => $text('direction'), 'source' => $text('source'),
+            'source_port' => is_string($shape['source_port'] ?? null) ? $shape['source_port'] : 'any',
             'destination' => $text('destination'), 'port' => $text('port'), 'protocol' => $text('protocol'),
             'in_interface' => $optional('in_interface'), 'out_interface' => $optional('out_interface'), 'family' => $optional('family')];
     }
@@ -183,6 +184,7 @@ final readonly class LiveFirewallSnapshot
             'action' => $action,
             'direction' => $direction,
             'source' => self::endpoint($rule['source'] ?? null),
+            'source_port' => is_string($rule['source_port'] ?? null) ? $rule['source_port'] : 'any',
             'destination' => self::endpoint($rule['destination'] ?? null),
             'port' => $port,
             'protocol' => $protocol,

@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\Nodes\NodeData;
+use App\Data\Nodes\NodeSettingsData;
+use App\Data\Nodes\NodeStorageAppsData;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Instance;
 use App\Models\Node;
@@ -84,4 +88,31 @@ it('unbinds groups whose workspace Instance a release deleted, and keeps every o
     expect(DB::table('tasks')->where('id', $bound)->value('taskable_id'))->toBe($kept)
         ->and(DB::table('tasks')->where('id', $dangling)->value('taskable_id'))->toBeNull()
         ->and(DB::table('tasks')->where('id', $dangling)->value('taskable_type'))->toBeNull();
+});
+
+it('migrates existing hosts to readable and updateable separate pool settings without losing other settings', function (): void {
+    $ids = [];
+    foreach (['Beast', 'shark', 'sabre'] as $index => $name) {
+        $ids[$name] = DB::table('nodes')->insertGetId(['name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+            'public_ssh_host' => '10.44.0.'.($index + 10), 'wireguard_ip' => '10.44.0.'.($index + 10), 'user' => 'orbit',
+            'settings' => json_encode(['task_vms' => ['cidr' => '10.252.7.0/24', 'max_vms' => 6, 'task_max_vms' => 1, 'ci_only' => $name === 'sabre', 'cpus' => 4],
+                'apps' => ['path' => '/fast/apps'], 't3' => ['project' => 'orbit']])]);
+    }
+    $migration = require database_path('migrations/2027_02_01_000001_migrate_task_vm_host_pools.php');
+    $migration->up();
+    $migration->up();
+    $normalizer = new NodeSettingsNormalizer;
+    foreach ($ids as $name => $id) {
+        $node = Node::query()->findOrFail($id);
+        $data = NodeData::fromModel($node);
+        expect($data->settings->task_vms->task_places)->toBe($name === 'sabre' ? 0 : 2)
+            ->and($data->settings->task_vms->ci_places)->toBe(2);
+        $updated = $normalizer->storedOver($node->settings, new NodeSettingsData(
+            apps: new NodeStorageAppsData('/new/apps'), task_vms: $data->settings->task_vms));
+        $node->update(['settings' => $updated]);
+        expect($node->fresh()->settings['task_vms'])->not->toHaveKeys(['max_vms', 'task_max_vms', 'ci_only'])
+            ->and($node->settings['task_vms']['cpus'])->toBe(4)
+            ->and($node->settings['t3'])->toBe(['project' => 'orbit'])
+            ->and($node->settings['apps']['path'])->toBe('/new/apps');
+    }
 });

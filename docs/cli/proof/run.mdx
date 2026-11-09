@@ -2,6 +2,9 @@
 title: "orbit proof:run"
 sidebarTitle: "proof:run"
 description: "Prove the commands that a commit changes. Orbit picks the cases from the commit, runs them in a disposable test fleet inside a task VM, and reports a verdict for each case."
+covers:
+  - apps/gateway/app/Domain/Proof/ProofBatchPlan.php
+  - apps/gateway/app/Domain/Proof/ProofShardVerdicts.php
 ---
 
 ```bash
@@ -12,11 +15,13 @@ orbit proof:run <commit> [--all] [--report-only] [--keep-failed] [--idempotency-
 | --- | --- | --- |
 | `commit` | yes | Full 40 or 64 character lowercase commit SHA. |
 
+The selection list maps the CLI, Gateway, SDK and native execution files for `node:role:add` to its approved cases. Changes to shared proof admission or failure rendering select every available cases file; test-only changes remain skipped.
+
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--all` | off | Run every case, not only the cases that the commit selects. |
-| `--report-only` | off | Wait visibly for capacity for up to 200 seconds, retrying every 20 seconds; then report `tasks.capacity_unavailable` with the selected commands and no passing result. Do not release kept VMs or cancel another proof. This flag does not grant reserve access. Only an authenticated active Node with an active `ci-runner` role qualifies for the shared CI/refresh reserve. CI proofs cannot be preempted by another proof. Other report-only proofs may yield to a normal proof. |
-| `--keep-failed` | off | Keep the VM of a run that failed, for any reason (a case, the run, or its setup), for 60 minutes. The run skips the destroy step, the group stays open, and the result names each kept VM with its group and the time it is destroyed. Nobody has to come back: the Gateway cancels the group when the time is up. A run that passes destroys its VM as before, and a run that never got a VM keeps none. A proof that cannot be placed for lack of room (not a `--report-only` one) releases the kept VMs first and retries for up to 200 seconds, with the step `Wait for VMs to be released`; a kept VM otherwise stays until its time is up. The API and MCP field is `keep_failed`. |
+| `--report-only` | off | Record reporting intent. Capacity waits and pool eligibility are the same with or without this flag. |
+| `--keep-failed` | off | For an operator proof, keep the VM of a failed run for 60 minutes. CI always deletes its VMs. The result names its VM, group and expiry. The Gateway cancels the group at expiry. Other proofs do not preempt it. A passing run deletes its VM. |
 | `--idempotency-key=KEY` | generated | Retry the same start with a permanent key. See [Start keys](/reference/operations#retry-a-start-with-a-key). |
 | `--json` | off | Print the final result as JSON, with the verdict of each case. |
 
@@ -28,7 +33,7 @@ In a terminal, an omitted commit is asked for with a text prompt. A noninteracti
 
 The command takes the commit and nothing else. The calling Node needs an access grant to the Gateway Node. Continuous integration calls it for every change to command code; see [the proof CI](/reference/feature-flow#the-proof-ci).
 
-Built so far: the trust check, the case selection, the run in a task VM and the verdict of each case. The CI job `proof-run` exists but is report-only until a run passes end to end. Not built yet: the receipt store.
+Built so far: the trust check, the case selection, the run in a task VM and the verdict of each case. The CI job `proof-run` is part of Required checks. A failed case or missing verdict fails it. Capacity waits never pass as a proof. Not built yet: the receipt store.
 
 ## Which commits Orbit proves
 
@@ -36,25 +41,23 @@ Orbit proves only code that it can trust. The commit must be the head of a branc
 
 ## Which cases run
 
-Orbit lists the files that differ between the commit and its merge base with `main`, and maps each path to commands with the selection list in the commit. The runner runs the cases file `swamp/proof/<family>/<command>.cases.yaml` of each of those commands. `--all` runs every case. A change to the selection list, or a file list that GitHub returns incomplete, also runs every case. [Choose the cases](/reference/feature-flow#choose-the-cases) holds the mapping rule.
+Orbit lists the files that differ between the commit and its merge base with `main`, and maps each path to commands with the selection list in the commit. A code change runs the command’s whole cases file. A change only to its cases selects added or changed entries and users of changed fixtures, vars or batch setup. The runner expands and compares both definitions. Changes to the runner, selection code or selection list disable narrowing for every selected command. Tooling alone selects no commands. Unknown fixture keys select the whole file. CI publishes its exact base/head result, and Orbit reads it; a missing or invalid result runs the whole file. Deleted entries select nothing. `--all` and an incomplete file list run every case. A selection-list change alone selects nothing. [Choose the cases](/reference/feature-flow#choose-the-cases) holds the mapping rule.
 
 When only paths that need no proof changed, such as documentation and charts, the command succeeds with `Skipped — nothing to prove (proof.nothing_to_prove)`. It starts nothing. A path that matches no line of the selection list is refused with `proof.path_unmapped`, so a new kind of file never passes unproven by accident. Paths that are marked as having no case yet, and commands without a cases file, are listed as uncovered in the result and do not fail the run.
 
 ## The run
 
-Orbit starts one run for each selected command, all at once, and each run has a task VM of its own. A command that fails does not stop the others. For each run Orbit creates a task group on the Orbit Project and admits the whole run as the operation `proof.command`. Orbit's own Swamp then runs the workflow `operation-proof-run` for it, with three children in turn:
+CI proofs join one first-come-first-served queue, ordered by their proof Operation id. The front proof takes every free CI place on hosts with usable bases, up to its number of batches. It needs at least one place. A full pool waits within a two-hour admission budget; an expired wait fails clearly. Other CI proofs cannot pass it.
 
-1. The task provision, `operation-task-provision`, the same one every task uses. The workspace starts exactly at the commit that you prove. The VM is a regular task VM, so it carries the Pi token of its own claim and the fixed model key of every task VM. It also gets the proof Swamp Club key that the nested fleet needs, through the same protected delivery as the `swamp-proof` Project; no other task of the Orbit Project gets it. If no host has room, the admission is refused with `tasks.capacity_unavailable` and no run starts.
-2. The cases of the command, `proof-fleet-verify`, on Node 209, which reaches the VM over SSH like every other step. The runner reads the cases file of the command, `swamp/proof/<family>/<command>.cases.yaml`, at the tested commit and runs its cases with the CLI built from the commit.
-3. The destruction of the VM, `operation-task-cancel`, whatever the cases did.
+Orbit reads the cases at the trusted commit and expands their variant ids. It sums measured case durations from prior reports for each whole batch, then assigns the longest batches to the least loaded VM. A batch never splits. Unseen cases use the median measured duration, or one second when no measurements exist.
 
-Not built: the nested test fleet of the VM and its snapshot `base`. The old reset was removed, and Orbit's own Swamp will build the fleet inside the provision.
+Each allocated VM starts from the host base with the task checkout at the tested commit. Orbit checks that commit, restores the nested fleet, and runs the VM's assigned batches in order. Before each batch it restores the head checkout, because replaying a changed case with `fails_on_base: true` may switch it to the merge base. Each batch runs its declared setup. A setup failure leaves missing cases unrun. Execution retries nothing.
 
-The cases run in batches. Each batch applies its declared start state first. Inside a batch the cases run one at a time. Each case asserts the promised effect, the recorded state and the Node state, on its own resources, and undoes nothing. Not built: the restore of `base` before each batch and after a case that did not pass; the old restore was removed. A batch setup that fails stops the run: the cases that did not run end `unrun` with cause `infrastructure`, and the verdicts already reached stay. Orbit retries nothing. [Verification cases](/reference/verification-cases#the-run) describes the workflow.
+Operator proofs use one VM per command through the task pool's FIFO admission. Their optional `--keep-failed` retains a failed VM for 60 minutes. CI ignores that option and always deletes its VMs.
 
-Each case has its own timeout, 180 seconds unless the case sets another. The operation `proof.command` has a budget of 60 minutes, and the `proof.run` that you follow has 65 minutes.
+Every run releases its VM after success or failure. If cleanup fails or a run never starts, normal group cancellation deletes the VM. One live or releasing VM holds one place until deletion is confirmed.
 
-No step of a run calls the Gateway. Each run is recorded once, from its terminal event: its verdicts, its VM and the end of its group. The `proof.run` that you follow closes when the last run has ended, and it passes only when every run passed.
+Orbit reads the full case reports, checks the expected case identities and merges every VM’s verdicts into one report. A missing, duplicate or unexpected verdict fails. The proof closes after all runs end and passes only when every selected command has all its cases passed. A selection with no command passes without claiming a VM.
 
 ## The execution switch
 
@@ -64,7 +67,7 @@ No step of a run calls the Gateway. Each run is recorded once, from its terminal
 
 Each selected case ends `passed`, `failed` or `unrun`. A case that exceeds the budget is `failed`. A case is `unrun` when its setup could not start or the run stopped before it. Neither `failed` nor `unrun` counts as a pass. If the fleet never becomes ready, every selected case is `unrun`.
 
-The result names the commit, each case with its command, verdict and duration, and the uncovered paths. The `program` of a case is the cases file and the case id, `swamp/proof/firewall/allow.cases.yaml#new-restricted-allow`; a `failed` or `unrun` case also carries its cause and the failed checks. The VM is destroyed after the run, so the evidence lasts only as long as a receipt store is not built; the verdicts stay in the result.
+The result names the commit, each case with its command, selection reason, verdict and duration, and the uncovered paths. The `program` of a case is the cases file and the case id, `swamp/proof/firewall/allow.cases.yaml#new-restricted-allow`; a `failed` or `unrun` case also carries its cause and the failed checks. The VM is destroyed after the run, so the evidence lasts only as long as a receipt store is not built; the verdicts stay in the result.
 
 | Outcome | Exit status |
 | --- | --- |
@@ -101,7 +104,7 @@ The request answers at once with the proof Operation. The checks of the commit, 
 | `proof.run_failed` | The VM or the test fleet of a run did not become ready, or its cases printed no verdict. Every selected case of that command is `unrun`. |
 | `proof.queue_unavailable` | The queue refused the job that admits the proof. No case ran. Run the command again. |
 | `proof.admission_interrupted` | The job that admits the proof was lost before it started the runs. No case ran, and each selected case is `unrun`. Run the command again. |
-| `tasks.capacity_unavailable` | No host with a usable nested fleet seed has room for a VM for each selected command. No run starts. Only authenticated CI proofs may use the per-host reserve shared with refresh candidate proofs; operator proofs stay outside it. Report-only CI waits briefly if it is busy (see the option). A host whose seed holds no ready copies of the current format is skipped, even with free slots. A host whose ready copies lack a change of the playbooks, pins or lock files made before the merge base of the commit with main is skipped too, and the refusal names it; a change of other files, such as Gateway PHP or documents, does not make copies stale. A refresh runs for every release, and a refusal starts none. For each skipped host the refusal names the release its copies come from, the change they lack, and whether a refresh of that host is running (with its operation id); run the proof again when that refresh has ended. |
+| `proof.capacity_timeout` | No place on a host with a usable base became available within the two-hour admission budget. No case ran. |
 | `proof.execution_disabled` | Cases are selected, and proof execution is switched off. The input of the proof holds the selected cases and the uncovered paths. |
 | `proof.selection_invalid` | The selection list of the commit is malformed. The message names the line. |
 | `proof.github_unavailable` | GitHub could not be read, so the commit or its cases cannot be checked. Run the command again. |

@@ -1,0 +1,29 @@
+---
+- name: Resolve the admitted software scope for the end check
+  ansible.builtin.import_tasks: node-converge-software-plan.yml
+- name: Read the selected package state after all mutations
+  ansible.builtin.package_facts: { manager: apt }
+- name: Require every selected package pin
+  ansible.builtin.assert:
+    that: item.version in (ansible_facts.packages[item.package] | default([]) | map(attribute='version') | list)
+    quiet: true
+  loop: "{{ ubuntu_tools + deb_tools }}"
+  loop_control: { label: "{{ item.name }}" }
+- name: Check selected JavaScript pins without writes
+  when: "'vp' in tool_by_name"
+  block:
+    - name: Read the pinned JavaScript runtime
+      ansible.builtin.import_tasks: javascript-version.yml
+    - name: Require the selected JavaScript pins
+      ansible.builtin.assert: { that: js_current, quiet: true }
+- name: Check the selected browser without writes
+  when: "'chrome-headless-shell' in tool_by_name"
+  block:
+    - name: Read the selected browser version
+      ansible.builtin.command: { argv: [/usr/local/bin/chrome-headless-shell, --version] }
+      changed_when: false
+      register: browser_check
+    - name: Require the selected browser pin
+      ansible.builtin.assert:
+        that: recipe.tools['chrome-headless-shell'].version in browser_check.stdout
+        quiet: true

@@ -1,0 +1,71 @@
+---
+# The checksum read and download may precede the lock, just as in bootstrap delivery.
+# Only the final atomic rename selects the artifact. flock owns the existing Node-local
+# update lock for that rename; failures never replace the destination or strand a lock.
+- name: Inspect the selected artifact
+  ansible.builtin.stat:
+    path: "{{ converge_replacement.path }}"
+    follow: "{{ converge_replacement.link is not defined }}"
+    get_checksum: "{{ converge_replacement.link is not defined }}"
+    checksum_algorithm: sha256
+  register: converge_selected
+- name: Stage and commit a different artifact
+  when: >-
+    (converge_replacement.link is defined and
+      (not converge_selected.stat.islnk | default(false) or
+       converge_selected.stat.lnk_source | default('') != converge_replacement.link)) or
+    (converge_replacement.link is not defined and
+      converge_selected.stat.checksum | default('') != converge_replacement.sha256)
+  block:
+    - name: Create a private candidate beside the destination
+      ansible.builtin.tempfile:
+        state: directory
+        path: "{{ converge_replacement.path | dirname }}"
+        prefix: .orbit-converge-
+      register: converge_candidate
+    - name: Download and verify the candidate binary
+      when: converge_replacement.link is not defined
+      ansible.builtin.get_url:
+        url: "{{ converge_replacement.url }}"
+        dest: "{{ converge_candidate.path }}/replacement"
+        checksum: "sha256:{{ converge_replacement.sha256 }}"
+        owner: root
+        group: root
+        mode: "0755"
+    - name: Stage the candidate CLI selection
+      when: converge_replacement.link is defined
+      ansible.builtin.file:
+        src: "{{ converge_replacement.link }}"
+        dest: "{{ converge_candidate.path }}/replacement"
+        state: link
+        owner: root
+        group: root
+    - name: Commit the replacement under the update lock
+      ansible.builtin.command:
+        argv:
+          - flock
+          - --wait
+          - "120"
+          - /run/lock/orbit-self-update.lock
+          - mv
+          - --force
+          - --no-target-directory
+          - --
+          - "{{ converge_candidate.path }}/replacement"
+          - "{{ converge_replacement.path }}"
+      register: converge_replacement_commit
+      changed_when: true
+  always:
+    - name: Remove this replacement's private candidate
+      when: converge_candidate.path is defined
+      ansible.builtin.file:
+        path: "{{ converge_candidate.path }}"
+        state: absent
+- name: Reconcile the selected artifact's ownership and mode
+  ansible.builtin.file:
+    path: "{{ converge_replacement.path }}"
+    owner: root
+    group: root
+    mode: "{{ '0755' if converge_replacement.link is not defined else omit }}"
+    follow: false
+  register: converge_replacement_metadata

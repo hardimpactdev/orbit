@@ -10,6 +10,8 @@ covers:
 
 The `metrics` family enables the Metrics role, reports its status, selects exporter Nodes, shows the Grafana credential, and disables the role. The [Metrics reference](/reference/metrics) explains what the role runs, which Nodes it selects, and who may open Grafana.
 
+The Node picker for `metrics:enable` reads role assignments from the shared Node list response. Its Roles column uses the same names, non-active statuses and retained failure details as `node:list`; it does not treat an assignment record as a role-name string.
+
 ## Commands
 
 | Command | Result |

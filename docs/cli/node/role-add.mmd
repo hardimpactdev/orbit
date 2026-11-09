@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0243/0244 task, one Swamp run, Ansible phases for idempotent Node state (rule 22). docs/reference/node-provisioning.md.
-  %% status: reviewed
+  %% status: draft
   %% command: node:role:add
   %% kind: node.role_add
   autonumber
@@ -13,128 +13,188 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
   participant N as Target Node<br/>gets the role
-  participant M as Metrics Node<br/>Prometheus
+  participant M as Fleet Nodes<br/>role participants
+  %% path: main
   CLI->>GW: node:role:add NODE ROLE
   %%> Command:
   %%> - `orbit node:role:add NODE ROLE`
-  %%> - syntax: `<node> <role> [--converge] [--postgres-process=ID] [--clickhouse-process=ID] [--json]`
-  %%> Input:
-  %%> - the Node and the role, such as `app-dev`, `app-prod`, `ingress`, `database`, `websocket`, `analytics`, `ci-runner`, `gateway` or `swamp`
-  %%> - `--converge` runs `node.role_converge` for a role the Node already has; it has its own chart
-  %%> Who can call it:
-  %%> - the `orbit` CLI and the MCP tool send the same request
-  Note over GW: Validate, claim the role
+  %%> - syntax: `<node> <role> [--converge] [--postgres-process=ID] [--clickhouse-process=ID] [--idempotency-key=KEY] [--json]`
+  Note over GW: Check recorded state
   %%> Requirements:
-  %%> - the calling Node has an access grant to the target Node, and the target is an active, managed Linux Node
-  %%> - the role is not `vpn` or `router`; those are protected from this command
-  %%> - the Node doesn't have the role yet and holds no role it conflicts with; a singleton role such as `gateway`, `websocket`, `metrics`, `analytics` or `swamp` has no holder yet (`node:role:relocate` moves `gateway`, `websocket` and `metrics`; `swamp` cannot be moved)
-  %%> - one add or converge Operation per Node (`operation.target_busy`)
-  %%> Builds:
-  %%> - the role plan: packages, files, units, Caddy sites, PHP settings, firewall rules and certificate requests, and for `metrics` the Prometheus and Grafana specifications
-  %%> Secrets:
-  %%> - role credentials reach the run only through the vault, as key names
-  %%> Result:
-  %%> - the assignment is recorded as `provisioning`, and a task is recorded with the full intent
-  %%> - a `provisioning` assignment with no Operation holding the Node for 11 minutes is a stale claim, left by an interrupted run
-  GW->>SW: Start run, full intent<br/>operation-node-role-add
-  GW-->>CLI: 202 Accepted<br/>task ID
-  %%> What you get:
-  %%> - the task ID, at once
-  %%> Next:
-  %%> - the CLI follows the task with `operation:show`
-  SW->>N: Require supported Ubuntu<br/>SSH argv · native assert
-  opt swamp role
-    SW->>N: Install Ansible<br/>native bootstrap
-    %%> Why:
-    %%> - the Swamp role provides the worker's Ansible; it installs the pinned version and collections first
-  end
-  SW->>N: Apply prerequisites<br/>Ansible phase: prerequisites
-  %%> What it does:
-  %%> - the role's repositories and packages, at the pins of the release
-  %%> - a Node of a task VM's nested fleet reads its apt packages through the VM's package cache (`apt_proxy` in the intent, else the archive)
-  %%> Downloads:
-  %%> - a pinned package comes from the mirror first; only a transport failure falls back to upstream, and a checksum failure stops the run and removes the staged file
-  opt role needs Tool Managers
-    SW->>N: Set up Tool Managers<br/>native child workflow
-  end
-  SW->>N: Apply the role<br/>Ansible phase: node
-  %%> What it does:
-  %%> - the role's files, units, ports and storage directory owner and mode; protected paths are refused before any host work
-  %%> On the swamp role:
-  %%> - Decided by the orchestrator, for Nick's review (2026-11-07): a Swamp start cache that exists is given to the swamp account with mode `0644`
-  %%> - the cache is the 10 MB file `/tmp/deno-compile-swamp.cache`; the swamp account can not replace a file of another owner in sticky `/tmp`
-  %%> - an unreadable file makes every dispatch start about 0.35 s slower; no restart is needed to repair it
-  opt Analytics
-    SW->>N: Initialize Analytics<br/>native SSH argv · child
-    %%> What it does:
-    %%> - opens local storage, pulls the image, creates and migrates the database and applies the runtime
-    SW->>N: Wait for Analytics<br/>Ansible phase: readiness
-  end
-  opt swamp role
-    SW->>N: Install Swamp<br/>native steps
-    %%> What it does:
-    %%> - installs the binary beside the running one, links it, then applies the identity, the serve unit and the worker units
-    SW->>N: Enable renewal<br/>systemd timer
-    %%> Order:
-    %%> - the Ansible node phase installs the renewal program and rendered units first
-    %%> - start the timer after all three permanent workers are started; renew the oldest due worker only while its two peers accept dispatches
-    %%> - active dispatches finish during each drain; two workers keep accepting work
-    %%> - all three workers stay running; only one worker renews per round, after its two peers are accepting
-    %%> - a failed or inactive worker can reset its failure limit and start while its two peers serve
-    %%> Why not in place:
-    %%> - replacing the running binary breaks every dispatch, so the running serve and workers keep working until they restart
-  end
-  opt role needs certificates
-    SW->>GW: Sign role certificates<br/>native child workflow
-    %%> Why this calls the Gateway:
-    %%> - certificate signing is the one call a step makes to the Gateway
-  end
-  opt role changes PHP pools
-    SW->>N: Publish PHP pools<br/>native delta publication
-  end
-  SW->>N: Publish role sites<br/>Ansible phase: publication
-  SW->>N: Open the firewall<br/>Ansible phase: firewall
-  %%> What it does:
-  %%> - adds the role's rules, each specific allow before its isolation deny and the broader peer trust rule; unrelated rules stay
-  opt role changes DNS
-    SW->>N: Publish private DNS<br/>native delta publication
-    %%> Why last:
-    %%> - a name is reachable only after the site serves and the firewall is open
-  end
-  opt role joins Metrics
-    SW->>N: Add the exporters<br/>Ansible phase: exporters
-    SW->>M: Publish Prometheus<br/>Ansible phase: prometheus
-  end
-  SW->>N: Check the role<br/>Ansible phase: check
-  %%> What it does:
-  %%> - the one end check: the role's services, ports, sites and rules are in place
-  %%> - on the swamp role it also checks that the swamp account owns and can read its start cache
-  alt every step passes
-    N-->>SW: role services ready
-    SW-->>GW: Run succeeded<br/>terminal event
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record the role active
+  %%> - apply the [Node family's shared authority rule](/cli/node#authority)
+  %%> - use recorded Node eligibility, role compatibility, singleton ownership and Cluster membership; admission contacts no Node
+  %%> - `database` needs a recorded WireGuard address; Analytics needs its two valid storage Processes
+  alt unknown Node
+    %% path: node-not-found
+    GW--xCLI: http.404
+  else caller refused
+    %% path: access-refused
+    GW--xCLI: node_access.required
+  else database address missing
+    %% path: database-address-missing
+    GW--xCLI: Database address missing<br/>database.wireguard_ip_missing
+  else Node not eligible
+    %% path: node-ineligible
+    GW--xCLI: operation.kind_unavailable
+    %%> When:
+    %%> - the Node is not active Linux or lacks recorded SSH management
+  else role not admissible
+    %% path: role-refused
+    GW--xCLI: validation.failed
+    %%> When:
+    %%> - the role is unknown or protected, conflicts with an assigned role, has another singleton holder, or violates the ingress Cluster rule
+    %%> - an existing assignment needs explicit convergence, except an active ingress assignment
+    %%> - Analytics storage options are refused for another role
+  else Analytics storage invalid
+    %% path: analytics-storage-refused
+    GW--xCLI: Storage refused<br/>analytics.*
     %%> Result:
-    %%> - the assignment becomes `active`
-  else a step fails
-    N--xSW: exit ≠ 0 or no match
-    SW--xGW: Run failed<br/>error_code, failed step
-    Note over GW: Mark the role failed
+    %%> - the storage error identifies the missing or unsuitable Process, port or credentials; no assignment is claimed
+  else storage path refused
+    %% path: storage-path-refused
+    GW--xCLI: Storage path refused<br/>node.settings_path_*
+    %%> When:
+    %%> - the effective application storage path is invalid, protected or inside a managed checkout
+  else Node held
+    %% path: target-busy
+    GW--xCLI: operation.target_busy
     %%> Result:
-    %%> - the assignment stays, marked `failed` at `converge:STEP`, so you can see it
-    %%> On the Node:
-    %%> - finished host changes stay; there is no rollback
-    %%> Retry:
-    %%> - fix the cause and run `node:role:add --converge`
-  end
-  opt run completed or failed
-    SW->>SW: Remove the run folder<br/>private run files
-    %%> Why:
-    %%> - the intent, vault values and role configuration do not outlive the run, whatever its result
-    SW->>N: Remove init containers<br/>best effort
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show TASK
-    GW-->>CLI: status + result
+    %%> - no Operation or assignment change
+  else convergence requested
+    %% path: converge-requested
+    opt --converge
+      %% path: converge-mode
+      alt assignment not eligible
+        %% path: converge-refused
+        GW--xCLI: validation.failed
+        %%> When:
+        %%> - the assignment is absent, fresh provisioning, removing, or failed outside a `converge:` step
+      else convergence admitted
+        %% path: converge
+        Note over GW: Claim convergence
+        %%> Requirements:
+        %%> - accept an active role, a `converge:` failure, or provisioning at least 11 minutes old with no Operation holding the Node
+        %%> Result:
+        %%> - one Node Operation owns the convergence; freeze its full intent and vault key names
+        GW->>SW: Start convergence run<br/>node.role_converge
+        %%> Next:
+        %%> - execute the [node.role_converge chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/role-converge.mmd), not the add-only phases below
+        GW-->>CLI: 202 Accepted<br/>Operation ID
+        alt convergence succeeds
+          %% path: converge-succeeded
+          SW-->>GW: Convergence succeeded<br/>terminal event
+          %%> Result:
+          %%> - the shared terminal reader records the assignment active and clears earlier failure details
+        else convergence fails
+          %% path: converge-failed
+          SW--xGW: Convergence failed<br/>error_code, failed step
+          %%> Result:
+          %%> - the shared terminal reader records the failure; an already-active assignment stays active
+        end
+        loop every 2 s until terminal
+          CLI->>GW: operation:show TASK
+          GW-->>CLI: status + result
+        end
+      end
+    end
+  else addition admitted
+    %% path: add
+    Note over GW: Claim the role and Node
+    %%> Result:
+    %%> - one Node Operation owns the add; a new assignment is provisioning, and a repeated active ingress assignment stays active
+    %%> - capture full public intent and vault key names, never credential values
+    %%> - for gateway, record its grants to active vpn and metrics Nodes on other machines
+    GW->>SW: Start run, full intent<br/>operation-node-role-add
+    GW-->>CLI: 202 Accepted<br/>Operation ID
+    SW->>N: Apply prerequisites<br/>Ansible phase: prerequisites
+    %%> What it does:
+    %%> - require an admitted Ubuntu release before changing the host, then apply pinned repositories and packages
+    %%> - for the swamp role, bootstrap its pinned Ansible and collections before the remaining phases
+    %% path: tools
+    SW->>N: Read Tool Manager accounts<br/>Ansible phase: tools-read
+    SW->>SW: Compose tools resources
+    SW->>SW: Write tool variables
+    SW->>N: Set up Tool Managers<br/>Ansible phase: tools
+    %%> What it does:
+    %%> - apply only the admitted managers; rerun manager commands only when their pin or lock changes
+    SW->>N: Apply the role<br/>Ansible phase: node
+    %%> What it does:
+    %%> - apply the role's files, units and storage ownership
+    %%> - for swamp, repair ownership and mode 0644 of an existing `/tmp/deno-compile-swamp.cache`
+    opt new Analytics assignment
+      %% path: analytics
+      SW->>M: Open Analytics storage<br/>Ansible phase: storage-firewall
+      SW->>M: Apply Analytics runtime<br/>Ansible phase: analytics
+      %%> What it does:
+      %%> - initialize the database and apply the runtime
+      SW->>M: Wait for Analytics<br/>Ansible phase: readiness
+      %%> Result:
+      %%> - a completed runtime is retained and recorded even if a later publication fails
+    end
+    opt swamp role
+      %% path: swamp
+      SW->>N: Install Swamp<br/>Ansible phase: swamp
+      %%> What it does:
+      %%> - publish the binary beside the running one, then apply identity, serve and worker units
+      %%> - start all three permanent workers without restarting live processes; enable renewal to drain one at a time while two serve
+    end
+    opt role needs certificates
+      %% path: certificates
+      SW->>GW: Sign role certificates<br/>native child workflow
+    end
+    SW->>M: Read role publications<br/>Ansible phase: publication-read
+    SW->>SW: Compose publications
+    SW->>SW: Write publication vars
+    opt role changes PHP pools
+      %% path: php-pools
+      SW->>M: Publish PHP pools<br/>Ansible phase: php
+    end
+    SW->>M: Publish role sites<br/>Ansible phase: publication
+    %%> What it does:
+    %%> - apply each participant's admitted delta; validate Caddy before reloading
+    SW->>M: Open the firewall<br/>Ansible phase: firewall
+    %%> What it does:
+    %%> - repair owned rules, placing specific allows before isolation denies and broader peer trust; preserve unrelated rules
+    opt role changes DNS
+      %% path: dns
+      SW->>M: Publish private DNS<br/>Ansible phase: dns
+      %%> Why:
+      %%> - publish only after the site serves and its firewall is open
+    end
+    opt role joins Metrics
+      %% path: metrics
+      SW->>N: Add the exporters<br/>Ansible phase: exporters
+      SW->>M: Publish Prometheus<br/>Ansible phase: prometheus
+      %%> What it does:
+      %%> - publish membership after the target's exporters are ready
+    end
+    SW->>M: Check the role<br/>Ansible phase: check
+    %%> What it does:
+    %%> - prove the role's services, ports, sites and owned rules, including swamp cache readability
+    alt every phase passes
+      %% path: succeeded
+      SW-->>GW: Run succeeded<br/>terminal event
+      %%> Result:
+      %%> - the shared terminal reader records the assignment active and clears earlier failure details
+    else a phase fails
+      %% path: failed
+      SW--xGW: Run failed<br/>error_code, failed step
+      %%> Result:
+      %%> - a first add stays recorded as failed at `converge:STEP`; an already-active ingress assignment stays active
+      %%> - retain the failed step and error code on the Operation and the failed assignment
+      %%> - finished host changes remain, with no rollback; recover with `node:role:add NODE ROLE --converge`
+    end
+    opt Analytics init containers
+      %% path: analytics-cleanup
+      SW->>M: Remove init containers<br/>Ansible phase: cleanup
+      %%> When:
+      %%> - condition: completed; best-effort cleanup on the admitted runtime Node
+    end
+    SW->>SW: Remove the run folder<br/>condition: completed
+    %%> Result:
+    %%> - remove private intent and credential files after role phases and init-container cleanup finish, on either result
+    loop every 2 s until terminal
+      CLI->>GW: operation:show TASK
+      GW-->>CLI: status + result
+    end
   end

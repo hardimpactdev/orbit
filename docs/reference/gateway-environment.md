@@ -171,7 +171,7 @@ Other `ORBIT_` keys belong to one feature, and the page for that feature documen
 
 `ORBIT_TASK_VMS_SWAMP_HOST` names the one private HTTPS site task VM workers may reach, such as `swamp.orbit`. Set it for the managed Swamp Route on the `swamp` Node. After applying the environment change, rebuild Caddy on that Node; Doctor reports `role.caddy_build_drift` until then. See [Refuse task VMs in Caddy](/reference/compute-drivers#refuse-task-vms-in-caddy).
 
-Task VMs run only on Incus. Provider API credentials are not part of Gateway configuration.
+Task VMs run only on Incus. Provider API credentials are not part of Gateway configuration. Task publication deletes the VM; no environment setting delays release for review. The operator sets the separate task and CI pool sizes on each host Node.
 
 Task VM hosts use [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list. Configure and verify each host's stored settings before removing the former `ORBIT_TASK_VMS_INCUS_HOSTS` variable with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read the environment list, including when configuration is cached.
 

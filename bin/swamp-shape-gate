@@ -43,6 +43,7 @@ BASES = ('origin/main', 'main')
 
 ANSIBLE_TESTS = ('tests/ansible_artifact_test.py', 'tests/ansible_inputs_test.py', 'tests/ansible_firewall_test.py',
                  'tests/ansible_node_add_test.py', 'tests/ansible_shape_gate_tools_test.py', 'tests/ansible_task_vm_role_test.py',
+                 'tests/ansible_gateway_swamp_grants_test.py',
                  'tests/ansible_task_vm_fleet_wait_test.py', 'tests/ansible_task_vm_host_egress_test.py')
 DENO_UNIT_TESTS = (
     ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/check-swamp-shape_test.ts'),
@@ -74,12 +75,12 @@ def plan(base, reports, cache, collections):
         Step('shape', 'ansible collections', ['ansible-galaxy', 'collection', 'install', '-r', 'ansible/requirements.yml', '-p', str(collections)],
              env=ansible_env),
         Step('shape', 'ansible-lint', ['ansible-lint', 'ansible/operation-instance-create.yml', 'ansible/route-create-site.yml', 'ansible/route-withdraw.yml', 'ansible/ai-router-task-guard.yml', 'ansible/operation-node-add.yml', 'ansible/operation-node-role-add.yml', 'ansible/swamp-worker-renewal.yml', 'ansible/task-vm-role.yml',
-                                       'ansible/task-vm-fleet-wait.yml', 'ansible/task-vm-host.yml'], env=ansible_env, parallel=True),
+                                       'ansible/task-vm-fleet-wait.yml', 'ansible/task-vm-host.yml', 'ansible/proof-gateway.yml'], env=ansible_env, parallel=True),
     ]
     steps += [Step('shape', test, ['python3', '-I', test], parallel=True) for test in ANSIBLE_TESTS]
     steps.append(Step('shape', 'ruff', ['ruff', 'check', 'ansible/build_vars.py', 'ansible/library/orbit_artifact.py',
                                         *ANSIBLE_TESTS], parallel=True))
-    steps += [Step('shape', 'deno test ' + ' '.join(arguments[-1:]), ['deno', 'test', *arguments], parallel=True) for arguments in DENO_UNIT_TESTS]
+    steps += [Step('shape', 'deno test ' + ' '.join(arguments[-1:]), ['deno', 'test', *arguments], env=ansible_env, parallel=True) for arguments in DENO_UNIT_TESTS]
     steps += [
         Step('shape', 'check-swamp-shape', ['deno', 'run', '--allow-env', '--allow-read', f'--allow-write={shape_report}', '--allow-run',
                                             'bin/check-swamp-shape.ts', '--base', base, '--report', str(shape_report)]),

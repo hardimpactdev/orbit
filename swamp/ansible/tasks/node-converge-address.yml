@@ -1,0 +1,9 @@
+---
+- name: Read the tunnel address
+  ansible.builtin.command: ip -4 -o address show dev orbit
+  register: tunnel_addresses
+  changed_when: false
+- name: Repair a missing recorded tunnel address
+  when: (' ' ~ tunnel_address ~ ' ') not in tunnel_addresses.stdout
+  ansible.builtin.command: { argv: [ip, address, replace, "{{ tunnel_address }}", dev, orbit] }
+  changed_when: true

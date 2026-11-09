@@ -42,9 +42,8 @@ To inspect resource use on the task's Node, use [`node:metrics`](/cli/node/metri
 | [`task:turn`](/cli/task/turn) | Run one agent turn on an external task group. |
 | [`task:check`](/cli/task/check) | Run a baseline or handoff check in an external task workspace. |
 | [`task:publish`](/cli/task/publish) | Push a checked commit and optionally open or update its pull request. |
-| [`task:park`](/cli/task/park) | Park an external task group VM while its PR waits for review. |
 | [`task:prep`](/cli/task/prep) | Prepare one command for the pipeline: draft its spec and open the draft PR. API and MCP only. |
-| [`task:prep-fix`](/cli/task/prep-fix) | Apply the owner's review to a parked prep group and push the corrections. API and MCP only. |
+| [`task:prep-fix`](/cli/task/prep-fix) | Apply the owner's review to a prep group and push the corrections. API and MCP only. |
 | [`task:sync`](/cli/task/sync) | Fetch the default branch and the task branch from origin into the VM workspace. API and MCP only. |
 
 Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, `questions`, `agents`, or `hosts`. The [PHP SDK](/api/php-sdk) task responses return those same records, including `assistance_kind` and `assistance_question` on a task and a subtask.
@@ -93,7 +92,7 @@ Every command belongs to `task:*`. Select either level with its existing Task ID
 | `task:cancel <task>` | Cancel the selected parent or child. Parent cancellation releases owned work and its VM; child cancellation affects that child's work only. |
 | `task:destroy <task>` | Delete a child while its parent is in Backlog. Parent deletion is refused. |
 | `task:check <task>`, `task:turn <task>` | Select the child directly. Orbit derives the parent and preserves current-child and check receipt guards. |
-| `task:park <task>`, `task:publish <task>`, `task:complete <task>` | Require a parent. |
+| `task:publish <task>`, `task:complete <task>` | Require a parent. |
 | `task:comment:create <task>`, `task:comment:list <task>` | Select either level. Parent assistance requires an open external parent with all children ended. Comments never start work. History remains readable after completion. |
 | `task:agent:list <task>`, `task:agent:show <task> <session>` | Require the parent and verify session ownership. The transcript stream stays outside MCP. |
 

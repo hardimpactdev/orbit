@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Responses\Nodes\NodeRoleAssignmentResponse;
 use Orbit\Sdk\Responses\Nodes\NodeRolesResponse;
 
@@ -49,58 +48,6 @@ describe('node role assignment response transport', function (): void {
             ->and(array_unique(array_column($assignments, 'role')))
             ->toBe(['ingress']);
     });
-
-    it('preserves recorded native failure labels verbatim', function (?string $label): void {
-        $assignment = NodeRoleAssignmentResponse::fromGatewayData([
-            'id' => 41,
-            'role' => 'app-dev',
-            'status' => 'failed',
-            'failed_step' => $label,
-            'error_code' => 'node_role.convergence_failed',
-        ], node_role_request_id());
-
-        expect($assignment->failedStep)->toBe($label)
-            ->and($assignment->toArray()['failed_step'])->toBe($label)
-            ->and($assignment->requestId)->toBe(node_role_request_id());
-    })->with([
-        'owner reproduction' => ['converge:Require supported Ubuntu'],
-        'role-list reproduction' => ['converge:Check the role'],
-        'removal label' => ['remove:Remove from the source'],
-        'punctuation' => ['converge:Check Ubuntu (24.04) / x86_64'],
-        'unicode' => ['converge:Préparer Ubuntu'],
-        'surrounding spaces' => ['converge: Check the role '],
-        'maximum byte length' => [str_repeat('A', 128)],
-        'unset' => [null],
-    ]);
-
-    it('rejects malformed and unsafe failure labels', function (mixed $label): void {
-        expect(fn (): NodeRoleAssignmentResponse => NodeRoleAssignmentResponse::fromGatewayData([
-            'id' => 41,
-            'role' => 'app-dev',
-            'status' => 'failed',
-            'failed_step' => $label,
-        ], node_role_request_id()))->toThrow(
-            GatewayApiException::class,
-            'Gateway response contains an invalid node role assignment failed_step.',
-        );
-    })->with([
-        'empty' => [''],
-        'over length' => [str_repeat('A', 129)],
-        'multibyte over byte limit' => [str_repeat('é', 65)],
-        'array' => [[]],
-        'integer' => [1],
-        'boolean' => [false],
-        'malformed UTF-8' => ["converge:Check \xFF"],
-        'Unicode control' => ["converge:Check\u{009B}Ubuntu"],
-        'Unicode formatting' => ["converge:Check\u{202E}Ubuntu"],
-        'credential assignment' => ['converge:password=step-secret-sentinel'],
-        'credential header' => ['converge:Authorization:step-secret-sentinel'],
-        'bearer credential' => ['converge:Bearer step-secret-sentinel'],
-        ...array_map(
-            static fn (int $byte): array => ['converge:Check'.chr($byte).'Ubuntu'],
-            [...range(0, 31), 127],
-        ),
-    ]);
 
     it('maps role list responses with the stable request id', function (): void {
         $list = new NodeRolesResponse(
@@ -151,6 +98,58 @@ describe('node role assignment response transport', function (): void {
             ->and($removing->failedStep)
             ->toBe('remove:firewall');
     });
+
+    it('preserves native failure step labels verbatim', function (string $step): void {
+        $assignment = NodeRoleAssignmentResponse::fromGatewayData([
+            'id' => 34,
+            'role' => 'database',
+            'status' => 'failed',
+            'failed_step' => $step,
+            'error_code' => 'node_role.convergence_failed',
+        ], node_role_request_id());
+
+        expect($assignment->failedStep)->toBe($step)
+            ->and($assignment->toArray()['failed_step'])->toBe($step);
+    })->with([
+        'native convergence' => 'converge:Check the role',
+        'recorded Ubuntu requirement' => 'converge:Require supported Ubuntu',
+        'native removal' => 'remove:Withdraw the role DNS',
+        'indexed native step' => 'converge:Sign role certificates-0',
+        'maximum length' => 'converge:'.str_repeat('A', 119),
+    ]);
+
+    it('rejects unbounded blank non-string and control-bearing failed-step labels', function (mixed $failedStep): void {
+        assert_node_role_boundary_exception(
+            fn (): NodeRoleAssignmentResponse => NodeRoleAssignmentResponse::fromGatewayData([
+                'id' => 34,
+                'role' => 'app-dev',
+                'status' => 'failed',
+                'failed_step' => $failedStep,
+            ], node_role_request_id()),
+            message: 'Gateway response contains an invalid node role assignment failed_step.',
+            rejected: is_string($failedStep) && trim($failedStep) !== '' ? [$failedStep] : [],
+        );
+    })->with([
+        'integer' => [1],
+        'boolean' => [false],
+        'array' => [[]],
+        'empty string' => [''],
+        'spaces only' => ['   '],
+        'Unicode spaces only' => ["\u{00A0}\u{2003}"],
+        'over maximum length' => [str_repeat('a', 129)],
+        'NUL' => ["converge:Check\0the role"],
+        'tab' => ["converge:Check\tthe role"],
+        'line feed' => ["converge:Check\nthe role"],
+        'carriage return' => ["converge:Check\rthe role"],
+        'terminal escape' => ["converge:Check\e[31mthe role"],
+        'DEL' => ["converge:Check\x7fthe role"],
+        'Unicode control' => ["converge:Check\u{0085}the role"],
+        'Unicode format control' => ["converge:Check\u{202E}the role"],
+        'Unicode line separator' => ["converge:Check\u{2028}the role"],
+        'Unicode paragraph separator' => ["converge:Check\u{2029}the role"],
+        'invalid UTF-8' => ["converge:Check\xffthe role"],
+        'C1 control' => ["converge:\x9b31mCheck the role"],
+    ]);
 
     it('rejects malformed ids unsafe roles unsupported statuses and invalid failure fields', function (): void {
         assert_node_role_boundary_exception(

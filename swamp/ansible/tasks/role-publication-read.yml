@@ -1,0 +1,45 @@
+---
+- name: Read the publication account
+  ansible.builtin.getent: { database: passwd, key: "{{ publications[0].connection.nodeUser }}" }
+- name: Select PHP pool versions
+  ansible.builtin.set_fact:
+    publication_versions: >-
+      {{ ((publications | map(attribute='before.php') | reject('none') | map(attribute='configurations') | map('list') | flatten)
+      + (publications | map(attribute='after.php') | reject('none') | map(attribute='configurations') | map('list') | flatten)) | unique | list }}
+    publication_pools: {}
+- name: Read PHP pool file existence
+  ansible.builtin.stat: { path: "/etc/php/{{ item }}/fpm/pool.d/orbit-scopes.conf" }
+  loop: "{{ publication_versions }}"
+  register: publication_pool_stats
+- name: Read existing PHP pool files
+  ansible.builtin.slurp: { src: "{{ item.stat.path }}" }
+  loop: "{{ publication_pool_stats.results }}"
+  when: item.stat.exists
+  register: publication_pool_reads
+- name: Capture absent PHP pool files
+  ansible.builtin.set_fact:
+    publication_pools: "{{ publication_pools | combine({item.item: ''}) }}"
+  loop: "{{ publication_pool_stats.results }}"
+- name: Capture existing PHP pool files
+  ansible.builtin.set_fact:
+    publication_pools: "{{ publication_pools | combine({item.item.item: item.content}) }}"
+  loop: "{{ publication_pool_reads.results }}"
+  when: not item.skipped | default(false)
+- name: Read current private DNS records
+  ansible.builtin.slurp: { src: /etc/dnsmasq.d/orbit-records.conf }
+  when: publications | rejectattr('after.dns', 'none') | list | length > 0
+  register: publication_records
+- name: Read current private DNS catalog
+  ansible.builtin.slurp: { src: /var/lib/orbit/private-dns/catalog.json }
+  when: publications | rejectattr('after.dns', 'none') | list | length > 0
+  register: publication_catalog
+- name: Capture publication observations in the private run folder
+  ansible.builtin.copy:
+    dest: "{{ run_folder }}/publication-{{ inventory_hostname }}.json"
+    content: >-
+      {{ {'account': ansible_facts.getent_passwd, 'pools': publication_pools,
+      'records': publication_records.content | default(''), 'catalog': publication_catalog.content | default('')} | to_json }}
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+  no_log: true

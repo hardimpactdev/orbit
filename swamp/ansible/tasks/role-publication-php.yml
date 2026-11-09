@@ -1,0 +1,24 @@
+---
+- name: Select composed PHP pools
+  ansible.builtin.set_fact:
+    publication_php: "{{ plans.publications[inventory_hostname].php.files }}"
+- name: Write composed PHP pools
+  ansible.builtin.copy:
+    dest: "{{ item.path }}"
+    content: "{{ item.content }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ publication_php }}"
+  when: item.ensure == 'present'
+- name: Remove withdrawn PHP pools
+  ansible.builtin.file: { path: "{{ item.path }}", state: absent }
+  loop: "{{ publication_php }}"
+  when: item.ensure == 'absent'
+- name: Validate PHP pool configuration
+  ansible.builtin.command: { argv: [timeout, '30', "php-fpm{{ item.version }}", -t] }
+  loop: "{{ publication_php }}"
+  changed_when: false
+- name: Reload PHP-FPM
+  ansible.builtin.systemd: { name: "php{{ item.version }}-fpm", state: reloaded, enabled: true }
+  loop: "{{ publication_php }}"

@@ -1,0 +1,89 @@
+---
+- name: Create the versioned Swamp binary folder
+  ansible.builtin.file: { path: "{{ rt.swamp.binary.path | dirname }}", state: directory, owner: root, group: root, mode: '0755' }
+- name: Install pinned Swamp binary
+  ansible.builtin.get_url:
+    url: "{{ rt.swamp.binary.url }}"
+    dest: "{{ rt.swamp.binary.path }}"
+    checksum: "sha256:{{ rt.swamp.binary.sha256 }}"
+    owner: root
+    group: root
+    mode: '0755'
+  register: swamp_binary
+- name: Read the current Swamp executable
+  ansible.builtin.stat: { path: /usr/local/bin/swamp, follow: false }
+  register: swamp_executable
+- name: Preserve a regular Swamp executable before linking
+  when: swamp_executable.stat.exists and not swamp_executable.stat.islnk
+  block:
+    - name: Create a private replacement folder
+      ansible.builtin.tempfile: { path: /usr/local/lib/orbit-swamp, prefix: replaced-, state: directory }
+      register: swamp_replaced
+    - name: Allow workers to execute the preserved binary
+      ansible.builtin.file: { path: "{{ swamp_replaced.path }}", state: directory, mode: '0755' }
+    - name: Preserve the regular executable
+      ansible.builtin.command:
+        argv: [mv, --, /usr/local/bin/swamp, "{{ swamp_replaced.path }}/swamp"]
+      changed_when: true
+- name: Link the pinned Swamp executable
+  ansible.builtin.file: { path: /usr/local/bin/swamp, src: "{{ rt.swamp.binary.path }}", state: link, force: true, follow: false }
+  register: swamp_link
+- name: Install the Swamp SSH identity
+  ansible.builtin.copy:
+    src: /etc/orbit/node-proxy/id_ed25519
+    dest: /etc/orbit/swamp-role-worker/ssh-identity
+    remote_src: true
+    owner: root
+    group: "{{ rt.swamp.user }}"
+    mode: '0440'
+  register: swamp_identity
+- name: Give workers access to their private run folders
+  ansible.builtin.file:
+    path: "/etc/orbit/swamp-role-worker/{{ item }}"
+    state: directory
+    owner: root
+    group: "{{ rt.swamp.user }}"
+    mode: 'u=rwX,g=rX,o='
+    recurse: true
+  loop: "{{ rt.swamp.workers }}"
+- name: Install sequential worker renewal
+  ansible.builtin.import_tasks: swamp-worker-renewal.yml
+- name: Write Swamp service units
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item.name }}"
+    content: "{{ item.content }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - { name: orbit-swamp-serve.service, content: "{{ rt.swamp.units.serve }}" }
+    - { name: 'orbit-swamp-worker@.service', content: "{{ rt.swamp.units.worker }}" }
+  register: swamp_units
+- name: Reload Swamp units
+  ansible.builtin.systemd: { daemon_reload: true }
+# Existing serve and workers keep their processes. The renewal timer applies the
+# new binary/worker unit through its guarded one-worker drain, with two peers serving.
+- name: Start Swamp runtime
+  ansible.builtin.systemd:
+    name: orbit-swamp-serve.service
+    state: started
+    enabled: true
+- name: Start the Swamp workers
+  ansible.builtin.systemd:
+    name: "orbit-swamp-worker@{{ item }}.service"
+    state: started
+    enabled: true
+  loop: "{{ rt.swamp.workers }}"
+- name: Start worker renewal after all workers
+  ansible.builtin.systemd: { name: orbit-swamp-worker-renewal.timer, state: started, enabled: true }
+- name: Check Swamp units
+  ansible.builtin.command: { argv: [systemctl, is-active, "{{ item }}"] }
+  loop: >-
+    {{ ['orbit-swamp-serve.service', 'orbit-swamp-worker-renewal.timer']
+    + (rt.swamp.workers | map('regex_replace', '^(.*)$', 'orbit-swamp-worker@\\1.service') | list) }}
+  changed_when: false
+- name: Check Swamp version
+  become: true
+  become_user: "{{ rt.swamp.user }}"
+  ansible.builtin.command: { argv: ["{{ rt.swamp.binary.path }}", --version] }
+  changed_when: false

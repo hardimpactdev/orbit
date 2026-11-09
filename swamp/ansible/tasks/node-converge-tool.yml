@@ -1,0 +1,87 @@
+---
+- name: Reconcile one recorded Tool without aborting other Tools
+  block:
+    - name: Validate the Tool and compile public argv
+      ansible.builtin.command:
+        argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", plan]
+        stdin: "{{ {'tool': tool, 'node_id': intent.node_id, 'user': intent.user} | to_json }}"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      register: tool_plan
+    - name: Hold the compiled Tool argv
+      ansible.builtin.set_fact: { tool_argv: "{{ tool_plan.stdout | from_json }}" }
+    - name: Reconcile a recorded apt repository
+      when: tool.manager == 'apt' and tool.repository is not none
+      ansible.builtin.include_tasks: node-converge-tool-repository.yml
+    - name: Read the Tool manager version
+      ansible.builtin.command: { argv: "{{ tool_argv.version }}" }
+      become: true
+      become_user: "{{ 'root' if tool.manager == 'apt' else intent.user }}"
+      changed_when: false
+      register: tool_version
+    - name: Read installed Tool state
+      ansible.builtin.command: { argv: "{{ tool_argv.inventory }}" }
+      become: true
+      become_user: "{{ 'root' if tool.manager == 'apt' else intent.user }}"
+      register: tool_query
+      changed_when: false
+      failed_when: false
+    - name: Compare observed state with the recorded constraint
+      ansible.builtin.command:
+        argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", inspect]
+        stdin: "{{ {'tool': tool, 'node_id': intent.node_id, 'user': intent.user, 'version': tool_version, 'query': tool_query} | to_json }}"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      register: tool_inspection
+    - name: Repair an absent or nonmatching Tool
+      when: (tool_inspection.stdout | from_json).needs_write
+      block:
+        - name: Refresh recorded apt candidate metadata
+          when: tool.manager == 'apt'
+          ansible.builtin.command: { argv: "{{ tool_argv.refresh }}" }
+          changed_when: false
+        - name: Read the manager candidate
+          ansible.builtin.command: { argv: "{{ tool_argv.candidate }}" }
+          become: true
+          become_user: "{{ 'root' if tool.manager == 'apt' else intent.user }}"
+          changed_when: false
+          register: tool_candidate
+        - name: Validate and pin the candidate before any package write
+          ansible.builtin.command:
+            argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", candidate]
+            stdin: >-
+              {{ {'tool': tool, 'node_id': intent.node_id, 'user': intent.user, 'version': tool_version,
+              'query': tool_query, 'candidate': tool_candidate} | to_json }}
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          register: tool_write
+        - name: Apply the validated Tool candidate
+          ansible.builtin.command: { argv: "{{ (tool_write.stdout | from_json).write }}" }
+          become: true
+          become_user: "{{ 'root' if tool.manager == 'apt' else intent.user }}"
+          changed_when: true
+    - name: Read the resulting Tool state
+      ansible.builtin.command: { argv: "{{ tool_argv.inventory }}" }
+      become: true
+      become_user: "{{ 'root' if tool.manager == 'apt' else intent.user }}"
+      register: tool_after
+      changed_when: false
+      failed_when: false
+    - name: Verify the Tool postcondition
+      ansible.builtin.command:
+        argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", verify]
+        stdin: "{{ {'tool': tool, 'node_id': intent.node_id, 'user': intent.user, 'version': tool_version, 'query': tool_after} | to_json }}"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      register: tool_verified
+    - name: Record only the bounded successful observation
+      ansible.builtin.set_fact:
+        tool_results: "{{ tool_results + [{'id': tool.id, 'status': 'installed', 'installed_version': (tool_verified.stdout | from_json).installed_version}] }}"
+  rescue:
+    - name: Record this Tool failure and continue the loop
+      ansible.builtin.set_fact:
+        tool_results: "{{ tool_results + [{'id': tool.id, 'status': 'failed', 'installed_version': none}] }}"

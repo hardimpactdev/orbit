@@ -1,0 +1,11 @@
+{
+  "number": 9923,
+  "checksums_url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.9923.0/SHA256SUMS",
+  "assets": [
+    {
+      "platform": "linux-x86_64",
+      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.9923.0/orbit-0.9923.0-linux-x86_64",
+      "sha256": "b30b22f9e4e778b9a2effd9588140617739d4d18145f646418032107a604cce3"
+    }
+  ]
+}

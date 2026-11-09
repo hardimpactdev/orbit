@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskVmAdmission;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
@@ -91,6 +92,9 @@ final readonly class TaskVmImageRefreshIntent
                 return $this->operations->execute(self::Kind, 'task_vm_host', $host->id, $host->id, $this->input($host, $commit, $fromStock), $caller, $request,
                     lockKey: OperationStore::lockKey('task_vm_host', $host->id));
             });
+        } catch (TaskCapacityException) {
+            return app(TaskVmAdmission::class)->wait(self::Kind, 'task_vm_host', $host->id, $host->id,
+                ['commit' => $commit, 'from_stock' => $fromStock], $caller, $request);
         } finally {
             $lock->release();
         }
@@ -138,11 +142,7 @@ final readonly class TaskVmImageRefreshIntent
         $identity = $this->ssh->identity();
         $large = TaskVmSize::Large->resources();
         // One task start with a slot and a fresh identity proves the candidate, as a group gets it; the refresh releases it when it ends.
-        try {
-            $slot = $this->slots->take(null, $host->id);
-        } catch (TaskCapacityException $full) {
-            throw new ResourceOperationException('task_vm.image_refresh_unavailable', 'A refresh proves its candidate with one task start; '.$full->getMessage(), 409);
-        }
+        $slot = $this->slots->take(null, $host->id);
         // The run's snapshot, named at admission: the run takes it, and a discard after a failure removes it.
         $snapshot = 'r'.now()->utc()->format('YmdHis');
         $start = $this->runs->claim($slot, null, $commit, $snapshot);

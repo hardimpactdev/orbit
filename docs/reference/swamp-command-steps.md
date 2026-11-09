@@ -2,6 +2,7 @@
 title: "Swamp command steps"
 description: "The shared execution-copy and terminal-output contract for native command steps."
 covers:
+  - apps/gateway/app/Domain/Proof/direct-operations.php
   - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult,SwampConnection,SwampDispatch,SwampTerminalReadUnavailable}.php
   - apps/gateway/app/Jobs/Operations/ReconcileSwampOperations.php
   - apps/gateway/app/Domain/Operations/DirectOperationChildProjection.php
@@ -54,7 +55,7 @@ A projection that implements `DirectOperationChildProjection` can also record it
 
 A running parent can record child evidence before its own terminal result; a timed-out parent can retain that evidence while awaiting native settlement. Timeout settlement releases the hold without projecting new root evidence. Native cancellation can skip finalization; a cancelled task turn keeps its previous transcript.
 
-When a capture exceeds inline output limits, the shared reader loads the capture’s declared `artifact` resource by its recorded data ID and version (`result` when omitted). Task settlement captures name `state`, `verdict` or `fix`, matching the producer. The artifact lookup must return exactly one row with the declared ID, name and version. Missing or mismatched evidence leaves the child unprojected. The reader never selects the latest version.
+When a capture exceeds inline output limits, the shared reader loads the capture’s declared `artifact` resource by its recorded data ID and version (`result` when omitted). `command/shell` captures, including proof reports and task pull request receipts, select `result`; custom producer captures use their own declared resource name. Task settlement captures name `state`, `verdict` or `fix`, matching the producer. Native WebSocket map selections return their rows in `projected.rows` and leave `results` empty. The artifact lookup must return exactly one row with the declared ID, name and version. Missing or mismatched evidence leaves the child unprojected. The reader never selects the latest version.
 
 A successful run requires its public JSON object; a kind without a result step declares `native` instead (below).
 
@@ -179,3 +180,5 @@ Workflows have no Gateway failure-report step. The shared terminal subscriber fo
 Unexpected errors in retained `directOperation` actions fail the native step with a fixed public code. They do not send a failed result callback. The normal shared native failure reader owns their terminal settlement. Explicit no-effect cancellation and returned domain refusals retain their existing contracts until those families switch.
 
 A family with admission records may implement `DirectOperationStartRefusal`. The shared start owner calls it inside the failure transaction only after a definite refusal with no bound native run. It closes those records without claiming Node effects. An uncertain submission keeps its pending record and awaits native terminal evidence.
+
+Task build, prep corrections and review rounds capture an optional fresh claim as `Claim a task place`. The child `operation-task-provision` copies the base at the published head. Publication releases the VM through the existing slot release; there is no task park workflow.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Firewall\ListFirewallRulesAction;
 use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Models\Node;
 use App\Models\NodeFact;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -142,4 +143,28 @@ describe('ListFirewallRulesAction', function (): void {
         expect($entry['live']['backend_status'])->toBe('inactive')
             ->and($entry['rules'][0]['match'])->toBe('missing');
     });
+});
+
+it('lists the complete task host input policy as managed and detects a widened DHCP source port', function (): void {
+    $node = list_node('task-host', '10.44.0.10');
+    $node->update(['settings' => ['task_vms' => ['cidr' => '10.252.42.0/24', 'task_places' => 6, 'ci_places' => 2, 'network' => 'proofbr0']]]);
+    $catalog = app(NodeFirewallRuleCatalog::class)->taskHostInput($node);
+    $shapes = array_map(static fn ($rule): array => $rule->shape->toAgentInput(), $catalog);
+    $live = $shapes;
+    $live[0]['source_port'] = 'any';
+    NodeFact::query()->create([
+        'node_id' => $node->id, 'kind' => NodeFactKind::Ufw, 'digest' => 'task-input', 'observed_at' => now(), 'received_at' => now(),
+        'data' => ['installed' => true, 'enabled' => true, 'rules' => $live],
+    ]);
+
+    $entry = app(ListFirewallRulesAction::class)->execute([$node->id], managed: true, live: true)[0];
+    $managed = array_values(array_filter($entry['managed'], static fn (array $row): bool => str_starts_with($row['name'], 'orbit:task-vms-')));
+
+    expect(array_column($managed, 'name'))->toBe(['orbit:task-vms-dhcp', 'orbit:task-vms-dns-tcp', 'orbit:task-vms-dns-udp']);
+    expect(array_column($managed, 'match', 'name'))->toBe([
+        'orbit:task-vms-dhcp' => 'drift', 'orbit:task-vms-dns-tcp' => 'exact', 'orbit:task-vms-dns-udp' => 'exact',
+    ]);
+    expect($shapes[0])->toMatchArray(['port' => '67', 'source_port' => '68', 'protocol' => 'udp', 'in_interface' => 'proofbr0']);
+    expect($shapes[1])->toMatchArray(['port' => '53', 'destination' => '10.252.42.1', 'protocol' => 'tcp', 'in_interface' => 'proofbr0']);
+    expect($shapes[2])->toMatchArray(['port' => '53', 'destination' => '10.252.42.1', 'protocol' => 'udp', 'in_interface' => 'proofbr0']);
 });

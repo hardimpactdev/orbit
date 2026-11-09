@@ -56,7 +56,9 @@ class Fleet:
         """Run the CLI without a terminal. The human form leaves out `--json`. With `node` the call is the `orbit` installed on that
         Node, run as its managed user: the Gateway sees that Node as the caller."""
         started = time.time()
-        words = [*args, '--json'] if form == 'json' else list(args)
+        words = list(args)
+        if form == 'json':
+            words.insert(words.index('--') if '--' in words else len(words), '--json')
         if node:
             self.prepare_node_cli(node)
             completed = self.incus_exec(node, [*NODE_ORBIT, *words], timeout)
@@ -97,7 +99,10 @@ class Fleet:
 
     @staticmethod
     def must(argv, what):
-        done = subprocess.run(argv, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
+        try:
+            done = subprocess.run(argv, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
+        except subprocess.TimeoutExpired as error:
+            raise FleetError(f'{what}: timed out after 120 seconds') from error
         if done.returncode != 0:
             raise FleetError(f'{what}: exit {done.returncode}, {(done.stderr or done.stdout).strip()[-200:]}')
 
@@ -179,6 +184,14 @@ def listed_node_ids():
 
 
 def from_environment():
+    # The guest's prerequisites are restored from base, but the checkout owns the callbacks, vault key patterns and proof release. Prepare through that
+    # checkout's Ansible play before even the discovery CLI runs. A failed reload must stop the proof, including on a later retry
+    # whose grant files already match the checkout.
+    Fleet.must(['incus', 'exec', GUEST_PREFIX + 'gateway', '--', 'timeout', '110', 'env',
+                'ANSIBLE_CONFIG=' + NODE_CHECKOUT + '/swamp/ansible/ansible.cfg',
+                '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml',
+                NODE_CHECKOUT + '/swamp/ansible/proof-gateway.yml'],
+               'cannot prepare the nested Gateway prerequisites from the tested checkout')
     return discover()
 
 

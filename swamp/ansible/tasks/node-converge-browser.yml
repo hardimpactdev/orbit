@@ -1,0 +1,52 @@
+---
+- name: Read the managed browser version
+  ansible.builtin.command: { argv: [/usr/local/bin/chrome-headless-shell, --version] }
+  changed_when: false
+  failed_when: false
+  register: browser_version
+- name: Reconcile the managed browser artifact
+  vars:
+    browser: "{{ recipe.tools['chrome-headless-shell'] }}"
+    artifact: "{{ browser.artifacts.amd64 }}"
+    release: "/opt/orbit/chrome-headless-shell/releases/{{ artifact.sha256 }}"
+  block:
+    - name: Create the browser folders
+      ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0755" }
+      loop: [/var/cache/orbit/browser, /opt/orbit/chrome-headless-shell, /opt/orbit/chrome-headless-shell/releases, "{{ release }}"]
+    - name: Read the pinned browser binary
+      ansible.builtin.stat: { path: "{{ release }}/chrome-headless-shell-linux64/chrome-headless-shell" }
+      register: browser_binary
+    - name: Repair the browser release
+      when: not browser_binary.stat.exists or browser.version not in browser_version.stdout | default('')
+      block:
+        - name: Download the pinned browser
+          ansible.builtin.get_url:
+            url: "{{ artifact.url }}"
+            dest: "/var/cache/orbit/browser/{{ artifact.sha256 }}.zip"
+            checksum: "sha256:{{ artifact.sha256 }}"
+            owner: root
+            group: root
+            mode: "0644"
+        - name: Unpack the pinned browser
+          ansible.builtin.unarchive:
+            src: "/var/cache/orbit/browser/{{ artifact.sha256 }}.zip"
+            dest: "{{ release }}"
+            remote_src: true
+            owner: root
+            group: root
+    - name: Publish the browser executable
+      ansible.builtin.file:
+        src: "{{ release }}/chrome-headless-shell-linux64/chrome-headless-shell"
+        dest: /usr/local/bin/chrome-headless-shell
+        state: link
+        force: true
+        owner: root
+        group: root
+    - name: Read the repaired browser version
+      ansible.builtin.command: { argv: [/usr/local/bin/chrome-headless-shell, --version] }
+      changed_when: false
+      register: browser_repaired
+    - name: Require the selected browser pin
+      ansible.builtin.assert:
+        that: browser.version in browser_repaired.stdout
+        quiet: true

@@ -1,0 +1,21 @@
+---
+# Each phase is a separate invocation; input's facts are not an implicit cache for software.
+- name: Read the package platform
+  ansible.builtin.setup: { gather_subset: [min], filter: [ansible_distribution_release] }
+- name: Select only admitted software and manager prerequisites
+  ansible.builtin.import_tasks: node-converge-software-plan.yml
+- name: Reconcile exact package pins
+  ansible.builtin.import_tasks: task-vm-apt.yml
+- name: Hold every recipe package at its pin
+  ansible.builtin.dpkg_selections: { name: "{{ item.package }}", selection: hold }
+  loop: "{{ ubuntu_tools }}"
+  loop_control: { label: "{{ item.name }}" }
+- name: Reconcile selected JavaScript pins
+  when: "'vp' in tool_by_name"
+  ansible.builtin.import_tasks: task-vm-javascript.yml
+- name: Reconcile selected browser pin
+  when: "'chrome-headless-shell' in tool_by_name"
+  ansible.builtin.import_tasks: node-converge-browser.yml
+- name: Reconcile the Composer scope
+  when: "'composer' in tool_by_name"
+  ansible.builtin.file: { path: /opt/orbit/composer, state: directory, owner: "{{ orbit_user }}", group: "{{ orbit_user }}", mode: "0755" }

@@ -91,8 +91,8 @@ swamp/workflows/workflow-vault-sync.yaml      none: no case yet
 | Value | Meaning |
 | --- | --- |
 | `skip` | The path needs no proof: documentation, charts, case descriptions, the web app. |
-| `<family>:<command>` | The cases file of each listed command runs. Without a cases file, the command is listed as uncovered. |
-| `*` | Every case runs. Use it for shared code that every command consumes. |
+| `<family>:<command>` | Select each listed command. Code changes run its whole cases file; cases-only changes run the affected entries. Without a cases file, the command is listed as uncovered. |
+| `*` | Every case runs. The list does not use it: a proof runs only when a command's own code or cases change. |
 | `none: <reason>` | The path has no case yet. It is listed as uncovered and does not fail the run. |
 
 The cases file of a command is `swamp/proof/<family>/<command>.cases.yaml`. Further colons of the command name become `-`, so `instance:deploy-step:create` has `swamp/proof/instance/deploy-step-create.cases.yaml`. A command without that file is listed as uncovered with the reason `no cases file for COMMAND`. When every case runs, each cases file of the commit is one command, labelled by its family and file name.
@@ -100,13 +100,27 @@ The cases file of a command is `swamp/proof/<family>/<command>.cases.yaml`. Furt
 - The last matching line wins.
 - A path that matches no line is refused with `proof.path_unmapped`, so the author must classify every path.
 - A rename or a delete counts for the old path too.
-- A change to the selection list selects every case. So do a file list that GitHub returns incomplete, and `--all`. A change cannot narrow its own selection.
-- List a shared workflow, extension or role with every command that consumes it. A change to it then runs the whole affected proof.
-- List a helper that several commands share with every one of them.
+- A change to the selection list selects nothing by itself.
+- A file list that GitHub returns incomplete selects every case, and so does `--all`.
 - A cases file selects its own command. Charts and pages are `skip`.
+
+After choosing commands, choose their cases:
+
+1. Expand base and head definitions with the runner. Include fixtures, list vars, variants, fleet settings and batch setup.
+2. Publish the runner selection as `proof-selection.json`. Bind it to the exact head and merge base.
+3. Read the runner result in the Gateway. Validate its identity and selected case ids.
+4. Record selected case ids and reasons. Keep each case in its batch with its required setup.
+
+The runner compares canonical definitions by id. A command code change selects the whole file. Changes to the runner, selection code or selection list disable narrowing for every selected command. These tooling changes alone select no commands. Any parse error or unknown construct, including an unknown fixture key, also selects the whole file. The artifact records every considered file, including files with zero selected cases. The Gateway does not compare YAML definitions. Expired or mismatched results select whole files.
+
+Merge-base replay is a separate opt-in within this selection. The runner uses the same case-level comparison to find added or changed definitions, then keeps only cases with `fails_on_base: true` that belong to the admitted batch. Whole-file selection for code, tooling or uncertainty does not by itself make unchanged cases eligible. Unflagged cases never replay. A merged flag stays in the file without causing replay in later PRs. See [when to set the flag](/reference/verification-cases#opt-into-merge-base-replay).
+
+Selection reasons are `changed`, `added`, `uses changed fixture`, `uses changed var`, `batch setup changed`, `file settings changed`, `command code changed`, `proof tooling changed` or `selection uncertain`. A changed case includes all its variants. Deleted cases select nothing. A verified zero-case selection succeeds without a VM.
+
+Comments, formatting and uncovered descriptions select nothing. The Gateway and `bin/ci-build-plan` consume one runner result, checked with shared fixtures. Case order can change fleet placement; when it does, the affected cases run.
 
 The PR that adds the first cases file of a command family maps the files of the family. A family block lists every command of the family. The Node family selects `node:list` and reports the remaining Node commands as uncovered until they have cases. It holds the Gateway Action, Request, Data, Domain, Infrastructure, Model, migration, route and controller files, and the CLI and SDK files. Until the first cases file exists, these files stay `skip`.
 
-Code that every command runs through selects `*`. The documentation skips (`**/*.md`, `**/*.mdx`, `**/*.mmd`) come last in the list. A README inside a directory that selects `*` therefore stays `skip`.
+Code that every command runs through, and the proof tooling itself, selects `none:` with a reason: a proof runs only when a command's own code or cases change, and the next such change proves the shared code too. The documentation skips (`**/*.md`, `**/*.mdx`, `**/*.mmd`) come last in the list. A README inside a directory that selects commands therefore stays `skip`.
 
 A malformed line is refused with `proof.selection_invalid`. A commit without a selection list selects every case.

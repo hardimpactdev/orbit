@@ -19,7 +19,7 @@ Loading Node...
 │
 ├  SSH                           orbit@94.237.40.75:22
 │
-├  Cluster                       1
+├  Cluster                       development
 │
 ├  WireGuard                     10.44.0.3
 │
@@ -35,7 +35,7 @@ Loading Node...
 │
 ├  Platform                      linux (x86_64)
 │
-├  Projects path                 —
+├  Apps folder                   —
 │
 ├  Access to                     —
 │

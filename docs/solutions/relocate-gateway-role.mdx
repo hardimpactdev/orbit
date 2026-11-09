@@ -35,7 +35,7 @@ orbit node:add gateway <new-host>
 orbit node:role:relocate gateway gateway --force
 ```
 
-A failed private DNS route on the target does not stop the move, and `follow_up` names the retry command. A failed removal on the source leaves the move incomplete; rerun the command with `--from`. Caddy and PHP-FPM keep serving on the source, so the old address works during the cutover. Adding or converging a role holds the Node until its Operation ends, and a competing admission fails with `operation.target_busy`.
+A failed private DNS route on the target does not stop the move, and `follow_up` names the retry command. A failed removal on the source leaves the move incomplete; rerun the command with `--from`. Caddy and PHP-FPM keep serving on the source, so the old address works during the cutover. Adding or converging a role holds the Node until its Operation ends, and a competing admission fails with `operation.target_busy`. Explicit role convergence requires an active assignment, a failure at a `converge:` step, or provisioning at least 11 minutes old; it cannot repair an assignment being removed. Use numeric Node IDs with `node:role:add`.
 
 **After the move:**
 

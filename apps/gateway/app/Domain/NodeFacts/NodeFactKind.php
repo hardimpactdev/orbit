@@ -89,8 +89,10 @@ enum NodeFactKind: string
                 'pressure.io.some_avg10' => ['required', 'numeric', 'between:0,100'],
                 'disks' => ['present', 'array', 'list', 'max:64'],
                 'disks.*.mount' => ['required', 'string', 'starts_with:/', 'max:4096'],
-                'disks.*.used' => ['required', 'integer', 'min:0', 'lte:data.disks.*.total'],
-                'disks.*.total' => ['required', 'integer', 'min:0'],
+                'disks.*.used' => ['present', 'nullable', 'integer', 'min:0', 'lte:data.disks.*.total'],
+                'disks.*.total' => ['present', 'nullable', 'integer', 'min:0'],
+                'disks.*.observed_at' => ['present', 'nullable', 'date_format:Y-m-d\\TH:i:s\\Z'],
+                'disks.*.stale' => ['required', 'boolean'],
             ],
             self::Units => [
                 'docker' => ['required', 'string', 'in:available,absent'],

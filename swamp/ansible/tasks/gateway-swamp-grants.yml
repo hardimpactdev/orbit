@@ -1,0 +1,38 @@
+---
+# A nested fleet keeps its grants on its own disk, over the candidate checkout. Render from that checkout after every restore,
+# just as a release does, rather than replaying the control plan saved when the base image was built.
+- name: Render the checkout's Swamp grants
+  become: true
+  become_user: "{{ control.user }}"
+  ansible.builtin.command:
+    argv: [php, "{{ control.repository | dirname }}/apps/gateway/artisan", orbit:bootstrap-control-plan,
+           "--checkout={{ control.repository }}"]
+  environment: { HOME: "/home/{{ control.user }}" }
+  register: current_control_plan
+  changed_when: false
+- name: Place the checkout's Swamp grants
+  ansible.builtin.copy:
+    dest: "{{ control.repository }}/{{ item.key }}"
+    content: "{{ item.value }}"
+    owner: "{{ control.user }}"
+    group: "{{ control.user }}"
+    mode: "0640"
+  loop: "{{ (current_control_plan.stdout | from_json).grants | dict2items }}"
+  loop_control: { label: "{{ item.key }}" }
+  register: current_control_grants
+- name: Reload the checkout's Swamp grants
+  become: true
+  become_user: "{{ control.user }}"
+  ansible.builtin.command:
+    argv: [timeout, "90", swamp, access, reload, --server, "ws://127.0.0.1:9418", --token-file,
+           "/home/{{ control.user }}/.config/swamp/serve-driver-token", --json]
+  environment:
+    HOME: "/home/{{ control.user }}"
+    SWAMP_HOME: "/home/{{ control.user }}/.swamp"
+    SWAMP_CONFIG_DIR: "/home/{{ control.user }}/.config/swamp"
+    SWAMP_API_KEY_FILE: "/home/{{ control.user }}/.config/swamp/api-key"
+    SWAMP_NO_UPDATE_CHECK: "1"
+    SWAMP_NO_TELEMETRY: "1"
+  register: current_control_reload
+  changed_when: current_control_grants.changed
+  failed_when: current_control_reload.rc != 0 or not ((current_control_reload.stdout | from_json).success | default(false))

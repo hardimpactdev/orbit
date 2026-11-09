@@ -1,0 +1,34 @@
+---
+- name: Read selected role check variables
+  ansible.builtin.include_vars: { file: "{{ orbit_run }}/role-{{ role_plan.assignment_id }}/vars.yml", name: scoped_check }
+  no_log: true
+- name: Check only the selected role's footprint
+  vars:
+    intent: "{{ scoped_check.intent }}"
+    rt: "{{ scoped_check.intent.runtime }}"
+    containers: "{{ scoped_check.containers }}"
+    secrets: "{{ scoped_check.secrets }}"
+  block:
+    - name: Read selected role services
+      ansible.builtin.command: { argv: [systemctl, is-active, "{{ item.name }}"] }
+      loop: "{{ intent.services + rt.units }}"
+      changed_when: false
+    - name: Check selected role files and folders
+      ansible.builtin.import_tasks: check-files.yml
+    - name: Check selected role identities and units
+      ansible.builtin.import_tasks: check-runtime.yml
+    - name: Check selected role endpoints
+      ansible.builtin.uri: { url: "{{ item.url }}", status_code: "{{ [200] if item.require_success else range(100, 600) | list }}" }
+      loop: "{{ rt.probes }}"
+    - name: Check selected Metrics containers without writes
+      when: rt.metrics is not none
+      ansible.builtin.import_tasks: metrics.yml
+      vars: { metrics_check_only: true, metrics_config_changed: false }
+    - name: Check the selected Swamp cache
+      when: rt.swamp is not none
+      ansible.builtin.import_tasks: swamp-start-cache.yml
+      vars: { swamp_start_cache: /tmp/deno-compile-swamp.cache, swamp_cache_check_only: true }
+    - name: Check selected CI state without writes
+      when: rt.ci_host
+      ansible.builtin.import_tasks: ci.yml
+      vars: { ci_check_only: true }

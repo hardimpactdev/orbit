@@ -98,8 +98,10 @@
       tags: [base-start]
       block:
         # A task VM copied from an old snapshot keeps its own ZFS clone: Incus keeps what it depends on until it goes.
+        # Without a proved snapshot, an earlier failed first boot may have consumed cloud-init's one-shot modules
+        # without installing SSH. It is not a reusable base: start from stock until a refresh promotes it.
         - name: Delete the base VM and its seed for a rebuild
-          when: host.rebuild | default(false)
+          when: host.rebuild | default(false) or host.current is none
           ansible.builtin.command: { argv: "{{ incus + item }}" }
           loop:
             - [delete, --force, "{{ base.vm }}"]

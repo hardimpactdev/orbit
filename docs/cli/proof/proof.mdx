@@ -26,9 +26,9 @@ Run it on the task VM that you develop in. The Gateway finds the VM and its task
 
 Built, not yet passed live: the command, the admission and the run. The workflow `proof-fleet-verify` and the restore of `base` that it uses have not passed a live run yet.
 
-The cases file is `swamp/proof/<family>/<command>.cases.yaml` in the checkout of the VM, so the cases run against the code that you have now, committed or not. The CLI under test is the one built from that checkout. This is the stage 3 proof of the [command development pipeline](/reference/command-development-pipeline#3-proof), run in the development environment you already have. [`proof:run`](/cli/proof/run) is the CI path: it proves a commit on a VM of its own. The execution switch of `proof:run`, `ORBIT_PROOF_RUN_EXECUTION`, does not apply here: this command creates no group and no VM.
+The cases file is `swamp/proof/<family>/<command>.cases.yaml` in the checkout of the VM, so the cases run against the code that you have now, committed or not. Colons after the family become hyphens in the file name: `orbit proof node:role:add` runs `swamp/proof/node/role-add.cases.yaml`. The CLI under test is the one built from that checkout. This is the stage 3 proof of the [command development pipeline](/reference/command-development-pipeline#3-proof), run in the development environment you already have. [`proof:run`](/cli/proof/run) is the CI path: it proves a commit on a VM of its own. The execution switch of `proof:run`, `ORBIT_PROOF_RUN_EXECUTION`, does not apply here: this command creates no group and no VM.
 
-The command is `family:command` with letters, digits and underscores in the family, and letters, digits, underscores and hyphens in the command. That is the form of the cases file name, so only a command that has a cases file can be proved.
+The command is `family:command`, optionally with more colon-separated command parts. Each part starts with a lowercase letter. The family accepts lowercase letters, digits and underscores; command parts also accept hyphens. Only a command that has a cases file can be proved.
 
 ## The run
 

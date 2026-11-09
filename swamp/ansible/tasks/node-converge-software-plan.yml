@@ -1,0 +1,30 @@
+---
+- name: Resolve selected recipe tools, not recorded digests
+  vars:
+    managers: "{{ intent.tools | map(attribute='manager') | unique | list }}"
+    manager_tools: >-
+      {{ (['node', 'pnpm', 'bun', 'vp', 'vp-cli'] if 'vp' in managers else [])
+      + (['composer', 'unzip'] + recipe.git.packages if 'composer' in managers else []) }}
+    names: "{{ (recipe.common + (intent.selected_roles | map('extract', recipe.roles) | flatten) + manager_tools) | unique | list }}"
+    versions: "{{ names | select('match', '^php:') | map('regex_replace', '^php:', '') | list }}"
+    php_names: "{{ (versions | map('extract', recipe.php.versions) | map(attribute='packages') | flatten) + (recipe.php.shared if versions else []) }}"
+  ansible.builtin.set_fact:
+    php_versions: "{{ versions }}"
+    tool_list: >-
+      {%- set out = [] -%}
+      {%- for name in ((names | reject('match', '^php:') | list) + php_names) | unique -%}
+      {%- set tool = recipe.tools[name] -%}
+      {%- set artifact = (tool.artifacts | default({})).amd64 | default({}) -%}
+      {%- set digest = artifact.sha256 | default(artifact.sha512 | default('')) -%}
+      {%- set _ = out.append({'name': name, 'source': tool.source, 'package': tool.package | default(name),
+          'version': artifact.version | default(tool.version), 'url': artifact.url | default(''),
+          'sha256': artifact.sha256 | default(''), 'sha512': artifact.sha512 | default(''),
+          'path': '/var/cache/orbit/debs/' ~ name ~ '_' ~ digest ~ '.deb'}) -%}
+      {%- endfor -%}
+      {{ out }}
+- name: Separate package and artifact pins
+  ansible.builtin.set_fact:
+    ubuntu_tools: "{{ tool_list | selectattr('source', 'equalto', 'ubuntu') | list }}"
+    deb_tools: "{{ tool_list | selectattr('url', 'match', '.*[.]deb$') | list }}"
+    tool_by_name: "{{ dict(tool_list | map(attribute='name') | zip(tool_list)) }}"
+    snapshot_packages: []

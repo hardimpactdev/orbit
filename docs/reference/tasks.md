@@ -85,27 +85,15 @@ Typed comments record the workflow. A stored turn receipt is a comment whose typ
 
 Every task group is external. Swamp owns its lifecycle. The Gateway rejects non-empty task topologies with HTTP 422 `tasks.orchestration_unsupported`; the existing Project review-and-merge setting does not block admission. Only explicit keyed operations start work. Group and subtask status updates record board state without starting an agent, check or cleanup.
 
-#### Park an external group for review
+#### Release a task VM for review
 
-`POST /api/v1/tasks/{task}/park`, CLI `task:park GROUP --idempotency-key=KEY`, and MCP `task-park` start the keyed `tasks.park` operation. The request is bodyless and requires an idempotency key. It returns HTTP 202 with the operation. It accepts no VM identity or provider command.
-
-Parking requires an open external group with a published, open PR, an existing task VM and workspace, no running child, no preview, no assistance, and and no other unfinished operation. It returns HTTP 409 `tasks.park_refused` when review parking is unsafe.
-
-A subtask that is still `todo` does not block the park: a prep run opens the spec PR and leaves its subtask `todo`, because the code follows. Such a subtask counts as idle only while no turn, check or prep run of the group is running. A subtask that runs or waits for review refuses the park. Operation admission serializes with other group operations and returns `operation.target_busy` for a busy target. A group execution lock wait is bounded to five seconds; contention returns HTTP 409 `tasks.workspace_waiting` for a later retry.
-
-The operation checks eligibility under the group execution lock. Swamp stops the existing VM through the canonical provider child and checks its stopped state. The Gateway reads native provider completion and retains the IDs captured at admission; no shell prints them again. It checks eligibility again after the stop and moves the group to `waiting_for_review` only if that check still passes. A child or assistance change during shutdown refuses the operation and preserves the previous group status. It preserves the checkout and disk. It neither allocates another VM nor merges the PR.
-
-Success records `{group_id, task_vm_id, instance_id, project_id, parked: true, stop_confirmed: true}` only after the provider observes the existing VM stopped. A missing VM is `task_vm.vm_missing`; a VM still running after stop is `task_vm.park_failed`; a provider power state still in transition is `task_vm.not_settled`. A failed or interrupted stop supplies no successful parking evidence.
-
-A failed stop or a refused final eligibility check records the VM error and leaves its power unknown. `vm_power` is `stopped` only after the provider confirms the stop. A parked row alone is not power evidence. Replaying the operation key returns the same operation; recovery of an interrupted step observes provider power before stopping again. A failed operation needs a new key, chosen by Swamp after its backoff. The Gateway does not queue an idle parking job.
-
-A resource observation job checks every parked VM once a minute, including groups asking for assistance and ended groups. It never starts or stops a VM or advances a group. Missing, unsettled, running or unreadable power clears the stop proof. A wake clears the proof before queuing resume.
+Publishing a task PR releases its VM, workspace, Node identity, keys and VPN peer. The group waits for review without holding a place. A build, fix turn or review round claims a task place again and restores the task branch on a fresh copy of the base. Full pools wait for up to two hours. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
 #### Provision an external group
 
 `task:start <group>` starts the Gateway operation `tasks.provision` through `POST /api/v1/tasks/{task}/start`. Its target is `task_group` with the group ID. Admission locks the group row while it captures the intent. It holds no Gateway execution lease or target hold. An ended group returns HTTP 409 `tasks.group_closed`. The Gateway retries no effect for an external group; the orchestrator decides whether to try new work.
 
-Task work and operator proofs never use a `ci_only` host, even when it is the only free host. Authenticated CI proofs prefer it over shared hosts.
+Task work and operator proofs claim task places. Authenticated CI proofs claim CI places. Proofs of a refreshed base use that pool too. Each VM holds one place until deletion is confirmed. Full pools record a waiting Operation without a workspace or identity.
 
 Task provision, prep, build and review leave each host’s [CI/refresh reserve](/reference/compute-drivers#place-task-vms) free. Operator proofs do too. Only a command proof from an authenticated active Node with an active `ci-runner` role, or a refresh candidate proof, can use it. Orbit records CI eligibility before queueing admission; report-only mode does not grant access. Another proof cannot preempt CI.
 
@@ -135,7 +123,7 @@ The profile, the dependency files, the Project setup, the copy of its output and
 
 When the workspace has a Route or Process definitions, three steps run between setup and the check. `Bind the workspace keys` puts the guest's pinned host key into the captured children; `Route the workspace` runs the `operation-route-create` child. It runs between `Hold the Route Nodes` and `Release the Route Nodes`, which hold the Route-serving Nodes for that step only ([Coordinate publication](/reference/routes#coordinate-publication)). A hold that stays busy for two minutes fails the receipt with `failed_step` `route`. `Create, start Processes` runs one `operation-process-create` child per definition. The check merges their outcomes into the receipt; a failed child sets `tasks.provision_failed` with `failed_step` `bind`, `route` or `processes`. `Accept the workspace` fails the run on any receipt error code.
 
-The group lifecycle after provision stays in separate keyed operations (`tasks.check`, `tasks.turn`, `tasks.publish`, `tasks.park` and `tasks.cancel`), each with its own receipt and time budget.
+The group lifecycle after provision stays in separate keyed operations (`tasks.check`, `tasks.turn`, `tasks.publish` and `tasks.cancel`), each with its own receipt and time budget.
 
 A step on Node 209 first asks the Gateway for the clone credential (`operation:direct:github-token` with `purpose: clone`). The Gateway writes a read-only Git authorization header to the vault key that admission named, or an empty value for a repository that needs none. Admission mints nothing, because the VM step before the clone can wait for capacity for longer than the hour that an installation token lives.
 
@@ -212,6 +200,8 @@ The Gateway captures no token at check admission. It mints the existing reposito
 The VM and repository commands receive none. The push token is revoked after use. The Checks token is revoked when CI settles or admission fails, with `gh api --method DELETE installation/token`. No pull request opens on the handoff branch.
 
 The check run ends after local execution and CI admission. A native `trigger.schedule` runs about once a minute and performs one bounded status observation per pending check: one `gh api` read of the latest check runs for the exact SHA, at most 100, without paging. TypeScript on 209 keeps only the public run fields.
+
+A queued or running GitHub Actions job on that candidate keeps CI pending while the aggregate Required check has not appeared. Another head or App cannot extend this wait. Without active jobs, a missing Required check fails after ten minutes; active CI keeps the existing 55-minute limit. Only the named Required check can supply passing evidence.
 
 Each observation of a settled result also snapshots the workspace with the same four argv steps (`snapshot-<operation>-index`, `-add`, `-tree`, `-head`); when HEAD or the tree differs from the candidate, the result is `changed`. The observation never waits or retries inside a step.
 
@@ -311,7 +301,7 @@ Without `pull_request`, publication only pushes. With it, a `gh api` step looks 
 
 After cleanup removes scratch, start a fresh command. Its push step mints a fresh token, pushes again and repeats the PR lookup before another mutation. Native resume cannot recreate scratch from a completed step, and it cannot reopen a terminal Operation.
 
-Token revocation (`gh api --method DELETE installation/token`) and scratch cleanup on the VM and on 209 are separate native steps. Publication requests no reviewers and runs no brief coverage. A native assert confirms publication and worker cleanup. The Gateway projects the PR step’s public metadata into `pr_url` and the watched PR fields without changing board status or settle metrics. Raw Git and GitHub replies stay in the private scratch directory. Typed data readers preserve public refusal codes without retaining those replies in run history.
+Token revocation (`gh api --method DELETE installation/token`) and scratch cleanup on the VM and on 209 are separate native steps. Publication requests no reviewers and runs no brief coverage. A native assert confirms publication and worker cleanup. The Gateway projects the PR step’s public metadata into `pr_url` and the watched PR fields and releases the VM after successful publication. Raw Git and GitHub replies stay in the private scratch directory. Typed data readers preserve public refusal codes without retaining those replies in run history.
 
 The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
 
@@ -335,7 +325,7 @@ It records the author thread on the subtask with a query update, so no model gua
 
 Two steps of the run mint a GitHub credential at the Gateway: the clone step of the provision child and the publish step.
 
-The run is the same in both modes. When it succeeds in `manual` mode, the Gateway admits `task:park` for the group, so the VM stops while the spec waits for the owner; a park that the Gateway refuses is kept in the result as `park_refused`. In `automatic` mode nothing parks, and the VM keeps running.
+The run is the same in both modes. Successful publication releases the VM and moves the group to `waiting_for_review`. A later build or correction claims a fresh task place.
 
 The native `operation-task-prep` workflow is one parent run. Each step runs an existing workflow as a child, with its input taken from the parent's inputs.
 
@@ -371,19 +361,19 @@ Each review starts a new thread on the reviewer model of the group, which differ
 
 A fix that leaves HEAD where it was ends the run with `tasks.prep_not_committed`, because the next review would restore a commit that holds none of the fix. A finding left after the last round ends the run with `tasks.prep_review_unresolved`. Nothing is published, the result keeps the findings of the last review, and the VM stays for the orchestrator, who cancels the group when done.
 
-The Gateway projects the terminal event once. A succeeded run records the workspace and VM as provision does, the metrics of each thread, and the pull request on the group as publish does: `pr_url`, `watched_pr_url`, `watched_pr_number` and `watched_pr_state`. It also marks the spec subtask completed, so [`task:park`](#park-an-external-group-for-review) can stop the VM while the spec waits for review. A failed run leaves the subtask open. The result is `{ branch, commit, pull_request_number, pull_request_url, rounds }`. The group stays running; stage 4 of the pipeline takes the draft from there. A failed run records the failed step and its code, and keeps the workspace.
+The Gateway projects the terminal event once. A succeeded run records the workspace and VM as provision does, the metrics of each thread, and the pull request on the group as publish does: `pr_url`, `watched_pr_url`, `watched_pr_number` and `watched_pr_state`. It also marks the spec subtask completed and releases the VM while the spec waits for review. A failed run leaves the subtask open. The result is `{ branch, commit, pull_request_number, pull_request_url, rounds }`. The group stays running; stage 4 of the pipeline takes the draft from there. A failed run records the failed step and its code, and keeps the workspace.
 
 #### Apply the corrections
 
-`task:prep-fix` starts `tasks.prep_fix` through `POST /api/v1/tasks/{task}/prep-fix` with `{ corrections }`. It is the "Apply the corrections" step of [stage 1](/reference/command-development-pipeline#1-prep): the owner reviewed the spec in its draft PR and asked for changes. A parked VM resumes first; a ready VM runs the corrections directly. `corrections` is the review as text, up to 40,000 characters, with any decision made since. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request; the MCP tool `task-prep-fix` is the caller, and so is the gate check of stage 4.
+`task:prep-fix` starts `tasks.prep_fix` through `POST /api/v1/tasks/{task}/prep-fix` with `{ corrections }`. It is the "Apply the corrections" step of [stage 1](/reference/command-development-pipeline#1-prep): the owner reviewed the spec in its draft PR and asked for changes. A group without a VM claims a task place and restores its published branch. A ready VM runs the corrections directly. `corrections` is the review as text, up to 40,000 characters, with any decision made since. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request; the MCP tool `task-prep-fix` is the caller, and so is the gate check of stage 4.
 
-Every minute the gate reads the reviews of a draft pull request whose group has a succeeded `tasks.prep` run, a parked task VM and a build that has not started, and the owner has not approved the head. When the latest decision of the reviewer is a request for changes on exactly that head, the gate admits `task:prep-fix` with the review text and the inline comments of the reviewer as `corrections`.
+Every minute the gate reads the reviews of a draft pull request whose group has a succeeded `tasks.prep` run, no active work and a build that has not started, and the owner has not approved the head. When the latest decision of the reviewer is a request for changes on exactly that head, the gate admits `task:prep-fix` with the review text and the inline comments of the reviewer as `corrections`.
 
-The admission is keyed by group and review, so a repeat tick starts nothing and each new review starts one run. A run that failed is not started again by the next tick: the gate reports `tasks_pr.prep_fix_failed` for that review once the VM is parked again. A failed run leaves the VM running, so until then the gate reads nothing for the group. A new review of the owner starts a new run. A comment, an approval, a dismissed review or a review of an older head starts nothing.
+The admission is keyed by group and review, so a repeat tick starts nothing and each new review starts one run. A run that failed is not started again by the next tick: the gate reports `tasks_pr.prep_fix_failed` for that review when the group is idle. A failed run leaves the VM running, so until then the gate reads nothing for the group. A new review of the owner starts a new run. A comment, an approval, a dismissed review or a review of an older head starts nothing.
 
-The group must be a prep group: a succeeded `tasks.prep` run, its task VM parked or still running with its Pi credential, an open pull request, and no running operation. Otherwise admission returns `409 tasks.prep_fix_refused`. The Gateway captures the whole intent in one transaction. It holds:
+The group must be a prep group: a succeeded `tasks.prep` run, a published branch and no active work, an open pull request, and no running operation. Otherwise admission returns `409 tasks.prep_fix_refused`. The Gateway captures the whole intent in one transaction. It holds:
 
-- the task VM identity and a parked VM's resume;
+- the task VM identity and a fresh claim when the previous VM was released;
 - the author turn, with the corrections as its prompt;
 - two new review threads and the fix turn;
 - the path of the cases file;
@@ -391,7 +381,7 @@ The group must be a prep group: a succeeded `tasks.prep` run, its task VM parked
 
 The native `operation-task-prep-fix` workflow is one parent run, with existing workflows as children. A ready VM skips resume and starts the author turn directly:
 
-- `Resume the VM` wakes a parked VM through `operation-task-vm-resume`.
+- `Claim a task place` creates a fresh VM from the base at the published task head. An existing VM skips this step.
 - `Apply the corrections` runs the author turn on the author thread of the prep run. The author changes only the three files of the spec, in one new commit. It never amends a pushed commit.
 - `Plan the cases` and the review follow as in the prep run, for at most two rounds.
   - The reviewer also checks that each correction is applied or has a reason.
@@ -401,7 +391,7 @@ The native `operation-task-prep-fix` workflow is one parent run, with existing w
 
 A branch that moved since the park, such as a correction pushed by hand, is refused with `tasks.not_fast_forward`; nothing is overwritten. A correction that needs another file or a decision of the owner is left out, and the author's summary says so.
 
-The Gateway projects the terminal event once. A succeeded run records the task VM as ready, the metrics of each thread, and `{ branch, commit, rounds }`, and then admits `task:park` for the group, which stops the VM again. A failed run keeps the VM running for the orchestrator, except after a failed resume, which leaves it recorded as parked so the run can be admitted again. A park that the Gateway refuses is kept in the result as `park_refused`. A failed run records the failed step with `tasks.prep_not_committed`, `tasks.prep_plan_failed`, `tasks.prep_review_unresolved` or the publish codes.
+The Gateway projects the terminal event once. A succeeded run records the thread metrics and `{ branch, commit, rounds }`, then releases the VM. A failed run records the failed step and keeps its workspace for inspection; a failed fresh claim releases its partial allocation.
 
 The gate check also admits this run when the owner requests changes, and it detects the approval, which [starts the build](#start-the-build).
 
@@ -409,17 +399,17 @@ The gate check also admits this run when the owner requests changes, and it dete
 
 `tasks.build` is the step after the owner approves the spec of a prep group. The gate check admits it. It has no command, route or MCP tool. Before it existed, a person moved the group to `running` and added the build subtask by hand.
 
-The gate check acts on a group with a succeeded `tasks.prep` run, an open draft pull request and no other subtask than its completed spec subtask. The group is `waiting_for_review` after a manual prep, and `running` after an automatic prep or a park that was refused.
+The gate check acts on a group with a succeeded `tasks.prep` run, an open draft pull request and no other subtask than its completed spec subtask. The group is `waiting_for_review` after publication in either mode.
 
 In manual mode it acts when the latest review of the reviewer approves the exact head of the pull request. In automatic mode it acts without a review, because the clean review of the prep run is the approval. A group that has started its build, a head that is not the approved one and a busy group are quiet skips. The Idempotency-Key is `pr-gate:build:<group>:<head>`.
 
 In one transaction the Gateway records the approval (the head, the mode and the reviewer) in the intent, appends the build subtask, moves the group to `running` and admits one run.
 
-The subtask has a fixed brief that names the approved chart, page and cases of the command and the approved head. Its deliverables are that the runner plan of the cases file passes and that the Project check passes, as the check command of the Project or, without one, a review deliverable. The intent also holds the task VM identity, its resume only when parked, the sync of the workspace, the first implementer turn on a new thread, and the vault key names of the Pi token and the read token.
+The subtask has a fixed brief that names the approved chart, page and cases of the command and the approved head. Its deliverables are that the runner plan of the cases file passes and that the Project check passes, as the check command of the Project or, without one, a review deliverable. The intent holds the VM identity and its fresh claim, the sync and the first implementer turn. It also names the vault keys of the Pi token and the read token.
 
 The native `operation-task-build` workflow is one parent run, with existing workflows as children. A ready VM skips resume and starts the sync directly:
 
-- `Resume the VM` wakes a parked VM through `operation-task-vm-resume`.
+- `Claim a task place` creates a fresh VM from the base at the published task head. An existing VM skips this step.
 - `Sync the refs` runs `operation-task-sync`, so the workspace holds the approved head in `refs/remotes/origin`.
 - `Run the first turn` runs `operation-task-turn`. Its prompt is the title, brief and deliverables of the subtask, then the instruction to build the command.
 
@@ -460,7 +450,7 @@ List, show, and `task:question:list` accept any authorized peer. Update and the 
 | `task:egress` | `GET /api/v1/tasks/{task}/egress` | Gateway |
 | `task:agent:show` | `GET /api/v1/tasks/{task}/agents/{session}` | Gateway |
 
-Each MCP tool name is the operation name with hyphens, such as `task-create`. The paths keep the `tasks` segment. `{task}` selects the existing ID of either a parent or a child. Check, turn and check cancellation require a child. Start, park, publish, complete and agent reads require a parent. Destroy requires a child whose parent is in Backlog. Comments select either level.
+Each MCP tool name is the operation name with hyphens, such as `task-create`. The paths keep the `tasks` segment. `{task}` selects the existing ID of either a parent or a child. Check, turn and check cancellation require a child. Start, publish, complete and agent reads require a parent. Destroy requires a child whose parent is in Backlog. Comments select either level.
 
 Parent creation requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). Child creation uses `parent_id` instead of `project_id` and inherits the Project; a contradictory Project is refused. The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App.
 
@@ -1087,6 +1077,8 @@ The agent driver reports input, output and cached token usage on each thread. Gr
 
 **Partly built.** Stage 4 of the [command development pipeline](/reference/command-development-pipeline#4-pr-and-ci) ends with two steps on the published pull request of an external group. Each is a keyed, native Swamp operation with a chart. The Gateway admits and names the vault key; each step mints its own token; Swamp calls GitHub. Neither step has an `orbit` command yet. Call the API or the MCP tools `task-pr-ready` and `task-pr-merge`. Both need Gateway access, as the other task operations do.
 
+The Gateway reads both steps' public receipts from the native `command/shell` `result` artifact by its recorded data ID and version when the output is not inline.
+
 Both steps hold the group execution lock and refuse a second task on the group with `operation.target_busy`. A step that fails records an error code and changes no group state. A repeat with a new key starts a new task with a new token. The charts [`tasks/pr-ready`](/cli/task/pr-ready) and [`tasks/pr-merge`](/cli/task/pr-merge) show the steps.
 
 ### Ready step
@@ -1126,7 +1118,7 @@ The Gateway scheduler runs `task:pr-gate` every minute while the Tasks extension
 - A manual group with a pull request out of draft gets the merge step. Admission requires the reviewer's latest review to approve the exact head, and the merge check to be green.
 - An automatic group with a pull request out of draft gets one review round per head.
 
-A round is one Swamp run, `tasks.review_round`, with the workflow `operation-task-review-round`. Its chart is `docs/cli/task/review-round.mmd`. The gate check admits it once for each head, with the whole intent. The intent holds the task VM identity and a fresh reviewer turn in a new thread on the head. A parked VM resumes before review; a running VM is used directly. In rounds 1 and 2 it also holds the fix: the author turn, the local check and the push.
+A round is one Swamp run, `tasks.review_round`, with the workflow `operation-task-review-round`. Its chart is `docs/cli/task/review-round.mmd`. The gate check admits it once for each head, with the whole intent. The intent holds the task VM identity and a fresh reviewer turn in a new thread on the head. A group without a VM claims a fresh task place at the reviewed head; a running VM is used directly. In rounds 1 and 2 it also holds the fix: the author turn, the local check and the push.
 
 Admission requires a green merge check on the head. The head must be a passed handoff candidate of the current subtask, or the commit that an earlier round pushed.
 

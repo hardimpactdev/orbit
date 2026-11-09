@@ -1,0 +1,18 @@
+---
+# Disposable nested Gateways only. A candidate has no published release of its own.
+- name: Prepare the tested checkout on the proof Gateway
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  handlers:
+    - name: Restart proof Gateway application services
+      ansible.builtin.systemd: { name: "{{ item }}", state: restarted }
+      loop: [orbit-gateway-horizon.service, orbit-gateway-schedule.service]
+  tasks:
+    - name: Apply the checkout's Ansible collections
+      ansible.builtin.import_tasks: tasks/gateway-ansible-collections.yml
+    - name: Apply the checkout's Swamp grants
+      ansible.builtin.import_tasks: tasks/gateway-swamp-grants.yml
+    - name: Prepare the proof release catalog
+      ansible.builtin.import_tasks: tasks/proof-gateway-release.yml

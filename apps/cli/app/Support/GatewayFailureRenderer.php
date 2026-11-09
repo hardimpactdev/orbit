@@ -222,6 +222,7 @@ final class GatewayFailureRenderer
         ?string $requestId = null,
         ?string $humanMessage = null,
         array $details = [],
+        bool $includeCode = false,
     ): void {
         $code = self::safeErrorCode($code);
         $message = self::safeErrorMessage($message);
@@ -256,6 +257,7 @@ final class GatewayFailureRenderer
             self::safeErrorMessage($humanMessage ?? $message),
             self::fieldDetails($humanDetails),
             $requestId,
+            $includeCode ? $code : null,
         ));
     }
 

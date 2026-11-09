@@ -43,7 +43,14 @@ Deno.test("the node phase gives an existing start cache to the swamp account, an
                 "tasks/swamp-start-cache.yml"
         ).map((task: Item) => [play.tags[0], task.vars.swamp_cache_check_only])
     );
-    assertEquals(imports, [["node", false], ["check", true]]);
+    const runtimeImport = load("operation-node-role-add.yml").find((play) =>
+        play.tags.includes("node") && play.hosts === "role_node"
+    )?.tasks[0];
+    assertEquals(runtimeImport["ansible.builtin.import_tasks"], "tasks/node-role-runtime.yml");
+    const runtime = load("tasks/node-role-runtime.yml").filter((task) =>
+        task["ansible.builtin.import_tasks"] === "swamp-start-cache.yml"
+    ).map((task) => ["node", task.vars.swamp_cache_check_only]);
+    assertEquals([...runtime, ...imports], [["node", false], ["check", true]]);
 });
 
 /** Every task of every play, including handlers and blocks, with the play it belongs to. */
@@ -85,7 +92,14 @@ function commandText(task: Item): string {
     const body = module === undefined ? undefined : task[module];
     if (typeof body === "string") return body;
     if (body?.cmd) return String(body.cmd);
-    if (Array.isArray(body?.argv)) return body.argv.join(" ");
+    if (Array.isArray(body?.argv)) {
+        // In argv mode, a pathname passed to mv/cp is data, not an executed binary.
+        // Shells and execution wrappers can execute the remaining arguments.
+        const executable = String(body.argv[0]);
+        return /(?:^|\/)(?:sh|bash|dash|env|sudo|runuser)$/.test(executable)
+            ? body.argv.join(" ")
+            : executable;
+    }
     return "";
 }
 

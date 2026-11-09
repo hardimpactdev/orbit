@@ -25,7 +25,7 @@ final class VerifyProofRequest extends GatewayRequest implements HasBody
         private readonly string $idempotencyKey,
         public readonly ?int $group = null,
     ) {
-        if (preg_match('/\A[a-z][a-z0-9_]*:[a-z][a-z0-9_-]*\z/D', $command) !== 1) {
+        if (preg_match('/\A[a-z][a-z0-9_]*(?::[a-z][a-z0-9_-]*)+\z/D', $command) !== 1) {
             throw new InvalidArgumentException('Name the command as family:action, for example firewall:allow.');
         }
     }
