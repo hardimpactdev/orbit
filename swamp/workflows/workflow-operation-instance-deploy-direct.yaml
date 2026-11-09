@@ -1754,6 +1754,213 @@ jobs:
     condition:
       type: succeeded
   steps:
+  - name: Write the container intent
+    # A default Instance in a container deploys in it (docs/cli/instance/container/deploy-default.mmd). Each machine phase is a tag of
+    # instance-container.yml; the Project's commands run in the container as `orbit`, each from its own vault copy.
+    labels:
+      role: swamp
+    writes: true
+    guard: ${{ inputs.intent.deployment.variant != "container" }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: write
+      inputs:
+        intent: ${{ inputs.intent }}
+        path: ${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}
+  - name: Start the container
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: Write the container intent
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "instance-deploy-container-start-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start "$ORBIT_ANSIBLE/instance-container.yml"
+        env: &container_ansible
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_RUN_ID: ${{ run.id }}
+          ORBIT_ANSIBLE: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets : "" }}'
+          ANSIBLE_CONFIG: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets + "/ansible.cfg" : "" }}'
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+  - name: Fetch into the mirror
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: Start the container
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "instance-deploy-container-fetch-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 400 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fetch "$ORBIT_ANSIBLE/instance-container.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_RUN_ID: ${{ run.id }}
+          ORBIT_ANSIBLE: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets : "" }}'
+          ANSIBLE_CONFIG: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets + "/ansible.cfg" : "" }}'
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+          ORBIT_GIT_CREDENTIAL: ${{ vault.get(inputs.execution_secrets.credential.vault, inputs.execution_secrets.credential.key) }}
+  - name: Check out in the container
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: Fetch into the mirror
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "instance-deploy-container-checkout-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags checkout "$ORBIT_ANSIBLE/instance-container.yml"
+        env: *container_ansible
+  - name: Run dev deploy steps
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: Check out in the container
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, k.startsWith("Run dev deploy steps") && steps[k].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("instance-deploy-container-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("instance-deploy-container-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+          hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["incus", "exec", "--project", inputs.intent.container.project, "--cwd", inputs.intent.container.workspace, inputs.intent.container.name, "--", "runuser", "-u", "orbit", "--", "/usr/bin/env", "-i"] + inputs.intent.container.environment + ["/bin/sh", "-c", self.step.required ? "s=$(cat) && exec timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1" : "s=$(cat) || exit 1; timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1; echo \"$?\"", "sh", string(self.step.timeout_seconds)] }}'
+        timeoutSec: ${{ self.step.timeout_seconds + 10 }}
+        stdin: ${{ vault.get(inputs.execution_secrets["step_" + string(self._index)].vault, inputs.execution_secrets["step_" + string(self._index)].key) }}
+    forEach:
+      item: step
+      in: '${{ inputs.intent.deployment.variant != "container" ? [] : inputs.intent.deployment.steps }}'
+    concurrency: 1
+  - name: Take the seed snapshot
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: Check out in the container
+      condition:
+        type: succeeded
+    - step: Run dev deploy steps
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "instance-deploy-container-seed-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags seed "$ORBIT_ANSIBLE/instance-container.yml"
+        env: *container_ansible
+  - name: Check the container
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: Take the seed snapshot
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "instance-deploy-container-check-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags check "$ORBIT_ANSIBLE/instance-container.yml"
+        env: *container_ansible
+  - name: Read the container result
+    # The phases' result file: the deployed commit, or the public code of the refusal. It runs whatever happened.
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Start the container
+      condition:
+        type: always
+    - step: Fetch into the mirror
+      condition:
+        type: always
+    - step: Check out in the container
+      condition:
+        type: always
+    - step: Run dev deploy steps
+      condition:
+        type: always
+    - step: Take the seed snapshot
+      condition:
+        type: always
+    - step: Check the container
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "container" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "instance-deploy-container-result-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 10 cat "$ORBIT_RUN/result.json"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+  - name: Remove the run folder
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: Write the container intent
+      condition:
+        type: always
+    - step: Read the container result
+      condition:
+        type: always
+    guard: ${{ inputs.intent.deployment.variant != "container" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "instance-deploy-container-cleanup-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_RUN"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
   - name: Run the deploy steps
     labels:
       role: swamp

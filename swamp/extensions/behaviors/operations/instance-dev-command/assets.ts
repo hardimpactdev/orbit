@@ -22,6 +22,13 @@ export const behavior = {
                 processes: z.array(z.string()),
                 route: z.string(),
                 certificates: z.array(z.string()).default([]),
+                container: z.object({
+                    launch: z.string(),
+                    workspace: Step.nullable(),
+                    deploy: z.array(z.string()),
+                    processes: z.string(),
+                    seed: z.string(),
+                }).nullable().default(null),
             }),
             execute: async (
                 args: {
@@ -32,6 +39,13 @@ export const behavior = {
                     processes: string[];
                     route: string;
                     certificates?: string[];
+                    container?: {
+                        launch: string;
+                        workspace: z.infer<typeof Step> | null;
+                        deploy: string[];
+                        processes: string;
+                        seed: string;
+                    } | null;
                 },
                 ctx: Context,
             ) => {

@@ -29,6 +29,7 @@ use LogicException;
  * @property string $agent_version
  * @property int|null $clone_source_instance_id
  * @property InstanceRuntimePowerState $power_state
+ * @property string|null $seed_commit
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Instance $instance
@@ -50,6 +51,7 @@ final class InstanceRuntime extends Model
         'agent_version',
         'clone_source_instance_id',
         'power_state',
+        'seed_commit',
     ];
 
     /** A container gets a guest address of its Node's bridge; the bridge keeps the first usable address. */

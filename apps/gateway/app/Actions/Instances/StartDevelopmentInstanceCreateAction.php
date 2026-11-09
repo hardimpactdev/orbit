@@ -10,10 +10,13 @@ use App\Actions\Projects\CaptureProjectSourceFactsAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlan;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\DefaultInstanceName;
+use App\Domain\Instances\Deployment\DevelopmentDeploySteps;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
@@ -24,6 +27,7 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Processes\ProcessInstanceOperation;
+use App\Domain\ProjectDefinitions\DefinitionEnvironment;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\ProjectLifecycleStepStore;
@@ -40,6 +44,7 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -83,6 +88,7 @@ final readonly class StartDevelopmentInstanceCreateAction
             $name = DefaultInstanceName::resolve($project, $data->name);
             $instance = Instance::query()->where('project_id', $project->id)->where('name', $name)->lockForUpdate()->first();
             $created = ! $instance instanceof Instance;
+            $container = $this->container($project, $node, $name, $instance, $data);
 
             if ($instance instanceof Instance) {
                 $this->assertRetry($instance, $node, $root, $data->branch);
@@ -93,11 +99,11 @@ final readonly class StartDevelopmentInstanceCreateAction
                         "Instance [{$instance->name}] finished its first setup. Create its database with `orbit database:create --server={$data->databaseServer} --instance={$instance->id}`, then run `orbit instance:setup {$instance->id}`.", 409);
                 }
             }
-            $clone = $instance instanceof Instance && ! $instance->first_setup_pending
+            $clone = $container || $instance instanceof Instance && ! $instance->first_setup_pending
                 ? null : $this->databases->plan($project, $name);
             app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($node);
             $sourceRoot = $this->nodeSettings->fromStored($node->settings)?->appsPath();
-            if (! is_string($sourceRoot) || StoragePath::tryParse($sourceRoot) === null) {
+            if (! $container && (! is_string($sourceRoot) || StoragePath::tryParse($sourceRoot) === null)) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Native creation requires an explicit apps.path.', 503);
             }
             if ($data->domain !== null && ! $project->type->isWebServing()) {
@@ -107,6 +113,16 @@ final readonly class StartDevelopmentInstanceCreateAction
                 && ($instance->failed_step === 'setup' || $instance->first_setup_pending)
             ) {
                 throw new ResourceOperationException('instance.setup_step_failed', 'Setup is incomplete. Run instance:setup before using this Instance.', 409);
+            }
+            if (! $instance instanceof Instance && $container) {
+                $instance = Instance::query()->create([
+                    'project_id' => $project->id, 'node_id' => $node->id, 'name' => $name,
+                    'source_layout' => InstanceSourceLayout::Checkout, 'checkout_path' => '/var/lib/orbit/instance-reservations/'.Str::uuid(),
+                    'source_prepare_id' => (string) Str::uuid(), 'root' => $root, 'branch_override' => $data->branch,
+                    'status' => InstanceState::Reserved, 'first_setup_pending' => true,
+                ]);
+                // The checkout path names the workspace inside the container, which only the Instance's id names.
+                $instance->update(['checkout_path' => InstanceContainer::workspaceOnNode($instance)]);
             }
             if (! $instance instanceof Instance) {
                 $checkout = StoragePath::parse($sourceRoot)->append($project->slug, $name);
@@ -120,7 +136,9 @@ final readonly class StartDevelopmentInstanceCreateAction
                 ]);
             }
 
-            $instance = app(SelectInstanceSeedAction::class)->execute($instance);
+            if (! $container) {
+                $instance = app(SelectInstanceSeedAction::class)->execute($instance);
+            }
             $lists = app(StartInstanceStepListAction::class);
             $digest = static fn (LifecyclePhase $phase): string => $lists->configurationDigest($project, $phase);
 
@@ -133,7 +151,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 'default_branch' => $project->default_branch,
                 'task_vm' => false,
                 'node_id' => $node->id, 'initial_status' => $instance->status->value, 'first_setup_pending' => $instance->first_setup_pending,
-                'user' => $node->user, 'source_root' => $sourceRoot,
+                'user' => $node->user, 'source_root' => $container ? InstanceContainer::workspaceOnNode($instance) : $sourceRoot,
                 'participant_node_ids' => [$node->id],
                 'seed_repository' => $instance->seed_repository, 'seed_commit' => $instance->seed_commit, 'seed_path' => $instance->seed_path,
                 'source_layout' => $instance->source_layout,
@@ -166,19 +184,29 @@ final readonly class StartDevelopmentInstanceCreateAction
                 $server = $serverSlug === null ? null : $this->serverDatabase($instance, $serverSlug, $clone);
                 $copy = $server === null && $clone !== null ? $this->sqliteCopy($instance, $node, $clone) : null;
                 $database = $copy['intent'] ?? null;
-                app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
+                if (! $container) {
+                    app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
+                }
                 $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? $server['connection'] ?? null);
                 // A rerun after a failed create checks the Processes its first run already started.
-                $input['members'] = app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions', includeActive: true)['members'];
+                $input['members'] = $container ? [] : app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions', includeActive: true)['members'];
             }
             if ($route !== null) {
                 // The Route publishes the Instance awake only when this run starts every one of its Processes.
                 $input = [...$input, ...app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id,
                     preserveEnvironment: true, preparedWorkloads: true,
-                    wakePreparedWorkloads: ! $instance->processes()->whereNotIn('id', array_column($input['members'], 'id'))->exists())];
+                    wakePreparedWorkloads: ! $container && ! $instance->processes()->whereNotIn('id', array_column($input['members'], 'id'))->exists())];
             }
+            $steps = $container && $provisioning['already_active'] !== true ? app(DevelopmentDeploySteps::class)->capture($project) : null;
             $input['direct_provisioning'] = [...$provisioning, 'route' => $input['route_create'] ?? null, 'database' => $database,
-                'server_database' => $server['input'] ?? null];
+                'server_database' => $server['input'] ?? null, 'container' => $steps === null ? null : $this->containerIntent($instance, $node, $steps)];
+            if ($steps !== null) {
+                // F8: 120 s for the container, the workspace and the Processes, the deploy step timeouts, 60 s for the seed snapshot
+                // and 240 s for the Route child and its withdrawal.
+                $input['run_budget_seconds'] = 180 + array_sum(array_column($steps, 'timeout_seconds')) + (isset($input['route_create']) ? 240 : 0);
+
+                return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId);
+            }
             // F8: 60 s for the create phases, the admitted setup timeouts (the setup phase runs within 540 s),
             // 30 s for the Process phase, 180 s for the Route child (CSR, signing, install, publication and its TLS probe; 117 s measured cold),
             // 60 s more for the withdrawal of a Route when the create fails (20 s measured),
@@ -234,6 +262,65 @@ final readonly class StartDevelopmentInstanceCreateAction
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($node), 'user' => $node->user,
             'sqlite' => ['source' => rtrim($source->checkout_path, '/').'/'.$relative, 'user' => $source->node->user,
                 'snapshot' => '/tmp/orbit-create-sqlite-'.$instance->id.'.sqlite', 'target' => $target]]];
+    }
+
+    /**
+     * Whether this create builds the Project's default Instance in a container: the Project's one `default` in the fleet, on a Node
+     * of the build list (docs/reference/development-containers.md#the-default-instance). Every clone of it is made on that Node.
+     * Clones, a database on a Database server and the Project's own development Processes come in later parts of the runtime, so a
+     * request that needs one is refused until then.
+     */
+    private function container(Project $project, Node $node, string $name, ?Instance $instance, CreateInstanceData $data): bool
+    {
+        if ($instance instanceof Instance) {
+            return $instance->runtime()->exists();
+        }
+        $default = $name === 'default' ? null : Instance::query()->where('project_id', $project->id)->where('name', 'default')->first();
+        if ($default instanceof Instance && $default->runtime()->exists()) {
+            if ($default->node_id !== $node->id) {
+                throw new ResourceOperationException('instance.default_missing',
+                    "The Project's default Instance runs on Node [{$default->node_id}]. Create its other Instances there.", 409);
+            }
+            $this->unavailable('Clones of a container default Instance are not available yet.');
+        }
+        if (! app(ContainerNodes::class)->includes($node)) {
+            return false;
+        }
+        if ($name !== 'default') {
+            if (! $default instanceof Instance) {
+                throw new ResourceOperationException('instance.default_missing', 'Create the Project\'s default Instance on this Node first.', 409);
+            }
+
+            return false;
+        }
+        if ($data->databaseServer !== null) {
+            $this->unavailable('A container Instance cannot reach a Database server yet.');
+        }
+        if (ProcessDefinition::query()->where('project_id', $project->id)->get()
+            ->contains(static fn (ProcessDefinition $definition): bool => in_array(DefinitionEnvironment::Development->value, $definition->environments, true))) {
+            $this->unavailable('The Project\'s development Processes cannot run in a container yet.');
+        }
+        app(InstanceContainer::class)->assertPhp($project);
+
+        return true;
+    }
+
+    /**
+     * The container, its runtime row and the Project's development deploy steps, which the run copies to the vault.
+     *
+     * @param  list<array{name:string,phase:string,required:bool,timeout_seconds:int,command_digest:string}>  $steps
+     * @return array<string,mixed>
+     */
+    private function containerIntent(Instance $instance, Node $node, array $steps): array
+    {
+        $containers = app(InstanceContainer::class);
+
+        return [...$containers->intent($instance, $containers->reserve($instance, $node)), 'steps' => $steps];
+    }
+
+    private function unavailable(string $message): never
+    {
+        throw new ResourceOperationException('operation.kind_unavailable', $message, 503);
     }
 
     private function assertDefaults(Project $project): void

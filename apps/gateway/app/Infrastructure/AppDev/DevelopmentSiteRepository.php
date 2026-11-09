@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\CustomProxyProcessListener;
@@ -22,6 +23,7 @@ use App\Domain\Routes\RouteWebRoot;
 use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
+use App\Models\InstanceRuntime;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Project;
@@ -524,6 +526,22 @@ final readonly class DevelopmentSiteRepository
         Route $route,
         bool $domainChange = false,
     ): DevelopmentSite {
+        // A container Instance is served by FrankenPHP in its container; the Node's Caddy proxies to its bridge address.
+        $runtime = $instance->relationLoaded('runtime') ? $instance->runtime : $instance->runtime()->first();
+        if ($runtime instanceof InstanceRuntime) {
+            return new DevelopmentSite(
+                nodeId: $instance->node_id,
+                nodeAddress: app(RouteRenderContext::class)->wireguardIp($instance->node) ?? '',
+                scope: "app-instance-{$instance->id}",
+                checkoutPath: '',
+                documentRoot: '',
+                phpVersion: null,
+                domain: $route->domain,
+                projectSlug: $instance->project->slug,
+                certificateScope: $domainChange ? "app-instance-{$instance->id}-hostname-change" : null,
+                localHttpUpstream: $runtime->bridge_address.':'.InstanceContainer::WebPort,
+            );
+        }
         // A development default in the old release layout serves through `current` until its next deployment converts it.
         $checkoutPath = $instance->placedOnAppProd()
             ? "{$instance->production_home}/current"

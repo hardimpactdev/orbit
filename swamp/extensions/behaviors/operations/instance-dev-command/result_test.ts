@@ -182,3 +182,28 @@ Deno.test("the Route is not finished until every certificate step succeeded", ()
         assertEquals(result.ready, certificates.length === 0);
     }
 });
+Deno.test("a container default takes its commit from the workspace and finishes after the seed snapshot", () => {
+    const container: NonNullable<Parameters<typeof createResult>[1]["container"]> = {
+        launch: "succeeded",
+        workspace: { status: "succeeded", outputs: { stdout: `"msg": "orbit-commit=${commit}"` } },
+        deploy: ["succeeded", "succeeded"],
+        processes: "succeeded",
+        seed: "succeeded",
+    };
+    const base = { ...phases, checkout: { status: "skipped" }, setup: "skipped", processes: [], container };
+    const create = (changes: Partial<typeof container>) =>
+        JSON.parse(createResult({ ...intent, setup_steps: [], route: { route_id: 1 } }, {
+            ...base,
+            route: "succeeded",
+            container: { ...container, ...changes },
+        }).stdout);
+    assertEquals(create({}), { instance_id: 7, ready: true, name_converted_from: null, commit });
+    assertEquals([create({ deploy: ["succeeded", "failed"] }).failed_step, create({ deploy: ["succeeded", "failed"] }).error_code], [
+        "deploy",
+        "instance.create_deploy_failed",
+    ]);
+    assertEquals(create({ seed: "failed" }).failed_step, "seed");
+    // A workspace that printed no commit did not finish, even when the steps after it were skipped.
+    assertEquals(create({ workspace: { status: "succeeded", outputs: { stdout: "" } }, deploy: [], processes: "skipped", seed: "skipped" }).failed_step, "workspace");
+    assertEquals(create({ launch: "failed", workspace: null, deploy: [], processes: "skipped", seed: "skipped" }).failed_step, "container");
+});

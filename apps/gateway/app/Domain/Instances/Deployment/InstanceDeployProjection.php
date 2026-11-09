@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
+use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
@@ -43,7 +44,10 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             return ['intent' => [...ProductionDeployInput::placeholder(), ...$input['intent']], 'execution_secrets' => $input['execution_secrets']];
         }
 
-        return app(ProductionDeployInput::class)->workflowInput($operation);
+        $input = app(ProductionDeployInput::class)->workflowInput($operation);
+
+        // The container steps read `intent.container` even when they are skipped.
+        return [...$input, 'intent' => ['container' => null, ...$input['intent']]];
     }
 
     public function input(Operation $operation): array
@@ -60,7 +64,12 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             $status = ValidatedData::string($data['status']);
             $payload = ValidatedData::object($data['result'] ?? []);
             if ($status !== 'running') {
-                [$data, $payload] = $this->development($locked) ? DevelopmentDeployOutcome::from($data) : ProductionDeployOutcome::from($data, $locked);
+                $variant = ValidatedData::string(ValidatedData::object($locked->input['deployment'])['variant']);
+                [$data, $payload] = match (true) {
+                    $variant === 'container' => ContainerDeployOutcome::from($data),
+                    $this->development($locked) => DevelopmentDeployOutcome::from($data),
+                    default => ProductionDeployOutcome::from($data, $locked),
+                };
             }
             $historyId = $locked->state['deployment_id'] ?? null;
             if (! is_int($historyId)) {
@@ -80,17 +89,21 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 return $projected;
             }
             $admitted = ValidatedData::object($locked->input['deployment']);
+            $variant = ValidatedData::string($admitted['variant']);
             if (is_array($payload['vp_environment'] ?? null)) {
                 $runtime = $payload['vp_environment'];
                 $path = ValidatedData::string($admitted['home']);
-                if ($admitted['variant'] !== 'development' && $facts['release'] !== null) {
+                if (! InstanceDeploymentIntent::development($variant) && $facts['release'] !== null) {
                     $path .= '/releases/'.$facts['release'];
                 }
                 $this->vp->recordReference($instance, $path, VpEnvironment::fromArray($runtime), ValidatedData::string($runtime['status']));
             }
-            if ($admitted['variant'] === 'development' && $status === 'succeeded') {
+            if ($variant === 'container' && $status === 'succeeded') {
+                // Clones start at the snapshot the deployment took; the container runs again.
+                $instance->runtime()->firstOrFail()->update(['seed_commit' => $facts['commit'], 'power_state' => InstanceRuntimePowerState::Running]);
+            } elseif ($variant === 'development' && $status === 'succeeded') {
                 $instance->update(['seed_path' => $admitted['home'], 'seed_repository' => $admitted['home'], 'seed_commit' => $facts['commit']]);
-            } elseif ($admitted['variant'] !== 'development' && $facts['selected_release'] !== null && ($payload['selection_confirmed'] ?? false) === true) {
+            } elseif (! InstanceDeploymentIntent::development($variant) && $facts['selected_release'] !== null && ($payload['selection_confirmed'] ?? false) === true) {
                 $instance->update(['checkout_path' => ValidatedData::string($admitted['home']).'/releases/'.$facts['selected_release']]);
             }
             if (is_array($payload['php_identity'] ?? null)) {
@@ -137,6 +150,6 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
 
     private function development(Operation $operation): bool
     {
-        return ValidatedData::object($operation->input['deployment'])['variant'] === 'development';
+        return InstanceDeploymentIntent::development(ValidatedData::string(ValidatedData::object($operation->input['deployment'])['variant']));
     }
 }

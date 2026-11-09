@@ -1,0 +1,347 @@
+---
+# One phase of instance-container.yml, `phase`, on the Node. Containers live in `container.project`; `incus` gets no stray input.
+# Work in the container runs through `incus exec` from the Node: root for units and snapshots, `orbit` for the workspace.
+- name: Name the container commands
+  ansible.builtin.set_fact:
+    incus_project: [incus, --project, "{{ container.project }}"]
+    as_orbit: >-
+      {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/orbit', container.name,
+          '--', 'runuser', '-u', 'orbit', '--'] }}
+    as_root: "{{ ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
+    in_workspace: >-
+      {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/orbit', container.name,
+          '--', 'runuser', '-u', 'orbit', '--', 'git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'] }}
+    mirror_git: [/usr/bin/git, -c, core.hooksPath=/dev/null, -c, core.fsmonitor=false, -C, "{{ container.mirror }}"]
+    node_bundle: "/tmp/orbit-instance-{{ container.instance_id }}-{{ run_id }}.bundle"
+    container_bundle: /tmp/orbit-workspace.bundle
+    units: "{{ container.units | map(attribute='name') | list }}"
+
+- name: Read the container
+  ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
+  register: container_read
+  changed_when: false
+  failed_when: false
+  when: phase in ['container', 'stop', 'start']
+
+# The container's own ACL: the bridge's way to the model forwarder stays in the bridge ACL; this one adds the Instance's database
+# server and lets the Node's Caddy reach FrankenPHP. Network ACLs live in the default project.
+- name: Converge the container's ACL
+  when: phase == 'container'
+  block:
+    - name: Read the network ACLs
+      ansible.builtin.command: { argv: [incus, query, "--", "/1.0/network-acls?project=default&recursion=1"] }
+      register: container_acls
+      changed_when: false
+    - name: Create the container's ACL
+      when: container.acl not in (container_acls.stdout | from_json | map(attribute='name') | list)
+      ansible.builtin.command: { argv: [incus, network, acl, create, "{{ container.acl }}", --project, default] }
+      changed_when: true
+    - name: Write the container's ACL rules
+      when: >-
+        (container_acls.stdout | from_json | selectattr('name', 'equalto', container.acl) | list | first | default({}))
+        | dict2items | selectattr('key', 'in', ['description', 'egress', 'ingress']) | items2dict != container.acl_rules
+      ansible.builtin.command:
+        argv: [incus, network, acl, edit, "{{ container.acl }}", --project, default]
+        stdin: "{{ container.acl_rules | to_json }}"
+      changed_when: true
+    - name: Create the container from the image
+      when: container_read.rc != 0
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['init', container.image, container.name, '--config', 'security.idmap.isolated=true',
+              '--device', 'eth0,ipv4.address=' ~ container.address,
+              '--device', 'eth0,security.acls=' ~ container.network ~ '-egress,' ~ container.acl,
+              '--device', 'eth0,security.acls.default.egress.action=reject',
+              '--device', 'eth0,security.acls.default.ingress.action=reject'] }}
+      changed_when: true
+
+- name: Start the container
+  when: phase in ['container', 'start'] and (container_read.rc != 0 or (container_read.stdout | from_json).status != 'Running')
+  ansible.builtin.command: { argv: "{{ incus_project + ['start', container.name] }}" }
+  changed_when: true
+
+- name: Stop the container
+  when: phase == 'stop' and container_read.rc == 0 and (container_read.stdout | from_json).status == 'Running'
+  ansible.builtin.command: { argv: "{{ incus_project + ['stop', '--timeout', '30', container.name] }}" }
+  changed_when: true
+
+# The branch comes from a mirror on the Node: a container cannot reach GitHub, and the read token never enters it.
+- name: Fetch the branch on the Node
+  when: phase in ['container', 'fetch']
+  vars:
+    credential_path: "/tmp/orbit-git-credential-{{ run_id }}"
+  block:
+    - name: Make the mirror folder
+      ansible.builtin.file: { path: "{{ container.mirror | dirname }}", state: directory, owner: root, group: root, mode: "0700" }
+    - name: Initialise the mirror
+      ansible.builtin.command:
+        argv: [/usr/bin/git, init, --quiet, --bare, "{{ container.mirror }}"]
+        creates: "{{ container.mirror }}/HEAD"
+    # The token file lives only for the fetch, so writing and removing it is no change to the Node.
+    - name: Write the read token
+      ansible.builtin.copy:
+        content: "{{ lookup('ansible.builtin.env', 'ORBIT_GIT_CREDENTIAL') }}"
+        dest: "{{ credential_path }}"
+        mode: "0600"
+      no_log: true
+      changed_when: false
+    - name: Read the mirrored branch
+      ansible.builtin.command: { argv: "{{ mirror_git + ['rev-parse', '--verify', '--quiet', 'refs/heads/' ~ container.branch] }}" }
+      register: mirror_before
+      changed_when: false
+      failed_when: false
+    - name: Fetch
+      ansible.builtin.command:
+        argv: >-
+          {{ ['/usr/bin/timeout', '300', '/usr/bin/env', 'GIT_TERMINAL_PROMPT=0', 'GIT_CONFIG_NOSYSTEM=1', 'GIT_CONFIG_GLOBAL=/dev/null']
+          + mirror_git
+          + ['-c', 'credential.helper=', '-c', 'credential.helper=store --file=' ~ credential_path,
+          '-c', 'protocol.allow=never', '-c', 'http.followRedirects=false',
+          '-c', 'url.https://github.com/.insteadOf=git@github.com:', '-c', 'url.https://github.com/.insteadOf=ssh://git@github.com/',
+          '-c', 'protocol.' ~ container.protocols[0] ~ '.allow=always',
+          'fetch', '--quiet', '--no-tags', '--', container.repository, '+refs/heads/' ~ container.branch ~ ':refs/heads/' ~ container.branch] }}
+      changed_when: false
+    - name: Read the fetched branch
+      ansible.builtin.command: { argv: "{{ mirror_git + ['rev-parse', '--verify', 'refs/heads/' ~ container.branch] }}" }
+      register: mirror_after
+      changed_when: mirror_after.stdout != mirror_before.stdout
+  always:
+    - name: Remove the read token
+      ansible.builtin.file: { path: "/tmp/orbit-git-credential-{{ run_id }}", state: absent }
+      changed_when: false
+
+# A pinned commit must be on the branch's first-parent chain; without one the branch's newest commit deploys.
+- name: Check the commit on the Node
+  when: phase == 'fetch'
+  block:
+    - name: Read the branch's first-parent chain
+      ansible.builtin.command: { argv: "{{ mirror_git + ['rev-list', '--first-parent', 'refs/heads/' ~ container.branch] }}" }
+      register: container_chain
+      changed_when: false
+    - name: Refuse a commit that is not on the branch
+      ansible.builtin.assert:
+        that: container.commit is none or container.commit in container_chain.stdout_lines
+        fail_msg: deployment.commit_not_on_branch
+        quiet: true
+    - name: Keep the commit
+      ansible.builtin.set_fact:
+        container_commit: "{{ container.commit if container.commit is not none else container_chain.stdout_lines[0] }}"
+
+- name: Bring the branch into the container
+  when: phase in ['workspace', 'fetch']
+  block:
+    - name: Bundle the branch
+      ansible.builtin.command: { argv: "{{ mirror_git + ['bundle', 'create', '--quiet', node_bundle, 'refs/heads/' ~ container.branch] }}" }
+      changed_when: true
+    - name: Push the bundle into the container
+      ansible.builtin.command:
+        argv: "{{ incus_project + ['file', 'push', '--uid', '1000', '--gid', '2760', '--mode', '0640', node_bundle, container.name ~ container_bundle] }}"
+      changed_when: true
+  always:
+    - name: Remove the bundle on the Node
+      ansible.builtin.file: { path: "{{ node_bundle }}", state: absent }
+
+# The workspace is a repository shared by `orbit` and `agent` through the group `work`.
+- name: Check out the branch in the workspace
+  when: phase == 'workspace'
+  block:
+    - name: Read the workspace repository
+      ansible.builtin.command: { argv: "{{ as_orbit + ['test', '-d', container.workspace ~ '/.git'] }}" }
+      register: workspace_repository
+      changed_when: false
+      failed_when: workspace_repository.rc not in [0, 1]
+    - name: Initialise the workspace repository
+      when: workspace_repository.rc != 0
+      ansible.builtin.command:
+        argv: "{{ as_orbit + ['git', 'init', '--quiet', '--shared=group', '--initial-branch', container.branch, container.workspace] }}"
+      changed_when: true
+    - name: Fetch the bundle and check out the branch
+      ansible.builtin.command: { argv: "{{ in_workspace + item }}" }
+      loop:
+        - [fetch, --quiet, "{{ container_bundle }}", "+refs/heads/{{ container.branch }}:refs/remotes/origin/{{ container.branch }}"]
+        - [checkout, --quiet, -B, "{{ container.branch }}", "refs/remotes/origin/{{ container.branch }}"]
+      changed_when: true
+    - name: Read the checked-out commit
+      ansible.builtin.command: { argv: "{{ in_workspace + ['rev-parse', '--verify', 'HEAD^{commit}'] }}" }
+      register: workspace_head
+      changed_when: false
+    - name: Keep the commit
+      ansible.builtin.set_fact:
+        container_commit: "{{ workspace_head.stdout | trim }}"
+  always:
+    - name: Remove the bundle in the container
+      ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_bundle] }}" }
+      changed_when: false
+
+# The .env goes in as `orbit` with group `work`, 0640, through a 0600 file on the Node that is removed at once.
+- name: Write .env in the container
+  when: phase == 'workspace'
+  vars:
+    environment_path: "/tmp/orbit-environment-{{ container.instance_id }}-{{ run_id }}"
+  block:
+    - name: Write the .env on the Node
+      ansible.builtin.copy:
+        content: "{{ lookup('ansible.builtin.env', 'ORBIT_ENVIRONMENT') }}"
+        dest: "{{ environment_path }}"
+        mode: "0600"
+      no_log: true
+    - name: Push the .env into the container
+      ansible.builtin.command:
+        argv: "{{ incus_project + ['file', 'push', '--uid', '1000', '--gid', '2760', '--mode', '0640', environment_path, container.name ~ container.environment_file] }}"
+      changed_when: true
+  always:
+    - name: Remove the .env on the Node
+      ansible.builtin.file: { path: "{{ environment_path }}", state: absent }
+
+# A deployment checks out only a clean tree that the commit fast-forwards.
+- name: Check out the commit
+  when: phase == 'checkout'
+  vars:
+    target: "{{ container.commit if container.commit is not none else 'refs/remotes/origin/' ~ container.branch }}"
+  block:
+    - name: Fetch the bundle
+      ansible.builtin.command:
+        argv: "{{ in_workspace + ['fetch', '--quiet', container_bundle, '+refs/heads/' ~ container.branch ~ ':refs/remotes/origin/' ~ container.branch] }}"
+      changed_when: true
+    - name: Read the tracked changes and the branch
+      ansible.builtin.command: { argv: "{{ in_workspace + item }}" }
+      loop:
+        - [status, --porcelain, --untracked-files=no]
+        - [symbolic-ref, --quiet, --short, HEAD]
+      register: workspace_state
+      changed_when: false
+      failed_when: false
+    - name: Refuse tracked changes
+      ansible.builtin.assert:
+        that: workspace_state.results[0].rc == 0 and workspace_state.results[0].stdout | trim == ''
+        fail_msg: deployment.checkout_dirty
+        quiet: true
+    - name: Read whether the commit fast-forwards the branch
+      ansible.builtin.command: { argv: "{{ in_workspace + ['merge-base', '--is-ancestor', 'HEAD', target] }}" }
+      register: workspace_ancestor
+      changed_when: false
+      failed_when: workspace_ancestor.rc not in [0, 1]
+    - name: Refuse a diverged branch
+      ansible.builtin.assert:
+        that:
+          - workspace_state.results[1].stdout | trim == container.branch
+          - workspace_ancestor.rc == 0
+        fail_msg: deployment.branch_diverged
+        quiet: true
+    - name: Check out the commit
+      ansible.builtin.command: { argv: "{{ in_workspace + ['checkout', '--quiet', '-B', container.branch, target] }}" }
+      changed_when: true
+  always:
+    - name: Remove the bundle in the container
+      ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_bundle] }}" }
+      changed_when: false
+
+# FrankenPHP and the Project's other development Processes are `orbit-*` units, so a runtime folder update restarts them too.
+- name: Install and start the Processes
+  when: phase == 'processes' and units | length > 0
+  block:
+    - name: Read the units
+      ansible.builtin.command: { argv: "{{ as_root + ['cat', '/etc/systemd/system/' ~ item.name] }}" }
+      loop: "{{ container.units }}"
+      loop_control: { label: "{{ item.name }}" }
+      register: units_read
+      changed_when: false
+      failed_when: false
+    - name: Write the changed units
+      when: item.rc != 0 or item.stdout ~ '\n' != item.item.content
+      ansible.builtin.command:
+        argv: "{{ incus_project + ['file', 'push', '--uid', '0', '--gid', '0', '--mode', '0644', '-', container.name ~ '/etc/systemd/system/' ~ item.item.name] }}"
+        stdin: "{{ item.item.content }}"
+        stdin_add_newline: false
+      loop: "{{ units_read.results }}"
+      loop_control: { label: "{{ item.item.name }}" }
+      register: units_written
+      changed_when: true
+    - name: Reload systemd
+      when: units_written.results | selectattr('changed', 'defined') | selectattr('changed') | list | length > 0
+      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'daemon-reload'] }}" }
+      changed_when: true
+    - name: Enable and start the units
+      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'enable', '--now', '--'] + units }}" }
+      changed_when: false
+    - name: Restart the changed units
+      when: units_written.results | selectattr('changed', 'defined') | selectattr('changed') | list | length > 0
+      ansible.builtin.command:
+        argv: "{{ as_root + ['systemctl', 'restart', '--'] + (units_written.results | selectattr('changed', 'defined') | selectattr('changed') | map(attribute='item.item.name') | list) }}"
+      changed_when: true
+
+# A clone copies the seed snapshot, so it is taken with the Processes stopped: no file is half written in it.
+- name: Take the seed snapshot
+  when: phase == 'seed'
+  block:
+    - name: Read the checked-out commit
+      ansible.builtin.command: { argv: "{{ in_workspace + ['rev-parse', '--verify', 'HEAD^{commit}'] }}" }
+      register: seed_head
+      changed_when: false
+    - name: Read the snapshots
+      ansible.builtin.command:
+        argv: [incus, query, "--", "/1.0/instances/{{ container.name }}/snapshots?project={{ container.project }}&recursion=1"]
+      register: seed_snapshots
+      changed_when: false
+    - name: Name the seed
+      ansible.builtin.set_fact:
+        container_commit: "{{ seed_head.stdout | trim }}"
+        seed_name: "seed-{{ seed_head.stdout | trim }}"
+        seed_names: "{{ seed_snapshots.stdout | from_json | map(attribute='name') | select('match', '^seed-') | list }}"
+    - name: Snapshot the container with the Processes stopped
+      when: seed_name not in seed_names
+      block:
+        - name: Stop the Processes
+          when: units | length > 0
+          ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'stop', '--'] + units }}" }
+          changed_when: true
+        - name: Snapshot the container
+          ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'create', container.name, seed_name] }}" }
+          changed_when: true
+      always:
+        - name: Start the Processes again
+          when: units | length > 0
+          ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'start', '--'] + units }}" }
+          changed_when: false
+    # Clones come later; until then no older seed has a user.
+    - name: Delete the older seeds
+      ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'delete', container.name, item] }}" }
+      loop: "{{ seed_names | reject('equalto', seed_name) | list }}"
+      changed_when: true
+
+- name: Check the container
+  when: phase == 'check'
+  block:
+    - name: Read the branch and the commit
+      ansible.builtin.command: { argv: "{{ in_workspace + item }}" }
+      loop:
+        - [symbolic-ref, --quiet, --short, HEAD]
+        - [rev-parse, --verify, "HEAD^{commit}"]
+        - [rev-parse, --verify, "{{ (container.commit if container.commit is not none else 'refs/remotes/origin/' ~ container.branch) ~ '^{commit}' }}"]
+      register: check_git
+      changed_when: false
+    - name: Read the Processes
+      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'is-active', '--'] + units if units | length > 0 else ['true'] }}" }
+      register: check_units
+      changed_when: false
+      failed_when: false
+    - name: Require the commit on the branch
+      ansible.builtin.assert:
+        that:
+          - check_git.results[0].stdout | trim == container.branch
+          - check_git.results[1].stdout | trim == check_git.results[2].stdout | trim
+        fail_msg: deployment.branch_changed
+        quiet: true
+    - name: Require running Processes
+      ansible.builtin.assert:
+        that: check_units.rc == 0
+        fail_msg: deployment.processes_inactive
+        quiet: true
+    - name: Keep the commit
+      ansible.builtin.set_fact:
+        container_commit: "{{ check_git.results[1].stdout | trim }}"
+
+- name: Report the commit
+  when: container_commit is defined
+  ansible.builtin.debug:
+    msg: "orbit-commit={{ container_commit }}"

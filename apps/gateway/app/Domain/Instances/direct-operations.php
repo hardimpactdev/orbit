@@ -36,6 +36,8 @@ return [
         'terminal_result' => ['job' => 'create', 'step' => 'finish'],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(?:instance-git-(?:operation|credential)-[1-9][0-9]*|instance-create-environment-(?:input|testing)-[1-9][0-9]*)$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'],
+            // A container default runs the Project's development deploy steps, each from its own copy.
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$'],
             // The owned server database: the same copies as database:create.
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-intent-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-owner-[1-9][0-9]*$']]],
     'instance.env_import' => ['workflow' => 'operation-instance-env-import', 'workflow_inputs' => true,
@@ -65,9 +67,9 @@ return [
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-git-(?:operation|credential)-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'], DatabaseDestroyRun::OWNED_EXECUTION_COPY]],
     'instance.deploy' => [
         'workflow' => 'operation-instance-deploy-direct',
-        // Development ends with the checkout's end check, production with the deployment's; the Vite+ runtime the steps
+        // Development ends with the checkout's end check, a container default with its container's, production with the deployment's; the Vite+ runtime the steps
         // ran under comes as one capture. Every step runs on Node 209 over official SSH.
-        'terminal_result' => ['job' => 'deploy', 'step' => 'Check the checkout', 'alternatives' => ['Check the deployment'], 'native' => true,
+        'terminal_result' => ['job' => 'deploy', 'step' => 'Check the checkout', 'alternatives' => ['Check the deployment', 'Check the container'], 'native' => true,
             'captures' => ['vp_runtime' => ['job' => 'dev-vp-workspaces', 'step' => 'dev-vp-requirements', 'field' => 'runtime'],
                 'php_runtime' => ['job' => 'deploy', 'step' => 'Check PHP runtime', 'field' => 'status']]],
         'workflow_inputs' => true,
