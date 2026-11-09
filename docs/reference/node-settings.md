@@ -101,7 +101,7 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 
 | Field | Required | Default | Meaning and validation |
 | --- | --- | --- | --- |
-| `cidr` | Yes | | Private IPv4 bridge network from `/16` to `/28`, not a host address; it must not overlap the VPN subnet or another host's bridge |
+| `cidr` | Yes | | Private IPv4 bridge network from `/16` to `/28`, not a host address; it must not overlap the VPN subnet, another host's bridge, or any Node's [Instance bridge](/reference/development-containers#nodes) |
 | `task_places` | Yes | | Independent task pool, integer from 0 to 64. One live VM holds one place until deletion |
 | `ci_places` | Yes | | Independent CI pool, integer from 0 to 64. Authenticated CI proofs and proofs of a refreshed base use it |
 | `project` | No | `orbit-tasks` | Incus project name |
@@ -137,7 +137,7 @@ The optional `containers` object gives a host task container places beside its t
 | `ci_places` | Yes | | CI places for containers, integer from 0 to 64, apart from the VM `ci_places` |
 | `project` | No | `orbit-task-containers` | Incus project of the containers and their base, with the VM `project` rule. It must differ from the host's VM `project` |
 | `network` | No | `orbittaskc0` | Bridge of the containers, with the VM `network` rule. It must differ from the host's VM `network` |
-| `cidr` | Yes | | Bridge network, with the VM `cidr` rule. It must not overlap the VPN subnet, the host's VM bridge, or any bridge of another host |
+| `cidr` | Yes | | Bridge network, with the VM `cidr` rule. It must not overlap the VPN subnet, the host's VM bridge, any bridge of another host, or any Node's Instance bridge |
 
 The host's `pool`, `cpus`, `memory`, `disk` and `operator_owned` apply to both runtimes. `image_alias` is a VM field only.
 

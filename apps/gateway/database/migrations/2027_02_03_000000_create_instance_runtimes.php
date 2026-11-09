@@ -59,7 +59,6 @@ return new class extends Migration
                             AND source.name = 'default'
                             AND source.project_id = clone.project_id
                             AND source.node_id = clone.node_id
-                            AND source_runtime.clone_source_instance_id IS NULL
                     )
                 ))
             BEGIN SELECT RAISE(ABORT, 'Invalid Instance runtime.'); END;

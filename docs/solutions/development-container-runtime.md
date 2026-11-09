@@ -91,6 +91,14 @@ The Node, Conn and build list records:
 
 Tests: Pest for the records, the bridge allocation and its collisions, the self-registration refusal, and the build list. No live check: the PR changes only Gateway records.
 
+These points stay open after PR 2. Each named PR settles its point.
+
+| Point | Fact | PR |
+| --- | --- | --- |
+| One default per Project | Instance names are unique per Project, so a Project has one `default` in the fleet. Its clones must share its Node. PR 4 keeps or changes that | 4 |
+| Registration race | Registration reads the environment's Instance only before its T3 calls. The create flow bumps the cleanup revision, or registration reads it again in its lock | 5 |
+| Destroy order | An environment that names an Instance keeps the Instance from deletion. Destroy removes the environment through the Conn contribution first | 6 |
+
 ### PR 3: prepare a Node and the shared folders
 
 This PR prepares a Node; it creates no Instance.

@@ -19,6 +19,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('conn_environments', function (Blueprint $table): void {
+            $table->dropUnique(['instance_id']);
             $table->dropConstrainedForeignId('instance_id');
         });
     }

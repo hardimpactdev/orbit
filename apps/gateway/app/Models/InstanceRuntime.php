@@ -15,7 +15,7 @@ use LogicException;
  * The container of a container Instance (docs/reference/development-containers.md#records). A row exists only for an
  * Instance that runs in a container; a checkout Instance has none. The database keeps the container, its bridge
  * address, its T3 port and its clone source fixed, and accepts a clone source only when it is the Project's default
- * Instance on the same Node and not itself a clone. A T3 port is one of 3800 to 3999 of the Node's WireGuard address;
+ * Instance on the same Node, itself in a container. A T3 port is one of 3800 to 3999 of the Node's WireGuard address;
  * the default Instance never has one.
  *
  * @property int $id

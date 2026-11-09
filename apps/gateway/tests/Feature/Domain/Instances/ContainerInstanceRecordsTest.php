@@ -121,7 +121,7 @@ describe('Instance runtimes', function (): void {
         $this->defaultRuntime->update(['runtime_version' => '2026.11.10', 'agent_version' => '2026.11.10', 'power_state' => InstanceRuntimePowerState::Stopped]);
         expect($this->defaultRuntime->refresh()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
 
-        foreach ([['container_name' => 'other'], ['bridge_address' => '10.253.0.9'], ['incus_project' => 'other'], ['t3_port' => 3801], ['power_state' => 'paused']] as $change) {
+        foreach ([['node_id' => recordsNode('shark', '10.44.0.11')->id], ['instance_id' => recordsInstance($this->project, $this->node, 'other')->id], ['clone_source_instance_id' => $this->default->id], ['container_name' => 'other'], ['bridge_address' => '10.253.0.9'], ['incus_project' => 'other'], ['t3_port' => 3801], ['power_state' => 'paused']] as $change) {
             expect(fn () => InstanceRuntime::query()->whereKey($this->defaultRuntime->id)->update($change))
                 ->toThrow(QueryException::class, 'An Instance runtime keeps its container, address, port and clone source.');
         }
