@@ -14,7 +14,6 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use InvalidArgumentException;
-use Throwable;
 
 /**
  * The alerts of the fleet reboot pass (ADR 0251, [Release alerts](/reference/gateway-recovery#release-alerts)): an Activity
@@ -34,28 +33,21 @@ final readonly class FleetRebootAlerts
     public function halted(Operation $operation, array $node): void
     {
         $code = is_string($node['error_code'] ?? null) ? $node['error_code'] : 'fleet.reboot_failed';
-        $boot = is_string($node['boot_id_before'] ?? null) && $node['boot_id_before'] !== '' ? $node['boot_id_before'] : 'unknown';
+        // The boot names the incident; a Node that failed before its read gets the pass instead, so each pass may alert once.
+        $boot = is_string($node['boot_id_before'] ?? null) && $node['boot_id_before'] !== '' ? $node['boot_id_before'] : 'operation-'.$operation->id;
         $this->raise(ReleaseAlertKind::RebootHalted, sprintf('Fleet reboot Operation %d stopped at node %s at step %s: %s', $operation->id,
             self::name($node), is_string($node['step'] ?? null) ? $node['step'] : 'unknown', $code),
             new ReleaseIncident('fleet-node:'.ValidatedData::integer($node['node_id']), substr($boot, 0, 100), $code), 'operation-'.$operation->id);
     }
 
-    /** @param array<string, mixed> $node A Node's record; only one that is still due after three days raises. */
-    public function overdue(array $node): void
+    /** @param array<string, mixed> $node A Node's record and since when it is due; only a Node due for more than three days raises. */
+    public function overdue(array $node, ?CarbonImmutable $since): void
     {
-        if (! in_array($node['outcome'] ?? null, ['deferred', 'failed', 'skipped'], true) || ! is_string($node['due_since'] ?? null)) {
-            return;
-        }
-        try {
-            $since = CarbonImmutable::parse($node['due_since']);
-        } catch (Throwable) {
-            return;
-        }
-        if ($since->greaterThan(CarbonImmutable::now()->subDays(self::OverdueDays))) {
+        if ($since === null || $since->greaterThan(CarbonImmutable::now()->subDays(self::OverdueDays))) {
             return;
         }
         $this->raise(ReleaseAlertKind::RebootOverdue, sprintf('Node %s has needed a reboot since %s; the last pass ended it %s%s.', self::name($node),
-            $since->toIso8601String(), $node['outcome'], is_string($node['reason'] ?? null) ? ' ('.$node['reason'].')' : ''),
+            $since->toIso8601String(), is_string($node['outcome'] ?? null) ? $node['outcome'] : 'unknown', is_string($node['reason'] ?? null) ? ' ('.$node['reason'].')' : ''),
             new ReleaseIncident('fleet-node:'.ValidatedData::integer($node['node_id']), 'due-'.$since->getTimestamp(), 'fleet.reboot_overdue'));
     }
 

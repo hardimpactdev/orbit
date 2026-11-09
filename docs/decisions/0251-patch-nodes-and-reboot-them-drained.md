@@ -57,13 +57,13 @@ Updates install on their own. Reboots run in one nightly Swamp pass that the Gat
 - **Nodes.** Every managed Linux Node except task VMs, one at a time, in the rollout's risk order, then the control path (the `vpn` hub, the Gateway, the Node that serves `swamp.orbit`), then Node 209.
 - **Due.** Swamp reads `/var/run/reboot-required` on each Node. A Node that is not due ends `not_due` at once. The agent is not changed.
 - **Phases.** Each Node runs `drain`, `reboot` and `check` as Ansible phases from Node 209. No step calls the Gateway.
-- **Failure.** A failed Node halts the pass and raises `reboot_halted`. A deferred Node does not hold back the others.
+- **Failure.** A failed Node halts the pass and raises `reboot_halted`; the Nodes after it read that from the run folder. A failed drain first starts what it stopped. A deferred Node does not hold back the others.
 
 ### Drain
 
 The drain stops new work for the Node, waits for work in flight for at most 15 minutes, and then reboots. Work that is not safe to cut never reaches the cut:
 
-- **Task work.** Admission leaves out a task host with an open task Operation. While the pass runs, the Gateway refuses task calls for that host with `409 tasks.host_rebooting`, places no new task VM there and starts no image refresh there. The drain stops the remaining task guests, and the Gateway records them parked.
+- **Task work.** A task host with an open task Operation is only read and deferred. On every other task host in the pass, the Gateway refuses task calls and proofs with `409 tasks.host_rebooting`, places no new task VM and starts no image refresh while the pass runs. The drain stops the remaining task guests, and the Gateway records them parked.
 - **CI jobs.** The drain freezes each runner container while it reads its processes, stops it when it runs no job, and lets it run on otherwise. When a job still runs at the end of the budget, the stopped runners start again and the Node is deferred.
 - **Gateway release and fleet rollout.** They and the pass refuse each other.
 - **The Gateway's own jobs.** The drain stops the scheduler and drains Horizon within the budget. A job still running then is cut, and Laravel runs it again after `retry_after`.

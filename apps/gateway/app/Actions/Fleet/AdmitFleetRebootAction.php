@@ -9,6 +9,7 @@ use App\Domain\Fleet\FleetReboot;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\GatewayRelease;
@@ -49,7 +50,7 @@ final readonly class AdmitFleetRebootAction
         if (FleetReboot::open() instanceof Operation) {
             throw new ResourceOperationException('fleet.reboot_busy', 'A fleet reboot pass is already running.', 409);
         }
-        if (Operation::query()->where('kind', 'fleet.rollout')->whereIn('status', FleetReboot::Open)->exists()
+        if (Operation::query()->where('kind', 'fleet.rollout')->whereNotIn('status', OperationStatus::terminalValues())->exists()
             || GatewayRelease::query()->whereIn('outcome', [GatewayRelease::Running, GatewayRelease::Queued])->get()
                 ->contains(static fn (GatewayRelease $record): bool => ! $record->awaitingPublication())) {
             throw new ResourceOperationException('fleet.reboot_waiting', 'A fleet rollout or a Gateway release runs; the pass waits for it.', 409);
@@ -63,23 +64,19 @@ final readonly class AdmitFleetRebootAction
         }
         $nodes = [];
         $order = [];
-        $deferred = [];
         $taskHosts = [];
         foreach ($members as $node) {
             $intent = $this->reboot->node($node);
-            if ($intent['task_project'] !== null && ($reason = $this->reboot->busy($node)) !== null) {
-                $deferred[] = ['node_id' => $node->id, 'name' => $node->name, 'outcome' => 'deferred', 'reason' => $reason];
-
-                continue;
-            }
+            // A busy task host is only read, so its due time is known, and then waits; its work is not held off.
+            $intent['defer'] = $intent['task_project'] !== null ? $this->reboot->busy($node) : null;
             $nodes[(string) $node->id] = $intent;
             $order[] = $node->id;
-            if ($intent['task_project'] !== null) {
+            if ($intent['task_project'] !== null && $intent['defer'] === null) {
                 $taskHosts[] = $node->id;
             }
         }
         if ($order === []) {
-            throw new ResourceOperationException('fleet.reboot_not_ready', 'No Node can be visited now.', 409);
+            throw new ResourceOperationException('fleet.reboot_not_ready', 'No managed Linux Node to visit.', 409);
         }
 
         // Its steps run on the Swamp Node, which owns the pass, as it owns a rollout. One pass runs at a time.
@@ -87,7 +84,7 @@ final readonly class AdmitFleetRebootAction
             'intent' => ['window' => [...FleetReboot::Window, 'enforced' => $window], 'drain_seconds' => Config::integer('fleet.reboot_drain_seconds'),
                 'order' => $order, 'nodes' => $nodes],
             'execution_secrets' => [],
-            'deferred' => $deferred, 'task_hosts' => $taskHosts,
+            'task_hosts' => $taskHosts,
             'participant_node_ids' => array_values(array_unique([$root, SwampNode::id(), ...$order])),
         ], 'swamp', null, lockKey: OperationStore::lockKey('fleet_reboot', $root));
     }

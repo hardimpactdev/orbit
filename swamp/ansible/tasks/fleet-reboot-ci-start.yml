@@ -1,0 +1,12 @@
+---
+# Start the runner containers that ran before the drain and are stopped now.
+- name: Read the runner containers again
+  ansible.builtin.command: { argv: [incus, list, --project, "{{ target.ci_project }}", --format, json] }
+  changed_when: false
+  register: runners_now
+- name: Start each runner the drain stopped
+  ansible.builtin.command: { argv: [incus, start, --project, "{{ target.ci_project }}", "{{ item }}"] }
+  loop: >-
+    {{ runners.stdout | from_json | selectattr('status', 'equalto', 'Running') | map(attribute='name')
+    | intersect(runners_now.stdout | from_json | selectattr('status', 'equalto', 'Stopped') | map(attribute='name')) | list }}
+  changed_when: true

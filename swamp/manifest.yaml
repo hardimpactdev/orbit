@@ -29,6 +29,9 @@ additionalFiles:
   - ansible/tasks/fleet-reboot-drain-tasks.yml
   - ansible/tasks/fleet-reboot-drain-ci.yml
   - ansible/tasks/fleet-reboot-drain-gateway.yml
+  - ansible/tasks/fleet-reboot-drain-undo.yml
+  - ansible/tasks/fleet-reboot-park.yml
+  - ansible/tasks/fleet-reboot-ci-start.yml
   - ansible/files/fleet-reboot-planned.sh
   - ansible/files/fleet-reboot-ci-drain.sh
   - ansible/tasks/node-converge-replace.yml

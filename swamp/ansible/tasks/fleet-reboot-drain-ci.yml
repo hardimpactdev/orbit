@@ -1,7 +1,7 @@
 ---
-# A CI runner host: stop each runner as soon as it runs no job, for at most the drain budget, every 20 seconds
-# (files/fleet-reboot-ci-drain.sh). A job is never cut: when one still runs at the end, the stopped runners start again and the
-# Node waits for the next night.
+# A CI runner host: stop each runner as soon as it runs no job, every 20 seconds for at most the drain budget
+# (files/fleet-reboot-ci-drain.sh exits 0 when no runner runs, 3 while a job runs). A job is never cut: when one still runs
+# at the end, the stopped runners start again and the Node waits for the next night. Any other exit fails the phase.
 - name: List the runner containers
   ansible.builtin.command: { argv: [incus, list, --project, "{{ target.ci_project }}", --format, json] }
   changed_when: false
@@ -9,23 +9,19 @@
 - name: Stop the runners that run no job
   ansible.builtin.script: { cmd: "files/fleet-reboot-ci-drain.sh {{ target.ci_project }}" }
   register: ci_drain
-  until: ci_drain.rc == 0
+  until: ci_drain.rc != 3
   retries: "{{ (intent.drain_seconds // 20) | int }}"
   delay: 20
   changed_when: ci_drain.stdout is search('stopped')
-  failed_when: false
+  failed_when: ci_drain.rc not in [0, 3]
 - name: Start the stopped runners again while a job runs
-  ansible.builtin.command: { argv: [incus, start, --project, "{{ target.ci_project }}", "{{ item }}"] }
-  loop: "{{ runners.stdout | from_json | selectattr('status', 'equalto', 'Running') | map(attribute='name') | list }}"
-  register: restarted
-  changed_when: true
-  failed_when: restarted.rc != 0 and restarted.stderr is not search('already running')
-  when: ci_drain.rc != 0
+  ansible.builtin.import_tasks: fleet-reboot-ci-start.yml
+  when: ci_drain.rc == 3
 - name: Record the deferred Node
   ansible.builtin.include_tasks: fleet-reboot-record.yml
   vars:
     record_update: { outcome: deferred, reason: ci_busy }
-  when: ci_drain.rc != 0
+  when: ci_drain.rc == 3
 - name: End the deferred Node
   ansible.builtin.meta: end_host
-  when: ci_drain.rc != 0
+  when: ci_drain.rc == 3

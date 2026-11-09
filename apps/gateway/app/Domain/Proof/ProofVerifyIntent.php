@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Proof;
 
+use App\Domain\Fleet\FleetReboot;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskOperations;
@@ -44,6 +45,8 @@ final readonly class ProofVerifyIntent
         if (! $group instanceof Task) {
             throw new ResourceOperationException('proof.no_task_vm', 'The proof runs on the task VM that calls it. This Node is not a task VM.', 409);
         }
+
+        FleetReboot::refuseTaskWork($group);
 
         // The caller may be the agent of a running turn, which holds the group and waits for this proof, so the turn does not count as busy.
         return $this->operations->start($group, OperationKinds::ProofVerify, [], static function (): void {}, $triggeredBy, $requestId,

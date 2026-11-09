@@ -13,7 +13,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Task;
-use App\Models\TaskVm;
 
 /**
  * The gate of an admission that needs the task VM of a group. A parked VM is admitted to its resume, and the admission refuses
@@ -29,10 +28,7 @@ final class TaskVmAwake
             return;
         }
         // A fleet reboot pass drains this host: work that started now would be cut by its reboot (ADR 0251).
-        $host = TaskVm::forGroup($group)?->host_node_id;
-        if ($host !== null && in_array($host, FleetReboot::rebootingTaskHosts(), true)) {
-            throw new ResourceOperationException('tasks.host_rebooting', 'The task VM host is in a fleet reboot pass. Repeat the call when the pass ends.', 409);
-        }
+        FleetReboot::refuseTaskWork($group);
         // The resume is its own Operation: it must not take the Idempotency-Key of the turn, check, publish or sync that asked for it.
         if (! app(OperationIdempotency::class)->suspended(static fn (): bool => app(WakeTaskVmAction::class)->forGroup($group))) {
             throw new ResourceOperationException('tasks.vm_resuming', 'The task VM was parked. Its resume is admitted; repeat the call when the VM runs.', 409);

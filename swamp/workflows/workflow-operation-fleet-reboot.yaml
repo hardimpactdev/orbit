@@ -47,7 +47,6 @@ jobs:
         assets: '${{ steps.input.outputs.assets }}'
         node_id: '${{ self.node }}'
         position: '${{ self._index }}'
-        halted: '${{ steps.exists(k, steps[k].status == "failed") }}'
 - name: pass
   labels: {role: swamp}
   dependsOn:

@@ -682,35 +682,38 @@ The order is the rollout's [risk groups](#rollout-set-and-order), then two more.
 | 5 | The control path: the `vpn` hub, the Gateway Node, and the Node of the Route that serves the Swamp address (`swamp.orbit`) |
 | 6 | The `swamp` Node |
 
-A task host with an open task Operation on one of its task VMs is left out at admission and reported `deferred` with `tasks_busy`. While the pass runs, the Gateway holds new task work off the task hosts it visits:
+A task host with an open task Operation on one of its task VMs stays in the pass, but only to be read: it records since when it is due and then `deferred` with `tasks_busy`. While the pass runs, the Gateway holds new task work off every other task host it visits:
 
-- task turns, checks, publishes and scripts for a group on such a host refuse with `409 tasks.host_rebooting`; the caller repeats the call after the pass;
+- task turns, checks, publishes, scripts and proofs for a group on such a host refuse with `409 tasks.host_rebooting`; the caller repeats the call after the pass;
 - task VM placement and the daily image refresh skip such a host.
 
 ### One Node of the pass
 
 The child `fleet-reboot-node` runs three Ansible phases of `swamp/ansible/operation-fleet-reboot.yml` from Node 209. Each phase reads and extends the Node's record in the pass's run folder. Once the record has an outcome, the later phases change nothing.
 
-The `drain` phase decides first whether the Node waits:
+The `drain` phase decides first whether the Node goes on:
 
-- After a failed Node, the Node records `skipped` with `halted`.
-- When its 15-minute drain and its reboot cannot end before 06:00, the Node records `deferred` with `window`.
+- After an earlier Node of the pass failed, the Node records `skipped` with `halted`. The phase reads that from the run folder.
 - Without `/var/run/reboot-required`, the Node records `not_due`.
+- A due Node records its boot ID, its kernel, its failed units and its due time.
+- A busy task host then records `deferred` with `tasks_busy`. A Node whose drain, guest stops and reboot cannot end 45 minutes before 06:00 records `deferred` with `window`.
 
-A due Node records its boot ID, its kernel, its failed units and since when the reboot is due. Then the phase drains it:
+Then the phase drains the Node:
 
 On a CI runner host, the phase drains the runners every 20 seconds, for at most the drain budget. It freezes each runner container and reads the container's processes from the host. It stops a container that runs no `Runner.Worker`. A runner with a job runs on, and so does a job on a runner of the host itself. When a job still runs at the end, the stopped runners start again, and the Node records `deferred` with `ci_busy`.
 
-On a task host, the phase stops each running task guest cleanly and records its name. The Gateway records those task VMs `parked`, and the next task call wakes them.
+On a task host, the phase stops each running task guest cleanly, within a minute, and records its name at once. The Gateway records those task VMs `parked`, and the next task call wakes them.
+
+When the drain fails, the phase starts the runners it stopped and, on the Gateway, the scheduler and Horizon again, before it records the failure. Stopped task guests stay parked.
 
 On the Gateway Node, the phase stops the scheduler. Then it stops Horizon, which drains on stop, within the drain budget. The reboot ends what is left.
 
 The `reboot` phase reboots the Node and waits up to 10 minutes for SSH and a new boot time. The `swamp` Node instead schedules its own reboot and records `scheduled`; see below.
 
-The `check` phase requires:
+The `check` phase waits up to 5 minutes for the boot to finish, then reads the Node and requires:
 
 - a new boot ID, the newest installed kernel, and no `/var/run/reboot-required`;
-- no failed unit that was not failed before the reboot, after waiting up to 5 minutes for the boot to finish;
+- no failed unit that was not failed before the reboot;
 - `orbit-agent` active, and on the Gateway its scheduler and Horizon, within a minute.
 
 Then the Node records `rebooted` with its new kernel.
@@ -719,7 +722,7 @@ A phase that fails records `failed` with its step and error code: the assert's o
 
 ### The swamp Node
 
-The pass runs on Node 209, so it cannot wait across 209's own reboot. Its `reboot` phase starts a transient path unit, `orbit-planned-reboot`, and returns. The pass's last step, after the report, removes the run folder and releases the unit. The unit then:
+The pass runs on Node 209, so it cannot wait across 209's own reboot. Its `reboot` phase clears a planned reboot left by an earlier pass, starts a transient path unit, `orbit-planned-reboot`, and returns. The pass's last step, after the report, removes the run folder and releases the unit. The unit then:
 
 1. stops Swamp serve, which finishes its runs for up to 5 minutes;
 2. stops the workers, which finish their active steps within the drain budget;
@@ -735,7 +738,7 @@ A reboot of the control path or of Node 209 can cut a Swamp run after the drain 
 
 The Operation result lists each Node in pass order with its outcome: `rebooted`, `scheduled`, `not_due`, `deferred` with `window`, `tasks_busy` or `ci_busy`, `skipped` with `halted` or `not_reached`, or `failed`. It also holds the kernel before and after, since when the reboot was due, the parked task guests and any newly failed units.
 
-Doctor reports `node.reboot_due` when the newest pass that visited a Node found it due more than 3 days ago and did not reboot it. When a pass ends with such a Node, the Gateway raises [`reboot_overdue`](#release-alerts) once.
+Doctor reports `node.reboot_due` when the newest pass that read a Node found it due more than 3 days ago and did not reboot it. A record without a due time, such as `halted`, does not count; Doctor looks at the pass before it. When a pass ends with such a Node, the Gateway raises [`reboot_overdue`](#release-alerts) once.
 
 ## Limits
 

@@ -10,15 +10,14 @@ inputs:
     assets: {type: string}
     node_id: {type: integer, minimum: 1}
     position: {type: integer, minimum: 0}
-    halted: {type: boolean}
-  required: [run_folder, assets, node_id, position, halted]
+  required: [run_folder, assets, node_id, position]
   additionalProperties: false
 jobs:
 - name: node
   labels: {role: swamp}
   steps:
     # Drain: wait for the window and the earlier Nodes, read whether a reboot is due, then stop new work and wait for the work in
-    # flight within the drain budget (900 s); a busy CI host or a closed window defers the Node.
+    # flight within the drain budget (900 s) and stop the task guests (75 s each at most); a busy CI host or a closed window defers it.
   - name: 'drain'
     labels: {role: swamp}
     writes: true
@@ -28,13 +27,12 @@ jobs:
       behaviorName: '${{ "fleet-reboot-drain-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
-        run: timeout 1500 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags drain "$ORBIT_ANSIBLE/operation-fleet-reboot.yml"
+        run: timeout 2400 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags drain "$ORBIT_ANSIBLE/operation-fleet-reboot.yml"
         env: &phase
           ORBIT_RUN: '${{ inputs.run_folder }}'
           ORBIT_ANSIBLE: '${{ inputs.assets }}'
           ORBIT_NODE_ID: '${{ string(inputs.node_id) }}'
           ORBIT_POSITION: '${{ string(inputs.position) }}'
-          ORBIT_HALTED: '${{ inputs.halted ? "true" : "false" }}'
           ANSIBLE_CONFIG: '${{ inputs.assets + "/ansible.cfg" }}'
           ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
           ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=" + inputs.run_folder + "/known_hosts" }}'

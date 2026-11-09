@@ -15,8 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 /**
- * Records each Node's outcome of a `fleet.reboot` pass (ADR 0251) on the Operation, in pass order, with the Nodes that
- * admission deferred. Task VMs that the drain stopped are recorded `parked`, so the next task call wakes them. A failed
+ * Records each Node's outcome of a `fleet.reboot` pass (ADR 0251) on the Operation, in pass order. Task VMs that the drain stopped are recorded `parked`, so the next task call wakes them. A failed
  * Node raises `reboot_halted`; a Node due for more than three days raises `reboot_overdue`.
  */
 final readonly class FleetRebootProjection implements DirectOperationProjection
@@ -54,9 +53,6 @@ final readonly class FleetRebootProjection implements DirectOperationProjection
             // A Node the pass did not reach, after a failed Node or a cut run, has no record.
             $nodes[] = $byNode[$id] ?? ['node_id' => $id, 'outcome' => 'skipped', 'reason' => 'not_reached'];
         }
-        foreach (is_array($operation->input['deferred'] ?? null) ? $operation->input['deferred'] : [] as $deferred) {
-            $nodes[] = ValidatedData::object($deferred);
-        }
         $failed = array_find($nodes, static fn (array $node): bool => ($node['outcome'] ?? null) === 'failed');
         $result = ['nodes' => $nodes, ...($failed !== null ? ['error_code' => is_string($failed['error_code'] ?? null) ? $failed['error_code'] : 'fleet.reboot_failed'] : [])];
 
@@ -80,7 +76,7 @@ final readonly class FleetRebootProjection implements DirectOperationProjection
                     $alerts->halted($projected, $failed);
                 }
                 foreach ($nodes as $node) {
-                    $alerts->overdue($node);
+                    $alerts->overdue($node, FleetReboot::dueSince(ValidatedData::integer($node['node_id'])));
                 }
             });
 

@@ -9,6 +9,7 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
@@ -18,6 +19,7 @@ use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Route;
+use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
@@ -39,9 +41,6 @@ final readonly class FleetReboot
     /** The window the fleet rollout uses too: 03:00 inclusive to 06:00 exclusive in this zone. */
     public const array Window = ['timezone' => 'Europe/Amsterdam', 'start' => '03:00', 'end' => '06:00'];
 
-    /** Open Operation statuses: a pass in any of them holds its Nodes. */
-    public const array Open = ['queued', 'running', 'waiting'];
-
     private const int ControlPath = 5;
 
     private const int SwampGroup = 6;
@@ -52,7 +51,7 @@ final readonly class FleetReboot
     /** The pass that is open now, if any. */
     public static function open(): ?Operation
     {
-        return Operation::query()->where('kind', self::Kind)->whereIn('status', self::Open)->latest('id')->first();
+        return Operation::query()->where('kind', self::Kind)->whereNotIn('status', OperationStatus::terminalValues())->latest('id')->first();
     }
 
     /**
@@ -64,6 +63,15 @@ final readonly class FleetReboot
     public static function rebootingTaskHosts(): array
     {
         return ValidatedData::integerList(self::open()?->input['task_hosts'] ?? []);
+    }
+
+    /** Refuses task work on a group whose task VM host the open pass drains: its reboot would cut the work. */
+    public static function refuseTaskWork(Task $group): void
+    {
+        $host = TaskVm::forGroup($group)?->host_node_id;
+        if ($host !== null && in_array($host, self::rebootingTaskHosts(), true)) {
+            throw new ResourceOperationException('tasks.host_rebooting', 'The task VM host is in a fleet reboot pass. Repeat the call when the pass ends.', 409);
+        }
     }
 
     /**
@@ -104,7 +112,7 @@ final readonly class FleetReboot
     {
         $vms = TaskVm::query()->where('host_node_id', $node->id)->whereNot('state', TaskVmState::Destroyed)->get(['id', 'group_id']);
         $groups = $vms->pluck('group_id')->filter()->values()->all();
-        $busy = Operation::query()->whereIn('status', self::Open)
+        $busy = Operation::query()->whereNotIn('status', OperationStatus::terminalValues())
             ->where(static fn ($query) => $query->where(static fn ($vm) => $vm->where('target_type', 'task_vm')->whereIn('target_id', $vms->pluck('id')->all()))
                 ->orWhere(static fn ($group) => $group->where('target_type', 'task_group')->whereIn('target_id', $groups))
                 ->orWhere(static fn ($host) => $host->where('node_id', $node->id)->where(static fn ($kind) => $kind->where('kind', 'like', 'tasks.%')
@@ -132,7 +140,7 @@ final readonly class FleetReboot
             'kind' => in_array(RoleName::Swamp->value, $roles, true) ? 'swamp' : (in_array(RoleName::Gateway->value, $roles, true) ? 'gateway' : 'node'),
             'task_project' => is_string($tasks['project'] ?? null) && $tasks['project'] !== '' ? $tasks['project'] : null,
             'ci_project' => in_array(RoleName::CiRunner->value, $roles, true) ? 'orbit-ci' : null,
-            'gateway' => in_array(RoleName::Gateway->value, $roles, true) ? self::gatewayUnits($node) : null];
+            'gateway' => in_array(RoleName::Gateway->value, $roles, true) ? self::gatewayUnits($node) : null, 'defer' => null];
     }
 
     /** @return array{horizon: string, scheduler: string} The units the drain stops and the check finds running again. */
@@ -164,21 +172,25 @@ final readonly class FleetReboot
     }
 
     /**
-     * Since when the Node needs a reboot, from the newest pass that visited it: null when that pass rebooted it, found it not
-     * due, or scheduled its reboot, and when no pass of the last 30 days visited it.
+     * Since when the Node needs a reboot, from the newest pass that read it: null when that pass rebooted it, found it not due
+     * or scheduled its reboot, and when no pass of the last 30 days read it.
      */
-    public static function dueSince(Node $node): ?CarbonImmutable
+    public static function dueSince(int $nodeId): ?CarbonImmutable
     {
         $passes = Operation::query()->where('kind', self::Kind)->whereNotNull('finished_at')->where('finished_at', '>=', now()->subDays(30))
             ->latest('id')->limit(30)->get(['id', 'result']);
         foreach ($passes as $pass) {
             $record = array_find(is_array($pass->result['nodes'] ?? null) ? $pass->result['nodes'] : [],
-                static fn (mixed $entry): bool => is_array($entry) && ($entry['node_id'] ?? null) === $node->id);
-            if (! is_array($record) || ($record['outcome'] ?? null) === 'skipped' && ! isset($record['due_since'])) {
+                static fn (mixed $entry): bool => is_array($entry) && ($entry['node_id'] ?? null) === $nodeId);
+            if (! is_array($record)) {
                 continue;
             }
-            if (! is_string($record['due_since'] ?? null) || in_array($record['outcome'] ?? null, ['rebooted', 'not_due', 'scheduled'], true)) {
+            if (in_array($record['outcome'] ?? null, ['rebooted', 'not_due', 'scheduled'], true)) {
                 return null;
+            }
+            // A Node skipped after a failed one, or cut before its read, says nothing about its due time: look further back.
+            if (! is_string($record['due_since'] ?? null)) {
+                continue;
             }
             try {
                 return CarbonImmutable::parse($record['due_since']);
@@ -188,11 +200,5 @@ final readonly class FleetReboot
         }
 
         return null;
-    }
-
-    /** Whether an open Operation status still holds. */
-    public static function isOpen(OperationStatus $status): bool
-    {
-        return in_array($status->value, self::Open, true);
     }
 }

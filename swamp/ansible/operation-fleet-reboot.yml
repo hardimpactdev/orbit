@@ -31,41 +31,24 @@
     record_path: "{{ run }}/result-{{ '%03d' | format(lookup('ansible.builtin.env', 'ORBIT_POSITION') | int) }}-{{ target.node_id }}.json"
     record: "{{ lookup('ansible.builtin.file', record_path, errors='ignore') | default('{}', true) | from_json }}"
     phase: drain
+    halted: >-
+      {{ query('ansible.builtin.file', *query('ansible.builtin.fileglob', run ~ '/result-*.json')) | map('from_json')
+      | selectattr('outcome', 'defined') | selectattr('outcome', 'equalto', 'failed') | list | length > 0 }}
   tasks:
     - name: Keep a decided Node
       ansible.builtin.meta: end_host
       when: record.outcome is defined
     - name: Drain the Node
       block:
-        - name: Read the time in the window's zone
-          ansible.builtin.command: { argv: [date, "+%H:%M"] }
-          environment: { TZ: "{{ intent.window.timezone }}" }
-          delegate_to: localhost
-          become: false
-          changed_when: false
-          register: clock
-        # After a failed Node the pass visits no Node after it; a Node that cannot finish its drain inside the window waits for
-        # the next night. An operator's pass is not bound to the window.
-        - name: Decide whether the Node waits
-          ansible.builtin.set_fact:
-            wait_reason: >-
-              {{ 'halted' if lookup('ansible.builtin.env', 'ORBIT_HALTED') == 'true'
-              else ('window' if intent.window.enforced and (clock.stdout < intent.window.start
-              or (clock.stdout.split(':')[0] | int) * 60 + (clock.stdout.split(':')[1] | int) + (intent.drain_seconds // 60) + 15
-              > (intent.window.end.split(':')[0] | int) * 60 + (intent.window.end.split(':')[1] | int))
-              else '') }}
-        - name: Record a Node that waits
+        # After a failed Node the pass visits no Node after it: the records of the Nodes before this one are in the run folder.
+        - name: Record a Node after a failed one
           ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
           vars:
-            record_update:
-              node_id: "{{ target.node_id }}"
-              name: "{{ target.name }}"
-              outcome: "{{ 'skipped' if wait_reason == 'halted' else 'deferred' }}"
-              reason: "{{ wait_reason }}"
-          when: wait_reason | length > 0
-        - name: End a Node that waits
+            record_update: { node_id: "{{ target.node_id }}", name: "{{ target.name }}", outcome: skipped, reason: halted }
+          when: halted
+        - name: End a Node after a failed one
           ansible.builtin.meta: end_host
-          when: wait_reason | length > 0
+          when: halted
         - name: Read the boot state
           ansible.builtin.import_tasks: tasks/fleet-reboot-read.yml
         - name: Record a Node that needs no reboot
@@ -80,6 +63,7 @@
         - name: End a Node that needs no reboot
           ansible.builtin.meta: end_host
           when: not boot.due
+        # Every due Node records since when it is due, also one that waits, so Doctor and the overdue alert see it.
         - name: Record the state before the reboot
           ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
           vars:
@@ -90,6 +74,31 @@
               boot_id_before: "{{ boot.boot_id }}"
               due_since: "{{ boot.due_since }}"
               failed_before: "{{ boot.failed_units }}"
+        - name: Read the time in the window's zone
+          ansible.builtin.command: { argv: [date, "+%H:%M"] }
+          environment: { TZ: "{{ intent.window.timezone }}" }
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          register: clock
+        # A task host that admission found busy waits for the next night. So does a Node that cannot finish its drain, its guest
+        # stops and its reboot inside the window. An operator's pass is not bound to the window.
+        - name: Decide whether the Node waits
+          ansible.builtin.set_fact:
+            wait_reason: >-
+              {{ target.defer if target.defer is not none
+              else ('window' if intent.window.enforced and (clock.stdout < intent.window.start
+              or (clock.stdout.split(':')[0] | int) * 60 + (clock.stdout.split(':')[1] | int) + (intent.drain_seconds // 60) + 30
+              > (intent.window.end.split(':')[0] | int) * 60 + (intent.window.end.split(':')[1] | int))
+              else '') }}
+        - name: Record a Node that waits
+          ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
+          vars:
+            record_update: { outcome: deferred, reason: "{{ wait_reason }}" }
+          when: wait_reason | length > 0
+        - name: End a Node that waits
+          ansible.builtin.meta: end_host
+          when: wait_reason | length > 0
         # CI first: a busy runner defers the Node before any task guest stops.
         - name: Drain the CI runners
           ansible.builtin.import_tasks: tasks/fleet-reboot-drain-ci.yml
@@ -101,6 +110,8 @@
           ansible.builtin.import_tasks: tasks/fleet-reboot-drain-gateway.yml
           when: target.gateway is not none
       rescue:
+        - name: Start what the drain stopped
+          ansible.builtin.import_tasks: tasks/fleet-reboot-drain-undo.yml
         - name: Record the failed phase
           ansible.builtin.import_tasks: tasks/fleet-reboot-failed.yml
 
@@ -126,6 +137,18 @@
         # workers and reboots (files/fleet-reboot-planned.sh). The Gateway confirms the new boot from the Node's agent.
         - name: Install the planned reboot of the swamp Node
           ansible.builtin.copy: { src: files/fleet-reboot-planned.sh, dest: /usr/local/lib/orbit/planned-reboot, owner: root, group: root, mode: "0755" }
+          when: target.kind == 'swamp'
+        # A path unit of an earlier pass whose cleanup never ran would make systemd-run refuse the name.
+        - name: Clear an earlier planned reboot
+          ansible.builtin.command: { argv: [systemctl, stop, orbit-planned-reboot.path, orbit-planned-reboot.service] }
+          register: earlier
+          changed_when: false
+          failed_when: false
+          when: target.kind == 'swamp'
+        - name: Reset an earlier failed planned reboot
+          ansible.builtin.command: { argv: [systemctl, reset-failed, orbit-planned-reboot.path, orbit-planned-reboot.service] }
+          changed_when: false
+          failed_when: false
           when: target.kind == 'swamp'
         - name: Schedule the reboot of the swamp Node after the pass
           ansible.builtin.command:
@@ -171,9 +194,14 @@
       when: record.outcome is defined
     - name: Check the Node
       block:
+        - name: Wait for the boot to finish
+          ansible.builtin.command: { argv: [timeout, "300", systemctl, is-system-running, --wait] }
+          register: system
+          changed_when: false
+          failed_when: system.stdout not in ['running', 'degraded']
         - name: Read the boot state
           ansible.builtin.import_tasks: tasks/fleet-reboot-read.yml
-        - name: Require a new boot into the newest kernel
+        - name: Require a new boot
           ansible.builtin.assert:
             that: [boot.boot_id != record.boot_id_before]
             fail_msg: fleet.reboot_boot_unchanged
@@ -185,11 +213,6 @@
           ansible.builtin.assert:
             that: [not boot.due]
             fail_msg: fleet.reboot_still_due
-        - name: Wait for the boot to finish
-          ansible.builtin.command: { argv: [timeout, "300", systemctl, is-system-running, --wait] }
-          register: system
-          changed_when: false
-          failed_when: system.stdout not in ['running', 'degraded']
         - name: Require no unit that failed in this boot only
           ansible.builtin.assert:
             that: [boot.failed_units | difference(record.failed_before) | length == 0]
