@@ -51,7 +51,7 @@ Every build PR keeps these rules, so the work in progress never breaks what runs
 | Live checks use a test Node | An `app-dev` test Node on the build list, with a test Laravel Project. Beast's checkout Instances keep running until PR 10 moves them |
 | Docs move with the code | A PR moves the part it builds from [Development containers](/reference/development-containers) into the owning page |
 
-The build list, the Gateway setting `instances.container_nodes`, exists for the build only. It is not a Node setting, and PR 11 removes it.
+The build list, the Gateway setting `instances.container_nodes` (`ORBIT_INSTANCES_CONTAINER_NODES`), exists for the build only. It is not a Node setting, and PR 11 removes it.
 
 ## Before the first build PR
 
@@ -71,16 +71,33 @@ ADR 0250 records the decisions, [Development containers](/reference/development-
 
 ### PR 2: the runtime records and the build list
 
-This PR adds the records. No Node runs a container yet.
+This PR adds the records. No Node runs a container yet, and no flow writes the records; PR 3 and later write them. [Records](/reference/development-containers#records) on the reference page holds the contract.
 
 - A migration adds `instance_runtimes`, one row per container Instance.
 - A row holds the container's Incus names, bridge address and T3 port.
 - It also holds the runtime and agent folder versions, the default Instance it was cloned from, and the power state.
-- Each Node gets a bridge network from a fleet range, which overlaps no other bridge and not the VPN subnet.
-- The Conn layer's environment gets a nullable Instance.
-- The Gateway setting `instances.container_nodes` lists the Nodes that run container Instances during the build.
+- Database triggers keep the rules of the row. A Node's container, address and port each belong to one row.
+- A clone source is the default Instance of the same Project and Node. The default Instance has no T3 port.
 
-Tests: Pest for the records, the bridge allocation and its collisions, and the build list. No live check: the PR changes only Gateway records.
+The Node, Conn and build list records:
+
+- Each Node gets a bridge network: a `/24` of `10.253.0.0/16` that overlaps no other bridge and not the VPN subnet.
+- The Node gets its bridge on the first allocation and keeps it. PR 3's converge makes that call.
+- `node:update` refuses a task VM host bridge that overlaps an Instance bridge.
+- The Conn layer's environment gets a nullable Instance.
+- A Node cannot register an environment that names an Instance. Only the Instance's create flow registers it, from PR 5.
+- The Gateway setting `instances.container_nodes` lists the Nodes that run container Instances during the build.
+- The setting is Gateway configuration, as `task_vms.container_placement` is: `ORBIT_INSTANCES_CONTAINER_NODES`, a JSON list of Node ids.
+
+Tests: Pest for the records, the bridge allocation and its collisions, the self-registration refusal, and the build list. No live check: the PR changes only Gateway records.
+
+These points stay open after PR 2. Each named PR settles its point.
+
+| Point | Fact | PR |
+| --- | --- | --- |
+| One default per Project | Instance names are unique per Project, so a Project has one `default` in the fleet. Its clones must share its Node. PR 4 keeps or changes that | 4 |
+| Registration race | Registration reads the environment's Instance only before its T3 calls. The create flow bumps the cleanup revision, or registration reads it again in its lock | 5 |
+| Destroy order | An environment that names an Instance keeps the Instance from deletion. Destroy removes the environment through the Conn contribution first | 6 |
 
 ### PR 3: prepare a Node and the shared folders
 
@@ -307,14 +324,14 @@ The unpushed branch `task-4193` (bundle `~/apps/orbit-container-plan/.backup/pro
 
 | Reuse | Where it goes | Change |
 | --- | --- | --- |
-| `InstanceRuntime`, `InstanceRuntimeKind` and the migration `add_development_runtime_ownership` | PR 2 | Drop the Project VM columns and the state volume |
+| `InstanceRuntime` and the migration `add_development_runtime_ownership` | PR 2 | Drop the Project VM columns and the state volume. `InstanceRuntimeKind` and `instances.runtime_kind` are dropped: a runtime row marks a container Instance |
 | `ContainerCreateInput`, `ContainerCreateProjection`, `ContainerDestroyInput`, `ContainerDestroyProjection` | PR 5, PR 6 | Drop the source hold, receipts and compensation admission |
 | `ContainerProcessTarget`, `ContainerProcessDefinitions`, `ContainerProcessInspection`, `ContainerProcessObservation`, `RefreshContainerProcessStatus` | PR 4 | The target is an Incus project and container on the Node, not a VM; the directory is `/srv/workspace` |
 | `swamp/ansible/tasks/process-systemd.yml`, `swamp/ansible/process-container.yml`, `swamp/ansible/process-guest.yml`, `swamp/ansible/tasks/process-container-target.yml` and their tests | PR 4 | Remove the VM checks; units get `User=orbit` |
 | `swamp/ansible/tasks/container-feature-branch.yml` | PR 5 | The branch comes from the Node |
 | `swamp/ansible/library/orbit_postgres_copy.py`, `swamp/ansible/postgres-copy.yml` with `swamp/ansible/tasks/postgres-copy.yml`, `PostgresCopyDatabase`, `PostgresDatabaseCopyInput`, the PostgreSQL copy in `DatabaseStatements`, and `ansible_postgres_copy_test.py` | PR 5 | The dump path across servers; the database family adds the template copy on one server |
 | `swamp/ansible/files/container-delete.py`, parts of `swamp/ansible/tasks/container-disposal-remove.yml` and `container-disposal-teardown.yml`, `swamp/tests/container_delete_test.py` | PR 6 | No offline credential path and no state volume |
-| `InstanceLifecycleContribution(s)`, the Conn `ConnInstanceLifecycle` and the migration `add_workspace_binding` | PR 2, PR 5 | The binding is the environment's Instance; no `paused` state |
+| `InstanceLifecycleContribution(s)`, the Conn `ConnInstanceLifecycle` and the migration `add_workspace_binding` | PR 5 | The binding is the environment's Instance, which PR 2 adds as a column; no `paused` state. The contributions come with their first caller, the create flow |
 | `swamp/proof/instance/create.cases.yaml`, `destroy.cases.yaml`, `proof/runner/container_runtime.py` | PR 4 to PR 6 | Cases for a container Node without a Project VM |
 
 These parts are dropped:

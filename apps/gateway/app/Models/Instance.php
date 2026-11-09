@@ -102,6 +102,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, Schedule> $schedules
  * @property-read InstanceRemovalMember|null $removalMember
+ * @property-read InstanceRuntime|null $runtime
  * @property-read Collection<int, InstanceTransfer> $transfers
  * @property-read Collection<int, Task> $tasks
  */
@@ -294,6 +295,16 @@ final class Instance extends Model
     public function removalMember(): HasOne
     {
         return $this->hasOne(InstanceRemovalMember::class)->whereNull('row_deleted_at');
+    }
+
+    /**
+     * The container of a container Instance; a checkout Instance has none.
+     *
+     * @return HasOne<InstanceRuntime, $this>
+     */
+    public function runtime(): HasOne
+    {
+        return $this->hasOne(InstanceRuntime::class);
     }
 
     /** @return HasMany<InstanceTransfer, $this> */

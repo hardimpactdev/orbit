@@ -4,19 +4,22 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Models;
 
+use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * A T3 server that registered with the Gateway and handed it an admin session.
+ * A T3 server that registered with the Gateway and handed it an admin session. The server of a container Instance
+ * names its Instance; Orbit records it from that Instance's create flow, never from a server's own registration.
  *
  * @property int $id
  * @property string $environment_id
  * @property string $label
  * @property string $url
  * @property int|null $node_id
+ * @property int|null $instance_id
  * @property string|null $server_version
  * @property string $admin_session
  * @property Carbon $admin_session_expires_at
@@ -26,6 +29,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read Node|null $node
+ * @property-read Instance|null $instance
  */
 final class ConnEnvironment extends Model
 {
@@ -64,11 +68,18 @@ final class ConnEnvironment extends Model
         return $this->belongsTo(Node::class);
     }
 
+    /** @return BelongsTo<Instance, $this> */
+    public function instance(): BelongsTo
+    {
+        return $this->belongsTo(Instance::class);
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
         return [
             'node_id' => 'integer',
+            'instance_id' => 'integer',
             'cleanup_version' => 'integer',
             'cleanup_completed_version' => 'integer',
             'admin_session' => 'encrypted',

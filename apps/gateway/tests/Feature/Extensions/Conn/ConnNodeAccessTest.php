@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Operations\OperationStatus;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
+use App\Models\Project;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -189,6 +191,17 @@ describe('registration', function (): void {
             ->assertJsonPath('error.code', 'conn.environment_owned');
         expect($this->onBeast->fresh()?->node_id)->toBe($this->beast->id)
             ->and($this->onBeast->fresh()?->url)->toBe('http://10.44.0.30:3773');
+    });
+
+    it('refuses a Node that registers the T3 server of a container Instance itself', function (): void {
+        $project = Project::query()->create(['name' => 'hauzer', 'slug' => 'hauzer', 'repository_url' => 'https://github.com/nckrtl/hauzer.git', 'default_branch' => 'main', 'root' => 'public']);
+        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->beast->id, 'name' => 'feature', 'checkout_path' => '/srv/workspace']);
+        $this->onBeast->forceFill(['instance_id' => $instance->id])->save();
+
+        conn_call($this->beast, 'POST', 'environments', conn_registration('env-beast'))->assertStatus(409)
+            ->assertJsonPath('error.code', 'conn.environment_owned');
+        expect($this->onBeast->fresh()?->url)->toBe('http://10.44.0.30:3773')
+            ->and($this->onBeast->fresh()?->instance?->is($instance))->toBeTrue();
     });
 
     it('lets the registering Node, or anyone for a new server, reach the T3 check', function (string $environmentId): void {

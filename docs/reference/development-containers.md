@@ -1,11 +1,19 @@
 ---
 title: "Development containers"
-description: "Not built. Step 6 of ADR 0250: every development Instance runs in one unprivileged Incus container, a clone of the Project's default Instance, with the app as `orbit` on FrankenPHP, a T3 server and its agents as `agent`, and shared runtime and agent folders per Node."
+description: "Step 6 of ADR 0250, built only as records: every development Instance runs in an Incus container cloned from the Project's default Instance. The app runs as `orbit` on FrankenPHP, T3 and its agents as `agent`."
+covers:
+  - apps/gateway/app/Models/InstanceRuntime.php
+  - apps/gateway/app/Domain/Instances/InstanceRuntimePowerState.php
+  - apps/gateway/app/Domain/Instances/ContainerNodes.php
+  - apps/gateway/app/Actions/Nodes/AllocateInstanceBridgeAction.php
+  - apps/gateway/app/Domain/Nodes/NodeBridges.php
+  - apps/gateway/config/instances.php
+  - apps/gateway/database/migrations/2027_02_03_000000_create_instance_runtimes.php
 ---
 
 # Development containers
 
-**Not built.** This page specifies step 6 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order). It describes the target. The PRs in [Development container runtime](/solutions/development-container-runtime) build it, one part at a time, and move each part into its owning page. Until then, development Instances run from checkouts on their Node, as [Applications](/domains/applications) describes.
+**Not built, except the [records](#records).** This page specifies step 6 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order). It describes the target. The PRs in [Development container runtime](/solutions/development-container-runtime) build it, one part at a time, and move each part into its owning page. Until then, development Instances run from checkouts on their Node, as [Applications](/domains/applications) describes.
 
 Every development Instance runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
 
@@ -33,7 +41,11 @@ Every `app-dev` Node runs its Instances in containers. There is no setting to op
 
 The `app-dev` role installs the container setup: the ZFS-backed Incus pool and project `orbit-instances`, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the Node's Incus pool must be ZFS.
 
-The Gateway gives each Node a bridge network from a fleet range that overlaps no other bridge and not the VPN subnet, and records it on the Node. T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address.
+The Gateway gives each Node a bridge network, a `/24` of the fleet range `10.253.0.0/16`, and records it on the Node. It takes the first `/24` that overlaps no recorded bridge and not the VPN subnet. A Node keeps its bridge. When no `/24` is free, the allocation fails with `node.instance_bridge_exhausted` (409). A task VM host's bridges may not overlap an Instance bridge either: `node:update` refuses them with `node.settings_invalid`. T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address.
+
+### The build list
+
+Until every `app-dev` Node switches, only the Nodes on the build list run container Instances. The list is the Gateway setting `instances.container_nodes`, a JSON list of Node ids in `ORBIT_INSTANCES_CONTAINER_NODES`, such as `[12]`. It is empty by default. A malformed list fails with `instance.container_nodes_invalid` (500), so a typo puts no Node on it. The list exists for the build only; the switch removes it ([plan](/solutions/development-container-runtime#rules-for-every-pr)).
 
 The Node must meet the host requirements of ADR 0250: current kernel, SCTP off and no secrets. A Node that still has checkout Instances keeps them until [migration](#migrate-a-checkout-instance) moves them into containers. The `app-prod` role follows the same model in step 8 ([Production Instances](#production-instances)).
 
@@ -222,7 +234,29 @@ The release flow, with release containers, gets its own specification in the fir
 
 ## Records
 
-Orbit records the container as the Instance's runtime: its Incus project and name, bridge address, T3 port, the runtime and agent folder versions it started with, the default Instance it was cloned from, and its power state. The T3 server's record in the Conn layer names the Instance. Each Node records its bridge network.
+The records exist; no flow writes them yet.
+
+Each Node records its Instance bridge, as [Nodes](#nodes) describes. Each container Instance has one runtime row, `instance_runtimes`. A checkout Instance has none.
+
+| Field | Meaning |
+| --- | --- |
+| `incus_project`, `container_name` | The container in Incus on the Instance's Node |
+| `bridge_address` | The container's address on its Node's bridge. It is a guest address: never the network, broadcast or first usable address, which the bridge keeps |
+| `t3_port` | The port of the Node's WireGuard address that publishes T3, from 3800 to 3999. The default Instance has none |
+| `runtime_version`, `agent_version` | The versions of the shared folders the container started with |
+| `clone_source_instance_id` | The default Instance it was cloned from. Null for the default Instance and for a migrated checkout |
+| `power_state` | `running` or `stopped`. A sleeping container is stopped |
+
+The database keeps these rules:
+
+- A Node's container, bridge address and T3 port each belong to one runtime.
+- A runtime keeps its Node, container, address, port and clone source; only the versions and the power state change.
+- A clone source is the Instance named `default` of the same Project on the same Node, and runs in a container.
+- A default with clones keeps its runtime and its name.
+- A container Instance keeps its Node, Project and name.
+- An Instance with a runtime, a clone or a Conn environment cannot be deleted. The destroy flow removes those records first.
+
+The T3 server's record in the Conn layer names its Instance. Only the Instance's create flow registers that server; a Node that registers it itself is refused ([Registration](/reference/conn#registration)).
 
 ## Errors
 
@@ -236,6 +270,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.turn_running` | 409 | `instance:destroy` without `--force` while a T3 turn runs in the container |
 | `instance.t3_unready` | 502 | The T3 server did not answer after the container started |
 | `conn.environment_asleep` | 409 | A pairing with a sleeping Instance's T3 server |
+| `node.instance_bridge_exhausted` | 409 | No `/24` of the fleet range is free for a Node's Instance bridge |
+| `instance.container_nodes_invalid` | 500 | `ORBIT_INSTANCES_CONTAINER_NODES` is not a JSON list of Node ids |
 
 ## Why it works this way
 
