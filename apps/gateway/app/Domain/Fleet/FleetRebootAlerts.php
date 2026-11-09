@@ -11,6 +11,7 @@ use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertSubject;
 use App\Domain\Releases\ReleaseIncident;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use InvalidArgumentException;
 use Throwable;
@@ -36,7 +37,7 @@ final readonly class FleetRebootAlerts
         $boot = is_string($node['boot_id_before'] ?? null) && $node['boot_id_before'] !== '' ? $node['boot_id_before'] : 'unknown';
         $this->raise(ReleaseAlertKind::RebootHalted, sprintf('Fleet reboot Operation %d stopped at node %s at step %s: %s', $operation->id,
             self::name($node), is_string($node['step'] ?? null) ? $node['step'] : 'unknown', $code),
-            new ReleaseIncident('fleet-node:'.$node['node_id'], substr($boot, 0, 100), $code), 'operation-'.$operation->id);
+            new ReleaseIncident('fleet-node:'.ValidatedData::integer($node['node_id']), substr($boot, 0, 100), $code), 'operation-'.$operation->id);
     }
 
     /** @param array<string, mixed> $node A Node's record; only one that is still due after three days raises. */
@@ -55,7 +56,7 @@ final readonly class FleetRebootAlerts
         }
         $this->raise(ReleaseAlertKind::RebootOverdue, sprintf('Node %s has needed a reboot since %s; the last pass ended it %s%s.', self::name($node),
             $since->toIso8601String(), $node['outcome'], is_string($node['reason'] ?? null) ? ' ('.$node['reason'].')' : ''),
-            new ReleaseIncident('fleet-node:'.$node['node_id'], 'due-'.$since->getTimestamp(), 'fleet.reboot_overdue'));
+            new ReleaseIncident('fleet-node:'.ValidatedData::integer($node['node_id']), 'due-'.$since->getTimestamp(), 'fleet.reboot_overdue'));
     }
 
     /** Node 209 scheduled its own reboot and has not reported a new boot since the pass ended. */
@@ -79,6 +80,6 @@ final readonly class FleetRebootAlerts
     /** @param array<string, mixed> $node */
     private static function name(array $node): string
     {
-        return is_string($node['name'] ?? null) ? $node['name'] : (string) $node['node_id'];
+        return is_string($node['name'] ?? null) ? $node['name'] : (string) ValidatedData::integer($node['node_id']);
     }
 }

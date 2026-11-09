@@ -44,16 +44,21 @@ final readonly class FleetRebootProjection implements DirectOperationProjection
         if ($valid->fails()) {
             throw new ResourceOperationException('operation.result_invalid', 'Each visited Node needs one known outcome.', 422);
         }
-        $byNode = array_column(array_map(static fn (array $node): array => array_intersect_key($node, array_flip(self::Fields)), $reported), null, 'node_id');
+        $byNode = [];
+        foreach ($reported as $node) {
+            $byNode[ValidatedData::integer($node['node_id'])] = array_intersect_key($node, array_flip(self::Fields));
+        }
         $intent = ValidatedData::object($operation->input['intent'] ?? []);
         $nodes = [];
-        foreach (is_array($intent['order'] ?? null) ? $intent['order'] : [] as $id) {
+        foreach (ValidatedData::integerList($intent['order'] ?? []) as $id) {
             // A Node the pass did not reach, after a failed Node or a cut run, has no record.
             $nodes[] = $byNode[$id] ?? ['node_id' => $id, 'outcome' => 'skipped', 'reason' => 'not_reached'];
         }
-        $nodes = [...$nodes, ...(is_array($operation->input['deferred'] ?? null) ? $operation->input['deferred'] : [])];
-        $failed = array_find($nodes, static fn (array $node): bool => $node['outcome'] === 'failed');
-        $result = ['nodes' => $nodes, ...($failed !== null ? ['error_code' => $failed['error_code'] ?? 'fleet.reboot_failed'] : [])];
+        foreach (is_array($operation->input['deferred'] ?? null) ? $operation->input['deferred'] : [] as $deferred) {
+            $nodes[] = ValidatedData::object($deferred);
+        }
+        $failed = array_find($nodes, static fn (array $node): bool => ($node['outcome'] ?? null) === 'failed');
+        $result = ['nodes' => $nodes, ...($failed !== null ? ['error_code' => is_string($failed['error_code'] ?? null) ? $failed['error_code'] : 'fleet.reboot_failed'] : [])];
 
         return DB::transaction(function () use ($operation, $data, $result, $nodes, $failed): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
@@ -65,7 +70,7 @@ final readonly class FleetRebootProjection implements DirectOperationProjection
             foreach ($nodes as $node) {
                 $parked = is_array($node['parked'] ?? null) ? array_values(array_filter($node['parked'], is_string(...))) : [];
                 if ($parked !== []) {
-                    TaskVm::query()->where('host_node_id', $node['node_id'])->whereIn('name', $parked)->where('state', TaskVmState::Ready)
+                    TaskVm::query()->where('host_node_id', ValidatedData::integer($node['node_id']))->whereIn('name', $parked)->where('state', TaskVmState::Ready)
                         ->update(['state' => TaskVmState::Parked]);
                 }
             }

@@ -19,6 +19,7 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Route;
 use App\Models\TaskVm;
+use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Config;
 use Throwable;
@@ -62,9 +63,7 @@ final readonly class FleetReboot
      */
     public static function rebootingTaskHosts(): array
     {
-        $hosts = self::open()?->input['task_hosts'] ?? [];
-
-        return is_array($hosts) ? array_values(array_map(intval(...), $hosts)) : [];
+        return ValidatedData::integerList(self::open()?->input['task_hosts'] ?? []);
     }
 
     /**
