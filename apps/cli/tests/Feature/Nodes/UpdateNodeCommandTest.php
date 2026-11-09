@@ -104,6 +104,39 @@ it('sends task VM host settings and their removal without changing apps', functi
     'removed host' => [null],
 ]);
 
+it('reports a skip when the Gateway wrote nothing, in human and JSON output', function (): void {
+    node_update_profile();
+    $host = ['cidr' => '10.251.77.0/24', 'task_places' => 2, 'ci_places' => 2];
+    MockClient::global([
+        '*/api/v1/nodes/9' => MockResponse::make([
+            'data' => ['id' => 9, 'name' => 'beast', 'status' => 'active', 'public_ssh_host' => '192.0.2.9', 'settings' => ['task_vms' => $host]],
+            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844', 'skipped' => 'node.unchanged'],
+        ]),
+    ]);
+
+    $this->artisan('node:update', ['node' => '9', '--task-vms' => json_encode($host)])
+        ->expectsOutputToContain('Skipped — already set (node.unchanged)')
+        ->doesntExpectOutputToContain('updated.')
+        ->assertExitCode(0);
+    $this->artisan('node:update', ['node' => '9', '--task-vms' => json_encode($host), '--json' => true])
+        ->expectsOutputToContain('"skipped":"node.unchanged"')
+        ->assertExitCode(0);
+});
+
+it('reports no skip for a saved change', function (): void {
+    node_update_profile();
+    MockClient::global([
+        '*/api/v1/nodes/9' => MockResponse::make([
+            'data' => ['id' => 9, 'name' => 'beast', 'status' => 'active', 'public_ssh_host' => '192.0.2.9'],
+            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ]),
+    ]);
+
+    $this->artisan('node:update', ['node' => '9', '--name' => 'beast', '--json' => true])
+        ->doesntExpectOutputToContain('skipped')
+        ->assertExitCode(0);
+});
+
 it('sends a null apps path for an empty --apps-path and the record fields beside it', function (): void {
     node_update_profile();
     $mockClient = MockClient::global([

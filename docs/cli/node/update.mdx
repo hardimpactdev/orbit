@@ -48,6 +48,8 @@ A change never moves an existing checkout; new development Instances use the new
 
 A saved change prints `Node #<id> [<name>] updated.` with the request ID. With `--json`, the CLI prints only the Node, or the final Operation.
 
+A skipped repeat prints `Skipped — already set (node.unchanged)`. With `--json`, the Node then has one more member, `"skipped": "node.unchanged"`. The Gateway's response carries the same reason as `meta.skipped`.
+
 ## Errors
 
 | Code | Meaning |

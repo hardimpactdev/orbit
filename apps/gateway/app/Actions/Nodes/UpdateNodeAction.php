@@ -21,6 +21,7 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Nodes\UpdateNodeResult;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -47,13 +48,14 @@ final readonly class UpdateNodeAction
     /**
      * Saves record fields at once. Apps preparation and task-host input withdrawal start a run; its settings
      * are stored when the run succeeds, while a new name or platform in the same request is already saved.
+     * A record-only request whose values all equal the stored ones writes nothing and is reported unchanged.
      */
-    public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null): Node|Operation
+    public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null): UpdateNodeResult
     {
         try {
-            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId): Node|Operation {
+            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId): UpdateNodeResult {
                 $node->refresh();
-                $update = fn (): Node|Operation => $this->update($node, $name, $platform, $settings, $caller, $requestId);
+                $update = fn (): UpdateNodeResult => $this->update($node, $name, $platform, $settings, $caller, $requestId);
 
                 return $name === null || $name === $node->name ? $update() : $this->provisioningLock->run($name, $update);
             });
@@ -62,7 +64,7 @@ final readonly class UpdateNodeAction
         }
     }
 
-    private function update(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller, ?string $requestId): Node|Operation
+    private function update(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller, ?string $requestId): UpdateNodeResult
     {
         $written = false;
         $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, &$written): Node|Operation {
@@ -82,8 +84,7 @@ final readonly class UpdateNodeAction
                     || $previousHost->cidr !== $normalized->task_vms->cidr);
             $prepareStorage = $settings->hasApps && ($create || $normalized?->appsPath() !== null);
             if (! $prepareStorage && ! $retireHostInput) {
-                $this->persist($node, $normalized);
-                $written = true;
+                $written = $this->persist($node, $normalized) || $written;
 
                 return $node;
             }
@@ -111,7 +112,7 @@ final readonly class UpdateNodeAction
             );
         }
 
-        return $result instanceof Node ? $node->load('roles') : $result;
+        return $result instanceof Node ? new UpdateNodeResult($node->load('roles'), unchanged: ! $written) : new UpdateNodeResult($result);
     }
 
     /** Saves the name and platform, the registry facts that need no run, and reports whether either changed. */
@@ -247,10 +248,16 @@ final readonly class UpdateNodeAction
         $this->inspectExplicitRoots($node, $account, $settings);
     }
 
-    private function persist(Node $node, ?NodeSettingsData $normalized): void
+    /** Saves the settings and reports whether they changed; equal settings are not written. */
+    private function persist(Node $node, ?NodeSettingsData $normalized): bool
     {
         $node->settings = $this->normalizer->storedOver($node->settings, $normalized);
+        if (! $node->isDirty('settings')) {
+            return false;
+        }
         $node->save();
+
+        return true;
     }
 
     private function inspectExplicitRoots(Node $node, ManagedUserAccount $account, NodeSettingsData $settings): void

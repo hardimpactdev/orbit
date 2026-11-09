@@ -3,7 +3,7 @@ title: "Node settings"
 description: "Typed Node settings for the apps root and operator-owned task VM hosts, with validation and explicit host configuration."
 covers:
   - apps/gateway/app/Domain/Nodes/Storage/**
-  - apps/gateway/app/{Actions/Nodes/UpdateNodeAction,Domain/Nodes/NodeSettingsOperationCompletion,Domain/Nodes/NodeSettingsProjection,Providers/TaskVmServiceProvider}.php
+  - apps/gateway/app/{Actions/Nodes/UpdateNodeAction,Domain/Nodes/UpdateNodeResult,Domain/Nodes/NodeSettingsOperationCompletion,Domain/Nodes/NodeSettingsProjection,Providers/TaskVmServiceProvider}.php
   - apps/gateway/app/Infrastructure/Nodes/AgentNodeStorageRootPreparer.php
   - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
@@ -67,7 +67,7 @@ orbit node:update app-dev --apps-path=/mnt/apps
 
 The [API reference](/api/overview), [MCP](/reference/mcp), and generated web types publish `apps` as an object or null, with `path` as a string or null, and `task_vms` as a typed object or null. The settings object and its nested objects reject unknown fields. The request needs at least one member; the `apps.path` member is optional. `"path": null`, `"apps": null`, or `"apps": {}` removes the path.
 
-A patch changes only the members it names. Other stored keys stay, and the API never returns them. Node responses return the stored value only. They return `settings: null` when nothing is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
+A patch changes only the members it names. Other stored keys stay, and the API never returns them. When a patch needs no run and every value equals the stored one, Orbit writes nothing, and the response adds `meta.skipped: node.unchanged`. Node responses return the stored value only. They return `settings: null` when nothing is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
 
 ## Configure a task VM host
 

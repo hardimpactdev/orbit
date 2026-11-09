@@ -66,7 +66,6 @@ cases:
     batch: fresh-fleet
     covers: [records]
     summary: Repeating stored task VM host settings with a containers member writes nothing and reports the skip.
-    fails_today: No code reports node.unchanged; the Gateway returns the Node and the CLI prints that it was updated.
     setup:
       - cli:
           run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1}}']
