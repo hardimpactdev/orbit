@@ -33,7 +33,9 @@ A [Project removal](/reference/projects#remove-a-project) deletes its task group
 
 Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `task:status` and the `task-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks and subtasks stay. [`extension`](/cli/extension) describes the switch.
 
-`task:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at` (always null), and `merges`. `merges` lists the stored open review-and-merge records. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. An ended task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
+`task:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at` (always null), `merges`, and `capacity`. `merges` lists each open task whose pull request Orbit reviews and merges: a task with a `pr_url` in a review-and-merge Project, or a task that reviews an incoming pull request. An open task without a pull request, such as one in `backlog`, is absent. `capacity` is described in [Task places](#task-places).
+
+`assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. An ended task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
 
 ## Model
 
@@ -95,6 +97,8 @@ Publishing a task PR releases its VM, workspace, Node identity, keys and VPN pee
 
 Task work and operator proofs claim task places. Authenticated CI proofs claim CI places. Proofs of a refreshed base use that pool too. Each VM holds one place until deletion is confirmed. Full pools record a waiting Operation without a workspace or identity.
 
+A task VM serves only the proof Project: the base VM carries only its checkout. Work that needs a new VM for a group of another Project, such as provision, prep or a build, returns HTTP 409 `task_vm.project_unsupported` at once and records no Operation. A waiting Operation that reaches that check fails with the same code. Freed places cannot change that, so such a group never joins the wait queue, where it would hold up every later admission.
+
 Task provision, prep, build and review leave each host’s [CI/refresh reserve](/reference/compute-drivers#place-task-vms) free. Operator proofs do too. Only a command proof from an authenticated active Node with an active `ci-runner` role, or a refresh candidate proof, can use it. Orbit records CI eligibility before queueing admission; report-only mode does not grant access. Another proof cannot preempt CI.
 
 Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a claimed group returns HTTP 409 `tasks.already_claimed`.
@@ -139,7 +143,7 @@ Each captured Project setup command runs in order as `env -C <checkout> … /bin
 
 Each shared task VM host keeps one Large VM place for authenticated CI proofs, shared with its refresh candidate proof. CI-only hosts admit only authenticated CI proofs and their own refresh proofs. Task starts, prep, builds and review rounds never take it, even when it is idle. See [Place task VMs](/reference/compute-drivers#place-task-vms) for the budget units and slot numbers.
 
-Full capacity, or no usable promoted image, returns HTTP 409 `tasks.capacity_unavailable`, with the placement reason in the message and `details.reason`. It leaves the group unchanged and records no VM, workspace or Operation. The orchestrator can try the same admission key after capacity or the required image becomes available. A host without a recorded base snapshot cannot serve a new VM. See [Image fallback](/reference/compute-drivers#image-fallback).
+Full capacity, or no usable promoted image, records the `tasks.provision` Operation as `waiting` in the shared task queue. It holds no VM, workspace or identity, and the group stays `todo`. Admission retries every 20 seconds in queue order and fails the Operation with `tasks.capacity_timeout` after two hours. The waiting Operation and the group show the queue position and the groups that hold the places; see [Task places](#task-places). A host without a recorded base snapshot cannot serve a new VM. See [Image fallback](/reference/compute-drivers#image-fallback).
 
 Admission captures the workspace's runtime with the same actions as `instance:create`. A Project that serves a web root with `task_workspace_routed` on gets a private Route on the development Cluster. Development Process definitions become Instance Processes. Schedule definitions are production-only ([ADR 0215](/decisions/0215-start-development-processes-from-project-definitions)), so a workspace gets none. The guest's host key is unknown at admission, so the Gateway captures the guest's SSH targets with `host_keys: null`.
 
@@ -150,6 +154,23 @@ Task VMs reuse WireGuard addresses. Official `@swamp/ssh` pins the observed host
 Success leaves the group `running` and its workspace `source_resolved`. The task branch starts at the pinned start commit. The workspace step refuses a checkout on any other commit. No subtask or check starts. The operation result includes `{ instance_id, node_id, starting_commit, image }`, naming the workspace Instance, guest Node, start commit and the image the VM got. The operation stays running until both VM enrollment and workspace setup finish. A failed native run ends the group `failed`; cancellation ends it `cancelled`. Neither result claims that the VM was destroyed. Cleanup remains a separate native operation.
 
 `image` is `{ recipe_identity, fingerprint, build_id, fallback }`, copied from the VM row. `fallback` is `true` when the VM started from the host's last promoted image instead of the current recipe's; `recipe_identity` then names that older recipe.
+
+#### Task places
+
+Task work waits for a task place in one first-come, first-served queue: the `tasks.provision`, `tasks.prep`, `tasks.build`, `tasks.prep_fix`, `tasks.turn`, `tasks.review_round` and operator `proof.command` admissions that found no free place. The queue is every `waiting` Operation on a group, in Operation ID order.
+
+`task:status` returns `capacity` with two lists:
+
+| Field | Contract |
+| --- | --- |
+| `hosts` | Each active task VM host, in configuration order: `node_id`, `node`, `task_places`, `task_used`, `task_free`, `ci_places`, `ci_used`, `ci_free`, and `holders` |
+| `queue` | Each waiting admission, front first: `position` (from 1), `operation_id`, `kind`, `group_id`, `title`, and `waiting_since` |
+
+A holder is one live task VM: `vm`, `pool` (`task` or `ci`), and the group it serves as `group_id`, `title`, `status`, `last_activity_at` and `active_operation_id`. The group fields are null for a VM that serves no group, such as a CI proof VM. Each live VM holds its place until its deletion is confirmed, so a failed or parked VM counts.
+
+A group's `last_activity_at` is the newest time any Operation on the group was created, started or ended, or null when it has none. `active_operation_id` is the Operation on the group that has not ended, or null. A holder with an old `last_activity_at` and no active Operation is idle: it keeps its place until it publishes, ends or is cancelled.
+
+A waiting Operation on a group, and `task:show` of its group, return `capacity_wait`: `operation_id`, `position`, and `holders`, the holders of the task pool on every host. `capacity_wait` is null when the group or Operation is not waiting for a task place.
 
 #### Keep command output out of run history
 
@@ -253,6 +274,8 @@ The package manager changes the manifest and the lock file in the workspace; not
 
 `task:turn <task> --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID` starts `tasks.turn` through `POST /api/v1/tasks/{task}/turn`. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
 
+While a group's `tasks.provision` Operation waits for a place or runs, the group is not provisioned. Every other admission on it then returns HTTP 409 `tasks.not_provisioned`. That covers a turn, a check, a publish, a script, a package install, a sync, a build, a review round, a prep fix, a maintenance run and a proof on the group's VM. `details.operation_id` names that Operation; follow it and repeat the call once it succeeds. Any other open Operation on the group still returns `operation.target_busy`.
+
 A parked VM is woken by the admission of a turn, a check, a publish or a script, which returns HTTP 409 `tasks.vm_resuming`; repeat the call once the VM runs. The resume is its own Operation and does not take the Idempotency-Key of the call, so a keyed call can be repeated with the same key.
 
 The Gateway admits the request and starts the native `operation-task-turn` workflow. A missing workspace returns HTTP 409 `tasks.no_workspace`. A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. A worker on Node 209 runs the turn. The full intent supplies the group's VM workspace path and admitted SSH target; official SSH performs each workspace action. Pi API actions run on Node 209 with the existing vault-backed VM token. Swamp owns cancellation and the Pi session without adding a cross-step lock.
@@ -277,7 +300,7 @@ When the turn ends, Swamp returns its receipt and measurements. The Gateway proj
 
 After a reviewer turn, Orbit records the checkout difference, resets to the check's commit, and removes untracked files. The result includes the removed difference and the state after reset. A consult is read-only but keeps the implementer's uncommitted tree: Orbit records its difference and never resets it.
 
-A Pi restart leaves the turn `working` while Durable resumes it. Durable retries transient provider errors inside that turn; the Gateway retries none. A crash-loop park or an exhausted provider retry budget ends the thread and operation `failed`, with the error in the result. Orbit raises no assistance for the external group. New task VMs need the [Durable artifact pin](/reference/pi-server#roll-out-a-new-binary).
+A Pi restart leaves the turn `working` while Durable resumes it. Durable retries transient provider errors inside that turn; the Gateway retries none. A crash loop at Durable's restart limit or an exhausted provider retry budget ends the thread and operation `failed`, with the error in the result. Orbit raises no assistance for the external group. New task VMs need the [Durable artifact pin](/reference/pi-server#roll-out-a-new-binary).
 
 Direct turn cancellation uses native Swamp cancellation and official SSH session teardown. It does not prove that the Pi session or remote descendants stopped. Normal group cleanup or VM destruction removes remaining work. A failed or disconnected Pi stream takes the separate interrupt action once before collecting a failed result. Native resume reuses completed steps, including the keyed message send; it adds no Gateway poller or ownership machinery.
 
@@ -504,6 +527,7 @@ The task and subtask operations return these errors.
 | `tasks.deliverables_locked` | 409 | A deliverables update on a subtask that has started |
 | `tasks.deliverable_base_unavailable` | 422 | The repository base or its complete file tree could not be read for path validation |
 | `tasks.already_claimed` | 409 | An attempted move after workspace reservation |
+| `tasks.not_provisioned` | 409 | Other work on a group while its `tasks.provision` Operation waits or runs. `details.operation_id` names it |
 | `tasks.subtask_not_running` | 409 | A subtask cancel that the rules above do not permit |
 | `tasks.subtask_interrupt_failed` | 502 | Orbit could not stop the implementer or the check |
 | `tasks.agent_driver_unavailable` | 409 | The configured agent driver is unknown. No task is stored |
@@ -1395,6 +1419,8 @@ Shared prompts stay free of Project policy. They do not name a feature contract 
 ### Every task group runs on its own task VM
 
 Each task group gets its own [task VM](#task-vm-workspace). [One user](/reference/pi-server#one-user-for-every-task-agent) runs its agents and checks in the same environment. The [VM edge](/reference/compute-drivers#why-task-vms-work-this-way) is the boundary. A task waits for its VM; there is no shared-host fallback.
+
+Operators can inspect the task Node's last reported resource use with [`node:metrics`](/cli/node/metrics). The read does not contact or wake the VM. An offline VM retains its last snapshot with the original observation time and a `possibly outdated` label; this is resource evidence, not proof that an agent turn is still running.
 
 ### Backlog before Todo
 

@@ -4,7 +4,7 @@ description: "What the metrics role runs, how to enable, inspect, and disable it
 covers:
   - apps/gateway/app/Infrastructure/Metrics/**
   - apps/gateway/app/Domain/Metrics/**
-  - apps/gateway/app/Infrastructure/Nodes/Metrics/**
+  - apps/gateway/app/Actions/Nodes/ShowNodeMetricsAction.php
   - apps/gateway/app/Domain/Nodes/ManagedNodeEligibility.php
   - apps/gateway/app/Http/Controllers/Api/{MetricsController,GrafanaAccessAuthorizationController}.php
   - apps/gateway/app/Infrastructure/Processes/PrometheusProcessRuntimeStatusIndex.php
@@ -186,9 +186,11 @@ Generic Node removal and relocation retain their separately owned workflows and 
 
 ## Read Node metrics
 
-[`orbit node:metrics`](/cli/node/metrics) and the [web app](/reference/web-app) read CPU, memory, swap, load, uptime, pressure, and disk from the role's Prometheus. The Gateway reads through Grafana's datasource proxy with the stored Grafana credential. It runs four instant PromQL queries for the Node's exporter. Each rate uses a 40-second window. This window survives a dropped scrape and still shows a spike.
+[`orbit node:metrics`](/cli/node/metrics) reads the latest metrics snapshot reported by the [Node agent](/reference/node-agent#facts). It needs no Metrics role or exporter, makes no outbound query, and retains the snapshot when the Node goes offline. Its observation time, agent state and `possibly_outdated` flag describe that recorded reading.
 
-A reading is at most 10 seconds old. The web app refreshes node metrics every 10 seconds through the Gateway's `/grafana/` path. A Node without an active exporter or without samples answers `node.metrics_unreachable` (HTTP 502). Without a Metrics assignment, the read fails with `metrics.assignment_missing` (HTTP 409).
+The [web app](/reference/web-app) reads CPU, memory, swap, load, uptime, pressure, and disk from the role's Prometheus through Grafana's datasource proxy with the stored Grafana credential. Each rate uses a 40-second window. This window survives a dropped scrape and still shows a spike.
+
+The web app refreshes node metrics every 10 seconds through the Gateway's `/grafana/` path. The CLI's recorded reading has no age limit: stale readings succeed with `possibly_outdated: true`, while no snapshot yet answers `node.metrics_unavailable` (HTTP 422).
 
 ## Why it works this way
 
@@ -226,7 +228,7 @@ Metrics keeps its own encrypted settings. Orbit has no generic credential system
 
 Volumes and the password survive a removal, so re-enabling is safe. Data deletion needs explicit `--purge-data --force` intent. It addresses only the two fixed Metrics volume names.
 
-### Node metrics through Grafana
+### Web metrics through Grafana
 
 Prometheus stays unpublished. Grafana's datasource proxy reuses the publication and the password that already exist. A new Prometheus host name is a rejected alternative. A Gateway endpoint that reads Prometheus over SSH is also rejected, because it adds an SSH round trip to each refresh.
 

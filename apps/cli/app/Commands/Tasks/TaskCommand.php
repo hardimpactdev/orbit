@@ -26,6 +26,7 @@ use Orbit\Sdk\Responses\Tasks\TaskAgentsResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupsResponse;
+use Orbit\Sdk\Responses\Tasks\TaskPlaceHolderResponse;
 use Orbit\Sdk\Responses\Tasks\TaskQuestionResponse;
 
 /**
@@ -292,6 +293,23 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         return $group instanceof TaskGroupResponse ? $group : null;
     }
 
+    /**
+     * One entry per holder of a task place: its group, status and last activity, or the VM when it serves no group.
+     *
+     * @param  list<TaskPlaceHolderResponse>  $holders
+     */
+    protected static function placeHolders(array $holders): string
+    {
+        if ($holders === []) {
+            return 'none';
+        }
+
+        return implode('; ', array_map(static fn (TaskPlaceHolderResponse $holder): string => $holder->groupId === null
+            ? "{$holder->vm} ({$holder->pool})"
+            : "#{$holder->groupId} {$holder->status}, last activity ".($holder->lastActivityAt ?? 'never')
+                .($holder->activeOperationId === null ? '' : ", operation {$holder->activeOperationId} open"), $holders));
+    }
+
     protected function renderGroup(TaskGroupResponse $group): int
     {
         if ($this->option('json') === true) {
@@ -307,7 +325,13 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             'Status' => $group->status,
             ...($group->vmPower === null ? [] : ['VM power' => $group->vmPower]),
             'Preview' => $group->preview,
+            ...($group->previewUrl === null ? [] : ['Preview URL' => $group->previewUrl]),
+            'Last activity' => $group->lastActivityAt,
             ...($group->capacityWaitReason === null ? [] : ['Waiting for capacity' => $group->capacityWaitReason]),
+            ...($group->capacityWait === null ? [] : [
+                'Queue position' => "{$group->capacityWait->position} (operation {$group->capacityWait->operationId})",
+                'Places held by' => self::placeHolders($group->capacityWait->holders),
+            ]),
             'Assistance' => $group->assistanceRequested,
             'Kind' => self::askingKind($group->assistanceRequested, $group->assistanceKind),
             'Question' => self::askingText($group->assistanceRequested, $group->assistanceQuestion),

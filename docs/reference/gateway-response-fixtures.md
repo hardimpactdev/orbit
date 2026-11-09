@@ -17,6 +17,8 @@ Node enrollment fixtures record the real HTTP 202 admission and a separate termi
 
 The `node-show` and `project-show` fixtures hold the record, and for a Node its `access`. They carry no exclusion lists. Node list and show keep `roles` as a list of names and also carry `cluster_name` and the same `assignments` projection as `node:role:list`. `NodeQueryFixturesTest` records these two responses from the Gateway; the CLI contract tests replay them.
 
+The `nodes/node-metrics` fixture carries a retained agent snapshot with its original `observed_at`, shared `agent` state, and `possibly_outdated` flag. Each disk retains its own observation time and stale flag, with null values before its first reading. SDK and CLI tests replay the whole snapshot. The selector PTY fixture waits for each key to be consumed, rather than for a repaint: an arrow can move the selection without changing the rendered bytes when color is off. Gateway tests cover offline retention, missing snapshots, access refusals, and replacement by later agent reports.
+
 The `proof-run` fixtures record a result as rows of `command`, `file` (the cases file), `case`, `verdict` and `seconds`. A refusal for a disabled execution lists the selected cases files.
 
 The web fleet includes a Swamp run for task group 12, with succeeded, running, and pending steps. It proves task-panel rendering and output expansion without an agent transcript. It does not prove live Swamp connectivity or credential grants. [Swamp run output](/reference/tasks#swamp-run-output) defines the live read.
@@ -81,6 +83,8 @@ Instance fixtures include nullable `seed_path` and `seed_commit` fields. These n
 The recorded file holds the request class, the route, the status, and the body. It holds no secrets, because fixture tests use example values. Project fixtures include source defaults and task settings such as `task_check`, and the `maintenance` switch; update the corresponding CLI expectations when those response fields change. Task fixtures share one id sequence with their subtasks. A subtask id is greater than its task id, and creating another task does not reuse a subtask id.
 
 The `tasks/task-show/watched` fixture records a running task whose branch pull request was opened outside Orbit. It has `watched_pr_url`, `watched_pr_number`, and `watched_pr_state`, while `pr_url` remains null. The default task fixtures keep the watched fields null. The SDK and CLI replay both cases so a watched pull request cannot become the reviewed pull request by accident. When these fields change, re-record every response that includes a task and update its CLI JSON expectation. The [branch watch](/reference/tasks#watch-the-branch-while-subtasks-are-open) owns their meaning.
+
+The `tasks/task-status/capacity` fixture records one task VM host with two task places held by groups, one CI place held by a proof VM, one free CI place, and one waiting admission. The other `task-status` fixtures carry an empty `capacity`. `tasks/task-show/waiting` records a group in the task queue with its `capacity_wait`, and `tasks/task-show/preview` a group whose workspace has an active Route, with its `preview_url`. The SDK and the CLI replay all three. [Task places](/reference/tasks#task-places) owns these fields.
 
 The `tasks/task-question-close` fixtures record a question closed as `superseded` and the `tasks.question_closed` refusal of a second close with another status. The SDK and the CLI replay both.
 

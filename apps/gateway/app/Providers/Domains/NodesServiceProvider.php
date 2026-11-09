@@ -8,7 +8,6 @@ use App\Actions\Nodes\AdmitWorkerKnownHostsAction;
 use App\Console\Commands\RekeyNodeAgentCommand;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\ManagedUserAccountResolver;
-use App\Domain\Nodes\Metrics\NodeMetricsReader;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningLock;
@@ -23,7 +22,6 @@ use App\Domain\Operations\OperationSecretSource;
 use App\Infrastructure\Nodes\AgentManagedUserAccountResolver;
 use App\Infrastructure\Nodes\AgentNodeStorageRootPreparer;
 use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
-use App\Infrastructure\Nodes\Metrics\GrafanaPrometheusNodeMetricsReader;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Nodes\NodeAgentHashSource;
@@ -49,7 +47,6 @@ final class NodesServiceProvider extends ServiceProvider
         WorkerKnownHostsPublisher::class => AdmitWorkerKnownHostsAction::class,
         NodeConverger::class => NativeNodeConverger::class,
         NodeStorageRootPreparer::class => AgentNodeStorageRootPreparer::class,
-        NodeMetricsReader::class => GrafanaPrometheusNodeMetricsReader::class,
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,
         NodeRoleFirewallManager::class => NativeNodeRoleFirewallManager::class,
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,

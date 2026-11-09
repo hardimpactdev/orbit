@@ -4,7 +4,7 @@ import { constants } from "node:fs";
 import { access, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, isAbsolute, join, resolve } from "node:path";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import {
     createLocalBashOperations,
     createReadToolDefinition,

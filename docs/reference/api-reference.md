@@ -88,7 +88,9 @@ The `task:start` body schema is empty: task VMs run no Swamp worker, so the scri
 
 The `task:insights` response is `TaskInsightsData`, mapped in the script because the controller returns the data class from its action and does not name it. Its nested data classes give the [task insights](/reference/tasks#task-insights) numbers, trend, and breakdowns. The route has no SDK request and no CLI command, because only the web app reads it.
 
-The `task:turn`, `task:check` and `task:publish` descriptions name the refusal `409 tasks.vm_resuming`: a parked task VM is woken by the admission, and the call is repeated once the VM runs ([Tasks](/reference/tasks)).
+The `task:turn`, `task:check` and `task:publish` descriptions name the refusal `409 tasks.vm_resuming`: a parked task VM is woken by the admission, and the call is repeated once the VM runs ([Tasks](/reference/tasks)). They also name `409 tasks.not_provisioned` for a group whose provision still waits or runs; [Run an external turn](/reference/tasks#run-an-external-turn) lists every admission that refuses with it.
+
+The `task:status`, `task:show` and `operation:show` descriptions name the [task places](/reference/tasks#task-places) fields: `capacity`, `last_activity_at`, `preview_url`, `capacity_wait` and `poll_after_seconds`. Their response schemas come from the data classes, so regenerate OpenAPI, MCP metadata and web types after changing them.
 
 The `task:pr-ready` and `task:pr-merge` descriptions follow [Ready and merge a task pull request](/reference/tasks#ready-and-merge-a-task-pull-request). They name the exact `head_sha`, the `mode` of the ready step, the read-only admission checks and the single write token that each step mints. Both routes have no SDK request and no CLI command, like `task:dependency-merge`; the MCP tools `task-pr-ready` and `task-pr-merge` are the callers.
 

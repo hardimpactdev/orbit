@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { sep } from "node:path";
-import type { AttachedReplicatedState } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { AssistantMessage, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import {
@@ -21,10 +20,12 @@ import {
     type Conversation,
     type ConversationView,
     type Cursor,
+    type EntryId,
     type EntryRecord,
-    type DocumentState,
     type HarnessSettings,
     type LiveState,
+    type Observation,
+    type Observer,
     type SubmissionRecord,
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
@@ -38,6 +39,10 @@ import { modelsWithProviderErrors } from "./provider-errors.ts";
 import { isValidSessionId, type SessionConfig, type SessionRecord, SessionStore } from "./store.ts";
 
 const context = BACKGROUND_CONTEXT;
+interface Outcome {
+    interruptedTurnId: string | null;
+    toolResults: Record<string, string>;
+}
 const OutcomeDoc = defineDoc({
     kind: "orbit.outcome",
     version: 1,
@@ -226,14 +231,20 @@ interface LiveSession {
     record: SessionRecord;
     harness: Harness;
     conversation: Conversation;
-    view: AttachedReplicatedState<ConversationView>;
-    outcome: DocumentState<{
-        interruptedTurnId: string | null;
-        toolResults: Record<string, string>;
-    }>;
+    /** The live view. Its `entries` are only Durable's bounded window; `entries` below hold the transcript. */
+    view: Followed<ConversationView>;
+    outcome: Followed<Readonly<Outcome>>;
+    detachCommits: () => void;
     entries: TranscriptEntry[];
+    /** The newest Durable entry read into `entries`. */
+    lastEntryId: EntryId | undefined;
     turnId: string | null;
     submission: SubmissionRecord | undefined;
+    /** A newer submission record that the next projection applies, after the entries it answers. */
+    nextSubmission: SubmissionRecord | undefined;
+    /** Projections of Durable changes into entries and state, one at a time. */
+    projecting: Promise<void>;
+    projectQueued: boolean;
     sending: Promise<unknown>;
     admitting: number;
     sequence: number;
@@ -243,7 +254,12 @@ interface LiveSession {
     lastStateEvent: StateEvent | undefined;
     listeners: Set<StreamListener>;
     lastUsedAt: number;
-    parked: boolean;
+}
+
+/** The newest value of a Durable observation, and how to stop it. */
+interface Followed<T> {
+    readonly value: T;
+    readonly detach: () => void;
 }
 
 export class SessionRegistry {
@@ -321,6 +337,8 @@ export class SessionRegistry {
                     },
                     context,
                 );
+                // A read right after the 202 shows the new turn and its input.
+                await live.projecting;
             } catch (error) {
                 if (!(error instanceof ConversationBusy)) throw error;
                 throw new PiServerError(
@@ -346,7 +364,6 @@ export class SessionRegistry {
                 outcome.interruptedTurnId = live.turnId;
             }, context);
             await live.conversation.abort(context);
-            live.parked = false;
             this.publishState(live);
         }
     }
@@ -483,8 +500,10 @@ export class SessionRegistry {
 
     private async closeLive(live: LiveSession): Promise<void> {
         await live.sending;
-        live.view.dispose();
-        live.outcome.dispose();
+        live.view.detach();
+        live.outcome.detach();
+        live.detachCommits();
+        await live.projecting;
         await live.harness.close(context);
     }
 
@@ -627,23 +646,16 @@ export class SessionRegistry {
                 ],
             }),
         );
-        let parked = false;
         let loaded: LiveSession | undefined;
+        const changed = () => {
+            if (loaded !== undefined) this.schedule(loaded);
+        };
         const harness = await Harness.open(
             await openNodeSqliteStorage(this.store.databasePath(id)),
             {
                 models: modelsWithProviderErrors(this.options.modelRuntime),
                 registry,
                 env: () => new NodeExecutionEnv({ cwd }),
-                onReport: (_error, info) => {
-                    if (info.type === "task_parked") {
-                        parked = true;
-                        if (loaded !== undefined) {
-                            loaded.parked = true;
-                            this.publishState(loaded);
-                        }
-                    }
-                },
                 settings: {
                     retry: PROVIDER_RETRY_POLICY,
                     stream: { maxRetries: 0 },
@@ -665,21 +677,41 @@ export class SessionRegistry {
             await conversation.commit(async (tx) => {
                 await tx.doc(OutcomeDoc, conversation.id);
             }, context);
-            const outcome = await harness.documentState(OutcomeDoc, conversation.id, context);
-            if (outcome === undefined) throw new Error("Missing Orbit outcome document.");
-            const view = await conversation.viewState(context);
-            const raw: EntryRecord[] = [];
-            let cursor: Cursor | undefined;
-            do {
-                const page = await conversation.entries(
-                    { order: "ascending" },
-                    1000,
-                    cursor,
+            // Observers see each change as memory adopts it, also progress Durable stores later.
+            const outcome = await follow<Readonly<Outcome>>(async (observer) => {
+                const observation = await harness.observeDoc(
+                    OutcomeDoc,
+                    conversation.id,
+                    observer,
                     context,
                 );
-                raw.push(...page.items);
-                cursor = page.next;
-            } while (cursor !== undefined);
+                if (observation === undefined) throw new Error("Missing Orbit outcome document.");
+                return observation;
+            }, changed);
+            const view = await follow<ConversationView>(
+                (observer) => harness.observeConversation(conversation.id, observer, context),
+                changed,
+            );
+            // Submission settlements are authoritative even when no assistant entry is appended.
+            const commits = harness.observeCommits({
+                advance: (publication) => {
+                    for (const change of publication.changes) {
+                        const next = loaded?.nextSubmission ?? loaded?.submission;
+                        if (
+                            loaded !== undefined &&
+                            change.type === "submission" &&
+                            change.value.type === "input" &&
+                            change.value.conversationId === conversation.id &&
+                            (next === undefined || change.value.id >= next.id)
+                        ) {
+                            loaded.nextSubmission = change.value;
+                        }
+                    }
+                    changed();
+                },
+                end: () => undefined,
+            });
+            const raw = await entriesAfter(conversation, undefined);
             recordAbortedBash = async (callId, text) => {
                 // Host-owned presentation evidence can commit after the invocation was cancelled.
                 // Close seals admission; a crash/reopen keeps Durable's interrupted-tool evidence.
@@ -690,7 +722,7 @@ export class SessionRegistry {
                     .catch(() => undefined);
             };
             const entries = raw.flatMap((entry) =>
-                transcriptEntry(entry, outcome.value?.toolResults),
+                transcriptEntry(entry, outcome.value.toolResults),
             );
             const turnId = raw.reduce<string | null>((key, entry) => inputKey(entry) ?? key, null);
             const submission =
@@ -708,9 +740,14 @@ export class SessionRegistry {
                 conversation,
                 view,
                 outcome,
+                detachCommits: () => commits.detach(),
                 entries,
+                lastEntryId: raw.at(-1)?.id,
                 turnId,
                 submission,
+                nextSubmission: undefined,
+                projecting: Promise.resolve(),
+                projectQueued: false,
                 sending: Promise.resolve(),
                 admitting: 0,
                 sequence: 0,
@@ -719,43 +756,11 @@ export class SessionRegistry {
                 lastStateEvent: undefined,
                 listeners: new Set(),
                 lastUsedAt: Date.now(),
-                parked:
-                    parked ||
-                    (await harness.inspect(context)).tasks.some(
-                        (task) =>
-                            task.state.kind === "blocked" && task.state.reason === "restart_limit",
-                    ),
             };
             loaded = live;
             live.lastState = stateKey(this.derive(live), usage(entries), live.turnId);
-            // Submission settlements are authoritative even when no assistant entry is appended.
-            harness.subscribeCommits((publication) => {
-                for (const change of publication.changes) {
-                    if (
-                        change.type === "submission" &&
-                        change.value.type === "input" &&
-                        change.value.conversationId === conversation.id &&
-                        (live.submission === undefined || change.value.id >= live.submission.id)
-                    ) {
-                        live.submission = change.value;
-                        live.turnId = change.value.requestId ?? null;
-                    }
-                }
-                // Chord delivers the adopted view in a microtask, before this projection.
-                queueMicrotask(() => {
-                    const value = view.value;
-                    live.lastUsedAt = Date.now();
-                    for (const rawEntry of value.entries) {
-                        live.turnId = inputKey(rawEntry) ?? live.turnId;
-                        for (const entry of transcriptEntry(rawEntry, outcome.value?.toolResults)) {
-                            if (!live.entrySequences.has(entry.id)) live.entries.push(entry);
-                        }
-                    }
-                    if (value.docs["pi.live"]?.run !== undefined) this.publishState(live);
-                    this.publishEntries(live);
-                    this.publishState(live);
-                });
-            });
+            // A change between the reads above and `loaded` reaches the first projection.
+            this.schedule(live);
             this.live.set(id, live);
             harness.resume();
             return live;
@@ -763,6 +768,49 @@ export class SessionRegistry {
             await harness.close(context);
             throw error;
         }
+    }
+
+    /** Queues one projection of the newest Durable changes behind the running one. */
+    private schedule(live: LiveSession): void {
+        if (live.projectQueued) return;
+        live.projectQueued = true;
+        live.projecting = live.projecting.then(async () => {
+            live.projectQueued = false;
+            try {
+                await this.project(live);
+            } catch (error) {
+                console.error(`pi-server could not project session ${live.id}:`, error);
+            }
+        });
+    }
+
+    /**
+     * Reads the entries the view window shows as new from the paged transcript, so a burst larger
+     * than the window loses none, then applies a newer submission and publishes the changes.
+     */
+    private async project(live: LiveSession): Promise<void> {
+        live.lastUsedAt = Date.now();
+        // Take the settlement before reading: a read that starts after it was published also
+        // returns the entry it answers.
+        const next = live.nextSubmission;
+        live.nextSubmission = undefined;
+        const newest = live.view.value.entries.at(-1)?.id;
+        if (newest !== undefined && (live.lastEntryId === undefined || newest > live.lastEntryId)) {
+            for (const rawEntry of await entriesAfter(live.conversation, live.lastEntryId)) {
+                live.lastEntryId = rawEntry.id;
+                live.turnId = inputKey(rawEntry) ?? live.turnId;
+                for (const entry of transcriptEntry(rawEntry, live.outcome.value.toolResults)) {
+                    if (!live.entrySequences.has(entry.id)) live.entries.push(entry);
+                }
+            }
+        }
+        if (next !== undefined) {
+            live.submission = next;
+            live.turnId = next.requestId ?? null;
+        }
+        if (live.view.value.docs["pi.live"]?.run !== undefined) this.publishState(live);
+        this.publishEntries(live);
+        this.publishState(live);
     }
 
     private publishEntries(live: LiveSession): void {
@@ -889,18 +937,15 @@ export class SessionRegistry {
     }
 
     private derive(live: LiveSession): DerivedState {
-        if (live.parked) {
-            return {
-                state: "failed",
-                error: "Pi Durable parked the turn after its restart limit (crash loop). Operator assistance is required.",
-            };
-        }
         const generation = (live.view.value.docs["pi.live"] as LiveState | undefined)?.generation;
         if (generation?.retry !== undefined) {
-            const last = [...live.entries]
-                .reverse()
+            // A request cut off by a restart waits with no assistant entry of its own, so read
+            // only the current turn: an earlier turn's provider error is not this wait's cause.
+            const since = live.submission?.entry;
+            const last = live.entries
+                .filter((entry) => since === undefined || durableEntryId(entry.id) > since)
                 .map((entry) => entry.message as AssistantMessage)
-                .find((message) => message.role === "assistant");
+                .findLast((message) => message.role === "assistant");
             const category = deriveState({
                 working: false,
                 interruptedByRestart: false,
@@ -928,6 +973,12 @@ export class SessionRegistry {
             return { state: "working", error: null };
         }
         if (submission === undefined) return { state: "idle", error: null };
+        if (submission.status === "unanswered" && submission.reason === "restart_limit") {
+            return {
+                state: "failed",
+                error: `Pi Durable ended the turn at its restart limit (crash loop): ${typeof submission.detail === "string" ? submission.detail : "cut off too often"}. Operator assistance is required.`,
+            };
+        }
         if (submission.status === "done") {
             const answer = live.entries.find((entry) => entry.id === String(submission.answer));
             return deriveState({
@@ -1041,6 +1092,55 @@ export class SessionRegistry {
     }
 }
 
+/**
+ * Follows a Durable observation. `changed` runs synchronously inside each advance, so it may
+ * only schedule work. A call can arrive before the attachment resolves; it is newer than the
+ * attachment's value.
+ */
+async function follow<T>(
+    attach: (observer: Observer<T>) => Promise<Observation<T>>,
+    changed: () => void,
+): Promise<Followed<T>> {
+    let latest: { value: T } | undefined;
+    const observation = await attach({
+        advance: (call) => {
+            if (call.kind !== "value") return;
+            latest = { value: call.value };
+            changed();
+        },
+        end: () => undefined,
+    });
+    return {
+        get value() {
+            return latest === undefined ? observation.value : latest.value;
+        },
+        detach: () => observation.detach(),
+    };
+}
+
+/** The transcript's entries after `after`, oldest first, from every page. */
+async function entriesAfter(
+    conversation: Conversation,
+    after: EntryId | undefined,
+): Promise<EntryRecord[]> {
+    const entries: EntryRecord[] = [];
+    let cursor: Cursor | undefined;
+    do {
+        const page = await conversation.entries(
+            {
+                order: "ascending",
+                ...(after === undefined ? {} : { minEntryId: (after + 1) as EntryId }),
+            },
+            1000,
+            cursor,
+            context,
+        );
+        entries.push(...page.items);
+        cursor = page.next;
+    } while (cursor !== undefined);
+    return entries;
+}
+
 function inputKey(entry: EntryRecord): string | undefined {
     if (
         entry.kind !== "orbit.input" ||
@@ -1050,6 +1150,11 @@ function inputKey(entry: EntryRecord): string | undefined {
     )
         return undefined;
     return typeof entry.data.key === "string" ? entry.data.key : undefined;
+}
+
+/** The Durable entry a transcript entry came from: its ID without the `:index` of a later message. */
+export function durableEntryId(transcriptId: string): number {
+    return Number.parseInt(transcriptId, 10);
 }
 
 function transcriptEntry(

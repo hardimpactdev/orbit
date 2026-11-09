@@ -12,9 +12,8 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Stores the fact a Node agent reported when it differs from the stored one. An unchanged report reads one row and
- * writes nothing, so a periodic resync never takes SQLite's write lock. A change compares and writes in one short
- * transaction with no remote call inside.
+ * Stores a changed observation. Metrics also retain a new observation time when the values match.
+ * Unchanged resyncs read one row and write nothing. A change compares and writes in one short transaction.
  */
 final readonly class RecordNodeFactAction
 {
@@ -26,7 +25,9 @@ final readonly class RecordNodeFactAction
     {
         $data = $kind->stored($data);
         $encoded = json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        $digest = hash('sha256', $kind->value."\0".$subject."\0".$encoded);
+        // A new metrics reading keeps its time even when its values happen to match the last reading.
+        $observation = $kind === NodeFactKind::Metrics ? "\0".$observedAt->toISOString() : '';
+        $digest = hash('sha256', $kind->value."\0".$subject."\0".$encoded.$observation);
         $key = ['node_id' => $node->id, 'kind' => $kind->value, 'subject' => $subject];
         $stored = static fn (): ?string => ValidatedData::nullableString(NodeFact::query()->where($key)->value('digest'));
         if ($stored() === $digest) {

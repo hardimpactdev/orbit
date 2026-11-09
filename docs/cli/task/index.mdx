@@ -12,11 +12,13 @@ The `task` family runs the operations of the Gateway [tasks extension](/referenc
 
 A task is one feature. A subtask is one ordered child of that task, and a subtask has no children. A command build verifies its runner plan as a deliverable; handoff runs the configured Project check once before the deliverables. The [tasks reference](/reference/tasks) owns the lifecycle, the scheduler, and every Gateway rule that these commands reach.
 
+To inspect resource use on the task's Node, use [`node:metrics`](/cli/node/metrics) with its numeric Node ID. See [task VM resource observations](/reference/tasks#every-task-group-runs-on-its-own-task-vm).
+
 ## Commands
 
 | Command | Result |
 | --- | --- |
-| [`task:status`](/cli/task/status) | Show whether the tasks extension is on, list tasks asking for assistance, and list open review-and-merge tasks. |
+| [`task:status`](/cli/task/status) | Show whether the tasks extension is on, list tasks asking for assistance, list open review-and-merge pull requests, and show the task places of each host. |
 | [`task:list`](/cli/task/list) | List tasks, optionally for one Project or status. |
 | [`task:show`](/cli/task/show) | Show one task with its brief and subtasks. |
 | [`task:create`](/cli/task/create) | Create a task in Backlog or Todo; `--current-recipe` makes its VM wait for the current recipe image; `--review=automatic` passes its pull request by review rounds instead of Nick's approval. |

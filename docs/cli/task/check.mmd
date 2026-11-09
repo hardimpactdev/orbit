@@ -22,6 +22,7 @@ sequenceDiagram
   Note over GW: Admit the check<br/>check 17 · task #5170
   %%> Requirements:
   %%> - group 42 is open and external, with its own task VM workspace, else `tasks.no_workspace`
+  %%> - group 42 is provisioned: while its `tasks.provision` Operation waits or runs, the check answers `tasks.not_provisioned` (409) with that Operation's ID in `details.operation_id`
   %%> - the task VM runs; a parked VM is woken by the admission, which records its resume, creates no Operation of this kind and answers `tasks.vm_resuming`; repeat the call once the VM runs
   %%> - subtask 7 is the current open subtask, else `tasks.subtask_not_current`
   %%> - a baseline only before any implementer started, else `tasks.baseline_done`

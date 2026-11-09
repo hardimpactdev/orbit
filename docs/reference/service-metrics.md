@@ -39,6 +39,8 @@ An `ingress` Node normally proxies to the Router. So its upstream health does no
 
 Orbit pins Cbox FPM Exporter `v3.1.1` for each architecture and checks its SHA-256 checksum. Orbit gives Cbox the recorded sockets, configuration paths, and PHP binaries. Pool discovery, CLI PHP monitoring, and Laravel collectors are off.
 
+The exporter's unit, `orbit-fpm-exporter.service`, starts after `wg-quick@orbit.service`, because the exporter listens on the WireGuard address. Its restart policy is `always`: Cbox `v3.1.1` logs a failed listen and exits with status 0, which `on-failure` would treat as a clean stop. Without both, an exporter that started before the tunnel at boot stayed down. The next Metrics reconciliation of a Node writes the new unit.
+
 The **Orbit PHP Capacity** dashboard groups pools by Node and Instance. It shows pool health, active workers, `pm.max_children`, waiting requests, worker-limit events, slow requests, and OPcache memory, hit rate, and manual resets. Prometheus drops the per-worker `phpfpm_process_*` series before storage.
 
 Cbox's average worker memory metric is the PHP memory of the last request. It is not resident process memory. Do not use it as RSS to size workers.

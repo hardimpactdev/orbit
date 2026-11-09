@@ -62,6 +62,17 @@
   loop: "{{ control.recorder }}"
   loop_control: { label: "{{ item.name }}" }
   notify: Reload units
+# The scheduler keeps the Documents cleanup state under /run/orbit, which the tmpfiles rule creates at every boot.
+- name: Write the Gateway runtime folder rule
+  ansible.builtin.copy:
+    dest: "{{ control.runtime_tmpfiles.path }}"
+    content: "{{ control.runtime_tmpfiles.content }}"
+    owner: root
+    group: root
+    mode: "0644"
+- name: Create the Gateway runtime folder
+  ansible.builtin.command: { argv: [systemd-tmpfiles, --create, "{{ control.runtime_tmpfiles.path }}"] }
+  changed_when: false
 - name: Make the grants folder
   ansible.builtin.file: { path: "{{ swamp_repository }}/grants", state: directory, owner: "{{ swamp_user }}", group: "{{ swamp_user }}", mode: "0755" }
 - name: Write the grants
