@@ -14,7 +14,7 @@ use App\Data\Nodes\NodeAccessData;
 use App\Data\Nodes\NodeData;
 use App\Data\Operations\OperationData;
 use App\Domain\Nodes\NodeUpdates;
-use App\Domain\Nodes\NodeUpdateUnchanged;
+use App\Domain\Nodes\UnchangedNodeUpdate;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -131,7 +131,7 @@ final class NodesController extends Controller
         }
 
         return response()->json([
-            'data' => $result instanceof NodeUpdateUnchanged
+            'data' => $result instanceof UnchangedNodeUpdate
                 ? [...NodeData::fromModel($result->node)->toArray(), 'skipped' => 'node.unchanged']
                 : NodeData::fromModel($result)->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],

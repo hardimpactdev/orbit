@@ -13,13 +13,13 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
-use App\Domain\Nodes\NodeUpdateUnchanged;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Nodes\UnchangedNodeUpdate;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
@@ -45,12 +45,12 @@ final readonly class UpdateNodeAction
      * Saves record fields at once. Apps preparation and task-host input withdrawal start a run; its settings
      * are stored when the run succeeds, while a new name or platform in the same request is already saved.
      */
-    public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null): Node|Operation|NodeUpdateUnchanged
+    public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null): Node|Operation|UnchangedNodeUpdate
     {
         try {
-            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId): Node|Operation|NodeUpdateUnchanged {
+            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId): Node|Operation|UnchangedNodeUpdate {
                 $node->refresh();
-                $update = fn (): Node|Operation|NodeUpdateUnchanged => $this->update($node, $name, $platform, $settings, $caller, $requestId);
+                $update = fn (): Node|Operation|UnchangedNodeUpdate => $this->update($node, $name, $platform, $settings, $caller, $requestId);
 
                 return $name === null || $name === $node->name ? $update() : $this->provisioningLock->run($name, $update);
             });
@@ -59,10 +59,10 @@ final readonly class UpdateNodeAction
         }
     }
 
-    private function update(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller, ?string $requestId): Node|Operation|NodeUpdateUnchanged
+    private function update(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller, ?string $requestId): Node|Operation|UnchangedNodeUpdate
     {
         $written = false;
-        $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, &$written): Node|Operation|NodeUpdateUnchanged {
+        $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, &$written): Node|Operation|UnchangedNodeUpdate {
             $node->refresh();
             $previous = $this->normalizer->fromStored($node->settings);
             $normalized = $this->normalizer->normalize($settings->merge($previous));
@@ -84,7 +84,7 @@ final readonly class UpdateNodeAction
             $written = $this->record($node, $name, $platform);
             $settingsChanged = $this->normalizer->stored($previous) != $this->normalizer->stored($normalized);
             if (! $written && ! $settingsChanged) {
-                return new NodeUpdateUnchanged($node->load('roles'));
+                return new UnchangedNodeUpdate($node->load('roles'));
             }
             if (! $prepareStorage && ! $retireHostInput) {
                 if ($settingsChanged) {

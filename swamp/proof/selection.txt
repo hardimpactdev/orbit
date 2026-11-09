@@ -84,7 +84,7 @@ swamp/proof/node/role-add.cases.yaml                        node:role:add
 # Node update: the record patch, deferred projection and its two machine phases.
 apps/cli/app/Commands/Nodes/UpdateNodeCommand.php           node:update
 apps/gateway/app/Actions/Nodes/UpdateNodeAction.php         node:update
-apps/gateway/app/Domain/Nodes/NodeUpdateUnchanged.php       node:update
+apps/gateway/app/Domain/Nodes/UnchangedNodeUpdate.php       node:update
 apps/gateway/app/Domain/Nodes/NodeSettings*.php             node:update
 apps/gateway/app/Domain/Nodes/Storage/**                    node:update
 apps/gateway/app/Http/Requests/Nodes/UpdateNodeRequest.php  node:update

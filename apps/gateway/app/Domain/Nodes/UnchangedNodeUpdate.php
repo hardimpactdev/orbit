@@ -6,7 +6,7 @@ namespace App\Domain\Nodes;
 
 use App\Models\Node;
 
-final readonly class NodeUpdateUnchanged
+final readonly class UnchangedNodeUpdate
 {
     public function __construct(public Node $node) {}
 }
