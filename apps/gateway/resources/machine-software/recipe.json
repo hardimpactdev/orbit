@@ -1325,6 +1325,12 @@
                 "bin": {
                     "rg": "ripgrep-15.2.0-x86_64-unknown-linux-musl/rg"
                 }
+            },
+            "vite-plus": {
+                "tool": "vp-cli",
+                "bin": {
+                    "vp": "vp"
+                }
             }
         },
         "agent": {
@@ -1362,6 +1368,22 @@
                 },
                 "bin": {
                     "codex": "package/vendor/x86_64-unknown-linux-musl/bin/codex"
+                }
+            }
+        },
+        "php": {
+            "static_php_cli": "ff04d4af9ba44f6c194239d733e0529cc6ddecea",
+            "frankenphp": "1.13.5",
+            "without": [
+                "ffi",
+                "pcov"
+            ],
+            "versions": {
+                "8.5": {
+                    "php_version": "8.5.12",
+                    "build": "f75f6e5ba525a7fa62616be616a5613a1db6e161a3d49b849186573d59539b38",
+                    "url": "https://github.com/hardimpactdev/orbit/releases/download/static-php-8.5.12-f75f6e5ba525/static-php-8.5.12-f75f6e5ba525-linux-x86_64.tar.gz",
+                    "sha256": null
                 }
             }
         }

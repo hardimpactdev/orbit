@@ -20,7 +20,7 @@ final readonly class InstanceFolderPlan
      */
     public static function for(InstanceFolders $folders): array
     {
-        $runtime = ['path' => InstanceHostIntent::RuntimeFolder, 'parts' => self::parts($folders->runtime)];
+        $runtime = ['path' => InstanceHostIntent::RuntimeFolder, 'parts' => [...self::parts($folders->runtime), ...self::php($folders)]];
         $agent = ['path' => InstanceHostIntent::AgentFolder, 'parts' => self::parts($folders->agent), 'notes' => InstanceNotes::all()];
 
         return ['runtime' => ['version' => self::version($runtime), ...$runtime], 'agent' => ['version' => self::version($agent), ...$agent]];
@@ -45,6 +45,28 @@ final readonly class InstanceFolderPlan
             $parts[] = $pin->artifact->algorithm === 'sha256'
                 ? [...$base, 'sha256' => $pin->artifact->digest, 'bin' => $pin->bin]
                 : [...$base, 'sha512' => $pin->artifact->digest, 'bin' => $pin->bin];
+        }
+
+        return $parts;
+    }
+
+    /**
+     * Each published static PHP build as the part `php/<version>`, which unpacks to `php/<version>/bin/{php,frankenphp}`. Its
+     * programs stay out of the folder's `bin`: an Instance picks its PHP version. The install checks both binaries against
+     * `static_php`. A build whose SHA-256 the recipe does not record yet has no bytes to install.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function php(InstanceFolders $folders): array
+    {
+        $parts = [];
+        foreach ($folders->php as $version => $build) {
+            if ($build->artifact === null) {
+                continue;
+            }
+            $parts[] = ['name' => "php/{$version}", 'version' => $build->phpVersion, 'url' => $build->artifact->location, 'archive' => 'tar',
+                'sha256' => $build->artifact->digest, 'bin' => [],
+                'static_php' => ['php_version' => $build->phpVersion, 'extensions' => $build->extensions]];
         }
 
         return $parts;

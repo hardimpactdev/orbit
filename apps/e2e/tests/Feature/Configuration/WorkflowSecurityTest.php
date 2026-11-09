@@ -48,6 +48,7 @@ it('defaults workflows to read-only tokens and grants writes only to named publi
         'git-build-watch.yml:publish' => ['issues' => 'write'],
         'orbit-cli-release.yml:publish' => ['contents' => 'write', 'actions' => 'read', 'id-token' => 'write', 'attestations' => 'write'],
         'php-build-mirror.yml:mirror' => ['contents' => 'write'],
+        'static-php.yml:publish' => ['contents' => 'write'],
     ]);
 });
 
@@ -107,6 +108,19 @@ it('limits the recipe mirror write token to main and never triggers it for pull 
     expect(array_keys($workflow['on']))->toBe(['push', 'workflow_dispatch']);
     expect($workflow['on']['push']['branches'])->toBe(['main']);
     expect($workflow['jobs']['mirror']['if'])->toBe("github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main'");
+});
+
+it('publishes static PHP builds only from proven main pushes and never replaces a release', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/static-php.yml'));
+    $publish = $workflow['jobs']['publish'];
+    $steps = array_column($publish['steps'], null, 'name');
+
+    expect($workflow['on']['push']['branches'])->toBe(['main'])
+        ->and($publish['needs'])->toBe(['definition', 'prove'])
+        ->and($publish['if'])->toBe("github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'hardimpactdev/orbit'")
+        ->and($steps['Publish the release']['run'])->toContain('Published builds are never replaced.')
+        ->and($workflow['jobs']['build']['permissions'] ?? null)->toBeNull()
+        ->and($workflow['jobs']['prove']['permissions'] ?? null)->toBeNull();
 });
 
 it('publishes docs-site only from green CI on main pushes or a manual main run', function (): void {

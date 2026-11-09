@@ -55,7 +55,7 @@
       loop: >-
         {%- set links = [] -%}
         {%- for part in folder.parts -%}
-          {%- for program, path in part.bin.items() -%}
+          {%- for program, path in (part.bin or {}).items() -%}
             {%- set _ = links.append({'part': part.name, 'program': program, 'path': path}) -%}
           {%- endfor -%}
         {%- endfor -%}
@@ -72,6 +72,15 @@
         quiet: true
       loop: "{{ folder_programs.results }}"
       loop_control: { label: "{{ item.item }}" }
+    # A static PHP build's CLI and FrankenPHP must load exactly its recipe extensions (docs/reference/compute-drivers.md#static-php-build).
+    - name: Check each static PHP build against its extensions
+      orbit_static_php:
+        php: "{{ folder_parts }}/{{ item.name }}/bin/php"
+        frankenphp: "{{ folder_parts }}/{{ item.name }}/bin/frankenphp"
+        php_version: "{{ item.static_php.php_version }}"
+        extensions: "{{ item.static_php.extensions }}"
+      loop: "{{ folder.parts | selectattr('static_php', 'defined') | list }}"
+      loop_control: { label: "{{ item.name }}" }
     - name: Write the environment notes
       when: folder_name == 'agent'
       block:

@@ -17,7 +17,10 @@ it('reads the two shared folders, a tool part with the tool\'s own pin', functio
     $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
     $node = $recipe->tools['node'];
 
-    expect(array_keys($recipe->instances->runtime))->toBe(['node', 'bun', 'composer', 'ripgrep'])
+    expect(array_keys($recipe->instances->runtime))->toBe(['node', 'bun', 'composer', 'ripgrep', 'vite-plus'])
+        ->and($recipe->instances->runtime['vite-plus']->artifact)->toBe($recipe->tools['vp-cli']->artifacts['amd64'])
+        ->and($recipe->instances->runtime['vite-plus']->version)->toBe($recipe->tools['vp']->version)
+        ->and($recipe->instances->runtime['vite-plus']->bin)->toBe(['vp' => 'vp'])
         ->and(array_keys($recipe->instances->agent))->toBe(['t3', 'claude-code', 'codex'])
         ->and($recipe->instances->runtime['node']->artifact)->toBe($node->artifacts['amd64'])
         ->and($recipe->instances->runtime['node']->version)->toBe($node->version)
@@ -45,7 +48,7 @@ it('refuses a malformed folder part', function (Closure $change, string $message
     }, 'expected exactly fields'],
     'a third folder' => [static function (array &$recipe): void {
         $recipe['instances']['extra'] = [];
-    }, 'instances: expected exactly fields runtime, agent'],
+    }, 'instances: expected exactly fields runtime, agent, php'],
     'a program twice' => [static function (array &$recipe): void {
         $recipe['instances']['agent']['codex']['bin']['claude'] = 'x';
     }, 'is not a new lower-case program name'],

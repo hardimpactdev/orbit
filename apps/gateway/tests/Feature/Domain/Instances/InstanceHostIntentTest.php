@@ -23,6 +23,7 @@ use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\MachineSoftware\ArtifactPin;
 use App\Infrastructure\MachineSoftware\FolderPin;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
+use App\Infrastructure\MachineSoftware\StaticPhpBuild;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Node;
 use App\Models\Operation;
@@ -162,6 +163,30 @@ describe('the Instance image', function (): void {
         );
     });
 
+    it('turns the Vite+ update check off for every unit and login shell', function (): void {
+        $files = array_column(InstanceImage::for('10.253.0.1')['files'], null, 'path');
+
+        expect($files['/etc/systemd/system.conf.d/90-orbit-runtime.conf']['content'])->toBe("# Managed by Orbit.\n[Manager]\nDefaultEnvironment=VP_NO_UPDATE_CHECK=1\n")
+            ->and($files['/etc/profile.d/90-orbit-runtime.sh']['content'])->toBe("# Managed by Orbit.\nexport VP_NO_UPDATE_CHECK=1\n")
+            ->and($files['/etc/profile.d/90-orbit-runtime.sh']['mode'])->toBe('0644');
+    });
+
+    it('installs each published static PHP build as php/<version>, checked against its extensions, and no unpublished one', function (): void {
+        $recipe = app(RecipeImageBuilds::class)->currentRecipe()->instances;
+        $build = $recipe->php('8.5');
+        $published = new StaticPhpBuild('8.5', $build->phpVersion, $build->frankenphp, $build->extensions, $build->build, $build->url,
+            new ArtifactPin($build->url, 'sha256', str_repeat('d', 64), $build->phpVersion));
+        $pending = new StaticPhpBuild('8.5', $build->phpVersion, $build->frankenphp, $build->extensions, $build->build, $build->url, null);
+        $part = static fn (StaticPhpBuild $php): array => array_values(array_filter(
+            InstanceFolderPlan::for(new InstanceFolders($recipe->runtime, $recipe->agent, ['8.5' => $php]))['runtime']['parts'],
+            static fn (array $part): bool => str_starts_with($part['name'], 'php/'),
+        ));
+
+        expect($part($published))->toBe([['name' => 'php/8.5', 'version' => $build->phpVersion, 'url' => $build->url, 'archive' => 'tar',
+            'sha256' => str_repeat('d', 64), 'bin' => [], 'static_php' => ['php_version' => $build->phpVersion, 'extensions' => $build->extensions]]])
+            ->and($part($pending))->toBe([]);
+    });
+
     it('sets up the users, the workspace and no sudo, and turns the Codex update check off', function (): void {
         $image = InstanceImage::for('10.253.0.1');
         $files = array_column($image['files'], null, 'path');
@@ -208,9 +233,9 @@ describe('the shared folders', function (): void {
         $plan = InstanceFolderPlan::for(app(RecipeImageBuilds::class)->currentRecipe()->instances);
         $programs = static fn (array $folder): array => array_merge(...array_map(static fn (array $part): array => $part['bin'], $folder['parts']));
 
-        expect(array_keys($programs($plan['runtime'])))->toBe(['node', 'npm', 'npx', 'bun', 'composer', 'rg'])
+        expect(array_keys($programs($plan['runtime'])))->toBe(['node', 'npm', 'npx', 'bun', 'composer', 'rg', 'vp'])
             ->and(array_keys($programs($plan['agent'])))->toBe(['t3', 'claude', 'codex'])
-            ->and(array_column($plan['runtime']['parts'], 'archive', 'name'))->toBe(['node' => 'tar', 'bun' => 'zip', 'composer' => 'file', 'ripgrep' => 'tar'])
+            ->and(array_column($plan['runtime']['parts'], 'archive', 'name'))->toBe(['node' => 'tar', 'bun' => 'zip', 'composer' => 'file', 'ripgrep' => 'tar', 'vite-plus' => 'tar'])
             ->and(array_column($plan['agent']['parts'], 'archive', 'name'))->toBe(['t3' => 'tar', 'claude-code' => 'tar', 'codex' => 'tar']);
     });
 
@@ -224,7 +249,7 @@ describe('the shared folders', function (): void {
 
     it('states facts only: the users, the workspace, the Instance file, no sudo and no internet', function (string $note): void {
         expect(InstanceNotes::all()[$note])->toContain('`agent`', '`orbit`', '`/srv/workspace`', '`/etc/orbit/instance`', 'There is no sudo.', 'no direct internet')
-            // The runtime folder has no PHP until PR 3b, so no note may say it does.
+            // The runtime folder has no PHP until its static build is published and pinned, so no note may say it does.
             ->and(InstanceNotes::all()[$note])->not->toContain('PHP', 'Composer');
     })->with(['web-app', 'monorepo', 'package']);
 });
