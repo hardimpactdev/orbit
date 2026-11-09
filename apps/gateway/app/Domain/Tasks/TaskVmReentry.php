@@ -16,8 +16,12 @@ use App\Support\ValidatedData;
 /** A published or idle-released task holds no workspace; later work starts from the base and its published branch, or its idle save. */
 final readonly class TaskVmReentry
 {
-    /** @return array<string,mixed>|null */
-    public static function capture(Task $group, string $commit): ?array
+    /**
+     * `$continue` is a turn or a prep fix, which continue from an idle save ({@see TaskIdleSave::restore()}).
+     *
+     * @return array<string,mixed>|null
+     */
+    public static function capture(Task $group, string $commit, bool $continue): ?array
     {
         $vm = TaskVm::forGroup($group);
         if ($vm?->state === TaskVmState::Releasing) {
@@ -28,7 +32,7 @@ final readonly class TaskVmReentry
         }
 
         // A group whose idle VM saved its workspace starts from that save while it holds the task branch head.
-        return app(TaskProvisionIntent::class)->capture($group, app(TaskIdleSave::class)->restore($group, $commit));
+        return app(TaskProvisionIntent::class)->capture($group, app(TaskIdleSave::class)->restore($group, $commit, $continue));
     }
 
     /** @param array<string,mixed> $native */

@@ -17,7 +17,8 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Projects the terminal event of one `operation-task-idle-save` run once (docs/cli/task/idle-save.mmd). A passed save records the
- * saved commit on the group and admits the release of the VM; a failed save keeps the VM, and the next pass of the idle release tries again.
+ * saved commit on the group and admits the release of the VM; a failed save keeps the VM, and the next pass of the idle release tries
+ * again, up to {@see TaskIdleSave::MaxFailures} times in a row, after which the group asks for assistance.
  */
 final readonly class TaskIdleSaveProjection implements DirectOperationProjection
 {
@@ -39,9 +40,16 @@ final readonly class TaskIdleSaveProjection implements DirectOperationProjection
             $saved = trim(ValidatedData::nullableString(ValidatedData::object($data['result'] ?? [])['saved'] ?? null) ?? '');
             if (($data['status'] ?? null) !== 'succeeded' || preg_match('/\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/', $saved) !== 1) {
                 $data['error_code'] = 'tasks.idle_save_failed';
-
-                return app(DirectOperation::class)->project($operation, [...$data, 'status' => ($data['status'] ?? null) === 'succeeded' ? 'failed' : $data['status']],
+                $projected = app(DirectOperation::class)->project($operation, [...$data, 'status' => ($data['status'] ?? null) === 'succeeded' ? 'failed' : $data['status']],
                     ['error_code' => 'tasks.idle_save_failed']);
+                $group = Task::topLevel()->find($operation->target_id);
+                if ($group instanceof Task && TaskIdleSave::exhausted($group)) {
+                    // The idle release stops trying; the VM keeps its place until the driver's next Operation or a person acts.
+                    TaskAssistance::apply($group, AssistanceKind::Failure, reason: 'The idle save of the workspace failed '.TaskIdleSave::MaxFailures
+                        .' times in a row, so the task VM keeps its place. See the failed tasks.idle_save Operations.');
+                }
+
+                return $projected;
             }
             $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
             $group->update(['idle_saved_commit' => $saved, 'idle_saved_at' => now()]);

@@ -55,7 +55,7 @@ final readonly class TaskBuildIntent
     /** @return array<string,mixed> */
     public function capture(Task $group, string $head): array
     {
-        $provision = TaskVmReentry::capture($group, $head);
+        $provision = TaskVmReentry::capture($group, $head, continue: false);
         $group->loadMissing('project', 'taskable');
         $instance = $group->taskable;
         $vm = TaskVm::forGroup($group);

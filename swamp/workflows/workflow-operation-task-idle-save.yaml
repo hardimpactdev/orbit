@@ -1,10 +1,9 @@
 id: 7c508e3a-5d66-4335-9630-78b38e482861
 name: operation-task-idle-save
 description: >-
-  Save the workspace of an idle task group to origin before its VM is released (docs/cli/task/idle-save.mmd): commit uncommitted
-  changes in the workspace, bundle HEAD, copy the bundle to Node 209, and push it with a token minted when the push runs to the save
-  branch task-<id>-idle, overwriting the previous save. Task VM work is official SSH exec argv; 209 work is inline git. No credential
-  reaches the VM.
+  Save the workspace of an idle task group to origin before its VM is released (docs/cli/task/idle-save.mmd): one Ansible phase
+  commits the changes of the workspace, bundles HEAD and fetches the bundle to Node 209; 209 imports it and pushes it, with a token
+  minted when the push runs, to the save branch task-<id>-idle, which holds only the latest save. No credential reaches the VM.
 queueTimeout: 30
 vaults:
 - orbit-control-inputs
@@ -57,215 +56,60 @@ jobs:
 - name: save
   labels: {role: swamp}
   steps:
-  - name: Create save scratch
+  - name: Write the intent
     labels: {role: swamp}
     queueTimeout: 30
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ${{ "ansible-input-idle-save-" + string(inputs.intent.node_id) }}
+      methodName: write
+      inputs: {intent: '${{ {"ssh_execution": inputs.intent.ssh_execution, "checkout_path": inputs.intent.checkout_path} }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
+  - name: Write the playbook input
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    dependsOn:
+    - {step: Write the intent, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-idle-save-scratch-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ "task-idle-save-input-" + string(inputs.intent.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 5 mktemp -d /tmp/orbit-task-idle-save-XXXXXXXX
+        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" tasks.idle_save
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
+  # One phase on the VM: a failed status read, commit or bundle fails the save, so nothing is pushed and the VM is not released.
+  - name: Save the workspace
+    labels: {role: swamp}
+    queueTimeout: 30
     writes: true
-  - name: Read the status
-    labels: {role: swamp}
-    queueTimeout: 30
     dependsOn:
-    - step: Create save scratch
-      condition:
-        type: succeeded
+    - {step: Write the playbook input, condition: {type: succeeded}}
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-idle-save-ssh-" + string(inputs.intent.node_id) }}
-      methodName: exec
+      behaviorType: command/shell
+      behaviorName: ${{ "task-idle-save-phase-" + string(inputs.intent.node_id) }}
+      methodName: execute
       inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - status
-        - --porcelain
-        timeoutSec: 70
-      globalArgs:
-        name: ${{ "task-idle-save-ssh-" + string(inputs.intent.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-  - name: Add workspace files
-    labels: {role: swamp}
-    queueTimeout: 30
-    dependsOn:
-    - step: Read the status
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-idle-save-ssh-" + string(inputs.intent.node_id) }}
-      methodName: exec
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - add
-        - --all
-        timeoutSec: 70
-      globalArgs:
-        name: ${{ "task-idle-save-ssh-" + string(inputs.intent.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-    guard: ${{ steps["Read the status"].outputs.stdout.trim() == "" }}
-    writes: true
-  - name: Commit the workspace
-    labels: {role: swamp}
-    queueTimeout: 30
-    dependsOn:
-    - step: Add workspace files
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-idle-save-ssh-" + string(inputs.intent.node_id) }}
-      methodName: exec
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - env
-        - GIT_AUTHOR_NAME=Orbit
-        - GIT_AUTHOR_EMAIL=orbit@users.noreply.github.com
-        - GIT_COMMITTER_NAME=Orbit
-        - GIT_COMMITTER_EMAIL=orbit@users.noreply.github.com
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - -c
-        - core.hooksPath=/dev/null
-        - -c
-        - commit.gpgSign=false
-        - commit
-        - --quiet
-        - --no-verify
-        - --message
-        - 'Save the idle workspace'
-        timeoutSec: 70
-      globalArgs:
-        name: ${{ "task-idle-save-ssh-" + string(inputs.intent.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-    guard: ${{ steps["Read the status"].outputs.stdout.trim() == "" }}
-    writes: true
-  - name: Export the head
-    labels: {role: swamp}
-    queueTimeout: 30
-    dependsOn:
-    - step: Commit the workspace
-      condition:
-        type: or
-        conditions: [{type: succeeded}, {type: skipped}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-idle-save-ssh-" + string(inputs.intent.node_id) }}
-      methodName: exec
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - bundle
-        - create
-        - ${{ "/tmp/orbit-task-idle-save-" + run.id + ".bundle" }}
-        - HEAD
-        timeoutSec: 70
-      globalArgs:
-        name: ${{ "task-idle-save-ssh-" + string(inputs.intent.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-    # A dirty workspace whose commit did not pass saves nothing: pushing HEAD alone would drop its changes.
-    guard: '${{ steps["Read the status"].outputs.stdout.trim() != "" && steps["Commit the workspace"].status != "succeeded" }}'
-    writes: true
-  - name: Copy the bundle
-    labels: {role: swamp}
-    queueTimeout: 30
-    dependsOn:
-    - step: Export the head
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-idle-save-ssh-" + string(inputs.intent.node_id) }}
-      methodName: copy
-      inputs:
-        hosts: name:target
-        src: ${{ "/tmp/orbit-task-idle-save-" + run.id + ".bundle" }}
-        dst: ${{ steps["Create save scratch"].outputs.stdout.trim() + "/save.bundle" }}
-        direction: from
-      globalArgs:
-        name: ${{ "task-idle-save-ssh-" + string(inputs.intent.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+        run: timeout 240 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" -e "save_run=$ORBIT_RUN_ID" "$ORBIT_ANSIBLE/task-vm-idle-save.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_RUN_ID: ${{ run.id }}
+          ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
+          ANSIBLE_CONFIG: ${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=" + "/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: 'true'
   - name: Init the bare repo
     labels: {role: swamp}
     queueTimeout: 30
+    writes: true
     dependsOn:
-    - step: Copy the bundle
-      condition:
-        type: succeeded
+    - {step: Save the workspace, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: command/shell
@@ -277,15 +121,13 @@ jobs:
           GIT_CONFIG_GLOBAL: /dev/null
           GIT_CONFIG_NOSYSTEM: '1'
           ORBIT_OBJECT_FORMAT: ${{ inputs.intent.object_format }}
-          ORBIT_REPOSITORY: ${{ steps["Create save scratch"].outputs.stdout.trim() + "/repository.git" }}
-    writes: true
+          ORBIT_REPOSITORY: ${{ "/tmp/orbit-ansible-" + run.id + "/repository.git" }}
   - name: Import the bundle
     labels: {role: swamp}
     queueTimeout: 30
+    writes: true
     dependsOn:
-    - step: Init the bare repo
-      condition:
-        type: succeeded
+    - {step: Init the bare repo, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: command/shell
@@ -296,9 +138,8 @@ jobs:
         env:
           GIT_CONFIG_GLOBAL: /dev/null
           GIT_CONFIG_NOSYSTEM: '1'
-          ORBIT_BUNDLE: ${{ steps["Create save scratch"].outputs.stdout.trim() + "/save.bundle" }}
-          ORBIT_REPOSITORY: ${{ steps["Create save scratch"].outputs.stdout.trim() + "/repository.git" }}
-    writes: true
+          ORBIT_BUNDLE: ${{ "/tmp/orbit-ansible-" + run.id + "/save.bundle" }}
+          ORBIT_REPOSITORY: ${{ "/tmp/orbit-ansible-" + run.id + "/repository.git" }}
   - name: Read the saved commit
     labels: {role: swamp}
     queueTimeout: 30
@@ -316,7 +157,7 @@ jobs:
         env:
           GIT_CONFIG_GLOBAL: /dev/null
           GIT_CONFIG_NOSYSTEM: '1'
-          ORBIT_REPOSITORY: ${{ steps["Create save scratch"].outputs.stdout.trim() + "/repository.git" }}
+          ORBIT_REPOSITORY: ${{ "/tmp/orbit-ansible-" + run.id + "/repository.git" }}
   - name: Mint the push token
     labels: {role: swamp}
     queueTimeout: 30
@@ -360,7 +201,7 @@ jobs:
           GIT_CONFIG_VALUE_2: 'false'
           GIT_CONFIG_KEY_3: http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_3: ${{ vault.get(inputs.execution_secrets.git_authorization.vault, inputs.execution_secrets.git_authorization.key) }}
-          ORBIT_REPOSITORY: ${{ steps["Create save scratch"].outputs.stdout.trim() + "/repository.git" }}
+          ORBIT_REPOSITORY: ${{ "/tmp/orbit-ansible-" + run.id + "/repository.git" }}
           ORBIT_REMOTE: ${{ inputs.intent.remote }}
           ORBIT_REFSPEC: ${{ inputs.intent.refspec }}
     writes: true
@@ -389,38 +230,6 @@ jobs:
     guard: ${{ !("Mint the push token" in steps && steps["Mint the push token"].status == "succeeded") }}
     allowFailure: true
     writes: true
-  - name: Remove remote scratch
-    labels: {role: swamp}
-    queueTimeout: 30
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-idle-save-ssh-" + string(inputs.intent.node_id) }}
-      methodName: exec
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '10'
-        - rm
-        - -f
-        - --
-        - ${{ "/tmp/orbit-task-idle-save-" + run.id + ".bundle" }}
-        timeoutSec: 70
-      globalArgs:
-        name: ${{ "task-idle-save-ssh-" + string(inputs.intent.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-    allowFailure: true
-    writes: true
   - name: Remove local scratch
     labels: {role: swamp}
     queueTimeout: 30
@@ -432,7 +241,7 @@ jobs:
       inputs:
         run: timeout 10 rm -rf -- "$ORBIT_DIRECTORY" "$ORBIT_GH_DIRECTORY"
         env:
-          ORBIT_DIRECTORY: '${{ "Create save scratch" in steps && steps["Create save scratch"].status == "succeeded" ? steps["Create save scratch"].outputs.stdout.trim() : "" }}'
+          ORBIT_DIRECTORY: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_GH_DIRECTORY: ${{ "/tmp/orbit-task-idle-save-" + run.id + "-gh" }}
     writes: true
   - name: Confirm the save
@@ -440,9 +249,6 @@ jobs:
     queueTimeout: 30
     dependsOn:
     - step: Revoke the token
-      condition:
-        type: completed
-    - step: Remove remote scratch
       condition:
         type: completed
     - step: Remove local scratch

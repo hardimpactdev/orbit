@@ -39,7 +39,7 @@ final readonly class TaskVmIdleRelease
         $saved = [];
         foreach ($vms as $vm) {
             $group = $groups->get($vm->group_id);
-            if (! $group instanceof Task || ! $group->groupStatus()->isActive() || ! self::idle($group->id, $activity[$group->id])) {
+            if (! $group instanceof Task || ! $group->groupStatus()->isActive() || ! self::idle($group->id, $activity[$group->id]) || TaskIdleSave::exhausted($group)) {
                 continue;
             }
             try {

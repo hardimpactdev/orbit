@@ -10,6 +10,8 @@ use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubComparisonStatus;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
+use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -59,11 +61,25 @@ final readonly class TaskIdleSave
         ], 'task-vm-idle', null, lockKey: OperationStore::lockKey('task_group', $group->id));
     }
 
+    /** A save that failed this many times in a row since the group's last other Operation stops the idle release and asks for assistance. */
+    public const int MaxFailures = 3;
+
+    /** Whether the idle saves of the group failed {@see self::MaxFailures} times in a row since its last other Operation. */
+    public static function exhausted(Task $group): bool
+    {
+        $operations = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id);
+        $since = (clone $operations)->where('kind', '!=', self::Kind)->max('id') ?? 0;
+
+        return (clone $operations)->where('kind', self::Kind)->where('id', '>', $since)->where('status', OperationStatus::Failed)->count() >= self::MaxFailures;
+    }
+
     /**
-     * The commit a new claim of the group starts from: its saved commit when that holds `$head`, the task branch head the claim would
-     * restore, and otherwise `$head`. A save that the task branch has moved past or away from stays on its branch on origin.
+     * The commit a new claim of the group starts from, given `$head`, the commit the claim would otherwise restore. A turn or a prep
+     * fix (`$continue`) continues from the idle save when that holds `$head`. A review round or a build acts on `$head` itself, so a
+     * save ahead of it refuses until a turn and a publish put that work on the task branch. A save that `$head` moved past is
+     * contained in it. A save that `$head` moved away from refuses, so the next save cannot overwrite it.
      */
-    public function restore(Task $group, string $head): string
+    public function restore(Task $group, string $head, bool $continue): string
     {
         $saved = $group->idle_saved_commit;
         if ($saved === null || $saved === $head) {
@@ -75,12 +91,22 @@ final readonly class TaskIdleSave
         } catch (GitHubApiException) {
             $comparison = null;
         }
+        $details = ['saved_commit' => $saved, 'branch' => self::branch($group), 'head' => $head];
         if ($comparison === null) {
             // Restoring the task branch here could drop the saved work, so the claim waits for a readable comparison.
-            throw new ResourceOperationException('tasks.idle_save_unreadable', 'The Gateway could not compare the saved workspace with the task branch. Try again.', 503,
-                details: ['saved_commit' => $saved, 'branch' => self::branch($group)]);
+            throw new ResourceOperationException('tasks.idle_save_unreadable', 'The Gateway could not compare the saved workspace with the task branch. Try again.', 503, details: $details);
+        }
+        if ($comparison->headDescendsFromBase()) {
+            if ($continue) {
+                return $saved;
+            }
+            throw new ResourceOperationException('tasks.idle_save_pending', 'The idle save of this group holds work beyond '.$head.'. Run a turn and publish it first.', 409, details: $details);
+        }
+        if ($comparison->status === GitHubComparisonStatus::Diverged) {
+            throw new ResourceOperationException('tasks.idle_save_diverged', 'The task branch moved away from the idle save on '.self::branch($group)
+                .'. Merge that branch into the task branch, with `-s ours` to drop the save, then try again.', 409, details: $details);
         }
 
-        return $comparison->status === GitHubComparisonStatus::Identical || $comparison->headDescendsFromBase() ? $saved : $head;
+        return $head;
     }
 }
