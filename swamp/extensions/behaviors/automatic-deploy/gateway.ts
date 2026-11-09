@@ -53,6 +53,8 @@ const OperationSchema = z.object({
     ),
     error_code: z.string().nullable(),
 });
+// operation:list rows carry no input or result (docs/reference/operations.md#page-the-list); a holder is read in full by its ID.
+const OperationListRowSchema = OperationSchema.omit({ input: true, result: true });
 const ReceiptSchema = z.object({
     request_key: z.string(),
     found: z.boolean(),
@@ -268,14 +270,14 @@ export class GatewayClient implements Gateway {
         for (const status of ["queued", "running", "waiting"]) {
             const operations = await this.read(
                 `/api/v1/operations?target_type=instance&target_id=${instance}&status=${status}`,
-                z.array(OperationSchema),
+                z.array(OperationListRowSchema),
             );
             const holder = operations.find((o) =>
                 o.target_type === "instance" && o.target_id === instance &&
                 o.status === status
             );
             if (holder) {
-                result.holder = holder;
+                result.holder = await this.operation(holder.id);
                 break;
             }
         }

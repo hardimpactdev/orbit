@@ -70,7 +70,7 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
             'workflow' => 'operation-task-prep', 'projection' => TaskPrepProjection::class, 'github_token_issuer' => TaskGitHubTokens::class,
             'workflow_inputs' => true,
             'terminal_result' => ['job' => 'prep', 'step' => 'Review has no findings', 'native' => true, 'captures' => [
-                'provision' => ['job' => 'prep', 'step' => 'Claim a slot'],
+                'provision' => ['job' => 'prep', 'step' => 'Claim a task place'],
                 'draft' => ['job' => 'prep', 'step' => 'Draft the spec'],
                 'review_1' => ['job' => 'prep', 'step' => 'Review the spec 1'], 'fix_1' => ['job' => 'prep', 'step' => 'Fix the findings 1'],
                 'review_2' => ['job' => 'prep', 'step' => 'Review the spec 2'], 'fix_2' => ['job' => 'prep', 'step' => 'Fix the findings 2'],

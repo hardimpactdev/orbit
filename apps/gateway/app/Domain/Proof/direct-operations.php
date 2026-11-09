@@ -18,6 +18,6 @@ return [
     // and the release of the slot, always. Its `Report` step joins the verdict lines; the Gateway reads it once, when the run ends. Each
     // `proof-fleet-verify` child that ends records its batch on the run as it ends (ProofBatchProjection::applyChild), for a run that reaches its budget.
     'proof.command' => ['workflow' => 'operation-proof-run', 'projection' => ProofCommandProjection::class, 'workflow_inputs' => true, 'github_token_issuer' => TaskGitHubTokens::class,
-        'terminal_result' => ['job' => 'prove', 'step' => 'Report', 'native' => true, 'captures' => ['provision' => ['job' => 'prove', 'step' => 'Claim a slot'], 'report' => ['job' => 'prove', 'step' => 'Report', 'field' => 'stdout', 'artifact' => 'result']]],
+        'terminal_result' => ['job' => 'prove', 'step' => 'Report', 'native' => true, 'captures' => ['provision' => ['job' => 'prove', 'step' => 'Claim a place'], 'report' => ['job' => 'prove', 'step' => 'Report', 'field' => 'stdout', 'artifact' => 'result']]],
         'execution_copies' => $provision['execution_copies']],
 ];

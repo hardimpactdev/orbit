@@ -56,7 +56,7 @@ The generated API types model Gateway rollback as a code switch without a `force
 
 The generated API types include [Reverb app](/reference/websocket-apps) create, list, show, and destroy operations, plus Instance attachments. App responses carry the app ID, public key, and attached Instance IDs. Attachment responses carry key names and stored key counts. Both omit the secret and environment values. These types add no web controls.
 
-Operation start and list responses can omit `steps`. The web app accepts those records; `operation:show` supplies recorded step summaries without execution plans or command output. See [the Operation record](/reference/operations#the-record).
+Operation start responses can omit `steps`. The web app accepts those records; `operation:show` supplies recorded step summaries without execution plans or command output. See [the Operation record](/reference/operations#the-record). List rows are `OperationListItem`: they carry no `input`, `result` or `steps` ([Page the list](/reference/operations#page-the-list)). The Instance operation panel takes only the newest row's ID and status from the list and follows that Operation with `operation:show`.
 
 TaskGroup responses include `current_recipe`, which defaults to `false`. When it is `true`, VM provisioning waits for the current machine recipe instead of using a recent promoted image. [Image fallback](/reference/compute-drivers#image-fallback) defines that choice.
 

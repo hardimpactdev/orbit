@@ -144,6 +144,7 @@ describe('operation requests', function (): void {
             [new ShowOperationRequest(42), Method::GET, '/api/v1/operations/42', []],
             [new ListOperationsRequest, Method::GET, '/api/v1/operations', []],
             [new ListOperationsRequest('running', 'instance.deploy', 'instance', 17), Method::GET, '/api/v1/operations', ['status' => 'running', 'kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => 17]],
+            [new ListOperationsRequest(limit: 5, cursor: '41'), Method::GET, '/api/v1/operations', ['limit' => 5, 'cursor' => '41']],
             [new CancelOperationRequest(42), Method::POST, '/api/v1/operations/42/cancel', []],
         ])->each(static function ($case): void {
             [$request, $method, $path, $query] = $case->value;
@@ -184,15 +185,23 @@ describe('operation requests', function (): void {
             ->and(json_encode($operation->toArray()['input']))->toBe('{}');
     });
 
-    it('lists operations without steps', function (): void {
+    it('lists a page of operations without input, result or steps', function (): void {
+        $row = static function (array $overrides = []): array {
+            $payload = operation_payload($overrides);
+            unset($payload['input'], $payload['result'], $payload['steps']);
+
+            return $payload;
+        };
         $mock = new MockClient([
-            ListOperationsRequest::class => MockResponse::make(['data' => [operation_payload(), operation_payload(['id' => 41, 'status' => 'succeeded'])], 'meta' => []]),
+            ListOperationsRequest::class => MockResponse::make(['data' => [$row(), $row(['id' => 41, 'status' => 'succeeded'])], 'meta' => ['request_id' => 'r', 'next_cursor' => '41']]),
         ]);
 
         $list = operation_connector($mock)->send(new ListOperationsRequest(status: 'running'))->dto();
 
         expect(array_map(static fn (OperationResponse $operation): int => $operation->id, $list->operations))->toBe([42, 41])
-            ->and($list->toArray()['operations'][0])->not->toHaveKey('steps');
+            ->and($list->nextCursor)->toBe('41')
+            ->and($list->toArray()['next_cursor'])->toBe('41')
+            ->and($list->toArray()['operations'][0])->not->toHaveKeys(['steps', 'input', 'result']);
     });
 
     it('refuses a malformed operation', function (): void {

@@ -160,8 +160,9 @@ function fixture() {
                 };
             } else if (path.endsWith("/deployments")) response = rows;
             else if (path.startsWith("/api/v1/operations?")) {
+                // List rows carry no input or result (docs/reference/operations.md#page-the-list).
                 response = holder && path.endsWith(`status=${holder.status}`)
-                    ? [holder]
+                    ? [listRow(holder)]
                     : [];
             } else if (path.endsWith("/head")) response = { head: B };
             else if (path.includes("/commits?")) response = walk;
@@ -253,6 +254,11 @@ const refusal = (code: string): Response => ({
     status: 409,
     body: { error: { code, message: "Refused", details: {} } },
 });
+/** An operation:list row: the record without input and result. */
+const listRow = (operation: Record<string, unknown>) => {
+    const { input: _input, result: _result, ...row } = operation;
+    return row;
+};
 const deployPosts = (f: ReturnType<typeof fixture>) =>
     f.requests.filter((r) =>
         r.method === "POST" && r.path.endsWith("/deploy/automatic")
@@ -409,20 +415,18 @@ Deno.test("other final publication errors remain failed runs with the admission 
 for (const status of ["queued", "running"]) {
     Deno.test(`manual ${status} operation with input [] remains a readable busy holder`, async () => {
         const f = fixture();
+        const manual = {
+            ...f.operation,
+            id: 901,
+            input: [],
+            status,
+            triggered_by: "manual",
+        };
+        f.operations.set(901, manual);
         f.intercept((_method, path) =>
             path.startsWith("/api/v1/operations?") &&
                 path.endsWith(`status=${status}`)
-                ? {
-                    status: 200,
-                    body: {
-                        data: [{
-                            ...f.operation,
-                            input: [],
-                            status,
-                            triggered_by: "manual",
-                        }],
-                    },
-                }
+                ? { status: 200, body: { data: [listRow(manual)] } }
                 : undefined
         );
         await f.run();
@@ -430,6 +434,21 @@ for (const status of ["queued", "running"]) {
         assertEquals(deployPosts(f), []);
     });
 }
+
+Deno.test("a holder found in the list is read in full, because list rows carry no input", async () => {
+    const f = fixture();
+    const automatic = { ...f.operation, id: 902, status: "running" };
+    f.operations.set(902, automatic);
+    f.intercept((_method, path) =>
+        path.startsWith("/api/v1/operations?") && path.endsWith("status=running")
+            ? { status: 200, body: { data: [listRow(automatic)] } }
+            : undefined
+    );
+    await f.run();
+    assertEquals(f.state().result, "deploying");
+    assert(f.requests.some((r) => r.method === "GET" && r.path === "/api/v1/operations/902"));
+    assertEquals(deployPosts(f), []);
+});
 
 Deno.test("target_busy follows a manual operation with input []", async () => {
     const f = fixture();

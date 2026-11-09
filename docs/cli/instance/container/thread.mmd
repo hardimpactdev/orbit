@@ -1,0 +1,55 @@
+sequenceDiagram
+  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#threads-and-tasks): Conn's own flow when a user starts a thread in an Orbit Project. It uses only public Orbit operations and T3's own API; Conn is drawn because this is Conn's flow, not a command chart. A task that attaches later drives the same thread.
+  %% status: draft
+  %% command: none · Conn thread start
+  %% kind: none
+  autonumber
+  %% lane CONN icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane T3 icon=server pill=target tone=purple
+  participant CONN as Conn<br/>user's device
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant T3 as T3 server<br/>in the container
+  Note over CONN: Start a thread<br/>Orbit Project · message
+  %%> What the user does:
+  %%> - picks an Orbit Project and a Node, and writes the first message
+  %%> What Conn proposes:
+  %%> - an Instance name from the message; the Instance is always a clone of the Project's default Instance on the Node, with a clone of its database
+  CONN->>GW: instance:create<br/>PROJECT NODE NAME
+  %%> Requirements:
+  %%> - the device's Node has node access to the target Node, the same edge that Conn needs to pair
+  GW->>SW: Start run, full intent<br/>operation-instance-create
+  GW-->>CONN: 202 Accepted<br/>task ID
+  SW->>T3: Create the Instance<br/>container/create.mmd
+  %%> What it does:
+  %%> - the whole create: the clone of the default container and database, the workspace, the first T3 start, the Processes, the Route and the registration
+  SW-->>GW: Run succeeded<br/>terminal event
+  Note over GW: Record Instance, T3 server
+  loop every 2 s until terminal
+    CONN->>GW: operation:show TASK
+    GW-->>CONN: active · environment id
+  end
+  CONN->>GW: Pair with the server<br/>conn pairing create
+  %%> What it does:
+  %%> - the usual pairing of docs/cli/conn/pairing-create.mmd: the Gateway admits it and waits up to 30 s for the run
+  GW->>SW: Start run, full intent<br/>operation-conn-pairing-create
+  SW->>T3: Mint a pairing link<br/>POST api/auth/pairing-token
+  %%> What it does:
+  %%> - a one-time link, minted with the Gateway's session; the link goes to the vault, and the Gateway reads it once
+  GW-->>CONN: pairing_url<br/>read once
+  CONN->>T3: Pair, then start thread<br/>first message · model
+  %%> What it does:
+  %%> - Conn opens the pairing link, then starts the thread in the Instance's T3 project `/srv/workspace`, which the create added, with the first message
+  %%> - from here Conn talks to the T3 server directly over WireGuard, as with any T3 server
+  %%> - Conn sends a message during a turn with `queue`, so it never steers a turn that a task started
+  T3-->>CONN: Turn streams<br/>diffs · terminal · browser
+  opt a task attaches to the Instance
+    SW->>T3: Drive the thread<br/>T3 MCP · thread send
+    %%> What it does:
+    %%> - while the task flow runs, Swamp sends turns with `queue`, waits for each by its run id and reads only that run's result, with the Gateway's session
+    %%> - the user sees every turn in the same thread; a message the user sends during a turn is queued by T3
+    %%> When the task pauses:
+    %%> - Swamp sends nothing more, and the user drives from the thread
+  end

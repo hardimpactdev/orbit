@@ -31,7 +31,7 @@ sequenceDiagram
   GW->>GW: Balance whole batches<br/>by measured time
   %%> Longest measured batch first; assign each to the least loaded VM. Selected cases of a batch stay together. Record expected cases and all shard operations atomically. Each shard records its run budget: 600 s for the shard, 180 s for each batch and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
   GW->>SW: Start one run per VM
-  SW->>VM: Claim a slot
+  SW->>VM: Claim a place
   %%> Fresh VM from the host base at the trusted commit. No CI keep-failed option.
   SW->>VM: Read the workspace commit
   SW->>SW: Check the workspace commit
@@ -65,7 +65,7 @@ sequenceDiagram
     VM-->>SW: Verdict lines
     %%> The Gateway records the verdict lines of each batch on its shard as the batch ends. A shard that ends at its run budget keeps them; only the cases of the batches that did not end are unrun.
   end
-  SW->>VM: Release the slot
+  SW->>VM: Release the place
   %%> Delete after every outcome. Failed or missing cleanup schedules normal group cancellation. A live or releasing VM holds its place until confirmed deletion.
   SW-->>GW: Report verdicts<br/>full artifact
   %%> Capture the full report, not its 4 KiB history tail. Identify command and file on each line. Missing, duplicate or unexpected case verdicts fail the shard; a missing expected case is unrun.

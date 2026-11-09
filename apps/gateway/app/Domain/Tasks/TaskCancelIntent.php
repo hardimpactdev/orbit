@@ -72,6 +72,16 @@ final readonly class TaskCancelIntent
 
             return DB::transaction(function () use ($group, $caller, $request, $kind): Operation {
                 $input = $this->capture($group, $kind, reserve: true);
+                // No VM and no workspace: nothing to release, so the group ends here and the Operation succeeds with no run (R1).
+                if ($input['task_vm_id'] === null && $input['instance_id'] === null) {
+                    $operation = $this->start->record($kind, 'task_group', $group->id, SwampNode::id(), $input,
+                        ['group_id' => $group->id, 'instance_id' => null, 'released' => true], $caller, $request, OperationStore::lockKey('task_group', $group->id));
+                    if ($operation->wasRecentlyCreated) {
+                        app(TaskGroupEnding::class)->settle(Task::topLevel()->lockForUpdate()->findOrFail($group->id), $input, $kind);
+                    }
+
+                    return $operation;
+                }
 
                 return $this->start->execute($kind, 'task_group', $group->id, isset($input['node_id']) ? ValidatedData::integer($input['node_id']) : SwampNode::id(), $input, $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
             });
@@ -104,7 +114,7 @@ final readonly class TaskCancelIntent
         $slot = TaskVm::forGroup($group);
         if ($workspace !== null && (! $workspace instanceof Instance || ! $slot instanceof TaskVm
             || $workspace->task_workspace_owner_id !== $group->id || $workspace->node_id !== $slot->node_id)) {
-            throw new ResourceOperationException('tasks.workspace_ownership_refused', 'Cancellation requires the exact owned slot workspace.', 409);
+            throw new ResourceOperationException('tasks.workspace_ownership_refused', 'Cancellation requires the exact workspace that the task VM holds.', 409);
         }
         $release = $slot instanceof TaskVm ? ($reserve ? $this->slots->reserveRelease($slot) : $this->slots->release($slot)) : null;
 

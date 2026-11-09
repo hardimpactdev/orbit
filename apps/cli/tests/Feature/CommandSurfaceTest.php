@@ -866,7 +866,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'node:update' => [['node'], ['name' => null, 'platform' => null, 'apps-path' => null, 'task-vms' => null, 'idempotency-key' => null, 'json' => false]],
         'node:wireguard-key' => [['node', 'public-key'], ['json' => false]],
         'operation:cancel' => [['operation'], ['json' => false]],
-        'operation:list' => [[], ['status' => null, 'kind' => null, 'instance' => null, 'json' => false]],
+        'operation:list' => [[], ['status' => null, 'kind' => null, 'instance' => null, 'limit' => null, 'cursor' => null, 'json' => false]],
         'operation:show' => [['operation'], ['json' => false]],
         'node:role:add' => [['node', 'role'], ['converge' => false, 'idempotency-key' => null, 'postgres-process' => null, 'clickhouse-process' => null, 'json' => false]],
         'node:role:list' => [['node'], ['json' => false]],

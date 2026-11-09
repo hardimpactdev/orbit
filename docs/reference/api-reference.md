@@ -92,6 +92,8 @@ The `task:turn`, `task:check` and `task:publish` descriptions name the refusal `
 
 The `task:status`, `task:show` and `operation:show` descriptions name the [task places](/reference/tasks#task-places) fields: `capacity`, `last_activity_at`, `preview_url`, `capacity_wait` and `poll_after_seconds`. Their response schemas come from the data classes, so regenerate OpenAPI, MCP metadata and web types after changing them.
 
+`operation:list` answers with `OperationListItem`, the Operation record without `input`, `result` and `steps`, and the script adds `meta.next_cursor` to its response. Its `limit` and `cursor` parameters come from the form request. [Page the list](/reference/operations#page-the-list) owns the contract.
+
 The `task:pr-ready` and `task:pr-merge` descriptions follow [Ready and merge a task pull request](/reference/tasks#ready-and-merge-a-task-pull-request). They name the exact `head_sha`, the `mode` of the ready step, the read-only admission checks and the single write token that each step mints. Both routes have no SDK request and no CLI command, like `task:dependency-merge`; the MCP tools `task-pr-ready` and `task-pr-merge` are the callers.
 
 The `task:agent:show` description names the cursor and the saved transcript, as the [thread read](/reference/tasks#read-a-thread) defines them. Its response uses the fixed `TaskAgentSnapshot` schema, because the controller returns the agent viewer's recorded snapshot and not a data class.

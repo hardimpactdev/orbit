@@ -1,0 +1,99 @@
+sequenceDiagram
+  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#create): every app-dev Node runs its Instances in containers, and every new Instance is a ZFS clone of the Project's default Instance on the Node, with a clone of its database. The kind and its step names follow docs/cli/instance/create.mmd; the intent carries `runtime: container`. The Project's first default Instance is container/create-default.mmd; when the charts move into place, it becomes the first-default branch of this chart.
+  %% status: draft
+  %% command: instance:create
+  %% kind: instance.create
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane C icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-dev Node<br/>reached over ssh
+  participant C as Container<br/>via incus exec
+  CLI->>GW: instance:create<br/>PROJECT NODE NAME
+  %%> Command:
+  %%> - `orbit instance:create PROJECT NODE NAME`
+  %%> - syntax: `<project> <node> <name> [--root=PATH] [--domain=HOST] [--branch=BRANCH] [--database-server=SLUG]`
+  Note over GW: Validate, reserve Instance<br/>address · T3 port · .env
+  %%> Requirements:
+  %%> - the calling Node has node access to the target Node, an active `app-dev` Node
+  %%> - the Project has an active default Instance on the Node, else `instance.default_missing`
+  %%> - no other change runs on the Instance or the default Instance; the Gateway holds the Route's Nodes
+  %%> Result:
+  %%> - the Instance is reserved with its runtime record: container name, bridge address, a free T3 port and its Route
+  %%> - `.env` is rendered from the Project's env template; the placeholder model key and a repository read token go to the vault
+  %%> - the intent names the vault key where the run stores the new Gateway session for this T3 server
+  %%> - a task is recorded with the full intent, `runtime: container`
+  GW->>SW: Start run, full intent<br/>operation-instance-create
+  GW-->>CLI: 202 Accepted<br/>task ID
+  SW->>N: Clone default container<br/>Ansible · tags container
+  %%> What it does:
+  %%> - `incus copy` of the default container's newest `seed-<commit>` snapshot, a ZFS clone; a sleeping default needs no start
+  %%> - sets the bridge address with `security.port_isolation`, `limits.cpu`, `limits.memory`, the idmapped mounts of `/opt/orbit-runtime` and `/opt/orbit-agent`, and the T3 proxy device
+  %%> - adds the firewall rules for the T3 port and for the database server's port
+  %%> Branch:
+  %%> - fetches the Instance's branch on the Node with the read token, or creates it at the seed commit; the token stays on the Node
+  SW->>N: Clone the database<br/>child database-clone
+  %%> What it does, through the database family:
+  %%> - creates the Instance's owner, then clones the default database
+  %%> - on the default's server, or the one `--database-server` names
+  %%> - PostgreSQL on the same server: `CREATE DATABASE … TEMPLATE`, after a moment without connections to the default database; a cleanup that always runs allows them again
+  %%> - another server: one `pg_dump` snapshot, restored with `pg_restore --single-transaction`; MySQL is a dump and restore
+  %%> Runs beside the step before it: Swamp starts both at once.
+  SW->>N: Start the container<br/>incus start
+  %%> What it does:
+  %%> - nftables, `hidepid` and the image's units start; T3 does not, because `/etc/orbit/instance` does not exist yet
+  SW->>C: Prepare the workspace<br/>Ansible · tags workspace
+  %%> What it does:
+  %%> - pushes the branch in and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
+  %%> - writes `.env` for `orbit` with group `work`; it keeps the default's `APP_KEY`, because the cloned data is encrypted with it
+  %%> - writes the placeholder key, Claude Code and Codex settings for `agent`
+  %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type
+  %%> - writes `/etc/orbit/instance`, owned by root and readable by all
+  %%> No setup steps:
+  %%> - the default Instance installed the dependencies and migrated; a later lockfile change is installed in the workspace
+  SW->>C: Start T3 and Processes<br/>systemctl start
+  %%> What it does:
+  %%> - T3 starts for the first time and creates its identity; the T3 project `/srv/workspace` is added as `agent`
+  %%> - the Processes start as `orbit` units, FrankenPHP among them
+  %%> Check:
+  %%> - waits up to 30 s for `/.well-known/t3/environment` and the units, else `instance.t3_unready`
+  opt web-serving Project
+    SW->>N: Create the Route<br/>child operation-route-create
+    %%> What it adds:
+    %%> - the same steps as `route:create`, with its key and signature, then a TLS probe of the site
+    %%> - the Node's Caddy proxies the Route to FrankenPHP at the container's bridge address
+  end
+  SW->>C: Register the T3 server<br/>sensitive output · vault
+  %%> What it does:
+  %%> - see container/t3-register.mmd: the session goes to the vault, and the step checks the environment id and scopes
+  alt all steps pass in budget
+    C-->>SW: T3 and site answer
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Record Instance, T3 server<br/>active · registered
+    %%> Result:
+    %%> - the Instance, its runtime and its Route become active; the runtime records the default Instance it came from
+    %%> - the Conn layer records the T3 server from the result; its Node is the container's Node and it names the Instance
+  else Instance already created
+    Note over GW: Skipped — already created<br/>instance.exists
+  else a step fails or the budget ends
+    C--xSW: exit ≠ 0 or timeout
+    SW->>N: Withdraw the Route<br/>child route-withdraw
+    %%> When:
+    %%> - only when the run published it
+    SW->>N: Stop the container<br/>incus stop
+    %%> What stays:
+    %%> - the stopped container, its database and its runtime record, marked failed; `instance:destroy` removes them
+    SW--xGW: Run failed<br/>failed step, error_code
+    Note over GW: Record the failure
+    %%> Retry:
+    %%> - run the same command again; it resumes on the same container and database
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
+  end

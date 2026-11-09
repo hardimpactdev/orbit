@@ -814,7 +814,7 @@ Enrollment records its pinned bootstrap connection, candidate placement and gene
 
 Node removal records immutable participants and Route withdrawal intent before its native run. It preserves the departing Node's Route associations through serving cleanup. Swamp decides completion; removal does not restore completed effects after a failure. The Gateway projects the native result without child receipts or runtime proof checks.
 
-A task start (`tasks.provision`) records the Node of its slot at admission; no enrollment child runs, and the release deletes the Node record. Serialized role names are converted to the Node role enum at admission.
+A task start (`tasks.provision`) records the Node of its VM at admission; no enrollment child runs, and the release deletes the Node record. Serialized role names are converted to the Node role enum at admission.
 
 Cross-family enrollment uses the internal `ProvisionNodeData` field names. TaskVM Node cleanup retains its owning planner and custody checks. Standalone Node removal refuses TaskVM guests and caller-supplied provider-deletion claims.
 

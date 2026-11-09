@@ -43,7 +43,7 @@ sequenceDiagram
   SW->>SW: Clean up<br/>revoke · scratch
   alt the save passed
     SW-->>GW: Native terminal result<br/>saved commit
-    Note over GW: Record and release<br/>saved commit · slot release
+    Note over GW: Record and release<br/>saved commit · place release
     %%> What it does:
     %%> - records the saved commit on the group, which keeps its status
     %%> - admits the release of the VM (`docs/cli/task/vm-release.mmd`) when the VM is still the group's and no Operation, such as a resume, is open on it

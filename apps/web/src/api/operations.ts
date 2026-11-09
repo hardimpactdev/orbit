@@ -7,6 +7,9 @@ export type Operation = Omit<Required<components["schemas"]["Operation"]>, "resu
     steps?: components["schemas"]["Operation"]["steps"];
 };
 
+/** One operation:list row: the record without input, result and steps. */
+export type OperationListItem = Required<components["schemas"]["OperationListItem"]>;
+
 export const TERMINAL: readonly string[] = ["succeeded", "failed", "cancelled", "interrupted"];
 
 export const isTerminal = (operation: Pick<Operation, "status">): boolean =>
@@ -41,7 +44,9 @@ export const instanceOperationsQuery = (instanceId: number) =>
     ({
         queryKey: ["operations", "instance", instanceId],
         queryFn: () =>
-            get<Operation[]>(`/api/v1/operations?target_type=instance&target_id=${instanceId}`),
+            get<OperationListItem[]>(
+                `/api/v1/operations?target_type=instance&target_id=${instanceId}`,
+            ),
     }) as const;
 
 /** Keeps the newest parent record when reads arrive out of order. */
