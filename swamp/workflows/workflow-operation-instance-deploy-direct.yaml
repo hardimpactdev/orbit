@@ -1893,7 +1893,6 @@ jobs:
   - name: Check the container
     labels:
       role: swamp
-    writes: true
     dependsOn:
     - step: Take the seed snapshot
       condition:

@@ -21,7 +21,8 @@ sequenceDiagram
   Note over GW: Validate, reserve default<br/>address · .env
   %%> Requirements:
   %%> - the calling Node has node access to the target Node, an active `app-dev` Node
-  %%> - the Project has no default Instance on the Node
+  %%> - the Project has no default Instance anywhere in the fleet; its other Instances are made on this Node
+  %%> - a web-serving Project names its PHP version, and the runtime folder holds that static PHP build
   %%> Result:
   %%> - the default Instance is reserved with its runtime record and Route; it gets no T3 port
   %%> - `.env` is rendered from the Project's env template; a repository read token goes to the vault
@@ -29,23 +30,28 @@ sequenceDiagram
   GW-->>CLI: 202 Accepted<br/>task ID
   SW->>N: Launch the container<br/>Ansible · tags container
   %%> What it does:
-  %%> - `incus launch` from the Node's image, with the bridge address, `security.port_isolation`, the limits and the idmapped mount of `/opt/orbit-runtime`
+  %%> - `incus init` from the Node's image `orbit-instance` with the reserved bridge address, then `incus start`; the project's profile gives `security.port_isolation` and the idmapped, read-only shared folders
+  %%> - the NIC carries the bridge ACL and the container's own ACL, which lets only the Node's Caddy reach port 8080
   %%> - the agent folder is mounted too, so its clones have it; nothing in the default runs from it
-  %%> - fetches the default branch on the Node with the read token; the token stays on the Node
-  SW->>N: Create the database<br/>child operation-database-create
-  %%> What it does:
-  %%> - the database family creates the owner and the database on the Project's database server, on this Node or another
+  %%> - fetches the default branch into the Node's mirror with the read token; the token stays on the Node
+  opt database on a Database server
+    SW->>N: Create the database<br/>child operation-database-create
+    %%> What it does:
+    %%> - the database family creates the owner and the database on the Project's database server, on this Node or another
+    %%> - needs the container's database rule; without it the admission refuses `operation.kind_unavailable`
+  end
   SW->>C: Prepare the workspace<br/>Ansible · tags workspace
   %%> What it does:
-  %%> - pushes the default branch in and checks it out in `/srv/workspace`, with the group, setgid bits and default ACLs
+  %%> - pushes the default branch in as a bundle and checks it out in `/srv/workspace` as `orbit`, with the group, setgid bits and default ACLs
   %%> - writes `.env` for `orbit` with group `work`; writes no `/etc/orbit/instance`, so T3 never starts here
-  SW->>C: Run dev deploy steps<br/>Ansible · tags deploy
+  SW->>C: Run dev deploy steps<br/>incus exec · vault copy
   %%> What it does:
   %%> - the Project's development deploy steps, as `orbit`, in list order: they install dependencies and migrate
   %%> - the runtime folder supplies `php`, `composer`, Node and Bun; dependency downloads use the container egress model
-  SW->>C: Start Processes<br/>systemctl start
+  SW->>C: Start Processes<br/>Ansible · tags processes
   %%> What it does:
-  %%> - FrankenPHP and the Project's other development Processes start as `orbit` units
+  %%> - FrankenPHP starts as the `orbit` unit `orbit-frankenphp.service` on port 8080 of the bridge address
+  %%> - the Project's development Process definitions need their own records and vault path; until then the admission refuses them with `operation.kind_unavailable`
   opt web-serving Project
     SW->>N: Create the Route<br/>child operation-route-create
   end
@@ -60,7 +66,7 @@ sequenceDiagram
   else a step fails or the budget ends
     SW--xGW: Run failed<br/>failed step, error_code
     %%> What stays:
-    %%> - the stopped container and its database, marked failed; the same command resumes, `instance:destroy` removes them
+    %%> - the stopped container with its workspace, marked failed; the same command resumes it
     Note over GW: Record the failure
   end
   loop every 2 s until terminal

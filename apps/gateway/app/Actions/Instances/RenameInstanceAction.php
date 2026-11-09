@@ -8,6 +8,7 @@ use App\Data\Instances\InstanceData;
 use App\Data\Instances\RenameInstanceData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\NodeFacts\NodeAgentLiveness;
@@ -30,6 +31,7 @@ final readonly class RenameInstanceAction
 
     public function execute(Instance $instance, RenameInstanceData $data): Instance
     {
+        InstanceContainer::assertCheckout($instance);
         if ($data->domain !== null) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Domain replacement requires the native Route publication parent.', 503);
         }

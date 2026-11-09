@@ -91,6 +91,7 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 | `operation.target_busy` | Another change to the Instance is running. |
 | `instance.default_missing` | The Project's `default` runs in a container on another Node, or a build-list Node has no `default` of the Project yet. |
 | `instance.host_unavailable` | The container Node is not prepared, its bridge is full, or its runtime folder lacks the Project's PHP build. |
+| `project.source_defaults_incomplete` | The Project's source defaults are incomplete, or a web-serving Project in a container has no PHP version. |
 | `operation.kind_unavailable` | The request needs a part of the container runtime that is not built yet. |
 
 ## How it works

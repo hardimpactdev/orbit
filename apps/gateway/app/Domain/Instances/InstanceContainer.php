@@ -46,6 +46,17 @@ final readonly class InstanceContainer
             .'/rootfs'.InstanceHostIntent::Workspace;
     }
 
+    /**
+     * Refuses a command that works on an Instance's checkout from its Node, for an Instance in a container: its workspace lives in the
+     * container. Destroy, setup, the environment file, transfer, rename and clone reach a container in later parts of the runtime.
+     */
+    public static function assertCheckout(Instance $instance): void
+    {
+        if ($instance->runtime()->exists()) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'This command does not reach an Instance in a container yet.', 503);
+        }
+    }
+
     /** The Node keeps a bare mirror of the Project's repository per Instance: Git runs there, never in the container. */
     public static function mirror(Instance $instance): string
     {
@@ -89,21 +100,27 @@ final readonly class InstanceContainer
         ]);
     }
 
-    /** Refuses a PHP version the runtime folder has no static build for. */
+    /** A web-serving Project needs its PHP version, and the runtime folder its static build: FrankenPHP serves it. */
     public function assertPhp(Project $project): void
     {
         $version = $project->php_version;
-        if ($project->type->isWebServing() && is_string($version) && ($this->folders()->php[$version]->artifact ?? null) === null) {
+        if (! $project->type->isWebServing()) {
+            return;
+        }
+        if (! is_string($version)) {
+            throw new ResourceOperationException('project.source_defaults_incomplete', "App [{$project->slug}] has no PHP version for FrankenPHP to serve.", 422);
+        }
+        if (($this->folders()->php[$version]->artifact ?? null) === null) {
             throw new ResourceOperationException('instance.host_unavailable', "The runtime folder has no static PHP {$version} build.", 409);
         }
     }
 
     /**
-     * The `container` section of a create or deploy intent.
+     * The `container` section of a create or deploy intent. A deployment run sets `commit` when the deployment pins one.
      *
      * @return array<string, mixed>
      */
-    public function intent(Instance $instance, InstanceRuntime $runtime, ?string $commit = null): array
+    public function intent(Instance $instance, InstanceRuntime $runtime): array
     {
         $instance->loadMissing(['project', 'node']);
         $project = $instance->project;
@@ -121,7 +138,7 @@ final readonly class InstanceContainer
                     'destination_port' => (string) self::WebPort, 'state' => 'enabled']]],
             'mirror' => self::mirror($instance), 'repository' => $project->repository_url,
             'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])),
-            'branch' => ValidatedData::string($project->default_branch), 'commit' => $commit,
+            'branch' => ValidatedData::string($project->default_branch), 'commit' => null,
             'workspace' => $workspace, 'environment_file' => $application.'/.env',
             // The deploy commands' whole environment: `orbit`'s home and the runtime folder, the Project's PHP first.
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.$this->path($project), InstanceImage::RuntimeEnvironment],

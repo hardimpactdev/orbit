@@ -2,9 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\RenameInstanceAction;
 use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
+use App\Actions\Instances\StartInstanceCloneAction;
+use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Actions\Instances\StartInstanceEnvironmentImportAction;
+use App\Actions\Instances\StartInstanceEnvironmentSyncAction;
+use App\Actions\Instances\StartInstanceStepListAction;
+use App\Actions\Instances\StartInstanceTransferAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Data\Instances\CloneInstanceData;
 use App\Data\Instances\CreateInstanceData;
+use App\Data\Instances\RenameInstanceData;
+use App\Data\Instances\TransferInstanceData;
 use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceContainer;
@@ -12,6 +22,7 @@ use App\Domain\Instances\InstanceFolderPlan;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
@@ -134,7 +145,7 @@ describe('the first default Instance of a Project on a build-list Node', functio
             'branch' => 'main', 'commit' => null, 'workspace' => '/srv/workspace', 'environment_file' => '/srv/workspace/.env', 'units' => [],
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin', 'VP_NO_UPDATE_CHECK=1'],
             'steps' => [['name' => 'install', 'phase' => 'before_activation', 'required' => true, 'timeout_seconds' => 300, 'command_digest' => hash('sha256', 'bun install')]],
-        ])->and($operation->input['run_budget_seconds'])->toBe(480);
+        ])->and($operation->input['run_budget_seconds'])->toBe(2100);
     });
 
     it('takes the next free address for a second Project\'s default on the same Node', function (): void {
@@ -158,6 +169,13 @@ describe('the first default Instance of a Project on a build-list Node', functio
 
         expect(InstanceRuntime::query()->count())->toBe(1)
             ->and(containerIntentOf($repeat))->toMatchArray(['address' => '10.253.0.2']);
+    });
+
+    it('refuses a web-serving Project without a PHP version, which FrankenPHP could not serve', function (): void {
+        $node = containerDefaultNode();
+
+        expect(containerRefusal(fn () => containerCreate(containerDefaultProject(ProjectType::LaravelApp), $node)))->toBe('project.source_defaults_incomplete')
+            ->and(Instance::query()->count())->toBe(0);
     });
 
     it('refuses a PHP Project until the runtime folder holds its static PHP build', function (): void {
@@ -275,3 +293,19 @@ it('keeps a failed container default stopped, with the .env keys it wrote once i
         ->and($instance->environment_owned_keys)->toBe($operation->input['environment_keys'])
         ->and(InstanceRuntime::query()->where('instance_id', $instance->id)->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
 });
+
+it('refuses every command that works on a checkout from the Node, for an Instance in a container', function (Closure $command): void {
+    $operation = containerCreate(containerDefaultProject(), containerDefaultNode());
+    $instance = Instance::query()->findOrFail($operation->target_id);
+    $instance->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
+
+    expect(containerRefusal(fn () => $command($instance)))->toBe('operation.kind_unavailable');
+})->with([
+    'destroy' => [fn (Instance $instance) => app(StartInstanceDestroyAction::class)->execute($instance, true)],
+    'setup' => [fn (Instance $instance) => app(StartInstanceStepListAction::class)->execute($instance, LifecyclePhase::Setup, 'test', null)],
+    'env:sync' => [fn (Instance $instance) => app(StartInstanceEnvironmentSyncAction::class)->execute($instance)],
+    'env:import' => [fn (Instance $instance) => app(StartInstanceEnvironmentImportAction::class)->execute($instance, false)],
+    'transfer' => [fn (Instance $instance) => app(StartInstanceTransferAction::class)->execute($instance, new TransferInstanceData(1, null, null))],
+    'rename' => [fn (Instance $instance) => app(RenameInstanceAction::class)->execute($instance, new RenameInstanceData('feature'))],
+    'clone' => [fn (Instance $instance) => app(StartInstanceCloneAction::class)->execute($instance, new CloneInstanceData(1, 'prod', 'prod', null, null))],
+]);

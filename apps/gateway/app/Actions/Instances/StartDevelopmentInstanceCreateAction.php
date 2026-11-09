@@ -201,9 +201,8 @@ final readonly class StartDevelopmentInstanceCreateAction
             $input['direct_provisioning'] = [...$provisioning, 'route' => $input['route_create'] ?? null, 'database' => $database,
                 'server_database' => $server['input'] ?? null, 'container' => $steps === null ? null : $this->containerIntent($instance, $node, $steps)];
             if ($steps !== null) {
-                // F8: 120 s for the container, the workspace and the Processes, the deploy step timeouts, 60 s for the seed snapshot
-                // and 240 s for the Route child and its withdrawal.
-                $input['run_budget_seconds'] = 180 + array_sum(array_column($steps, 'timeout_seconds')) + (isset($input['route_create']) ? 240 : 0);
+                // F8: no container create has run yet, so the run starts at 30 minutes, plus the deploy step timeouts.
+                $input['run_budget_seconds'] = 1800 + array_sum(array_column($steps, 'timeout_seconds'));
 
                 return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId);
             }

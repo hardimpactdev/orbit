@@ -98,9 +98,11 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 }
                 $this->vp->recordReference($instance, $path, VpEnvironment::fromArray($runtime), ValidatedData::string($runtime['status']));
             }
-            if ($variant === 'container' && $status === 'succeeded') {
-                // Clones start at the snapshot the deployment took; the container runs again.
-                $instance->runtime()->firstOrFail()->update(['seed_commit' => $facts['commit'], 'power_state' => InstanceRuntimePowerState::Running]);
+            if ($variant === 'container') {
+                // A deployment starts a stopped container; clones start at the snapshot a passed deployment took.
+                $runtime = $instance->runtime()->firstOrFail();
+                $runtime->update([...($payload['started'] ?? false) === true ? ['power_state' => InstanceRuntimePowerState::Running] : [],
+                    ...$status === 'succeeded' ? ['seed_commit' => $facts['commit']] : []]);
             } elseif ($variant === 'development' && $status === 'succeeded') {
                 $instance->update(['seed_path' => $admitted['home'], 'seed_repository' => $admitted['home'], 'seed_commit' => $facts['commit']]);
             } elseif (! InstanceDeploymentIntent::development($variant) && $facts['selected_release'] !== null && ($payload['selection_confirmed'] ?? false) === true) {

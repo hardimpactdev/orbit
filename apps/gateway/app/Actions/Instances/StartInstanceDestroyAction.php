@@ -6,6 +6,7 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Instances\InstanceLifecycleInput;
@@ -54,6 +55,7 @@ final readonly class StartInstanceDestroyAction
         if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
         }
+        InstanceContainer::assertCheckout($instance);
         if (! $force && $instance->project->source_access === ProjectSourceAccess::GhCli) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Native publication verification requires anonymous or scoped GitHub App repository access.', 503);
         }

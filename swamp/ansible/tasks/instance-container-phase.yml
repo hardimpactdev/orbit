@@ -13,7 +13,8 @@
           '--', 'runuser', '-u', 'orbit', '--', 'git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'] }}
     mirror_git: [/usr/bin/git, -c, core.hooksPath=/dev/null, -c, core.fsmonitor=false, -C, "{{ container.mirror }}"]
     node_bundle: "/tmp/orbit-instance-{{ container.instance_id }}-{{ run_id }}.bundle"
-    container_bundle: /tmp/orbit-workspace.bundle
+    # Run-scoped, so the run of another Operation never removes it; the fetch and checkout phases of one run share it.
+    container_bundle: "/tmp/orbit-workspace-{{ run_id }}.bundle"
     units: "{{ container.units | map(attribute='name') | list }}"
 
 - name: Read the container
@@ -23,8 +24,8 @@
   failed_when: false
   when: phase in ['container', 'stop', 'start']
 
-# The container's own ACL: the bridge's way to the model forwarder stays in the bridge ACL; this one adds the Instance's database
-# server and lets the Node's Caddy reach FrankenPHP. Network ACLs live in the default project.
+# The container's own ACL: the bridge's way to the model forwarder stays in the bridge ACL; this one lets the Node's Caddy reach
+# FrankenPHP. Network ACLs live in the default project.
 - name: Converge the container's ACL
   when: phase == 'container'
   block:
@@ -127,8 +128,40 @@
       ansible.builtin.set_fact:
         container_commit: "{{ container.commit if container.commit is not none else container_chain.stdout_lines[0] }}"
 
+# The first build brings the branch in only when the workspace is not at the mirror's commit yet, so a rerun changes nothing.
+- name: Read the workspace and the mirror
+  when: phase == 'workspace'
+  block:
+    - name: Read the workspace repository
+      ansible.builtin.command: { argv: "{{ as_orbit + ['test', '-d', container.workspace ~ '/.git'] }}" }
+      register: workspace_repository
+      changed_when: false
+      failed_when: workspace_repository.rc not in [0, 1]
+    - name: Initialise the workspace repository
+      when: workspace_repository.rc != 0
+      ansible.builtin.command:
+        argv: "{{ as_orbit + ['git', 'init', '--quiet', '--shared=group', '--initial-branch', container.branch, container.workspace] }}"
+      changed_when: true
+    - name: Read the workspace's branch and commit
+      ansible.builtin.command: { argv: "{{ in_workspace + item }}" }
+      loop:
+        - [symbolic-ref, --quiet, --short, HEAD]
+        - [rev-parse, --verify, --quiet, "HEAD^{commit}"]
+      register: workspace_before
+      changed_when: false
+      failed_when: false
+    - name: Read the mirror's commit
+      ansible.builtin.command: { argv: "{{ mirror_git + ['rev-parse', '--verify', 'refs/heads/' ~ container.branch] }}" }
+      register: mirror_head
+      changed_when: false
+    - name: Decide whether the branch moves in
+      ansible.builtin.set_fact:
+        workspace_behind: >-
+          {{ workspace_before.results[0].stdout | trim != container.branch
+             or workspace_before.results[1].stdout | trim != mirror_head.stdout | trim }}
+
 - name: Bring the branch into the container
-  when: phase in ['workspace', 'fetch']
+  when: phase == 'fetch' or (phase == 'workspace' and workspace_behind | bool)
   block:
     - name: Bundle the branch
       ansible.builtin.command: { argv: "{{ mirror_git + ['bundle', 'create', '--quiet', node_bundle, 'refs/heads/' ~ container.branch] }}" }
@@ -143,39 +176,43 @@
 
 # The workspace is a repository shared by `orbit` and `agent` through the group `work`.
 - name: Check out the branch in the workspace
-  when: phase == 'workspace'
+  when: phase == 'workspace' and workspace_behind | bool
   block:
-    - name: Read the workspace repository
-      ansible.builtin.command: { argv: "{{ as_orbit + ['test', '-d', container.workspace ~ '/.git'] }}" }
-      register: workspace_repository
-      changed_when: false
-      failed_when: workspace_repository.rc not in [0, 1]
-    - name: Initialise the workspace repository
-      when: workspace_repository.rc != 0
-      ansible.builtin.command:
-        argv: "{{ as_orbit + ['git', 'init', '--quiet', '--shared=group', '--initial-branch', container.branch, container.workspace] }}"
-      changed_when: true
     - name: Fetch the bundle and check out the branch
       ansible.builtin.command: { argv: "{{ in_workspace + item }}" }
       loop:
         - [fetch, --quiet, "{{ container_bundle }}", "+refs/heads/{{ container.branch }}:refs/remotes/origin/{{ container.branch }}"]
         - [checkout, --quiet, -B, "{{ container.branch }}", "refs/remotes/origin/{{ container.branch }}"]
       changed_when: true
-    - name: Read the checked-out commit
+  always:
+    - name: Remove the bundle in the container
+      ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_bundle] }}" }
+      changed_when: false
+
+- name: Read the checked-out commit
+  when: phase == 'workspace'
+  block:
+    - name: Read the commit
       ansible.builtin.command: { argv: "{{ in_workspace + ['rev-parse', '--verify', 'HEAD^{commit}'] }}" }
       register: workspace_head
       changed_when: false
     - name: Keep the commit
       ansible.builtin.set_fact:
         container_commit: "{{ workspace_head.stdout | trim }}"
-  always:
-    - name: Remove the bundle in the container
-      ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_bundle] }}" }
-      changed_when: false
 
-# The .env goes in as `orbit` with group `work`, 0640, through a 0600 file on the Node that is removed at once.
-- name: Write .env in the container
+# The .env goes in as `orbit` with group `work`, 0640, through a 0600 file on the Node that is removed at once. It is compared by
+# digest first, so a rerun with the same .env changes nothing.
+- name: Read the digest of .env in the container
   when: phase == 'workspace'
+  ansible.builtin.command: { argv: "{{ as_root + ['sha256sum', '--', container.environment_file] }}" }
+  register: environment_digest
+  changed_when: false
+  failed_when: false
+
+- name: Write .env in the container
+  when: >-
+    phase == 'workspace'
+    and (environment_digest.stdout | default('')).split(' ') | first != lookup('ansible.builtin.env', 'ORBIT_ENVIRONMENT') | hash('sha256')
   vars:
     environment_path: "/tmp/orbit-environment-{{ container.instance_id }}-{{ run_id }}"
   block:

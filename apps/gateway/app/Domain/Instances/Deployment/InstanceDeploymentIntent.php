@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Deployment;
 
 use App\Actions\Instances\InstanceDeploymentConfigResolver;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
@@ -60,6 +61,8 @@ final readonly class InstanceDeploymentIntent
                 'project_id' => $instance->project_id, 'node_user' => $instance->node->user,
                 'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])), 'branch' => $instance->project->default_branch,
                 'repository' => $instance->project->repository_url, 'home' => $instance->checkout_path,
+                // The container is frozen with the rest of the intent; the run adds only the pinned commit.
+                'container' => $container ? app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail()) : null,
             ];
         }
         $config = $this->production->resolve($instance);

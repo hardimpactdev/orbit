@@ -174,7 +174,7 @@ Every lifecycle flow runs from the Node, with `incus` and Ansible phases. Develo
 
 ### The default Instance
 
-The default Instance is the clone source of its Project on the Node. Orbit builds the Project's first default Instance from scratch. It launches a container from the image and pushes in the default branch, fetched on the Node. The database family creates the database. Orbit writes `.env` and runs the Project's [development deploy steps](/reference/deployments#development-deploy-steps), which install dependencies and migrate. The [first default chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd) has the steps.
+The default Instance is the clone source of its Project on the Node. Orbit builds the Project's first default Instance from scratch. It launches a container from the image and pushes in the default branch, fetched on the Node. The database family creates the database on a Database server once the container can reach one; until then the default uses the database in its workspace. Orbit writes `.env` and runs the Project's [development deploy steps](/reference/deployments#development-deploy-steps), which install dependencies and migrate. The [first default chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd) has the steps.
 
 After that, the default Instance deploys every merge to the default branch, as a checkout default does today ([development deployment](/reference/deployments)). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
 
@@ -197,7 +197,9 @@ The first default Instance and its deployments are built for the Nodes of the [b
 | Seed | After the first build and each deployment that passes, Orbit stops the units, takes `seed-<commit>` and starts them again. It deletes older seeds, and the runtime row records the commit |
 | Deployment | The variant `container` starts a stopped container and fetches the commit on the Node. It refuses `deployment.checkout_dirty`, `deployment.commit_not_on_branch` and `deployment.branch_diverged` as a checkout does |
 
-A container default cannot reach a Database server yet, so it uses the database its Project names in the workspace; `--database-server` refuses with `operation.kind_unavailable`. A Project with development Process definitions refuses the same way, and a PHP Project whose PHP build the runtime folder lacks refuses with `instance.host_unavailable`. Another Instance of the Project refuses with `instance.default_missing` on any Node but the default's, and with `operation.kind_unavailable` on that Node until clones are built.
+A container default cannot reach a Database server yet, so it uses the database its Project names in the workspace; `--database-server` refuses with `operation.kind_unavailable`. A Project with development Process definitions refuses the same way. Dependency installs in the deploy steps need the container egress path of [step 2c of the rollout](/solutions/agent-runtime-and-manual-mode).
+
+A web-serving Project without a PHP version refuses with `project.source_defaults_incomplete`, and one whose PHP build the runtime folder lacks with `instance.host_unavailable`. Destroy, setup, `env:sync`, `env:import`, transfer, rename and clone refuse a container Instance with `operation.kind_unavailable`: they work on a checkout from the Node. Another Instance of the Project refuses with `instance.default_missing` on any Node but the default's, and with `operation.kind_unavailable` on that Node until clones are built.
 
 ### Create
 
@@ -521,7 +523,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
-| `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node |
+| `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node. Also when the Project's default runs on another Node |
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
 | `instance.default_not_migrated` | 409 | `instance:migrate` of a non-default Instance whose default Instance is still a checkout |
 | `instance.turn_running` | 409 | `instance:destroy` without `--force` while a T3 turn runs in the container |
@@ -530,6 +532,9 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `node.instance_bridge_exhausted` | 409 | No `/24` of the fleet range is free for a Node's Instance bridge |
 | `instance.container_nodes_invalid` | 500 | `ORBIT_INSTANCES_CONTAINER_NODES` is not a JSON list of Node ids |
 | `instance.host_unavailable` | 409 | A build-list Node cannot be prepared: it lacks the pool `orbit-instances` or enough subordinate IDs, or the recipe has no pin for it |
+| `instance.host_unavailable` | 409 | A container default cannot be placed: the Node has no bridge, the bridge is full, or the runtime folder lacks the Project's PHP build |
+| `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
+| `instance.container_<phase>_failed` | 502 | A phase of a container default's create or deployment failed without a refusal, such as `instance.container_start_failed` |
 
 ## Why it works this way
 

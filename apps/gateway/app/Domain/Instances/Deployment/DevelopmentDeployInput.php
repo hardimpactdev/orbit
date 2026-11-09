@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
-use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceGitHubReadTokens;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectSourceAccess;
@@ -50,10 +49,8 @@ final readonly class DevelopmentDeployInput
 
         // Commands run with the account's own home, as Orbit creates managed accounts.
         $user = $instance->node->user;
-        $container = null;
-        if ($intent['variant'] === 'container') {
-            $container = app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail(), InstanceDeploymentIntent::commit($operation));
-        }
+        $container = $intent['variant'] === 'container'
+            ? [...ValidatedData::object($intent['container']), 'commit' => InstanceDeploymentIntent::commit($operation)] : null;
 
         return ['intent' => [...$input, ...$runtime, 'container' => $container, 'application' => ValidatedData::object($input['deployment'])['home'],
             'account_home' => $user === 'root' ? '/root' : '/home/'.$user],

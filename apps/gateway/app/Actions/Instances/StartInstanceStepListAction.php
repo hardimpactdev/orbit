@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
@@ -47,6 +48,7 @@ final readonly class StartInstanceStepListAction
     public function execute(Instance $instance, LifecyclePhase $phase, string $triggeredBy, ?string $requestId): Operation
     {
         $instance->refresh()->loadMissing('project');
+        InstanceContainer::assertCheckout($instance);
         if ($instance->placedOnAppProd() || $instance->status !== InstanceState::Active) {
             throw new ResourceOperationException('instance.setup_unavailable', 'Setup requires an active development Instance.', 409);
         }

@@ -46,7 +46,7 @@ Pressing Ctrl-C stops following, not the deploy. In human output the CLI prints 
 
 A failure while fetching the release, synchronizing the environment, or running a `before_activation` step leaves the prior `current` selected. A failure in the activation steps (Caddy access, `current.next` or the swap) leaves the prior `current` selected when the swap did not happen. A failure after the swap leaves the fresh release selected: the PHP cache refresh, installing a Process or a Schedule timer, restarting a Process, or running an `after_activation` step. Orbit undoes no step and no data change, and the new release folder stays until a cleanup. Deploy again after the fix: it is a new task with a new release.
 
-Deployment, rollback, deploy-step changes, environment changes and removal share one owner for each Instance. A second production deploy while one is queued or running is refused with `operation.target_busy`. A development `default` takes no such hold. A rollback cancels a deploy that no run has started; see [`instance:rollback`](/cli/instance/rollback).
+Deployment, rollback, deploy-step changes, environment changes and removal share one owner for each Instance. A second production deploy while one is queued or running is refused with `operation.target_busy`. A development `default` in a checkout takes no such hold; one in a container holds its Instance, so a second deployment is refused with `operation.target_busy`. A rollback cancels a deploy that no run has started; see [`instance:rollback`](/cli/instance/rollback).
 
 ## How it works
 
@@ -72,6 +72,8 @@ Deployment, rollback, deploy-step changes, environment changes and removal share
 | `deployment.source_failed` | Fetching the repository or preparing the release failed. |
 | `deployment.step_failed` | A required `before_activation` or `after_activation` step failed. |
 | `deployment.branch_changed` | The development checkout does not match the commit after the steps. |
+| `deployment.processes_inactive` | A container default's units were not active after the deployment. |
+| `instance.container_<phase>_failed` | A phase of a container default's deployment failed without a refusal, such as `instance.container_start_failed`. |
 | `schedule.install_failed` | Installing a Schedule service or timer failed. |
 | `deployment.selection_invalid` | Selecting or reading back `current` failed. |
 | `deployment.php_runtime_unconfirmed` | The PHP runtime did not confirm the new release. |

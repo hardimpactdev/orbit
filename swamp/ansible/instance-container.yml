@@ -49,6 +49,8 @@
             mode: "0600"
           delegate_to: localhost
           become: false
+          # The result file lives in the run folder on the worker: no change to the Node.
+          changed_when: false
           vars:
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
