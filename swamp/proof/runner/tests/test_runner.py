@@ -35,6 +35,23 @@ class RunnerTest(unittest.TestCase):
     def execute(self, case=CASE, negative=False):
         return runner.execute(self.spec.case(case), self.fleet, self.spec, self.directory.name, negative)
 
+    def test_temporary_metrics_diagnostics_keep_the_cli_error_and_observer_evidence_in_the_verdict(self):
+        run = runner.Run(self.fleet, spec.Spec('node:metrics', 'node/metrics', 'app-dev', [], [], []), self.directory.name)
+        for form in ('human', 'json'):
+            run.keep({'rc': 1, 'args': ['orbit', 'node:metrics'], 'stdout': 'node.metrics_unavailable: no recorded metrics snapshot yet', 'stderr': ''}, form)
+        self.fleet.sh = Mock(side_effect=[
+            completed(out=json.dumps({'data': {'version': '0.14.0', 'sha256': 'a' * 64, 'observer': 'active'}})),
+            completed(out=json.dumps({'kinds': ['host', 'units'], 'metrics_at': None})),
+            completed(out='orbit-agent: metrics fact report failed: HTTP 422'),
+        ])
+        failures = runner.metrics_diagnostics(run) + ['act[0] exit 1, expected 0']
+        result = {'id': 'recorded-snapshot', 'verdict': 'failed', 'failed': failures}
+        line = runner.verdict_line(result)
+        self.assertLessEqual(len(line), runner.LINE_LIMIT)
+        for evidence in ('node.metrics_unavailable', '0.14.0', 'metrics_at', 'HTTP 422'):
+            self.assertIn(evidence, line)
+        self.assertEqual(len(self.fleet.sh.call_args_list), 3)
+
     def test_the_first_case_passes_when_the_effect_is_real(self):
         result, receipt = self.execute()
         self.assertEqual(result['verdict'], 'passed', result)

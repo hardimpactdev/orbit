@@ -8,9 +8,13 @@ use App\Models\Node;
 use App\Models\NodeFact;
 use App\Models\Operation;
 use Carbon\CarbonImmutable;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
+use Symfony\Component\Process\Process;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -63,6 +67,39 @@ afterEach(function (): void {
 });
 
 describe('GET /api/v1/nodes/{node}/metrics', function (): void {
+    it('passes a reporter snapshot or its absence through the real CLI exit path', function (bool $present, bool $json): void {
+        if ($present) {
+            $snapshot = metrics_read_snapshot();
+            $snapshot['swap'] = ['used' => 0, 'total' => 0];
+            metrics_read_report($this->node, $snapshot);
+        }
+        $response = $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+            ->getJson('/api/v1/nodes/'.$this->node->id.'/metrics');
+        $response->assertStatus($present ? 200 : 422);
+        $directory = sys_get_temp_dir().'/metrics-pipeline-'.Str::uuid();
+        $files = new Filesystem;
+        $files->ensureDirectoryExists($directory);
+        $files->put($directory.'/case.json', json_encode([
+            'home' => $directory.'/home', 'trace' => $directory.'/requests.jsonl',
+            'arguments' => ['node:metrics', (string) $this->node->id, ...($json ? ['--json'] : [])],
+            'replies' => [['class' => ShowNodeMetricsRequest::class,
+                'status' => $response->getStatusCode(), 'body' => $response->json()]],
+        ], JSON_THROW_ON_ERROR));
+
+        try {
+            $process = new Process([
+                PHP_BINARY, base_path('../cli/tests/Fixtures/Console/command-consent.php'), $directory.'/case.json',
+            ], env: ['PAO_DISABLE' => '1', 'NO_COLOR' => '1'], timeout: 10);
+            $process->run();
+
+            expect($process->getExitCode())->toBe($present ? 0 : 1, $process->getOutput().$process->getErrorOutput());
+            expect($process->getOutput())->toContain($present ? ($json ? 'uptime_seconds' : 'Observed at') : ($json ? 'node.metrics_unavailable' : 'no recorded metrics snapshot yet'));
+            expect($process->getErrorOutput())->toBe('');
+        } finally {
+            $files->deleteDirectory($directory);
+        }
+    })->with([true, false])->with([true, false]);
+
     it('reads only the recorded snapshot and liveness without changing fleet or snapshot records', function (): void {
         metrics_read_report($this->node, metrics_read_snapshot());
         $before = NodeFact::query()->get()->toArray();
