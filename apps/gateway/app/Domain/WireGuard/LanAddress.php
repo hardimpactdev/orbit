@@ -7,6 +7,23 @@ namespace App\Domain\WireGuard;
 /** The recorded-LAN rule: two recorded `lan_ip` values share a private network when both are IPv4 in one /24 (ADR 0233, ADR 0251). */
 final class LanAddress
 {
+    /** RFC 1918: the networks the hub keeps on its main table, and the only ones a hub LAN endpoint may use (ADR 0251). */
+    public const array PrivateRanges = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
+
+    public static function isPrivate(?string $address): bool
+    {
+        if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            return false;
+        }
+        foreach (self::PrivateRanges as $range) {
+            if (Ipv4Subnet::from($range)->contains($address)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static function sameNetwork(?string $first, ?string $second): bool
     {
         return is_string($first) && is_string($second)

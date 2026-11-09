@@ -30,6 +30,8 @@ it('uses the hub\'s LAN endpoint only for a Node in the hub\'s recorded /24', fu
     'home LAN' => ['10.0.0.2', '192.168.6.20', '94.237.124.160:51820'],
     'no Node LAN' => ['10.0.0.2', null, '94.237.124.160:51820'],
     'no hub LAN' => [null, '10.0.0.4', '94.237.124.160:51820'],
+    // The hub replies to anything outside RFC 1918 from its public address, so such a LAN never carries the tunnel.
+    'LAN outside RFC 1918' => ['100.64.0.2', '100.64.0.4', '94.237.124.160:51820'],
 ]);
 
 it('never gives the hub its own LAN endpoint, and keeps one LAN rule for Process Routes and the hub', function (): void {

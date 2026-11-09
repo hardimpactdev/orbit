@@ -48,7 +48,7 @@ The hub's own peer sections name no endpoint. The hub learns each peer's address
 
 ## The LAN endpoint
 
-A Node is on the hub's private network when the hub and the Node both record an IPv4 `lan_ip` and both addresses are in the same IPv4 /24. [Public Process Routes](/cli/route/create) use the same rule. A Node without a `lan_ip`, or with one in another /24, such as a home Node on `192.168.6.0/24` with the hub on `10.0.0.0/24`, uses the public endpoint.
+A Node is on the hub's private network when the hub and the Node both record an IPv4 `lan_ip`, both addresses are in the same IPv4 /24, and that /24 is in an RFC 1918 range. The hub sends to any other network from its public address, so a LAN endpoint there could not work. [Public Process Routes](/cli/route/create) use the same /24 rule. A Node without a `lan_ip`, or with one in another /24, such as a home Node on `192.168.6.0/24` with the hub on `10.0.0.0/24`, uses the public endpoint.
 
 The record is a claim. Before Orbit writes a WireGuard file that names the LAN endpoint, in [`node:add`](/cli/node/add) and in the network phase of [`node:converge`](/cli/node/converge), the Node proves that the address is the hub:
 
@@ -76,7 +76,9 @@ Swamp reaches the Node through this tunnel, so the move runs as one detached job
 2. removes the hub peer from the live tunnel and loads the new files, so the old session ends;
 3. waits up to a minute for a hub handshake at or after the move. A handshake through the old endpoint does not count.
 
-When no such handshake comes, the job puts the previous files back and sets the live configuration it saved before the move, so the Node keeps the tunnel it had, also when a previous file was missing. A move that was cut off, for example by a reboot, leaves the files it replaced; the next converge decides the move from them and keeps them for its own rollback. The phase then fails with the assertion `node.hub_switch_no_handshake`. This is a rollback of the move, not a fallback: the Node stays on the endpoint it used before, and the converge reports the failure.
+When no such handshake comes, the job puts the previous files back and sets the live configuration it saved before the move, so the Node keeps the tunnel it had, also when a previous file was missing. A new file without a previous copy is deleted, so the next converge reads no endpoint and moves again with the same rollback.
+
+A move that was cut off, for example by a reboot, leaves the files it replaced; the next converge decides the move from them and keeps them for its own rollback. The phase then fails with the assertion `node.hub_switch_no_handshake`. This is a rollback of the move, not a fallback: the Node stays on the endpoint it used before, and the converge reports the failure.
 
 `node:add` has no such rollback. When it finds a live tunnel whose hub endpoint would move, it stops before any tunnel change with the assertion `node.hub_switch_by_converge`; run `node:converge` for that Node.
 
@@ -103,7 +105,7 @@ Without that drop-in, `systemd-networkd` deletes rules and routes it did not cre
 
 The hub's network phase writes the script and the unit. It restarts the unit when either changes, or when the live rules, the source of a marked packet or its gateway differ from the rendered rules and the main default route. It then checks that a marked packet to a public address leaves from the endpoint address. The table copies the default gateway when the unit runs; after the hub's default gateway changes, the next converge of the hub sees it and runs the unit again.
 
-A hub whose public endpoint is a hostname or an IPv6 address gets no source unit. Orbit does not remove a unit that an earlier IPv4 endpoint left. When you change the endpoint to a hostname, disable `orbit-hub-source.service`, delete rules 31820 and 31821, and flush the table by hand. In the network phase, failed assertions name these causes:
+A hub whose public endpoint is a hostname or an IPv6 address gets no source unit. Its network phase stops and removes a unit that an earlier IPv4 endpoint left, with its script, its networkd drop-in, rules 31820 and 31821 and the table. In the network phase, failed assertions name these causes:
 
 - `vpn.endpoint_not_local`: the hub does not hold the IPv4 address of its endpoint.
 - `vpn.source_route_failed`: the source is still wrong after the unit ran.

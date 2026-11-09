@@ -7,6 +7,7 @@ namespace App\Actions\Clusters;
 use App\Actions\Routes\ConvergeRouteAction;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Nodes\NodeLanAddress;
 use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -45,15 +46,8 @@ final readonly class AttachClusterNodeAction
             );
         }
 
-        if (
-            $node->lan_ip !== null
-            && Node::query()
-                ->where('cluster_id', $cluster->id)
-                ->whereKeyNot($node->id)
-                ->where('lan_ip', $node->lan_ip)
-                ->exists()
-        ) {
-            throw $this->lanIpConflict($node);
+        if (is_string($node->lan_ip)) {
+            NodeLanAddress::assertFree($node->lan_ip, $cluster->id, $node->id);
         }
 
         $overrides = [$node->id => ['cluster_id' => $cluster->id]];

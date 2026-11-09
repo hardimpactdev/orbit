@@ -8,6 +8,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\HubEndpoint;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Domain\WireGuard\LanAddress;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
@@ -36,6 +37,8 @@ final readonly class NodeWireGuardHubInput
 
     public const string SourceUnit = 'orbit-hub-source.service';
 
+    public const string NetworkdDropIn = '/etc/systemd/networkd.conf.d/orbit-hub-source.conf';
+
     /**
      * The hub's wg-quick file and one peer file per Node, from Gateway records. orbit.conf holds no peer: wg-quick loads
      * every file in the peer directory on start. A run that adds one peer writes only that peer's file, so concurrent
@@ -45,7 +48,7 @@ final readonly class NodeWireGuardHubInput
      * snapshot: Node ids only grow, and a Node created after the snapshot, such as a task VM that joins meanwhile, has a higher one.
      * A gone Node above every remaining one keeps its leftover file until a later converge, after a newer Node exists.
      *
-     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,interface:string,source:array{address:string,mark:int,priorities:list<int>,rules:list<string>,script_path:string,script:string,unit_path:string,unit_name:string,unit:string,networkd_path:string,networkd:string}|null,lan_ssh_argv:list<list<string>>,peers:list<array{node_id:int,file:string,content:string}>,prune:array{directory:string,keep:list<int>,newest:int},peer_keys:list<string>}
+     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,interface:string,source:array{address:string,mark:int,priorities:list<int>,rules:list<string>,script_path:string,script:string,unit_path:string,unit_name:string,unit:string,networkd_path:string,networkd:string}|null,source_owner:array{unit_name:string,unit_path:string,script_path:string,networkd_path:string,priorities:list<int>,table:int},lan_ssh_argv:list<list<string>>,peers:list<array{node_id:int,file:string,content:string}>,prune:array{directory:string,keep:list<int>,newest:int},peer_keys:list<string>}
      */
     public static function intent(Node $hub): array
     {
@@ -58,6 +61,7 @@ final readonly class NodeWireGuardHubInput
         // with the peer files on the Node at apply time. No file, the intent nor the run holds it.
         return ['hub_id' => $hub->id, 'ssh' => app(SwampSshExecutionInput::class)->forNode($hub), 'port' => $port,
             'config' => self::config($hub), 'interface' => self::interface($port), 'source' => self::source($hub),
+            'source_owner' => self::sourceOwner($hub),
             'lan_ssh_argv' => array_map(static fn (UfwManagedRule $rule): array => array_slice($rule->arguments, 1),
                 app(NodeFirewallRuleCatalog::class)->vpnLanSsh($hub)),
             'peers' => array_values($peers->map(static fn (Node $peer): array => ['node_id' => $peer->id, 'file' => self::peerFile($peer->id),
@@ -126,7 +130,7 @@ final readonly class NodeWireGuardHubInput
         return ['address' => $address, 'mark' => $port, 'priorities' => [$main, $own],
             // systemd-networkd deletes rules and routes it did not create when it starts or configures a link; on the hub it keeps
             // them, from its next start on.
-            'networkd_path' => '/etc/systemd/networkd.conf.d/orbit-hub-source.conf',
+            'networkd_path' => self::NetworkdDropIn,
             'networkd' => "[Network]\nManageForeignRoutingPolicyRules=no\nManageForeignRoutes=no\n",
             // Each rule as `ip -j rule show` reports it: priority, hexadecimal mark, destination and table.
             'rules' => [...array_map(static fn (string $range): string => "{$main}:{$mark}:{$range}:main", $private), "{$own}:{$mark}:all:{$port}"],
@@ -162,10 +166,22 @@ final readonly class NodeWireGuardHubInput
                 ."\n\n[Install]\nWantedBy=wg-quick@orbit.service multi-user.target\n"];
     }
 
+    /**
+     * What the hub's source unit owns, also when the endpoint is no IPv4 address: then the hub phase removes a unit, its files,
+     * rules and table that an earlier IPv4 endpoint left.
+     *
+     * @return array{unit_name:string,unit_path:string,script_path:string,networkd_path:string,priorities:list<int>,table:int}
+     */
+    public static function sourceOwner(Node $hub): array
+    {
+        return ['unit_name' => self::SourceUnit, 'unit_path' => '/etc/systemd/system/'.self::SourceUnit, 'script_path' => self::SourceScript,
+            'networkd_path' => self::NetworkdDropIn, 'priorities' => [self::MainRulePriority, self::SourceRulePriority], 'table' => self::port($hub)];
+    }
+
     /** RFC 1918 and the WireGuard subnet when it lies outside them: the destinations that keep the main table. @return list<string> */
     private static function privateRanges(): array
     {
-        $ranges = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
+        $ranges = LanAddress::PrivateRanges;
         $subnet = Ipv4Subnet::from(app(VpnSettings::class)->subnet());
         foreach ($ranges as $range) {
             if (Ipv4Subnet::from($range)->contains($subnet->networkAddress())) {

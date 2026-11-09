@@ -18,7 +18,8 @@ final readonly class HubEndpoint
 
     public static function for(Node $node, Node $hub, VpnSettings $vpn): self
     {
-        if (! $node->is($hub) && LanAddress::sameNetwork($hub->lan_ip, $node->lan_ip)) {
+        // Only an RFC 1918 network: the hub replies to anything else from its public address, so a LAN endpoint there never works.
+        if (! $node->is($hub) && LanAddress::isPrivate($hub->lan_ip) && LanAddress::sameNetwork($hub->lan_ip, $node->lan_ip)) {
             return new self(WireGuardEndpoint::format((string) $hub->lan_ip, (int) $vpn->port()), ['address' => (string) $hub->lan_ip, 'source' => (string) $node->lan_ip,
                 'fingerprint' => is_string($hub->ssh_host_fingerprint) ? $hub->ssh_host_fingerprint : null]);
         }

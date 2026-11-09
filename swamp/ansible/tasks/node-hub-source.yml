@@ -84,3 +84,31 @@
         that: (' src ' ~ hub_source.address ~ ' ') in hub_source_check.stdout
         fail_msg: vpn.source_route_failed
         quiet: true
+- name: Remove the source unit that an earlier IPv4 endpoint left
+  when: hub_source is none
+  block:
+    - name: Read whether a source unit is installed
+      ansible.builtin.stat: { path: "{{ hub_source_owner.unit_path }}" }
+      register: hub_source_installed
+    - name: Stop and disable the earlier source unit
+      when: hub_source_installed.stat.exists
+      ansible.builtin.systemd: { name: "{{ hub_source_owner.unit_name }}", state: stopped, enabled: false }
+    - name: Remove the earlier source files
+      ansible.builtin.file: { path: "{{ item }}", state: absent }
+      loop: ["{{ hub_source_owner.unit_path }}", "{{ hub_source_owner.script_path }}", "{{ hub_source_owner.networkd_path }}"]
+      register: hub_source_removed
+    - name: Remove the earlier source rules and table
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          for p in {{ hub_source_owner.priorities | join(' ') }}; do
+            while ip -4 rule del priority "$p" 2>/dev/null; do echo changed; done
+          done
+          if [ -n "$(ip -4 route show table {{ hub_source_owner.table | quote }} 2>/dev/null)" ]; then
+            ip -4 route flush table {{ hub_source_owner.table | quote }}; echo changed
+          fi
+      register: hub_source_cleared
+      changed_when: hub_source_cleared.stdout is search('changed')
+    - name: Reload units after removing the source unit
+      when: hub_source_removed is changed
+      ansible.builtin.systemd: { daemon_reload: true }

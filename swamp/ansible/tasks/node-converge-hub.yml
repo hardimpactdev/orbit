@@ -37,7 +37,7 @@
   changed_when: hub_sync.stdout is search('changed')
 - name: Apply the hub's source unit and LAN SSH
   ansible.builtin.include_tasks: node-hub-source.yml
-  vars: { hub_source: "{{ hub_plan.source }}", hub_lan_ssh_argv: "{{ hub_plan.lan_ssh_argv }}" }
+  vars: { hub_source: "{{ hub_plan.source }}", hub_source_owner: "{{ hub_plan.source_owner }}", hub_lan_ssh_argv: "{{ hub_plan.lan_ssh_argv }}" }
 - name: Read the hub key
   ansible.builtin.command: wg show orbit public-key
   register: hub_key

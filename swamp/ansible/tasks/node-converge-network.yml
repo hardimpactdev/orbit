@@ -13,6 +13,10 @@
     - name: Decide whether the hub endpoint changes
       ansible.builtin.include_tasks: node-converge-hub-switch.yml
       vars: { hub_switch_dir: /etc/wireguard, hub_switch_endpoint: "{{ intent.network.apply.peer.endpoint }}" }
+    - name: Drop the copies of a cut-off move that no longer moves
+      when: not hub_switch | bool
+      ansible.builtin.file: { path: "{{ item }}", state: absent }
+      loop: [/etc/wireguard/orbit.conf.previous, /etc/wireguard/orbit.peers.previous, /etc/wireguard/orbit.live.previous]
     # A move stages the tunnel files beside the live ones; the move job installs them, so the previous ones stay until it ends.
     - name: Reconcile recorded peer files
       ansible.builtin.copy:

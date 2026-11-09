@@ -49,6 +49,10 @@ UFW = """#!/bin/sh
 echo "ufw $*" >> "$STUB_DIR/calls.log"
 if [ "$1 $2" = "show added" ]; then cat "$STUB_DIR/ufw-added.txt" 2>/dev/null || true; else cat "$STUB_DIR/ufw.txt"; fi
 """
+OWNER = {'unit_name': 'orbit-hub-source.service', 'unit_path': '@DIR@/etc/orbit-hub-source.service', 'script_path': '@DIR@/etc/hub-source',
+         'networkd_path': '@DIR@/etc/networkd/orbit-hub-source.conf', 'priorities': [31820, 31821], 'table': 51820}
+RETIRE_IP = IP.replace('esac', '  "-4 rule del priority "*) n=$(cat "$STUB_DIR/del" 2>/dev/null || echo 0); echo $((n + 1)) > "$STUB_DIR/del"; '
+                       '[ "$n" -lt 2 ] ;;\n  "-4 route show table 51820") echo "default via 85.9.216.1 dev eth0" ;;\nesac')
 HUB_KEY = 'SHA256:TP06RDL2oMgX8CDMhbQMVPkTgBz5oH7PDMb2QcpY8CE'
 LAN = {'address': '10.0.0.2', 'source': '10.0.0.4', 'fingerprint': HUB_KEY}
 RULES = ['31820:0xca6c:10.0.0.0/8:main', '31820:0xca6c:172.16.0.0/12:main', '31820:0xca6c:192.168.0.0/16:main', '31821:0xca6c:all:51820']
@@ -107,7 +111,7 @@ class WireGuardHubLanTest(unittest.TestCase):
             calls = (folder / 'calls.log').read_text() if (folder / 'calls.log').exists() else ''
             # What the run left behind, for the tests that read files after a failed playbook.
             self.left = {str(path.relative_to(folder)): path.read_text() for path in folder.rglob('*')
-                         if path.is_file() and path.parts[len(folder.parts)] in ('wg', 'loaded.log')}
+                         if path.is_file() and path.parts[len(folder.parts)] in ('wg', 'etc', 'loaded.log')}
             return result.returncode, result.stdout + result.stderr, calls
 
     def prove(self, route, keys, fingerprints):
@@ -143,7 +147,7 @@ class WireGuardHubLanTest(unittest.TestCase):
                       'unit': '[Unit]\n', 'networkd_path': '@DIR@/etc/networkd/orbit-hub-source.conf', 'networkd': '[Network]\n',
                       'script_path': '@DIR@/etc/hub-source', 'unit_path': '@DIR@/etc/orbit-hub-source.service',
                       'unit_name': 'orbit-hub-source.service'}
-        return self.run_tasks('node-hub-source.yml', {'hub_source': hub_source, 'hub_lan_ssh_argv': LAN_SSH}, {
+        return self.run_tasks('node-hub-source.yml', {'hub_source': hub_source, 'hub_source_owner': OWNER, 'hub_lan_ssh_argv': LAN_SSH}, {
             'local.txt': local, 'rules.json': rules, 'rules.applied.json': LIVE, 'source.txt': source, 'source.applied.txt': RIGHT,
             **(installed or {})})
 
@@ -192,6 +196,16 @@ class WireGuardHubLanTest(unittest.TestCase):
         self.assertNotIn('vpn-ssh', calls.replace('vpn-lan-ssh', ''))
 
 
+    def test_a_hub_whose_endpoint_is_no_longer_an_ipv4_address_removes_the_earlier_unit_rules_and_table(self):
+        installed = {name: body for name, body in self.INSTALLED.items() if name.startswith('etc/')}
+        code, output, calls = self.run_tasks('node-hub-source.yml', {'hub_source': None, 'hub_source_owner': OWNER, 'hub_lan_ssh_argv': []},
+                                             {**installed, 'bin/ip': RETIRE_IP, 'ufw.txt': ''})
+        self.assertEqual(code, 0, output)
+        self.assertIn('systemctl stop orbit-hub-source.service', calls)
+        self.assertIn('ip -4 rule del priority 31821', calls)
+        self.assertIn('ip -4 route flush table 51820', calls)
+        self.assertEqual([name for name in self.left if name.startswith('etc/')], [])
+
     def switch(self, files, endpoint):
         return self.run_tasks('node-converge-hub-switch.yml', {'hub_switch_dir': '@DIR@/wg', 'hub_switch_endpoint': endpoint}, files,
                               after=[{'ansible.builtin.debug': {'msg': 'present={{ hub_switch_present }} switch={{ hub_switch | bool }}'}}])
@@ -205,6 +219,9 @@ class WireGuardHubLanTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn('present=True switch=True', output)
         code, output, _ = self.switch({'wg/orbit.conf': 'only a conf\n'}, self.LAN)
+        self.assertIn('present=False switch=True', output)
+        # A node:add that stopped early leaves an empty peer file: no live tunnel, so a retry is no refused move.
+        code, output, _ = self.switch({'wg/orbit.peers': ''}, self.LAN)
         self.assertIn('present=False switch=True', output)
 
     def test_an_unchanged_endpoint_is_no_switch_even_as_a_hostname_or_after_the_peer_roamed(self):
@@ -267,6 +284,8 @@ class WireGuardHubLanTest(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertTrue(self.left['loaded.log'].rstrip().endswith('setconf: LIVE CONFIG'))
         self.assertEqual(self.left['wg/orbit.conf'], 'old conf\n')
+        # The new peer file goes too, so the next converge reads no endpoint and moves with a rollback again.
+        self.assertNotIn('wg/orbit.peers', self.left)
 
     def test_a_rerun_after_a_cut_off_move_keeps_the_files_that_move_replaced(self):
         code, _, _ = self.move(1, **{'wg/orbit.peers': self.PEERS.format(self.LAN),

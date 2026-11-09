@@ -180,7 +180,7 @@
     - name: Apply the hub's source unit and LAN SSH
       when: net.is_hub
       ansible.builtin.include_tasks: tasks/node-hub-source.yml
-      vars: { hub_source: "{{ net.source }}", hub_lan_ssh_argv: "{{ net.lan_ssh_argv }}" }
+      vars: { hub_source: "{{ net.source }}", hub_source_owner: "{{ net.source_owner }}", hub_lan_ssh_argv: "{{ net.lan_ssh_argv }}" }
     - name: Trust WireGuard members
       ansible.builtin.command: { argv: "{{ net.trust_argv }}" }
       register: trust

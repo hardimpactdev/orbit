@@ -2,13 +2,14 @@
 # Decide whether a Node moves to another hub endpoint (ADR 0251). The files decide: the Endpoint of the previous `orbit.peers`
 # against the rendered one, read on the Node so no key in the file leaves it. The live endpoint would not do: `wg` shows a
 # hostname resolved, and a peer that roamed shows the address it roamed to. A move that was cut off left `orbit.peers.previous`,
-# which holds the endpoint the Node had. `hub_switch_present` says whether a previous file exists at all.
+# which holds the endpoint the Node had. `hub_switch_present` says whether a previous file names a hub endpoint at all; an
+# empty file from a node:add that stopped early names none.
 - name: Read the previous hub endpoint
   ansible.builtin.shell:
     executable: /bin/sh
     cmd: |
       for f in {{ hub_switch_dir | quote }}/orbit.peers.previous {{ hub_switch_dir | quote }}/orbit.peers; do
-        if [ -f "$f" ]; then awk '/^Endpoint = / { e = $3 } END { print "present " e }' "$f"; exit 0; fi
+        if [ -f "$f" ]; then awk '/^Endpoint = / { e = $3 } END { if (e != "") print "present " e }' "$f"; exit 0; fi
       done
   register: hub_switch_read
   changed_when: false
