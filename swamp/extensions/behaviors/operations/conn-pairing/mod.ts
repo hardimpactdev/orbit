@@ -8,13 +8,13 @@ const Intent = z.object({
     request_body: z.string().min(1),
 }).strict();
 const Credential = z.string().min(1).max(16384);
-// T3's AuthPairingCredentialResult. T3 echoes the requested label, and a newer
-// T3 may add fields; only the stored resource below is strict.
+// T3's AuthPairingCredentialResult. T3 echoes the label Orbit always sends, and
+// a newer T3 may add fields; only the stored resource below is strict.
 const Reply = z.object({
     id: Id,
     expiresAt: Time,
     credential: Credential,
-    label: z.string().min(1).optional(),
+    label: z.string().min(1),
 });
 const Issued = z.object({
     id: Id,
@@ -70,7 +70,7 @@ export async function issue(
         credential: reply.credential,
     };
     if (
-        (reply.label !== undefined && reply.label !== args.intent.label) ||
+        reply.label !== args.intent.label ||
         [issued.id, issued.expiresAt].some((value) =>
             value.includes(issued.credential) ||
             value.includes(args.env.ORBIT_CONN_ADMIN_SESSION)

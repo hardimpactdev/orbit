@@ -96,6 +96,7 @@ const failures: Record<string, string> = {
     "503": "conn.request_refused",
     "malformed": "conn.response_invalid",
     "no-credential": "conn.response_invalid",
+    "no-label": "conn.response_invalid",
     "other-label": "conn.response_invalid",
     "echo": "conn.response_invalid",
     "admin-echo": "conn.response_invalid",
@@ -113,7 +114,9 @@ for (const [mode, code] of Object.entries(failures)) {
                         ? admin
                         : "link",
                     ...(mode === "no-credential" ? {} : { credential }),
-                    ...(mode === "other-label" ? { label: "laptop" } : {}),
+                    ...(mode === "no-label"
+                        ? {}
+                        : { label: mode === "other-label" ? "laptop" : "phone" }),
                     expiresAt: "2026-11-01T01:00:00Z",
                 }),
             );
