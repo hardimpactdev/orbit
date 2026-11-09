@@ -3,7 +3,7 @@
     {
       "tab": "Documentation",
       "group": "Fleet",
-      "order": 26,
+      "order": 32,
       "pages": [
         "reference/development-containers"
       ]

@@ -33,17 +33,22 @@ sequenceDiagram
   end
   CONN->>GW: Pair with the server<br/>conn pairing create
   %%> What it does:
-  %%> - the usual pairing: Swamp mints a one-time link with the Gateway's session on this T3 server
-  GW-->>CONN: pairing_url
+  %%> - the usual pairing of docs/cli/conn/pairing-create.mmd: the Gateway admits it and waits up to 30 s for the run
+  GW->>SW: Start run, full intent<br/>operation-conn-pairing-create
+  SW->>T3: Mint a pairing link<br/>POST api/auth/pairing-token
+  %%> What it does:
+  %%> - a one-time link, minted with the Gateway's session; the link goes to the vault, and the Gateway reads it once
+  GW-->>CONN: pairing_url<br/>read once
   CONN->>T3: Pair, then start thread<br/>first message · model
   %%> What it does:
-  %%> - Conn opens the pairing link, then starts the thread in the Instance's T3 project `/srv/workspace` with the first message
+  %%> - Conn opens the pairing link, then starts the thread in the Instance's T3 project `/srv/workspace`, which the create added, with the first message
   %%> - from here Conn talks to the T3 server directly over WireGuard, as with any T3 server
+  %%> - Conn sends a message during a turn with `queue`, so it never steers a turn that a task started
   T3-->>CONN: Turn streams<br/>diffs · terminal · browser
   opt a task attaches to the Instance
     SW->>T3: Drive the thread<br/>T3 MCP · thread send
     %%> What it does:
-    %%> - while the task flow runs, Swamp sends turns with `queue`, waits for each and reads the result, with the Gateway's session
+    %%> - while the task flow runs, Swamp sends turns with `queue`, waits for each by its run id and reads only that run's result, with the Gateway's session
     %%> - the user sees every turn in the same thread; a message the user sends during a turn is queued by T3
     %%> When the task pauses:
     %%> - Swamp sends nothing more, and the user drives from the thread

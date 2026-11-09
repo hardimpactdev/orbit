@@ -62,7 +62,14 @@ A second spike on 2026-11-09 ran the same setup on an UpCloud server, which has 
 
 ### Users and kernel surface
 
-- **Development containers.** Two unprivileged users, neither with sudo. The app runs as `orbit`: PHP-FPM, queue workers, development servers and every Orbit Process. T3, Claude Code and Codex run as `agent`, and so do their shell commands; there is no wrapper shell and no switch between the users. `orbit` cannot run the agent binaries, read `/home/agent`, see agent processes or reach the model route; a firewall rule by uid inside the container enforces the last. Both users share the workspace through a group with default ACLs. Git's `safe.directory` names the workspace for `orbit` only, because `agent` owns the repository. This is the boundary against an attacker who comes in through a preview URL. Root work (packages, services, runtime setup) goes through Orbit from the host. A project's system packages come from its recipe, not from the agent. `user.max_user_namespaces=0` is set inside the container, and the container has no nesting.
+- **Development containers.** Two unprivileged users, neither with sudo.
+  - The app runs as `orbit`: PHP-FPM, queue workers, development servers and every Orbit Process.
+  - T3, Claude Code and Codex run as `agent`, and so do their shell commands. There is no wrapper shell and no switch between the users.
+  - `orbit` cannot run the agent binaries, read `/home/agent`, see agent processes or reach the model route. A firewall rule by uid inside the container enforces the last.
+  - Both users share the workspace through a group with default ACLs. Git's `safe.directory` names the workspace for `orbit` only, because `agent` owns the repository.
+  - This is the boundary against an attacker who comes in through a preview URL.
+  - Root work (packages, services, runtime setup) goes through Orbit from the host. A project's system packages come from its recipe, not from the agent.
+  - `user.max_user_namespaces=0` is set inside the container, and the container has no nesting.
 - **Task containers.** The agent is root inside the outer container, because it drives the nested topology. This is the accepted risk below.
 
 ### Agent engine in containers
@@ -81,7 +88,7 @@ Each Project type has one environment note: a web app with previews, a monorepo,
 
 ### Threads and Instances
 
-Starting a thread in an Orbit Project in T3 makes Swamp create an Instance: a container with its own T3 server. Orbit registers that server, and the user pairs with it through Conn. Access follows the node access edges to the Instance's Node. The thread is a session of that Instance's T3 server.
+Starting a thread in an Orbit Project in Conn makes Swamp create an Instance: a container with its own T3 server. Orbit registers that server, and the user pairs with it through Conn. Access follows the node access edges to the Instance's Node. The thread is a session of that Instance's T3 server.
 
 A task can attach to an Instance. While its flow runs, Swamp drives the turns; while it is paused, or when there is no task, the user drives from the thread. Both use the same sessions. There is no separate runtime object and no separate mode for work that a user drives.
 

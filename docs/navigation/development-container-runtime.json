@@ -3,7 +3,7 @@
     {
       "tab": "Documentation",
       "group": "Solutions",
-      "order": 5,
+      "order": 8,
       "pages": [
         "solutions/development-container-runtime"
       ]

@@ -18,7 +18,7 @@ Every build PR keeps these rules, so the work in progress never breaks what runs
 | Gateway and Swamp ship together | One PR, as the [contributor guide](/contributor-guide) requires |
 | Swamp has the shape | Ansible phases do the machine work, steps call the Gateway only to sign or mint, secrets come from the vault. `bin/swamp-shape-gate` passes |
 | `incus` gets no stray input | Every task and script that runs `incus` closes standard input |
-| No secret enters a container | Only the placeholder model key. Git tokens stay on the Node; the Gateway's T3 session goes through the vault |
+| No Orbit or provider secret enters a container | The placeholder model key and the Instance's own `.env` are all it holds. Git tokens stay on the Node; the Gateway's T3 session goes through the vault |
 | The checks pass | `bin/swamp-shape-gate`, `bin/check-flows`, `composer docs-lint` and the tests of each changed project |
 | Live checks run on Beast | On a container side of Beast that no other work uses, with a test Laravel Project. Beast's checkout Instances keep running |
 | Docs move with the code | A PR moves the part it builds from [Development containers](/reference/development-containers) into the owning page |
@@ -27,7 +27,7 @@ Every build PR keeps these rules, so the work in progress never breaks what runs
 
 These come from other work and must land first.
 
-- **The model forwarder and guard change.** A separate PR builds the per-Node forwarder and lets the model router guard accept agent Nodes and the `?beta=true` query. PR 4's live checks need it.
+- **The model forwarder and guard change.** A separate PR builds the per-Node forwarder and lets the model router guard accept agent Nodes and the `?beta=true` query. The live checks of PR 3 and later need it.
 - **Container egress for packages.** Step 2c of ADR 0250 names the package path that setup steps use. PR 3 builds the source container with it.
 - **Pairing works.** The spike's pairings failed at the vault step. The pairing fix on `main` must pair with a container's server before PR 4 ends.
 
@@ -70,7 +70,10 @@ Tests: Molecule `unit` cases for the nftables and unit templates and the notes, 
 2. In a test container from the image, `orbit` cannot run `t3`, `claude` or `codex`, and cannot read `/home/agent`.
 3. As `orbit`, the forwarder port and T3's port reset, `ps` shows no agent process, and `sudo -n true` fails.
 4. As `agent`, the three binaries run at the pinned versions.
-5. An update to a second version flips the link and restarts T3 in a running container during a `sleep 40` tool call; the turn completes.
+5. A second container with another isolated ID map shows the same: `agent` runs `t3`, `orbit` cannot.
+6. From the second container, the first container's bridge address is unreachable.
+7. T3's published port answers from a WireGuard peer and refuses a task VM.
+8. An update to a second version flips the link and restarts T3 in a running container during a `sleep 40` tool call; the turn completes.
 
 ### PR 4: create an Instance in a container
 
@@ -91,7 +94,9 @@ Tests: Pest for the intent, the projection, the registration checks from a resul
 3. `zfs get written` on the copy shows only a few MB.
 4. A second Instance gets a copy of the default database.
 5. A failed setup step leaves a stopped container; the same create resumes it.
-6. The PR records the times of the source build, the copy, the first T3 start, the setup and the whole create.
+6. An agent's `npm run dev` in the container shows in Conn's browser through T3's port preview. Without that, the PR stops and asks for a decision.
+7. A message that the user sends in Conn during a turn is queued, not steered.
+8. The PR records the times of the source build, the copy, the first T3 start, the setup and the whole create.
 
 ### PR 5: copy a feature with its database
 
@@ -125,9 +130,11 @@ The spec commit adds [container/sleep.mmd](https://github.com/hardimpactdev/orbi
 Tests: Pest for the sweep's choices, the wake admission by caller, and the joined wake. Live on Beast:
 
 1. An idle Instance stops; one with a running turn does not.
-2. A request to its Route shows the progress page and then the app, within 5 s.
-3. Conn opening the sleeping server wakes it.
-4. A session within seven days of its expiry is renewed at the wake.
+2. A user who keeps an open thread active in Conn, without a request to the site, keeps the Instance awake.
+3. The PR names the T3 read that gives the last client activity. Without one, the PR stops and asks for a decision.
+4. A request to its Route shows the progress page and then the app, within 5 s.
+5. Conn opening the sleeping server wakes it.
+6. A session within seven days of its expiry is renewed at the wake.
 
 ### PR 8: start a thread in an Orbit Project (Conn)
 
@@ -137,7 +144,7 @@ This is a Conn PR, with the Orbit parts it needs. It follows [container/thread.m
 - A thread in one of them creates an Instance, pairs with it and sends the first message.
 - Conn shows a sleeping Instance's server as asleep and wakes it on open.
 
-Live: a thread started on the Mac in an Orbit Project ends in a new Instance with its first turn answered.
+Tests: Conn tests for the Project list, the create-then-pair flow, the queued send and the asleep state; Pest for any Orbit endpoint it adds. Live: a thread started on the Mac in an Orbit Project ends in a new Instance with its first turn answered.
 
 ### PR 9: attach a task to an Instance
 
@@ -154,6 +161,8 @@ Tests: Pest for the attach admission and the turn intent; tests of the Swamp T3 
 
 Task containers lose the Node identity of their temporary exception and the Pi server, and run T3 as Instances do. This removes the exception from ADR 0250. It needs the parity gate of step 4 passed.
 
+Tests: Pest for the task intents without a Node identity, and the Swamp T3 driver tests of PR 9. Live: the parity gate runs again on task containers with T3 and gives the same verdicts as before; one real task group starts, turns, checks and publishes.
+
 ## What to reuse from the task-4193 branch
 
 The unpushed branch `task-4193` (bundle `~/apps/orbit-container-plan/.backup/proof-4193.bundle`, head `e1690fe44`, base `9ff162721`) built development containers inside a Project VM with a pause protocol in a Conn fork. Its record, ADR 0249, is not merged. This design keeps its parts that do not depend on the Project VM or the pause.
@@ -163,10 +172,10 @@ The unpushed branch `task-4193` (bundle `~/apps/orbit-container-plan/.backup/pro
 | `InstanceRuntime`, `InstanceRuntimeKind` and the migration `add_development_runtime_ownership` | PR 2 | Drop the Project VM columns and the state volume |
 | `ContainerCreateInput`, `ContainerCreateProjection`, `ContainerDestroyInput`, `ContainerDestroyProjection` | PR 4, PR 6 | Drop the source hold, receipts and compensation admission |
 | `ContainerProcessTarget`, `ContainerProcessDefinitions`, `ContainerProcessInspection`, `ContainerProcessObservation`, `RefreshContainerProcessStatus` | PR 4 | The target is an Incus project and container on the Node, not a VM; the directory is `/srv/workspace` |
-| `swamp/ansible/tasks/process-systemd.yml`, `process-container.yml`, `process-guest.yml`, `tasks/process-container-target.yml` and their tests | PR 4 | Remove the VM checks; units get `User=orbit` |
-| `tasks/container-setup-step.yml`, `tasks/container-feature-branch.yml` | PR 4, PR 5 | Run as `orbit` and `agent`; the branch comes from the Node |
-| `library/orbit_postgres_copy.py`, `postgres-copy.yml`, `PostgresCopyDatabase`, `PostgresDatabaseCopyInput`, the PostgreSQL copy in `DatabaseStatements`, and `ansible_postgres_copy_test.py` | PR 4, PR 5 | No writer fence; the dump reads a live database |
-| `files/container-delete.py`, parts of `container-disposal-remove.yml` and `container-disposal-teardown.yml`, `container_delete_test.py` | PR 6 | No offline credential path and no state volume |
+| `swamp/ansible/tasks/process-systemd.yml`, `swamp/ansible/process-container.yml`, `swamp/ansible/process-guest.yml`, `swamp/ansible/tasks/process-container-target.yml` and their tests | PR 4 | Remove the VM checks; units get `User=orbit` |
+| `swamp/ansible/tasks/container-setup-step.yml`, `swamp/ansible/tasks/container-feature-branch.yml` | PR 4, PR 5 | Run as `orbit` and `agent`; the branch comes from the Node |
+| `swamp/ansible/library/orbit_postgres_copy.py`, `swamp/ansible/postgres-copy.yml` with `swamp/ansible/tasks/postgres-copy.yml`, `PostgresCopyDatabase`, `PostgresDatabaseCopyInput`, the PostgreSQL copy in `DatabaseStatements`, and `ansible_postgres_copy_test.py` | PR 4, PR 5 | No writer fence; the dump reads a live database |
+| `swamp/ansible/files/container-delete.py`, parts of `swamp/ansible/tasks/container-disposal-remove.yml` and `container-disposal-teardown.yml`, `swamp/tests/container_delete_test.py` | PR 6 | No offline credential path and no state volume |
 | `InstanceLifecycleContribution(s)`, the Conn `ConnInstanceLifecycle` and the migration `add_workspace_binding` | PR 2, PR 4 | The binding is the environment's Instance; no `paused` state |
 | `--from` in `StoreInstanceRequest`, the CLI and the SDK's `CreateInstanceRequest` | PR 5 | No `--runtime`: the Node decides |
 | `swamp/proof/instance/create.cases.yaml`, `destroy.cases.yaml`, `proof/runner/container_runtime.py` | PR 4 to PR 6 | Cases for a container Node without a Project VM |
@@ -212,7 +221,7 @@ Each question has options and a recommendation. A PR that depends on one stops u
 
 It blocks PR 4.
 
-- (a) The Gateway records the server from the run's result, with the checks of `POST /conn/environments`.
+- (a) A step in the container runs the checks of `POST /conn/environments`, and the Gateway records the server from the run's result.
 - (b) A step on the Node calls `POST /conn/environments` as the Node.
 - (c) The container calls it.
 - Recommendation: (a). (b) breaks the rule that steps call the Gateway only to sign or mint. (c) gives the container its Node's Gateway access.
@@ -273,12 +282,12 @@ It blocks PR 9.
 
 ### 8. When the source container is rebuilt
 
-It blocks PR 4.
+It blocks PR 4. Copies are ZFS clones of their source, so a rebuild makes a new source container beside the old one. The old one goes with its last copy.
 
-- (a) At the next create, when the default branch's lockfiles changed since the build.
-- (b) On a daily schedule.
-- (c) Never; setup reconciles the dependencies.
-- Recommendation: (a). A copy stays fast. The rebuild happens only where it saves setup time.
+- (a) Rebuild at the next create after the default branch's lockfiles change.
+- (b) Rebuild on a daily schedule.
+- (c) Never rebuild; setup reconciles the dependencies.
+- Recommendation: (a). A copy stays fast, and a rebuild happens only where it saves setup time.
 
 ### 9. Thread history on destroy
 

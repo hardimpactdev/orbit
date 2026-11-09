@@ -26,6 +26,11 @@ sequenceDiagram
   %%> - the Instance is reserved as in create; the intent names the source's container and database
   GW->>SW: Start run, full intent<br/>operation-instance-create
   GW-->>CLI: 202 Accepted<br/>task ID
+  opt the source is asleep
+    SW->>N: Start the source<br/>incus start
+    %%> What it does:
+    %%> - the same start as a wake; the Gateway records the source awake with the result, and the hibernation sweep stops it again when it stays idle
+  end
   SW->>N: Read the source commit<br/>git rev-parse HEAD
   %%> What it does:
   %%> - `incus exec` into the source container: reads the commit that `HEAD` points to, as `agent`; local commits count, uncommitted files do not
@@ -34,8 +39,8 @@ sequenceDiagram
   %%> - the files of the copy come from the source container, which never changes, so nothing in the source needs to stop
   SW->>C: Copy source container<br/>Ansible · tags container
   %%> What it does:
-  %%> - the same step as in create, from `<project>-source`
-  %%> - pushes the bundle in and creates the branch at the source commit; `--branch` names it, else the Instance name
+  %%> - the same step as in create, from the current source container
+  %%> - keeps the bundle on the Node; the workspace step pushes it in after the start and creates the branch at the source commit; `--branch` names it, else the Instance name
   SW->>N: Dump the source database<br/>pg_dump · one snapshot
   %%> What it does:
   %%> - one `pg_dump` in custom format; PostgreSQL reads one consistent snapshot while the source keeps writing
@@ -60,4 +65,8 @@ sequenceDiagram
     %%> What stays:
     %%> - the stopped container and its database; the source was never touched
     Note over GW: Record the failure
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
   end

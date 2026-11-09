@@ -67,8 +67,14 @@ The spikes found three things that Orbit must change or accept.
 
 The open questions of the Instance side are in [Development container runtime](/solutions/development-container-runtime#open-questions). These remain here:
 
-1. **MCP from the project.** Which file lists a project's MCP servers for each agent. Claude Code reads a project's `.mcp.json`; Codex needs its own answer.
-2. **Subagents.** Claude Code and Codex bring their own. Whether Swamp should also start turns in parallel Instances for one task.
+1. **MCP from the project.** Which file lists a project's MCP servers for each agent.
+   - (a) Claude Code reads the project's `.mcp.json`, and Codex reads the project's own Codex configuration; Orbit adds nothing.
+   - (b) Orbit renders one file into both agents' settings at create.
+   - Recommendation: (a). It keeps the rule that MCP servers come from the project, with no Orbit layer.
+2. **Subagents.** Claude Code and Codex bring their own.
+   - (a) Use only the agents' own subagents.
+   - (b) Swamp also starts turns in parallel Instances for one task.
+   - Recommendation: (a) until a task shows the need; (b) costs a container per branch of work.
 
 ## Steps
 

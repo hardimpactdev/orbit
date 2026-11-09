@@ -24,20 +24,22 @@ sequenceDiagram
   %%> - the Instance is not the source of an Instance that is still being created
   %%> Result:
   %%> - the Instance is `removing`; the Conn layer refuses new pairings with its T3 server
+  %%> - a repository read token for the work check is minted, and the Gateway's session for this T3 server goes to the vault; the intent names both vault keys
   %%> - a task is recorded with the full intent
   GW->>SW: Start run, full intent<br/>operation-instance-destroy
   GW-->>CLI: 202 Accepted<br/>task ID
   opt the container is stopped
-    SW->>C: Start the container<br/>incus start
+    SW->>N: Start the container<br/>incus start
     %%> Why:
     %%> - the checks below read the workspace and T3; the Route is not published again
   end
   SW->>C: Check work and turns<br/>Ansible · tags check
   %%> What it does:
-  %%> - as `agent`: unpushed commits and uncommitted files in the workspace, as for a checkout today
-  %%> - asks T3's MCP endpoint for threads with a running or queued turn
+  %%> - fetches origin on the Node with the read token; the token never enters the container
+  %%> - reads the branch heads and uncommitted files in the workspace as `agent`, and compares the heads with origin on the Node
+  %%> - asks T3's MCP endpoint, with the Gateway's session, for threads with a running or queued turn
   %%> Refuses:
-  %%> - unpushed work, as today; a running turn with `instance.turn_running`
+  %%> - unpushed work, as today; a running turn with `instance.turn_running` (open question 9 in the plan)
   %%> - `--force` skips both checks
   SW->>N: Revoke the pairings<br/>child conn-pairing-revoke
   %%> What it does:

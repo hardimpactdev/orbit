@@ -14,7 +14,7 @@ sequenceDiagram
   participant SW as Swamp<br/>workflow execution
   participant N as app-dev Node<br/>reached over ssh
   participant C as Container<br/>via incus exec
-  CL->>GW: Wake the Instance<br/>POST runtime-activations
+  CL->>GW: Wake the Instance<br/>GET runtime-activations
   %%> Callers:
   %%> - Caddy on the Instance's Node, when a request finds no awake marker
   %%> - a Conn device, when it opens the T3 server of a sleeping Instance

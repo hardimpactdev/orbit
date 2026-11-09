@@ -15,17 +15,23 @@ sequenceDiagram
   Note over GW: Find idle containers<br/>every 10 min
   %%> What it does:
   %%> - `orbit-runtime-hibernator.timer` reads the last HTTP activity of each running container Instance, as it does for checkouts
+  %%> - an Instance without a Route, such as a package, has no HTTP activity, so only T3 activity keeps it awake
   %%> Skips:
   %%> - an Instance with HTTP activity inside the idle window, a running task attached to it, or another change running on it
   %%> - an Instance with a keep-alive Process or an enabled Schedule (open question 5 in the plan)
   %%> Result:
   %%> - one task per idle Instance, with the Instance lock
   GW->>SW: Start run, full intent<br/>operation-instance-sleep
+  %%> Inputs:
+  %%> - the vault key of the Gateway's session for this T3 server
   SW->>C: Check T3 is idle<br/>T3 MCP · thread list
   %%> What it does:
-  %%> - asks T3's MCP endpoint with the Gateway's session for threads with a running or queued turn
+  %%> - asks T3's MCP endpoint with the Gateway's session for threads with a running or queued turn, and for the time of the last turn and the last client activity
+  %%> - T3 activity inside the idle window counts as activity, so a user reading an open thread keeps the Instance awake
   %%> Why:
   %%> - an agent can work for an hour without a request to the site
+  %%> To confirm:
+  %%> - PR 7 confirms which T3 read gives the last client activity, and stops for a decision when none does
   alt a turn runs
     C-->>SW: busy
     SW-->>GW: Run succeeded<br/>skipped: turn running
@@ -34,6 +40,8 @@ sequenceDiagram
   else T3 is idle
     SW->>N: Stop the container<br/>incus stop
     %%> What it does:
+    %%> - checks T3 once more in the same phase, right before the stop; a turn that started since keeps the container running
+    %%> - a turn that starts in the last moment is cut, and T3 continues it at the next wake
     %%> - a clean stop: systemd stops the Processes and T3; the disk, the database and the Route stay
     %%> - removes the awake marker, so Caddy sends the next request to the wake page
     SW-->>GW: Run succeeded<br/>terminal event

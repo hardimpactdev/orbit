@@ -24,31 +24,34 @@ sequenceDiagram
   %%> Requirements:
   %%> - the calling Node has node access to the target Node
   %%> - the target is an active `app-dev` Node with `settings.apps.containers`
-  %%> - a database server, when given, is on the same Node, else `instance.database_server_remote`
+  %%> - a database server, when given, is on the same Node, else `instance.database_server_remote` (open question 11 in the plan)
   %%> - no other change runs on the Instance; the Gateway holds one lock per Instance and holds the Route's Nodes
   %%> Result:
   %%> - the Instance is reserved with its runtime record: container name, bridge address, a free port from `t3_ports`, and its Route
   %%> - `.env` is rendered from the Project's env template; the placeholder model key and a repository read token go to the vault
+  %%> - the intent names the vault key where the run stores the new Gateway session for this T3 server
   %%> - a task is recorded with the full intent, `runtime: container`
   GW->>SW: Start run, full intent<br/>operation-instance-create
   GW-->>CLI: 202 Accepted<br/>task ID
-  opt no source container for the Project on the Node
+  opt no current source container for the Project
     SW->>N: Build source container<br/>Ansible · tags source
     %%> What it does:
-    %%> - launches `<project>-source` from the Node's image, fetches the default branch on the Node with the read token and pushes it in, and runs the Project setup steps as `orbit`
-    %%> - stops it; the T3 unit never starts in it, because it starts only when the Instance marker exists
+    %%> - launches `<project>-source-<commit>` from the Node's image, fetches the default branch on the Node with the read token and pushes it in
+    %%> - installs the dependencies from the lockfiles as `orbit`, with the install that a cold wake runs today; it runs no setup step, because there is no database and no `.env`
+    %%> - stops it; T3 never starts in it, because its unit starts only when `/etc/orbit/instance` exists
     %%> Why:
     %%> - every copy then starts T3 for the first time and makes its own identity
     %%> Once:
-    %%> - later creates on this Node reuse it; the Gateway records its commit
+    %%> - later creates reuse it; a rebuild makes a new one beside it (open question 8 in the plan)
   end
   SW->>N: Copy source container<br/>Ansible · tags container
   %%> What it does:
-  %%> - `incus copy` of `<project>-source` to the Instance's container, a ZFS clone
-  %%> - sets the bridge address, `limits.cpu` and `limits.memory`, the read-only idmapped mount of `/opt/orbit-agent`, and the T3 proxy device on the Node's WireGuard address and the Instance's port
+  %%> - `incus copy` of the current source container, a ZFS clone
+  %%> - sets the bridge address with `security.port_isolation`, so containers on the bridge cannot reach each other
+  %%> - sets `limits.cpu`, `limits.memory`, the read-only idmapped mount of `/opt/orbit-agent`, and the T3 proxy device on the Node's WireGuard address and the Instance's port
   %%> - adds the firewall route rule for that port; nothing else of the Node changes
   %%> Branch:
-  %%> - fetches the Instance's branch on the Node with the read token, or creates it from the default branch, and pushes it into the stopped copy; the token stays on the Node and is removed after the step
+  %%> - fetches the Instance's branch on the Node with the read token, or creates it from the default branch; the token stays on the Node and is removed after the step
   opt database on a Database server
     SW->>N: Create owner and database<br/>child operation-database-create
     %%> What it adds:
@@ -61,16 +64,19 @@ sequenceDiagram
     %%> How:
     %%> - one consistent `pg_dump` of the default Instance's database while it runs, restored into the new database with `--no-owner --no-privileges`
   end
+  SW->>N: Start the container<br/>incus start
+  %%> What it does:
+  %%> - nftables, `hidepid` and the image's units start; T3 does not, because `/etc/orbit/instance` does not exist yet
   SW->>C: Prepare the workspace<br/>Ansible · tags workspace
-  %%> What it does, before the first start:
-  %%> - checks out the branch in `/srv/workspace` and sets the group, setgid bits and default ACLs
+  %%> What it does:
+  %%> - pushes the branch in and checks it out in `/srv/workspace`; sets the group, setgid bits and default ACLs
   %%> - writes `.env` for `orbit` with group `work`, and the placeholder key, Claude Code and Codex settings for `agent`
   %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type
-  %%> - writes the Instance marker that lets the T3 unit start
-  SW->>C: Start the container<br/>incus start
+  %%> - writes `/etc/orbit/instance`, owned by root and readable by all: the Instance, its Project and its URL, which the note points to
+  SW->>C: Start T3<br/>systemctl start t3
   %%> What it does:
-  %%> - nftables, `hidepid`, T3 and the enabled units start with the container
   %%> - T3 starts for the first time and creates its identity
+  %%> - adds the T3 project `/srv/workspace` as `agent`, so a thread can start in it
   %%> Check:
   %%> - waits up to 30 s for `/.well-known/t3/environment`, else `instance.t3_unready`
   SW->>C: Run Project setup steps<br/>Ansible · tags setup
@@ -86,19 +92,21 @@ sequenceDiagram
   opt web-serving Project
     SW->>N: Create the Route<br/>child operation-route-create
     %%> What it adds:
+    %%> - the same steps as `route:create`, with its key and signature, then a TLS probe of the site
     %%> - the Node's Caddy proxies the Route to the web Process at the container's bridge address
     %%> - only an Orbit Process is ever a Route target, so a preview reaches only `orbit`
   end
   SW->>C: Issue the Gateway session<br/>sensitive output · vault
   %%> What it does:
-  %%> - see container/t3-register.mmd: `t3 auth session issue --label "Orbit Gateway"` as `agent`, stored in the vault; the run returns the environment id and URL
+  %%> - see container/t3-register.mmd: `t3 auth session issue --label "Orbit Gateway"` as `agent`, stored in the vault
+  %%> - the step itself checks the served environment id and the session's scopes; the run returns the environment id, URL and vault key
   alt all steps pass in budget
     C-->>SW: T3 and site answer<br/>Processes running
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record Instance, T3 server<br/>active · registered
     %%> Result:
     %%> - the Instance, its runtime and its Route become active
-    %%> - the Conn layer records the T3 server with the registration checks; its Node is the container's Node and it names the Instance
+    %%> - the Conn layer records the T3 server from the result and moves its session from the vault; its Node is the container's Node and it names the Instance
   else Instance already created
     Note over GW: Skipped — already created<br/>instance.exists
     %%> Result:
