@@ -90,6 +90,20 @@ jobs:
         run: |
           composer analyse
           vendor/bin/pest --list-tests
+      # The one test of the container model forwarder's nftables table on a real kernel. The flag turns a missing requirement into a
+      # failure, so it never passes as a skip here.
+      - name: Prove the model forwarder's nftables table on a real kernel
+        if: steps.scope.outputs.selected == 'true'
+        working-directory: apps/gateway
+        env:
+          APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ':memory:'
+          ORBIT_REAL_KERNEL_TESTS: '1'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes nftables
+          vendor/bin/pest tests/Feature/Extensions/AiRouter/AiRouterModelForwarderTest.php --filter 'on a real kernel'
 
   cli:
     name: CLI build

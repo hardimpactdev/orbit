@@ -72,7 +72,7 @@ final readonly class AdmitAiRouterModelForwarderAction
                     'user' => AiRouterModelForwarder::User,
                     'table' => AiRouterModelForwarder::Table,
                     'table_unit' => AiRouterModelForwarder::TableUnit,
-                    'ruleset' => $this->forwarder->ruleset($this->guard->address($router)),
+                    'ruleset' => $this->forwarder->ruleset($this->guard->address($router), $bridge, $address),
                     'firewall' => [
                         'desired' => $remove ? [] : [['ufw', ...array_slice($rule->arguments, 2)]],
                         'remove' => $remove ? [$rule->removalArguments()] : [],

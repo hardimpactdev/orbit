@@ -251,17 +251,23 @@ A container on an agent Node reaches the router through a forwarder on its Node.
 | `orbit-ai-router-forwarder.service` | The agent Node | Its own Caddy on the container bridge address, port 8319. Its own system user `orbit-ai-router-forwarder`, no admin endpoint, no saved config, no key |
 | Proxy | The same Caddy | Passes every request to the guard origin, such as `http://10.44.0.3:8318`. It adds only Caddy's `X-Forwarded-*` headers, and nothing secret |
 | UFW `orbit:ai-router-forwarder` | The agent Node | Admits port 8319 on the bridge only |
-| nftables table `inet orbit_ai_router_forwarder` | The agent Node | Drops every forwarded packet to the guard, and resets every connection from the Node to the guard but the forwarder user's |
-| `orbit-ai-router-forwarder-table.service` | The agent Node | Loads the table early at boot, before WireGuard, Docker and Incus. The forwarder runs only while it is up; stopping it deletes the table |
+| nftables table `inet orbit_ai_router_forwarder` | The agent Node | Admits the forwarder only from the bridge, drops every forwarded packet to the guard, and resets every connection from the Node to the guard but the forwarder user's |
+| `orbit-ai-router-forwarder-table.service` | The agent Node | Loads the table early at boot, after `nftables.service` and before WireGuard, Docker and Incus. A reload loads the table again in place; stopping the unit deletes it |
 | UFW `orbit:ai-router-task-guard-node-<id>` | The router's Node | Admits port 8318 from the agent Node's WireGuard address, above the guard's deny |
 
 The guard stays the one place that decides. The forwarder has no rule of its own: a request through it meets the same key, method, path and query checks as a request from a task VM.
 
-All traffic from the Node to the guard leaves from the Node's WireGuard address, which the guard admits. So the forwarder's nftables table makes the forwarder the only way to the guard.
+While the table is loaded, only a container on the forwarder's bridge reaches the guard from an agent Node, and only through the forwarder. No other process on the Node reaches it: not root, `orbit`, an app-dev Instance, CI work, or a Docker or Incus container on another bridge.
 
-The forward chain drops every forwarded packet to the guard's address and port. This covers Incus containers, Docker containers and Docker Processes alike. The chain runs at priority `filter - 10`, before Docker's `FORWARD` accept and UFW's chains. A drop in any base chain is final.
+All traffic from the Node to the guard leaves from the Node's WireGuard address, which the guard admits. So the forwarder's nftables table has three chains. Each runs at priority `filter - 10`, before Docker's chains and UFW's, and a drop or reject in any base chain is final.
 
-The output chain resets every connection from the Node to the guard unless it belongs to the forwarder's user. So root, `orbit`, app-dev Instances on the Node and CI work cannot use the placeholder there.
+The input chain resets every connection to the forwarder's address and port that does not come in on the bridge. A process on the Node reaches the bridge address over `lo`, and UFW accepts loopback first. Without this chain the forwarder would relay that process to the guard as its own user.
+
+The forward chain drops every forwarded packet to the guard's address and port. This covers Incus containers, Docker containers and Docker Processes alike, because Docker accepts its traffic in its own `FORWARD` chains ahead of UFW.
+
+The output chain resets every connection from the Node to the guard unless it belongs to the forwarder's user.
+
+The guarantee holds only while the table is loaded. Root on the Node can delete it, and root already reaches every container. The forwarder fails closed for its own path: it runs only while the table's unit is up (`BindsTo`), and each start refuses when the table is missing. A table deleted at runtime is not noticed until the next start, and the guard still admits the Node meanwhile. `sudo nft list table inet orbit_ai_router_forwarder` on the Node shows whether it is loaded, and a new forwarder run proves it again. A Doctor check for it is a follow-up.
 
 The guard sees the Node, not the container. Usage is per Node. The guard keeps no per-container record, as it keeps none per task VM.
 
@@ -294,7 +300,9 @@ First, a `POST` with no key goes through the forwarder and must get 401. The gua
 
 Next, a request goes straight to the guard. It must fail, and the forward chain's drop counter must rise.
 
-Last, root on the Node sends a request to the guard. It must fail, and the output chain's reset counter must rise. SSH to the router's Node must still answer.
+Then root on the Node sends a request to the guard. It must fail, and the output chain's reset counter must rise. SSH to the router's Node must still answer.
+
+Last, root on the Node sends a request to the forwarder on the bridge address. It must fail, and the input chain's reset counter must rise.
 
 A removing run ends by checking that the router's Node answers SSH from the Node while the guard port does not.
 
@@ -308,7 +316,9 @@ A removing run ends by checking that the router's Node answers SSH from the Node
 | `resource.not_found` | 404 | A removal for a Node that never had a forwarder run |
 | `operation.target_busy` | 409 | Another guard or forwarder run holds the guard |
 
-Two limits remain. Nothing notices when the table goes missing while the forwarder runs, for example after `nft flush ruleset`; a Doctor check for it is a follow-up. The output rule trusts the socket's uid, so it assumes no host-network container runs on an agent Node, which Orbit does not offer.
+The output rule trusts the socket's uid, so it assumes no host-network container runs on an agent Node, which Orbit does not offer.
+
+The Gateway test `confines the guard to containers on the bridge through the forwarder, on a real kernel` loads the rendered table and checks every path above with a container namespace on a bridge, behind a Docker-style `FORWARD` accept. It needs Linux, passwordless sudo and `nft`, and skips elsewhere. The `gateway-static` CI job installs `nft` and sets `ORBIT_REAL_KERNEL_TESTS=1`, so there it fails instead of skipping.
 
 The refused Nodes have reasons. The router's Node holds the real key. The guard run uses the swamp Node as its outside source. The vpn hub forwards task VM traffic to the guard, which the forward chain would drop.
 

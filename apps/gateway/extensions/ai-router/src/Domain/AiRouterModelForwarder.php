@@ -75,24 +75,30 @@ final readonly class AiRouterModelForwarder
 
     /**
      * The forwarder's own nftables table: traffic from the Node to the guard leaves from the Node's WireGuard address, which the guard
-     * admits, so only the forwarder may send it.
-     * - The forward chain drops every forwarded packet to the guard: a container on any bridge, an Incus or a Docker one. It runs before
-     *   the `filter` priority, where Docker's `FORWARD` accept and UFW's chains sit, and a drop in any base chain is final.
-     * - The output chain resets every connection of the Node's own processes to the guard but the forwarder's user's: root, `orbit`
-     *   and every app process on the Node included.
-     * The file replaces the table whole, so loading it again is idempotent.
+     * admits, so only containers on the bridge, through the forwarder, may send it. Each chain runs before the `filter` priority, where
+     * Docker's `FORWARD` accept and UFW's chains (its loopback accept included) sit, and a drop or reject in any base chain is final.
+     * - The input chain resets every connection to the forwarder that does not come in on the bridge: a process on the Node itself
+     *   reaches the bridge address over `lo`, so without it the forwarder would relay root, `orbit` and every app process.
+     * - The forward chain drops every forwarded packet to the guard: a container on any bridge, an Incus or a Docker one.
+     * - The output chain resets every connection of the Node's own processes to the guard but the forwarder's user's.
+     * The file replaces the table whole and atomically, so loading it again leaves no moment without it.
      */
-    public function ruleset(string $guardAddress): string
+    public function ruleset(string $guardAddress, string $bridge, string $address): string
     {
         $table = self::Table;
         $user = self::User;
         $port = AiRouterTaskGuard::Port;
+        $forwarder = self::Port;
 
         return <<<NFT
             # Managed by Orbit: the ai-router container model forwarder (/reference/ai-router#container-model-forwarder).
             table inet {$table}
             delete table inet {$table}
             table inet {$table} {
+            	chain input {
+            		type filter hook input priority filter - 10; policy accept;
+            		ip daddr {$address} tcp dport {$forwarder} iifname != "{$bridge}" counter reject with tcp reset
+            	}
             	chain forward {
             		type filter hook forward priority filter - 10; policy accept;
             		ip daddr {$guardAddress} tcp dport {$port} counter drop

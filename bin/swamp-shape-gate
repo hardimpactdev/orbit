@@ -41,7 +41,7 @@ CREDENTIALS = ('SWAMP_API_KEY', 'SWAMP_SIGNIN_TOKEN')
 CREDENTIALS_MISSING = 78
 BASES = ('origin/main', 'main')
 
-ANSIBLE_TESTS = ('tests/ansible_artifact_test.py', 'tests/ansible_inputs_test.py', 'tests/ansible_firewall_test.py',
+ANSIBLE_TESTS = ('tests/ansible_artifact_test.py', 'tests/ansible_inputs_test.py', 'tests/ansible_firewall_test.py', 'tests/ansible_model_forwarder_test.py',
                  'tests/ansible_node_add_test.py', 'tests/ansible_shape_gate_tools_test.py', 'tests/ansible_task_vm_role_test.py',
                  'tests/ansible_gateway_swamp_grants_test.py',
                  'tests/ansible_task_vm_fleet_wait_test.py', 'tests/ansible_task_vm_host_egress_test.py',

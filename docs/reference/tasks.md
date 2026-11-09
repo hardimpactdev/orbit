@@ -846,10 +846,11 @@ A guard proxy runs outside the VM, on the Node that holds the real key. It answe
 
 | Request | Answer |
 | --- | --- |
-| From the task VM WireGuard network (`task_vms.wireguard_range`), on a path the VM needs, with the placeholder | Passed upstream with the real key in place of the placeholder |
-| Anything else | 403 |
+| From an admitted source, on a path the VM needs, with the placeholder | Passed upstream with the real key in place of the placeholder |
+| Anything else from an admitted source | 401 |
+| Anything from any other source | 403 |
 
-So the real key never leaves its Node and the Gateway, and a leaked placeholder is useless outside a task VM. Each further key is one more placeholder-to-real pair in a guard.
+The admitted sources are the task VM WireGuard network (`task_vms.wireguard_range`) and each agent Node that runs a [container model forwarder](/reference/ai-router#container-model-forwarder), where only containers on its bridge reach the guard. So the real key never leaves its Node and the Gateway, and a leaked placeholder is useless outside those sources. Each further key is one more placeholder-to-real pair in a guard.
 
 The one exception is a short-lived minted token that never stays on the VM, such as a GitHub App token that a step mints for one push.
 

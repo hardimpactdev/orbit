@@ -109,6 +109,8 @@ it('admits the Node at the guard and records a forwarder with no key, as one run
         ->and($intent['forwarder']['ruleset'])
         ->toContain("type filter hook forward priority filter - 10; policy accept;\n\t\tip daddr 10.44.0.3 tcp dport 8318 counter drop\n")
         ->toContain("type filter hook output priority filter - 10; policy accept;\n\t\tip daddr 10.44.0.3 tcp dport 8318 meta skuid != \"orbit-ai-router-forwarder\" counter reject with tcp reset\n")
+        // Only the bridge reaches the forwarder: a process on the Node would reach it over `lo` and be relayed as the forwarder's user.
+        ->toContain("type filter hook input priority filter - 10; policy accept;\n\t\tip daddr 10.251.33.1 tcp dport 8319 iifname != \"orbitc0\" counter reject with tcp reset\n")
         // No key anywhere in the intent; the forwarder gets none.
         ->and(json_encode($operation->input))->not->toContain($secrets->task())->not->toContain($secrets->anchor('http://10.44.0.3:8317'));
 
@@ -354,23 +356,29 @@ it('drops a forwarder Node that is no longer active from the guard', function ()
 });
 
 /**
- * Loads the rendered table on a real kernel, as root, through `tests/Support/ai-router-forwarder-nft-check.sh`: a container behind a
- * Docker-style FORWARD accept and root on the host reach a stand-in guard before the table and not after it, and the forwarder's user still
- * does. It needs passwordless sudo, nft, iptables and ip, as a Linux CI runner has.
+ * Loads the rendered table on a real kernel, as root, through `tests/Support/ai-router-forwarder-nft-check.sh`. A container on a bridge,
+ * behind a Docker-style FORWARD accept, reaches a stand-in forwarder but not the guard; root reaches neither, over `lo` included; the
+ * forwarder's user reaches the guard. It needs Linux, passwordless sudo, nft, iptables and ip. The `gateway-static` CI job installs nft
+ * and sets `ORBIT_REAL_KERNEL_TESTS=1`, which turns a missing requirement into a failure instead of a skip.
  */
-it('drops a container behind a Docker FORWARD accept and every Node process but the forwarder, on a real kernel', function (): void {
+it('confines the guard to containers on the bridge through the forwarder, on a real kernel', function (): void {
+    $required = getenv('ORBIT_REAL_KERNEL_TESTS') === '1';
     if (PHP_OS_FAMILY !== 'Linux' || Process::run(['sudo', '-n', 'nft', '--version'])->failed()) {
+        expect($required)->toBeFalse('ORBIT_REAL_KERNEL_TESTS=1 needs Linux with passwordless sudo and nft.');
         $this->markTestSkipped('Needs Linux with passwordless sudo and nft.');
     }
     $ruleset = tempnam(sys_get_temp_dir(), 'orbit-forwarder-nft-');
-    file_put_contents($ruleset, app(AiRouterModelForwarder::class)->ruleset('10.44.0.3'));
+    file_put_contents($ruleset, app(AiRouterModelForwarder::class)->ruleset('10.44.0.3', 'ofchkb0', '169.254.78.1'));
     try {
-        $check = Process::timeout(60)->run(['sudo', '-n', base_path('tests/Support/ai-router-forwarder-nft-check.sh'), $ruleset, '10.44.0.3', '8318',
-            AiRouterModelForwarder::User]);
+        $check = Process::timeout(90)->run(['sudo', '-n', base_path('tests/Support/ai-router-forwarder-nft-check.sh'), $ruleset, '10.44.0.3', '8318',
+            AiRouterModelForwarder::User, 'ofchkb0', '169.254.78.1', (string) AiRouterModelForwarder::Port]);
     } finally {
         unlink($ruleset);
     }
 
     expect($check->exitCode())->toBe(0, $check->output().$check->errorOutput())
-        ->and($check->output())->toContain('ok: container, behind a FORWARD accept: refused')->toContain('ok: the forwarder user: reached');
+        ->and($check->output())->toContain('ok: container to the guard, behind a FORWARD accept: refused')
+        ->toContain('ok: container to the forwarder, on the bridge: reached')
+        ->toContain('ok: root to the forwarder, over lo: refused')
+        ->toContain('ok: the forwarder user to the guard: reached');
 });
