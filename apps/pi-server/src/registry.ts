@@ -943,7 +943,7 @@ export class SessionRegistry {
             // only the current turn: an earlier turn's provider error is not this wait's cause.
             const since = live.submission?.entry;
             const last = live.entries
-                .filter((entry) => since === undefined || Number(entry.id) > Number(since))
+                .filter((entry) => since === undefined || durableEntryId(entry.id) > since)
                 .map((entry) => entry.message as AssistantMessage)
                 .findLast((message) => message.role === "assistant");
             const category = deriveState({
@@ -1150,6 +1150,11 @@ function inputKey(entry: EntryRecord): string | undefined {
     )
         return undefined;
     return typeof entry.data.key === "string" ? entry.data.key : undefined;
+}
+
+/** The Durable entry a transcript entry came from: its ID without the `:index` of a later message. */
+export function durableEntryId(transcriptId: string): number {
+    return Number.parseInt(transcriptId, 10);
 }
 
 function transcriptEntry(
