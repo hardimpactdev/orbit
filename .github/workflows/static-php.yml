@@ -1,8 +1,8 @@
 name: Static PHP build
 
 # Builds the static PHP CLI and FrankenPHP of the Instance runtime folder from the recipe's instances.php section, proves both
-# with the Gateway as a Laravel fixture, and on main publishes a build that has no release yet. A recipe pin records the
-# published SHA-256 in a later reviewed commit. See docs/reference/compute-drivers.md#static-php-build.
+# with the Gateway as a Laravel fixture, and on main, from a push or a manual run, publishes a build that has no release yet.
+# A recipe pin records the published SHA-256 in a later reviewed commit. See docs/reference/compute-drivers.md#static-php-build.
 on:
   pull_request:
     paths:
@@ -54,7 +54,9 @@ jobs:
           missing='[]'
           while read -r build; do
             tag="$(jq -r .tag <<< "$build")"
-            if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Only a release that does not exist is missing; any other error stops the run.
+            if ! answer="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName 2>&1)"; then
+              grep -qx 'release not found' <<< "$answer" || { echo "::error::Cannot read release ${tag}: ${answer}"; exit 1; }
               missing="$(jq -c --argjson build "$build" '. + [$build]' <<< "$missing")"
             fi
           done < <(sed -n 's/^builds=//p' "$RUNNER_TEMP/definition" | jq -c '.[]')
@@ -76,10 +78,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # The build id names every input of the build, so an archive of the same id is the same build.
-      - name: Restore a build of this definition
+      # The proof job saves an archive under its build id only once it passed, so a cached archive is a proven one.
+      - name: Restore a proven build of this definition
         id: cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: static-php-${{ matrix.build.build }}
           path: |
@@ -134,7 +136,8 @@ jobs:
           file bin/php bin/frankenphp
           # A static-pie binary has no program interpreter: it needs no loader and no shared library.
           for binary in bin/php bin/frankenphp; do
-            if readelf --program-headers "$binary" | grep -q INTERP; then echo "::error::${binary} is not fully static."; exit 1; fi
+            headers="$(readelf --program-headers --wide "$binary")"
+            if grep -q INTERP <<< "$headers"; then echo "::error::${binary} is not fully static."; exit 1; fi
           done
           echo "STATIC=$PWD/bin" >> "$GITHUB_ENV"
 
@@ -192,19 +195,26 @@ jobs:
           mkdir -p "$ORBIT_HOME" && touch "$DB_DATABASE"
           "$STATIC/frankenphp" php-server --root public --listen 127.0.0.1:8088 > "$RUNNER_TEMP/frankenphp.log" 2>&1 &
           server=$!
-          trap 'kill "$server"' EXIT
+          trap 'kill "$server"; cat "$RUNNER_TEMP/frankenphp.log"' EXIT
           for _ in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:8088/up && break; sleep 1; done
           status="$(curl -sS -o "$RUNNER_TEMP/up.html" -w '%{http_code}' http://127.0.0.1:8088/up)"
           header="$(curl -sS -o /dev/null -D - http://127.0.0.1:8088/up | tr -d '\r' | grep -i '^x-powered-by:' || true)"
-          cat "$RUNNER_TEMP/frankenphp.log"
           echo "GET /up answered ${status} (${header})"
           [ "$status" = 200 ]
           grep -qi "PHP/${{ matrix.build.php_version }}" <<< "$header"
 
+      - name: Keep the proven build under its build id
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: static-php-${{ matrix.build.build }}
+          path: |
+            ${{ runner.temp }}/static-php/${{ matrix.build.asset }}
+            ${{ runner.temp }}/static-php/SHA256SUMS
+
   publish:
     name: Publish PHP ${{ matrix.build.php_version }}
     needs: [definition, prove]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'hardimpactdev/orbit'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'hardimpactdev/orbit'
     runs-on: ubuntu-26.04
     permissions:
       contents: write

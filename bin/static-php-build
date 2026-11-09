@@ -7,10 +7,12 @@
   bin/static-php-build check --version X.Y --bin DIR       # exit 1 unless both binaries load exactly the recipe's extensions
 
 The recipe's instances.php section names the PHP release, FrankenPHP, the static-php-cli commit and the extensions left out.
-The build id is a digest of those, the extension list and tools/static-php/craft.yml, so any change to them needs a new
-build. A build of main publishes the release that the recipe pin names; a later reviewed commit records its SHA-256.
+The build id is a digest of those, the extension list, tools/static-php/craft.yml and this script, so any change to them
+needs a new build. static-php-cli resolves the library and extension sources at build time; sources.json in the archive
+records each one. The published archive's SHA-256, which a later reviewed commit records in the pin, fixes the bytes.
 """
 import argparse
+import gzip
 import hashlib
 import json
 import os
@@ -39,11 +41,12 @@ def definitions(recipe=None):
     recipe = recipe or json.loads(RECIPE.read_text())
     section = recipe['instances']['php']
     craft = hashlib.sha256(CRAFT.read_bytes()).hexdigest()
+    script = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     builds = {}
     for version, pin in section['versions'].items():
         extensions = [name for name in recipe['php']['versions'][version]['extensions'] if name not in section['without']]
         inputs = {'php_version': pin['php_version'], 'frankenphp': section['frankenphp'], 'static_php_cli': section['static_php_cli'],
-                  'extensions': extensions, 'craft_sha256': craft}
+                  'extensions': extensions, 'craft_sha256': craft, 'script_sha256': script}
         build = hashlib.sha256(json.dumps(inputs, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
         tag = f'static-php-{pin["php_version"]}-{build[:12]}'
         asset = f'{tag}-{PLATFORM}.tar.gz'
@@ -109,8 +112,11 @@ def build(version, output):
         shutil.copy2(work / 'buildroot/bin' / name, stage / 'bin' / name)
     manifest = {key: item[key] for key in ('version', 'php_version', 'frankenphp', 'static_php_cli', 'extensions', 'build', 'tag')}
     (stage / 'build.json').write_text(json.dumps(manifest, indent=2) + '\n')
+    # static-php-cli's record of each source it fetched: the version, file or Git commit, and its hash.
+    shutil.copy2(work / 'downloads/.cache.json', stage / 'sources.json')
     archive = output / item['asset']
-    with tarfile.open(archive, 'w:gz') as tar:
+    with archive.open('wb') as raw, gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0) as packed, \
+            tarfile.open(fileobj=packed, mode='w') as tar:
         for path in sorted(stage.rglob('*')):
             info = tar.gettarinfo(path, path.relative_to(stage).as_posix())
             info.uid = info.gid = 0

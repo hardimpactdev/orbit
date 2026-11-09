@@ -110,14 +110,14 @@ it('limits the recipe mirror write token to main and never triggers it for pull 
     expect($workflow['jobs']['mirror']['if'])->toBe("github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main'");
 });
 
-it('publishes static PHP builds only from proven main pushes and never replaces a release', function (): void {
+it('publishes static PHP builds only from proven main runs and never replaces a release', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/static-php.yml'));
     $publish = $workflow['jobs']['publish'];
     $steps = array_column($publish['steps'], null, 'name');
 
     expect($workflow['on']['push']['branches'])->toBe(['main'])
         ->and($publish['needs'])->toBe(['definition', 'prove'])
-        ->and($publish['if'])->toBe("github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'hardimpactdev/orbit'")
+        ->and($publish['if'])->toBe("github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'hardimpactdev/orbit'")
         ->and($steps['Publish the release']['run'])->toContain('Published builds are never replaced.')
         ->and($workflow['jobs']['build']['permissions'] ?? null)->toBeNull()
         ->and($workflow['jobs']['prove']['permissions'] ?? null)->toBeNull();

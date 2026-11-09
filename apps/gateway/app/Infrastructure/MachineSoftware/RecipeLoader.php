@@ -236,7 +236,7 @@ final readonly class RecipeLoader
             $this->require(str_starts_with($url, 'https://'), "{$field}.url: expected an HTTPS release URL.");
             $this->require($pin->sha256 === null || (is_string($pin->sha256) && preg_match('/\A[0-9a-f]{64}\z/', $pin->sha256) === 1), "{$field}.sha256: expected the published SHA-256, or null before publication.");
             $extensions = $php[$version]['extensions'];
-            $this->require(array_diff($without, $extensions) === [], "instances.php.without: [".implode(', ', array_diff($without, $extensions))."] are not PHP {$version} extensions.");
+            $this->require(array_diff($without, $extensions) === [], 'instances.php.without: ['.implode(', ', array_diff($without, $extensions))."] are not PHP {$version} extensions.");
             $builds[(string) $version] = new StaticPhpBuild((string) $version, $phpVersion, $frankenphp, array_values(array_diff($extensions, $without)), $build, $url,
                 $pin->sha256 === null ? null : new ArtifactPin($url, 'sha256', $pin->sha256, $phpVersion));
         }

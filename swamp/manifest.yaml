@@ -15,7 +15,6 @@ additionalFiles:
   - ansible/library/orbit_artifact.py
   - ansible/library/orbit_static_php.py
   - ansible/tasks/artifact-fetch.yml
-  - ansible/tasks/static-php-check.yml
   - ansible/transport-exit-codes.json
   - ansible/operation-node-role-add.yml
   - ansible/operation-node-converge.yml
