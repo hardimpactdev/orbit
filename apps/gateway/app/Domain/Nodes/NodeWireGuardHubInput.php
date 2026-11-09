@@ -50,7 +50,7 @@ final readonly class NodeWireGuardHubInput
         // The hub's private key never leaves the Node: orbit.conf reads its key file, and the apply step composes the key
         // with the peer files on the Node at apply time. No file, the intent nor the run holds it.
         return ['hub_id' => $hub->id, 'ssh' => app(SwampSshExecutionInput::class)->forNode($hub), 'port' => $port,
-            'config' => self::config($hub), 'source' => self::source($hub),
+            'config' => self::config($hub), 'interface' => self::interface($port), 'source' => self::source($hub),
             'peers' => array_values($peers->map(static fn (Node $peer): array => ['node_id' => $peer->id, 'file' => self::peerFile($peer->id),
                 'content' => self::section($peer->name, (string) $peer->wireguard_public_key, "{$peer->wireguard_ip}/32")])->values()->all()),
             'prune' => ['directory' => self::PeerDirectory, 'keep' => $keep, 'newest' => ValidatedData::integer(Node::query()->max('id'))],
@@ -62,7 +62,7 @@ final readonly class NodeWireGuardHubInput
      * intent is a snapshot from admission, so a removal that listed the other Nodes would write back, or delete, the peer of a Node that
      * another run adds or takes away meanwhile. The apply step loads the files that remain.
      *
-     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,source:array{address:string,mark:int,rules:list<string>,commands:list<string>}|null,peers:list<array{node_id:int,file:string,content:string}>,prune_argv:list<string>,peer_keys:list<string>}
+     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,interface:string,source:array{address:string,mark:int,rules:list<string>,commands:list<string>}|null,peers:list<array{node_id:int,file:string,content:string}>,prune_argv:list<string>,peer_keys:list<string>}
      */
     public static function removal(Node $hub, Node $removed): array
     {

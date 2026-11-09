@@ -29,7 +29,7 @@
       before=$(wg showconf orbit | sha256sum)
       wg syncconf orbit <(
         printf '[Interface]\nPrivateKey = '; cat /etc/wireguard/orbit.key
-        printf '\nListenPort = %s\nFwMark = %s\n' {{ hub_plan.port | quote }} {{ hub_plan.port | quote }}
+        printf '\n%s' {{ hub_plan.interface | quote }}
         for f in /etc/wireguard/orbit-peers.d/*.conf; do [ ! -f "$f" ] || cat "$f"; done
       )
       [ "$before" = "$(wg showconf orbit | sha256sum)" ] || echo changed

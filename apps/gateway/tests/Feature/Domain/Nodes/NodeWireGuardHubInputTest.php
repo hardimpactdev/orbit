@@ -7,6 +7,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Symfony\Component\Yaml\Yaml;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
@@ -113,4 +114,19 @@ it('takes the source address from the stored Gateway endpoint, and pins none for
     expect(NodeWireGuardHubInput::source($hub))->toBeNull()
         ->and(NodeWireGuardHubInput::config($hub))->toContain("FwMark = 51820\n")->not->toContain('ip -4 rule')
         ->and(NodeWireGuardHubInput::interface(51820))->toBe("ListenPort = 51820\nFwMark = 51820\n");
+});
+
+it('fits the closed intent schema of the hub workflow that a removal runs, and carries the mark in its syncconf', function (): void {
+    $hub = SwampNodeFixture::ensure();
+    $removed = Node::withoutEvents(static fn (): Node => Node::query()->create([
+        'name' => 'removed', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.21', 'user' => 'orbit',
+        'status' => LifecycleStatus::Removing, 'platform' => 'linux', 'architecture' => 'x86_64']));
+    $workflow = Yaml::parseFile(dirname(base_path(), 2).'/swamp/workflows/workflow-node-network-hub.yaml');
+    $schema = $workflow['inputs']['properties']['intent'];
+    $intent = NodeWireGuardHubInput::removal($hub, $removed);
+
+    expect(array_keys($intent))->toEqualCanonicalizing(array_keys($schema['properties']))
+        ->and(array_diff($schema['required'], array_keys($intent)))->toBe([])
+        ->and($intent['interface'])->toBe(NodeWireGuardHubInput::interface(51820))
+        ->and(json_encode($workflow, JSON_THROW_ON_ERROR))->toContain('inputs.intent.interface');
 });

@@ -2,13 +2,11 @@
 title: "WireGuard endpoints"
 description: "Accepted endpoint forms, how Orbit picks a Node's hub endpoint, the LAN endpoint and its proof, the hub's source address, and recovery for an invalid stored endpoint."
 covers:
-  - apps/gateway/app/Domain/WireGuard/WireGuardEndpoint.php
-  - apps/gateway/app/Infrastructure/WireGuard/VpnConfigurationRepository.php
+  - apps/gateway/app/Domain/WireGuard/{WireGuardEndpoint,HubEndpoint,LanAddress}.php
+  - apps/gateway/app/Infrastructure/WireGuard/{VpnConfigurationRepository,WireGuardServerConfigRenderer,NativeWireGuardPeerConverger}.php
   - apps/gateway/app/Console/Commands/BootstrapGatewayCommand.php
-  - apps/gateway/app/Domain/Nodes/{NodeNetworkConvergeInput,NodeNetworkInput,NodeNetworkParticipantInput,NodeNetworkProjection,NodeWireGuardInput}.php
+  - apps/gateway/app/Domain/Nodes/{NodeNetworkConvergeInput,NodeNetworkInput,NodeNetworkParticipantInput,NodeNetworkProjection,NodeWireGuardInput,NodeWireGuardHubInput}.php
   - apps/gateway/app/Infrastructure/Nodes/NodeVpnConfigurationSource.php
-  - apps/gateway/app/Domain/WireGuard/{HubEndpoint,LanAddress}.php
-  - apps/gateway/app/Domain/Nodes/NodeWireGuardHubInput.php
   - apps/gateway/database/migrations/2027_02_02_000000_drop_node_wireguard_endpoint_override.php
   - swamp/ansible/tasks/{node-hub-lan-proof,node-converge-hub,node-hub-source}.yml
 ---
@@ -73,11 +71,13 @@ The hub therefore marks its WireGuard packets with `FwMark`, set to the WireGuar
 1. Priority 31820: the main table without its default route. Packets to the private network and to the WireGuard subnet keep their normal route and source.
 2. Priority 31821: table number equal to the WireGuard port. Its default route copies the main default route and sets the source to the public endpoint address.
 
-The hub's `orbit.conf` holds the mark and adds the rules and the route in `PostUp`, so they return after a restart. A failed route never stops the tunnel from starting.
+The hub's `orbit.conf` holds the mark and adds the rules and the route in `PostUp`, so they return after a restart. A failed route never stops the tunnel from starting. The route copies the default gateway when it is applied. After the hub's default gateway changes, or when the tunnel started before the hub had a default route, converge the hub to apply it again.
 
-The hub converge applies the same commands to the running hub and checks that a marked packet to a public address leaves from the endpoint address; a failed check fails the converge. A hub whose public endpoint is a hostname or an IPv6 address gets no source rule. An IPv4 endpoint address that the hub does not hold fails the hub's network phase; the failed assertion reads `vpn.endpoint_not_local`. A source that is still wrong after the commands reads `vpn.source_route_failed`.
+The hub converge applies the same commands to the running hub and checks that a marked packet to a public address leaves from the endpoint address; a failed check fails the converge.
 
-Every `wg syncconf` on the hub carries the mark. `syncconf` resets an interface setting that its input leaves out, as it does with the private key.
+A hub whose public endpoint is a hostname or an IPv6 address gets no source rule. Orbit does not remove a rule that an earlier IPv4 endpoint left; delete rules 31820 and 31821 and flush the table by hand when you change the endpoint to a hostname. An IPv4 endpoint address that the hub does not hold fails the hub's network phase; the failed assertion reads `vpn.endpoint_not_local`. A source that is still wrong after the commands reads `vpn.source_route_failed`.
+
+Every `wg syncconf` on the hub carries the mark, from the interface lines the Gateway renders once for every hub run. `syncconf` resets an interface setting that its input leaves out, as it does with the private key. The older native hub projection of [`node:wireguard-key`](/cli/node/wireguard-key) also writes the mark, but it rewrites `orbit.conf` without the `PostUp` lines, so converge the hub after it.
 
 ## Peer key changes
 

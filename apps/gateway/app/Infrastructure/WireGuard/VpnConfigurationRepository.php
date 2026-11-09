@@ -61,7 +61,8 @@ final readonly class VpnConfigurationRepository
 
         $serverPrivateKey = $this->key('private');
         $serverPublicKey = $this->key('public');
-        $endpoint = HubEndpoint::for($peer, $server, $this->settings)->endpoint;
+        $hubEndpoint = HubEndpoint::for($peer, $server, $this->settings);
+        $endpoint = $hubEndpoint->endpoint;
         $domain = $this->settings->domain();
 
         if (! WireGuardEndpoint::isValid($endpoint)) {
@@ -86,6 +87,7 @@ final readonly class VpnConfigurationRepository
             peerAddress: "{$peerAddress}/{$prefixLength}",
             serverPrivateKey: $serverPrivateKey,
             serverPublicKey: $serverPublicKey,
+            lan: $hubEndpoint->lan,
         );
     }
 
