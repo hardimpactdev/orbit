@@ -307,13 +307,16 @@ final readonly class RecipeLoader
                 $field = "instances.{$folder}.{$name}";
                 $this->require(preg_match('/^[a-z][a-z0-9-]*$/D', (string) $name) === 1, "{$field}: expected a lower-case part name.");
                 $part = $this->object($rawPart, $field);
-                $bin = get_object_vars($this->object($part->bin ?? null, "{$field}.bin"));
-                $this->require($bin !== [], "{$field}.bin: expected at least one program.");
-                foreach ($bin as $program => $path) {
-                    $path = $this->text($path, "{$field}.bin.{$program}");
+                $rawBin = get_object_vars($this->object($part->bin ?? null, "{$field}.bin"));
+                $this->require($rawBin !== [], "{$field}.bin: expected at least one program.");
+                $bin = [];
+                foreach ($rawBin as $program => $rawPath) {
+                    $program = (string) $program;
+                    $path = $this->text($rawPath, "{$field}.bin.{$program}");
                     $this->require(preg_match('/^[a-z][a-z0-9-]*$/D', (string) $program) === 1 && ! isset($programs[$program]), "{$field}.bin: [{$program}] is not a new lower-case program name.");
                     $this->require(preg_match('~^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$~D', $path) === 1 && ! in_array('..', explode('/', $path), true), "{$field}.bin.{$program}: expected a relative path inside the artifact.");
                     $programs[$program] = true;
+                    $bin[$program] = $path;
                 }
                 if (isset($part->tool)) {
                     $this->object($part, $field, ['tool', 'bin']);

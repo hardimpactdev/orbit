@@ -35,14 +35,16 @@ final readonly class InstanceFolderPlan
         $parts = [];
         foreach ($pins as $name => $pin) {
             $path = (string) parse_url($pin->artifact->location, PHP_URL_PATH);
-            $parts[] = ['name' => $name, 'version' => $pin->version, 'url' => $pin->artifact->location,
-                // A tarball or zip is unpacked into the part's folder; any other artifact is the part's one file.
-                'archive' => match (true) {
-                    preg_match('/\.(?:tar\.gz|tgz|tar\.xz)$/', $path) === 1 => 'tar',
-                    str_ends_with($path, '.zip') => 'zip',
-                    default => 'file',
-                },
-                $pin->artifact->algorithm => $pin->artifact->digest, 'bin' => $pin->bin];
+            // A tarball or zip is unpacked into the part's folder; any other artifact is the part's one file.
+            $archive = match (true) {
+                preg_match('/\.(?:tar\.gz|tgz|tar\.xz)$/', $path) === 1 => 'tar',
+                str_ends_with($path, '.zip') => 'zip',
+                default => 'file',
+            };
+            $base = ['name' => (string) $name, 'version' => $pin->version, 'url' => $pin->artifact->location, 'archive' => $archive];
+            $parts[] = $pin->artifact->algorithm === 'sha256'
+                ? [...$base, 'sha256' => $pin->artifact->digest, 'bin' => $pin->bin]
+                : [...$base, 'sha512' => $pin->artifact->digest, 'bin' => $pin->bin];
         }
 
         return $parts;
