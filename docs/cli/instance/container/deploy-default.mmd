@@ -1,0 +1,43 @@
+sequenceDiagram
+  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#the-default-instance): the automatic development deployment of docs/reference/deployments.md, in the default Instance's container. Every merge to the default branch reaches the default Instance, so new clones start current.
+  %% status: draft
+  %% command: none · automatic deployment tick
+  %% kind: instance.deploy
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane C icon=server pill=target tone=purple
+  participant GW as Gateway<br/>deployment tick
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-dev Node<br/>reached over ssh
+  participant C as Container<br/>default Instance
+  Note over GW: New default-branch commit<br/>deployment tick
+  %%> When:
+  %%> - the default branch has a commit that the default Instance has not deployed, as today
+  %%> Result:
+  %%> - a deployment task with the commit, the Instance lock and a repository read token in the vault
+  GW->>SW: Start run, full intent<br/>development-deploy
+  opt the default Instance is asleep
+    SW->>N: Start the container<br/>incus start
+  end
+  SW->>N: Fetch the commit<br/>git fetch · read token
+  %%> What it does:
+  %%> - fetches on the Node and pushes the commit into the container's repository; the token never enters the container
+  SW->>C: Check out the commit<br/>Ansible · tags checkout
+  %%> What it does:
+  %%> - the same checks as a checkout default: a dirty tree refuses `deployment.checkout_dirty`, a diverged branch `deployment.branch_diverged`
+  SW->>C: Run dev deploy steps<br/>Ansible · tags deploy
+  %%> What it does:
+  %%> - the Project's development deploy steps, as `orbit`: they install changed dependencies and migrate
+  %%> - restarts the Processes whose code changed
+  alt every required step passes
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Record the seed commit
+    %%> Result:
+    %%> - new clones start at this commit; existing clones do not change
+  else a required step fails
+    SW--xGW: Run failed<br/>failed step
+    %%> Result:
+    %%> - clones keep starting at the last commit that deployed; the tick retries after a backoff, at most three times
+  end

@@ -28,14 +28,18 @@ These decisions are settled. Later steps build on them without asking again.
 | 2026-11-09 | Swamp drives T3 through its `/mcp` endpoint and WebSocket API. The Pi server stays on task VMs until they switch. |
 | 2026-11-09 | Inside a development container, the app and every Orbit Process run as `orbit`. |
 | 2026-11-09 | T3, Claude Code and Codex run as `agent`, and so do their shell commands. There is no wrapper shell and no sudo. |
-| 2026-11-09 | T3, Claude Code, Codex, Node, Bun and the environment notes live once per Node, in a versioned read-only folder mounted into every container. |
+| 2026-11-09 | T3, Claude Code, Codex and the environment notes live once per Node, in a versioned read-only agent folder. Every development container mounts it. |
+| 2026-11-09 | The runtime binaries have their own such folder. |
 | 2026-11-09 | An update flips a link and restarts T3 per container. The CLI self-updaters are off. |
 | 2026-11-09 | Each Project type has an environment note. `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` link to it. A note states environment facts only: a narrow exception to "the runtime injects no prompts". |
 | 2026-11-09 | Preview URLs reach only Orbit Processes. Agents may run their own development servers and view them in T3's browser, without restriction. |
 | 2026-11-09 | A T3 thread in an Orbit Project is an Instance. Orbit registers its T3 server. |
 | 2026-11-09 | The user pairs through Conn. Access follows the node access edges to the Instance's Node. |
 | 2026-11-09 | A task can attach to the Instance. There is no runtime object and no separate mode for work that a user drives. |
-| 2026-11-09 | A container that is copied must never have run T3. T3 creates its identity on the first start of each copy. |
+| 2026-11-09 | A container that is cloned must never have run T3. Every new Instance is a clone of the Project's default Instance, which never runs T3. |
+| 2026-11-09 | T3 creates its identity on the first start of each clone. |
+| 2026-11-09 | T3 history is deleted with its Instance. An archive comes later. |
+| 2026-11-09 | MCP servers come from the project's own files. The agents use their own subagents only. |
 
 The earlier decision that T3 threads live on the always-on Mac mini and drive an agent in a container from outside is replaced by the T3 server inside the container.
 
@@ -63,19 +67,6 @@ The spikes found three things that Orbit must change or accept.
 - T3 prints a pairing token to its journal on every start. With two users, only root and `agent` can read it.
 - Each container holds one T3 port on its Node's WireGuard address.
 
-## Open questions
-
-The open questions of the Instance side are in [Development container runtime](/solutions/development-container-runtime#open-questions). These remain here:
-
-1. **MCP from the project.** Which file lists a project's MCP servers for each agent.
-   - (a) Claude Code reads the project's `.mcp.json`, and Codex reads the project's own Codex configuration; Orbit adds nothing.
-   - (b) Orbit renders one file into both agents' settings at create.
-   - Recommendation: (a). It keeps the rule that MCP servers come from the project, with no Orbit layer.
-2. **Subagents.** Claude Code and Codex bring their own.
-   - (a) Use only the agents' own subagents.
-   - (b) Swamp also starts turns in parallel Instances for one task.
-   - Recommendation: (a) until a task shows the need; (b) costs a container per branch of work.
-
 ## Steps
 
 The work runs in two tracks. Each step lands as its own change and updates the reference pages it touches.
@@ -100,7 +91,7 @@ Track A replaces task VMs and the Project VM with containers, in the order ADR 0
 
 ### Track B: threads and tasks
 
-Track B builds on step 6. Steps 3 to 5 are PRs of the [step 6 plan](/solutions/development-container-runtime#build-prs).
+Track B builds on step 6. Steps 3 to 5 are PRs of the [step 6 plan](/solutions/development-container-runtime#build-prs): PR 8, PR 9 and PR 12.
 
 1. **pi-server on Pi 1.5.0.** Done.
 2. **Drive an external task group from a T3 thread through the Orbit MCP.** What got in the way became fixes in the MCP. The last of them is in review.

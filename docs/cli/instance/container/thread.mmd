@@ -16,7 +16,7 @@ sequenceDiagram
   %%> What the user does:
   %%> - picks an Orbit Project and a Node, and writes the first message
   %%> What Conn proposes:
-  %%> - an Instance name from the message, and the Project's default Instance as `--from` when it exists (open question 3 in the plan)
+  %%> - an Instance name from the message; the Instance is always a clone of the Project's default Instance on the Node, with a clone of its database
   CONN->>GW: instance:create<br/>PROJECT NODE NAME
   %%> Requirements:
   %%> - the device's Node has node access to the target Node, the same edge that Conn needs to pair
@@ -24,7 +24,7 @@ sequenceDiagram
   GW-->>CONN: 202 Accepted<br/>task ID
   SW->>T3: Create the Instance<br/>container/create.mmd
   %%> What it does:
-  %%> - the whole create: copy, workspace, database, first T3 start, setup, Processes, Route, Gateway session
+  %%> - the whole create: the clone of the default container and database, the workspace, the first T3 start, the Processes, the Route and the registration
   SW-->>GW: Run succeeded<br/>terminal event
   Note over GW: Record Instance, T3 server
   loop every 2 s until terminal

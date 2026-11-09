@@ -21,7 +21,7 @@ sequenceDiagram
   Note over GW: Validate, mark removing<br/>no new pairings
   %%> Requirements:
   %%> - the calling Node has node access to the Instance's Node; no other change runs on the Instance
-  %%> - the Instance is not the source of an Instance that is still being created
+  %%> - a default Instance has no clones, else `instance.default_has_clones`
   %%> Result:
   %%> - the Instance is `removing`; the Conn layer refuses new pairings with its T3 server
   %%> - a repository read token for the work check is minted, and the Gateway's session for this T3 server goes to the vault; the intent names both vault keys
@@ -37,9 +37,9 @@ sequenceDiagram
   %%> What it does:
   %%> - fetches origin on the Node with the read token; the token never enters the container
   %%> - reads the branch heads and uncommitted files in the workspace as `agent`, and compares the heads with origin on the Node
-  %%> - asks T3's MCP endpoint, with the Gateway's session, for threads with a running or queued turn
+  %%> - asks T3's MCP endpoint, with the Gateway's session, for threads with a running or queued turn; a default Instance has no T3, so this part is skipped
   %%> Refuses:
-  %%> - unpushed work, as today; a running turn with `instance.turn_running` (open question 9 in the plan)
+  %%> - unpushed work, as today; a running turn with `instance.turn_running`
   %%> - `--force` skips both checks
   SW->>N: Revoke the pairings<br/>child conn-pairing-revoke
   %%> What it does:
@@ -50,8 +50,8 @@ sequenceDiagram
   %%> - stops the Processes, then runs the Project's teardown steps as `orbit`
   SW->>N: Delete the container<br/>incus delete --force
   %%> What it does:
-  %%> - deletes the container with its T3 state and thread history, its proxy device and its firewall route rule
-  %%> - the source container stays
+  %%> - deletes the container with its T3 state and thread history, its proxy device and its firewall rules; an archive of the history comes later
+  %%> - the default Instance it was cloned from stays
   opt database on a Database server
     SW->>N: Drop owner and database<br/>child database-destroy
   end

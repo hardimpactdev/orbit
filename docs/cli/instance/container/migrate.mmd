@@ -1,0 +1,55 @@
+sequenceDiagram
+  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#migrate-a-checkout-instance): one checkout Instance moves into a container, with its code and its database. A default Instance moves before the other Instances of its Project. The command exists only until the last checkout Instance has moved.
+  %% status: draft
+  %% command: instance:migrate
+  %% kind: instance.migrate
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane C icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-dev Node<br/>reached over ssh
+  participant C as New container<br/>via incus exec
+  CLI->>GW: instance:migrate<br/>INSTANCE
+  %%> Command:
+  %%> - `orbit instance:migrate INSTANCE`
+  Note over GW: Validate, reserve runtime<br/>address · T3 port
+  %%> Requirements:
+  %%> - the Instance is an active checkout Instance on an `app-dev` Node
+  %%> - a non-default Instance needs its Project's default Instance in a container first
+  %%> Result:
+  %%> - the runtime record is reserved; the checkout stays the Instance's runtime until the run succeeds
+  GW->>SW: Start run, full intent<br/>operation-instance-migrate
+  GW-->>CLI: 202 Accepted<br/>task ID
+  SW->>N: Stop the Processes<br/>Ansible · tags quiesce
+  %%> Why:
+  %%> - no process writes the checkout or the database while they move
+  SW->>N: Launch, copy the checkout<br/>Ansible · tags container
+  %%> What it does:
+  %%> - launches a container from the image with the bridge address, limits and idmapped mounts
+  %%> - copies the checkout as it is, uncommitted and ignored files included, into `/srv/workspace`, and sets the owners, group and ACLs
+  SW->>N: Clone the database<br/>child database-clone
+  %%> What it does:
+  %%> - the database family clones the checkout's database into a new one for the container: a template copy on the same server, a dump and restore across servers
+  %%> - the old database stays until the run succeeds
+  SW->>C: Start the container<br/>.env · T3 · Processes
+  %%> What it does:
+  %%> - writes `.env` with the new database, starts the Processes as `orbit`
+  %%> - a non-default Instance also gets `/etc/orbit/instance`, the agent settings and its T3 server, registered as in create
+  SW->>N: Move the Route<br/>child route-update
+  %%> What it does:
+  %%> - points the Instance's Route at FrankenPHP in the container, and withdraws the checkout's PHP-FPM pool
+  alt all steps pass
+    SW->>N: Remove the checkout<br/>checkout · old database
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Record container runtime
+  else a step fails
+    SW->>N: Start the Processes again<br/>checkout runtime
+    %%> What it does:
+    %%> - the checkout and its database are untouched, so the Instance runs as before; the new container and database are removed
+    SW--xGW: Run failed<br/>failed step, error_code
+  end

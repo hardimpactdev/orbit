@@ -1,0 +1,66 @@
+sequenceDiagram
+  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#the-default-instance): the Project's first default Instance on an app-dev Node, the only Instance built from scratch. It runs no T3; it is the clone source of the Project's other Instances.
+  %% status: draft
+  %% command: instance:create PROJECT NODE default
+  %% kind: instance.create
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane C icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-dev Node<br/>reached over ssh
+  participant C as Container<br/>via incus exec
+  CLI->>GW: instance:create<br/>PROJECT NODE default
+  %%> Command:
+  %%> - `orbit instance:create PROJECT NODE default`
+  %%> - a name equal to the Project's default branch also creates the `default` Instance
+  Note over GW: Validate, reserve default<br/>address · .env
+  %%> Requirements:
+  %%> - the calling Node has node access to the target Node, an active `app-dev` Node
+  %%> - the Project has no default Instance on the Node
+  %%> Result:
+  %%> - the default Instance is reserved with its runtime record and Route; it gets no T3 port
+  %%> - `.env` is rendered from the Project's env template; a repository read token goes to the vault
+  GW->>SW: Start run, full intent<br/>operation-instance-create
+  GW-->>CLI: 202 Accepted<br/>task ID
+  SW->>N: Launch the container<br/>Ansible · tags container
+  %%> What it does:
+  %%> - `incus launch` from the Node's image, with the bridge address, `security.port_isolation`, the limits and the idmapped mount of `/opt/orbit-runtime`
+  %%> - the agent folder is mounted too, so its clones have it; nothing in the default runs from it
+  %%> - fetches the default branch on the Node with the read token; the token stays on the Node
+  SW->>N: Create the database<br/>child operation-database-create
+  %%> What it does:
+  %%> - the database family creates the owner and the database on the Project's database server, on this Node or another
+  SW->>C: Prepare the workspace<br/>Ansible · tags workspace
+  %%> What it does:
+  %%> - pushes the default branch in and checks it out in `/srv/workspace`, with the group, setgid bits and default ACLs
+  %%> - writes `.env` for `orbit` with group `work`; writes no `/etc/orbit/instance`, so T3 never starts here
+  SW->>C: Run dev deploy steps<br/>Ansible · tags deploy
+  %%> What it does:
+  %%> - the Project's development deploy steps, as `orbit`, in list order: they install dependencies and migrate
+  %%> - the runtime folder supplies `php`, `composer`, Node and Bun; dependency downloads use the container egress model
+  SW->>C: Start Processes<br/>systemctl start
+  %%> What it does:
+  %%> - FrankenPHP and the Project's other development Processes start as `orbit` units
+  opt web-serving Project
+    SW->>N: Create the Route<br/>child operation-route-create
+  end
+  alt all steps pass in budget
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Record default Instance<br/>active · seed commit
+    %%> Result:
+    %%> - the default Instance is active; its commit is the one its clones start from
+  else a step fails or the budget ends
+    SW--xGW: Run failed<br/>failed step, error_code
+    %%> What stays:
+    %%> - the stopped container and its database, marked failed; the same command resumes, `instance:destroy` removes them
+    Note over GW: Record the failure
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
+  end

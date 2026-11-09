@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#sleep-and-wake): the hibernation sweep stops a whole idle container instead of its Processes. No command starts it. Dependency pruning does not apply to containers.
+  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#sleep-and-wake): the hibernation sweep stops a whole development container after one hour without activity. No command starts it. Dependency pruning does not apply to containers, and production containers never sleep.
   %% status: draft
   %% command: none · hibernation sweep
   %% kind: instance.sleep
@@ -17,17 +17,20 @@ sequenceDiagram
   %%> - `orbit-runtime-hibernator.timer` reads the last HTTP activity of each running container Instance, as it does for checkouts
   %%> - an Instance without a Route, such as a package, has no HTTP activity, so only T3 activity keeps it awake
   %%> Skips:
-  %%> - an Instance with HTTP activity inside the idle window, a running task attached to it, or another change running on it
-  %%> - an Instance with a keep-alive Process or an enabled Schedule (open question 5 in the plan)
+  %%> - an Instance with HTTP activity in the last hour, a running task attached to it, or another change running on it
+  %%> Not a reason to stay awake:
+  %%> - a keep-alive Process; development Instances have no Schedules
   %%> Result:
   %%> - one task per idle Instance, with the Instance lock
   GW->>SW: Start run, full intent<br/>operation-instance-sleep
   %%> Inputs:
   %%> - the vault key of the Gateway's session for this T3 server
   SW->>C: Check T3 is idle<br/>T3 MCP · thread list
+  %%> When:
+  %%> - not for a default Instance, which runs no T3
   %%> What it does:
   %%> - asks T3's MCP endpoint with the Gateway's session for threads with a running or queued turn, and for the time of the last turn and the last client activity
-  %%> - T3 activity inside the idle window counts as activity, so a user reading an open thread keeps the Instance awake
+  %%> - T3 activity in the last hour counts as activity, so a user working in an open thread keeps the Instance awake
   %%> Why:
   %%> - an agent can work for an hour without a request to the site
   %%> To confirm:
