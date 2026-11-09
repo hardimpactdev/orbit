@@ -353,6 +353,8 @@ To install, `@swamp/cfgmgmt/fetch` downloads the binary to `/usr/local/bin/orbit
 | `cli.install_failed` | The download, its checksum, its version check, the link or the profile failed. The link stays as it was when the switch did not happen |
 | `cli.configuration_failed` | The profile could not be written, or the Gateway has no WireGuard address |
 
+A Node of the build list keeps a mirror of each container default's repository at `/var/lib/orbit/instance-repositories/<id>.git`, owned by root. The create and deploy flows fetch into it. See [the default Instance](/reference/development-containers#the-default-instance).
+
 ## Converge the Orbit footprint
 
 `orbit node:converge <node> [--base | --roles=a,b] [--idempotency-key=KEY] [--json]` repairs one active, managed Linux Node against the release. It never runs `node:add`, changes an Instance, or adds or removes a role assignment, so a Node that owns Instances can converge. Fleet release rollout remains a separate CLI and observer publication path.
