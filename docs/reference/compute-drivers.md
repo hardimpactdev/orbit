@@ -49,6 +49,7 @@ The recipe is UTF-8 JSON, not executable PHP or a list of shell commands. The lo
 | `git` | The Git package set, `packages`, and the review date of the Git security notices, `usn_since` |
 | `roles` | Object requiring `gateway`, `app-dev`, `app-prod`, and `operator`; optional profiles use known Node role names. Each value lists additional tool identifiers and PHP sets |
 | `base` | List of additional tool identifiers and PHP sets for the task VM base image; this is an image profile, not a Node role |
+| `instances` | The two [shared folders](/reference/development-containers#shared-folders) of an Instance container host, `runtime` and `agent`. See [Shared Instance folders](#shared-instance-folders) |
 
 An `ubuntu` tool names its Debian `package`. Its `version` is the complete Debian version, including epoch and distribution revision when present, not just an upstream release or a constraint. It resolves only from the selected Ubuntu snapshot's signed package indexes for the declared release and architectures. Every pin must equal the newest version across the release's archive, updates, and security pockets on every declared architecture. An older pin or one available only from today's rolling archive fails online validation.
 
@@ -81,6 +82,17 @@ Internal pins do not require publishing HTTPS releases. Third-party tools still 
 The Pi pin comes from `apps/pi-server` at source commit `23e7198f7c98`, file `pi-server-23e7198f7c98-linux-x64`, SHA-256 `df3aa5aea1788c3bcfdd576d0124b252b640c66c2bfa78e69b985bca9f39f438`. It is an `amd64` build, like every recipe artifact. It must equal `task_vms.pi.artifact_sha256`: the enrolment check compares the Pi build of the image with that setting. The first pin was `e5933d4c8696`.
 
 A profile's effective set is the union of `common` and its own list, sorted by tool identifier. A `php:<version>` entry expands to that version's PHP set. Profiles cannot refer to other profiles, so role inheritance cannot hide software or form cycles. A multi-role Node's set is the union of its roles, not the base image set.
+
+### Shared Instance folders
+
+The `instances` object pins the two shared folders of an [Instance container host](#prepare-an-instance-container-host). Each of `runtime` and `agent` maps a part name to one part. A part either pins its own artifact, as a tool does, with `version`, `artifacts` and `bin`, or names a recipe artifact `tool` with `tool` and `bin`, so that a Node and its containers share one pin. `bin` maps each program the part gives the folder to a relative path inside the unpacked artifact. A program name appears once in a folder, and a path never leaves the artifact.
+
+| Folder | Parts |
+| --- | --- |
+| `runtime` | `node` and `bun`, from the recipe's tools; `composer`, the release phar; `ripgrep` |
+| `agent` | `t3`, the release tarball; `claude-code` and `codex`, the npm packages of the Linux x64 builds |
+
+The object is not part of the [recipe identity](#recipe-identity): no task image or Node profile holds the folders, so a new T3 or Claude Code rebuilds no image. A Node gets the new pins with its next converge.
 
 ### Swamp worker
 
@@ -1013,6 +1025,42 @@ The phase then proves that a copy is a clone:
 Without idmapped mounts, Incus would shift the owner of every file of a copy at its first start. Each task start would then rewrite the whole root disk. Incus 7 reports empty `kernel_features`, so `incus info` cannot answer this.
 
 Every refusal fails the phase with `task_vm.setup_failed`. Ansible runs its modules through a pipe that it closes, so `incus` never reads a stray standard input as YAML.
+
+### Prepare an Instance container host
+
+An `app-dev` Node on the [build list](/reference/development-containers#the-build-list) that is not a task VM gets a container branch in its role converge: `tasks/instance-host.yml`, from `tasks/node-role-runtime.yml`. The Gateway's `InstanceHostIntent` sends the branch's intent as the role runtime's `instances` key, only for such a Node; every other Node gets the same intent as before. The first intent allocates the Node's Instance bridge. [Development containers](/reference/development-containers#prepare-a-node) describes the result.
+
+The branch shares the two task files of a [container host](#prepare-a-container-host). `container_host` names what differs:
+
+| | Task container host | Instance container host |
+| --- | --- | --- |
+| Pool | The VM side's ZFS pool | The Node's pool `orbit-instances`: ZFS, or a directory pool |
+| Project, bridge | `containers.project`, `containers.network` | `orbit-instances`, `orbitinst0` at the first address of the Node's bridge |
+| Kernel modules, sysctl files | `orbit-task-containers` | None; `60-orbit-instances.conf` |
+| Subordinate IDs | 101,000,000 per place and the base | 65,536 for each of 201 containers |
+| ACL egress | The VM bridge's rules | None |
+| Profile | Root disk and `eth0` | Also the folders `/opt/orbit-runtime` and `/opt/orbit-agent`, read-only and idmapped |
+| Restrictions | Nesting, interception, low-level keys | Isolated ID maps, host disks only at the two folders, proxy devices |
+| Input rules | `orbit:task-containers-*` | `orbit:instances-*` |
+| Clone probe | Always | On a ZFS pool only; a directory pool makes full copies |
+| Error code | `task_vm.setup_failed` | `instance.host_unavailable` |
+
+The branch then:
+
+1. requires the pool, and on a ZFS pool applies the ARC cap that the system part sized, in `/etc/modprobe.d/orbit-instances-zfs.conf`;
+2. installs each shared folder (`tasks/instance-folder.yml`);
+3. prepares the bridge, project and profile;
+4. builds the image (`tasks/instance-image.yml`).
+
+A folder version is built under a staging name and renamed last, so a version that exists is whole.
+
+Each artifact is fetched by its digest into `/var/cache/orbit/instance-folders`. A tarball or zip is unpacked into its part's folder; any other artifact is the part's one file. Each program in `bin` links to its path, and every link must reach an executable file.
+
+The runtime folder is readable by everyone. The agent folder's `agent/` is `root:2750` and closed to others; its notes stay public. Then `current` flips to the version. When it flips from an earlier version, each running container restarts `t3.service` for the agent folder, or every `orbit-*.service` for the runtime folder, one after another. A version that no process on the Node maps goes.
+
+The image's alias is a digest of the definition that the Gateway sends. A Node without that alias builds it in the container `orbit-instance-build`, from the stock alias, at the bridge's last address. Its NIC uses the ACL `orbitinst0-build`, which drops private ranges, and the route rule `orbit:instances-build` lets it out.
+
+The build installs the packages, runs the setup script, writes the files with their owners and modes, enables the units, cleans the package lists, and publishes the container. The build container and the route rule go in every case. The stable alias `orbit-instance` then moves to the new image, and older images whose aliases are only digest aliases go.
 
 ### The base VM and its snapshot
 
