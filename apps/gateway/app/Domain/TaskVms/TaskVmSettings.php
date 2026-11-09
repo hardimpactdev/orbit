@@ -20,7 +20,8 @@ use InvalidArgumentException;
  *
  * Every value is validated whenever it is set, also while task VMs are off, so an operator can
  * prepare hosts and the hub before enabling claims. An unset value stays absent: no hosts, a null
- * Cluster. `enabled` gates behaviour only, and requires the Cluster and at least one host. The model
+ * Cluster. `enabled` gates behaviour only, and requires the Cluster and at least one host. `containerPlacement` lets
+ * normal placement take the container places of a host ({@see TaskVmSlotPool}); it is off until a host switches. The model
  * route is not a setting: the ai-router guard supplies it ({@see TaskVmModelRoute}).
  *
  * The reserved WireGuard range is always a private network. As soon as task VMs are enabled or the
@@ -49,6 +50,7 @@ final readonly class TaskVmSettings
         public array $largeProjectIds = [],
         public array $topologyPaths = [],
         public ?string $swampHost = null,
+        public bool $containerPlacement = false,
     ) {}
 
     /** @throws TaskVmException `task_vm.invalid_config` for the first invalid value */
@@ -114,6 +116,7 @@ final readonly class TaskVmSettings
             largeProjectIds: self::projectIds($config, 'large_projects'),
             topologyPaths: $topology,
             swampHost: $swampHost,
+            containerPlacement: ($config['container_placement'] ?? null) === true,
         );
     }
 
@@ -284,7 +287,7 @@ final readonly class TaskVmSettings
 
         foreach ($hosts as $host) {
             foreach ($hosts as $other) {
-                if ($host->nodeId !== $other->nodeId && (Ipv4Subnet::from($host->cidr)->contains($other->bridgeAddress()) || Ipv4Subnet::from($other->cidr)->contains($host->bridgeAddress()))) {
+                if ($host->nodeId !== $other->nodeId && array_any($host->bridges(), static fn (string $cidr): bool => array_any($other->bridges(), static fn (string $bridge): bool => TaskVmHost::overlap($cidr, $bridge)))) {
                     throw TaskVmConfig::invalid('task_vms host bridges must not overlap.');
                 }
             }

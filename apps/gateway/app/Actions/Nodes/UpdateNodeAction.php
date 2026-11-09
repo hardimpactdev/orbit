@@ -7,6 +7,8 @@ namespace App\Actions\Nodes;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Nodes\NodeData;
 use App\Data\Nodes\NodeSettingsData;
+use App\Data\Nodes\NodeTaskVmContainersData;
+use App\Data\Nodes\NodeTaskVmsData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -19,13 +21,16 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Nodes\UpdateNodeResult;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\WireGuard\Ipv4Subnet;
+use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmRuntime;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
 
 final readonly class UpdateNodeAction
@@ -43,13 +48,14 @@ final readonly class UpdateNodeAction
     /**
      * Saves record fields at once. Apps preparation and task-host input withdrawal start a run; its settings
      * are stored when the run succeeds, while a new name or platform in the same request is already saved.
+     * A record-only request whose values all equal the stored ones writes nothing and is reported unchanged.
      */
-    public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null): Node|Operation
+    public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null): UpdateNodeResult
     {
         try {
-            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId): Node|Operation {
+            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId): UpdateNodeResult {
                 $node->refresh();
-                $update = fn (): Node|Operation => $this->update($node, $name, $platform, $settings, $caller, $requestId);
+                $update = fn (): UpdateNodeResult => $this->update($node, $name, $platform, $settings, $caller, $requestId);
 
                 return $name === null || $name === $node->name ? $update() : $this->provisioningLock->run($name, $update);
             });
@@ -58,7 +64,7 @@ final readonly class UpdateNodeAction
         }
     }
 
-    private function update(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller, ?string $requestId): Node|Operation
+    private function update(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller, ?string $requestId): UpdateNodeResult
     {
         $written = false;
         $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, &$written): Node|Operation {
@@ -72,13 +78,13 @@ final readonly class UpdateNodeAction
             $this->validateHostBridge($node, $normalized);
             $create = $this->hasActiveAppDevRole($node);
             $previousHost = $this->normalizer->fromStored($node->settings)?->task_vms;
+            $this->keepLiveContainers($node, $previousHost, $normalized?->task_vms);
             $retireHostInput = $settings->hasTaskVms && $previousHost !== null
                 && ($normalized?->task_vms === null || $previousHost->network !== $normalized->task_vms->network
                     || $previousHost->cidr !== $normalized->task_vms->cidr);
             $prepareStorage = $settings->hasApps && ($create || $normalized?->appsPath() !== null);
             if (! $prepareStorage && ! $retireHostInput) {
-                $this->persist($node, $normalized);
-                $written = true;
+                $written = $this->persist($node, $normalized) || $written;
 
                 return $node;
             }
@@ -106,7 +112,7 @@ final readonly class UpdateNodeAction
             );
         }
 
-        return $result instanceof Node ? $node->load('roles') : $result;
+        return $result instanceof Node ? new UpdateNodeResult($node->load('roles'), unchanged: ! $written) : new UpdateNodeResult($result);
     }
 
     /** Saves the name and platform, the registry facts that need no run, and reports whether either changed. */
@@ -137,6 +143,7 @@ final readonly class UpdateNodeAction
     {
         $normalized = $this->normalizer->normalize($settings);
         $this->validateHostBridge($node, $normalized);
+        $this->keepLiveContainers($node, $this->normalizer->fromStored($node->settings)?->task_vms, $normalized?->task_vms);
         $this->apply($node, $normalized);
     }
 
@@ -145,6 +152,7 @@ final readonly class UpdateNodeAction
     {
         $normalized = $this->normalizer->normalize($settings);
         $this->validateHostBridge($node, $normalized);
+        $this->keepLiveContainers($node, $this->normalizer->fromStored($node->settings)?->task_vms, $normalized?->task_vms);
         $this->validator->validateGrammar($normalized);
         $create = $this->hasActiveAppDevRole($node);
         $storage = null;
@@ -157,22 +165,54 @@ final readonly class UpdateNodeAction
         return ['settings' => $this->normalizer->stored($normalized), 'storage' => $storage];
     }
 
+    /** No bridge of the host, its VM bridge or its container bridge, may overlap a bridge of another host. */
     private function validateHostBridge(Node $node, ?NodeSettingsData $settings): void
     {
-        if ($settings?->task_vms === null) {
+        $host = $settings?->task_vms;
+        if ($host === null) {
             return;
         }
-        $bridge = Ipv4Subnet::from($settings->task_vms->cidr);
+        $bridges = self::bridges($host->toArray());
         foreach (Node::query()->where('id', '!=', $node->id)->get() as $other) {
             $stored = $other->settings;
-            $host = is_array($stored) ? $stored['task_vms'] ?? null : null;
-            $cidr = is_array($host) ? $host['cidr'] ?? null : null;
-            if (is_string($cidr)) {
-                $subnet = Ipv4Subnet::from($cidr);
-                if ($bridge->contains($subnet->networkAddress()) || $subnet->contains($bridge->networkAddress())) {
-                    throw new ResourceOperationException('node.settings_invalid', 'The task_vms bridge overlaps another host.');
+            $otherHost = is_array($stored) && is_array($stored['task_vms'] ?? null) ? $stored['task_vms'] : [];
+            foreach (self::bridges($otherHost) as $cidr) {
+                if (array_any($bridges, static fn (string $bridge): bool => TaskVmHost::overlap($bridge, $cidr))) {
+                    throw new ResourceOperationException('node.settings_invalid', 'A task_vms bridge overlaps a bridge of another host.');
                 }
             }
+        }
+    }
+
+    /**
+     * The bridge networks of stored task VM host settings: `cidr` and `containers.cidr`.
+     *
+     * @param  array<array-key, mixed>  $host
+     * @return list<string>
+     */
+    private static function bridges(array $host): array
+    {
+        $containers = is_array($host['containers'] ?? null) ? $host['containers'] : [];
+
+        return array_values(array_filter([$host['cidr'] ?? null, $containers['cidr'] ?? null], is_string(...)));
+    }
+
+    /**
+     * A host keeps the container side its live task containers run on: their project, bridge and bridge network
+     * (docs/reference/task-containers.md#add-containers-to-a-host). Its places may change.
+     */
+    private function keepLiveContainers(Node $node, ?NodeTaskVmsData $previous, ?NodeTaskVmsData $next): void
+    {
+        $before = $previous?->containers;
+        if (! $before instanceof NodeTaskVmContainersData) {
+            return;
+        }
+        $after = $next?->containers;
+        if ($after instanceof NodeTaskVmContainersData && [$after->project, $after->network, $after->cidr] === [$before->project, $before->network, $before->cidr]) {
+            return;
+        }
+        if (TaskVm::query()->live()->where('host_node_id', $node->id)->where('runtime', TaskVmRuntime::Container)->exists()) {
+            throw new ResourceOperationException('task_vm.runtime_in_use', 'The host has a task container that is not destroyed, so its containers project, network and cidr stay.', 409);
         }
     }
 
@@ -208,10 +248,16 @@ final readonly class UpdateNodeAction
         $this->inspectExplicitRoots($node, $account, $settings);
     }
 
-    private function persist(Node $node, ?NodeSettingsData $normalized): void
+    /** Saves the settings and reports whether they changed; equal settings are not written. */
+    private function persist(Node $node, ?NodeSettingsData $normalized): bool
     {
         $node->settings = $this->normalizer->storedOver($node->settings, $normalized);
+        if (! $node->isDirty('settings')) {
+            return false;
+        }
         $node->save();
+
+        return true;
     }
 
     private function inspectExplicitRoots(Node $node, ManagedUserAccount $account, NodeSettingsData $settings): void

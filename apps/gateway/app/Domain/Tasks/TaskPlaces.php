@@ -11,6 +11,7 @@ use App\Data\Tasks\TaskPlaceQueueData;
 use App\Data\Tasks\TaskPlaceWaitData;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\TaskVms\TaskVmCapacity;
+use App\Domain\TaskVms\TaskVmRuntime;
 use App\Models\Operation;
 use App\Models\Task;
 use DateTimeInterface;
@@ -28,8 +29,9 @@ final readonly class TaskPlaces
         $hosts = $this->capacity->activeHosts();
         $holders = $this->holders(array_map(static fn (array $pair): int => $pair[0]->nodeId, $hosts));
 
-        $taskFree = $this->capacity->freeSlots($hosts);
-        $ciFree = $this->capacity->freeSlots($hosts, true);
+        // The view counts VM places; container places stay out until container placement is switched on.
+        $taskFree = $this->capacity->freeSlots($hosts, false, TaskVmRuntime::Vm);
+        $ciFree = $this->capacity->freeSlots($hosts, true, TaskVmRuntime::Vm);
         $places = [];
         foreach ($hosts as [$host, $node]) {
             $own = $holders[$host->nodeId] ?? [];
@@ -79,7 +81,7 @@ final readonly class TaskPlaces
      */
     private function holders(array $hosts): array
     {
-        $vms = $this->capacity->placed()->whereIn('host_node_id', $hosts)->with('group')->orderBy('host_node_id')->orderBy('slot_number')->orderBy('id')->get();
+        $vms = $this->capacity->placed()->where('runtime', TaskVmRuntime::Vm)->whereIn('host_node_id', $hosts)->with('group')->orderBy('host_node_id')->orderBy('slot_number')->orderBy('id')->get();
         $activity = TaskGroupActivity::of(array_values(array_unique(array_filter($vms->pluck('group_id')->all(), is_int(...)))));
         $holders = [];
         foreach ($vms as $vm) {

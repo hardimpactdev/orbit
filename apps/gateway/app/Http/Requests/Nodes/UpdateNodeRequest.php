@@ -34,7 +34,7 @@ final class UpdateNodeRequest extends FormRequest
             'platform' => ['sometimes', 'string', Rule::in(['linux', 'macos', 'ipados'])],
             'apps' => ['sometimes', 'nullable', 'array:path'],
             'apps.path' => ['sometimes', 'nullable', 'string'],
-            'task_vms' => ['sometimes', 'nullable', 'array:cidr,task_places,project,network,pool,pool_size,image_alias,zfs_dataset,cpus,memory,disk,operator_owned,slots,ci_places'],
+            'task_vms' => ['sometimes', 'nullable', 'array:cidr,task_places,project,network,pool,pool_size,image_alias,zfs_dataset,cpus,memory,disk,operator_owned,slots,ci_places,containers'],
             'task_vms.ci_places' => ['required_with:task_vms', 'integer:strict', 'between:0,64'],
             'task_vms.cidr' => ['required_with:task_vms', 'string'],
             'task_vms.task_places' => ['required_with:task_vms', 'integer:strict', 'between:0,64'],
@@ -53,6 +53,12 @@ final class UpdateNodeRequest extends FormRequest
             'task_vms.slots.count' => ['required_with:task_vms.slots', 'integer:strict', 'between:1,16'],
             'task_vms.slots.project_id' => ['required_with:task_vms.slots', 'integer:strict', 'min:1'],
             'task_vms.slots.size' => ['required_with:task_vms.slots', 'string', 'in:normal,medium,large'],
+            'task_vms.containers' => ['sometimes', 'array:cidr,task_places,ci_places,project,network'],
+            'task_vms.containers.cidr' => ['required_with:task_vms.containers', 'string'],
+            'task_vms.containers.task_places' => ['required_with:task_vms.containers', 'integer:strict', 'between:0,64'],
+            'task_vms.containers.ci_places' => ['required_with:task_vms.containers', 'integer:strict', 'between:0,64'],
+            'task_vms.containers.project' => ['sometimes', 'string'],
+            'task_vms.containers.network' => ['sometimes', 'string'],
         ];
     }
 

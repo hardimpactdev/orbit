@@ -39,18 +39,19 @@ final readonly class TaskVmCapacity
     }
 
     /**
-     * Each live VM holds exactly one place in its admitted pool, including a failed VM until deletion is confirmed.
+     * Each live row holds exactly one place in its admitted pool of its runtime, including a failed row until deletion
+     * is confirmed. Container places and VM places are counted apart.
      *
      * @param  list<array{TaskVmHost, Node}>  $hosts
-     * @return array<int, int> host Node id => free places
+     * @return array<int, int> host Node id => free places of `$runtime`
      */
-    public function freeSlots(array $hosts, bool $proof = false): array
+    public function freeSlots(array $hosts, bool $proof, TaskVmRuntime $runtime): array
     {
-        $used = $this->placed()->where('capacity_pool', $proof ? 'ci' : 'task')->selectRaw('host_node_id, count(*) as total')
+        $used = $this->placed()->where('runtime', $runtime)->where('capacity_pool', $proof ? 'ci' : 'task')->selectRaw('host_node_id, count(*) as total')
             ->groupBy('host_node_id')->pluck('total', 'host_node_id');
         $free = [];
         foreach ($hosts as [$host]) {
-            $free[$host->nodeId] = max(0, ($proof ? $host->ciPlaces : $host->taskPlaces) - StoredInteger::fromOrZero($used[$host->nodeId] ?? 0));
+            $free[$host->nodeId] = max(0, $host->places($runtime, $proof) - StoredInteger::fromOrZero($used[$host->nodeId] ?? 0));
         }
 
         return $free;

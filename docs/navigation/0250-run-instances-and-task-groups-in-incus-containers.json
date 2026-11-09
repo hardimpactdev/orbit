@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 250,
+      "pages": [
+        "decisions/0250-run-instances-and-task-groups-in-incus-containers"
+      ]
+    }
+  ]
+}

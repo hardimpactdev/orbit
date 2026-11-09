@@ -8,6 +8,7 @@ use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmPublishState;
+use App\Domain\TaskVms\TaskVmRuntime;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -28,6 +29,7 @@ use Throwable;
  * @property int|null $host_node_id
  * @property int|null $node_id
  * @property TaskVmProviderKind $provider
+ * @property TaskVmRuntime $runtime the runtime the row started with, a task VM or a task container
  * @property TaskVmSize $size
  * @property string|null $publish_commit
  * @property string|null $publish_branch
@@ -67,7 +69,7 @@ final class TaskVm extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'capacity_pool', 'group_id', 'slot_project_id', 'host_node_id', 'node_id', 'provider', 'size',
+        'capacity_pool', 'runtime', 'group_id', 'slot_project_id', 'host_node_id', 'node_id', 'provider', 'size',
         'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_error_code', 'publish_queued_at', 'publish_started_at', 'name', 'state', 'address', 'wireguard_ip',
         'pi_token', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity', 'image_build_id', 'image_fallback',
         'error_code', 'error_message', 'ready_at', 'destroyed_at', 'stop_confirmed_at', 'slot_number', 'wireguard_private_key', 'ssh_host_private_key', 'agent_secret',
@@ -79,7 +81,7 @@ final class TaskVm extends Model
 
     /** @var array<string, mixed> */
     #[\Override]
-    protected $attributes = ['capacity_pool' => 'task', 'size' => 'normal', 'image_fallback' => false];
+    protected $attributes = ['capacity_pool' => 'task', 'runtime' => 'vm', 'size' => 'normal', 'image_fallback' => false];
 
     /** @return array<string, string> */
     #[\Override]
@@ -87,6 +89,7 @@ final class TaskVm extends Model
     {
         return [
             'provider' => TaskVmProviderKind::class,
+            'runtime' => TaskVmRuntime::class,
             'state' => TaskVmState::class,
             'size' => TaskVmSize::class,
             'publish_state' => TaskVmPublishState::class,
