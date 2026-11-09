@@ -171,7 +171,7 @@
         - name: Record the reboot time
           ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
           vars:
-            record_update: { reboot_seconds: "{{ rebooted.elapsed }}" }
+            record_update: { reboot_seconds: "{{ rebooted.elapsed }}", rebooted_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}" }
       rescue:
         - name: Record the failed phase
           ansible.builtin.import_tasks: tasks/fleet-reboot-failed.yml
@@ -234,6 +234,38 @@
       rescue:
         - name: Record the failed phase
           ansible.builtin.import_tasks: tasks/fleet-reboot-failed.yml
+
+- name: Re-run the CI jobs the drain cut
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [rerun]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    target: "{{ intent.nodes[lookup('ansible.builtin.env', 'ORBIT_NODE_ID')] }}"
+    record_path: "{{ run }}/result-{{ '%03d' | format(lookup('ansible.builtin.env', 'ORBIT_POSITION') | int) }}-{{ target.node_id }}.json"
+    record: "{{ lookup('ansible.builtin.file', record_path, errors='ignore') | default('{}', true) | from_json }}"
+    github_tokens: "{{ lookup('ansible.builtin.env', 'ORBIT_GITHUB') | default('{}', true) | from_json }}"
+  tasks:
+    # Only a rebooted Node whose drain stopped a runner can have lost a job.
+    - name: Keep a Node without stopped runners
+      ansible.builtin.meta: end_play
+      when: record.outcome | default('') != 'rebooted' or not (record.ci_stopped | default([]))
+    # A failure here leaves the Node rebooted: it records the error and never halts the pass.
+    - name: Re-run the lost jobs
+      block:
+        - name: Find and re-run the lost jobs
+          ansible.builtin.import_tasks: tasks/fleet-reboot-rerun.yml
+          vars:
+            stopped: "{{ record.ci_stopped }}"
+            rebooted_at: "{{ record.rebooted_at }}"
+      rescue:
+        - name: Record why the re-run failed
+          ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
+          vars:
+            record_update: { rerun_error: fleet.reboot_rerun_failed }
 
 - name: Report the pass
   hosts: localhost

@@ -700,7 +700,7 @@ The `drain` phase decides first whether the Node goes on:
 
 Then the phase drains the Node:
 
-On a CI runner host, the phase drains the runners every 20 seconds, for at most the drain budget. It freezes each runner container and reads the container's processes from the host. It stops a container that runs no `Runner.Worker`. A runner with a job runs on, and so does a job on a runner of the host itself. When a job still runs at the end, the stopped runners start again, and the Node records `deferred` with `ci_busy`.
+On a CI runner host, the phase drains the runners every 20 seconds, for at most the drain budget. It freezes each runner container and reads the container's processes from the host. It stops a container that runs no `Runner.Worker` and records the runner with the time of its freeze. A runner with a job runs on, and so does a job on a runner of the host itself. When a job still runs at the end, the stopped runners start again, and the Node records `deferred` with `ci_busy`.
 
 On a task host, the phase stops each running task guest cleanly, within a minute, and records its name at once. The Gateway records those task VMs `parked`, and the next task call wakes them.
 
@@ -720,6 +720,23 @@ Then the Node records `rebooted` with its new kernel.
 
 A phase that fails records `failed` with its step and error code: the assert's own code, such as `fleet.reboot_old_kernel`, `fleet.reboot_units_failed` or `fleet.reboot_still_due`, or `fleet.reboot_drain_failed`, `fleet.reboot_lost` (no SSH after the reboot) or `fleet.reboot_check_failed`. The pass visits no Node after it, and the Gateway raises [`reboot_halted`](#release-alerts). A Node that never answers SSH needs its provider console. The next pass starts again at that Node, as it is the first due Node.
 
+### CI jobs lost at the freeze
+
+A runner can accept a job in the instant before the drain freezes it. That job is lost when the runner stops. After the `check` phase confirms the reboot of a CI host, the child runs two more steps. Neither fails the Node.
+
+The `mint` step asks the Gateway for the pass's GitHub tokens. Each repository of a Project read through the [GitHub App](/reference/github-app) gets one `actions: write` token, when the App is installed on it. Admission froze that list. The App already holds `Actions: write`; runner administration stays out of it.
+
+The `rerun` phase then looks for lost jobs:
+
+- It lists the runs of each repository created from two hours before the first freeze, one page of 100.
+- It keeps the runs that changed after the first freeze and did not succeed, and reads the jobs of each run's current attempt.
+- It waits up to 15 minutes for a job of a stopped runner to end.
+- A lost job ran on a stopped runner, started before the reboot and at most a minute before the freeze, and ended `failure` or `cancelled`.
+
+For each run with a lost job, the phase reads the run again. It calls `POST /repos/{owner}/{repo}/actions/runs/{id}/rerun-failed-jobs` only while the run is still completed at the attempt that lost the job.
+
+So a run is re-run at most once for one attempt: a second Node of the pass, or a later pass, finds the newer attempt and leaves it alone. The Node's result lists the re-run runs in `reran`, each with its repository, run, attempt and lost jobs. A GitHub error records `rerun_error` and leaves the Node `rebooted`.
+
 ### The swamp Node
 
 The pass runs on Node 209, so it cannot wait across 209's own reboot. Its `reboot` phase clears a planned reboot left by an earlier pass, starts a transient path unit, `orbit-planned-reboot`, and returns. The pass's last step, after the report, removes the run folder and releases the unit. The unit then:
@@ -736,7 +753,7 @@ A reboot of the control path or of Node 209 can cut a Swamp run after the drain 
 
 ### What is reported
 
-The Operation result lists each Node in pass order with its outcome: `rebooted`, `scheduled`, `not_due`, `deferred` with `window`, `tasks_busy` or `ci_busy`, `skipped` with `halted` or `not_reached`, or `failed`. It also holds the kernel before and after, since when the reboot was due, the parked task guests and any newly failed units.
+The Operation result lists each Node in pass order with its outcome: `rebooted`, `scheduled`, `not_due`, `deferred` with `window`, `tasks_busy` or `ci_busy`, `skipped` with `halted` or `not_reached`, or `failed`. It also holds the kernel before and after, since when the reboot was due, the parked task guests, any newly failed units, the stopped CI runners with their freeze times, and the CI runs it re-ran.
 
 Doctor reports `node.reboot_due` when the newest pass that read a Node found it due more than 3 days ago and did not reboot it. A record without a due time, such as `halted`, does not count; Doctor looks at the pass before it. When a pass ends with such a Node, the Gateway raises [`reboot_overdue`](#release-alerts) once.
 

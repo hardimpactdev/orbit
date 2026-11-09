@@ -1,7 +1,7 @@
 id: 8b61ea39-e5d5-4f20-aab9-f9e6b339da9f
 name: fleet-reboot-node
 description: "One Node of a fleet.reboot pass: the drain, reboot and check phases of ansible/operation-fleet-reboot.yml, run from 209."
-vaults: []
+vaults: [orbit-control-inputs]
 queueTimeout: 60
 inputs:
   type: object
@@ -10,7 +10,10 @@ inputs:
     assets: {type: string}
     node_id: {type: integer, minimum: 1}
     position: {type: integer, minimum: 0}
-  required: [run_folder, assets, node_id, position]
+    operation_id: {type: integer, minimum: 1}
+    root_run: {type: string, pattern: '^[a-f0-9-]{36}$'}
+    ci: {type: boolean}
+  required: [run_folder, assets, node_id, position, operation_id, root_run, ci]
   additionalProperties: false
 jobs:
 - name: node
@@ -64,3 +67,43 @@ jobs:
       inputs:
         run: timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags check "$ORBIT_ANSIBLE/operation-fleet-reboot.yml"
         env: *phase
+    # Mint: on a CI host, the pass's Actions write tokens, which the Gateway writes to the vault key of this Operation. Neither
+    # this step nor the next fails the Node: the reboot is done, and a job that is not re-run shows in GitHub.
+  - name: 'mint'
+    labels: {role: swamp}
+    dependsOn: [{step: 'check', condition: {type: succeeded}}]
+    guard: '${{ !inputs.ci }}'
+    allowFailure: true
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "fleet-reboot-mint-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: "curl --fail --silent --show-error --proto =https --max-time 60 --max-filesize 65536 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_MINT_REQUEST\" \"$ORBIT_MINT_URL\"\n"
+        env:
+          ORBIT_MINT_URL: '${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/github-token" }}'
+          ORBIT_MINT_REQUEST: '${{ "{\"run_id\":\"" + inputs.root_run + "\"}" }}'
+    # Rerun: after the check, re-run once the jobs that a runner accepted just before the drain froze and stopped it.
+  - name: 'rerun'
+    labels: {role: swamp}
+    dependsOn: [{step: 'mint', condition: {type: succeeded}}]
+    guard: '${{ !inputs.ci }}'
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "fleet-reboot-rerun-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 1200 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rerun "$ORBIT_ANSIBLE/operation-fleet-reboot.yml"
+        env:
+          ORBIT_RUN: '${{ inputs.run_folder }}'
+          ORBIT_ANSIBLE: '${{ inputs.assets }}'
+          ORBIT_NODE_ID: '${{ string(inputs.node_id) }}'
+          ORBIT_POSITION: '${{ string(inputs.position) }}'
+          ORBIT_GITHUB: '${{ vault.get("orbit-control-inputs", "fleet-reboot-github-operation-" + string(inputs.operation_id)) }}'
+          ANSIBLE_CONFIG: '${{ inputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
+          ANSIBLE_FORCE_COLOR: '0'

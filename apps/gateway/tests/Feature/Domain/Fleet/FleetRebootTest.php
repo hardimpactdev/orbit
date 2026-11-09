@@ -136,6 +136,7 @@ it('only reads a task host with open task work, without holding its work, and ad
     expect($operation->kind)->toBe('fleet.reboot')
         ->and($operation->input['intent']['window'])->toBe(['timezone' => 'Europe/Amsterdam', 'start' => '03:00', 'end' => '06:00', 'enforced' => true])
         ->and($operation->input['intent']['drain_seconds'])->toBe(900)
+        ->and($operation->input['intent']['ci_repositories'])->toBe(FleetReboot::ciRepositories())
         ->and($operation->input['intent']['order'])->toContain($this->beast->id)
         ->and($operation->input['intent']['nodes'][(string) $this->beast->id]['defer'])->toBe('tasks_busy')
         ->and($operation->input['intent']['nodes'][(string) $this->prod->id]['defer'])->toBeNull()

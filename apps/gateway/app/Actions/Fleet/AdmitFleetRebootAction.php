@@ -82,7 +82,7 @@ final readonly class AdmitFleetRebootAction
         // Its steps run on the Swamp Node, which owns the pass, as it owns a rollout. One pass runs at a time.
         return $this->start->execute(FleetReboot::Kind, 'fleet', $root, SwampNode::node()->id, [
             'intent' => ['window' => [...FleetReboot::Window, 'enforced' => $window], 'drain_seconds' => Config::integer('fleet.reboot_drain_seconds'),
-                'order' => $order, 'nodes' => $nodes],
+                'order' => $order, 'nodes' => $nodes, 'ci_repositories' => FleetReboot::ciRepositories()],
             'execution_secrets' => [],
             'task_hosts' => $taskHosts,
             'participant_node_ids' => array_values(array_unique([$root, SwampNode::id(), ...$order])),

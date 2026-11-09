@@ -65,6 +65,7 @@ The drain stops new work for the Node, waits for work in flight for at most 15 m
 
 - **Task work.** A task host with an open task Operation is only read and deferred. On every other task host in the pass, the Gateway refuses task calls and proofs with `409 tasks.host_rebooting`, places no new task VM and starts no image refresh while the pass runs. The drain stops the remaining task guests, and the Gateway records them parked.
 - **CI jobs.** The drain freezes each runner container while it reads its processes, stops it when it runs no job, and lets it run on otherwise. When a job still runs at the end of the budget, the stopped runners start again and the Node is deferred.
+- **A CI job taken at the freeze.** A runner can accept a job in the instant before the drain freezes it; that job is lost when the runner stops. The drain records when it froze each runner it stopped. After the Node's reboot is confirmed, the pass finds the failed or cancelled jobs that such a runner started from a minute before its freeze until the reboot. It re-runs the failed jobs of each such run once, with GitHub's re-run-failed-jobs API, and only while the run is still at the attempt that lost the job. It uses an `actions: write` token from the App's existing `Actions: write` permission. Runner administration stays out of the App, as [ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge) decided. The Node's result names the runs it re-ran.
 - **Gateway release and fleet rollout.** They and the pass refuse each other.
 - **The Gateway's own jobs.** The drain stops the scheduler and drains Horizon within the budget. A job still running then is cut, and Laravel runs it again after `retry_after`.
 - **Node 209.** It reboots itself after the pass ends. A transient path unit waits for the pass's cleanup step, then stops serve and the workers with their own drains, within the budget, and reboots. The Gateway confirms the new boot from the agent's uptime and raises `reboot_unconfirmed` after 30 minutes without one.
@@ -81,7 +82,6 @@ The `fleet.reboot` Operation result holds each Node's outcome: `rebooted`, `sche
 
 ### Open points
 
-- Orbit has no switch that pauses CI dispatch for one host; runners take jobs from GitHub directly. The freeze closes the race except for a job that a runner's listener accepted in the instant before the freeze. That job fails and needs a rerun. Closing it needs GitHub organization runner administration, which [ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge) keeps out of the GitHub App.
 - The proof runner that runs on a host itself, outside a container, can still take a job during the drain. Its job defers the host, because the drain cannot stop that runner first.
 - No proof case covers the pass. Proof Nodes are containers that share their task VM's kernel and have no `/boot`, so a reboot proof needs a VM Node.
 

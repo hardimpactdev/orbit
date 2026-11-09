@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Domain\Fleet;
 
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmState;
@@ -18,6 +20,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -86,6 +89,27 @@ final readonly class FleetReboot
         usort($members, fn (Node $left, Node $right): int => [$this->group($left), $left->id] <=> [$this->group($right), $right->id]);
 
         return $members;
+    }
+
+    /**
+     * The GitHub repositories whose CI jobs the runners of a CI host may take: every Project read through the GitHub App. A job
+     * that a runner lost to the drain is re-run in one of these (docs/reference/gateway-recovery.md#fleet-reboot).
+     *
+     * @return list<string> `owner/name`, sorted
+     */
+    public static function ciRepositories(): array
+    {
+        $slugs = [];
+        foreach (Project::query()->where('source_access', ProjectSourceAccess::GitHubApp)->pluck('repository_url') as $url) {
+            $repository = is_string($url) ? GitHubRepository::fromOrigin($url) : null;
+            if ($repository !== null) {
+                $slugs[$repository->owner.'/'.$repository->name] = true;
+            }
+        }
+        $slugs = array_keys($slugs);
+        sort($slugs);
+
+        return $slugs;
     }
 
     /** The Node's group: the rollout's for its workload roles, 5 for the control path and 6 for the `swamp` Node. */

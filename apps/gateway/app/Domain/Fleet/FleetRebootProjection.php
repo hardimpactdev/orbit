@@ -24,7 +24,7 @@ final readonly class FleetRebootProjection implements DirectOperationProjection
 
     /** The record fields a Node's result keeps. */
     private const array Fields = ['node_id', 'name', 'outcome', 'reason', 'step', 'error_code', 'kernel_before', 'kernel_after', 'due_since',
-        'boot_id_before', 'parked', 'failed_units', 'drain_seconds', 'reboot_seconds'];
+        'boot_id_before', 'parked', 'failed_units', 'drain_seconds', 'reboot_seconds', 'ci_stopped', 'reran'];
 
     public function input(Operation $operation): array
     {

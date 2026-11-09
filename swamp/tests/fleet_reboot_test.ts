@@ -28,7 +28,7 @@ Deno.test("the pass visits one Node at a time and the Gateway reads its report s
     const nodes = pass.jobs.find((job: Record<string, unknown>) => job.name === "nodes").steps[0];
     assertEquals([nodes.concurrency, nodes.forEach.in, nodes.task.workflowIdOrName], [1, "${{ inputs.intent.order }}", "fleet-reboot-node"]);
     // After a failed Node the next ones read the run folder and record `skipped`; no Swamp expression carries it.
-    assertEquals(Object.keys(nodes.task.inputs), ["run_folder", "assets", "node_id", "position"]);
+    assertEquals(Object.keys(nodes.task.inputs), ["run_folder", "assets", "node_id", "position", "operation_id", "root_run", "ci"]);
     const report = pass.jobs.find((job: Record<string, unknown>) => job.name === "pass").steps.find((step: Record<string, unknown>) => step.name === "Report the pass");
     const declared = Deno.readTextFileSync(new URL("../../apps/gateway/app/Domain/Fleet/direct-operations.php", import.meta.url));
     assertMatch(declared, /'fleet\.reboot' => \[\s*'workflow' => 'operation-fleet-reboot',[\s\S]*?'terminal_result' => \['job' => 'pass', 'step' => 'Report the pass', 'data' => 'fleet-reboot-report'\]/);
@@ -36,8 +36,9 @@ Deno.test("the pass visits one Node at a time and the Gateway reads its report s
 });
 
 Deno.test("each Node runs drain, reboot and check in order, each phase bounded and the drain longer than its budget", () => {
-    const steps = workflow("fleet-reboot-node").jobs[0].steps as Array<Record<string, any>>;
-    assertEquals(steps.map((step) => step.name), ["drain", "reboot", "check"]);
+    const all = workflow("fleet-reboot-node").jobs[0].steps as Array<Record<string, any>>;
+    assertEquals(all.map((step) => step.name), ["drain", "reboot", "check", "mint", "rerun"]);
+    const steps = all.slice(0, 3);
     assertEquals(steps.map((step) => step.task.inputs.run.match(/^timeout (\d+) .* --tags (\w+) /).slice(1)), [["2400", "drain"], ["900", "reboot"], ["600", "check"]]);
     assertEquals(steps.slice(1).map((step) => step.dependsOn), [[{ step: "drain", condition: { type: "succeeded" } }], [{ step: "reboot", condition: { type: "succeeded" } }]]);
     // The drain waits up to the 900 s budget for CI jobs and Horizon, then stops up to six task guests (75 s each), plus the reads.
@@ -100,7 +101,7 @@ Deno.test("the CI drain stops idle runners, keeps a busy one running and never l
         await Deno.writeTextFile(`${folder}/bin/pgrep`, `#!/bin/sh\necho 42\n`);
         await Deno.chmod(`${folder}/bin/incus`, 0o755);
         await Deno.chmod(`${folder}/bin/pgrep`, 0o755);
-        const run = await new Deno.Command("sh", { args: [`${ansible}files/fleet-reboot-ci-drain.sh`, "orbit-ci"], stdout: "piped",
+        const run = await new Deno.Command("sh", { args: [`${ansible}files/fleet-reboot-ci-drain.sh`, "orbit-ci", `${folder}/stops`], stdout: "piped",
             env: { PATH: `${folder}/bin:/usr/bin:/bin`, ORBIT_PROC: `${folder}/proc` } }).output();
         assertEquals(run.code, 3);
         assertEquals((await Deno.readTextFile(`${folder}/calls`)).trim().split("\n"), [
@@ -108,14 +109,17 @@ Deno.test("the CI drain stops idle runners, keeps a busy one running and never l
             "pause --project orbit-ci ci-a", "stop --project orbit-ci --force ci-a",
             "pause --project orbit-ci ci-b", "start --project orbit-ci ci-b",
         ]);
+        // Each stopped runner is recorded with the time of its freeze, for the rerun phase.
+        const stop = JSON.parse((await Deno.readTextFile(`${folder}/stops`)).trim());
+        assertEquals([stop.name, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(stop.frozen_at)], ["ci-a", true]);
         // With the job gone, the round stops the last runner and ends at once.
         await Deno.writeTextFile(`${folder}/proc/42/cgroup`, "0::/lxc.payload.orbit-ci_other/\n");
-        const done = await new Deno.Command("sh", { args: [`${ansible}files/fleet-reboot-ci-drain.sh`, "orbit-ci"],
+        const done = await new Deno.Command("sh", { args: [`${ansible}files/fleet-reboot-ci-drain.sh`, "orbit-ci", `${folder}/stops`],
             env: { PATH: `${folder}/bin:/usr/bin:/bin`, ORBIT_PROC: `${folder}/proc` } }).output();
         assertEquals(done.code, 0);
         // A job of the host's own runner, outside any container, keeps the host busy.
         await Deno.writeTextFile(`${folder}/proc/42/cgroup`, "0::/system.slice/orbit-proof-runner.service\n");
-        const host = await new Deno.Command("sh", { args: [`${ansible}files/fleet-reboot-ci-drain.sh`, "orbit-ci"],
+        const host = await new Deno.Command("sh", { args: [`${ansible}files/fleet-reboot-ci-drain.sh`, "orbit-ci", `${folder}/stops`],
             env: { PATH: `${folder}/bin:/usr/bin:/bin`, ORBIT_PROC: `${folder}/proc` } }).output();
         assertEquals(host.code, 3);
     } finally { await Deno.remove(folder, { recursive: true }); }
@@ -174,4 +178,68 @@ Deno.test("a failed drain starts what it stopped, and each task guest is recorde
     const park = parse(await Deno.readTextFile(`${ansible}tasks/fleet-reboot-park.yml`)) as Task[];
     assertEquals(park.map((t) => t.name), ["Stop the task guest", "Record the parked task guest"]);
     assertEquals((park[1].vars as Record<string, Record<string, string>>).record_update.parked, "{{ (record.parked | default([])) + [guest] }}");
+});
+
+const rerunTasks = parse(await Deno.readTextFile(`${ansible}tasks/fleet-reboot-rerun.yml`)) as Task[];
+const rerunTask = (name: string) => rerunTasks.find((t) => t.name === name)!;
+
+Deno.test("the rerun picks only jobs a stopped runner took just before its freeze, and only runs still at that attempt", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const run = (id: number, updated: string, conclusion: string | null, attempt = 1) =>
+            ({ id, updated_at: updated, status: conclusion === null ? "in_progress" : "completed", conclusion, run_attempt: attempt });
+        const job = (name: string, runner: string, started: string, conclusion = "failure") =>
+            ({ name, runner_name: runner, started_at: started, status: "completed", conclusion });
+        const repo = "hardimpactdev/orbit";
+        const vars = {
+            stopped: [{ name: "ci-a", frozen_at: "2026-11-10T03:10:00Z" }],
+            rebooted_at: "2026-11-10T03:20:00Z",
+            rerun_runs: { results: [{ item: { key: repo }, json: { workflow_runs: [
+                run(1, "2026-11-10T03:15:00Z", "failure"), run(2, "2026-11-10T03:15:00Z", "success"),
+                run(3, "2026-11-10T02:00:00Z", "failure"), run(4, "2026-11-10T03:30:00Z", "cancelled", 2), run(5, "2026-11-10T03:16:00Z", "failure"),
+            ] } }] },
+            rerun_jobs: { results: [
+                // Run 1: ci-a took `php` 30 s before its freeze and lost it; `web` failed on a runner the drain did not stop.
+                { item: { repository: repo, run_id: 1, attempt: 1 }, json: { jobs: [job("php", "ci-a", "2026-11-10T03:09:30Z"), job("web", "ci-b", "2026-11-10T03:09:40Z")] } },
+                // Run 4: ci-a ran `old` long before the freeze, and `new` after the reboot, when the runner was back.
+                { item: { repository: repo, run_id: 4, attempt: 2 }, json: { jobs: [job("old", "ci-a", "2026-11-10T03:00:00Z"), job("new", "ci-a", "2026-11-10T03:25:00Z")] } },
+                // Run 5: lost a job too, but another Node of the pass re-ran it already.
+                { item: { repository: repo, run_id: 5, attempt: 1 }, json: { jobs: [job("lint", "ci-a", "2026-11-10T03:10:05Z", "cancelled")] } },
+            ] },
+            rerun_now: { results: [
+                { item: { repository: repo, run_id: 1, attempt: 1, jobs: ["php"] }, json: { run_attempt: 1, status: "completed" } },
+                { item: { repository: repo, run_id: 5, attempt: 1, jobs: ["lint"] }, json: { run_attempt: 2, status: "queued" } },
+            ] },
+        };
+        const keep = (name: string) => ({ name: `Keep ${name}`, "ansible.builtin.copy": { dest: `${folder}/${name}`, content: `{{ ${name} }}` } });
+        const result = await play(folder, vars, [
+            rerunTask("Bound the search by the freezes"), rerunTask("Bound the run list"),
+            rerunTask("Pick the runs that changed after the first freeze and did not succeed"),
+            rerunTask("Pick the runs that lost a job to a stopped runner"), rerunTask("Keep the lost runs still at the attempt that lost the job"),
+            keep("rerun_created_since"), keep("rerun_candidates"), keep("rerun_lost"), keep("rerun_due"),
+        ]);
+        assertEquals(result.code, 0, result.output);
+        const read = async (name: string) => JSON.parse(await Deno.readTextFile(`${folder}/${name}`));
+        assertEquals(await Deno.readTextFile(`${folder}/rerun_created_since`), "2026-11-10T01:09:00Z");
+        assertEquals((await read("rerun_candidates")).map((c: { run_id: number }) => c.run_id), [1, 4, 5]);
+        assertEquals(await read("rerun_lost"), [{ repository: repo, run_id: 1, attempt: 1, jobs: ["php"] }, { repository: repo, run_id: 5, attempt: 1, jobs: ["lint"] }]);
+        assertEquals(await read("rerun_due"), [{ repository: repo, run_id: 1, attempt: 1, jobs: ["php"] }]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the rerun posts re-run-failed-jobs once per due run, records it, and never fails the Node", async () => {
+    const post = rerunTask("Re-run the failed jobs of each lost run")["ansible.builtin.uri"] as Record<string, unknown>;
+    assertEquals([post.method, post.status_code, post.url], ["POST", 201,
+        "https://api.github.com/repos/{{ item.repository }}/actions/runs/{{ item.run_id }}/rerun-failed-jobs"]);
+    assertEquals(rerunTask("Re-run the failed jobs of each lost run").loop, "{{ rerun_due | from_json }}");
+    assertEquals((rerunTask("Record the re-run jobs").vars as Record<string, Record<string, string>>).record_update.reran, "{{ rerun_due | from_json }}");
+    const rerun = plays.find((p) => p.name === "Re-run the CI jobs the drain cut")!;
+    assertEquals(rerun.tags, ["rerun"]);
+    const node = workflow("fleet-reboot-node").jobs[0].steps as Array<Record<string, any>>;
+    const [mint, step] = [node.find((s) => s.name === "mint")!, node.find((s) => s.name === "rerun")!];
+    assertEquals([mint.guard, mint.allowFailure, mint.dependsOn], ["${{ !inputs.ci }}", true, [{ step: "check", condition: { type: "succeeded" } }]]);
+    assertEquals([step.guard, step.allowFailure], ["${{ !inputs.ci }}", true]);
+    assertEquals(step.task.inputs.env.ORBIT_GITHUB, '${{ vault.get("orbit-control-inputs", "fleet-reboot-github-operation-" + string(inputs.operation_id)) }}');
+    const pass = workflow("operation-fleet-reboot").jobs.find((job: Record<string, unknown>) => job.name === "nodes").steps[0];
+    assertEquals([pass.task.inputs.root_run, pass.task.inputs.ci], ["${{ run.id }}", "${{ inputs.intent.nodes[string(self.node)].ci_project != null }}"]);
 });

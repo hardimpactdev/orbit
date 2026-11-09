@@ -15,7 +15,7 @@ final readonly class GitHubTokenGrant
     public static function from(mixed $definition): self
     {
         $allowed = ['contents' => ['read', 'write'], 'pull_requests' => ['read', 'write'],
-            'checks' => ['read'], 'actions' => ['read'], 'metadata' => ['read']];
+            'checks' => ['read'], 'actions' => ['read', 'write'], 'metadata' => ['read']];
         if (! is_array($definition) || array_diff(array_keys($definition), ['repository', 'permissions']) !== []
             || ! is_string($definition['repository'] ?? null)
             || ! is_array($definition['permissions'] ?? null) || $definition['permissions'] === []

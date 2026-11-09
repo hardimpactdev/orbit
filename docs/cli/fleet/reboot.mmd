@@ -35,6 +35,15 @@ sequenceDiagram
     SW->>N: Check the new boot<br/>check phase
     %%> Checks:
     %%> - new boot ID, newest kernel, nothing due, no newly failed unit, agent (and on the Gateway its scheduler and Horizon) active
+    opt a CI host whose drain stopped runners
+      SW->>GW: Mint Actions write tokens<br/>github-token
+      %%> Why:
+      %%> - one `actions: write` token per Project repository, from the App's existing permission; no runner administration (ADR 0223)
+      SW->>SW: Re-run lost CI jobs<br/>rerun phase
+      %%> Picks:
+      %%> - failed or cancelled jobs a stopped runner started from a minute before its freeze until the reboot
+      %%> - `rerun-failed-jobs` once, only while the run is still at that attempt; the Node's result lists them
+    end
   end
   alt every Node rebooted, scheduled, not due, deferred or skipped
     SW-->>GW: Run succeeded<br/>each Node's outcome

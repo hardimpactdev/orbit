@@ -1,7 +1,7 @@
 id: 3551bc1b-ee36-4dc5-bf9b-6c0e1140aad6
 name: operation-fleet-reboot
 description: "fleet.reboot: drain, reboot and check each admitted Node, one at a time in pass order, as Ansible phases from 209; report every Node's outcome."
-vaults: []
+vaults: [orbit-control-inputs]
 queueTimeout: 60
 inputs:
   type: object
@@ -47,6 +47,9 @@ jobs:
         assets: '${{ steps.input.outputs.assets }}'
         node_id: '${{ self.node }}'
         position: '${{ self._index }}'
+        operation_id: '${{ inputs.operation_id }}'
+        root_run: '${{ run.id }}'
+        ci: '${{ inputs.intent.nodes[string(self.node)].ci_project != null }}'
 - name: pass
   labels: {role: swamp}
   dependsOn:
