@@ -104,8 +104,51 @@ def build_node_add(folder):
                                          'secrets': secrets, 'hub_files': hub_files}) + '\n')
 
 
+def build_role_remove(folder):
+    """Group captured duties by their recorded SSH participant; do not discover fleet members."""
+    folder = Path(folder)
+    intent = json.loads((folder / 'intent.json').read_text())
+    hosts, known = {}, set()
+    target_address = intent['ssh']['target']['host']
+
+    def participant(ssh):
+        target = ssh['target']
+        known.update(known_host_lines(target))
+        name = 'target' if target['host'] == target_address else 'p' + str(len(hosts))
+        existing = next((key for key, value in hosts.items() if value['ansible_host'] == target['host']), None)
+        return hosts.setdefault(existing or name, {
+            'ansible_host': target['host'], 'ansible_user': target['user'], 'ansible_port': target['port'],
+            'ansible_ssh_private_key_file': ssh['identity_file'], 'publications': [], 'prometheus': None,
+            **{key: [] for key in ('stop_units', 'files', 'directories', 'commands', 'reload_units', 'remove_containers', 'firewall', 'certificates')},
+        })
+
+    participant(intent['ssh'])
+    for field in ('stop_units', 'files', 'directories', 'commands', 'reload_units', 'remove_containers', 'firewall', 'certificates'):
+        for action in intent[field]:
+            # The standalone flow gives data its own phase; DNS reversion stays in teardown.
+            if field in ('files', 'directories') and action['path'] in intent['purge'][field]:
+                continue
+            if field == 'commands' and 'resolvectl revert' not in action['command']:
+                continue
+            participant(action['ssh'])[field].append(action)
+    for publication in intent['publications']:
+        connection = publication['connection']
+        ssh = {'identity_file': connection['nodeIdentityFile'], 'target': {
+            'host': connection['nodeHost'], 'port': connection['nodePort'], 'user': connection['nodeUser'], 'host_keys': publication['host_keys']}}
+        participant(ssh)['publications'].append(publication)
+    if intent['prometheus']:
+        participant(intent['prometheus']['ssh'])['prometheus'] = intent['prometheus']
+    inventory = {'all': {'hosts': hosts, 'children': {'role_node': {'hosts': {'target': {}}},
+                 'participants': {'hosts': {name: {} for name in hosts if name != 'target'}}}}}
+    (folder / 'inventory.yml').write_text(json.dumps(inventory))
+    (folder / 'known_hosts').write_text(''.join(line + '\n' for line in sorted(known)))
+    (folder / 'vars.yml').write_text(unsafe({'intent': intent, 'run_folder': str(folder)}) + '\n')
+
+
 def build(folder, kind):
     os.umask(0o077)
+    if kind == 'node.role_remove':
+        return build_role_remove(folder)
     if kind == 'node.role_add.composed':
         folder = Path(folder)
         (folder / 'composed.yml').write_text(unsafe(json.loads((folder / 'composed.json').read_text())) + '\n')

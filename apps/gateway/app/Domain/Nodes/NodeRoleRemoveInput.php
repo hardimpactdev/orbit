@@ -26,7 +26,7 @@ final readonly class NodeRoleRemoveInput
             || ! $this->roles->definition($role)->mutable) {
             throw new ResourceOperationException('operation.execution_forbidden', 'Removal requires its claimed Node role assignment.', 422);
         }
-        if (($role === RoleName::AppDev && $node->instances()->exists()) || $offline || $deleted) {
+        if ((in_array($role, [RoleName::AppDev, RoleName::AppProd], true) && $node->instances()->exists()) || $deleted) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Role cleanup requires its admitted online Node and detached Instances.', 422);
         }
 

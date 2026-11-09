@@ -563,3 +563,5 @@ The task check runs no Gateway tests, so it needs neither host sudo nor another 
 The shared installer inspects runner-writable JavaScript executables as `runner`, including the setup smoke check, which runs from `/` and compares the result with the recipe pin. Inspection passes `VP_HOME` after sudo in argv so sudo environment filtering cannot create another Vite+ store. All Node-consuming CI jobs, including the dependency audit, read `.node-version`.
 
 Native Vault CLI fixtures serialize each read and write of their shared backend state. A failed command must preserve another command's completed writes and deletes.
+
+The Swamp shape gate includes the standalone role-removal playbook in its production-profile Ansible lint.

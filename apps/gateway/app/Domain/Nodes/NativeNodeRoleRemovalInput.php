@@ -84,7 +84,7 @@ final readonly class NativeNodeRoleRemovalInput
             throw new ResourceOperationException('operation.execution_forbidden', 'Source cleanup requires the actual transferred role assignment.', 422);
         }
         $plan = ['firewall' => app(NodeRoleFirewallInput::class)->remove($node, $assignment->role),
-            'runtime' => app(NodeRoleRuntimeInput::class)->removal($node, $assignment->role),
+            'runtime' => app(NodeRoleRuntimeInput::class)->removal($node, $assignment->role, $purgeData),
             'certificates' => app(NodeRoleCertificateInput::class)->capture($node, $assignment->role, removing: true)];
         $ssh = $machineDeleted ? null : app(SwampSshExecutionInput::class)->forNode($node);
         $firewall = [];
@@ -159,7 +159,7 @@ final readonly class NativeNodeRoleRemovalInput
                 '/etc/orbit/metrics/grafana/provisioning/dashboards/provider.yml',
                 '/etc/orbit/metrics/grafana/dashboards/orbit-node-resources.json',
                 '/etc/orbit/metrics/grafana/dashboards/orbit-caddy.json', '/etc/orbit/metrics/grafana/dashboards/orbit-fpm.json',
-                '/etc/orbit/metrics/grafana/admin-password', '/etc/orbit/metrics/.orbit-owner'] as $path) {
+                '/etc/orbit/metrics/.orbit-owner'] as $path) {
                 $files[] = ['ssh' => $ssh, 'path' => $path];
             }
             if ($purgeData) {
@@ -199,8 +199,17 @@ final readonly class NativeNodeRoleRemovalInput
                 'after' => array_intersect_key($after, array_flip(['caddy', 'php', 'dns']))];
         }
 
+        $purge = ['files' => [], 'directories' => [], 'volumes' => []];
+        if ($purgeData && $assignment->role === RoleName::Metrics) {
+            $purge['files'][] = '/etc/orbit/metrics/grafana/admin-password';
+            $purge['volumes'] = ['orbit-metrics-prometheus-data', 'orbit-metrics-grafana-data'];
+        }
+        if ($purgeData && $assignment->role === RoleName::WebSocket && is_array($runtime)) {
+            $purge['files'][] = ValidatedData::string($runtime['install_path']);
+            $purge['directories'][] = ValidatedData::string($runtime['install_path']).'.releases';
+        }
         $input = ['schema_version' => 1, 'node_id' => $node->id, 'assignment_id' => $assignment->id,
-            'role' => $assignment->role->value, 'ssh' => $ssh, 'publications' => $publications,
+            'role' => $assignment->role->value, 'ssh' => $ssh, 'purge' => $purge, 'publications' => $publications,
             'public_ssh' => $node->roles()->whereKeyNot($assignment->id)->exists() ? [] : [['ssh' => $ssh,
                 'input' => ['argv' => ['ufw', ...array_slice(app(NodeFirewallRuleCatalog::class)->publicSshRecovery($node)->arguments, 2)]]]],
             'stop_units' => [...$unitsForFleet, ...array_map(static fn (string $unit): array => ['ssh' => $ssh, 'input' => ['unit' => $unit]], $units)],

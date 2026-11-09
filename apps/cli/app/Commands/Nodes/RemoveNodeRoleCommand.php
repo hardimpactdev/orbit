@@ -9,10 +9,15 @@ use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\ProgressOutcome;
 use App\Support\Console\ProgressState;
+use App\Support\GatewayFailureRenderer;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\Nodes\ListNodeRolesRequest;
+use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
-use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\Nodes\NodeRolesResponse;
+use Orbit\Sdk\Responses\Nodes\NodesResponse;
+use Orbit\Sdk\Responses\Nodes\RemovedNodeRoleResponse;
 
 final class RemoveNodeRoleCommand extends NodeCommand
 {
@@ -20,9 +25,9 @@ final class RemoveNodeRoleCommand extends NodeCommand
 
     #[\Override]
     protected $signature = 'node:role:remove
-        {node : Node ID or name}
-        {role : Role name}
-        {--force : Confirm destructive role removal and dependent cleanup}
+        {node? : Positive numeric Node ID}
+        {role? : Role name}
+        {--force : Confirm role removal}
         {--purge-data : Request supported role-owned data cleanup}
         {--offline : Remove the role from a node Orbit cannot reach}
         {--idempotency-key= : Reuse a key to retry this operation start}
@@ -31,26 +36,69 @@ final class RemoveNodeRoleCommand extends NodeCommand
     #[\Override]
     protected $description = 'Remove one role assignment from a node.';
 
+    /** @param array<string, mixed> $details */
+    #[\Override]
+    protected function renderGatewayFailure(string $code, string $message, ?string $requestId = null, ?string $humanMessage = null, array $details = []): int
+    {
+        GatewayFailureRenderer::write($this, $code, $message, $requestId, $humanMessage, $details, includeCode: true);
+
+        return self::FAILURE;
+    }
+
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $role = $this->stringArgument('role', 'Role', 'node_role.role_required');
-
-        if ($role === null) {
+        $nodeId = $this->argument('node') === null ? null : $this->positiveId('node', 'Node', 'node.id_invalid');
+        if ($this->argument('node') !== null && $nodeId === null) {
             return self::FAILURE;
         }
-
+        if ($this->option('force') !== true && ($this->option('purge-data') === true || $this->option('offline') === true)) {
+            return $this->renderGatewayFailure('validation.failed', '--purge-data and --offline require --force.');
+        }
+        $role = $this->argument('role');
+        if ($role !== null || ! $this->consoleMode()->mayPrompt) {
+            $role = $this->stringArgument('role', 'Role', 'node_role.role_required');
+            if ($role === null) {
+                return self::FAILURE;
+            }
+        }
+        if ($nodeId === null && ! $this->consoleMode()->mayPrompt) {
+            return $this->renderGatewayFailure('node.id_invalid', 'Node ID must be a positive integer.');
+        }
         $connector = $this->gatewayConnector($repository, $connectors);
-
         if ($connector === null) {
             return self::FAILURE;
         }
-
-        $nodeId = $this->resolveNodeId($connector, $this->argument('node'));
-
         if ($nodeId === null) {
-            return self::FAILURE;
+            $nodes = $this->sendWithProgress($connector, new ListNodesRequest, NodesResponse::class, ['List Nodes', 'Loading Nodes', 'Loaded Nodes']);
+            if (! $nodes instanceof NodesResponse) {
+                return self::FAILURE;
+            }
+            $rows = [];
+            foreach ($nodes->nodes as $node) {
+                $rows[$node->id] = [(string) $node->id, $node->name];
+            }
+            $nodeId = $this->commandPrompts()->selectEntity('Node', ['ID', 'Name'], $rows);
+            if (! is_int($nodeId)) {
+                return self::FAILURE;
+            }
+        }
+        if ($role === null) {
+            $roles = $this->sendWithProgress($connector, new ListNodeRolesRequest($nodeId), NodeRolesResponse::class, ['List roles', 'Loading roles', 'Loaded roles']);
+            if (! $roles instanceof NodeRolesResponse) {
+                return self::FAILURE;
+            }
+            $rows = [];
+            foreach ($roles->assignments as $assignment) {
+                if (! in_array($assignment->role, ['vpn', 'router', 'swamp'], true)) {
+                    $rows[$assignment->role] = [$assignment->role, $assignment->status];
+                }
+            }
+            if ($rows === []) {
+                return $this->renderGatewayFailure('http.404', 'No removable role is assigned.');
+            }
+            $role = (string) $this->commandPrompts()->selectEntity('Role', ['Name', 'Status'], $rows);
         }
 
         if ($this->option('force') !== true) {
@@ -71,18 +119,27 @@ final class RemoveNodeRoleCommand extends NodeCommand
                 offline: $this->option('offline') === true,
                 idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
             ),
-            OperationResponse::class,
+            RemovedNodeRoleResponse::class,
             ['Remove Node role', 'Recording Node role removal', 'Node role removal recorded'],
             static fn (object $response): ProgressOutcome => new ProgressOutcome(ProgressState::Success, 'Node role removal recorded'),
         );
 
-        if (! $response instanceof OperationResponse) {
+        if (! $response instanceof RemovedNodeRoleResponse) {
             return self::FAILURE;
         }
 
+        if ($response->operation === null) {
+            if ($this->option('json') === true) {
+                $this->writeJson($response->toArray());
+            } else {
+                $this->writeHumanMessage('Skipped — role not assigned (node_role.absent)');
+            }
+
+            return self::SUCCESS;
+        }
         $profile = $this->activeGatewayProfile($repository);
 
-        return $profile === null ? self::FAILURE : $this->followOperation($connector, $profile, $response, 'Remove Node role', 'Node role removal');
+        return $profile === null ? self::FAILURE : $this->followOperation($connector, $profile, $response->operation, 'Remove Node role', 'Node role removal');
     }
 
     private function previewRemoval(
@@ -98,7 +155,7 @@ final class RemoveNodeRoleCommand extends NodeCommand
                 try {
                     $this->sendOrThrow($connector, new RemoveNodeRoleRequest(
                         nodeId: $nodeId, role: $role, force: false, purgeData: false, offline: false,
-                    ), OperationResponse::class);
+                    ), RemovedNodeRoleResponse::class);
                 } catch (GatewayApiException $exception) {
                     if ($this->isConsentPreview($exception)) {
                         return $exception;

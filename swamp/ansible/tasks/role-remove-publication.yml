@@ -1,0 +1,69 @@
+---
+- name: Publish complete Caddy configuration
+  when: publication.after.caddy is not none
+  block:
+    - name: Write the complete Caddyfile
+      ansible.builtin.copy:
+        dest: /etc/caddy/Caddyfile
+        content: "{{ publication.after.caddy.content }}"
+        owner: root
+        group: caddy
+        mode: '0640'
+        validate: caddy validate --config %s --adapter caddyfile
+    - name: Reload the serving Caddy
+      ansible.builtin.systemd: {name: caddy, state: reloaded}
+- name: Publish complete PHP pool configuration
+  when: publication.after.php is not none
+  block:
+    - name: Read the PHP account
+      ansible.builtin.getent: {database: passwd, key: "{{ publication.connection.nodeUser }}"}
+    - name: Read the PHP account group
+      ansible.builtin.getent: {database: group, key: "{{ ansible_facts.getent_passwd[publication.connection.nodeUser][2] }}"}
+    - name: Write complete desired PHP pool files
+      ansible.builtin.copy:
+        dest: "/etc/php/{{ item.key }}/fpm/pool.d/orbit-scopes.conf"
+        content: >-
+          {{ item.value | replace('__ORBIT_NODE_GROUP__', ansible_facts.getent_group.keys() | first)
+          | replace('/__ORBIT_NODE_HOME__', ansible_facts.getent_passwd[publication.connection.nodeUser][4]) }}
+        owner: root
+        group: root
+        mode: '0644'
+      loop: "{{ publication.after.php.configurations | default({}, true) | dict2items }}"
+    - name: Remove withdrawn PHP pool versions
+      ansible.builtin.file: {path: "/etc/php/{{ item }}/fpm/pool.d/orbit-scopes.conf", state: absent}
+      loop: >-
+        {{ (publication.before.php.configurations | default({}, true)).keys()
+        | difference((publication.after.php.configurations | default({}, true)).keys()) }}
+    - name: Validate complete PHP pool configuration
+      ansible.builtin.command: {argv: ["php-fpm{{ item }}", -t]}
+      loop: >-
+        {{ ((publication.before.php.configurations | default({}, true)).keys() | list
+        + (publication.after.php.configurations | default({}, true)).keys() | list) | unique }}
+      changed_when: false
+    - name: Reload published PHP pool versions
+      ansible.builtin.systemd: {name: "php{{ item }}-fpm", state: reloaded}
+      loop: >-
+        {{ ((publication.before.php.configurations | default({}, true)).keys() | list
+        + (publication.after.php.configurations | default({}, true)).keys() | list) | unique }}
+- name: Publish complete private DNS configuration
+  when: publication.after.dns is not none
+  block:
+    - name: Write private DNS records
+      ansible.builtin.copy:
+        dest: /etc/dnsmasq.d/orbit-records.conf
+        content: "{{ publication.after.dns.records }}"
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Write private DNS catalog
+      ansible.builtin.copy:
+        dest: /var/lib/orbit/private-dns/catalog.json
+        content: "{{ publication.after.dns.catalog }}"
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Validate private DNS
+      ansible.builtin.command: dnsmasq --test
+      changed_when: false
+    - name: Reload private DNS
+      ansible.builtin.systemd: {name: dnsmasq, state: reloaded}

@@ -86,7 +86,7 @@ final class NodeRolesController extends Controller
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
-    #[RequiresNodeAccess(ServingNode::RoleMutation)]
+    #[RequiresNodeAccess(ServingNode::Target)]
     #[StartsOperation('node.role_remove')]
     public function destroy(
         RemoveNodeRoleRequest $request,
@@ -98,6 +98,10 @@ final class NodeRolesController extends Controller
         $this->guardMutable($role, $registry);
         $operation = $action->remove($node, $role, $request->force(), $request->purgeData(), $request->offline(),
             requestId: $request->attributes->getString('orbit.request_id'));
+
+        if ($operation === null) {
+            return response()->json(['data' => ['node_id' => $node->id, 'role' => 'ingress', 'skipped' => 'node_role.absent'], 'meta' => $this->meta($request)]);
+        }
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }

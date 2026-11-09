@@ -12,6 +12,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketRegistry;
 use App\Infrastructure\Swamp\NativeRunResult;
@@ -28,7 +29,7 @@ final readonly class NodeRoleRemovalProjection implements DirectOperationProject
 {
     public function input(Operation $operation): array
     {
-        return ['intent' => $operation->input['intent'], 'execution_secrets' => [], 'offline' => false];
+        return ['intent' => $operation->input['intent'], 'execution_secrets' => []];
     }
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
@@ -48,9 +49,24 @@ final readonly class NodeRoleRemovalProjection implements DirectOperationProject
             $terminal = $operation->status->terminal();
             $raw = ValidatedData::object($data['result'] ?? []);
             $snapshot = ValidatedData::object($operation->input['_role_remove']);
-            $result = ($data['status'] ?? null) === 'succeeded' && NativeRunResult::stepStatus($raw, 'Confirm role removal') === 'succeeded'
-                ? ['node_id' => $snapshot['node_id'], 'assignment_id' => $snapshot['assignment_id'], 'role' => $snapshot['role'], 'role_removed' => true, 'offline' => false]
-                : array_intersect_key($raw, array_flip(['error_code', 'failed_step']));
+            $summary = ValidatedData::object($raw['summary'] ?? []);
+            $failed = $raw['failed_step'] ?? (is_array($summary['failed_steps'] ?? null) ? ($summary['failed_steps'][0] ?? 'operation') : 'operation');
+            $error = match ($failed) {
+                'Reach the Node', 'Require drained CI' => 'node.removal_incomplete',
+                'Keep public SSH access' => 'node.firewall_recovery_failed',
+                default => $raw['error_code'] ?? $data['error_code'] ?? 'node.removal_incomplete',
+            };
+            $steps = ValidatedData::object($raw['steps'] ?? []);
+            $collected = ValidatedData::object($steps['Collect the removal result'] ?? []);
+            $reach = is_string($collected['stdout'] ?? null) ? json_decode($collected['stdout'], true) : null;
+            $offline = is_array($reach) && ($reach['reachable'] ?? true) === false;
+            $proven = ($data['status'] ?? null) === 'succeeded' && NativeRunResult::stepStatus($raw, 'Remove the run folder') === 'succeeded';
+            $result = $proven
+                ? ['node_id' => $snapshot['node_id'], 'assignment_id' => $snapshot['assignment_id'], 'role' => $snapshot['role'], 'role_removed' => true, 'offline' => $offline]
+                : ['failed_step' => $failed === 'Keep public SSH access' ? 'firewall-recovery' : $failed, 'error_code' => $error];
+            if (! $proven && ($data['status'] ?? null) === 'failed') {
+                $data['error_code'] = $error;
+            }
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($terminal) {
                 return $projected;
@@ -62,7 +78,7 @@ final readonly class NodeRoleRemovalProjection implements DirectOperationProject
             $assignment = NodeRole::query()->whereKey($snapshot['assignment_id'])->where('node_id', $operation->node_id)->where('role', $snapshot['role'])->firstOrFail();
             $node = $assignment->node;
             if ($status === OperationStatus::Succeeded) {
-                self::recordCleanup($snapshot);
+                self::recordCleanup([...$snapshot, 'offline' => $offline]);
                 $assignment->delete();
             } else {
                 $assignment->update(['status' => LifecycleStatus::Failed,
@@ -94,7 +110,13 @@ final readonly class NodeRoleRemovalProjection implements DirectOperationProject
         if ($relocated) {
             app(NodeRoleSettings::class)->removeTransferred($nodeId, $role);
         } else {
-            app(NodeRoleSettings::class)->remove($nodeId, $role, ($snapshot['purge_data'] ?? false) === true, false);
+            if (isset($snapshot['certificates'])) {
+                $certificates = ValidatedData::object($snapshot['certificates']);
+                foreach (RouteExecutionProof::objects($certificates['withdrawals']) as $entry) {
+                    app(NodeRolePublicationState::class)->record($certificates, 'withdrawal_started', ValidatedData::integer($entry['node_id']));
+                }
+            }
+            app(NodeRoleSettings::class)->remove($nodeId, $role, ($snapshot['purge_data'] ?? false) === true, ($snapshot['offline'] ?? false) === true);
         }
     }
 }

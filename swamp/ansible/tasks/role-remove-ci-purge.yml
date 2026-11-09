@@ -1,0 +1,27 @@
+---
+- name: Read remaining CI resource collections
+  ansible.builtin.command: {argv: "{{ ['incus'] + item.command + ['list', '--format=json'] }}"}
+  loop:
+    - {command: [project], name: orbit-ci}
+    - {command: [network], name: orbitci0}
+    - {command: [network, acl], name: orbit-ci-egress}
+  register: ci_resources
+  changed_when: false
+- name: Delete only existing empty role resources
+  ansible.builtin.command: {argv: "{{ ['incus'] + item.item.command + ['delete', item.item.name] }}"}
+  loop: "{{ ci_resources.results }}"
+  when: item.stdout | from_json | selectattr('name', 'equalto', item.item.name) | list | length > 0
+  changed_when: true
+- name: Read purged CI resource collections
+  ansible.builtin.command: {argv: "{{ ['incus'] + item.command + ['list', '--format=json'] }}"}
+  loop:
+    - {command: [project], name: orbit-ci}
+    - {command: [network], name: orbitci0}
+    - {command: [network, acl], name: orbit-ci-egress}
+  register: ci_purged
+  changed_when: false
+- name: Prove only role resources were removed
+  ansible.builtin.assert:
+    that: item.stdout | from_json | selectattr('name', 'equalto', item.item.name) | list | length == 0
+    quiet: true
+  loop: "{{ ci_purged.results }}"

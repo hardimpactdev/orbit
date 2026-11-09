@@ -1,0 +1,104 @@
+---
+- name: Read installed services
+  ansible.builtin.service_facts:
+- name: Stop and disable only present owned services
+  ansible.builtin.systemd: {name: "{{ item.input.unit }}", state: stopped, enabled: false}
+  loop: "{{ stop_units }}"
+  when: item.input.unit in ansible_facts.services
+- name: Remove owned containers while keeping their volumes
+  community.docker.docker_container: {name: "{{ item.input.name }}", state: absent, keep_volumes: true}
+  loop: "{{ remove_containers }}"
+- name: Publish complete desired serving configuration
+  ansible.builtin.include_tasks: role-remove-publication.yml
+  loop: "{{ publications }}"
+  loop_control: {loop_var: publication}
+- name: Remove captured managed files and certificate paths
+  ansible.builtin.file: {path: "{{ item.path }}", state: absent}
+  loop: "{{ files + directories + certificates }}"
+- name: Reload the service catalog after owned unit withdrawal
+  ansible.builtin.systemd: {daemon_reload: true}
+  when: reload_units | length > 0
+- name: Withdraw the Gateway DNS link only when it is not owned by VPN
+  when: commands | length > 0
+  block:
+    - name: Read the VPN DNS link marker
+      ansible.builtin.stat: {path: /etc/wireguard/orbit.dns-link}
+      register: vpn_dns_link
+    - name: Read the managed tunnel
+      ansible.builtin.command: ip link show dev orbit
+      register: dns_tunnel
+      failed_when: dns_tunnel.rc not in [0, 1]
+      changed_when: false
+    - name: Revert the withdrawn Gateway DNS link
+      ansible.builtin.command: resolvectl revert orbit
+      when: not vpn_dns_link.stat.exists and dns_tunnel.rc == 0
+      changed_when: true
+- name: Read the exact configured firewall rules
+  ansible.builtin.command: ufw show added
+  register: owned_rules
+  changed_when: false
+  when: firewall | length > 0
+- name: Select captured firewall owners
+  ansible.builtin.set_fact:
+    owned_comments: "{{ firewall | map(attribute='input.argv') | map('last') | unique | map('regex_escape') | join('|') }}"
+- name: Delete only configured rules with exact captured owner comments
+  ansible.builtin.command:
+    cmd: "{{ item | regex_replace('^ufw ', 'ufw --force delete ') }}"
+  loop: >-
+    {{ owned_rules.stdout_lines | default([])
+    | select('search', " comment '(?:" ~ owned_comments ~ ")'$") | list }}
+  when: firewall | length > 0
+  changed_when: true
+- name: Read remaining configured firewall rules
+  ansible.builtin.command: ufw show added
+  register: remaining_rules
+  changed_when: false
+  when: firewall | length > 0
+- name: Verify exact owned firewall rules are absent
+  ansible.builtin.assert:
+    that: remaining_rules.stdout is not search("(?m) comment '(?:" ~ owned_comments ~ ")'$")
+    quiet: true
+  when: firewall | length > 0
+- name: Withdraw captured Prometheus scrape bindings
+  when: prometheus is not none
+  block:
+    - name: Validate desired Prometheus configuration
+      ansible.builtin.command:
+        argv: [docker, exec, -i, orbit-metrics-prometheus, /bin/promtool, check, config, /dev/stdin]
+        stdin: "{{ prometheus.configuration }}"
+      changed_when: false
+    - name: Publish Prometheus without replacing its bind-mounted inode
+      ansible.builtin.command:
+        argv: [dd, of=/etc/orbit/metrics/prometheus.yml, status=none]
+        stdin: "{{ prometheus.configuration }}"
+        stdin_add_newline: false
+      changed_when: true
+    - name: Reload Prometheus
+      ansible.builtin.command: docker kill --signal HUP orbit-metrics-prometheus
+      changed_when: true
+    - name: Verify Prometheus readiness
+      ansible.builtin.uri: {url: 'http://127.0.0.1:9090/-/ready'}
+- name: Verify removed managed paths
+  ansible.builtin.stat: {path: "{{ item.path }}"}
+  loop: "{{ files + directories + certificates }}"
+  register: removed_paths
+- name: Prove managed paths are absent
+  ansible.builtin.assert: {that: not item.stat.exists, quiet: true}
+  loop: "{{ removed_paths.results }}"
+- name: Read remaining services
+  ansible.builtin.service_facts:
+- name: Prove owned services are stopped and disabled
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.services[item.input.unit].state != 'running'
+      - ansible_facts.services[item.input.unit].status != 'enabled'
+    quiet: true
+  loop: "{{ stop_units }}"
+  when: item.input.unit in ansible_facts.services
+- name: Read removed containers
+  community.docker.docker_container_info: {name: "{{ item.input.name }}"}
+  loop: "{{ remove_containers }}"
+  register: removed_containers
+- name: Prove owned containers are absent
+  ansible.builtin.assert: {that: not item.exists, quiet: true}
+  loop: "{{ removed_containers.results }}"

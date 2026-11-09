@@ -1,0 +1,291 @@
+id: 67ba8790-dc54-4d4d-9529-49bf93916204
+name: operation-node-role-remove
+description: One run removes an admitted role through the charted Ansible phases.
+queueTimeout: 30
+jobs:
+- name: intent
+  steps:
+  - name: Write the intent
+    labels: &id001
+      role: swamp
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ${{ "role-remove-intent-" + string(inputs.node_id) }}
+      methodName: write
+      inputs:
+        intent: ${{ inputs.intent }}
+        path: ${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}
+- name: input
+  steps:
+  - name: Write the playbook input
+    labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "role-remove-write-the-playbook-input-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" node.role_remove
+        env: &id002
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
+  dependsOn:
+  - job: intent
+    condition:
+      type: succeeded
+- name: reach
+  steps:
+  - name: Reach the Node
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "role-remove-reach-the-node-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 env ANSIBLE_CONFIG="$ORBIT_ANSIBLE/ansible.cfg" ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPersist=60s
+          -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts"
+          /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" "$ORBIT_ANSIBLE/operation-node-role-remove.yml"
+          --tags reach
+        env: *id002
+  dependsOn:
+  - job: input
+    condition:
+      type: succeeded
+- name: ci
+  steps:
+  - name: Require drained CI
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "role-remove-require-drained-ci-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 90 env ANSIBLE_CONFIG="$ORBIT_ANSIBLE/ansible.cfg" ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPersist=60s
+          -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts"
+          /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" "$ORBIT_ANSIBLE/operation-node-role-remove.yml"
+          --tags ci
+        env: *id002
+  dependsOn:
+  - job: reach
+    condition:
+      type: succeeded
+- name: recovery
+  steps:
+  - name: Keep public SSH access
+    labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "role-remove-keep-public-ssh-access-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 60 env ANSIBLE_CONFIG="$ORBIT_ANSIBLE/ansible.cfg" ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPersist=60s
+          -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts"
+          /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" "$ORBIT_ANSIBLE/operation-node-role-remove.yml"
+          --tags recovery
+        env: *id002
+  dependsOn:
+  - job: ci
+    condition:
+      type: succeeded
+- name: fleet
+  steps:
+  - name: Withdraw from the fleet
+    labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "role-remove-withdraw-from-the-fleet-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 300 env ANSIBLE_CONFIG="$ORBIT_ANSIBLE/ansible.cfg" ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPersist=60s
+          -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts"
+          /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" "$ORBIT_ANSIBLE/operation-node-role-remove.yml"
+          --tags fleet
+        env: *id002
+  dependsOn:
+  - job: recovery
+    condition:
+      type: succeeded
+- name: remove
+  steps:
+  - name: Remove the role
+    labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "role-remove-remove-the-role-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 300 env ANSIBLE_CONFIG="$ORBIT_ANSIBLE/ansible.cfg" ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPersist=60s
+          -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts"
+          /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" "$ORBIT_ANSIBLE/operation-node-role-remove.yml"
+          --tags remove
+        env: *id002
+  dependsOn:
+  - job: fleet
+    condition:
+      type: succeeded
+- name: purge
+  steps:
+  - name: Remove role data
+    labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "role-remove-remove-role-data-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 180 env ANSIBLE_CONFIG="$ORBIT_ANSIBLE/ansible.cfg" ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPersist=60s
+          -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts"
+          /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" "$ORBIT_ANSIBLE/operation-node-role-remove.yml"
+          --tags purge
+        env: *id002
+  dependsOn:
+  - job: remove
+    condition:
+      type: succeeded
+- name: result
+  steps:
+  - name: Collect the removal result
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "role-remove-collect-the-removal-result-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 10 cat "$ORBIT_RUN/reach.json"
+        env: *id002
+  dependsOn:
+  - job: intent
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+  - job: input
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+  - job: reach
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+  - job: ci
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+  - job: recovery
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+  - job: fleet
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+  - job: remove
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+  - job: purge
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+- name: cleanup
+  steps:
+  - name: Remove the run folder
+    labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "role-remove-remove-the-run-folder-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 10 rm -rf -- "$ORBIT_RUN"
+        env: *id002
+  dependsOn:
+  - job: intent
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+  - job: input
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+  - job: reach
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+  - job: ci
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+  - job: recovery
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+  - job: fleet
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+  - job: remove
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+  - job: purge
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+  - job: result
+    condition:
+      or:
+      - type: completed
+      - type: skipped
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false

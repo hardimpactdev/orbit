@@ -35,8 +35,8 @@ describe(RemoveNodeRoleRequest::class, function (): void {
         $response = node_role_gateway_connector($client)->send($request)->dto();
         expect($request->getMethod())->toBe(Method::DELETE)->and($request->resolveEndpoint())->toBe('/api/v1/nodes/7/roles/app-dev')
             ->and($client->getLastPendingRequest()?->headers()->get('Idempotency-Key'))->toBe('role-native-retry')
-            ->and($response)->toBeInstanceOf(OperationResponse::class)->and($response->kind)->toBe('node.role_remove')
-            ->and($response->id)->toBe(91)->and($response->status)->toBe('queued')->and($response->requestId)->toBe(node_role_request_id());
+            ->and($response->operation)->toBeInstanceOf(OperationResponse::class)->and($response->operation->kind)->toBe('node.role_remove')
+            ->and($response->operation->id)->toBe(91)->and($response->operation->status)->toBe('queued')->and($response->requestId)->toBe(node_role_request_id());
     });
 
     it('sends the offline claim in the request body', function (): void {
@@ -123,4 +123,15 @@ describe(RemoveNodeRoleRequest::class, function (): void {
         expect($request->resolveEndpoint())
             ->toBe('/api/v1/nodes/7/roles/..%2Fapp-dev%2Fslash%20role');
     });
+});
+
+it('transports the absent ingress response without inventing an Operation', function (): void {
+    $client = new MockClient([RemoveNodeRoleRequest::class => MockResponse::make([
+        'data' => ['node_id' => 7, 'role' => 'ingress', 'skipped' => 'node_role.absent'],
+        'meta' => ['request_id' => node_role_request_id()],
+    ])]);
+    $dto = node_role_gateway_connector($client)->send(new RemoveNodeRoleRequest(7, 'ingress', true))->dto();
+    expect($dto->operation)->toBeNull()->and($dto->toArray())->toBe([
+        'node_id' => 7, 'role' => 'ingress', 'skipped' => 'node_role.absent', 'request_id' => node_role_request_id(),
+    ]);
 });

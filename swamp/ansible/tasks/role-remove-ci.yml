@@ -1,0 +1,38 @@
+---
+- name: Read existing Incus projects
+  ansible.builtin.command: incus project list --format=json
+  register: ci_projects
+  changed_when: false
+- name: Verify an existing CI project is already drained
+  when: ci_projects.stdout | from_json | selectattr('name', 'equalto', 'orbit-ci') | list | length > 0
+  block:
+    - name: Read every CI guest including stopped guests
+      ansible.builtin.command: incus list --project orbit-ci --format=json
+      register: ci_guests
+      changed_when: false
+    - name: Refuse remaining CI guests
+      ansible.builtin.assert:
+        that: ci_guests.stdout | from_json | length == 0
+        fail_msg: node.removal_incomplete
+    - name: Require purge resources to be empty already
+      when: intent.purge_data
+      block:
+        - name: Read cached CI images
+          ansible.builtin.command: incus image list --project orbit-ci --format=json
+          register: ci_images
+          changed_when: false
+        - name: Read custom CI volumes
+          ansible.builtin.command: incus storage volume list default --project orbit-ci --format=json
+          register: ci_volumes
+          changed_when: false
+        - name: Read CI profiles
+          ansible.builtin.command: incus profile list --project orbit-ci --format=json
+          register: ci_profiles
+          changed_when: false
+        - name: Refuse nonempty CI purge resources
+          ansible.builtin.assert:
+            that:
+              - ci_images.stdout | from_json | length == 0
+              - ci_volumes.stdout | from_json | length == 0
+              - ci_profiles.stdout | from_json | rejectattr('name', 'equalto', 'default') | list | length == 0
+            fail_msg: node.removal_incomplete

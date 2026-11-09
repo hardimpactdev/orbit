@@ -39,7 +39,7 @@ it('registers the exact node role remove command signature surface', function ()
         ->and(array_keys($command?->getDefinition()->getArguments() ?? []))
         ->toBe(['node', 'role'])
         ->and($command?->getDefinition()->getArgument('node')->getDescription())
-        ->toBe('Node ID or name')
+        ->toBe('Positive numeric Node ID')
         ->and(node_role_remove_command_options($command))
         ->toBe([
             'force' => false,
@@ -64,7 +64,7 @@ it('rejects an invalid node id before connector io', function (string $nodeId): 
     'negative' => '-1',
 ]);
 
-it('rejects an unknown node name before the role removal request', function (): void {
+it('rejects a node name before any request', function (): void {
     $mockClient = MockClient::global([
         ListNodesRequest::class => MockResponse::make([
             'data' => [node_role_remove_node_payload(id: 7, name: 'app-dev')],
@@ -74,10 +74,10 @@ it('rejects an unknown node name before the role removal request', function (): 
 
     $this
         ->artisan('node:role:remove', ['node' => 'mini', 'role' => 'app-dev', '--force' => true])
-        ->expectsOutputToContain('Node [mini] is not registered.')
+        ->expectsOutputToContain('node.id_invalid')
         ->assertExitCode(1);
 
-    $mockClient->assertNotSent(RemoveNodeRoleRequest::class);
+    expect($mockClient->getLastPendingRequest())->toBeNull();
 });
 
 it('rejects an empty role before connector io', function (): void {
@@ -442,3 +442,20 @@ function node_role_remove_node_payload(int $id, string $name): array
         'roles' => [],
     ];
 }
+
+it('rejects unconsented offline and purge flags without any request', function (string $option): void {
+    $mock = MockClient::global();
+    $this->artisan('node:role:remove', ['node' => '7', 'role' => 'database', $option => true, '--json' => true])
+        ->assertExitCode(1);
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with(['--offline', '--purge-data']);
+
+it('renders missing ingress as a success with its stable skip reason', function (bool $json): void {
+    MockClient::global([RemoveNodeRoleRequest::class => MockResponse::make([
+        'data' => ['node_id' => 7, 'role' => 'ingress', 'skipped' => 'node_role.absent'],
+        'meta' => ['request_id' => node_role_remove_request_id()],
+    ])]);
+    $this->artisan('node:role:remove', ['node' => '7', 'role' => 'ingress', '--force' => true, '--json' => $json])
+        ->expectsOutputToContain($json ? '"skipped":"node_role.absent"' : 'Skipped — role not assigned (node_role.absent)')
+        ->assertExitCode(0);
+})->with([true, false]);

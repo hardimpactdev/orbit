@@ -1,0 +1,102 @@
+---
+- name: Establish target reachability
+  hosts: role_node
+  gather_facts: false
+  tags: [reach]
+  tasks:
+    - name: Reach the recorded SSH target
+      ansible.builtin.ping:
+      ignore_unreachable: true
+      register: reach
+    - name: Record whether target cleanup can run
+      ansible.builtin.copy:
+        dest: "{{ run_folder }}/reach.json"
+        content: "{{ {'reachable': not (reach.unreachable | default(false))} | to_json }}"
+        mode: '0600'
+      delegate_to: localhost
+    - name: Require reachability or offline consent
+      ansible.builtin.assert:
+        that: not (reach.unreachable | default(false)) or intent.offline
+        fail_msg: node.removal_incomplete
+      delegate_to: localhost
+- name: Check CI before any teardown
+  hosts: role_node
+  gather_facts: false
+  become: true
+  tags: [ci]
+  tasks:
+    - name: Require drained CI
+      when: intent.role == 'ci-runner' and (lookup('file', run_folder ~ '/reach.json') | from_json).reachable
+      ansible.builtin.import_tasks: tasks/role-remove-ci.yml
+- name: Keep recovery access before last role teardown
+  hosts: role_node
+  gather_facts: false
+  become: true
+  tags: [recovery]
+  tasks:
+    - name: Restore and verify public SSH
+      when: intent.public_ssh | length > 0 and (lookup('file', run_folder ~ '/reach.json') | from_json).reachable
+      block:
+        - name: Restore the exact recovery rule
+          ansible.builtin.command: {argv: "{{ intent.public_ssh[0].input.argv }}"}
+          register: recovery
+          changed_when: recovery.stdout is not search('Skipping')
+        - name: Read recovery firewall policy
+          ansible.builtin.command: ufw show added
+          register: recovery_rules
+          changed_when: false
+        - name: Require the configured recovery SSH port
+          ansible.builtin.assert:
+            that:
+              - recovery_rules.stdout is search("(?m)^ufw allow " ~ intent.public_ssh[0].input.argv[2] ~ " comment 'orbit:public-ssh-recovery'$")
+            fail_msg: node.firewall_recovery_failed
+        - name: Verify the SSH listener
+          ansible.builtin.wait_for:
+            host: "{{ ansible_host }}"
+            port: "{{ ansible_port }}"
+            timeout: 10
+          delegate_to: localhost
+          become: false
+- name: Withdraw recorded duties on other Nodes
+  hosts: participants
+  gather_facts: false
+  become: true
+  any_errors_fatal: true
+  tags: [fleet]
+  tasks:
+    - name: Withdraw from the fleet
+      ansible.builtin.import_tasks: tasks/role-remove-owned.yml
+- name: Remove target role runtime and configuration
+  hosts: role_node
+  gather_facts: false
+  become: true
+  tags: [remove]
+  tasks:
+    - name: Remove the role
+      when: (lookup('file', run_folder ~ '/reach.json') | from_json).reachable
+      ansible.builtin.import_tasks: tasks/role-remove-owned.yml
+- name: Purge only documented role data
+  hosts: role_node
+  gather_facts: false
+  become: true
+  tags: [purge]
+  tasks:
+    - name: Remove role data
+      when: intent.purge_data and (lookup('file', run_folder ~ '/reach.json') | from_json).reachable
+      block:
+        - name: Remove owned data paths
+          ansible.builtin.file: {path: "{{ item }}", state: absent}
+          loop: "{{ intent.purge.files + intent.purge.directories }}"
+        - name: Remove owned Metrics volumes
+          community.docker.docker_volume: {name: "{{ item }}", state: absent}
+          loop: "{{ intent.purge.volumes }}"
+        - name: Remove already empty CI resources
+          when: intent.role == 'ci-runner'
+          ansible.builtin.import_tasks: tasks/role-remove-ci-purge.yml
+        - name: Read purged paths
+          ansible.builtin.stat: {path: "{{ item }}"}
+          loop: "{{ intent.purge.files + intent.purge.directories }}"
+          register: purged_paths
+        - name: Prove role data paths are absent
+          ansible.builtin.assert: {that: not item.stat.exists, quiet: true}
+          loop: "{{ purged_paths.results }}"

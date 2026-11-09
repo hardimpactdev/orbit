@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Nodes;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\Nodes\RemovedNodeRoleResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -32,12 +32,12 @@ final class RemoveNodeRoleRequest extends GatewayRequest implements HasBody
         return "/api/v1/nodes/{$this->nodeId}/roles/".rawurlencode($this->role);
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): RemovedNodeRoleResponse
     {
         $data = $this->unwrapData($response);
         $requestId = $this->successRequestId($response);
 
-        return OperationResponse::fromGatewayData($data, $requestId);
+        return RemovedNodeRoleResponse::fromGatewayData($data, $requestId);
     }
 
     /** @return array<string,string> */

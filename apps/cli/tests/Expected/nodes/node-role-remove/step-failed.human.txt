@@ -9,3 +9,4 @@ Recording Node role removal...
 UFW is inactive on node [app-dev]. Retry with --offline if node [app-dev] is unreachable.
 step: remove:host-firewall
 error_code: firewall.inactive
+Code: node_role.remove_failed

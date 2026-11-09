@@ -65,3 +65,4 @@ tasks.turn
 vault.setup
 vault.sync
 vault.teardown
+node.role_remove

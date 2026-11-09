@@ -15,6 +15,11 @@ additionalFiles:
   - ansible/library/orbit_artifact.py
   - ansible/tasks/artifact-fetch.yml
   - ansible/transport-exit-codes.json
+  - ansible/operation-node-role-remove.yml
+  - ansible/tasks/role-remove-owned.yml
+  - ansible/tasks/role-remove-publication.yml
+  - ansible/tasks/role-remove-ci.yml
+  - ansible/tasks/role-remove-ci-purge.yml
   - ansible/operation-node-role-add.yml
   - ansible/operation-node-converge.yml
   - ansible/tasks/node-role-runtime.yml

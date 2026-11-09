@@ -29,6 +29,7 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -128,7 +129,7 @@ final readonly class AdmitNodeRoleOperationAction
         });
     }
 
-    public function remove(Node $node, RoleName $role, bool $force = false, bool $purgeData = false, bool $offline = false, bool $deleted = false, ?string $requestId = null): Operation
+    public function remove(Node $node, RoleName $role, bool $force = false, bool $purgeData = false, bool $offline = false, bool $deleted = false, ?string $requestId = null): ?Operation
     {
         if (($existing = $this->idempotency->replay('node.role_remove')) !== null) {
             return $existing;
@@ -139,7 +140,7 @@ final readonly class AdmitNodeRoleOperationAction
             ]);
         }
 
-        return DB::transaction(function () use ($node, $role, $purgeData, $offline, $deleted, $requestId): Operation {
+        return DB::transaction(function () use ($node, $role, $purgeData, $offline, $deleted, $requestId): ?Operation {
             $node = Node::query()->lockForUpdate()->findOrFail($node->id);
             $this->guardMutable($node, $role);
             if ($role === RoleName::Swamp) {
@@ -150,15 +151,23 @@ final readonly class AdmitNodeRoleOperationAction
             if (! app(ManagedNodeEligibility::class)->allows($node)) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Role removal requires recorded SSH management.', 422);
             }
+            $assignment = $node->roles()->where('role', $role)->lockForUpdate()->first();
+            if ($assignment === null && $role === RoleName::Ingress) {
+                return null;
+            }
+            $assignment ??= $node->roles()->where('role', $role)->firstOrFail();
+            if (in_array($assignment->status, [LifecycleStatus::Provisioning, LifecycleStatus::Removing], true) && ! $assignment->isStaleClaim()) {
+                throw new NodeRoleValidationException('The role assignment has a live claim.');
+            }
             $this->routes->assertRoleRemovable($node, $role);
-            $assignment = $node->roles()->where('role', $role)->lockForUpdate()->firstOrFail();
-            if ($role === RoleName::AppDev && $node->instances()->exists()) {
-                throw new NodeRoleValidationException('The app-dev role cannot be removed while its Node owns Instances.', [
+            if (in_array($role, [RoleName::AppDev, RoleName::AppProd], true) && $node->instances()->exists()) {
+                throw new NodeRoleValidationException('The app role cannot be removed while its Node owns Instances.', [
                     'reason' => 'instances_attached', 'role' => $role->value,
                 ]);
             }
             $operation = $this->operations->execute('node.role_remove', 'node', $node->id, $node->id,
-                ['node_id' => $node->id, 'role' => $role->value, 'purge_data' => $purgeData, 'offline' => $offline], 'operator', $requestId);
+                ['node_id' => $node->id, 'role' => $role->value, 'purge_data' => $purgeData, 'offline' => $offline], 'operator', $requestId,
+                lockKey: OperationStore::lockKey('node', $node->id));
             if (! $operation->wasRecentlyCreated) {
                 return $operation;
             }
@@ -168,6 +177,16 @@ final readonly class AdmitNodeRoleOperationAction
             $node->unsetRelation('roles');
             $snapshot = app(NodeRoleRemoveInput::class)->capture($node, $assignment, $purgeData, $offline, $deleted);
             $intent = $native->capture($node, $assignment, $before, purgeData: $purgeData);
+            $intent['prometheus'] = null;
+            $metrics = $snapshot['metrics_fleet'];
+            if (is_array($metrics) && $role !== RoleName::Metrics) {
+                $metricsNode = Node::query()->findOrFail(ValidatedData::integer($metrics['metrics_node_id']));
+                $intent['prometheus'] = ['node_id' => $metricsNode->id,
+                    'ssh' => app(SwampSshExecutionInput::class)->forNode($metricsNode),
+                    'configuration' => ValidatedData::stringMap($metrics['runtime_files'])['/etc/orbit/metrics/prometheus.yml']];
+            }
+            $intent['offline'] = $offline;
+            $intent['purge_data'] = $purgeData;
             $this->bindRemoval($operation, $snapshot, $intent);
 
             return $operation;

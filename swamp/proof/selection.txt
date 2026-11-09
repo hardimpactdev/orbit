@@ -68,8 +68,8 @@ packages/php-sdk/src/Responses/Nodes/**                      node:access:add nod
 
 # Role addition and explicit role convergence share one native workflow and cases file.
 apps/cli/app/Commands/Nodes/AddNodeRoleCommand.php          node:role:add
-apps/cli/app/Commands/Nodes/FollowsNodeRoleOperations.php   node:role:add
-apps/gateway/app/Actions/Nodes/AdmitNodeRoleOperationAction.php  node:role:add
+apps/cli/app/Commands/Nodes/FollowsNodeRoleOperations.php   node:role:add node:role:remove
+apps/gateway/app/Actions/Nodes/AdmitNodeRoleOperationAction.php  node:role:add node:role:remove
 apps/gateway/app/Http/Requests/Nodes/AddNodeRoleRequest.php  node:role:add
 apps/gateway/app/Domain/Nodes/NativeNodeRoleAddInput.php     node:role:add
 apps/gateway/app/Domain/Nodes/NativeNodeRoleRuntimeInput.php  node:role:add
@@ -189,3 +189,16 @@ swamp/extensions/behaviors/operations/firewall/native_fixture.ts  skip
 **/*.md                                          skip
 **/*.mdx                                         skip
 **/*.mmd                                         skip
+
+# Standalone role removal and its admitted captured resources.
+apps/cli/app/Commands/Nodes/RemoveNodeRoleCommand.php       node:role:remove
+apps/gateway/app/Domain/Nodes/NativeNodeRoleRemovalInput.php  node:role:remove node:role:relocate node:remove
+apps/gateway/app/Domain/Nodes/NodeRoleRemoveInput.php       node:role:remove
+apps/gateway/app/Domain/Nodes/NodeRoleRemovalProjection.php  node:role:remove
+apps/gateway/app/Http/Requests/Nodes/RemoveNodeRoleRequest.php  node:role:remove
+packages/php-sdk/src/Requests/Nodes/RemoveNodeRoleRequest.php  node:role:remove
+packages/php-sdk/src/Responses/Nodes/RemovedNodeRoleResponse.php  node:role:remove
+swamp/workflows/workflow-operation-node-role-remove.yaml  node:role:remove
+swamp/ansible/operation-node-role-remove.yml               node:role:remove
+swamp/ansible/tasks/role-remove-*.yml                     node:role:remove
+swamp/proof/node/role-remove.cases.yaml                    node:role:remove

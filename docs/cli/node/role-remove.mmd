@@ -93,17 +93,19 @@ sequenceDiagram
         GW-->>CLI: Operation accepted<br/>202 · Operation ID
         %%> Result:
         %%> - Follow this Operation rather than starting another run.
+        Note over SW: Write the intent
+        Note over SW: Write the playbook input
         SW->>N: Reach the Node<br/>Ansible phase
         %%> What it does:
         %%> - Establish reachability; offline consent changes only the unreachable outcome.
         alt Target is unreachable without offline consent
             %% path: target-unreachable
-            Note over SW: Target unreachable
+            Note over N: Target unreachable
             %%> Result:
             %%> - Fail with node.removal_incomplete at the reachability step, retaining the assignment; do no target cleanup.
         else Target is unreachable and offline is set
             %% path: offline-unreachable
-            Note over SW: Skip target cleanup
+            Note over N: Skip target cleanup
             %%> What it does:
             %%> - Retain all target-host state for manual cleanup, including data even when purge was requested.
             %%> - Continue withdrawal on recorded other Nodes; no claim that recovery SSH was restored.
@@ -117,12 +119,12 @@ sequenceDiagram
                 %%> - Check before teardown. Never drain guests or deregister runners, even with force.
                 alt Guests remain, or purge resources are not empty
                     %% path: ci-not-drained
-                    Note over SW: CI not drained
+                    Note over N: CI not drained
                     %%> Result:
                     %%> - Fail with node.removal_incomplete before CI teardown; retain the failed assignment and CI resources.
                 else CI is empty for the requested cleanup
                     %% path: ci-drained
-                    Note over SW: CI ready for removal
+                    Note over N: CI ready for removal
                     %%> Result:
                     %%> - Continue teardown under the same lock.
                 end

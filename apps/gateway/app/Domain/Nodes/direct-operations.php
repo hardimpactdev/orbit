@@ -88,8 +88,8 @@ return ['node.add' => [
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-role-relocate-operation-[1-9][0-9]*$'],
     ],
 ], 'node.role_remove' => [
-    'workflow' => 'node-role-remove',
+    'workflow' => 'operation-node-role-remove',
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'remove', 'step' => 'Confirm role removal', 'native' => true],
+    'terminal_result' => ['job' => 'cleanup', 'step' => 'Remove the run folder', 'native' => true],
     'projection' => NodeRoleRemovalProjection::class,
 ]];

@@ -2,7 +2,7 @@
 title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
-  - swamp/{ansible/**,extensions/behaviors/operations/ansible-input/**,manifest.yaml,extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local}.ts,node-enrollment-plan/**,node-removal-command/**},workflows/workflow-{operation-node-add,operation-node-remove,operation-node-role-relocate,node-role-remove,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue,node-cli-install,fleet-release-node}.yaml}
+  - swamp/{ansible/**,extensions/behaviors/operations/ansible-input/**,manifest.yaml,extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local}.ts,node-enrollment-plan/**,node-removal-command/**},workflows/workflow-{operation-node-add,operation-node-remove,operation-node-role-relocate,operation-node-role-remove,node-role-remove,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue,node-cli-install,fleet-release-node}.yaml}
   - apps/gateway/app/{Domain/Nodes/{NodeNetworkReservation,NodeRemovalInput,NativeNodeRoleRemovalInput,NativeNodeRoleRelocateInput,NodeRoleRelocateInput,NodeRoleRelocateProjection,NativeNodeEnrollmentInput,NativeNodeEnrollmentProjection,NodeEnrollmentPolicy,NodeRemovalResources,NodeRemovalProjection,NodeRoleRemovalProjection,direct-operations}.php,Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,AssignRoleAction,AdmitNodeRoleOperationAction,AdmitNodeEnrollmentOperationAction}.php}}
   - apps/gateway/app/Infrastructure/{WireGuard/NativeGatewayPeerProjectionManager.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/{Console/Commands/{ProvisionNodeCommand,BootstrapPlanCommand,BootstrapControlPlanCommand,RoleAddCommand,NodeAddCommand,NodeConvergeCommand},Domain/Gateway/{GatewayBootstrapPlan,GatewayControlPlan}}.php
@@ -840,7 +840,9 @@ Exporter work shares the prospective certificate plan. It omits Caddy and shared
 
 ### Native role lifecycle
 
-Role convergence uses the same Swamp workflow and Ansible phases as role addition. Removal first records the assignment as removing, then publishes the remaining PHP, Caddy and DNS state and reconciles the complete Metrics fleet. It removes only the withdrawn role's runtime, certificate and firewall rules. The last role restores public SSH before closing role access. Shared packages and Tool managers remain.
+Role convergence uses the same Swamp workflow and Ansible phases as role addition. Standalone `node:role:remove` runs `operation-node-role-remove`: reachability, CI pre-drain, recovery SSH, recorded fleet withdrawal, target cleanup, optional purge, result and run-folder cleanup. Offline consent skips target work only after an unreachable probe. A failure keeps completed changes and the assignment at its exact `remove:STEP` for retry.
+
+Removal first records the assignment as removing, then publishes the remaining PHP, Caddy and DNS state and reconciles the complete Metrics fleet. It removes only the withdrawn role's runtime, certificate and firewall rules. The last role restores public SSH before closing role access. Shared packages and Tool managers remain.
 
 ### Native role relocation
 

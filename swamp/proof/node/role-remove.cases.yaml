@@ -22,8 +22,6 @@ cases:
     covers: [main, admitted, reachable, target-cleanup, removed, follow-operation]
     summary: Reachable offline consent still stops WebSocket runtime and preserves the other assignments and SSH policy.
     timeout: 900
-    fails_today: Admission rejects offline with operation.kind_unavailable rather than probing and doing ordinary cleanup
-      on a reachable target.
     setup:
       - cli:
           run: ['node:role:list', '${app-dev.id}']
@@ -69,8 +67,6 @@ cases:
     covers: [main, admitted, reachable, target-cleanup, removed, missing-assignment, role-missing, missing-ingress, follow-operation]
     summary: Delete once, refuse the ordinary repeat without an Operation, but treat missing ingress as a no-op.
     timeout: 900
-    fails_today: Admission looks up the assignment with firstOrFail for ingress too, so missing ingress returns http.404 instead
-      of success with skip reason node_role.absent.
     setup:
       - cli:
           run: ['node:role:add', '${app-dev.id}', database]
@@ -118,7 +114,6 @@ cases:
     covers: [main, admitted, reachable, last-role, target-cleanup, removed, follow-operation]
     summary: Last-role teardown restores real recovery SSH, deletes only the assignment, and retains the active Node.
     timeout: 900
-    fails_today: Remove the role is not yet one consolidated Ansible phase with this Operation step name.
     setup:
       - cli:
           run: ['node:show', '${app-dev.id}']
@@ -167,7 +162,6 @@ cases:
     node: app-dev
     covers: []
     summary: Reject invalid numeric IDs, names and unconsented flags locally without mutation.
-    fails_today: The CLI accepts Node names instead of requiring a positive numeric Node ID.
     stages:
       - act:
           - cli:
@@ -207,8 +201,6 @@ cases:
     node: app-dev
     covers: [no-access, missing-assignment, role-missing]
     summary: Gateway authority or a target grant suffices; neither refuses access; Metrics follows the same target-write rule.
-    fails_today: The Metrics roleMutation middleware still requires Gateway authority, so a target-only Metrics removal is
-      denied.
     setup:
       - cli:
           run: ['node:access:add', '${app-prod.id}', '${gateway.id}']
