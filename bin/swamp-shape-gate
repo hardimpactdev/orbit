@@ -58,14 +58,17 @@ DENO_UNIT_TESTS = (
     ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/validate-swamp-workflows_test.ts'),
     ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/check-swamp-base-policy_test.ts'),
 )
-# Run elsewhere: the validation group runs the enrollment trust test; the other two need a live host.
+# The file names `deno test` takes from a directory.
+DENO_TEST_FILE = re.compile(r'(.*[._])?test\.(ts|tsx|mts|js|mjs|jsx)')
+# Not in the shape group: the validation group runs the enrollment trust test, the firewall test stays out until it passes,
+# and the host method test needs systemd and passwordless sudo.
 DENO_TESTS_ELSEWHERE = ('tests/metrics_exporter_firewall_test.ts', 'tests/native_host_method_test.ts', 'tests/node_add_bootstrap_test.ts')
 
 
 def deno_test_files():
     """Each file in tests/ is its own command, so the workers share the playbook-heavy files.
     As one serial command they took more than 15 of the 20 minutes CI gives the gate."""
-    files = sorted(str(path.relative_to(SWAMP)) for path in (SWAMP / 'tests').glob('*_test.ts'))
+    files = sorted(str(path.relative_to(SWAMP)) for path in (SWAMP / 'tests').rglob('*') if DENO_TEST_FILE.fullmatch(path.name))
     return [('-A', file) for file in files if file not in DENO_TESTS_ELSEWHERE]
 
 
