@@ -12,9 +12,10 @@ sequenceDiagram
   participant N as Router Node<br/>services, over ssh
   Note over GW: Admit the guard<br/>the router's Node
   %%> What it does:
-  %%> - renders the guard's Caddyfile and its two UFW rules from the task VM WireGuard range and the router's port
+  %%> - renders the guard's Caddyfile and its UFW rules from its sources and the router's port: the task VM WireGuard range and the WireGuard address of each Node whose last forwarder run left a forwarder
   %%> - pushes vault copies of the task key and the anchor key; the intent holds neither
-  %%> - `--remove` records the guard's removal instead: the same run takes it off the Node
+  %%> - `--remove` records the guard's removal instead: the same run takes it off the Node, with each forwarder Node's allow
+  %%> - takes the lock `ai_router_guard:<router Node>`, which forwarder runs share
   %%> Requirements:
   %%> - the ai-router extension is set up on its Node
   GW->>SW: Start run, full intent<br/>operation-ai-router-task-guard
@@ -22,7 +23,8 @@ sequenceDiagram
   %%> What it does:
   %%> - writes the two keys as root-only files and the Caddyfile into /etc/orbit/ai-router-guard, validated by `caddy validate`
   %%> - runs its own Caddy, `orbit-ai-router-guard.service`, on 10.44.0.3:8318: a dynamic user that loads the keys with `LoadCredential`, no admin endpoint, no saved config
-  %%> - places the UFW pair above the WireGuard member trust, re-placing a pair out of order: allow 8318 from the task VM range, deny it from every other member
+  %%> - passes a POST with the task key to an inference route, with no query or only `beta=true` on the two messages routes, for Claude Code
+  %%> - places the UFW rules above the WireGuard member trust, re-placing a pair out of order: allow 8318 from the task VM range and from each forwarder Node, deny it from every other member
   %%> - from the Node itself, outside the range: the task key gets 403
   SW->>N: Prove the refusal<br/>from Node 209
   %%> What it does:

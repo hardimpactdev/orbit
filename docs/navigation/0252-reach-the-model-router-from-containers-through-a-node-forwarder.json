@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 252,
+      "pages": [
+        "decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder"
+      ]
+    }
+  ]
+}

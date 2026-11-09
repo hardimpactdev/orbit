@@ -65,6 +65,7 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
     - The real key never leaves its Node and the Gateway. Each further key is one more placeholder-to-real pair in a guard.
     - The one exception: short-lived minted tokens that never stay on the VM, such as GitHub App tokens.
     - First use: the model router guard, `ai_router.task_guard`, on `services` at `10.44.0.3:8318`.
+    - Containers on agent Nodes reach the same guard through a forwarder with no key on their Node, `ai_router.model_forwarder` ([ADR 0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder)).
 
 ## Checks on every PR
 

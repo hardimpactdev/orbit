@@ -1,0 +1,47 @@
+sequenceDiagram
+  %% Target design: Nick 2026-11-09, containers reach models with only the placeholder key and no real key on their Node (ADR 0252).
+  %% status: draft
+  %% command: none · `ai-router:model-forwarder NODE` on the Gateway, once per agent Node, and with `--remove` to withdraw it
+  %% kind: ai_router.model_forwarder
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane R icon=server pill=target tone=amber
+  %% lane N icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant R as Router Node<br/>services, over ssh
+  participant N as Agent Node<br/>beast, over ssh
+  Note over GW: Admit the forwarder<br/>the agent Node
+  %%> What it does:
+  %%> - renders the guard as `ai-router:task-guard` does, with the Node's WireGuard address added to its sources, or removed
+  %%> - renders the forwarder's Caddyfile: the bridge address at port 8319, proxied unchanged to the guard origin; it holds no key
+  %%> - pushes vault copies of the task key and the anchor key for the guard; the intent holds neither, and the forwarder gets neither
+  %%> - takes the lock `ai_router_guard:<router Node>`, which guard runs share
+  %%> Requirements:
+  %%> - the ai-router extension is set up on its Node
+  %%> - the Node is active Linux with a WireGuard address, and is neither the router's Node nor the swamp Node
+  %%> - `--bridge` and `--address` name the container bridge and its IPv4 address; a removal reuses those of the last run
+  GW->>SW: Start run, full intent<br/>ai_router.model_forwarder
+  SW->>R: Apply the guard<br/>Ansible
+  %%> What it does:
+  %%> - the guard phase of `ai-router:task-guard`: keys, Caddyfile, unit, and the UFW allow of each forwarder Node above the deny
+  %%> - its end checks: from the router Node and from the swamp Node, a source outside the admitted sources is refused
+  SW->>N: Apply the forwarder<br/>Ansible
+  %%> What it does:
+  %%> - checks that the address belongs to the bridge
+  %%> - runs its own Caddy, `orbit-ai-router-forwarder.service`, on the bridge address at port 8319: a dynamic user, no admin endpoint, no saved config, no key
+  %%> - allows port 8319 in on the bridge only
+  %%> - `--remove`: takes the unit, its folder and its UFW rule off the Node instead
+  SW->>N: Prove the path<br/>from the agent Node
+  %%> What it does:
+  %%> - apply: a POST through the forwarder with no key gets the guard's 403, so the guard admits the Node and still demands the key
+  %%> - remove: the guard port does not answer the Node
+  alt the checks pass
+    SW-->>GW: Run succeeded
+    Note over GW: Record the forwarder<br/>http://10.251.33.1:8319
+    %%> Result:
+    %%> - containers on the Node call this origin with the one task key; only the `agent` uid reaches it, by the container's own nftables rule
+  else a step failed
+    SW--xGW: Run failed<br/>failed step
+  end
