@@ -50,6 +50,7 @@ The recipe is UTF-8 JSON, not executable PHP or a list of shell commands. The lo
 | `roles` | Object requiring `gateway`, `app-dev`, `app-prod`, and `operator`; optional profiles use known Node role names. Each value lists additional tool identifiers and PHP sets |
 | `base` | List of additional tool identifiers and PHP sets for the task VM base image; this is an image profile, not a Node role |
 | `instances` | The two [shared folders](/reference/development-containers#shared-folders) of an Instance container host, `runtime` and `agent`. See [Shared Instance folders](#shared-instance-folders) |
+| `static_php` | The [static PHP build](#static-php-build) of the Instance runtime folder: `static_php_cli`, `frankenphp`, `without`, and `versions` |
 
 An `ubuntu` tool names its Debian `package`. Its `version` is the complete Debian version, including epoch and distribution revision when present, not just an upstream release or a constraint. It resolves only from the selected Ubuntu snapshot's signed package indexes for the declared release and architectures. Every pin must equal the newest version across the release's archive, updates, and security pockets on every declared architecture. An older pin or one available only from today's rolling archive fails online validation.
 
@@ -305,6 +306,52 @@ The standalone recipe CLI uses `python3`, `gpg` and `gpgv`. Run `php artisan orb
 2. Each task VM host [refreshes its base snapshot](#refresh-the-base-snapshot).
 3. The next [PHP step](/reference/php-runtime#php-build) of an Instance brings its versions to the recipe.
 4. Hosted CI installs the new build in its next run. See [runner updates](/reference/implementation-loop#one-php-build-in-ci) for the pre-merge operator steps.
+
+### Static PHP build
+
+The runtime folder of a [development container](/reference/development-containers#php) holds a static PHP CLI and FrankenPHP for each PHP version. Both come from one [static-php-cli](https://static-php.dev) build, so web requests and commands run the same PHP with the same extensions. No published release ships both binaries from one build, so Orbit builds them.
+
+The recipe's `static_php` section defines the builds:
+
+| Field | Contract |
+| --- | --- |
+| `static_php_cli` | The full static-php-cli commit that runs the build, on its `v3` line, which FrankenPHP's own static build uses |
+| `frankenphp` | The exact FrankenPHP release, such as `1.13.5` |
+| `without` | Extensions of the [PHP build](#php-build) that the static build leaves out: `ffi` and `pcov`. A fully static musl binary cannot load shared code, and static-php-cli builds `pcov` only as a shared extension |
+| `versions.<X.Y>.php_version` | The exact PHP release, such as `8.5.12`. It can differ from the Node pin's patch release for a while, because a new release needs a new build |
+| `versions.<X.Y>.build` | The build id: a SHA-256 over the PHP release, FrankenPHP, the static-php-cli commit, the extension list and `tools/static-php/craft.yml` |
+| `versions.<X.Y>.url` | The release asset `static-php-<php_version>-<build id prefix>-linux-x86_64.tar.gz` under the `static-php-<php_version>-<build id prefix>` release |
+| `versions.<X.Y>.sha256` | The asset's SHA-256, or `null` until main has published the build |
+
+A build's extensions are its PHP version's `extensions` less `without`, so the Node build and the static build share one list. Today that is every extension Orbit's Laravel projects require, from their `composer.json` files and locks: `intl`, `exif`, `sodium`, `pcntl`, `sockets` and the rest, with `pdo_pgsql`, `pdo_mysql`, `pdo_sqlite`, `redis`, `igbinary`, `imagick`, `gd` and `opentelemetry`. Both binaries load OpenTelemetry, because they share one build; on a Node only PHP-FPM loads it. The section is not part of the [recipe identity](#recipe-identity): no Node profile or task image holds the static build.
+
+`tools/static-php/craft.yml` is the static-php-cli build definition. It builds the `cli` and `frankenphp` SAPIs together with ZTS, as a fully static musl binary for the baseline x86_64 CPU, without static-php-cli's suggested extensions. Its libraries give `gd` its image formats and `curl` HTTP/2 and HTTP/3. PHP reads its configuration from `/etc/orbit/php` and `/etc/orbit/php/conf.d`.
+
+`bin/static-php-build` runs the build:
+
+| Command | Effect |
+| --- | --- |
+| `definition` | Prints each version's build id, release tag, asset and URL |
+| `verify-pins` | Fails when a recorded `build` or `url` is not the definition's |
+| `build --version X.Y --output DIR` | Fetches the pinned static-php-cli and FrankenPHP sources, runs `spc craft`, and packs `bin/php`, `bin/frankenphp` and `build.json` with a `SHA256SUMS` file |
+| `check --version X.Y --bin DIR` | Fails unless both binaries report the pinned PHP release and load exactly the build's extensions |
+
+The check is the Ansible module `orbit_static_php`. The runtime folder install runs it through `swamp/ansible/tasks/static-php-check.yml` for each PHP version it unpacks, with the version's `bin` folder, `php_version` and `extensions` as `static_php`. FrankenPHP runs its probe through `frankenphp php-cli`, and the CLI runs it with `php -n`.
+
+#### The static PHP workflow
+
+The `Static PHP build` workflow runs when the recipe, the build files or the workflow change. It requires every pin to name its definition, then builds only the versions whose release does not exist yet.
+
+A proof job unpacks the archive, checks its SHA-256, refuses a binary that is not fully static, and runs the extension check. It then runs `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G`, installs the Gateway with Composer and its scripts, runs Artisan and Pest with `php -d memory_limit=1G vendor/bin/pest`, and serves the Gateway's `/up` with `frankenphp php-server`.
+
+On a push to main, the publish job creates the release with the archive and `SHA256SUMS`. It never replaces a release: a published SHA-256 may already be pinned. Pull requests build and prove, but never publish.
+
+#### Change a static build
+
+1. Change the definition: the `static_php` section, the PHP build's extensions, or `tools/static-php/craft.yml`.
+2. Run `bin/static-php-build definition`. Record each changed version's `build` and `url`, and set its `sha256` to `null`.
+3. The pull request's workflow builds and proves the new definition. After merge, main publishes it.
+4. A second pull request records the published SHA-256 from the release's `SHA256SUMS`. Only then can a Node install the build.
 
 ### Recipe identity
 
