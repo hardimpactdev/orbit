@@ -27,7 +27,7 @@ sequenceDiagram
   %%> - after recording, the Gateway's cleanup revokes earlier `Orbit Gateway` sessions on this server
   SW->>C: Issue the Swamp session<br/>t3 auth session issue
   %%> Command, as `agent`:
-  %%> - `t3 auth session issue --label "Orbit Swamp" --token-only`, with only the scopes the thread tools and `orchestration.forceStopThread` need, as the plan proposes
+  %%> - `t3 auth session issue --label "Orbit Swamp" --token-only`, with only the scopes the thread tools and `orchestration.forceStopThread` need
   %%> What it does:
   %%> - the session goes to the Instance's Swamp vault key, which Swamp reads when it drives T3 for a task; it never enters the run or the Gateway's records
   %%> When:

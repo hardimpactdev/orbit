@@ -1,6 +1,6 @@
 ---
 title: "Instance containers"
-description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project may turn on a nested fleet."
+description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
   - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes}.php
@@ -243,7 +243,7 @@ A container's T3 server has two drivers. They use the same threads and the same 
 
 | Driver | When | Through |
 | --- | --- | --- |
-| A user | No task runs in the Instance, or its task is [paused](/solutions/development-container-runtime#open-questions) | Conn, paired with the T3 server through Orbit |
+| A user | No task runs in the Instance, or its task is paused | Conn, paired with the T3 server through Orbit |
 | Swamp | A task flow runs in the Instance | T3's MCP endpoint and WebSocket API, as [Swamp drives T3](#swamp-drives-t3) specifies |
 
 Both send a turn with `queue`, so neither steers the other's turn. No lease decides who drives.
@@ -267,7 +267,7 @@ A task group runs in one Instance container. Everything else about a group, its 
 | Workspace actions | The receipt, the Git evidence, the reviewer's reset and the checks run from the Node, with `incus exec` as `agent` in `/srv/workspace`. A check sees what the agent saw |
 | Preview | The Instance's Route |
 | Publish | Orbit reads the branch out on the Node and pushes it with a minted token, as [Git in and out](#git-in-and-out) describes |
-| Pause | Swamp sends no turn, and the user drives from Conn. How a task pauses is an [open question](/solutions/development-container-runtime#open-questions) |
+| Pause | `task:pause` on the group stops Swamp's turns, and the user drives from Conn. `task:resume` gives the turns back to Swamp |
 | End | Orbit destroys a clone that the task owns, through [Destroy](#destroy). An attached Instance stays running |
 
 A task keeps its Instance awake: [Sleep and wake](#sleep-and-wake) never stops a container while a task flow runs in it.
@@ -281,7 +281,7 @@ Swamp drives a container's T3 server through T3's own API. Nothing of Orbit runs
 Swamp reaches the container's T3 as a Conn device does, with its own session.
 
 - **Address.** The Instance's published URL: the Node's WireGuard address and the runtime row's `t3_port`. Conn devices use the same path. The firewall admits WireGuard peers and refuses task VMs.
-- **Session.** A second T3 session, `Orbit Swamp`, from the create flow, as the plan proposes.
+- **Session.** A second T3 session, `Orbit Swamp`, from the create flow.
 - **Vault.** Swamp keeps that session in the vault and reads it in each step that calls T3.
 - **Session scope.** The session never enters a run or the Gateway's records. The renewal of [registration](#t3-registration-and-pairing) renews it, and destroy revokes it.
 - **MCP.** `POST <url>/mcp` with `Authorization: Bearer <session>`.
@@ -325,7 +325,7 @@ The state of a thread is the status of its latest run, from `t3_thread_wait` or 
 | `preparing`, `queued`, `starting`, `running` | `working` |
 | `waiting` | `asking_for_input` |
 | `completed` | `done` |
-| `failed`, `interrupted`, `cancelled`, `rolled_back` | `failed`, with T3's failure class and message as the error, as the plan proposes |
+| `failed`, `interrupted`, `cancelled`, `rolled_back` | `failed`, with T3's failure class and message as the error. Swamp decides assistance from the class |
 
 `full-access` agents ask for no approval. A `waiting` run comes from a question that the agent asks, or from an MCP server of the project that asks for input.
 
@@ -339,7 +339,7 @@ Swamp reads the `turnTokenUsage` of each provider turn from `orchestration.getTh
 | Cached input | `cachedInputTokens` |
 | Output | `outputTokens`, which holds the reasoning tokens |
 | Subagents and compaction | `otherUsage.inputTokens` and `otherUsage.outputTokens`, added to uncached input and output |
-| Cost | Null, as the plan proposes. T3 reports no cost per turn |
+| Cost | Null. T3 reports no cost per turn |
 
 A provider turn without `turnTokenUsage`, or whose `usageStatus` is `partial` or `unavailable`, leaves the turn's metrics null, because a partial sum would look complete. The thread keeps the sum of its turns, as with Pi.
 
@@ -360,11 +360,11 @@ When the turn ends, Swamp reads the thread's activity since the turn began with 
 
 Swamp keeps its own Git evidence before and after a turn, with a temporary index in the workspace. It does not use T3's diff calls; Conn shows them to a user.
 
-What T3 does not give yet is listed in the plan's [open questions](/solutions/development-container-runtime#open-questions).
+The plan's [decisions](/solutions/development-container-runtime#decided) record the choices behind this contract.
 
 ## Nested fleet
 
-A Project may turn on a nested fleet. Its Instance containers then run a fleet of Incus containers nested inside them. Orbit uses it for its command proofs: a Gateway, an `app-dev` and an `app-prod` Node. Other Projects leave it off and keep the kernel surface of [Inside a container](#inside-a-container).
+A Project setting turns on a nested fleet. Its Instance containers then run a fleet of Incus containers nested inside them. Orbit uses it for its command proofs: a Gateway, an `app-dev` and an `app-prod` Node. Other Projects leave it off and keep the kernel surface of [Inside a container](#inside-a-container).
 
 ### The container
 
@@ -405,7 +405,8 @@ The agent reaches its fleet as on a task VM, with its own tunnel.
 - Its tunnel `wg-nested` runs as `orbit-wg-nested.service` with `ip` and `wg`, because `wg-quick` segfaults in the outer container under Ubuntu 26.04's AppArmor profile.
 - The candidate CLI in the workspace talks to the nested Gateway at `https://10.45.0.1`, with the `nested` profile and the nested root CA.
 - The agent runs `incus` in the container for `exec`, logs and snapshots of its nested containers.
-- The plan proposes that `agent` joins the inner Incus admin group. That makes the agent root-equivalent inside its own container, never on the Node.
+- `agent` is a member of the inner Incus admin group and has no sudo.
+- That makes the agent root-equivalent inside its own container, never on the Node.
 - `orbit` has no access to the inner Incus.
 - The nested Gateway and `app-dev` get `/srv/workspace` as the disk device `checkout`, so an edit reaches them at once.
 

@@ -50,7 +50,7 @@ Orbit has one runtime kind for Instances and agent work: an unprivileged Incus c
 - **Every Node with Instances.** Every `app-dev` and `app-prod` Node runs its Instances in containers; there is no setting to opt in. The Nodes' Incus pools are ZFS, which clones need. The two roles install the container setup and the [shared folders](#shared-folders) instead of PHP-FPM and checkout folders. Existing checkout Instances are migrated into containers, code and database.
 - **Development Instance.** One container per Instance, recorded as the Instance's runtime. The Project's first default Instance on a Node is built from scratch. Every other Instance is a ZFS clone of that default Instance, and its database is a clone of the default's database through the database family. The default Instance deploys every merge to the default branch, so a clone starts current; there are no development setup steps. The default Instance never runs T3.
 - **Task.** A task group runs in one Instance container. Its start clones the Project's default Instance, or the task attaches to an existing Instance. Swamp drives the container's T3 for the task's turns. A clone made for the task is destroyed when the group ends; an attached Instance stays.
-- **Nested fleet.** An optional feature, which [the plan](/solutions/development-container-runtime#open-questions) proposes per Project. Instance containers with it run a fleet as Incus containers nested inside them: for Orbit, a Gateway, an `app-dev` and an `app-prod` Node for command proofs.
+- **Nested fleet.** An optional feature, set per Project. Instance containers with it run a fleet as Incus containers nested inside them: for Orbit, a Gateway, an `app-dev` and an `app-prod` Node for command proofs.
 - **Production Instance.** Containers on its `app-prod` Node, with the user `orbit` only and no agent. Production containers never sleep. Step 10 moves them, after development containers work.
 - **Node.** The machine Orbit runs on: a bare-metal host or a VPS. Containers are runtimes of Instances, never Nodes. They get no WireGuard identity, no roles and no exporter.
 
@@ -89,7 +89,7 @@ The default Instance holds the fleet's ready copies, with each nested container 
   - This is the boundary against an attacker who comes in through a preview URL.
   - Root work (packages, services, runtime setup) goes through Orbit from the host. A project's system packages come from its recipe, not from the agent.
   - Without a nested fleet, `user.max_user_namespaces=0` is set inside the container, and the container has no nesting.
-- **With a nested fleet.** The container gets nesting and the keys above. The agent drives the inner Incus, which makes it root-equivalent inside its own container; [the plan](/solutions/development-container-runtime#open-questions) settles how. `orbit` still gets none of it. This is the accepted risk below.
+- **With a nested fleet.** The container gets nesting and the keys above. `agent` joins the inner Incus admin group, with no sudo, which makes it root-equivalent inside its own container. `orbit` still gets none of it. This is the accepted risk below.
 - **Production containers.** Only `orbit`. No agent, no T3 and no model route.
 
 ### Agent engine in containers
