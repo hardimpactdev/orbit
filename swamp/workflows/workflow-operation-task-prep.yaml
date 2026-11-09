@@ -90,7 +90,7 @@ jobs:
 - name: prep
   labels: {role: swamp}
   steps:
-  - name: Claim a slot
+  - name: Claim a task place
     labels: {role: swamp}
     task:
       type: workflow
@@ -106,7 +106,7 @@ jobs:
   - name: Draft the spec
     labels: {role: swamp}
     dependsOn:
-    - step: Claim a slot
+    - step: Claim a task place
       condition:
         type: succeeded
     task:

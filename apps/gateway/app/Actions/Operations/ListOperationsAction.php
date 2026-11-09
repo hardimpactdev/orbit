@@ -9,20 +9,25 @@ use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Database\Eloquent\Collection;
 
-/** The 50 newest operations on Nodes the caller can access, newest first. */
+/** One page of the newest operations on Nodes the caller can access, newest first (docs/reference/operations.md#page-the-list). */
 final readonly class ListOperationsAction
 {
-    public const int Limit = 50;
+    public const int DefaultLimit = 20;
+
+    public const int MaxLimit = 100;
 
     public function __construct(private NodeAccessAuthorizer $access) {}
 
     /**
+     * Reads one row more than the page, so the caller knows whether a next page exists.
+     *
      * @param  array{status?: string, kind?: string, target_type?: string, target_id?: int}  $filters
-     * @return Collection<int, Operation>
+     * @param  int|null  $before  the cursor: only operations with a lower ID
+     * @return array{operations: Collection<int, Operation>, next_cursor: ?string}
      */
-    public function execute(Node $consumer, array $filters): Collection
+    public function execute(Node $consumer, array $filters, int $limit = self::DefaultLimit, ?int $before = null): array
     {
-        return Operation::query()
+        $rows = Operation::query()
             ->withCallerNodeName()
             ->when(
                 ! $this->access->hasGatewayAuthority($consumer),
@@ -32,8 +37,12 @@ final readonly class ListOperationsAction
             ->when(isset($filters['kind']), static fn ($query) => $query->where('kind', $filters['kind'] ?? null))
             ->when(isset($filters['target_type']), static fn ($query) => $query->where('target_type', $filters['target_type'] ?? null))
             ->when(isset($filters['target_id']), static fn ($query) => $query->where('target_id', $filters['target_id'] ?? null))
+            ->when($before !== null, static fn ($query) => $query->where('id', '<', $before))
             ->orderByDesc('id')
-            ->limit(self::Limit)
+            ->limit($limit + 1)
             ->get();
+        $page = $rows->take($limit)->values();
+
+        return ['operations' => $page, 'next_cursor' => $rows->count() > $limit ? (string) $page->last()?->id : null];
     }
 }

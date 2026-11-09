@@ -411,7 +411,7 @@ it('projects a terminal prep parent with large state settlement evidence', funct
         'startedAt' => now()->subMinute()->toISOString(), 'completedAt' => now()->toISOString(),
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $kind],
         'jobs' => [['name' => $selector['job'], 'steps' => [
-            ['name' => 'Claim a slot', 'status' => 'succeeded', 'outputs' => ['ready' => true]],
+            ['name' => 'Claim a task place', 'status' => 'succeeded', 'outputs' => ['ready' => true]],
             ['name' => $selector['captures']['findings']['step'], 'status' => 'succeeded',
                 'dataArtifacts' => [['dataId' => $dataId, 'name' => 'state', 'version' => 22]]],
             ['name' => $selector['step'], 'status' => 'failed'],

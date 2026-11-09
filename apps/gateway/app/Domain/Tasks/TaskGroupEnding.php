@@ -27,7 +27,7 @@ final readonly class TaskGroupEnding
         if (($captured['task_vm_id'] ?? null) !== null) {
             $slot = TaskVm::query()->lockForUpdate()->findOrFail(ValidatedData::integer($captured['task_vm_id']));
             if ($slot->group_id !== null && $slot->group_id !== $group->id) {
-                throw new ResourceOperationException('operation.execution_forbidden', 'Cleanup no longer owns its slot.', 422);
+                throw new ResourceOperationException('operation.execution_forbidden', 'Cleanup no longer owns its task VM.', 422);
             }
             app(TaskVmSlotReleaseProjection::class)->record($slot, true, null);
         }

@@ -2160,6 +2160,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
+    if route['name'] == 'operation:list':
+        meta = responses['200']['content']['application/json']['schema']['properties']
+        meta['meta'] = {'allOf': [{'$ref': '#/components/schemas/Meta'}, {'type': 'object', 'properties': {'next_cursor': {'type': ['string', 'null'], 'description': 'Send as `cursor` with the same filters for the next page; null on the last page.'}}, 'required': ['next_cursor']}]}
     if route['name'].startswith('project:document:'):
         op['description'] = 'Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.'
         if route['name'] in ('project:document:list', 'project:document:search', 'project:document:version:list'):

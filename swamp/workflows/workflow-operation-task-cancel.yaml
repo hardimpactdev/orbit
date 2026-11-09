@@ -29,7 +29,7 @@ jobs:
   labels: {role: swamp}
   steps:
   # The VM and its seed clone are deleted and its hub peer is removed; the Gateway then deletes its Node.
-  - name: Release the slot
+  - name: Release the place
     labels: {role: swamp}
     writes: true
     guard: ${{ inputs.intent.release == null }}
@@ -48,5 +48,5 @@ jobs:
   steps:
   - name: Check the end
     labels: {role: swamp}
-    task: {type: assert, expr: 'inputs.intent.release == null || steps["Release the slot"].status == "succeeded"',
+    task: {type: assert, expr: 'inputs.intent.release == null || steps["Release the place"].status == "succeeded"',
       severity: high, message: The task VM was not released.}

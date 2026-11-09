@@ -71,13 +71,13 @@ it('fails the run and the workspace, and releases the slot, when the claim did n
 
     $projected = app(TaskPrepProjection::class)->apply($operation, [
         'run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'failed', 'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['steps' => ['Claim a slot' => ['status' => 'failed']], 'summary' => ['status' => 'failed', 'failed_steps' => ['Claim a slot']]],
-        'failure' => ['failed_step' => 'Claim a slot', 'detail' => 'exec failed', 'stderr_recorded' => true],
+        'result' => ['steps' => ['Claim a task place' => ['status' => 'failed']], 'summary' => ['status' => 'failed', 'failed_steps' => ['Claim a task place']]],
+        'failure' => ['failed_step' => 'Claim a task place', 'detail' => 'exec failed', 'stderr_recorded' => true],
     ]);
 
     expect($projected->status)->toBe(OperationStatus::Failed)
         ->and($projected->error_code)->toBe('tasks.provision_failed')
-        ->and($projected->result)->toMatchArray(['error_code' => 'tasks.provision_failed', 'failed_step' => 'Claim a slot'])
+        ->and($projected->result)->toMatchArray(['error_code' => 'tasks.provision_failed', 'failed_step' => 'Claim a task place'])
         ->and($group->refresh()->status)->toBe(TaskGroupStatus::Failed)
         ->and($instance->refresh()->failed_step)->toBe('provision');
     Queue::assertPushed(ReleaseTaskVmSlot::class, fn (ReleaseTaskVmSlot $job): bool => $job->slotId === $vm->id);

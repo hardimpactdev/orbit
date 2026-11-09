@@ -425,9 +425,11 @@ it('unbinds a failed start\'s group from the workspace its release deletes, and 
     $release->update(['status' => OperationStatus::Succeeded]);
     expect($group->refresh()->taskable_id)->toBeNull();
 
+    // Nothing is left to release, so the cancel closes the group at admission with no run (R1).
     $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);
     expect($cancel->input['instance_id'])->toBeNull()->and($cancel->input['release'])->toBeNull()
-        ->and(app(TaskCancelIntent::class)->input($cancel)['intent']['group_id'])->toBe($group->id);
+        ->and($cancel->status)->toBe(OperationStatus::Succeeded)
+        ->and($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
 });
 
 it('lets a cancel admitted before a failed start\'s release still close the group the release unbound, and keeps the slot destroyed', function (): void {
@@ -1386,10 +1388,12 @@ it('lets task cancellation take precedence over a capacity wait or admitted task
     expect($work->refresh()->status)->toBe(OperationStatus::Cancelled)
         ->and($work->cancel_requested_at)->not->toBeNull()
         ->and($work->lock_key)->toBeNull();
+    // A waiting group holds no VM, so its cancel ends it at admission with no run (R1); a claimed VM needs the release run.
     expect($cancel->kind)->toBe('tasks.cancel')
-        ->and($cancel->status)->toBe(OperationStatus::Queued)
-        ->and($cancel->lock_key)->not->toBeNull();
-    expect($group->refresh()->capacity_wait_reason)->toBeNull();
+        ->and($cancel->status)->toBe($waiting ? OperationStatus::Succeeded : OperationStatus::Queued)
+        ->and($cancel->lock_key === null)->toBe($waiting)
+        ->and($group->refresh()->status)->toBe($waiting ? TaskGroupStatus::Cancelled : TaskGroupStatus::Reserved);
+    expect($group->capacity_wait_reason)->toBeNull();
     if ($waiting) {
         app(TaskVmAdmission::class)->admit($work->id);
         expect($work->refresh()->status)->toBe(OperationStatus::Cancelled)

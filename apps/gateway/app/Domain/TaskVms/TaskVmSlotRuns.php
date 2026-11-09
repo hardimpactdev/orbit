@@ -46,7 +46,7 @@ final readonly class TaskVmSlotRuns
         // fixed placeholder key of the guard, the same for every VM.
         $this->shared->executionCopy('orbit-control-inputs', self::piTokenKey($slot), $token);
         $secrets = $token."\n".self::piModelsFile($this->route->origin(), $this->settings->piModels, $this->route->key());
-        $host = $slot->hostNode ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its host.', 409);
+        $host = $slot->hostNode ?? throw new ResourceOperationException('task_vm.slot_refused', 'A task VM needs its host.', 409);
         $location = $this->settings->host($host->id);
         // A refresh proves its new snapshot before the Gateway records it; any other start copies the recorded one.
         $current = $snapshot === null ? $this->images->snapshot($host, $location)
@@ -63,7 +63,7 @@ final readonly class TaskVmSlotRuns
                 // The VM's peer on the WireGuard hub, added while the VM boots.
                 'hub_peer' => $this->identity->hubPeer($slot),
                 // How every later step reaches the VM: ssh from a Swamp worker over WireGuard, with its pinned host key. Readiness proves it.
-                'guest_ssh' => $this->ssh->forNode($slot->node ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its Node.', 409)),
+                'guest_ssh' => $this->ssh->forNode($slot->node ?? throw new ResourceOperationException('task_vm.slot_refused', 'A task VM needs its Node.', 409)),
                 'converge' => $converge['converge'],
                 // The Pi server is fetched only when the base's recipe is older than the release's, so that the converge installs the new one.
                 'with_pi' => $snapshot === null && $current['recipe_identity'] !== $converge['recipe_identity'],
@@ -126,7 +126,7 @@ final readonly class TaskVmSlotRuns
         // it deletes only a task VM's name: `<host>-tvm-<n>` of slot n, under the host name it had then, or `tvm-<id>` of the old pool. A
         // name of another shape, such as a base or a seed, refuses. Names are unique, so no task VM name is another VM's or its seed.
         if (! TaskVmName::accepts($slot)) {
-            throw new ResourceOperationException('task_vm.release_refused', "Task VM [{$slot->name}] has no task VM name (<host>-tvm-<slot> or tvm-<id>), so no release deletes it.", 409,
+            throw new ResourceOperationException('task_vm.release_refused', "Task VM [{$slot->name}] has no task VM name (<host>-tvm-<place> or tvm-<id>), so no release deletes it.", 409,
                 details: ['task_vm_id' => $slot->id]);
         }
 
@@ -162,7 +162,7 @@ final readonly class TaskVmSlotRuns
     /** @return array{node_id:int,ssh:array<string,mixed>,project:string,pool:string} */
     private function host(TaskVm $slot): array
     {
-        $host = $slot->hostNode ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its host.', 409);
+        $host = $slot->hostNode ?? throw new ResourceOperationException('task_vm.slot_refused', 'A task VM needs its host.', 409);
         $location = $this->settings->host($host->id);
 
         return ['node_id' => $host->id, 'ssh' => $this->ssh->forNode($host), 'project' => $location->project, 'pool' => $location->pool];
@@ -171,7 +171,7 @@ final readonly class TaskVmSlotRuns
     /** @return array{host:array<string,mixed>,slot:array<string,mixed>} the host and the VM, as every slot step names them */
     private function target(TaskVm $slot): array
     {
-        $node = $slot->node ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its Node.', 409);
+        $node = $slot->node ?? throw new ResourceOperationException('task_vm.slot_refused', 'A task VM needs its Node.', 409);
         $pi = Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->where('name', 'pi-server')->sole();
 
         return [
