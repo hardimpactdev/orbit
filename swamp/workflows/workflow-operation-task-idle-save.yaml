@@ -185,8 +185,10 @@ jobs:
       behaviorName: ${{ "task-idle-save-push-" + string(inputs.intent.node_id) }}
       methodName: execute
       inputs:
-        # The save branch belongs to this group alone and holds only the latest save, so the push replaces it.
-        run: timeout 60 git -C "$ORBIT_REPOSITORY" push --quiet -- "$ORBIT_REMOTE" "$ORBIT_REFSPEC"
+        # The save branch belongs to this group alone and holds only the latest save, so the push replaces it. The token has
+        # `contents: write` only, so GitHub refuses a save that adds or changes a workflow; Read push result names that refusal.
+        run: timeout 60 git -C "$ORBIT_REPOSITORY" push --porcelain -- "$ORBIT_REMOTE" "$ORBIT_REFSPEC" >"$ORBIT_DIRECTORY/push.stdout" 2>"$ORBIT_DIRECTORY/push.stderr"
+        ignoreExitCode: true
         env:
           GIT_CONFIG_GLOBAL: /dev/null
           GIT_CONFIG_NOSYSTEM: '1'
@@ -204,7 +206,21 @@ jobs:
           ORBIT_REPOSITORY: ${{ "/tmp/orbit-ansible-" + run.id + "/repository.git" }}
           ORBIT_REMOTE: ${{ inputs.intent.remote }}
           ORBIT_REFSPEC: ${{ inputs.intent.refspec }}
+          ORBIT_DIRECTORY: ${{ "/tmp/orbit-ansible-" + run.id }}
     writes: true
+  - name: Read push result
+    labels: {role: swamp}
+    queueTimeout: 30
+    dependsOn:
+    - {step: Push the save branch, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-idle-save-pushed-" + string(inputs.intent.node_id) }}
+      methodName: pushed
+      inputs:
+        directory: ${{ "/tmp/orbit-ansible-" + run.id }}
+        exit_code: ${{ steps["Push the save branch"].outputs.exitCode }}
 - name: cleanup
   labels: {role: swamp}
   dependsOn:
@@ -256,6 +272,6 @@ jobs:
         type: completed
     task:
       type: assert
-      expr: '"Push the save branch" in steps && steps["Push the save branch"].status == "succeeded" && steps["Remove local scratch"].status == "succeeded"'
+      expr: '"Read push result" in steps && steps["Read push result"].status == "succeeded" && steps["Remove local scratch"].status == "succeeded"'
       message: tasks.idle_save_failed
       severity: high

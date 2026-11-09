@@ -1651,15 +1651,20 @@ it('leaves CI proof VMs to their proof', function (): void {
     expect(app(TaskVmIdleRelease::class)->release())->toBe([])->and(idleOperations($group, $slot)->count())->toBe(0);
 });
 
-/** A group with an idle save, and a GitHub that compares the task branch head with it as `$status`, or fails when null. */
-function idleRestoreWorld(?GitHubComparisonStatus $status): Task
+/**
+ * A group with an idle save, and a GitHub that compares the task branch head with it as `$status`, or fails when null, and whose save
+ * branch exists unless `$branch` is false.
+ */
+function idleRestoreWorld(?GitHubComparisonStatus $status, bool $branch = true): Task
 {
     [, $project] = slotPoolHost();
     $head = str_repeat('a', 40);
     app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'read', 'read', 'hardimpactdev', 'organization', 'https://github.com/apps/read', 'unused'));
-    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($status, $head): void {
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($status, $head, $branch): void {
         $github->shouldReceive('repositoryInstallation')->andReturn(7);
         $github->shouldReceive('repositoryReadToken')->andReturn('contents-read');
+        $github->shouldReceive('branchHead')->withArgs(fn (string $token, GitHubRepository $repository, string $name): bool => str_ends_with($name, '-idle'))
+            ->andReturn($branch ? str_repeat('c', 40) : null);
         $compare = $github->shouldReceive('compareCommits')->withArgs(fn (string $token, GitHubRepository $repository, string $base): bool => $token === 'contents-read' && $base === $head);
         $status === null ? $compare->andThrow(GitHubApiException::unavailable())
             : $compare->andReturn(new GitHubCommitComparison($status, $head, $status === GitHubComparisonStatus::Diverged ? str_repeat('0', 40) : $head));
@@ -1695,6 +1700,59 @@ it('refuses a claim while the task branch moved away from the idle save or the c
     expect(app(TaskIdleSave::class)->restore($group, str_repeat('c', 40), true))->toBe(str_repeat('c', 40));
 })->with([[GitHubComparisonStatus::Diverged, 'tasks.idle_save_diverged'], [null, 'tasks.idle_save_unreadable']]);
 
+it('treats a deleted save branch as no save once the task branch holds its commit, and refuses with the way out otherwise', function (?GitHubComparisonStatus $status): void {
+    $group = idleRestoreWorld($status, branch: false);
+
+    if ($status === GitHubComparisonStatus::Behind) {
+        expect(app(TaskIdleSave::class)->restore($group, str_repeat('a', 40), true))->toBe(str_repeat('a', 40));
+
+        return;
+    }
+    expect(fn () => app(TaskIdleSave::class)->restore($group, str_repeat('a', 40), true))
+        ->toThrow(fn (ResourceOperationException $refused) => expect([$refused->errorCode, $refused->getMessage(), $refused->details['saved_commit']])
+            ->toBe(['tasks.idle_save_missing', 'The save branch task-'.$group->id.'-idle is gone and the task branch does not hold its commit '.str_repeat('c', 40)
+                .'. Push '.str_repeat('c', 40).' to task-'.$group->id.'-idle again, or merge it into the task branch, then try again. Cancel the group when that commit is lost.', str_repeat('c', 40)]));
+})->with(['the task branch holds it' => [GitHubComparisonStatus::Behind], 'the save is ahead' => [GitHubComparisonStatus::Ahead], 'the commit is gone' => [null]]);
+
+it('counts a save that reports success without a valid saved commit as failed, and releases nothing', function (?string $saved): void {
+    [$group, $slot] = idleWorld();
+    idleGroupOperation($group, $slot, 120);
+    app(TaskVmIdleRelease::class)->release();
+
+    $projected = idleSaveEnds(Operation::query()->where('kind', TaskIdleSave::Kind)->sole(), 'succeeded', $saved);
+
+    expect($projected->status)->toBe(OperationStatus::Failed)->and($projected->error_code)->toBe('tasks.idle_save_failed')
+        ->and($group->refresh()->idle_saved_commit)->toBeNull()->and($slot->refresh()->state)->toBe(TaskVmState::Ready)
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
+})->with(['no commit' => [null], 'an empty commit' => [''], 'not a commit' => ['refs/heads/candidate']]);
+
+it('stops saving at once and asks for assistance when GitHub refuses a save that changes a workflow', function (): void {
+    [$group, $slot] = idleWorld();
+    idleGroupOperation($group, $slot, 120);
+    app(TaskVmIdleRelease::class)->release();
+    $save = Operation::query()->where('kind', TaskIdleSave::Kind)->sole();
+    $save->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a']]);
+
+    $projected = app(TaskIdleSaveProjection::class)->apply($save, ['run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'failed',
+        'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [],
+        'failure' => ['failed_step' => 'Read push result', 'detail' => 'tasks.workflows_permission']]);
+
+    expect($projected->error_code)->toBe('tasks.workflows_permission')
+        ->and($group->refresh()->assistance_kind)->toBe(AssistanceKind::Failure)->and($group->assistance_reason)->toContain('changes a GitHub workflow')
+        ->and($slot->refresh()->state)->toBe(TaskVmState::Ready)
+        ->and(app(TaskVmIdleRelease::class)->release())->toBe([]);
+});
+
+it('counts a cancelled or interrupted save toward the bound', function (OperationStatus $status): void {
+    [$group, $slot] = idleWorld();
+    idleGroupOperation($group, $slot, 120);
+    foreach (range(1, TaskIdleSave::MaxFailures) as $attempt) {
+        idleGroupOperation($group, $slot, 60 - $attempt, kind: TaskIdleSave::Kind)->update(['status' => $status]);
+    }
+
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([]);
+})->with([OperationStatus::Cancelled, OperationStatus::Interrupted]);
+
 it('stops saving after three failed saves in a row, asks for assistance, and saves again after the driver\'s next Operation', function (): void {
     [$group, $slot] = idleWorld();
     idleGroupOperation($group, $slot, 120);
@@ -1721,6 +1779,7 @@ it('claims a fresh VM at the idle save for a fix after the idle release, and a b
     app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($head): void {
         $github->shouldReceive('repositoryInstallation')->andReturn(7);
         $github->shouldReceive('repositoryReadToken')->andReturn('contents-read');
+        $github->shouldReceive('branchHead')->andReturn(str_repeat('c', 40));
         $github->shouldReceive('compareCommits')->andReturn(new GitHubCommitComparison(GitHubComparisonStatus::Ahead, $head, $head));
     }));
     idleTaskBranch($head);

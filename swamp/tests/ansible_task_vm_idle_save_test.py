@@ -92,6 +92,26 @@ class TaskVmIdleSaveTest(unittest.TestCase):
             self.assertIn(base, git(run_dir, 'bundle', 'list-heads', str(run_dir / 'save.bundle')))
 
     @NEEDS_ANSIBLE
+    def test_a_workspace_that_stays_dirty_after_the_commit_fails_the_save_and_fetches_nothing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            workspace = self.workspace(root)
+            # A nested repository is committed as a gitlink, so its own uncommitted change keeps the workspace dirty.
+            nested = workspace / 'nested'
+            nested.mkdir()
+            git(nested, 'init', '--quiet')
+            (nested / 'inner.txt').write_text('one\n')
+            git(nested, 'add', '--all')
+            git(nested, 'commit', '--quiet', '-m', 'Inner')
+            (nested / 'inner.txt').write_text('two\n')
+            run_dir = root / 'run'
+            run_dir.mkdir()
+            code, output = self.save(workspace, run_dir)
+            self.assertNotEqual(code, 0, output)
+            self.assertIn('Check the workspace is clean', output)
+            self.assertFalse((run_dir / 'save.bundle').exists())
+
+    @NEEDS_ANSIBLE
     def test_a_workspace_that_cannot_be_read_fails_the_save_and_fetches_nothing(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

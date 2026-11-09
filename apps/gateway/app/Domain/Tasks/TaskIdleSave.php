@@ -64,13 +64,18 @@ final readonly class TaskIdleSave
     /** A save that failed this many times in a row since the group's last other Operation stops the idle release and asks for assistance. */
     public const int MaxFailures = 3;
 
-    /** Whether the idle saves of the group failed {@see self::MaxFailures} times in a row since its last other Operation. */
+    /**
+     * Whether the idle release stops for the group until its next other Operation: its saves ended without success
+     * {@see self::MaxFailures} times in a row since then, or one was refused for changing a workflow, which no retry changes.
+     */
     public static function exhausted(Task $group): bool
     {
         $operations = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id);
         $since = (clone $operations)->where('kind', '!=', self::Kind)->max('id') ?? 0;
+        $ended = (clone $operations)->where('kind', self::Kind)->where('id', '>', $since)
+            ->whereIn('status', [OperationStatus::Failed, OperationStatus::Cancelled, OperationStatus::Interrupted]);
 
-        return (clone $operations)->where('kind', self::Kind)->where('id', '>', $since)->where('status', OperationStatus::Failed)->count() >= self::MaxFailures;
+        return (clone $ended)->count() >= self::MaxFailures || (clone $ended)->where('error_code', 'tasks.workflows_permission')->exists();
     }
 
     /**
@@ -86,12 +91,29 @@ final readonly class TaskIdleSave
             return $head;
         }
         $repository = GitHubRepository::fromOrigin($group->project->repository_url ?? '');
+        $branch = self::branch($group);
+        $details = ['saved_commit' => $saved, 'branch' => $branch, 'head' => $head];
         try {
-            $comparison = $repository === null ? null : $this->github->compareCommits($this->access->contentsReadToken($repository), $repository, $head, $saved);
+            $token = $repository === null ? null : $this->access->contentsReadToken($repository);
+            // An unreadable branch counts as present, so only a branch GitHub reports gone takes the missing path.
+            $present = $repository === null || $token === null || $this->github->branchHead($token, $repository, $branch) !== null;
+        } catch (GitHubApiException) {
+            $token = null;
+            $present = true;
+        }
+        try {
+            $comparison = $repository === null || $token === null ? null : $this->github->compareCommits($token, $repository, $head, $saved);
         } catch (GitHubApiException) {
             $comparison = null;
         }
-        $details = ['saved_commit' => $saved, 'branch' => self::branch($group), 'head' => $head];
+        if (! $present) {
+            // A deleted save branch is no save once the task branch holds its commit; otherwise its work is not on origin.
+            if ($comparison !== null && ($comparison->status === GitHubComparisonStatus::Behind || $comparison->status === GitHubComparisonStatus::Identical)) {
+                return $head;
+            }
+            throw new ResourceOperationException('tasks.idle_save_missing', 'The save branch '.$branch.' is gone and the task branch does not hold its commit '.$saved
+                .'. Push '.$saved.' to '.$branch.' again, or merge it into the task branch, then try again. Cancel the group when that commit is lost.', 409, details: $details);
+        }
         if ($comparison === null) {
             // Restoring the task branch here could drop the saved work, so the claim waits for a readable comparison.
             throw new ResourceOperationException('tasks.idle_save_unreadable', 'The Gateway could not compare the saved workspace with the task branch. Try again.', 503, details: $details);

@@ -93,9 +93,9 @@ final class OperationBudgetTable
         // and one fetch over WireGuard (about 30 s), so about 2 minutes, x 3 for a slow GitHub, rounded to 6 minutes. Replace with the
         // 14-day p95 after the first success.
         'tasks.sync' => 360,
-        // No run yet. Basis: the publish shape without the PR steps: a status read, an optional commit, one bundle, one copy over
-        // WireGuard and one push (about 1 minute), x 3 for a slow GitHub, rounded to 4 minutes. Replace with the 14-day p95 after the first success.
-        'tasks.idle_save' => 240,
+        // No run yet. Basis: the bounds of its own steps: the Ansible phase (240 s), the import (60 s), the push (60 s) and 60 s for the
+        // intent, the mint and the cleanup, so 7 minutes. Replace with the 14-day p95 after the first success.
+        'tasks.idle_save' => 420,
         // Both ending kinds run the release of the task VM (task_vm.slot_release) after Route withdrawal and Project teardown. Their history
         // came from cancels with no VM, so the derived budget timed out real cleanups at 300 s (ops 6725, 6727, 6728).
         // Basis: the former VM destroy bound of 2,700 s + teardown cap 540 s (LifecycleStep::MaxTotalTimeoutSeconds) + 660 s for the

@@ -39,14 +39,18 @@ final readonly class TaskIdleSaveProjection implements DirectOperationProjection
             }
             $saved = trim(ValidatedData::nullableString(ValidatedData::object($data['result'] ?? [])['saved'] ?? null) ?? '');
             if (($data['status'] ?? null) !== 'succeeded' || preg_match('/\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/', $saved) !== 1) {
-                $data['error_code'] = 'tasks.idle_save_failed';
+                // A run that reports success without a saved commit saved nothing, so it is a failed save too.
+                $detail = ValidatedData::object($data['failure'] ?? [])['detail'] ?? null;
+                $code = in_array($detail, ['tasks.workflows_permission', 'tasks.push_failed'], true) ? $detail : 'tasks.idle_save_failed';
+                $data['error_code'] = $code;
                 $projected = app(DirectOperation::class)->project($operation, [...$data, 'status' => ($data['status'] ?? null) === 'succeeded' ? 'failed' : $data['status']],
-                    ['error_code' => 'tasks.idle_save_failed']);
+                    ['error_code' => $code]);
                 $group = Task::topLevel()->find($operation->target_id);
                 if ($group instanceof Task && TaskIdleSave::exhausted($group)) {
                     // The idle release stops trying; the VM keeps its place until the driver's next Operation or a person acts.
-                    TaskAssistance::apply($group, AssistanceKind::Failure, reason: 'The idle save of the workspace failed '.TaskIdleSave::MaxFailures
-                        .' times in a row, so the task VM keeps its place. See the failed tasks.idle_save Operations.');
+                    TaskAssistance::apply($group, AssistanceKind::Failure, reason: $code === 'tasks.workflows_permission'
+                        ? 'The idle save changes a GitHub workflow, which its contents-only token may not push, so the task VM keeps its place. A turn and a publish carry that work.'
+                        : 'The idle save of the workspace failed '.TaskIdleSave::MaxFailures.' times in a row, so the task VM keeps its place. See the failed tasks.idle_save Operations.');
                 }
 
                 return $projected;

@@ -153,7 +153,19 @@ it('mints the push token of a publish when its step asks, and writes it only und
         ->toBe([['orbit-control-inputs', $names['github_token']['key'], 'push-token-value'],
             ['orbit-control-inputs', $names['git_authorization']['key'], 'AUTHORIZATION: basic '.base64_encode('x-access-token:push-token-value')]])
         ->and(json_encode($copies))->not->toContain('push-token-value');
-})->with(['a publish' => ['tasks.publish'], 'a prep run' => ['tasks.prep'], 'a review round' => ['tasks.review_round'], 'an idle save' => ['tasks.idle_save']]);
+})->with(['a publish' => ['tasks.publish'], 'a prep run' => ['tasks.prep'], 'a review round' => ['tasks.review_round']]);
+
+it('mints the push token of an idle save with contents write only, so a save cannot add or change a workflow', function (): void {
+    $scoped = [];
+    $socket = tokenWorld(scoped: $scoped);
+    [$operation, $names] = pushOperation('tasks.idle_save');
+
+    $copies = app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'publish');
+
+    expect($copies)->toBe($names)->and(array_map(static fn (GitHubTokenGrant $grant): array => $grant->permissions, $scoped))->toBe([['contents' => 'write']])
+        ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $names['github_token']['key'], 'step-token-value'],
+            ['orbit-control-inputs', $names['git_authorization']['key'], 'AUTHORIZATION: basic '.base64_encode('x-access-token:step-token-value')]]);
+});
 
 it('mints the clone credential of a workspace when the clone step asks, and only a read credential', function (string $kind): void {
     $socket = tokenWorld();
