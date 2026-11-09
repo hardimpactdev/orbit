@@ -1028,7 +1028,7 @@ Every refusal fails the phase with `task_vm.setup_failed`. Ansible runs its modu
 
 ### Prepare an Instance container host
 
-An `app-dev` Node on the [build list](/reference/development-containers#the-build-list) that is not a task VM gets a container branch in its role converge: `tasks/instance-host.yml`, from `tasks/node-role-runtime.yml`. The Gateway's `InstanceHostIntent` sends the branch's intent as the role runtime's `instances` key, only for such a Node; every other Node gets the same intent as before. The first intent allocates the Node's Instance bridge. [Development containers](/reference/development-containers#prepare-a-node) describes the result.
+An `app-dev` Node on the [build list](/reference/development-containers#the-build-list) that is not a task VM gets a container branch in its role converge: `tasks/instance-host.yml`, from `tasks/node-role-runtime.yml`. The Gateway's `InstanceHostIntent` sends the branch's intent as the role runtime's `instances` key, only for such a Node; every other Node gets the same intent as before. The admission of a role add or converge allocates the Node's Instance bridge before it captures the intent; the capture only reads it. [Development containers](/reference/development-containers#prepare-a-node) describes the result.
 
 The branch shares the two task files of a [container host](#prepare-a-container-host). `container_host` names what differs:
 
@@ -1037,7 +1037,7 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 | Pool | The VM side's ZFS pool | The Node's pool `orbit-instances`: ZFS, or a directory pool |
 | Project, bridge | `containers.project`, `containers.network` | `orbit-instances`, `orbitinst0` at the first address of the Node's bridge |
 | Kernel modules, sysctl files | `orbit-task-containers` | None; `60-orbit-instances.conf` |
-| Subordinate IDs | 101,000,000 per place and the base | 65,536 for each of 201 containers |
+| Subordinate IDs | 101,000,000 per place and the base | 65,536 for each of 201 containers, plus the task container need on a host that has both |
 | ACL egress | The VM bridge's rules | Only the model forwarder, port 8319 of the bridge address |
 | Profile | Root disk and `eth0` | Also the folders `/opt/orbit-runtime` and `/opt/orbit-agent`, read-only and idmapped |
 | Restrictions | Nesting, interception, low-level keys | Isolated ID maps, host disks only at the two folders, proxy devices |
@@ -1060,7 +1060,9 @@ The runtime folder is readable by everyone. The agent folder's `agent/` is `root
 
 The image's alias is a digest of the definition that the Gateway sends. A Node without that alias builds it in the container `orbit-instance-build`, from the stock alias, at the bridge's last address. Its NIC uses the ACL `orbitinst0-build`, which drops private ranges, and the route rule `orbit:instances-build` lets it out.
 
-The build container sets an isolated ID map, as the project requires. The build installs the packages, runs the setup script, writes the files with their owners and modes, enables the units, cleans the package lists, and publishes the container. The build container and the route rule go in every case. The stable alias `orbit-instance` then moves to the new image, and older images whose aliases are only digest aliases go.
+The build waits for cloud-init's first boot to finish. The build container sets an isolated ID map, as the project requires. The build installs the packages, runs the setup script, writes the files with their owners and modes, enables the units and cleans the package lists.
+
+The build refuses an image with a sudo path: an `ubuntu` user, a file in `sudoers.d` but its README, or a member of `sudo` or `admin`. Then it publishes the container. The build container and the route rule go in every case. The stable alias `orbit-instance` then moves to the new image, and older images whose aliases are only digest aliases go.
 
 ### The base VM and its snapshot
 

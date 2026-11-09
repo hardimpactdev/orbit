@@ -42,7 +42,7 @@ The `app-dev` role installs the container setup: the Incus project `orbit-instan
 
 This part is built. The `app-dev` role converge of a Node on the [build list](#the-build-list) runs a container branch; a task VM never does. The Gateway sends the branch's intent only for such a Node, so every other Node gets the same intent as before. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
 
-- **Allocation.** The first intent allocates the Node's bridge.
+- **Allocation.** The admission of a role add or converge allocates the Node's bridge. The captured intent only reads it.
 - **Pool.** The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge chooses no disk itself.
 - **Missing pool.** A Node without the pool is refused with `instance.host_unavailable`.
 - **Project.** Containers of `orbit-instances` must set an isolated ID map. They mount only the two shared folders, may have proxy devices, and cannot be VMs.

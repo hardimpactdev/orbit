@@ -55,6 +55,15 @@
            --device, "eth0,security.acls={{ build_acl }}"]
         - [start, "{{ build }}"]
       changed_when: true
+    # Cloud-init's first boot makes the stock `ubuntu` user and its sudo grant; the setup script removes them only after it.
+    # A container has no guest agent, so `cloud-init status --wait` blocks from the first moment of the boot. It exits 2 when
+    # cloud-init finished with a recoverable warning; both are a finished boot.
+    - name: Let cloud-init finish
+      ansible.builtin.command: { argv: [incus, exec, --project, "{{ instances.project }}", "{{ build }}", --, cloud-init, status, --wait] }
+      timeout: 400
+      register: image_cloud_init
+      changed_when: false
+      failed_when: image_cloud_init.rc not in [0, 2]
     # The stock image starts its network a moment after the container.
     - name: Read the package index
       ansible.builtin.command: { argv: "{{ in_build + ['apt-get', 'update'] }}" }
@@ -82,6 +91,23 @@
       ansible.builtin.command: { argv: "{{ in_build + item }}" }
       loop: "{{ instances.image.finish }}"
       changed_when: true
+    # Nothing may publish an image with a sudo path: no `ubuntu` user, nothing in sudoers.d but its README, and no member of the
+    # groups `sudo` or `admin`.
+    - name: Read the sudo paths of the image
+      ansible.builtin.command:
+        argv: "{{ in_build + ['sh', '-c', image_audit] }}"
+      vars:
+        image_audit: >-
+          getent passwd ubuntu >/dev/null && echo user:ubuntu;
+          for f in /etc/sudoers.d/*; do [ "$f" = /etc/sudoers.d/README ] || [ ! -e "$f" ] || echo "sudoers:$f"; done;
+          getent group sudo admin | cut -d: -f4 | tr , '\n' | sed '/^$/d; s/^/member:/'; true
+      register: image_sudo
+      changed_when: false
+    - name: Require an image without a sudo path
+      ansible.builtin.assert:
+        that: image_sudo.stdout | trim == ''
+        fail_msg: "instance.host_unavailable: the image keeps a sudo path: {{ image_sudo.stdout_lines | join(', ') }}"
+        quiet: true
     - name: Stop and publish the build container
       ansible.builtin.command: { argv: "{{ ['incus', '--project', instances.project] + item }}" }
       loop:

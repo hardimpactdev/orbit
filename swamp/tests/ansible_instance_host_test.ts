@@ -68,8 +68,7 @@ function transform(task: Task, folder: string): Task {
   // Ownership needs root; the modes stay.
   const command = task["ansible.builtin.command"] as Task | undefined;
   if (task.name === "Set the folder owners and modes" && command) {
-    command.argv =
-      "{{ item if item[0] != 'chown' else ['true'] }}";
+    command.argv = "{{ item if item[0] != 'chown' else ['true'] }}";
   }
   return task;
 }
@@ -235,7 +234,8 @@ async function fixture({ pool = "zfs" }: { pool?: string | null } = {}) {
     // No Node group holds gid 2750.
     getent: "exit 2",
     // The pinned artifacts come from the fixture folder, by the URL's file name.
-    curl: `out=; for a; do case "$prev" in --output) out=$a;; esac; prev=$a; done
+    curl:
+      `out=; for a; do case "$prev" in --output) out=$a;; esac; prev=$a; done
 cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
   };
   for (const [name, body] of Object.entries(scripts)) {
@@ -444,7 +444,10 @@ Deno.test({
         Deno.readTextFileSync(`${f.folder}/sysctl/fs.inotify.max_user_watches`),
         "1048576 /etc/sysctl.d/60-orbit-instances.conf",
       );
-      assertEquals(Deno.readTextFileSync(`${f.folder}/arc`).trim(), String(4 * GiB));
+      assertEquals(
+        Deno.readTextFileSync(`${f.folder}/arc`).trim(),
+        String(4 * GiB),
+      );
 
       // The folders: each program links into its part, `current` names the version, and the agent's notes are beside it.
       const runtime = `${f.folder}/opt/orbit-runtime`;
@@ -503,16 +506,25 @@ Deno.test({
           c.includes("install") && c.includes("nftables") && c.includes("acl")
         ),
       );
+      // Cloud-init's first boot ends before anything runs in the build container, so it cannot add a sudo user after the setup.
+      const inBuild = f.calls().filter((c) =>
+        c[0] === "exec" || c.includes("exec")
+      ).map((c) => c.slice(c.indexOf("--") + 1).join(" "));
+      assertEquals(inBuild[0], "cloud-init status --wait");
+      assert(inBuild.indexOf("apt-get update") > 0);
       assertEquals(state.files["orbit-instance-build/etc/nftables.conf"], {
         content: "flush ruleset\n",
         mode: "0640",
         uid: "0",
         gid: "0",
       });
-      assertEquals(state.images.map((i: { aliases: unknown }) => i.aliases).at(-1), [
-        { name: "orbit-instance-aaaaaaaaaaaa" },
-        { name: "orbit-instance" },
-      ]);
+      assertEquals(
+        state.images.map((i: { aliases: unknown }) => i.aliases).at(-1),
+        [
+          { name: "orbit-instance-aaaaaaaaaaaa" },
+          { name: "orbit-instance" },
+        ],
+      );
       assertEquals(
         state.instances.map((i: { name: string }) => i.name),
         [],
@@ -697,6 +709,32 @@ Deno.test({
         ),
       );
       assert(!f.has("opt/orbit-runtime/.restart"));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "an image that keeps a sudo path is never published",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture();
+    try {
+      const state = f.state();
+      state.sudo_paths =
+        "user:ubuntu\nsudoers:/etc/sudoers.d/90-cloud-init-users\nmember:ubuntu";
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const result = f.run();
+      assert(!result.ok);
+      assertStringIncludes(
+        result.output,
+        "the image keeps a sudo path: user:ubuntu, sudoers:/etc/sudoers.d/90-cloud-init-users, member:ubuntu",
+      );
+      const after = f.state();
+      assert(!f.calls().some((c) => c.includes("publish")));
+      assertEquals(after.instances, []);
+      assert(!f.has("firewall-orbit_instances-build.json"));
     } finally {
       f.cleanup();
     }

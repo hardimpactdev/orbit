@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Actions\Nodes;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeConvergeScope;
 use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\NodeNetworkReservation;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -37,6 +39,10 @@ final readonly class StartNodeConvergeAction
                     'participant_node_ids' => array_values(array_unique([$node->id, $hub->id ?? $node->id]))],
                 'operator', $requestId, lockKey: 'node-converge:node:'.$node->id);
             if ($operation->wasRecentlyCreated) {
+                // The one write before the capture: a build-list app-dev Node gets its Instance bridge here, never in the capture.
+                if (in_array(RoleName::AppDev->value, $selected, true)) {
+                    app(InstanceHostIntent::class)->prepare($node);
+                }
                 $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, ! $base && $roles === null, $operation, $hub);
                 // Dispatch is deferred until this reservation transaction commits.
                 $operation->input = [...$operation->input, '_converge' => [

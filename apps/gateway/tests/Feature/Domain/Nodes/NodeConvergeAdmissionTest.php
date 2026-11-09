@@ -8,6 +8,7 @@ use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Nodes\NodeConvergeScope;
+use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\NodeNetworkReservation;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
@@ -176,3 +177,29 @@ it('selects only existing assignments without changing their status or settings'
         ->and(NodeConvergeScope::roles($this->node, true, null))->toBe([])
         ->and($a->refresh()->status->value)->toBe('active')->and($b->refresh()->status->value)->toBe('failed');
 });
+
+it('allocates a build-list app-dev Node\'s Instance bridge in the admission, before the read-only capture', function (array $scope, ?string $bridge): void {
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    config(['instances.container_nodes' => [$this->node->id]]);
+    // The capture records what it sees and stops the admission there; the test needs nothing after it.
+    $seen = new ArrayObject;
+    app()->instance(NodeDesiredConvergeInput::class, new class($seen)
+    {
+        public function __construct(private ArrayObject $seen) {}
+
+        public function capture(Node $node): never
+        {
+            $this->seen['bridge'] = Node::query()->whereKey($node->id)->value('instance_bridge');
+
+            throw new RuntimeException('capture reached');
+        }
+    });
+
+    $this->postJson($this->url, $scope);
+
+    expect($seen['bridge'])->toBe($bridge);
+})->with([
+    'the app-dev role' => [['roles' => ['app-dev']], '10.253.0.0/24'],
+    'every role' => [[], '10.253.0.0/24'],
+    'the base only' => [['base' => true], null],
+]);

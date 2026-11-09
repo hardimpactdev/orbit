@@ -122,6 +122,11 @@ if (family === "query") {
   state.images.push({ fingerprint: `fp-${alias}`, aliases: [{ name: alias }] });
 } else if (family === "exec") {
   if (!instance(action)) fail("Instance not found");
+  const command = args.slice(args.indexOf("--") + 1);
+  // The audit of the image's sudo paths reads what the fixture says the build left; a clean image prints nothing.
+  if (command[0] === "sh" && command[2]?.includes("sudoers.d")) {
+    if (state.sudo_paths) console.log(state.sudo_paths);
+  }
 } else if (family === "file" && action === "push") {
   state.files ??= {};
   state.files[args.at(-1)!] = {

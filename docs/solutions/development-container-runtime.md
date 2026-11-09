@@ -107,7 +107,7 @@ The Gateway decides which Node gets the branch:
 
 - A container branch of the `app-dev` role converge runs in `node-role-runtime.yml`.
 - It runs only for a Node of the build list that is not a task VM. Every other Node gets the same intent as before.
-- The first intent allocates the Node's Instance bridge.
+- The admission of a role add or converge allocates the Node's Instance bridge. The capture only reads it.
 - The allocation and a task host's new bridges are each one transaction, which the connection begins IMMEDIATE, so they cannot interleave.
 
 The host side reuses the container host tasks of the task containers (#3279):
@@ -145,6 +145,15 @@ The isolation and update checks follow.
 8. A nested `app-dev` Node of the proof fleet runs a container on its directory pool, where a copy is a full copy.
 9. The PR stops and asks where the `instance:*` proof cases run, if check 8 fails.
 
+No fixture can prove these claims; only real Incus on the first test Node can.
+
+10. As `orbit` in a test container, `ps -u agent` lists nothing: `hidepid=invisible` holds after a container restart.
+11. The restricted project accepts the two folder disks, read-only and shifted, under `restricted.devices.disk.paths`.
+12. The build container reaches the internet through its own NIC ACL. A test container on the bridge reaches only the forwarder.
+13. As `orbit`, `10.253.x.1:8319` and T3's port 3773 answer with a reset; as `agent`, both answer.
+14. The published image has no `ubuntu` user and no sudo grant.
+15. Cloud-init stays off in a new container.
+
 Three points of the first plan moved, because the code showed they belong elsewhere:
 
 - **The static PHP build** moved to PR 3b. No published artifact gives FrankenPHP and a PHP CLI from one build.
@@ -160,6 +169,7 @@ This PR adds PHP to the runtime folder; it creates no Instance.
 - A build job makes `frankenphp` and `php` from one static-php-cli build per PHP version that Orbit supports, with the recipe's extension list. It publishes both to the artifact mirror.
 - The recipe pins them in the runtime folder as `php/<php-version>/bin`, with the extension list.
 - The converge checks that both binaries load exactly the listed extensions.
+- The environment notes name PHP and Composer from the runtime folder. Until then they name only Node, npm, Bun and rg.
 
 Tests: Pest for the pins and the extension check; a fixture test for the check. Live on the test Node:
 

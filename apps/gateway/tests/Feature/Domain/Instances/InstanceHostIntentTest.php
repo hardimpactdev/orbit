@@ -13,8 +13,10 @@ use App\Domain\Instances\InstanceNotes;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
+use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\Firewall\NodeFirewallDesiredRules;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
@@ -62,38 +64,68 @@ describe('the container branch of the app-dev converge', function (): void {
             ->and($node->refresh()->instance_bridge)->toBeNull();
     });
 
-    it('allocates the bridge on the first intent and names the project, pool, image and folders', function (): void {
+    it('reads the bridge only: a build-list Node without one is refused, and only the admission allocates it', function (): void {
+        $node = instanceHostNode();
+        config(['instances.container_nodes' => [$node->id]]);
+
+        expect(fn () => app(InstanceHostIntent::class)->for($node))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.host_unavailable'))
+            ->and($node->refresh()->instance_bridge)->toBeNull();
+
+        $assignment = $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        app(NodeRoleRuntimeInput::class)->prepare($node, $assignment);
+
+        expect($node->refresh()->instance_bridge)->toBe('10.253.0.0/24');
+    });
+
+    it('names the project, pool, image and folders of a prepared Node', function (): void {
         $node = instanceHostNode();
         config(['instances.container_nodes' => [$node->id]]);
         $recipe = app(RecipeImageBuilds::class)->currentRecipe();
+        app(InstanceHostIntent::class)->prepare($node);
 
         $intent = app(InstanceHostIntent::class)->for($node);
 
-        expect($node->refresh()->instance_bridge)->toBe('10.253.0.0/24')
-            ->and(array_diff_key($intent, array_flip(['incus', 'image', 'folders'])))->toBe([
-                'project' => 'orbit-instances', 'network' => 'orbitinst0', 'pool' => 'orbit-instances', 'cidr' => '10.253.0.0/24',
-                'address' => '10.253.0.1/24', 'build_address' => '10.253.0.254', 'dhcp_range' => '10.253.0.2-10.253.0.253', 'stock' => 'ubuntu-26.04-instance-stock',
-                'forwarder_port' => 8319, 'ids' => 201 * 65536,
-            ])
+        expect(array_diff_key($intent, array_flip(['incus', 'image', 'folders'])))->toBe([
+            'project' => 'orbit-instances', 'network' => 'orbitinst0', 'pool' => 'orbit-instances', 'cidr' => '10.253.0.0/24',
+            'address' => '10.253.0.1/24', 'build_address' => '10.253.0.254', 'dhcp_range' => '10.253.0.2-10.253.0.253', 'stock' => 'ubuntu-26.04-instance-stock',
+            'forwarder_port' => 8319, 'ids' => 201 * 65536,
+        ])
             ->and($intent['incus'])->toBe($recipe->incus('amd64'))
             ->and($intent['image'])->toBe(InstanceImage::for('10.253.0.1'))
-            ->and($intent['folders'])->toBe(InstanceFolderPlan::for($recipe->instances))
-            // A second intent keeps the bridge.
-            ->and(app(InstanceHostIntent::class)->for($node)['cidr'])->toBe('10.253.0.0/24');
+            ->and($intent['folders'])->toBe(InstanceFolderPlan::for($recipe->instances));
     });
 
-    it('adds the branch to the app-dev runtime of a build-list Node only, so every other intent stays as it was', function (): void {
+    it('needs the ID ranges of a host\'s task containers too, which share root\'s one range', function (): void {
+        $node = Node::withoutEvents(fn (): Node => Node::query()->create([
+            'name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.7',
+            'public_ssh_host' => '10.44.0.7', 'user' => 'orbit', 'settings' => ['task_vms' => NodeTaskVmsData::validated(
+                ['cidr' => '10.252.10.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 2, 'ci_places' => 1]],
+                Ipv4Subnet::from('10.44.0.0/24'))->toArray()],
+        ]));
+        config(['instances.container_nodes' => [$node->id]]);
+        app(InstanceHostIntent::class)->prepare($node);
+
+        expect(app(InstanceHostIntent::class)->for($node)['ids'])->toBe(201 * 65536 + 4 * 101000000);
+    });
+
+    it('adds the branch to the app-dev runtime of a build-list Node only, so every other intent stays exactly as it was', function (): void {
         $listed = instanceHostNode();
         $other = instanceHostNode('beast', '10.44.0.7');
-        config(['instances.container_nodes' => [$listed->id]]);
-        $capture = fn (Node $node, RoleName $role) => app(NativeNodeRoleRuntimeInput::class)
-            ->capture($node, $node->roles()->create(['role' => $role, 'status' => 'active']), [], new Operation)['intent'];
+        $capture = function (Node $node, RoleName $role): array {
+            $assignment = $node->roles()->firstOrCreate(['role' => $role], ['status' => 'active']);
 
-        $keys = ['directories', 'files', 'secret_files', 'units', 'probes', 'groups', 'users', 'websocket', 'metrics', 'analytics',
-            'gateway_dns', 'gateway', 'swamp', 'ci_host'];
-        expect(array_keys($capture($other, RoleName::AppDev)))->toBe($keys)
-            ->and(array_keys($capture($listed, RoleName::CiRunner)))->toBe($keys)
-            ->and($capture($listed, RoleName::AppDev)['instances']['cidr'])->toBe('10.253.0.0/24')
+            return app(NativeNodeRoleRuntimeInput::class)->capture($node, $assignment, [], new Operation)['intent'];
+        };
+        $before = ['other' => $capture($other, RoleName::AppDev), 'ci' => $capture($listed, RoleName::CiRunner), 'app' => $capture($listed, RoleName::AppDev)];
+        config(['instances.container_nodes' => [$listed->id]]);
+        app(InstanceHostIntent::class)->prepare($listed);
+
+        $after = $capture($listed, RoleName::AppDev);
+        expect($capture($other, RoleName::AppDev))->toBe($before['other'])
+            ->and($capture($listed, RoleName::CiRunner))->toBe($before['ci'])
+            ->and(array_diff_key($after, ['instances' => true]))->toBe($before['app'])
+            ->and($after['instances']['cidr'])->toBe('10.253.0.0/24')
             ->and($other->refresh()->instance_bridge)->toBeNull();
     });
 
@@ -191,7 +223,9 @@ describe('the shared folders', function (): void {
     ]);
 
     it('states facts only: the users, the workspace, the Instance file, no sudo and no internet', function (string $note): void {
-        expect(InstanceNotes::all()[$note])->toContain('`agent`', '`orbit`', '`/srv/workspace`', '`/etc/orbit/instance`', 'There is no sudo.', 'no direct internet');
+        expect(InstanceNotes::all()[$note])->toContain('`agent`', '`orbit`', '`/srv/workspace`', '`/etc/orbit/instance`', 'There is no sudo.', 'no direct internet')
+            // The runtime folder has no PHP until PR 3b, so no note may say it does.
+            ->and(InstanceNotes::all()[$note])->not->toContain('PHP', 'Composer');
     })->with(['web-app', 'monorepo', 'package']);
 });
 
