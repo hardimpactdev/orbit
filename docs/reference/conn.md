@@ -22,11 +22,25 @@ The Conn layer is the `conn` [extension](/reference/extensions). Its code lives 
 
 A caller is the active Node that owns its WireGuard address, as for every other Gateway API call. Phones and laptops are Nodes too, without roles, much like an operator Node. A caller that is not an active Node gets `peer.identity_unknown` (403).
 
-This slice has no grants. The Conn endpoints need no node access edge: every active Node may read and change every profile, register a T3 server, mint a pairing link, and revoke any Node's sessions.
+## Access
+
+Conn uses the existing [node access](/cli/node/access-add) edges. It has no grant of its own.
+
+A T3 server belongs to the Node that registered it. A server in a container on a Node counts as that Node's server when that Node registers it. A caller may list a server, read its pairings, mint a pairing link on it, and revoke sessions on it only when it has node access to that Node. The environment list shows only those servers. A server whose Node was removed is visible only to callers with Gateway access.
+
+Profiles, their settings, `GET /me`, `PUT /me/profile`, and the Conn Operation endpoints need node access to at least one Node, the [collection rule](/cli/node#authority) that `node:list` uses.
+
+The Gateway Node, its serving host, and a Node with an edge to the Gateway Node have access to every Node, so they reach every server. A refused call gets `node_access.required` (403), with `details.consumer_node` and, for a server, `details.serving_node`.
+
+A [task VM](/reference/compute-drivers#placement-invariant) Node never holds an access edge, so it can use no Conn endpoint except registration.
+
+Registration needs no edge. It stays tied to the Node the server runs on: the calling Node becomes the server's Node. Once a Node registered an environment id, another Node cannot register it again: it gets `conn.environment_owned` (409). When the Node is removed, the server has no Node and the next registration takes it.
+
+Removing an edge does not revoke sessions that the consumer already paired. Revoke them with `POST /environments/{environment_id}/pairings/revoke` and the consumer's `node_id`.
 
 ## Profiles
 
-A profile is a named set of shared settings, such as "Nick". A Node belongs to at most one profile. On first connect the device lists the profiles, lets the user pick or create one, and binds to it. Later calls read the binding from `GET /api/v1/conn/me`. Every Node sees every profile.
+A profile is a named set of shared settings, such as "Nick". A Node belongs to at most one profile. On first connect the device lists the profiles, lets the user pick or create one, and binds to it. Later calls read the binding from `GET /api/v1/conn/me`. Every Node that may use profiles ([Access](#access)) sees every profile.
 
 A profile holds one settings document. Its keys follow Conn's stores, so they stay camelCase. The document has three kinds of section:
 
@@ -126,11 +140,12 @@ t3 auth session issue --label "Orbit Gateway" --token-only
 
 The job sends that token as `admin_session`, with the server's environment id, its label, and the URL that devices use to reach it over WireGuard.
 
-1. The Gateway reads `GET <url>/.well-known/t3/environment`. The served `environmentId` must equal `environment_id`, or the request fails with `conn.environment_mismatch` (422) before the session is sent.
-2. It reads `GET <url>/api/auth/session` with the session as its bearer token. A session T3 does not accept fails with `conn.session_rejected` (502).
-3. The session must carry `access:read` and `access:write`. `t3 auth session issue` grants both. A session without them fails with `conn.admin_scope_missing` (422).
-4. The Gateway stores the session encrypted, with the expiry T3 reports. T3 sessions last 30 days by default.
-5. After the registration commits, it starts native Swamp cleanup of earlier `Orbit Gateway` sessions. A cleanup or dispatch failure leaves registration successful. This is why the job must issue the session with the label `Orbit Gateway`.
+1. The environment id must be new, or registered by the calling Node, or have no Node; otherwise the request fails with `conn.environment_owned` (409).
+2. The Gateway reads `GET <url>/.well-known/t3/environment`. The served `environmentId` must equal `environment_id`, or the request fails with `conn.environment_mismatch` (422) before the session is sent.
+3. It reads `GET <url>/api/auth/session` with the session as its bearer token. A session T3 does not accept fails with `conn.session_rejected` (502).
+4. The session must carry `access:read` and `access:write`. `t3 auth session issue` grants both. A session without them fails with `conn.admin_scope_missing` (422).
+5. The Gateway stores the session encrypted, with the expiry T3 reports. T3 sessions last 30 days by default.
+6. After the registration commits, it starts native Swamp cleanup of earlier `Orbit Gateway` sessions. A cleanup or dispatch failure leaves registration successful. This is why the job must issue the session with the label `Orbit Gateway`.
 
 Registering again replaces the stored session. The job registers on each server start and before the session expires. An environment whose session expired shows `status: session_expired` and cannot mint pairings until it registers again.
 
@@ -178,6 +193,8 @@ The objects:
 | Error code | Status | Meaning |
 | --- | --- | --- |
 | `peer.identity_unknown` | 403 | The caller is not an active Node. |
+| `node_access.required` | 403 | The caller has no node access to the server's Node, or to any Node for the profile and Operation endpoints. |
+| `conn.environment_owned` | 409 | Another Node registered this environment id. |
 | `validation.failed` | 422 | The request breaks a rule; `details` names each field. |
 | `conn.settings_version_conflict` | 409 | The document, or a section a patch names, changed since the sent version. `details.current_version` is the document version; a patch adds `details.sections`, the current version of each section it named. |
 | `conn.environment_mismatch` | 422 | `url` serves another environment. |
@@ -197,6 +214,16 @@ The T3 Connect relay could also be self-hosted. It needs four outside services a
 The Gateway uses T3's own admin sessions and pairing instead of a new T3 auth scope. The host issues the admin session with the stock `t3` CLI, so servers run unmodified upstream T3, and the Gateway needs no SSH access to them. The cost is that the Gateway holds full admin access to every registered T3 server. On a private WireGuard network where the Gateway already manages every machine, that adds little new risk.
 
 A device pairing link carries T3's administrative scopes, including `access:read` and `access:write`, which T3 lets an admin session grant. The servers are headless, so the device is the only place to manage a server's linked environments and to answer an agent's environment-link request. Each paired device therefore gets admin access to the server, the same trust the Gateway already holds. Sessions paired before this change keep their old scopes until the device pairs again.
+
+### Why Conn uses node access
+
+A pairing gives a device admin access to a T3 server, and the server runs agents with the rights of its host. So pairing with a server is acting on its Node, which is what a node access edge allows. Every task VM is an active Node with its own WireGuard identity; without a check, an agent inside one could mint an admin pairing to any server. Task VMs hold no edges, so they are refused, and no second grant system is needed.
+
+The server is keyed on the Node that registered it, not on the host of its URL. A container's server is registered by its host Node, and a URL can name a forwarded port, so the URL does not identify the Node.
+
+A registration cannot move an environment id to another Node. Otherwise any Node could register a server of its own under a known id and send devices that pair with it there.
+
+Removing an edge does not revoke paired sessions. The `node:access:remove` command lives in core, which cannot call an extension, and a hook for it is a plug-in point of its own.
 
 The Node is the identity because the Gateway already knows every WireGuard peer as a Node, phones included, and WireGuard binds each address to one key. Revocation happens only in T3 and leaves WireGuard access alone, so a revoked device keeps its other servers and Orbit access.
 
