@@ -1,54 +1,53 @@
 ---
 title: "orbit node:metrics"
 sidebarTitle: "node:metrics"
-description: "Show one metrics snapshot of an active Node: CPU per core, memory, swap, load, uptime, pressure, and disks."
+description: "Show the latest recorded metrics snapshot reported by a Node's agent: CPU per core, memory, swap, load, uptime, pressure, and disks."
 ---
 
 ```bash
-orbit node:metrics <node> [--json]
+orbit node:metrics [node] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `node` | yes | Numeric Node ID. |
+| `node` | machine mode | Numeric Node ID. In an interactive terminal, omit it to search the registered Nodes by ID or name. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--json` | off | Print the snapshot as JSON. |
+| `--json` | off | Use the [standard machine output](/reference/cli-ux#input-and-output-modes). |
 
 ```bash
 orbit node:metrics 7
 ```
 
-In a terminal, an omitted Node is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `node.id_invalid` and sends no request, and so is an ID that is not a positive integer.
+Access follows the [shared Node authority rule](/cli/node#authority).
 
-Orbit reads the snapshot from the [Metrics role](/reference/metrics#read-node-metrics) through Grafana. It runs four queries for the Node's exporter: one for memory, swap, load, and uptime, and one each for cores, pressure, and disks. Only the first decides whether the Node has metrics. The command starts no run, changes no Node and stores no sample.
+## How it works
+
+Orbit answers only from the latest metrics snapshot that the Node's agent reported to the Gateway. It contacts no Node or other system and does not wait for a new report, so the read stays fast even when the Node is unreachable. It changes no records or Node state. Running it again reads the latest recorded snapshot; it is not a skipped action.
 
 | Field | Meaning |
 | --- | --- |
+| `node_id`, `node_name` | The Node's ID and name. |
+| `observed_at` | When the agent observed the snapshot, not the time of this request. |
+| `agent` | The recorded [agent state and since time](/cli/node/show), shared with `node:show` and `node:list`. |
+| `possibly_outdated` | Whether the agent state is anything other than `online`. |
 | `cores` | The busy ratio of each core, from 0 to 1. |
 | `memory`, `swap` | Used and total bytes. |
 | `load` | The 1, 5, and 15-minute load averages. |
-| `uptime_seconds` | Time since boot. |
-| `pressure` | The `some` `avg10` value for CPU, memory, and I/O. `0` when the kernel has no pressure data or its query failed. |
-| `disks` | Mount, used bytes, and total bytes. Pseudo filesystems such as `tmpfs` and `proc` are left out. `/` comes first. |
+| `uptime_seconds` | Time since boot at the observation time. |
+| `pressure` | The `some` `avg10` value for CPU, memory, and I/O. `0` when the kernel has no pressure data. |
+| `disks` | Mount, used and total bytes, `observed_at`, and `stale`. Each mount keeps its last good reading when a sample times out. Values and time are null until its first successful sample. Pseudo and network filesystems are left out. `/` comes first. |
 
-Human output shows bytes and durations in readable units, with the Node's name and ID and the request ID. JSON keeps the raw numbers. A missing value shows `—`. If the query for cores, pressure or disks fails, that field is empty and pressure is `0`, and the command still succeeds.
+Human output marks stale disks and shows unknown disk values as `—`. Disk freshness is separate from the snapshot’s `possibly_outdated` flag. Human output shows the Node's name and ID, `Observed at` time, `Agent` state, and readable byte and duration values. A retained snapshot with `possibly_outdated: true` still succeeds, but is labeled `possibly outdated`; an offline agent is shown as `offline since <time>`, as in `node:show`. No snapshot yet is a distinct refusal, not an all-zero snapshot.
+
+<div className="flow-at" data-chart="node/metrics"></div>
 
 ## Errors
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
-| `node.id_invalid` | n/a | The Node is missing or is not a positive integer, and the CLI cannot prompt. |
-| `node.metrics_unavailable` | 422 | The Node is not active or has no WireGuard address. |
-| `metrics.assignment_missing` | 409 | No Node has the Metrics role. |
-| `metrics.assignment_drift` | 409 | More than one Node has the Metrics role. |
-| `metrics.node_inactive` | 409 | The Metrics Node is not active. |
-| `metrics.credentials_missing` | 422 | The Metrics role has no stored credentials. |
+| `node.id_invalid` | n/a | The supplied Node ID is not a positive integer, or the required ID is omitted in [noninteractive or machine mode](/reference/cli-ux#input-and-output-modes). |
 | `http.404` | 404 | The Node is unknown. |
-| `node.metrics_unreachable` | 502 | Grafana could not answer, or Prometheus has no samples for the Node yet. |
-| `node_access.required` | 403 | The caller has no access grant to the Node. |
-
-## How it works
-
-<div className="flow-at" data-chart="node/metrics"></div>
+| `node_access.required` | 403 | The [shared Node authority rule](/cli/node#authority) refuses the caller. |
+| `node.metrics_unavailable` | 422 | No metrics snapshot has been recorded for the Node yet. |
