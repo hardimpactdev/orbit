@@ -161,7 +161,7 @@ The base enables the identity's units: `orbit-wireguard.service`, `orbit-agent.s
 
 ### Pi
 
-A task container runs the Pi server as a task VM does, so the parity gate compares like with like. Which agent engine runs in containers after the switch, Pi Durable or a T3 server inside, is [open](/solutions/agent-runtime-and-manual-mode#open-questions).
+A task container runs the Pi server as a task VM does, so the parity gate compares like with like. A T3 server inside the container is the agent engine of [development containers](/reference/development-containers). Task containers move to it later, as the [step 6 plan](/solutions/development-container-runtime#pr-10-task-containers-on-t3) says.
 
 The Pi server is in the base, at the pin of the release. The start writes the claim's Pi token and models file and the Pi unit, which listens on the container's WireGuard address and `ORBIT_PI_PORT`. Everything else is as in [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm).
 

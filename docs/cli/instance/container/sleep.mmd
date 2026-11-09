@@ -1,0 +1,43 @@
+sequenceDiagram
+  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#sleep-and-wake): the hibernation sweep stops a whole idle container instead of its Processes. No command starts it. Dependency pruning does not apply to containers.
+  %% status: draft
+  %% command: none · hibernation sweep
+  %% kind: instance.sleep
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane C icon=server pill=target tone=purple
+  participant GW as Gateway<br/>hibernation sweep
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-dev Node<br/>reached over ssh
+  participant C as Container<br/>via incus exec
+  Note over GW: Find idle containers<br/>every 10 min
+  %%> What it does:
+  %%> - `orbit-runtime-hibernator.timer` reads the last HTTP activity of each running container Instance, as it does for checkouts
+  %%> Skips:
+  %%> - an Instance with HTTP activity inside the idle window, a running task attached to it, or another change running on it
+  %%> - an Instance with a keep-alive Process or an enabled Schedule (open question 5 in the plan)
+  %%> Result:
+  %%> - one task per idle Instance, with the Instance lock
+  GW->>SW: Start run, full intent<br/>operation-instance-sleep
+  SW->>C: Check T3 is idle<br/>T3 MCP · thread list
+  %%> What it does:
+  %%> - asks T3's MCP endpoint with the Gateway's session for threads with a running or queued turn
+  %%> Why:
+  %%> - an agent can work for an hour without a request to the site
+  alt a turn runs
+    C-->>SW: busy
+    SW-->>GW: Run succeeded<br/>skipped: turn running
+    %%> Result:
+    %%> - the Instance stays awake; the next sweep looks again
+  else T3 is idle
+    SW->>N: Stop the container<br/>incus stop
+    %%> What it does:
+    %%> - a clean stop: systemd stops the Processes and T3; the disk, the database and the Route stay
+    %%> - removes the awake marker, so Caddy sends the next request to the wake page
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Record asleep
+    %%> Result:
+    %%> - the Instance's runtime is `stopped`; the Conn layer shows its T3 server asleep
+  end
