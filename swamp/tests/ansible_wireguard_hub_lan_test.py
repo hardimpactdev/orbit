@@ -249,14 +249,15 @@ class WireGuardHubLanTest(unittest.TestCase):
           '  "setconf orbit "*) echo "setconf: $(cat "$3")" >> "$STUB_DIR/loaded.log" ;;\n'
           '  "syncconf orbit "*) cat "$3" >> "$STUB_DIR/loaded.log"; echo --- >> "$STUB_DIR/loaded.log" ;;\n'
           '  "show orbit latest-handshakes") printf "HUBKEY\\t%s\\n" "$(cat "$STUB_DIR/handshake.txt")" ;;\n'
+          '  "show orbit endpoints") printf "HUBKEY\\t%s\\n" "$(cat "$STUB_DIR/endpoint.txt")" ;;\n'
           'esac\n')
 
     def move(self, handshake, **extra):
         """Move a tunnel from the public to the LAN endpoint with a stand-in `wg` whose hub handshake is `handshake`."""
-        files = {'bin/wg': self.WG, 'bin/ping': '#!/bin/sh\nexit 0\n', 'handshake.txt': str(handshake),
+        files = {'bin/wg': self.WG, 'bin/ping': '#!/bin/sh\nexit 0\n', 'handshake.txt': str(handshake), 'endpoint.txt': self.LAN,
                  'wg/orbit.key': 'KEY\n', 'wg/orbit.conf': 'old conf\n', 'wg/orbit.peers': self.PEERS.format(self.PUBLIC),
                  'wg/orbit.conf.next': 'new conf\n', 'wg/orbit.peers.next': self.PEERS.format(self.LAN), **extra}
-        variables = {'hub_move': {'dir': '@DIR@/wg', 'key': 'HUBKEY', 'probe_ip': '10.44.0.1', 'interval': 0}}
+        variables = {'hub_move': {'dir': '@DIR@/wg', 'key': 'HUBKEY', 'endpoint': self.LAN, 'probe_ip': '10.44.0.1', 'interval': 0}}
         files = {name: body for name, body in files.items() if body is not None}
         return self.run_tasks('node-converge-hub-move.yml', variables, files)
 
@@ -268,6 +269,13 @@ class WireGuardHubLanTest(unittest.TestCase):
         self.assertEqual(self.left['wg/orbit.conf'], 'new conf\n')
         self.assertNotIn('wg/orbit.peers.previous', self.left)
         self.assertNotIn('wg/orbit.live.previous', self.left)
+
+    def test_a_new_handshake_through_the_old_public_address_is_no_proof_of_the_lan(self):
+        # UDP on the LAN fails, the hub starts a handshake to the Node's old public address, and the Node roams there.
+        code, output, _ = self.move(9_999_999_999, **{'endpoint.txt': self.PUBLIC})
+        self.assertNotEqual(code, 0)
+        self.assertIn('node.hub_switch_no_handshake', output)
+        self.assertIn(f'Endpoint = {self.PUBLIC}', self.left['wg/orbit.peers'])
 
     def test_a_move_without_a_handshake_after_it_restores_the_files_and_the_live_configuration(self):
         # A handshake from before the move went through the old endpoint and does not count.

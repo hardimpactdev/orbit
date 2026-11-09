@@ -37,7 +37,11 @@
       when: hub_switch | bool
       ansible.builtin.include_tasks: node-converge-hub-move.yml
       vars:
-        hub_move: { dir: /etc/wireguard, key: "{{ intent.network.apply.peer.server_public_key }}", probe_ip: "{{ intent.network.probe_ip }}" }
+        hub_move:
+          dir: /etc/wireguard
+          key: "{{ intent.network.apply.peer.server_public_key }}"
+          endpoint: "{{ intent.network.apply.peer.endpoint }}"
+          probe_ip: "{{ intent.network.probe_ip }}"
     - name: Reconcile live peer state without copying its private key
       when: not hub_switch | bool
       ansible.builtin.shell:

@@ -29,7 +29,11 @@
       load
       for _ in $(seq 1 30); do
         seen=$(wg show orbit latest-handshakes | awk -v k="$key" '$1 == k { print $2 }')
-        if [ "${seen:-0}" -ge "$moved" ]; then
+        # A handshake the hub started to an old address would also be new; only one through the new endpoint counts. A
+        # hostname endpoint shows resolved, so it is compared only when the endpoint is an address.
+        live=$(wg show orbit endpoints | awk -v k="$key" '$1 == k { print $2 }')
+        case {{ hub_move.endpoint | quote }} in *[!0-9.:]*) live={{ hub_move.endpoint | quote }} ;; esac
+        if [ "${seen:-0}" -ge "$moved" ] && [ "$live" = {{ hub_move.endpoint | quote }} ]; then
           rm -f "$d/orbit.conf.previous" "$d/orbit.peers.previous" "$d/orbit.live.previous"; echo "moved=$moved"; exit 0
         fi
         ping -c 1 -W 1 {{ hub_move.probe_ip | quote }} > /dev/null 2>&1 || true
