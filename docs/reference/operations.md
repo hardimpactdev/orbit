@@ -163,7 +163,7 @@ A direct Operation may admit immutable `input.participant_node_ids`. A foreign p
 
 ## The record
 
-The optional `steps` list uses typed `OperationStep` metadata. Start and list responses can omit it; show and cancel responses include it.
+The optional `steps` list uses typed `OperationStep` metadata. Start responses can omit it; show and cancel responses include it. List rows never carry `steps`, `input` or `result`; [Page the list](#page-the-list) says why.
 
 `operation:show`, `operation:cancel` and `task:cancel` return a summary of `input`: top-level scalars and strings of at most 512 bytes. An admission that waits for a place keeps the caller's request as `input.capacity_request`; the summary keeps it as an object with the same filter, so a waiting Operation reads the same request on every read. Nested execution plans, scripts, SSH configuration and vault references stay in the stored Operation. The workflow still receives its full admitted intent. Empty summaries serialize as `[]`. Domain results remain available. `steps` contains only recorded names, jobs, statuses and times, with no nested payload or command output.
 
@@ -311,7 +311,7 @@ Four requests read and stop operations.
 | --- | --- |
 | `GET /api/v1/operations/{operation}` | The record with every step |
 | `GET /api/v1/operations/{operation}?after_sequence=N` | The record with only the steps whose `sequence` is greater than `N` |
-| `GET /api/v1/operations` | The 50 newest records, without steps. [Filter the list](#filter-the-list) with `status`, `kind`, `target_type`, and `target_id` |
+| `GET /api/v1/operations` | The newest records, 20 to a page, without `input`, `result` or `steps`. [Filter the list](#filter-the-list) with `status`, `kind`, `target_type`, and `target_id`, and [page it](#page-the-list) with `limit` and `cursor` |
 | `POST /api/v1/operations/{operation}/cancel` | Asks the operation to stop and returns the record |
 
 The list selects operations and caller Node names in one query. Show uses the bound operation and reads its steps in one query. Neither waits for the operation. A read needs access to the Node that serves the target, such as the Instance's Node. The list returns only operations on Nodes that the caller can access; the Gateway Node and a Node with an access grant to the Gateway see all of them.
@@ -332,6 +332,12 @@ The CLI reads with `operation:show`, `operation:list`, and `operation:cancel` ([
 Each name starts with a lower-case letter and holds only lower-case letters, digits, and `_`.
 
 The Gateway checks the form of `kind` and `target_type`, not whether a kind exists. A well-formed value that no operation has returns an empty list. A value in another form answers `422` with `validation.failed`.
+
+### Page the list
+
+`GET /api/v1/operations` returns at most `limit` records, newest first. `limit` is 1 to 100; the default is 20. `meta.next_cursor` names the next page, or is null on the last page. Send it back as `cursor` with the same filters to read the next page. A cursor is an opaque string; one in another form answers `422` with `validation.failed`. A page is not a snapshot: an Operation created after the first page appears on no later page.
+
+A list row has every field of [the record](#the-record) except `input`, `result` and `steps`. A stored input holds the whole admitted intent and a result can hold up to 256 KiB, so a page of full records can pass what an MCP client accepts in one reply. Read one Operation with `operation:show` to get its input summary, result and steps.
 
 ### Follow an operation by polling
 

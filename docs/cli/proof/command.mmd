@@ -8,7 +8,7 @@ sequenceDiagram
   participant VM as Proof VM
   GW->>SW: Start one shard<br/>full intent
   %%> Record one group and VM with its whole batch assignments and expected expanded case ids. Operator proofs instead carry one full command from task admission. Record the run budget of the shard from its batches: 600 s, 180 s a batch and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
-  SW->>VM: Claim a slot
+  SW->>VM: Claim a place
   SW->>VM: Read the workspace commit
   SW->>SW: Check the workspace commit
   %%> A mismatch fails before cases and records expected and found commits.
@@ -46,7 +46,7 @@ sequenceDiagram
     SW-->>GW: Batch run ended
     %%> The Gateway reads each ended batch run with the parent's reconcile and records its full report artifact on the shard, once.
   end
-  SW->>VM: Release the slot
+  SW->>VM: Release the place
   %%> Always after success or failure. Only operator proofs can keep a failed VM for 60 minutes. CI always deletes.
   SW->>SW: Report<br/>full verdict artifact
   %%> Prefix each line with its command, file and batch. The fixed capture reads the full artifact rather than the 4 KiB history summary.

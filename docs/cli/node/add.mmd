@@ -97,7 +97,7 @@ sequenceDiagram
   %%> - installs the pinned `orbit-agent` release, its configuration and the observer secret, and starts it
   %%> - the unit starts the agent after `wg-quick@orbit`, which brings up the tunnel, so the agent's first request to the Gateway address has a route
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
-  %%> - measured on a booted slot VM: the agent started 0.8 s before the tunnel was up, its first requests then hung for the 10 s connect timeout, and the Node was online 29 s after the VM started instead of about 19 s
+  %%> - measured on a booted task VM: the agent started 0.8 s before the tunnel was up, its first requests then hung for the 10 s connect timeout, and the Node was online 29 s after the VM started instead of about 19 s
   SW->>N: Verify managed access<br/>SSH argv
   %%> What it does:
   %%> - logs in as the managed user over the tunnel; on Linux it runs the command with passwordless sudo
