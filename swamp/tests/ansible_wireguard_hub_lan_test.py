@@ -9,6 +9,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from typing import ClassVar
 
 import yaml
 
@@ -106,7 +107,7 @@ class WireGuardHubLanTest(unittest.TestCase):
         return self.run_tasks('node-hub-lan-proof.yml', {'hub_lan': LAN},
                               {'route.json': json.dumps([route]), 'keyscan.txt': keys, 'keygen.txt': fingerprints})
 
-    DIRECT = {'dst': '10.0.0.2', 'dev': 'eth1', 'prefsrc': '10.0.0.4'}
+    DIRECT: ClassVar[dict] = {'dst': '10.0.0.2', 'dev': 'eth1', 'prefsrc': '10.0.0.4'}
     HUB_KEYS = '10.0.0.2 ssh-ed25519 AAAAhub\n10.0.0.2 ssh-rsa AAAArsa\n'
     HUB_PRINTS = f'256 {HUB_KEY} 10.0.0.2 (ED25519)\n3072 SHA256:rsaKeyPrint 10.0.0.2 (RSA)\n'
 
@@ -138,7 +139,7 @@ class WireGuardHubLanTest(unittest.TestCase):
             'local.txt': local, 'rules.json': rules, 'rules.applied.json': LIVE, 'source.txt': source, 'source.applied.txt': RIGHT,
             **(installed or {})})
 
-    INSTALLED = {'etc/hub-source': '#!/bin/sh\n', 'etc/orbit-hub-source.service': '[Unit]\n',
+    INSTALLED: ClassVar[dict] = {'etc/hub-source': '#!/bin/sh\n', 'etc/orbit-hub-source.service': '[Unit]\n',
                  'ufw.txt': 'Skipping adding existing rule\n'}
 
     def test_a_hub_with_the_old_suppress_rule_gets_the_private_range_rules_from_its_unit(self):
