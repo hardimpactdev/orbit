@@ -3,7 +3,7 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,test,ci-cache-ref,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
+  - bin/{review-check,test,ci-build-plan,ci-cache-ref,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy}.py,swamp/bin/check-swamp-shape.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
@@ -78,7 +78,7 @@ The job summary lists case verdicts and uncovered paths. The `proof-receipt` art
 
 The job holds no secret. The runner's CLI acts as its enrolled Node from its WireGuard address, with an access grant to the Gateway. Only an active authenticated `ci-runner` Node gets the CI pool. The default labels are `self-hosted, hardimpact, orbit-shard`; `ORBIT_PROOF_RUNNER` can supply a JSON list of labels. The 195-minute job timeout covers two hours of admission, execution and cancellation.
 
-`bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds.
+`bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. A change under `apps/gateway/resources/agent/` also selects that job: it downloads the pinned Linux agent, verifies its checksum, and checks that its `contract` output exactly matches the frozen command file. Shared workflow, script and tooling changes select all builds.
 
 Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. A run whose token the Gateway writes to a vault key, such as `task:sync` with `task-sync-token-<uuid>`, adds its key pattern there. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp). The CI run on `main` selects builds the same way.
 

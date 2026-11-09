@@ -141,6 +141,12 @@ class BuildPlanTest(unittest.TestCase):
                      'apps/agent/AGENTS.md'):
             self.assertFalse(self.selected([path]) & {'pi', 'agent'}, path)
 
+    def test_each_frozen_pin_file_runs_the_published_binary_contract_check(self):
+        for name in ('frozen-manifest.json', 'frozen-commands.json', 'frozen-commands-source.json'):
+            for main in (False, True):
+                with self.subTest(name=name, main=main):
+                    self.assertIn('php', self.selected([f'apps/gateway/resources/agent/{name}'], main))
+
     def test_agent_delivery_selection_tracks_agent_sources(self):
         self.assertTrue(plan.select(['apps/agent/src/main.rs'])['agent'])
         self.assertFalse(plan.select(['apps/gateway/app/Thing.php'])['agent'])
