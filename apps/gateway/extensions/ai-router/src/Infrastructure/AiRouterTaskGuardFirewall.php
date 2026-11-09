@@ -12,7 +12,7 @@ use Orbit\Extensions\AiRouter\Domain\AiRouterTaskGuard;
 /**
  * The guard's UFW rules on the router's Node, in UFW's order, while the last guard or forwarder run left the guard in place: each
  * forwarder Node's allow (each inserted at the top, so the last one first), the task VM range, and the deny. On a forwarder Node, while
- * its last succeeded run left the forwarder in place: the route deny to the guard, and the bridge rule.
+ * its last succeeded run left the forwarder in place: the bridge rule. Its nftables table is no UFW rule.
  */
 final readonly class AiRouterTaskGuardFirewall implements ContributedNodeFirewallRules
 {
@@ -28,7 +28,7 @@ final readonly class AiRouterTaskGuardFirewall implements ContributedNodeFirewal
         if ($router->id !== $node->id) {
             $own = $present[$node->id] ?? null;
 
-            return $own === null ? [] : [$this->forwarder->routeRule($this->guard->address($router)), $this->forwarder->rule($own['bridge'], $own['address'])];
+            return $own === null ? [] : [$this->forwarder->rule($own['bridge'], $own['address'])];
         }
         if (! $this->guard->applied($node)) {
             return [];

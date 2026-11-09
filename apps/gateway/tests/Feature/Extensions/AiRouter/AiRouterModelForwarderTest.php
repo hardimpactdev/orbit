@@ -54,6 +54,8 @@ function forwarderRouter(): Node
         public function start(Operation $operation): void {}
     });
     app(AiRouterState::class)->enable($services->id, 'services-valkey', 'http://10.44.0.3:8317', 'management', 'read', 'control');
+    // A forwarder run needs the guard in place.
+    forwarderSucceeded(app(AdmitAiRouterTaskGuardAction::class)->execute(triggeredBy: 'test'));
 
     return $services;
 }
@@ -98,11 +100,14 @@ it('admits the Node at the guard and records a forwarder with no key, as one run
             'directory' => '/etc/orbit/ai-router-forwarder', 'unit' => 'orbit-ai-router-forwarder.service'])
         ->and($intent['forwarder']['caddyfile'])->toContain("bind 10.251.33.1\n")->toContain("reverse_proxy http://10.44.0.3:8318\n")
         ->not->toContain('header_up')->not->toContain('credentials')
-        // The bridge rule, and the route deny at the top: a container reaches the guard only through the forwarder.
         ->and($intent['forwarder']['firewall'])->toBe(['desired' => [
             ['ufw', 'allow', 'in', 'on', 'orbitc0', 'proto', 'tcp', 'from', 'any', 'to', '10.251.33.1', 'port', '8319', 'comment', 'orbit:ai-router-forwarder'],
-            ['ufw', 'route', 'insert', '1', 'deny', 'proto', 'tcp', 'from', 'any', 'to', '10.44.0.3', 'port', '8318', 'comment', 'orbit:ai-router-forwarder-route'],
         ], 'remove' => []])
+        // Its own table: forwarded packets to the guard dropped ahead of Docker and UFW, and only its user may connect from the Node.
+        ->and($intent['forwarder'])->toMatchArray(['user' => 'orbit-ai-router-forwarder', 'table' => 'orbit_ai_router_forwarder'])
+        ->and($intent['forwarder']['ruleset'])
+        ->toContain("type filter hook forward priority filter - 10; policy accept;\n\t\tip daddr 10.44.0.3 tcp dport 8318 counter drop\n")
+        ->toContain("type filter hook output priority filter - 10; policy accept;\n\t\tip daddr 10.44.0.3 tcp dport 8318 meta skuid != \"orbit-ai-router-forwarder\" counter reject with tcp reset\n")
         // No key anywhere in the intent; the forwarder gets none.
         ->and(json_encode($operation->input))->not->toContain($secrets->task())->not->toContain($secrets->anchor('http://10.44.0.3:8317'));
 
@@ -123,7 +128,7 @@ it('keeps a forwarder Node in every later guard run and firewall until a run rem
     forwarderSucceeded(app(AdmitAiRouterModelForwarderAction::class)->execute($beast, 'orbitc0', '10.251.33.1', triggeredBy: 'test'));
     // A succeeded forwarder run applied the guard too.
     expect(forwarderRuleNames($services))->toContain('orbit:ai-router-task-guard', $allow, 'orbit:ai-router-task-guard-deny')
-        ->and(forwarderRuleNames($beast))->toContain('orbit:ai-router-forwarder', 'orbit:ai-router-forwarder-route')
+        ->and(forwarderRuleNames($beast))->toContain('orbit:ai-router-forwarder')
         ->and(collect(app(ListManagedFirewallRulesAction::class)->execute($beast))->firstWhere('name', 'orbit:ai-router-forwarder'))
         ->toMatchArray(['action' => 'allow', 'destination' => '10.251.33.1', 'port' => '8319']);
 
@@ -142,24 +147,29 @@ it('keeps a forwarder Node in every later guard run and firewall until a run rem
         ->and($intent['forwarder'])->toMatchArray(['state' => 'absent', 'bridge' => 'orbitc0', 'address' => '10.251.33.1'])
         ->and($intent['forwarder']['firewall'])->toBe(['desired' => [], 'remove' => [
             ['ufw', '--force', 'delete', 'allow', 'in', 'on', 'orbitc0', 'proto', 'tcp', 'from', 'any', 'to', '10.251.33.1', 'port', '8319', 'comment', 'orbit:ai-router-forwarder'],
-            ['ufw', '--force', 'route', 'delete', 'deny', 'proto', 'tcp', 'from', 'any', 'to', '10.44.0.3', 'port', '8318', 'comment', 'orbit:ai-router-forwarder-route'],
         ]]);
     forwarderSucceeded($removal);
     expect(forwarderRuleNames($services))->not->toContain($allow)->toContain('orbit:ai-router-task-guard')
-        ->and(forwarderRuleNames($beast))->not->toContain('orbit:ai-router-forwarder', 'orbit:ai-router-forwarder-route')
+        ->and(forwarderRuleNames($beast))->not->toContain('orbit:ai-router-forwarder')
         ->and(app(AdmitAiRouterTaskGuardAction::class)->execute(triggeredBy: 'test')->input['intent']['caddyfile'])
         ->toContain("remote_ip 10.44.0.128/25\n");
 });
 
-it('removes each forwarder allow with the guard, and admits the forwarders again on the next guard run', function (): void {
+it('removes the guard with its pair, refuses forwarder runs until it is back, and admits the forwarders again', function (): void {
     forwarderRouter();
     $beast = forwarderNode('beast', '10.44.0.7');
     forwarderSucceeded(app(AdmitAiRouterModelForwarderAction::class)->execute($beast, 'orbitc0', '10.251.33.1', triggeredBy: 'test'));
 
     $removal = forwarderSucceeded(app(AdmitAiRouterTaskGuardAction::class)->execute(remove: true, triggeredBy: 'test'));
 
-    expect($removal->input['intent']['firewall']['remove'])->toContain(
-        ['ufw', '--force', 'delete', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', '10.44.0.7', 'to', '10.44.0.3', 'port', '8318', 'comment', 'orbit:ai-router-task-guard-node-'.$beast->id])
+    // The pair only: `tasks/firewall.yml` takes every `-node-<id>` allow with it, named or stray.
+    expect($removal->input['intent']['firewall']['remove'])->toBe([
+        ['ufw', '--force', 'delete', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', '10.44.0.128/25', 'to', '10.44.0.3', 'port', '8318', 'comment', 'orbit:ai-router-task-guard'],
+        ['ufw', '--force', 'delete', 'deny', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', 'any', 'to', '10.44.0.3', 'port', '8318', 'comment', 'orbit:ai-router-task-guard-deny'],
+    ])
+        // With the guard off, no forwarder run brings it back, a removal included.
+        ->and(fn () => app(AdmitAiRouterModelForwarderAction::class)->execute($beast, null, null, remove: true, triggeredBy: 'test'))
+        ->toThrow(ResourceOperationException::class, 'The guard is not in place')
         ->and(app(AdmitAiRouterTaskGuardAction::class)->execute(triggeredBy: 'test')->input['intent']['caddyfile'])
         ->toContain("remote_ip 10.44.0.128/25 10.44.0.7\n");
 });
@@ -180,6 +190,11 @@ it('refuses a forwarder on the router Node, the swamp Node, an invalid Node or b
 
     expect($refusal(fn () => $admit->execute($services, 'orbitc0', '10.251.33.1')))->toBe('ai_router.forwarder_refused')
         ->and($refusal(fn () => $admit->execute(Node::query()->where('name', 'swamp')->firstOrFail(), 'orbitc0', '10.251.33.1')))->toBe('ai_router.forwarder_refused')
+        ->and($refusal(function () use ($admit) {
+            $hub = forwarderNode('vpn', '10.44.0.1');
+            $hub->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+            $admit->execute($hub, 'orbitc0', '10.251.33.1');
+        }))->toBe('ai_router.forwarder_refused')
         ->and($refusal(fn () => $admit->execute(forwarderNode('mac', '10.44.0.9')->forceFill(['platform' => 'macos']), 'orbitc0', '10.251.33.1')))->toBe('ai_router.node_invalid')
         ->and($refusal(fn () => $admit->execute(forwarderNode('nowg', '10.44.0.10')->forceFill(['wireguard_ip' => null]), 'orbitc0', '10.251.33.1')))->toBe('ai_router.node_invalid')
         ->and($refusal(fn () => $admit->execute($beast, 'orbitc0; rm', '10.251.33.1')))->toBe('validation.failed')
@@ -187,6 +202,10 @@ it('refuses a forwarder on the router Node, the swamp Node, an invalid Node or b
         ->and($refusal(fn () => $admit->execute($beast, null, null)))->toBe('validation.failed')
         ->and($refusal(fn () => $admit->execute($beast, null, null, remove: true)))->toBe('resource.not_found')
         ->and(Operation::query()->where('kind', AiRouterModelForwarder::Kind)->count())->toBe(0);
+
+    // Before the first guard run, and after its removal, no forwarder run applies the guard.
+    forwarderSucceeded(app(AdmitAiRouterTaskGuardAction::class)->execute(remove: true, triggeredBy: 'test'));
+    expect($refusal(fn () => $admit->execute($beast, 'orbitc0', '10.251.33.1')))->toBe('ai_router.guard_absent');
 
     app(AiRouterState::class)->disable();
     expect($refusal(fn () => $admit->execute($beast, 'orbitc0', '10.251.33.1')))->toBe('ai_router.disabled')
@@ -325,4 +344,26 @@ it('drops a forwarder Node that is no longer active from the guard', function ()
 
     expect(app(AdmitAiRouterTaskGuardAction::class)->execute(triggeredBy: 'test')->input['intent']['caddyfile'])->toContain("remote_ip 10.44.0.128/25\n")
         ->and(forwarderRuleNames($services))->not->toContain('orbit:ai-router-task-guard-node-'.$beast->id);
+});
+
+/**
+ * Loads the rendered table on a real kernel, as root, through `tests/Support/ai-router-forwarder-nft-check.sh`: a container behind a
+ * Docker-style FORWARD accept and root on the host reach a stand-in guard before the table and not after it, and the forwarder's user still
+ * does. It needs passwordless sudo, nft, iptables and ip, as a Linux CI runner has.
+ */
+it('drops a container behind a Docker FORWARD accept and every Node process but the forwarder, on a real kernel', function (): void {
+    if (PHP_OS_FAMILY !== 'Linux' || Process::run(['sudo', '-n', 'nft', '--version'])->failed()) {
+        $this->markTestSkipped('Needs Linux with passwordless sudo and nft.');
+    }
+    $ruleset = tempnam(sys_get_temp_dir(), 'orbit-forwarder-nft-');
+    file_put_contents($ruleset, app(AiRouterModelForwarder::class)->ruleset('10.44.0.3'));
+    try {
+        $check = Process::timeout(60)->run(['sudo', '-n', base_path('tests/Support/ai-router-forwarder-nft-check.sh'), $ruleset, '10.44.0.3', '8318',
+            AiRouterModelForwarder::User]);
+    } finally {
+        unlink($ruleset);
+    }
+
+    expect($check->exitCode())->toBe(0, $check->output().$check->errorOutput())
+        ->and($check->output())->toContain('ok: container, behind a FORWARD accept: refused')->toContain('ok: the forwarder user: reached');
 });

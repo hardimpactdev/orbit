@@ -33,9 +33,16 @@ Containers reach the router through a forwarder with no key on their Node, and t
 
 ### A forwarder with no key on each agent Node
 
-Each agent Node runs its own Caddy, `orbit-ai-router-forwarder.service`. It listens on the Node's container bridge address at port 8319 and proxies every request to the guard origin. It adds only Caddy's `X-Forwarded-*` headers, holds no key and has no rule of its own. UFW admits port 8319 only on the bridge.
+Each agent Node runs its own Caddy, `orbit-ai-router-forwarder.service`, as its own system user `orbit-ai-router-forwarder`. It listens on the Node's container bridge address at port 8319 and proxies every request to the guard origin. It adds only Caddy's `X-Forwarded-*` headers, holds no key and has no rule of its own. UFW admits port 8319 only on the bridge.
 
-A container's traffic leaves the Node from the Node's WireGuard address, which the guard admits. So UFW on the Node drops forwarded traffic to the guard's address and port, from any bridge, with a route deny at the top. A container reaches the guard only through the forwarder. The Node's own processes are not forwarded and reach the guard directly; on an agent Node these are Orbit's own: the forwarder, the Node agent, Incus and root.
+### Only the forwarder reaches the guard from the Node
+
+All traffic from the Node to the guard leaves from the Node's WireGuard address, which the guard admits. So the forwarder brings its own nftables table, `inet orbit_ai_router_forwarder`, and only the forwarder may reach the guard from the Node:
+
+- A forward chain drops every forwarded packet to the guard's address and port. It catches Incus and Docker containers alike. Docker accepts container traffic in its own `FORWARD` chains, ahead of UFW, so a UFW route rule would not stop a Docker container. The table's chain runs at priority `filter - 10`, before Docker and UFW, and a drop in any base chain is final.
+- An output chain resets every connection from the Node to the guard unless its socket belongs to the forwarder's user. Root, `orbit`, app-dev Instances that run on the Node and CI work get no model route.
+
+The unit loads the table as root before each start, so it is in place after a reboot before the forwarder listens.
 
 The guard stays the one place that decides. A request through the forwarder meets the same key, method, path and query checks as a request from a task VM.
 
@@ -43,9 +50,11 @@ The guard stays the one place that decides. A request through the forwarder meet
 
 The guard admits two kinds of source: the task VM range, and the WireGuard address of every Node whose last forwarder run left a forwarder in place. Each such address gets its own UFW allow above the guard's deny.
 
-One run does both halves. `ai_router.model_forwarder` first applies the guard with the Node added (or removed), then applies (or removes) the forwarder on the Node. A run that applies ends with a request through the forwarder with no key. The guard answers 401 to a refused request from a source it admits, and 403 to any other source. So the 401 proves both that the guard admits the Node and that it still demands the key. A run that removes ends by showing that the router's Node answers SSH from the Node while the guard port does not.
+One run does both halves. `ai_router.model_forwarder` first applies the guard with the Node added (or removed), then applies (or removes) the forwarder on the Node. A run that applies ends with checks from a network namespace on the bridge, as a container. A request through the forwarder with no key must get 401. The guard answers 401 to a refused request from a source it admits, and 403 to any other source, so the 401 proves the bridge rule, the forwarder, and that the guard admits the Node and still demands the key. A request straight to the guard must fail while the forward chain's drop counter rises. A request from the Node as root must fail while the output chain's reset counter rises. A run that removes ends by showing that the router's Node answers SSH from the Node while the guard port does not.
 
-The router's Node and Nodes with the `swamp` role cannot run a forwarder. The router's Node holds the real key, so it is no agent host. The swamp Node is the outside source the guard run uses to prove its refusal.
+A forwarder run applies the guard, so it runs only while the guard is in place. It never brings back a guard that `ai-router:task-guard --remove` took off.
+
+The router's Node, the swamp Node and the vpn hub cannot run a forwarder. The router's Node holds the real key, so it is no agent host. The swamp Node is the outside source the guard run uses to prove its refusal. The hub forwards every task VM's traffic to the guard, which the forward chain would drop.
 
 ### Only `orbit` is kept out, inside the container
 
@@ -53,7 +62,7 @@ The forwarder cannot tell the users in a container apart: both reach it from the
 
 ### Claude Code's query
 
-The guard accepts exactly one query, `beta=true`, and only on `/v1/messages` and `/v1/messages/count_tokens`. Every other query on every route still gets 403. Claude Code sends this query on every call and has no setting to drop it. Allowing one fixed value keeps the guard's reason for the rule: no client can pass router options, such as a key, in the query.
+The guard accepts exactly one query, `beta=true`, and only on `/v1/messages` and `/v1/messages/count_tokens`. Every other query on every route is still refused: 401 from an admitted source, 403 from any other. Claude Code sends this query on every call and has no setting to drop it. Allowing one fixed value keeps the guard's reason for the rule: no client can pass router options, such as a key, in the query.
 
 `/v1/messages/count_tokens` joins the inference routes. It counts tokens and changes nothing on the router.
 
@@ -71,7 +80,7 @@ The guard sees the Node's address, not the container's. These are the options:
 
 ## Rejected alternatives
 
-- **Admit agent Node addresses at the guard, with no forwarder.** Containers would call the guard directly, through the Node's NAT. Every bridge on the Node, such as a CI runner bridge, would reach the guard too, and the container runtime's rule for the `agent` uid would need the guard's address, which can move. The forwarder gives one local listener per Node that the runtime's rule names, and the route deny closes the direct path.
+- **Admit agent Node addresses at the guard, with no forwarder.** Containers would call the guard directly, through the Node's NAT. Every bridge on the Node, such as a CI runner bridge, would reach the guard too, and the container runtime's rule for the `agent` uid would need the guard's address, which can move. The forwarder gives one local listener per Node that the runtime's rule names, and its table closes the direct path.
 - **A guard on each agent Node.** It needs the real key on the Node. ADR 0250 rule 3 forbids it.
 - **Give containers WireGuard identities.** Every container becomes a WireGuard peer with its own address, hub filter and enrolment. Too much for one route.
 - **Allow any query on the messages routes.** The rule against queries keeps clients from passing router options. One fixed value is enough for Claude Code.
@@ -79,7 +88,7 @@ The guard sees the Node's address, not the container's. These are the options:
 ## Consequences
 
 - A container needs only the placeholder and the forwarder origin, `http://<bridge address>:8319`.
-- Any process of the Node itself can use the guard with the placeholder; containers cannot, except through the forwarder. The placeholder is no secret: it works only from an admitted source. Root on the Node already reaches every container.
+- Only the forwarder reaches the guard from an agent Node. Containers and the Node's own processes cannot, root included. Root can still remove the table; root on the Node already reaches every container.
 - The guard answers 401 instead of 403 to a refused request from an admitted source, task VMs included. Nothing reads the difference except the forwarder run's end check.
 - Removing the guard with `ai-router:task-guard --remove` also removes every forwarder Node's allow. The forwarders stay; the next guard run admits them again.
 - Task VMs see no change until an operator runs the guard again. Then they also gain `?beta=true` and `count_tokens`.

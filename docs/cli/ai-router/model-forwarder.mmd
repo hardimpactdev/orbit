@@ -20,7 +20,8 @@ sequenceDiagram
   %%> - takes the lock `ai_router_guard:<router Node>`, which guard runs share
   %%> Requirements:
   %%> - the ai-router extension is set up on its Node
-  %%> - the Node is active Linux with a WireGuard address, and is neither the router's Node nor the swamp Node
+  %%> - the guard is in place: a forwarder run never brings back a removed guard
+  %%> - the Node is active Linux with a WireGuard address, and is not the router's Node, the swamp Node or the vpn hub
   %%> - `--bridge` and `--address` name the container bridge and its IPv4 address; a removal reuses those of the last run
   GW->>SW: Start run, full intent<br/>ai_router.model_forwarder
   SW->>R: Apply the guard<br/>Ansible
@@ -30,12 +31,15 @@ sequenceDiagram
   SW->>N: Apply the forwarder<br/>Ansible
   %%> What it does:
   %%> - checks that the address belongs to the bridge
-  %%> - runs its own Caddy, `orbit-ai-router-forwarder.service`, on the bridge address at port 8319: a dynamic user, no admin endpoint, no saved config, no key
-  %%> - allows port 8319 in on the bridge only, and puts a UFW route deny to the guard at the top, so a container on any bridge reaches the guard only through the forwarder
+  %%> - runs its own Caddy, `orbit-ai-router-forwarder.service`, on the bridge address at port 8319: its own system user, no admin endpoint, no saved config, no key
+  %%> - allows port 8319 in on the bridge only
+  %%> - loads its nftables table before each start: forwarded packets to the guard are dropped ahead of Docker and UFW, and only the forwarder's user may connect to the guard from the Node
   %%> - `--remove`: takes the unit, its folder and its UFW rule off the Node instead
-  SW->>N: Prove the path<br/>from the agent Node
+  SW->>N: Prove the path<br/>from the bridge
   %%> What it does:
-  %%> - apply: a POST through the forwarder with no key gets the guard's 401, which it gives only to a source it admits: the guard admits the Node and still demands the key
+  %%> - from a namespace whose veth is a port of the bridge, as a container: a POST through the forwarder with no key gets the guard's 401, which it gives only to a source it admits
+  %%> - from that namespace, a request straight to the guard fails and the forward drop counter rises
+  %%> - from the Node as root, a request to the guard fails and the output reset counter rises
   %%> - remove: the router Node answers SSH, and the guard port does not answer the Node
   alt the checks pass
     SW-->>GW: Run succeeded

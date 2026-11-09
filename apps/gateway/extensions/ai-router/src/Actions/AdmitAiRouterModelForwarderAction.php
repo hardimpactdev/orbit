@@ -33,9 +33,15 @@ final readonly class AdmitAiRouterModelForwarderAction
             throw new ResourceOperationException('ai_router.node_invalid', "Node [{$node->name}] is not an active Linux Node.", 422);
         }
         $this->guard->address($node);
-        if ($node->id === $router->id || $node->roles()->where('role', RoleName::Swamp)->exists()) {
+        // The router's Node holds the real key; the swamp Node proves the guard's refusal; the vpn hub forwards every task VM's traffic
+        // to the guard, which the forwarder's forward drop would cut.
+        if ($node->id === $router->id || $node->roles()->whereIn('role', [RoleName::Swamp, RoleName::Vpn])->exists()) {
             throw new ResourceOperationException('ai_router.forwarder_refused',
-                "Node [{$node->name}] holds the real key or proves the guard's refusal; it cannot run a forwarder.", 409);
+                "Node [{$node->name}] holds the real key, proves the guard's refusal or forwards task VM traffic; it cannot run a forwarder.", 409);
+        }
+        // A forwarder run applies the guard; it must not bring back a guard that `ai-router:task-guard --remove` took off.
+        if (! $this->guard->applied($router)) {
+            throw new ResourceOperationException('ai_router.guard_absent', 'The guard is not in place; run `ai-router:task-guard` first.', 409);
         }
         if ($remove) {
             ['bridge' => $bridge, 'address' => $address] = $this->forwarder->last($router, $node)
@@ -46,7 +52,6 @@ final readonly class AdmitAiRouterModelForwarderAction
         }
         $others = array_values(array_filter($this->guard->forwarders($router), static fn (Node $other): bool => $other->id !== $node->id));
         $rule = $this->forwarder->rule($bridge, $address);
-        $route = $this->forwarder->routeRule($this->guard->address($router));
 
         return $this->start->execute(AiRouterModelForwarder::Kind, 'node', $node->id, $router->id, [
             'intent' => [
@@ -61,10 +66,12 @@ final readonly class AdmitAiRouterModelForwarderAction
                     'directory' => AiRouterModelForwarder::Directory,
                     'unit' => AiRouterModelForwarder::Unit,
                     'caddyfile' => $this->forwarder->caddyfile($address, $this->guard->origin($router)),
-                    // The route deny goes to the top, above any route allow such as a CI runner bridge's.
+                    'user' => AiRouterModelForwarder::User,
+                    'table' => AiRouterModelForwarder::Table,
+                    'ruleset' => $this->forwarder->ruleset($this->guard->address($router)),
                     'firewall' => [
-                        'desired' => $remove ? [] : [['ufw', ...array_slice($rule->arguments, 2)], ['ufw', 'route', 'insert', '1', ...array_slice($route->arguments, 3)]],
-                        'remove' => $remove ? [$rule->removalArguments(), $route->removalArguments()] : [],
+                        'desired' => $remove ? [] : [['ufw', ...array_slice($rule->arguments, 2)]],
+                        'remove' => $remove ? [$rule->removalArguments()] : [],
                     ],
                 ],
             ],

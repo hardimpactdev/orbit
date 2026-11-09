@@ -160,7 +160,7 @@ final readonly class AiRouterTaskGuard
 
     /**
      * The intent of the guard phase (docs/cli/ai-router/task-guard.mmd): its Caddyfile and its UFW rules. With `$remove`, the phase takes
-     * the guard off the Node. While it keeps the guard, `tasks/firewall.yml` removes a forwarder Node's allow that the rules no longer name.
+     * the guard off the Node. `tasks/firewall.yml` removes each forwarder Node allow the rules do not name, and every one with the pair.
      *
      * @param  list<Node>  $forwarders
      * @return array<string, mixed>
@@ -186,8 +186,7 @@ final readonly class AiRouterTaskGuard
                 // The catalog reads the contributed rules, this guard's among them, so it resolves when used.
                 'desired' => [$ufw(app(NodeFirewallRuleCatalog::class)->forNode($node)[1]->arguments),
                     ...($remove ? [] : [$insert($rules['deny']), $insert($rules['allow']), ...array_map($insert, $allows)])],
-                'remove' => $remove ? array_map(static fn (UfwManagedRule $rule): array => $rule->removalArguments(),
-                    [$rules['allow'], $rules['deny'], ...$allows]) : [],
+                'remove' => $remove ? [$rules['allow']->removalArguments(), $rules['deny']->removalArguments()] : [],
             ],
         ];
     }

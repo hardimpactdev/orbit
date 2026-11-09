@@ -106,6 +106,42 @@ class AnsibleFirewallTest(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_removed_pair_takes_every_node_allow(self):
+        tasks = yaml.safe_load(TASKS.read_text())
+        comparison = [task for task in tasks if 'ansible.builtin.set_fact' in task]
+        removal = next(task for task in tasks if task['name'] == 'Remove only changed or misplaced owned rules')
+        guard = ['in', 'on', 'orbit', 'proto', 'tcp']
+        commands = [
+            ['ufw', 'allow', 'in', 'on', 'orbit', 'to', '10.44.0.3', 'comment', 'orbit:wireguard-members'],
+            ['ufw', '--force', 'delete', 'allow', *guard, 'from', '10.44.0.128/25', 'to', '10.44.0.3', 'port', '8318', 'comment', 'orbit:ai-router-task-guard'],
+            ['ufw', '--force', 'delete', 'deny', *guard, 'from', 'any', 'to', '10.44.0.3', 'port', '8318', 'comment', 'orbit:ai-router-task-guard-deny'],
+        ]
+        order = ['ai-router-task-guard-node-9', 'ai-router-task-guard-node-7', 'ai-router-task-guard', 'ai-router-task-guard-deny',
+                 'wireguard-members']
+        numbered = '\n'.join(f'[ {index}] rule # orbit:{comment}' for index, comment in enumerate(order, 1))
+        plays = [{
+            'name': 'removed pair', 'hosts': 'localhost', 'gather_facts': False,
+            'vars': {'firewall_commands': commands, 'intent': {'firewall': {'desired': commands[:1]}},
+                     'firewall_added': {'stdout_lines': [
+                         "ufw allow in on orbit from 10.44.0.128/25 to 10.44.0.3 port 8318 proto tcp comment 'orbit:ai-router-task-guard'",
+                         "ufw deny in on orbit to 10.44.0.3 port 8318 proto tcp comment 'orbit:ai-router-task-guard-deny'"]},
+                     'firewall_numbered': {'stdout': numbered}, 'expected_indices': [2, 1]},
+            'tasks': [*comparison,
+                      {'ansible.builtin.set_fact': {'repair_indices': removal['loop']}},
+                      {'ansible.builtin.assert': {'that': 'repair_indices == expected_indices', 'fail_msg': '{{ repair_indices | to_json }}'}}],
+        }]
+        with tempfile.TemporaryDirectory() as directory:
+            playbook = Path(directory) / 'comparison.yml'
+            playbook.write_text(json.dumps(plays))
+            config = Path(directory) / 'ansible.cfg'
+            config.write_text('[defaults]\n')
+            result = subprocess.run(
+                [str(Path(sys.executable).with_name('ansible-playbook')), '-i', 'localhost,', '-c', 'local', str(playbook)],
+                capture_output=True, text=True, check=False,
+                env={**os.environ, 'ANSIBLE_CONFIG': str(config), 'ANSIBLE_NOCOLOR': '1'},
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -212,7 +212,7 @@ The guard is its own Caddy on the router's Node, `orbit-ai-router-guard.service`
 
 The admitted sources are the task VM range and the WireGuard address of every Node that runs a [container model forwarder](#container-model-forwarder).
 
-The allowed query is none, except `beta=true` on the two messages routes. Claude Code sends `?beta=true` on every call and has no setting to drop it. Any other query, and `beta=true` on any other route, gets 403, so no client passes router options in the query. [ADR 0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder) records why.
+The allowed query is none, except `beta=true` on the two messages routes. Claude Code sends `?beta=true` on every call and has no setting to drop it. Any other query, and `beta=true` on any other route, is refused: 401 from an admitted source, 403 from any other. So no client passes router options in the query. [ADR 0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder) records why.
 
 The guard matches the path and the query as the client sent them, so `/v1//responses`, a path with `..`, or `?beta=true&key=x` does not pass.
 
@@ -234,7 +234,7 @@ Run `php artisan ai-router:task-guard` on the Gateway after setup, and after a k
 - On the router's Node, the task key gets 403.
 - From the swamp Node, the router's Node answers on SSH and port 8318 does not answer.
 
-`php artisan ai-router:task-guard --remove` takes the guard, its keys and its rules off the Node, before a teardown, including the allow of each forwarder Node. The forwarders stay; the next guard run admits them again. `firewall:list --managed` lists the rules while the last succeeded run of the guard, or of a forwarder, applied the guard.
+`php artisan ai-router:task-guard --remove` takes the guard, its keys and its rules off the Node, before a teardown. It takes every installed allow of a forwarder Node with them, including a stray one. The forwarders stay, and no forwarder run starts until a guard run puts the guard back and admits them again. `firewall:list --managed` lists the rules while the last succeeded run of the guard, or of a forwarder, applied the guard.
 
 Both commands take the lock `ai_router_guard:<router Node>`. While one guard or forwarder run holds it, another fails with `operation.target_busy` (409) and does not wait. Two runs at once could each drop the other's forwarder Node from the guard.
 
@@ -248,15 +248,19 @@ A container on an agent Node reaches the router through a forwarder on its Node.
 
 | Piece | Where | Detail |
 | --- | --- | --- |
-| `orbit-ai-router-forwarder.service` | The agent Node | Its own Caddy on the container bridge address, port 8319. A dynamic user, no admin endpoint, no saved config, no key |
+| `orbit-ai-router-forwarder.service` | The agent Node | Its own Caddy on the container bridge address, port 8319. Its own system user `orbit-ai-router-forwarder`, no admin endpoint, no saved config, no key |
 | Proxy | The same Caddy | Passes every request to the guard origin, such as `http://10.44.0.3:8318`. It adds only Caddy's `X-Forwarded-*` headers, and nothing secret |
 | UFW `orbit:ai-router-forwarder` | The agent Node | Admits port 8319 on the bridge only |
-| UFW `orbit:ai-router-forwarder-route` | The agent Node | A route deny at the top: forwarded traffic to the guard's address and port is dropped, from any bridge |
+| nftables table `inet orbit_ai_router_forwarder` | The agent Node | Drops every forwarded packet to the guard, and resets every connection from the Node to the guard but the forwarder user's. The unit loads it as root before each start |
 | UFW `orbit:ai-router-task-guard-node-<id>` | The router's Node | Admits port 8318 from the agent Node's WireGuard address, above the guard's deny |
 
 The guard stays the one place that decides. The forwarder has no rule of its own: a request through it meets the same key, method, path and query checks as a request from a task VM.
 
-A container's own traffic leaves the Node from the Node's WireGuard address, which the guard admits. So the route deny keeps every container, on any bridge, from calling the guard directly: it reaches the guard only through the forwarder. The Node's own processes are not forwarded, so they reach the guard with the placeholder. They are Orbit's: the forwarder, the Node agent, Incus and root.
+All traffic from the Node to the guard leaves from the Node's WireGuard address, which the guard admits. So the forwarder's nftables table makes the forwarder the only way to the guard.
+
+The forward chain drops every forwarded packet to the guard's address and port. This covers Incus containers, Docker containers and Docker Processes alike. The chain runs at priority `filter - 10`, before Docker's `FORWARD` accept and UFW's chains. A drop in any base chain is final.
+
+The output chain resets every connection from the Node to the guard unless it belongs to the forwarder's user. So root, `orbit`, app-dev Instances on the Node and CI work cannot use the placeholder there.
 
 The guard sees the Node, not the container. Usage is per Node. The guard keeps no per-container record, as it keeps none per task VM.
 
@@ -278,18 +282,27 @@ The command admits `ai_router.model_forwarder` on the Node. One run does both ha
 1. It applies the guard on the router's Node. The guard's sources gain the Node's WireGuard address, or lose it. This phase is the guard phase of `ai-router:task-guard`.
 2. It applies, or removes, the forwarder on the Node.
 
-An applying run ends with a `POST` through the forwarder with no key. The guard answers 401 only to a source it admits, so the 401 proves that the guard admits the Node and still demands the key. A source the guard refuses gets 403. Without the UFW allow, the guard's deny drops the request and the forwarder answers 502. A removing run ends by checking that the router's Node answers SSH from the Node while the guard port does not.
+The run checks first that the address belongs to the bridge on the Node. An applying run ends with checks that act as a container: a network namespace whose veth is a port of the bridge, removed again afterwards.
 
-The run checks first that the address belongs to the bridge on the Node.
+First, a `POST` with no key goes through the forwarder and must get 401. The guard answers 401 only to a source it admits. So the 401 proves the bridge rule, the forwarder, the guard's admission of the Node, and that the guard still demands the key. A source the guard refuses gets 403. Without the guard's UFW allow, the forwarder answers 502.
+
+Next, a request goes straight to the guard. It must fail, and the forward chain's drop counter must rise.
+
+Last, root on the Node sends a request to the guard. It must fail, and the output chain's reset counter must rise. SSH to the router's Node must still answer.
+
+A removing run deletes the table and the user, and ends by checking that the router's Node answers SSH from the Node while the guard port does not.
 
 | Code | Status | When |
 | --- | --- | --- |
 | `ai_router.disabled` | 409 | The ai-router is not set up. Each run applies the guard, so a removal needs it too |
+| `ai_router.guard_absent` | 409 | The guard is not in place: no guard run yet, or `ai-router:task-guard --remove` took it off. A forwarder run never brings it back; run `ai-router:task-guard` first |
 | `ai_router.node_invalid` | 422 | The Node is missing, inactive, not Linux, or has no WireGuard IPv4 address |
-| `ai_router.forwarder_refused` | 409 | The Node is the router's Node, which holds the real key, or has the `swamp` role, which the guard run uses as its outside source |
+| `ai_router.forwarder_refused` | 409 | The Node is the router's Node, or has the `swamp` or `vpn` role |
 | `validation.failed` | 422 | `--bridge` is not an interface name, or `--address` is not an IPv4 address |
 | `resource.not_found` | 404 | A removal for a Node that never had a forwarder run |
 | `operation.target_busy` | 409 | Another guard or forwarder run holds the guard |
+
+The refused Nodes have reasons. The router's Node holds the real key. The guard run uses the swamp Node as its outside source. The vpn hub forwards task VM traffic to the guard, which the forward chain would drop.
 
 A container then uses `http://<address>:8319` as its model origin: `ANTHROPIC_BASE_URL` for Claude Code, and `base_url = "http://<address>:8319/v1"` for Codex, each with the task key.
 

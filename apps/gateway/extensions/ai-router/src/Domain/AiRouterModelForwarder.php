@@ -16,7 +16,7 @@ use App\Support\ValidatedData;
  * The container model forwarder ([ADR 0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder)): its own
  * Caddy on an agent Node's container bridge address at port 8319, which proxies every request to the task VM guard with only Caddy's
  * `X-Forwarded-*` headers added. It holds no key and has no rule of its own; the guard admits the Node's WireGuard address and still
- * demands the placeholder. UFW drops forwarded traffic to the guard on the Node, so a container reaches it only through the forwarder.
+ * demands the placeholder. The forwarder's own nftables table makes it the only way from the Node to the guard.
  */
 final readonly class AiRouterModelForwarder
 {
@@ -30,7 +30,10 @@ final readonly class AiRouterModelForwarder
 
     public const string Comment = 'orbit:ai-router-forwarder';
 
-    public const string RouteComment = 'orbit:ai-router-forwarder-route';
+    /** The fixed system user the forwarder runs as; the output rule names it. */
+    public const string User = 'orbit-ai-router-forwarder';
+
+    public const string Table = 'orbit_ai_router_forwarder';
 
     /** The origin containers on the Node call. */
     public function origin(string $address): string
@@ -68,15 +71,36 @@ final readonly class AiRouterModelForwarder
     }
 
     /**
-     * Forwarded traffic to the guard dropped on the Node, from any bridge: a container's packets would leave from the Node's WireGuard
-     * address, which the guard admits, so without it a container could skip the forwarder. The Node's own processes are not forwarded.
+     * The forwarder's own nftables table: traffic from the Node to the guard leaves from the Node's WireGuard address, which the guard
+     * admits, so only the forwarder may send it.
+     * - The forward chain drops every forwarded packet to the guard: a container on any bridge, an Incus or a Docker one. It runs before
+     *   the `filter` priority, where Docker's `FORWARD` accept and UFW's chains sit, and a drop in any base chain is final.
+     * - The output chain resets every connection of the Node's own processes to the guard but the forwarder's user's: root, `orbit`
+     *   and every app process on the Node included.
+     * The file replaces the table whole, so loading it again is idempotent.
      */
-    public function routeRule(string $guardAddress): UfwManagedRule
+    public function ruleset(string $guardAddress): string
     {
-        $port = (string) AiRouterTaskGuard::Port;
+        $table = self::Table;
+        $user = self::User;
+        $port = AiRouterTaskGuard::Port;
 
-        return new UfwManagedRule(new UfwRuleShape(self::RouteComment, 'deny', 'fwd', 'any', $guardAddress, $port, 'tcp', null, null, 'v4'),
-            ['sudo', 'ufw', 'route', 'deny', 'proto', 'tcp', 'from', 'any', 'to', $guardAddress, 'port', $port, 'comment', self::RouteComment]);
+        return <<<NFT
+            # Managed by Orbit: the ai-router container model forwarder (/reference/ai-router#container-model-forwarder).
+            table inet {$table}
+            delete table inet {$table}
+            table inet {$table} {
+            	chain forward {
+            		type filter hook forward priority filter - 10; policy accept;
+            		ip daddr {$guardAddress} tcp dport {$port} counter drop
+            	}
+            	chain output {
+            		type filter hook output priority filter - 10; policy accept;
+            		ip daddr {$guardAddress} tcp dport {$port} meta skuid != "{$user}" counter reject with tcp reset
+            	}
+            }
+
+            NFT;
     }
 
     /**
