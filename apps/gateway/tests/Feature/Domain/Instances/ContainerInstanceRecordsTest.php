@@ -13,6 +13,8 @@ use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -79,6 +81,8 @@ describe('Instance bridges', function (): void {
         app(AllocateInstanceBridgeAction::class)->execute($beast);
 
         expect(fn () => Node::query()->whereKey($beast->id)->update(['instance_bridge' => '10.253.9.0/24']))->toThrow(QueryException::class, 'A Node keeps its Instance bridge.')
+            ->and(fn () => Node::query()->whereKey($beast->id)->update(['instance_bridge' => null]))->toThrow(QueryException::class, 'A Node keeps its Instance bridge.')
+            ->and($beast->isDirty('instance_bridge'))->toBeFalse()
             ->and(fn () => Node::query()->whereKey(recordsNode('shark', '10.44.0.11')->id)->update(['instance_bridge' => '10.253.0.0/24']))->toThrow(QueryException::class, 'UNIQUE');
     });
 
@@ -179,7 +183,7 @@ describe('Instance runtimes', function (): void {
         'name' => [['name' => 'renamed']],
     ]);
 
-    it('keeps an Instance while its runtime or a clone of it exists', function (): void {
+    it('keeps an Instance while its runtime exists', function (): void {
         $clone = recordsInstance($this->project, $this->node, 'feature');
         $runtime = recordsRuntime($clone, '10.253.0.3', ['clone_source_instance_id' => $this->default->id]);
 
@@ -187,6 +191,35 @@ describe('Instance runtimes', function (): void {
         $runtime->delete();
         $this->defaultRuntime->delete();
         expect(fn () => Instance::query()->whereKey($this->default->id)->delete())->not->toThrow(QueryException::class);
+    });
+
+    it('keeps a default Instance\'s runtime and name while a clone of it exists', function (): void {
+        recordsRuntime(recordsInstance($this->project, $this->node, 'feature'), '10.253.0.3', ['clone_source_instance_id' => $this->default->id]);
+
+        expect(fn () => $this->defaultRuntime->delete())->toThrow(QueryException::class, 'A default Instance keeps its runtime while clones of it exist.')
+            ->and(fn () => Instance::query()->whereKey($this->default->id)->update(['name' => 'renamed']))->toThrow(QueryException::class, 'A container Instance keeps its Node, Project and name.')
+            ->and($this->default->refresh()->name)->toBe('default');
+    });
+
+    it('keeps a default Instance while a clone names it, even without its own runtime', function (): void {
+        recordsRuntime(recordsInstance($this->project, $this->node, 'feature'), '10.253.0.3', ['clone_source_instance_id' => $this->default->id]);
+        // Isolate the clone source's foreign key from the trigger that keeps the default's runtime.
+        DB::unprepared('DROP TRIGGER instance_runtimes_delete');
+        $this->defaultRuntime->delete();
+
+        expect(fn () => Instance::query()->whereKey($this->default->id)->delete())->toThrow(QueryException::class, 'FOREIGN KEY');
+    });
+
+    it('keeps an Instance that a Conn environment names, and gives an Instance one environment', function (): void {
+        $environment = fn (string $id) => ConnEnvironment::query()->forceCreate([
+            'environment_id' => $id, 'label' => $id, 'url' => 'http://10.44.0.7:3800', 'node_id' => $this->node->id,
+            'admin_session' => 'token', 'admin_session_expires_at' => now()->addDays(30), 'registered_at' => now(), 'instance_id' => $this->default->id,
+        ]);
+        $environment('env-default');
+        $this->defaultRuntime->delete();
+
+        expect(fn () => Instance::query()->whereKey($this->default->id)->delete())->toThrow(QueryException::class, 'FOREIGN KEY')
+            ->and(fn () => $environment('env-other'))->toThrow(QueryException::class, 'UNIQUE');
     });
 });
 

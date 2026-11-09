@@ -28,7 +28,9 @@ final readonly class AllocateInstanceBridgeAction
         return DB::transaction(function () use ($node): string {
             $current = Node::query()->whereKey($node->id)->value('instance_bridge');
             if (is_string($current)) {
-                return $node->instance_bridge = $current;
+                $node->forceFill(['instance_bridge' => $current])->syncOriginalAttribute('instance_bridge');
+
+                return $current;
             }
             $taken = [$this->vpn->subnet(), ...NodeBridges::recorded()];
             $range = Ipv4Subnet::from(self::FleetRange);
@@ -39,7 +41,9 @@ final readonly class AllocateInstanceBridgeAction
                 if (! NodeBridges::overlapsAny($candidate, $taken)) {
                     Node::query()->whereKey($node->id)->update(['instance_bridge' => $candidate]);
 
-                    return $node->instance_bridge = $candidate;
+                    $node->forceFill(['instance_bridge' => $candidate])->syncOriginalAttribute('instance_bridge');
+
+                    return $candidate;
                 }
             }
 

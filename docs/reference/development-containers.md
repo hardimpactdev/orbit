@@ -252,6 +252,7 @@ The database keeps these rules:
 - A Node's container, bridge address and T3 port each belong to one runtime.
 - A runtime keeps its Node, container, address, port and clone source; only the versions and the power state change.
 - A clone source is the Instance named `default` of the same Project on the same Node, and runs in a container.
+- A default with clones keeps its runtime and its name.
 - A container Instance keeps its Node, Project and name.
 - An Instance with a runtime, a clone or a Conn environment cannot be deleted. The destroy flow removes those records first.
 

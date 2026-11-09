@@ -90,7 +90,7 @@ final readonly class RegisterConnEnvironmentAction
     private function assertMayRegister(Node $node, ?ConnEnvironment $prior): void
     {
         if ($prior?->instance_id !== null) {
-            throw new ResourceOperationException('conn.environment_owned', "Environment {$prior->environment_id} is the T3 server of Instance {$prior->instance_id}; its Instance's flow registers it.", 409);
+            throw new ResourceOperationException('conn.environment_owned', "Environment {$prior->environment_id} is the T3 server of an Instance; its Instance's flow registers it.", 409);
         }
         if ($prior === null || $prior->node_id === $node->id
             || ($prior->node_id === null && $this->access->hasGatewayAuthority($node))) {

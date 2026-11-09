@@ -75,6 +75,11 @@ return new class extends Migration
                 OR NEW.power_state NOT IN ('running', 'stopped')
             BEGIN SELECT RAISE(ABORT, 'An Instance runtime keeps its container, address, port and clone source.'); END;
 
+            CREATE TRIGGER instance_runtimes_delete
+            BEFORE DELETE ON instance_runtimes
+            WHEN EXISTS (SELECT 1 FROM instance_runtimes WHERE clone_source_instance_id = OLD.instance_id)
+            BEGIN SELECT RAISE(ABORT, 'A default Instance keeps its runtime while clones of it exist.'); END;
+
             CREATE TRIGGER instances_runtime_placement_update
             BEFORE UPDATE OF node_id, project_id, name ON instances
             WHEN EXISTS (SELECT 1 FROM instance_runtimes WHERE instance_id = OLD.id)
@@ -85,7 +90,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        foreach (['instances_runtime_placement_update', 'instance_runtimes_update', 'instance_runtimes_insert', 'nodes_instance_bridge_update'] as $trigger) {
+        foreach (['instances_runtime_placement_update', 'instance_runtimes_delete', 'instance_runtimes_update', 'instance_runtimes_insert', 'nodes_instance_bridge_update'] as $trigger) {
             DB::statement("DROP TRIGGER {$trigger}");
         }
         Schema::dropIfExists('instance_runtimes');
