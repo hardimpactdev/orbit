@@ -318,7 +318,7 @@ A removing run ends by checking that the router's Node answers SSH from the Node
 
 The output rule trusts the socket's uid, so it assumes no host-network container runs on an agent Node, which Orbit does not offer.
 
-The Gateway test `confines the guard to containers on the bridge through the forwarder, on a real kernel` loads the rendered table and checks every path above with a container namespace on a bridge, behind a Docker-style `FORWARD` accept. It needs Linux, passwordless sudo and `nft`, and skips elsewhere. The `gateway-static` CI job installs `nft` and sets `ORBIT_REAL_KERNEL_TESTS=1`, so there it fails instead of skipping.
+The Gateway test `confines the guard to containers on the bridge through the forwarder, on a real kernel` loads the rendered table and checks every path above with a container namespace on a bridge, behind a Docker-style `FORWARD` accept. It needs Linux, passwordless sudo and `nft`, so it is in the Gateway's `privileged` test group, which the default suite excludes. The `gateway-static` CI job installs `nft`, runs that group and sets `ORBIT_REAL_KERNEL_TESTS=1`, so there it fails instead of skipping.
 
 The refused Nodes have reasons. The router's Node holds the real key. The guard run uses the swamp Node as its outside source. The vpn hub forwards task VM traffic to the guard, which the forward chain would drop.
 

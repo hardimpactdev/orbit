@@ -358,8 +358,9 @@ it('drops a forwarder Node that is no longer active from the guard', function ()
 /**
  * Loads the rendered table on a real kernel, as root, through `tests/Support/ai-router-forwarder-nft-check.sh`. A container on a bridge,
  * behind a Docker-style FORWARD accept, reaches a stand-in forwarder but not the guard; root reaches neither, over `lo` included; the
- * forwarder's user reaches the guard. It needs Linux, passwordless sudo, nft, iptables and ip. The `gateway-static` CI job installs nft
- * and sets `ORBIT_REAL_KERNEL_TESTS=1`, which turns a missing requirement into a failure instead of a skip.
+ * forwarder's user reaches the guard. It needs Linux, passwordless sudo, nft, iptables and ip, so it is in the `privileged` group, which
+ * the default suite excludes and the sudo guard lets through. The `gateway-static` CI job installs nft, runs `--group privileged` and sets
+ * `ORBIT_REAL_KERNEL_TESTS=1`, which turns a missing requirement into a failure instead of a skip.
  */
 it('confines the guard to containers on the bridge through the forwarder, on a real kernel', function (): void {
     $required = getenv('ORBIT_REAL_KERNEL_TESTS') === '1';
@@ -381,4 +382,4 @@ it('confines the guard to containers on the bridge through the forwarder, on a r
         ->toContain('ok: container to the forwarder, on the bridge: reached')
         ->toContain('ok: root to the forwarder, over lo: refused')
         ->toContain('ok: the forwarder user to the guard: reached');
-});
+})->group('privileged');
