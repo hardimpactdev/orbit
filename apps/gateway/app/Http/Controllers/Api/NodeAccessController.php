@@ -13,32 +13,40 @@ use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
+/** Route IDs stay unbound until Gateway authority has been checked. */
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class NodeAccessController extends Controller
 {
     public function store(
         Request $request,
-        Node $servingNode,
-        Node $consumerNode,
+        string $servingNode,
+        string $consumerNode,
         AddNodeAccessAction $action,
     ): JsonResponse {
         return response()->json([
-            'data' => $action->execute($consumerNode, $servingNode)->toArray(),
+            'data' => $action->execute(
+                Node::query()->findOrFail($consumerNode),
+                Node::query()->findOrFail($servingNode),
+            )->toArray(),
             'meta' => $this->meta($request),
         ]);
     }
 
     public function destroy(
         Request $request,
-        Node $servingNode,
-        Node $consumerNode,
+        string $servingNode,
+        string $consumerNode,
         RemoveNodeAccessAction $action,
     ): JsonResponse {
         $caller = $request->user();
         assert($caller instanceof Node, description: 'Authenticated peer must be a Node.');
 
         return response()->json([
-            'data' => $action->execute($consumerNode, $servingNode, $caller)->toArray(),
+            'data' => $action->execute(
+                Node::query()->findOrFail($consumerNode),
+                Node::query()->findOrFail($servingNode),
+                $caller,
+            )->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

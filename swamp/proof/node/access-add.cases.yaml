@@ -92,7 +92,7 @@ cases:
     batch: node-down
     exclusive: true
     covers: [main, gateway-authority, active-nodes, eligible-consumer, grant-exists, refused-caller]
-    summary: An offline grant repeats without writes, but target-only authority cannot administer grants.
+    summary: An offline grant repeats without writes, but target-only authority cannot administer grants even with unknown Node IDs.
     fails_on_base: true
     setup:
       - use: restored-grant
@@ -116,6 +116,20 @@ cases:
       - act:
           - cli:
               run: [node:access:add, "${gateway.id}", "${app-dev.id}"]
+              as: app-prod
+              expect: {exit: 1, code: node_access.required, request: none}
+        expect:
+          - unchanged: {since: act, what: [operations, node_records, ufw]}
+      - act:
+          - cli:
+              run: [node:access:add, "2147483647", "${app-dev.id}"]
+              as: app-prod
+              expect: {exit: 1, code: node_access.required, request: none}
+        expect:
+          - unchanged: {since: act, what: [operations, node_records, ufw]}
+      - act:
+          - cli:
+              run: [node:access:add, "${gateway.id}", "2147483647"]
               as: app-prod
               expect: {exit: 1, code: node_access.required, request: none}
         expect:

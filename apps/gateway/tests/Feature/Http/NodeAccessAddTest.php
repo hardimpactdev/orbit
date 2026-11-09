@@ -104,7 +104,22 @@ it('returns 403 for target-only access or no authority without changing records'
     expect(accessAddSnapshot())->toBe($before);
 })->with([false, true]);
 
-it('returns 404 for either unknown or inactive endpoint without changing records', function (string $endpoint, ?string $status): void {
+it('returns 403 before looking up either unknown endpoint without Gateway authority', function (string $method, string $endpoint, bool $targetGrant): void {
+    if ($targetGrant) {
+        $this->consumer->accessibleNodes()->attach($this->serving);
+    }
+    $this->withServerVariables(['REMOTE_ADDR' => $this->consumer->wireguard_ip]);
+    $consumer = $endpoint === 'consumer' ? 2147483647 : $this->consumer->id;
+    $serving = $endpoint === 'serving' ? 2147483647 : $this->serving->id;
+    $before = accessAddSnapshot();
+
+    $this->json($method, "/api/v1/nodes/{$serving}/access/{$consumer}")
+        ->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
+
+    expect(accessAddSnapshot())->toBe($before);
+})->with(['PUT', 'DELETE'])->with(['consumer', 'serving'])->with([false, true]);
+
+it('returns 404 for either unknown or inactive endpoint with Gateway authority without changing records', function (string $endpoint, ?string $status, string $method): void {
     if ($status !== null) {
         $this->{$endpoint}->updateQuietly(['status' => $status]);
     }
@@ -112,14 +127,14 @@ it('returns 404 for either unknown or inactive endpoint without changing records
     $serving = $endpoint === 'serving' && $status === null ? 2147483647 : $this->serving->id;
     $before = accessAddSnapshot();
 
-    $this->putJson("/api/v1/nodes/{$serving}/access/{$consumer}")
+    $this->json($method, "/api/v1/nodes/{$serving}/access/{$consumer}")
         ->assertNotFound()->assertJsonPath('error.code', 'http.404');
 
     expect(accessAddSnapshot())->toBe($before);
 })->with([
     ['consumer', null], ['serving', null], ['consumer', 'failed'], ['serving', 'failed'],
     ['consumer', 'provisioning'], ['serving', 'provisioning'], ['consumer', 'removing'], ['serving', 'removing'],
-]);
+])->with(['PUT', 'DELETE']);
 
 it('refuses a task VM consumer even for a pre-existing grant without changing any record', function (bool $existing): void {
     if ($existing) {
