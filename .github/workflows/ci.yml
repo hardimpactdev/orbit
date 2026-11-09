@@ -103,7 +103,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes nftables
-          vendor/bin/pest --group privileged tests/Feature/Extensions/AiRouter/AiRouterModelForwarderTest.php --filter 'on a real kernel'
+          vendor/bin/pest --default-time-limit=5 --group privileged tests/Feature/Extensions/AiRouter/AiRouterModelForwarderTest.php --filter 'on a real kernel'
 
   cli:
     name: CLI build

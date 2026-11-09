@@ -73,8 +73,9 @@ python3 -m http.server "$forwarder_port" --bind "$address" >/dev/null 2>&1 &
 forwarder_server=$!
 id -u "$user" >/dev/null 2>&1 || { useradd --system --no-create-home --shell /usr/sbin/nologin "$user"; made_user=1; }
 
-get() { curl -s -o /dev/null --max-time 3 "$1"; }
-for _ in $(seq 50); do get "http://$guard:$port/" && get "http://$address:$forwarder_port/" && break; sleep 0.1; done
+# The stand-ins answer within milliseconds, and a dropped packet would wait out the whole timeout, so it is short.
+get() { curl -s -o /dev/null --max-time 0.4 "$1"; }
+for _ in $(seq 50); do get "http://$guard:$port/" && get "http://$address:$forwarder_port/" && break; sleep 0.05; done
 
 expect() {
     local want=$1 what=$2
@@ -83,7 +84,7 @@ expect() {
     [[ $got == "$want" ]] || { echo "FAIL: $what: $got, expected $want" >&2; exit 1; }
     echo "ok: $what: $got"
 }
-container() { ip netns exec ofchkc curl -s -o /dev/null --max-time 3 "$1"; }
+container() { ip netns exec ofchkc curl -s -o /dev/null --max-time 0.4 "$1"; }
 
 expect reached 'container to the guard, without the table' container "http://$guard:$port/"
 expect reached 'root to the guard, without the table' get "http://$guard:$port/"
@@ -93,7 +94,7 @@ expect refused 'container to the guard, behind a FORWARD accept' container "http
 expect reached 'container to the forwarder, on the bridge' container "http://$address:$forwarder_port/"
 expect refused 'root to the guard' get "http://$guard:$port/"
 expect refused 'root to the forwarder, over lo' get "http://$address:$forwarder_port/"
-expect reached 'the forwarder user to the guard' runuser -u "$user" -- curl -s -o /dev/null --max-time 3 "http://$guard:$port/"
+expect reached 'the forwarder user to the guard' runuser -u "$user" -- curl -s -o /dev/null --max-time 0.4 "http://$guard:$port/"
 nft --file "$ruleset"
 expect refused 'container to the guard, after loading the table again' container "http://$guard:$port/"
 expect refused 'root to the forwarder, after loading the table again' get "http://$address:$forwarder_port/"
