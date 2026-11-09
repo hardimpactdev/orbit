@@ -45,13 +45,9 @@ final readonly class ProofVerifyIntent
             throw new ResourceOperationException('proof.no_task_vm', 'The proof runs on the task VM that calls it. This Node is not a task VM.', 409);
         }
 
-        // Validate the workspace before fetching release metadata; network reads stay outside the admission transaction.
-        $this->capture($group, $command);
-        $observerRelease = app(ProofObserverRelease::class)->forGateway();
-
         // The caller may be the agent of a running turn, which holds the group and waits for this proof, so the turn does not count as busy.
         return $this->operations->start($group, OperationKinds::ProofVerify, [], static function (): void {}, $triggeredBy, $requestId,
-            fn (Task $group): array => [...$this->capture($group, $command), 'observer_release' => $observerRelease], [OperationKinds::TasksTurn]);
+            fn (Task $group): array => $this->capture($group, $command), [OperationKinds::TasksTurn]);
     }
 
     /** @return array<string,mixed> */

@@ -50,33 +50,6 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
     {
         $sha = $this->commit($revision);
         $frozen = $this->download($this->pinUrl($sha), $sha);
-        $manifest = $this->verifyPin($frozen, $sha);
-
-        // The binary goes into the shared artifact cache, where the install below and every Node install find it.
-        $staged = $this->cacheDirectory.'/manifest-'.bin2hex(random_bytes(8)).'.json';
-        try {
-            if ((! is_dir($this->cacheDirectory) && ! @mkdir($this->cacheDirectory, 0o700, true) && ! is_dir($this->cacheDirectory))
-                || @file_put_contents($staged, $manifest) === false) {
-                throw $this->unavailable($sha, 'The agent artifact cache cannot be written.');
-            }
-            new AgentDelivery($staged, $this->cacheDirectory)->localFile($gateway);
-        } catch (GatewayReleaseException $exception) {
-            throw $exception;
-        } catch (Throwable $exception) {
-            throw $this->unavailable($sha, 'The release agent for the Gateway cannot be downloaded: '.$exception->getMessage());
-        } finally {
-            @unlink($staged);
-        }
-
-        return ['sha' => $sha, 'manifest' => $manifest];
-    }
-
-    /** The same release admission for proof pins; no candidate code is executed. */
-    public function verifyPin(string $frozen, string $sha): string
-    {
-        if (strlen($frozen) > self::MetadataMaxBytes) {
-            throw $this->invalid($sha, 'The pinned agent manifest is too large.');
-        }
         $pin = json_decode($frozen, true);
         $url = data_get($pin, 'artifacts.linux-x86_64.url');
         if (! is_string($url) || preg_match('#\A'.preg_quote(rtrim($this->repository, '/'), '#').'/releases/download/(cli-v0\.[1-9][0-9]*\.0)/orbit-agent-linux-x86_64\z#D', $url, $match) !== 1) {
@@ -100,7 +73,23 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
         }
         $this->validate($manifest, $this->checksums($sums, $sha), $base, $sha);
 
-        return $manifest;
+        // The binary goes into the shared artifact cache, where the install below and every Node install find it.
+        $staged = $this->cacheDirectory.'/manifest-'.bin2hex(random_bytes(8)).'.json';
+        try {
+            if ((! is_dir($this->cacheDirectory) && ! @mkdir($this->cacheDirectory, 0o700, true) && ! is_dir($this->cacheDirectory))
+                || @file_put_contents($staged, $manifest) === false) {
+                throw $this->unavailable($sha, 'The agent artifact cache cannot be written.');
+            }
+            new AgentDelivery($staged, $this->cacheDirectory)->localFile($gateway);
+        } catch (GatewayReleaseException $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            throw $this->unavailable($sha, 'The release agent for the Gateway cannot be downloaded: '.$exception->getMessage());
+        } finally {
+            @unlink($staged);
+        }
+
+        return ['sha' => $sha, 'manifest' => $manifest];
     }
 
     /** Resolve the Gateway commit independently of the frozen agent's published release. */

@@ -119,7 +119,7 @@ async function fixture() {
   for (const role of roles) {
     Deno.writeTextFileSync(`${folder}/${role}.agent`, "old observer");
   }
-  const manifest = `${folder}/admitted-release.json`;
+  const manifest = `${folder}/candidate-release.json`;
   Deno.mkdirSync(`${folder}/apps/gateway/resources/agent`, { recursive: true });
   async function pin(content: string, badHash = false) {
     const artifact = `${folder}/published-agent`;
@@ -182,7 +182,7 @@ async function fixture() {
 
 Deno.test({
   name:
-    "proof preparation installs the Gateway-admitted artifact on every seed observer and repeats safely",
+    "proof preparation installs the candidate artifact on every seed observer and repeats safely",
   ignore: !hasAnsible,
   async fn() {
     const f = await fixture();
@@ -238,6 +238,27 @@ Deno.test({
       assertEquals(done.ok, false, done.output);
       assertEquals(f.contents(), roles.map(() => "old observer"));
       assertStringIncludes(done.output, "checksum");
+      assert(
+        !done.output.includes("TASK [Start the candidate observer]"),
+        done.output,
+      );
+    } finally {
+      Deno.removeSync(f.folder, { recursive: true });
+    }
+  },
+});
+
+Deno.test({
+  name: "a download error preserves every old observer and refuses preparation",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture();
+    try {
+      await f.pin("missing artifact");
+      Deno.removeSync(`${f.folder}/published-agent`);
+      const done = f.run();
+      assertEquals(done.ok, false, done.output);
+      assertEquals(f.contents(), roles.map(() => "old observer"));
       assert(
         !done.output.includes("TASK [Start the candidate observer]"),
         done.output,

@@ -44,7 +44,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             static fn (Application $app): GatewayReleaseLock => new GatewayReleaseLock(rtrim(Config::string('orbit.home'), '/').'/gateway-release.lock'),
         );
         $this->app->bind(
-            GatewayReleaseAgentDelivery::class,
+            GatewayReleaseAgent::class,
             static fn (Application $app): GatewayReleaseAgentDelivery => new GatewayReleaseAgentDelivery(
                 processes: $app->make(ProcessRunner::class),
                 provenance: $app->make(ReleaseProvenance::class),
@@ -52,7 +52,6 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 cacheDirectory: rtrim(Config::string('orbit.home'), '/').'/agent-artifacts',
             ),
         );
-        $this->app->bind(GatewayReleaseAgent::class, GatewayReleaseAgentDelivery::class);
         $this->app->bind(
             GatewayReleaseSource::class,
             static fn (): GatewayReleaseSource => new GatewayReleaseSource(
