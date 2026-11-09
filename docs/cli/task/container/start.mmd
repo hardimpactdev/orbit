@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 3, docs/reference/task-containers.md): on a host whose `settings.task_vms.runtime` is `container`, a task start copies the host's base container snapshot instead of the base VM snapshot. The workflow and its step names stay those of docs/cli/task/start.mmd; the intent carries `runtime: container`, and the Ansible parts branch on it. The container keeps the task VM's Node identity until ADR 0250 step 6 (open question 1 of docs/solutions/task-container-runtime.md).
+  %% Target design, container runtime (ADR 0250 step 3, docs/reference/task-containers.md): on a host with `settings.task_vms.containers`, a task start that gets a container place copies the host's base container snapshot instead of the base VM snapshot. The workflow and its step names stay those of docs/cli/task/start.mmd; the intent carries `runtime: container`, and the Ansible parts branch on it. The container keeps the task VM's Node identity until ADR 0250 step 6 (a temporary exception that ADR 0250 records).
   %% status: draft
   %% command: task:start
   %% kind: tasks.provision
@@ -16,7 +16,8 @@ sequenceDiagram
   %%> Started by:
   %%> - `task:start` for a todo group, a proof, a build, a fix turn or a review round
   %%> Requirements:
-  %%> - a host whose `settings.task_vms.runtime` is `container`, a free place in the pool the request uses, and a base snapshot that a refresh of this runtime promoted on that host
+  %%> - a host with `settings.task_vms.containers`, a free container place in the pool the request uses, and a base container snapshot that a refresh promoted on that host
+  %%> - `task_vms.container_placement` on, or the request is the host's container refresh proof or an operator `proof:run --host`; until the switch, normal work goes to task VMs
   %%> Result:
   %%> - the same records as a task VM start: the slot `HOST-tvm-N`, the Node with its `app-dev` role, a WireGuard key pair in the reserved range, the agent secret and an SSH host key, pinned on the Node
   %%> - the claim's Pi token and Pi models file in the vault; the models file holds the model router guard origin and the one fixed model key

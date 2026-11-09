@@ -12,11 +12,11 @@ sequenceDiagram
   participant SW as Swamp<br/>serve · Swamp Node
   participant H as Container host<br/>Incus over ssh
   participant BC as Base container<br/>HOST-base
-  Note over GW: Admit the refresh<br/>one run per host
+  Note over GW: Admit the refresh<br/>one per host and runtime
   %%> Started by:
   %%> - every Gateway release, after the Swamp load, and the daily schedule; the same triggers as a VM host
   %%> Result:
-  %%> - the intent carries the host's runtime; a host whose runtime changed has no recorded base of the new runtime, so its first refresh builds from stock
+  %%> - a host with `settings.task_vms.containers` gets a container refresh beside its VM refresh: its own run, intent `runtime: container`, its own base and its own queue; a host without a recorded container base builds it from stock
   GW->>SW: Start run, full intent<br/>operation-task-vm-image-refresh
   SW->>H: Prepare the host<br/>shared Ansible phase
   %%> What it does, for a container host:

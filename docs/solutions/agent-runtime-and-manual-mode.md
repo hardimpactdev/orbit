@@ -77,7 +77,7 @@ Track A replaces task VMs and the Project VM with containers, in the order ADR 0
 | 2c | Define the container egress and DNS model on Beast. | Open |
 | 2d | Keep secrets off agent hosts. | Open |
 | 2e | Patch kernels automatically, with planned reboots. | Open |
-| 3 | Build the task container runtime next to the task VM runtime, selected by a Node setting. It needs a container base image, the nested setup of ADR 0250, and `SetCredential` units. | Specified in [Task containers](/reference/task-containers); plan and open questions in [Task container runtime](/solutions/task-container-runtime) |
+| 3 | Build the task container runtime next to the task VM runtime, selected by a Node setting. It needs a container base image, the nested setup of ADR 0250, and `SetCredential` units. | Specified in [Task containers](/reference/task-containers); plan and decisions in [Task container runtime](/solutions/task-container-runtime#decided) |
 | 4 | Parity gate: the command proof cases on task containers match their task VM results. Time it with the operations migration thread. | Specified in [Parity gate](/solutions/task-container-runtime#parity-gate) |
 | 5 | Switch Beast, then Shark, in a window with no proofs or merges in flight. | Open |
 | 6 | Run development Instances on the Node. Rework the unpushed `task-4193` branch to drop the Project VM; a bundle is kept at `~/apps/orbit-container-plan/.backup/proof-4193.bundle`. | Open |
