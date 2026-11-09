@@ -1,8 +1,10 @@
 ---
 title: "orbit node:add"
 sidebarTitle: "node:add"
-description: "Add a machine to the fleet. For an existing Node, the same command converges it again after you change its TLD, roles, or settings."
+description: "Enroll an existing machine, or re-enroll the same eligible Node with its base, roles, settings and final check."
 ---
+
+**Does:** enroll one supported existing machine, or re-enroll the same eligible Node. **Does not:** create cloud machines, move workloads, enroll Linux ARM or iPadOS, replace the hub peer list, or add roles or settings beyond the contract below.
 
 ```bash
 orbit node:add <name> [host] [--host-key-fingerprint=SHA256] [--ssh-port=PORT] [--user=USER] [--orbit-user=USER] [--platform=PLATFORM] [--architecture=ARCH] [--tld=TLD] [--role=ROLE]... [--cluster=ID] [--wireguard-ip=IP] [--lan-ip=IP] [--wireguard-endpoint=HOST:PORT] [--dns-server=IP] [--setting=PATH:VALUE] [--json]
@@ -43,38 +45,71 @@ orbit node:add beast beast.example.com \
 orbit node:add beast --role=app-dev --role=database
 ```
 
-For macOS, use `node:add` with `--platform=macos` and set `--user` and `--orbit-user` to the same existing account. The machine must already join WireGuard and accept the Gateway's SSH key. No role is required. A role request fails with `node.platform_unsupported` before SSH. This path also enrolls an existing roleless peer whose SSH identity is not pinned, and it can correct that peer's platform and architecture from the machine. See [macOS Nodes](/reference/node-provisioning#macos-nodes).
+## Admission
 
-In a terminal, an omitted name is asked for as text, and so are the host and the fingerprint for a new Node or an existing Node with no pinned host key. A noninteractive or `--json` call that omits one is refused with `input.invalid` for the name or host, or `node.ssh_host_fingerprint_required` for the fingerprint, and sends no request.
+[Node authority](/cli/node#authority) applies. For an existing Node, refuse only when the caller has neither Gateway authority nor a grant to that Node. A new name starts enrollment; it is not an unknown-Node error. Enrollment reserves the name under the existing lifecycle lock. Admission refusals create no Operation, contact no machine, and leave records, keys, peer files, DNS and firewall state unchanged.
 
-A Node with Instances cannot be enrolled again, including for a TLD change. Repeating the command for an active Node with unchanged settings converges it again and checks it; it succeeds with the usual result and creates no duplicates.
+An omitted new name is intentionally a text prompt, not a choice from existing Nodes. Existing-record and role selectors, prompts for missing inputs, cancellation, human and JSON results, progress, request IDs and keyed replay follow the [CLI standard](/reference/cli-ux).
 
-Orbit checks the machine's SSH host key against the approved fingerprint before it changes anything. It then sets up the machine, the WireGuard tunnel and the Node agent, converges the requested roles, and checks the Node. The first role closes public recovery SSH, so the Node is reachable over WireGuard only afterwards. The CLI shows one progress indicator while the Operation runs, then the final result with the Operation and request IDs.
+A Node with Instances cannot be enrolled again, including for a TLD change. An active eligible Node with unchanged input is not skipped: a new attempt re-converges it and runs the full check. It keeps its Node ID, grants and matching SSH and WireGuard identities, reuses matching assignments, peers and DNS resources, and creates no duplicates.
 
-A failed run retains the work it finished and does not roll back. A new Node stays, marked failed at the failed step. An existing Node keeps its earlier recorded identity and stays active until the full check passes. A role that the request created and that did not finish stays marked failed. Publishing the Orbit CLI is best effort and never fails the run. After you fix the cause, run the same command again: every step skips work that is already done. [`node:remove`](/cli/node/remove) removes a failed Node.
+## Linux enrollment
+
+Linux enrollment supports Ubuntu on `x86_64` only. Orbit first compares the observed SSH key with the approved fingerprint, before any machine mutation or SSH pin replacement. Later connections pin that approved key. The baseline phase checks the actual platform, architecture and bootstrap account before it changes the machine.
+
+One Operation covers the machine setup, tunnel, hub admission when needed, Node agent, managed access, optional CLI publication, roles, DNS and final check. At admission, Orbit freezes the union of recorded and requested roles and captures settings and publication resources; role work belongs to the same Operation even without `--role`.
+
+The Node's private WireGuard key stays on the Node. Hub admission updates only the joining peer's established peer file and applies that peer. It does not replace the hub configuration, loader or full peer list, restart the hub, change its key, or rewrite unrelated peers, including peers present only in files.
+
+Managed access must work over WireGuard with the managed account and passwordless sudo before the first role closes public recovery SSH. A roleless Node keeps recovery SSH. Role work uses the existing role, firewall and settings rules. DNS backend, listener and private-name publication follow role convergence; a new hub's listener is ready before its private names are published.
+
+Publishing the Orbit CLI is best effort: a failed publication does not prevent role work, DNS or the final check. The full check verifies the Node agent, binary, observer secret and tunnel. A peer has up to 20 seconds to show a handshake; a hub needs no handshake with itself. Only a successful full check lets Orbit record the candidate identity and settings and mark the Node active.
+
+Orbit removes temporary private enrollment inputs on success and failure, after all work that depends on them has finished cleaning up. Incomplete cleanup is reported without hiding the original failed step.
+
+## macOS enrollment
+
+Use `--platform=macos` and set both `--user` and `--orbit-user` to the same existing account. The machine must already have working WireGuard and accept the Gateway's SSH key. Supply the approved fingerprint and the existing WireGuard address, unless that address is already recorded. macOS supports observed `x86_64` or `arm64`.
+
+macOS enrollment verifies the approved host key, actual platform and architecture, managed SSH as the named account, and the existing tunnel address. It runs no Ansible or sudo and changes no account, agent, package, role, tunnel, DNS or firewall state. It accepts no roles, storage setting, DNS server override, endpoint override, or change to Cluster, TLD or LAN metadata. It does not allocate or replace a tunnel address. An eligible roleless, unpinned peer can be enrolled in place; an already managed Mac cannot change its recorded platform, architecture or user. See [macOS Nodes](/reference/node-provisioning#macos-nodes).
+
+iPadOS is unmanaged metadata maintained with [`node:update`](/cli/node/update); it never takes an enrollment path.
+
+## Failure and recovery
+
+A failure records its failed-step label and error code. Later dependent work stops, except after a tolerated CLI publication failure; cleanup still runs. A newly admitted Node remains marked failed. An existing Node keeps its prior recorded identity and status until the full check succeeds. A role assignment created by this request that did not finish stays marked failed. A refused or failed host-key approval changes neither SSH pin nor machine state.
+
+Completed or partial machine work remains; there is no rollback. This includes a peer file written before a later failure. After fixing the cause, start a new attempt of the same command: phases reuse matching state, converge what remains and check the Node again. [`node:remove`](/cli/node/remove) removes a failed Node. A failed macOS run leaves the host unchanged.
+
+## How it works
+
+<div className="flow-at" data-chart="node/add"></div>
+
+[Verification cases](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/node/add.cases.yaml) check input and admission refusals and list the remaining proof capabilities.
 
 ## Errors
 
 | Code | Meaning |
 | --- | --- |
-| `input.invalid` | The name or host is missing and the CLI cannot prompt. |
-| `node.ssh_port_invalid`, `node.platform_invalid`, `node.host_key_fingerprint_invalid`, `node.wireguard_ip_invalid`, `node.lan_ip_invalid` | An option value is malformed. Refused before the request. |
-| `node.setting_unknown`, `node.setting_duplicate`, `node.setting_invalid` | A `--setting` path is not `apps.path`, is repeated, or has an invalid value. |
-| `node.has_instances` | The Node already owns Instances, so it cannot be enrolled again. |
-| `node.ssh_host_fingerprint_required` | A new Node, or an existing Node with no pinned host key, has no approved fingerprint. |
-| `node.ssh_host_key_mismatch` | The machine's host key, or for an existing Node the given fingerprint, differs from the approved or recorded one. Nothing changes. |
-| `node.ssh_host_key_changed` | The machine presents a different host key than the one recorded for this Node. |
-| `node.architecture_unsupported` | The architecture is not `x86_64` on a Linux Node. |
-| `node.platform_unsupported` | A macOS Node was given a role, or a TLD, Cluster, DNS, tunnel or storage setting. Refused before SSH. |
-| `node.macos_account_required`, `node.macos_account_mismatch`, `node.wireguard_required` | A macOS Node needs `--user` and `--orbit-user` naming the same existing account, and an existing WireGuard address. |
-| `node.tld_required`, `node.tld_invalid`, `node.tld_taken`, `node.tld_conflict` | `app-dev` has no TLD, or the TLD is malformed, reserved, in use, or conflicts with another name Orbit serves. |
-| `node.role_conflict` | A requested role cannot be assigned during enrollment or conflicts with the Node's roles. |
-| `cluster.not_found`, `cluster.membership_conflict`, `cluster.lan_ip_conflict` | The Cluster does not exist, the Node cannot join it, or the LAN address is already used in it. |
-| `node.invalid_linux_user`, `node.user_change_unsupported` | The managed user is not a valid Linux account name, or an existing Node's managed user cannot change. |
-| `vpn.endpoint_override_invalid` | The WireGuard endpoint override is not valid. |
-| `node.ssh_host_key_scan_failed`, `node.bootstrap_account_unavailable`, `node.enrollment_failed` | The run could not read the host key, log in to the bootstrap account, or finish enrollment. |
-| `node.provisioning_busy` | Another lifecycle operation holds the Node's name lock. Nothing changes. |
-
-## How it works
-
-<div className="flow-at" data-chart="node/add"></div>
+| `input.invalid` | Required name or host is missing and the CLI cannot prompt. No request. |
+| `cluster.id_invalid` | The Cluster ID is not a positive integer. No request. |
+| `node.ssh_port_invalid`, `node.platform_invalid`, `node.host_key_fingerprint_invalid`, `node.wireguard_ip_invalid`, `node.lan_ip_invalid` | An option value is malformed. No request. |
+| `node.setting_unknown`, `node.setting_duplicate`, `node.setting_invalid` | A `--setting` path is not `apps.path`, is repeated, or has invalid syntax or value. No mutation. |
+| `node_access.required` | The caller has neither Gateway authority nor the required target access. No Operation. |
+| `node.has_instances` | The existing Node owns Instances, so it cannot be enrolled again. No Operation. |
+| `node.ssh_host_fingerprint_required` | A new Node or an unpinned existing Node has no approved fingerprint. No Operation. |
+| `node.ssh_host_key_mismatch` | A supplied fingerprint differs from the recorded one (no Operation), or first contact differs from the approved fingerprint (failed run, no machine mutation). |
+| `node.ssh_host_key_changed` | Pinned SSH detects that the machine now presents a different key. No remote mutation through that connection. |
+| `node.architecture_unsupported` | A Linux request or observed Linux machine is not `x86_64`, or the observed architecture is unsupported. |
+| `node.platform_mismatch`, `node.architecture_mismatch` | The observed platform or architecture differs from the request or the managed identity. The check fails before machine mutation. |
+| `node.platform_unsupported` | An unsupported platform or platform change, or an incompatible macOS role, setting or metadata change. No Operation. |
+| `node.macos_account_required`, `node.macos_account_mismatch`, `node.wireguard_required` | macOS needs the same existing account in both user options and its existing WireGuard address. No Operation. |
+| `node.tld_required`, `node.tld_invalid`, `node.tld_taken`, `node.tld_conflict` | `app-dev` has no TLD, or the TLD is malformed, reserved, in use or conflicts with a private name. No Operation. |
+| `node.role_conflict` | A requested role cannot be assigned during enrollment or conflicts with the Node's roles. No Operation. |
+| `cluster.not_found`, `cluster.membership_conflict`, `cluster.lan_ip_conflict` | The Cluster does not exist, the Node cannot join it, or the LAN address is already used in it. No Operation. |
+| `node.invalid_linux_user`, `node.user_change_unsupported` | An account name is invalid, or the existing Node cannot change its managed account. No Operation. |
+| `vpn.endpoint_override_invalid` | The WireGuard endpoint override is invalid. No Operation. |
+| `vpn.peer_address_invalid`, `vpn.peer_address_taken`, `vpn.peer_address_exhausted` | The address is outside the usable subnet, is already assigned, or none is available. No Operation. |
+| `node.ssh_host_key_scan_failed`, `node.bootstrap_account_unavailable`, `node.orbit_ssh_failed`, `node.enrollment_failed` | Host-key discovery, bootstrap access, managed access or a later phase failed. Retain the failed-step result and work already done. |
+| `operation.result_invalid` | The enrollment result lacks valid identity or successful full-check evidence. Orbit does not mark the Node active. |
+| `node.provisioning_busy` | Another lifecycle operation holds the Node's name lock. No Operation or change. |

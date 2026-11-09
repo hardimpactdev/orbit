@@ -1,0 +1,179 @@
+# Stage 1 target contract. No inherited node:add cases existed on origin/main.
+# The five successful/failure outcomes and one repeat need the capabilities below.
+# Budget: O=6 + 1 repeat + R=16 refusal scenarios = 23 logical scenarios.
+# O includes pre-mutation failure as well as later partial-failure recovery.
+# R: nine runnable templates below, plus seven capability-gated refusal scenarios.
+# Runnable: nine templates, 17 expanded verdicts. Shared interaction/final proof
+# requests strengthen these scenarios; they do not add command cases.
+command: node:add
+chart: node/add
+target: app-dev
+sources: [gateway, app-prod]
+baseline: [node_records, operations, ufw, firewall_records, listeners]
+parallel: 1
+
+vars:
+  approved: [--host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA]
+
+uncovered:
+  "case:linux-enrollment": "Need an allocated fresh Ubuntu x86_64 SSH target with an approved host key, enrollment-result capture and owned-file, identity, grant, DNS, hub-peer and phase-order assertions. Prove main, admitted, linux, hub-peer, cleanup and succeeded, including baseline/tunnel/agent/managed/check, --ssh-port, --user, --orbit-user, --architecture and --wireguard-ip; current node_fixture creates records, not enrollable machines."
+  "case:macos-enrollment": "Need an allocated macOS target with an existing account and working WireGuard plus read-only host snapshots to prove macos and succeeded without Ansible, sudo or host mutation. Share the fixture between new and unpinned-peer stages, retaining IDs, grants, keys and endpoint and checking observed arm64 and explicit matching architecture."
+  "case:requested-roles-and-dns": "Need a fresh enrollable Linux peer and existing/new-hub stages with ordered phase and resource assertions to prove requested-roles and dns-publication for --role, --tld, --cluster, --lan-ip, --wireguard-endpoint, --dns-server and --setting=apps.path. Prove the frozen union of recorded and requested roles in one run, private names, hub-listener ordering, managed access before recovery-SSH closure and no unrelated peer or hub-key change, including a peer present only in a file."
+  "case:partial-failure-recovery": "Need enrollment-phase fault injection and new/existing-Node identity, assignment, peer-file and run-folder snapshots to prove phase-failed and cleanup after a real change, retained work without rollback, and a fresh successful repair attempt. Include a final-check failure, a role assignment left failed, unchanged existing identity/status, retained written peer, dependent-cleanup ordering and the original failure when cleanup also fails."
+  "case:cli-publication-tolerated": "Need an enrollment CLI-phase fault and ordered phase assertions to prove cli-publication can fail while frozen role work, DNS and the full check still succeed. The runner's fault step injects only UFW failures."
+  "case:repeat": "Need an enrollable active eligible role-owning Node and before/after identity, grant, assignment, peer and DNS snapshots to prove one name-only node:add NAME repeat, without --role, re-converges its recorded roles through the full check with unchanged identities and no duplicate or unintended resource changes, not an admission skip. Share the role-owning Linux enrollment fixture; do not multiply repeat cases by option combinations."
+  "path:caller-refused": "Need restored authority/grant fixtures to prove node_access.required only when both Gateway authority and target access are absent, with no Operation or supported-state change. Share stages for Gateway authority, target-only authority and neither; current enrollment checks only Gateway access and the no-grant batch still grants access to the Gateway."
+  "path:has-instances": "Need a recorded Node-with-Instances fixture and Instance snapshots to prove node.has_instances before any Operation or mutation, including the active app-dev TLD-change attempt. Current policy permits that TLD-only exception; no enrollment attempt may use it."
+  "path:lifecycle-busy": "Need a held enrollment lifecycle reservation, restored after the case, to prove node.provisioning_busy without an Operation or state change. busy_node holds the firewall lock, not the enrollment name lock."
+  "path:pre-mutation-failed": "Need approved/changed/unreachable SSH-key fixtures and platform observations to prove node.ssh_host_key_scan_failed, node.ssh_host_key_mismatch, node.ssh_host_key_changed, node.platform_mismatch, node.architecture_unsupported and node.architecture_mismatch before mutation, including explicit architecture on an existing Node. Assert both pins, host state and prior recorded identity/status unchanged, a new Node failed, and no subsequent machine phase."
+  "configuration:recorded-conflicts": "Need Cluster, role and TLD fixtures with recorded conflicts to prove cluster.not_found, cluster.membership_conflict, cluster.lan_ip_conflict, node.tld_invalid, node.tld_taken and node.tld_conflict with no Operation or supported-state change. Share staged reserved-name tests for case-insensitive DNS label boundaries and a VPN domain root dot, and prove non-overlapping labels are allowed."
+  "configuration:accounts-and-storage": "Need enrolled-Mac and role-owning Linux record fixtures to prove node.user_change_unsupported, and invalid-account/storage fixtures to prove node.invalid_linux_user and node.setting_invalid without an Operation or mutation. The existing synthetic managed fixture is roleless Linux, and apps.path validation needs actual managed-account/path evidence."
+  "configuration:network": "Need restored subnet/address fixtures and request observation to prove vpn.peer_address_invalid, vpn.peer_address_taken, vpn.peer_address_exhausted, vpn.endpoint_override_invalid and invalid DNS-server values before an Operation or mutation, while valid private-subnet overrides reach the requested-role/DNS outcome. Share cases with existing network validation; do not add fallback allocation or clearing policies."
+  "configuration:approved-pin": "Need a managed-record fixture with a usable allocated WireGuard address to prove a different supplied fingerprint returns node.ssh_host_key_mismatch with no Operation or supported-state change. The current managed fixture puts the address in 10.254.0.0 and fails subnet validation before reaching the fingerprint check."
+  "interaction:shared-contract": "Need the shared CLI harness to prove the intentional new-name text prompt, finite searchable existing-record/role selectors, host/fingerprint prompts, noninteractive input.invalid, cancellation, no HTTP on local refusals, human/JSON shape and keyed transport replay. These are one shared-contract proof, not enrollment chart branches; cli expect request:none proves only no new Operation, not no HTTP request."
+  "result:final-proof": "Need enrollment result/phase and handshake observations for node.bootstrap_account_unavailable, node.orbit_ssh_failed, node.enrollment_failed and operation.result_invalid, including missing/invalid terminal evidence, the peer's bounded handshake wait and the hub self-handshake exemption. Reuse success and partial-failure fixtures; assert the one terminal projection cannot publish a candidate identity early."
+
+fixtures:
+  unchanged:
+    steps:
+      - unchanged: {since: act, what: [node_records, operations, ufw, firewall_records, listeners]}
+  sparse:
+    steps:
+      - node_fixture: {kind: sparse, as: candidate}
+
+cases:
+  - id: local-option-refused
+    batch: fresh-fleet
+    covers: []
+    summary: Malformed options refuse without creating an Operation or changing supported state.
+    variants:
+      - {name: ssh-port, args: [--ssh-port=0], code: node.ssh_port_invalid}
+      - {name: platform, args: [--platform=ipados], code: node.platform_invalid}
+      - {name: fingerprint, args: [--host-key-fingerprint=invalid], code: node.host_key_fingerprint_invalid}
+      - {name: cluster, args: [--cluster=0], code: cluster.id_invalid}
+      - {name: wireguard, args: [--wireguard-ip=invalid], code: node.wireguard_ip_invalid}
+      - {name: lan, args: [--lan-ip=invalid], code: node.lan_ip_invalid}
+      - {name: setting-duplicate, args: [--setting=apps.path:/srv/apps, --setting=apps.path:/srv/other], code: node.setting_duplicate}
+      - {name: setting-syntax, args: [--setting=apps.path], code: node.setting_invalid}
+    act:
+      - cli:
+          run: [node:add, proof-invalid, 192.0.2.99, "@args"]
+          expect: {exit: 1, code: "${code}", request: none}
+    expect: [{use: unchanged}]
+
+  - id: setting-surface-refused
+    batch: fresh-fleet
+    covers: []
+    summary: The enrollment setting surface is apps.path only, even when the shared parser knows another setting.
+    fails_today: The shared NodeSettingOptions parser accepts task_vms; enrollment must not widen its documented settings.
+    act:
+      - cli:
+          run: [node:add, proof-invalid, 192.0.2.99, --setting=task_vms:null]
+          expect: {exit: 1, code: node.setting_unknown, request: none}
+    expect: [{use: unchanged}]
+
+  - id: fingerprint-required
+    batch: fresh-fleet
+    covers: [identity-refused]
+    summary: An unpinned existing record needs explicit approval before an Operation or SSH contact.
+    setup: [{use: sparse}]
+    act:
+      - cli:
+          run: [node:add, "${candidate.name}", 192.0.2.99]
+          expect: {exit: 1, code: node.ssh_host_fingerprint_required, request: none}
+    expect: [{use: unchanged}]
+
+  - id: linux-arm-refused
+    batch: fresh-fleet
+    covers: [platform-refused]
+    summary: A supplied Linux ARM architecture refuses before enrollment, not through an ARM fallback.
+    setup: [{use: sparse}]
+    act:
+      - cli:
+          run: [node:add, "${candidate.name}", 192.0.2.99, --architecture=arm64]
+          expect: {exit: 1, code: node.architecture_unsupported, request: none}
+    expect: [{use: unchanged}]
+
+  - id: macos-account-refused
+    batch: fresh-fleet
+    covers: [account-refused]
+    summary: macOS requires both explicitly named accounts to be the same existing user.
+    setup: [{use: sparse}]
+    variants:
+      - {name: required, args: [], code: node.macos_account_required}
+      - {name: mismatch, args: [--user=operator, --orbit-user=other], code: node.macos_account_mismatch}
+    act:
+      - cli:
+          run: [node:add, "${candidate.name}", 192.0.2.99, --platform=macos, "@args"]
+          expect: {exit: 1, code: "${code}", request: none}
+    expect: [{use: unchanged}]
+
+  - id: macos-options-refused
+    batch: fresh-fleet
+    covers: [platform-refused]
+    summary: Linux-only role, DNS, tunnel, storage and metadata inputs never start macOS enrollment.
+    setup: [{use: sparse}]
+    stages:
+      - act:
+          - cli:
+              run: [node:add, "${candidate.name}", 192.0.2.99, --platform=macos, --user=orbit, --orbit-user=orbit, --role=database]
+              expect: {exit: 1, code: node.platform_unsupported, request: none}
+        expect: [{use: unchanged}]
+      - act:
+          - cli:
+              run: [node:add, "${candidate.name}", 192.0.2.99, --platform=macos, --user=orbit, --orbit-user=orbit, --tld=proof-test]
+              expect: {exit: 1, code: node.platform_unsupported, request: none}
+        expect: [{use: unchanged}]
+      - act:
+          - cli:
+              run: [node:add, "${candidate.name}", 192.0.2.99, --platform=macos, --user=orbit, --orbit-user=orbit, --lan-ip=192.168.88.2]
+              expect: {exit: 1, code: node.platform_unsupported, request: none}
+        expect: [{use: unchanged}]
+      - act:
+          - cli:
+              run: [node:add, "${candidate.name}", 192.0.2.99, --platform=macos, --user=orbit, --orbit-user=orbit, --wireguard-endpoint=192.0.2.99:51820]
+              expect: {exit: 1, code: node.platform_unsupported, request: none}
+        expect: [{use: unchanged}]
+      - act:
+          - cli:
+              run: [node:add, "${candidate.name}", 192.0.2.99, --platform=macos, --user=orbit, --orbit-user=orbit, --dns-server=192.0.2.53]
+              expect: {exit: 1, code: node.platform_unsupported, request: none}
+        expect: [{use: unchanged}]
+      - act:
+          - cli:
+              run: [node:add, "${candidate.name}", 192.0.2.99, --platform=macos, --user=orbit, --orbit-user=orbit, --setting=apps.path:/srv/apps]
+              expect: {exit: 1, code: node.platform_unsupported, request: none}
+        expect: [{use: unchanged}]
+
+  - id: macos-wireguard-required
+    batch: fresh-fleet
+    covers: [account-refused]
+    summary: macOS enrollment never allocates a missing WireGuard address.
+    setup: [{use: sparse}]
+    act:
+      - cli:
+          run: [node:add, "${candidate.name}", 192.0.2.99, --platform=macos, --user=orbit, --orbit-user=orbit]
+          expect: {exit: 1, code: node.wireguard_required, request: none}
+    expect: [{use: unchanged}]
+
+  - id: app-dev-tld-required
+    batch: fresh-fleet
+    covers: [configuration-refused]
+    summary: app-dev without a Node or active Cluster TLD refuses without an assignment or Operation.
+    setup: [{use: sparse}]
+    act:
+      - cli:
+          run: [node:add, "${candidate.name}", 192.0.2.99, --role=app-dev]
+          expect: {exit: 1, code: node.tld_required, request: none}
+    expect: [{use: unchanged}]
+
+  - id: role-conflict
+    batch: fresh-fleet
+    covers: [configuration-refused]
+    summary: Known roles that require node:role:add cannot widen the enrollment role surface.
+    setup: [{use: sparse}]
+    act:
+      - cli:
+          run: [node:add, "${candidate.name}", 192.0.2.99, "@approved", --role=ingress]
+          expect: {exit: 1, code: node.role_conflict, request: none}
+    expect: [{use: unchanged}]
