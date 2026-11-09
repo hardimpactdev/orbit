@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\Operations\OperationBudgetTable;
+use App\Infrastructure\Shared\ShutdownFastStop;
 
 /**
- * The swamp role's systemd units, rendered at admission. Convergence applies templates without restarting serve or
+ * The swamp role's systemd units, rendered at admission. Serve and the workers drain on a normal stop, but a system shutdown
+ * never waits for them ({@see ShutdownFastStop}). Convergence applies templates without restarting serve or
  * active workers. The renewal timer then drains and restarts one worker at a time (ADR 0243).
  */
 final class SwampRoleUnits
@@ -58,7 +60,7 @@ final class SwampRoleUnits
             .' --server-token-file='.self::Credentials."/%i/server.token --cache-dir={$home}/cache"
             .' --concurrency '.self::WorkerConcurrency." --label role=swamp --label node={$nodeId}\n"
             ."Restart=on-failure\nRestartSec=30\nKillMode=mixed\n"
-            .'TimeoutStopSec='.self::WorkerStopSeconds."\nUMask=0077\n"
+            .'TimeoutStopSec='.self::WorkerStopSeconds."\n".ShutdownFastStop::Directive."\nUMask=0077\n"
             ."StandardOutput=journal\nStandardError=journal\n\n"
             ."[Install]\nWantedBy=multi-user.target\n";
     }
@@ -103,7 +105,7 @@ final class SwampRoleUnits
             .' --max-concurrent-scheduled-runs '.self::ScheduledRuns.' --shutdown-drain-timeout 5m'
             .' --max-run-duration '.OperationBudgetTable::longestFixedSeconds()
             ." --remote-only --hot-reload\n"
-            ."Restart=on-failure\nRestartSec=2\nTimeoutStopSec=360\n\n"
+            ."Restart=on-failure\nRestartSec=2\nTimeoutStopSec=360\n".ShutdownFastStop::Directive."\n\n"
             ."[Install]\nWantedBy=multi-user.target\n";
     }
 }

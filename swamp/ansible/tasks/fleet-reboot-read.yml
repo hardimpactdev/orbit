@@ -1,0 +1,23 @@
+---
+# The boot state of one Node, read before its drain and again after its reboot: whether a reboot is due and since when, the
+# boot ID, the running and the newest installed kernel, and the units that failed in this boot.
+- name: Read whether a reboot is due
+  ansible.builtin.stat: { path: /var/run/reboot-required, get_checksum: false }
+  register: due_file
+- name: Read the boot ID, the kernel and the failed units
+  ansible.builtin.command:
+    argv: [sh, -c, "cat /proc/sys/kernel/random/boot_id; uname -r; systemctl list-units --state=failed --plain --no-legend --no-pager | cut -d' ' -f1"]
+  changed_when: false
+  register: boot_read
+- name: Find the installed kernels
+  ansible.builtin.find: { paths: /boot, patterns: "vmlinuz-*", file_type: file }
+  register: kernels
+- name: Keep the boot state
+  ansible.builtin.set_fact:
+    boot:
+      due: "{{ due_file.stat.exists }}"
+      due_since: "{{ ('%Y-%m-%dT%H:%M:%SZ' | strftime(due_file.stat.mtime | int, utc=true)) if due_file.stat.exists else none }}"
+      boot_id: "{{ boot_read.stdout_lines[0] }}"
+      kernel: "{{ boot_read.stdout_lines[1] }}"
+      failed_units: "{{ boot_read.stdout_lines[2:] | select | list }}"
+      newest_kernel: "{{ kernels.files | map(attribute='path') | map('regex_replace', '^/boot/vmlinuz-', '') | community.general.version_sort | last }}"

@@ -1,0 +1,68 @@
+id: 8b61ea39-e5d5-4f20-aab9-f9e6b339da9f
+name: fleet-reboot-node
+description: "One Node of a fleet.reboot pass: the drain, reboot and check phases of ansible/operation-fleet-reboot.yml, run from 209."
+vaults: []
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    run_folder: {type: string}
+    assets: {type: string}
+    node_id: {type: integer, minimum: 1}
+    position: {type: integer, minimum: 0}
+    halted: {type: boolean}
+  required: [run_folder, assets, node_id, position, halted]
+  additionalProperties: false
+jobs:
+- name: node
+  labels: {role: swamp}
+  steps:
+    # Drain: wait for the window and the earlier Nodes, read whether a reboot is due, then stop new work and wait for the work in
+    # flight within the drain budget (900 s); a busy CI host or a closed window defers the Node.
+  - name: 'drain'
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "fleet-reboot-drain-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 1500 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags drain "$ORBIT_ANSIBLE/operation-fleet-reboot.yml"
+        env: &phase
+          ORBIT_RUN: '${{ inputs.run_folder }}'
+          ORBIT_ANSIBLE: '${{ inputs.assets }}'
+          ORBIT_NODE_ID: '${{ string(inputs.node_id) }}'
+          ORBIT_POSITION: '${{ string(inputs.position) }}'
+          ORBIT_HALTED: '${{ inputs.halted ? "true" : "false" }}'
+          ANSIBLE_CONFIG: '${{ inputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=" + inputs.run_folder + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+    # Reboot: reboot and wait up to 10 minutes for SSH; the swamp Node instead schedules its own reboot after the pass.
+  - name: 'reboot'
+    labels: {role: swamp}
+    dependsOn: [{step: 'drain', condition: {type: succeeded}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "fleet-reboot-reboot-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags reboot "$ORBIT_ANSIBLE/operation-fleet-reboot.yml"
+        env: *phase
+    # Check: a new boot into the newest kernel, nothing due, no unit that failed only in this boot, and the Node's own services.
+  - name: 'check'
+    labels: {role: swamp}
+    dependsOn: [{step: 'reboot', condition: {type: succeeded}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "fleet-reboot-check-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags check "$ORBIT_ANSIBLE/operation-fleet-reboot.yml"
+        env: *phase

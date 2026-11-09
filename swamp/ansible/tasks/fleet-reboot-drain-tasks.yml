@@ -1,0 +1,15 @@
+---
+# A task host: admission left it out while task work ran on it, and the Gateway holds new task work and placements on it
+# during the pass. Each running task guest stops cleanly; the Gateway records it parked, and the next task call wakes it.
+- name: List the task guests
+  ansible.builtin.command: { argv: [incus, list, --project, "{{ target.task_project }}", --format, json] }
+  changed_when: false
+  register: guests
+- name: Stop each running task guest
+  ansible.builtin.command: { argv: [timeout, "150", incus, stop, --project, "{{ target.task_project }}", --timeout, "120", "{{ item }}"] }
+  loop: "{{ guests.stdout | from_json | selectattr('status', 'equalto', 'Running') | map(attribute='name') | list }}"
+  changed_when: true
+- name: Record the parked task guests
+  ansible.builtin.include_tasks: fleet-reboot-record.yml
+  vars:
+    record_update: { parked: "{{ guests.stdout | from_json | selectattr('status', 'equalto', 'Running') | map(attribute='name') | list }}" }

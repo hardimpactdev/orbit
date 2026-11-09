@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
+use App\Domain\Fleet\FleetReboot;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\StoredInteger;
 use App\Models\Node;
@@ -19,14 +20,14 @@ final readonly class TaskVmCapacity
     public function __construct(private TaskVmSettings $settings) {}
 
     /**
-     * The configured hosts whose Node is active, in config order.
+     * The configured hosts whose Node is active and not in an open fleet reboot pass, in config order.
      *
      * @return list<array{TaskVmHost, Node}>
      */
     public function activeHosts(): array
     {
         $nodes = Node::query()->whereKey(array_map(static fn (TaskVmHost $host): int => $host->nodeId, $this->settings->hosts))
-            ->where('status', LifecycleStatus::Active)->get()->keyBy('id');
+            ->where('status', LifecycleStatus::Active)->whereNotIn('id', FleetReboot::rebootingTaskHosts())->get()->keyBy('id');
         $hosts = [];
         foreach ($this->settings->hosts as $host) {
             $node = $nodes->get($host->nodeId);

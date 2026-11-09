@@ -73,7 +73,8 @@ Admission records a provisioning Node and freezes its public resource plan. Boot
 | --- | --- |
 | Trust | Native steps collect the public SSH key, assert its approved fingerprint, read the platform and bootstrap account, then bind that identity into the frozen resources. |
 | Input | The intent, the private files and the inventory with pinned host keys are written to a run folder on 209. |
-| Baseline | Ansible phase `baseline`: pin the Node, authorize the control key, install packages, create the managed account and its sudo rule, open recovery SSH, apply the [kernel policy](#kernel-policy), enable the firewall. |
+| Baseline | Ansible phase `baseline`: pin the Node, authorize the control key, install packages, create the managed account and its sudo rule, open recovery SSH, apply the [kernel](#kernel-policy) and [update](#update-policy) policies. |
+| Firewall | The `baseline` phase then enables the firewall. |
 | Network | Phase `tunnel` creates and checks the WireGuard key, writes the tunnel files and applies peers. A native step reads the public key. Phase `hub` adds the peer. |
 | Observer | Ansible phase `agent`: fetch the pinned binary, write its public configuration and mode-0600 secret, and start its systemd unit. |
 | Access | A native step logs in as the managed user and, on Linux, runs a command with passwordless sudo. |
@@ -366,7 +367,7 @@ The native Swamp workflow runs these phases in order. Input preparation writes p
 | Phase | Work |
 | --- | --- |
 | `input` | Prepare this attempt's recorded roles, Tools, network and release pins, plus vault key references. Require the CLI pin before machine work. |
-| `agent` | Reconcile the pinned agent, versioned CLI, selection link, Orbit-owned configuration and units, and the [kernel policy](#kernel-policy). Restart services only for managed changes. |
+| `agent` | Reconcile the pinned agent, versioned CLI, selection link, Orbit-owned configuration and units, the [kernel policy](#kernel-policy) and the [update policy](#update-policy). Restart services only for managed changes. |
 | `software` | Read the selected pins from `recipe.json`, install them and hold the selected packages at those pins. |
 | `roles` | Repair the selected roles' configuration without changing an Instance or assignment. |
 | `tools` | Apply recorded Tools within scope, recording each Tool's own result and continuing after an individual Tool failure. |
@@ -399,6 +400,32 @@ Docker publishes [Database server](/reference/database-servers#private-publicati
 The non-local bind has a cost: a service bound to an address the Node does not hold, such as an old LAN address, starts and serves nothing instead of failing at start. Check a Process's publications after you change a Node's addresses.
 
 Both phases write the module file as root, mode `0644`. A file that already holds the same content, such as one an operator wrote by hand, stays unchanged. The phases also set `net.ipv4.ip_nonlocal_bind` on the running kernel, and `systemd-sysctl` sets it at every boot before Docker starts.
+
+### Update policy
+
+Every managed Linux Node gets the same update policy ([ADR 0251](/decisions/0251-patch-nodes-and-reboot-them-drained)). The Gateway renders it once, in `NodeUpdatePolicy`, and the same two phases as the kernel policy apply it. The Node installs Ubuntu security fixes itself; the nightly [fleet reboot](/reference/gateway-recovery#fleet-reboot) reboots it when a fix needs that.
+
+| File | Content |
+| --- | --- |
+| `/etc/apt/apt.conf.d/20auto-upgrades` | Update the package lists and run `unattended-upgrades` every day |
+| `/etc/apt/apt.conf.d/52orbit-unattended-upgrades` | Only the `${distro_id}:${distro_codename}-security` origin; `Automatic-Reboot "false"`; remove unused kernels |
+| `/etc/needrestart/conf.d/50-orbit.conf` | Restart services automatically, except the protected units |
+| `/etc/apt/apt.conf.d/53orbit-reboot-due` | Run the hook after each `dpkg` run |
+| `/usr/local/lib/orbit/reboot-due` | The hook: a protected unit on an old library writes `/var/run/reboot-required` and adds the unit to `/var/run/reboot-required.pkgs` |
+
+The phases install `unattended-upgrades` and `needrestart` and start `apt-daily.timer` and `apt-daily-upgrade.timer`. Held recipe packages stay held, because `unattended-upgrades` skips held packages.
+
+The protected units are `orbit-swamp-*`, `orbit-gateway-*`, every Orbit Process unit (`orbit-process-*`), `orbit-agent`, `docker`, `containerd`, `incus*` and `wg-quick@*`. Their restart drains for a long time or cuts the fleet's work, so they wait for the drained reboot. `needrestart` restarts every other service on the same day as the fix. One list in `NodeUpdatePolicy` feeds both the `needrestart` configuration and the hook.
+
+A Node of a task VM's nested fleet gets the same files with the daily timers stopped and disabled: a proof must not change under an unattended upgrade.
+
+### Shutdown never waits
+
+Some Orbit units drain for a long time on stop: Horizon on the Gateway (its longest job plus 30 seconds), the Swamp workers (75 minutes) and Swamp serve (6 minutes). These drains are right for a rolling restart, such as a release or a worker renewal. A system shutdown must not wait for them: WireGuard and SSH stop during a shutdown, so the work they wait for cannot finish.
+
+Each of these units carries the same `ExecStop` guard, from `ShutdownFastStop`. systemd runs `ExecStop` before it sends the kill signal. While `systemctl is-system-running` reports `stopping`, the guard kills the whole unit at once; otherwise it exits and the unit's own drain applies. Each unit keeps its own `KillMode`, `SendSIGKILL` and `TimeoutStopSec`.
+
+Converging a unit file changes no running unit; systemd uses the new `ExecStop` from the next stop. The planned reboot drains before it reboots ([fleet reboot](/reference/gateway-recovery#fleet-reboot)), so the guard cuts only work that outlasted the drain budget.
 
 ### Break-glass recovery for Services and Swamp 209
 
@@ -596,7 +623,9 @@ Before a drain, all three workers must be connected, have their full `auto` capa
 
 Recovery needs only two serving peers with full capacity. If the third unit is failed or inactive, the service resets its systemd failure limit and starts it, then ends the round. Its connection is checked next round; recovery never drains a serving worker.
 
-The service restarts one unit with SIGTERM. `KillMode=mixed` sends it only to the main process; Swamp finishes active dispatches before disconnecting. `TimeoutStopSec=4500` allows 75 minutes, giving headroom over the observed cold refresh step of about 50 minutes. Work beyond this allowance can still be killed. The service waits for a different accepting instance, checks all three workers' capacity, then probes the renewed worker. Native readiness retries are limited to 20 retries, two-second delay and three-second CLI calls; probes are capped at 125 seconds. A round has a 90-minute systemd deadline and a slightly shorter outer command timeout.
+The service restarts one unit with SIGTERM. `KillMode=mixed` sends it only to the main process; Swamp finishes active dispatches before disconnecting. `TimeoutStopSec=4500` allows 75 minutes, giving headroom over the observed cold refresh step of about 50 minutes. Work beyond this allowance can still be killed.
+
+A system shutdown does not wait for this drain ([Shutdown never waits](#shutdown-never-waits)). The service waits for a different accepting instance, checks all three workers' capacity, then probes the renewed worker. Native readiness retries are limited to 20 retries, two-second delay and three-second CLI calls; probes are capped at 125 seconds. A round has a 90-minute systemd deadline and a slightly shorter outer command timeout.
 
 Oldest-first selection and one drain per round avoid a second drain to remove a replacement. Starting at the three-hour threshold, even three 90-minute rounds separated by five-minute waits finish by age 7h45. This is a scheduling budget under healthy admission and reconnection, not a guarantee under failures or unlimited load. Activate on connections young enough to complete their first renewal before eight hours; the service refuses a drain with insufficient headroom. Repeated deferrals, invalid tokens or a missing worker can still leave the cap risk active and need operator attention.
 

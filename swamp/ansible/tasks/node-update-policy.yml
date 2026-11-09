@@ -1,0 +1,20 @@
+---
+# The update policy the Gateway renders for every managed Linux Node (ADR 0251, docs/reference/node-provisioning.md#update-policy).
+# node.add and node.converge apply it from the same input: Ubuntu -security updates every day, never an automatic reboot, and
+# needrestart that leaves the protected units for the drained reboot of the fleet.reboot pass.
+- name: Install the update tools
+  ansible.builtin.apt:
+    name: "{{ update_policy.packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+    lock_timeout: 300
+  environment: { DEBIAN_FRONTEND: noninteractive, NEEDRESTART_MODE: l }
+- name: Write the update policy
+  ansible.builtin.copy: { dest: "{{ item.path }}", content: "{{ item.content }}", owner: root, group: root, mode: "{{ item.mode }}" }
+  loop: "{{ update_policy.files }}"
+  loop_control: { label: "{{ item.path }}" }
+# A Node of a task VM's nested fleet keeps them off: a proof must not change under an unattended upgrade.
+- name: Set the daily update timers
+  ansible.builtin.systemd_service: { name: "{{ item }}", enabled: "{{ update_policy.daily }}", state: "{{ 'started' if update_policy.daily else 'stopped' }}" }
+  loop: "{{ update_policy.timers }}"

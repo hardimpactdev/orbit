@@ -1,0 +1,12 @@
+---
+# The Gateway Node: stop the scheduler, so no new job starts, and let Horizon finish its jobs within the drain budget. The
+# Horizon unit drains on stop and never kills a job (GatewayHorizon::stopDirectives); after the budget the reboot ends what
+# is left, and Laravel runs a cut job again after `retry_after`.
+- name: Stop the Gateway scheduler
+  ansible.builtin.systemd_service: { name: "{{ target.gateway.scheduler }}", state: stopped }
+- name: Drain Horizon within the budget
+  ansible.builtin.command: { argv: [timeout, "{{ intent.drain_seconds }}", systemctl, stop, "{{ target.gateway.horizon }}"] }
+  register: horizon
+  changed_when: true
+  failed_when: horizon.rc not in [0, 124]
+  when: target.gateway.horizon | length > 0

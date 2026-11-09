@@ -430,7 +430,7 @@ Do not migrate the restored database forward while attempting to run the older c
 
 ## Release alerts
 
-A release command raises an alert when a release fails, when it pauses automatic releases, or when a Node of a fleet rollout fails.
+A release command raises an alert when a release fails, when it pauses automatic releases, or when a Node of a fleet rollout fails. The [fleet reboot](#fleet-reboot) raises its own three alerts.
 
 The [automatic deployment tick](/reference/deployments#automatic-deployments) also raises one when an automatic deployment of a production Instance fails, stalls, or pauses. Its target is `instance:<id>`.
 
@@ -441,6 +441,9 @@ The alert leaves an Activity entry and a problem for the [outer loop](/reference
 | `release_failed` | A release failed. Nothing went live, or the previous release serves again |
 | `release_paused` | A release failed after its migrations ran, or died after it touched the schema or the current link, and automatic releases are paused |
 | `rollout_halted` | A fleet rollout stopped at a Node that failed. Once per Node, commit and error code |
+| `reboot_halted` | A [fleet reboot](#fleet-reboot) pass stopped at a Node that failed. Once per Node, boot and error code |
+| `reboot_unconfirmed` | Node 209 scheduled its own reboot and its agent reported no new boot within 30 minutes of the pass's end. Once per pass |
+| `reboot_overdue` | A Node has needed a reboot for more than 3 days when a pass ends. Once per Node and due time |
 | `release_stalled` | [Automatic releases](#failure-and-alerts) made no progress for 30 minutes, including a wait for agent delivery, or the branch head stayed unreleased for 6 hours |
 | `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the release switch |
 | `instance_deploy_failed` | An [automatic deployment](/reference/deployments#automatic-deployments) of a production Instance failed. Once per commit |
@@ -643,6 +646,96 @@ Each Node in `GET /api/v1/nodes` and `GET /api/v1/nodes/{node}` has an `updating
 The Gateway reads a running release's result from its Swamp run. An interrupted run pauses releases, as [Release as a Swamp run](#release-as-a-swamp-run) describes. The Gateway broadcasts [`node.updated`](/reference/events#node) with the new value when a release record starts running and ends. The [web app](/reference/web-app#live-node-and-process-state) shows the Node as `updating`.
 
 A fleet rollout visit does not set `updating`. Its progress is in the Operation and its Swamp run.
+
+## Fleet reboot
+
+Every night, Swamp reboots the managed Linux Nodes that need it into their kernel and library fixes, one at a time, after it drained their work ([ADR 0251](/decisions/0251-patch-nodes-and-reboot-them-drained)). The Nodes install the fixes themselves through their [update policy](/reference/node-provisioning#update-policy); the pass only reboots. Each pass is one `fleet.reboot` Operation and its Swamp run. Read them with [`operation:list --kind=fleet.reboot`](/cli/operation/list) and [`operation:show`](/cli/operation/show).
+
+<div className="flow-at" data-chart="fleet/reboot"></div>
+
+### Admission
+
+The Gateway admits a pass every day at 03:06 Europe/Amsterdam, after the fleet rollout admission. An operator starts one at any hour with `POST /api/v1/fleet/reboot`, optionally with `node_ids`. The operator's pass ignores the window.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `ORBIT_FLEET_REBOOT` | `true` | Admit passes |
+
+A pass, a fleet rollout and a Gateway release never overlap:
+
+- While a rollout or a release runs, a pass refuses with `fleet.reboot_waiting` (409). The nightly admission tries again every minute for two hours.
+- While a pass runs, a rollout refuses with `fleet.rollout_busy` and a release with `gateway.release_in_progress`. Both wait for the pass as they wait for one of their own.
+- A second pass refuses with `fleet.reboot_busy`.
+
+### Which Nodes and in which order
+
+A pass visits every `active` Linux Node with a WireGuard address and a pinned SSH host key, except task VMs: Nodes without roles, the Gateway and Node 209 included. macOS Nodes stay out.
+
+The order is the rollout's [risk groups](#rollout-set-and-order), then two more. A Node with several roles goes in the latest group of its roles.
+
+| Group | Nodes |
+| --- | --- |
+| 1 | `app-dev`, and Nodes without roles |
+| 2 | `ci-runner`, `metrics`, `analytics` |
+| 3 | `database`, `websocket`, `router` |
+| 4 | `app-prod`, `ingress` |
+| 5 | The control path: the `vpn` hub, the Gateway Node, and the Node of the Route that serves the Swamp address (`swamp.orbit`) |
+| 6 | The `swamp` Node |
+
+A task host with an open task Operation on one of its task VMs is left out at admission and reported `deferred` with `tasks_busy`. While the pass runs, the Gateway holds new task work off the task hosts it visits:
+
+- task turns, checks, publishes and scripts for a group on such a host refuse with `409 tasks.host_rebooting`; the caller repeats the call after the pass;
+- task VM placement and the daily image refresh skip such a host.
+
+### One Node of the pass
+
+The child `fleet-reboot-node` runs three Ansible phases of `swamp/ansible/operation-fleet-reboot.yml` from Node 209. Each phase reads and extends the Node's record in the pass's run folder. Once the record has an outcome, the later phases change nothing.
+
+The `drain` phase decides first whether the Node waits:
+
+- After a failed Node, the Node records `skipped` with `halted`.
+- When its 15-minute drain and its reboot cannot end before 06:00, the Node records `deferred` with `window`.
+- Without `/var/run/reboot-required`, the Node records `not_due`.
+
+A due Node records its boot ID, its kernel, its failed units and since when the reboot is due. Then the phase drains it:
+
+On a CI runner host, the phase drains the runners every 20 seconds, for at most the drain budget. It freezes each runner container and reads the container's processes from the host. It stops a container that runs no `Runner.Worker`. A runner with a job runs on, and so does a job on a runner of the host itself. When a job still runs at the end, the stopped runners start again, and the Node records `deferred` with `ci_busy`.
+
+On a task host, the phase stops each running task guest cleanly and records its name. The Gateway records those task VMs `parked`, and the next task call wakes them.
+
+On the Gateway Node, the phase stops the scheduler. Then it stops Horizon, which drains on stop, within the drain budget. The reboot ends what is left.
+
+The `reboot` phase reboots the Node and waits up to 10 minutes for SSH and a new boot time. The `swamp` Node instead schedules its own reboot and records `scheduled`; see below.
+
+The `check` phase requires:
+
+- a new boot ID, the newest installed kernel, and no `/var/run/reboot-required`;
+- no failed unit that was not failed before the reboot, after waiting up to 5 minutes for the boot to finish;
+- `orbit-agent` active, and on the Gateway its scheduler and Horizon, within a minute.
+
+Then the Node records `rebooted` with its new kernel.
+
+A phase that fails records `failed` with its step and error code: the assert's own code, such as `fleet.reboot_old_kernel`, `fleet.reboot_units_failed` or `fleet.reboot_still_due`, or `fleet.reboot_drain_failed`, `fleet.reboot_lost` (no SSH after the reboot) or `fleet.reboot_check_failed`. The pass visits no Node after it, and the Gateway raises [`reboot_halted`](#release-alerts). A Node that never answers SSH needs its provider console. The next pass starts again at that Node, as it is the first due Node.
+
+### The swamp Node
+
+The pass runs on Node 209, so it cannot wait across 209's own reboot. Its `reboot` phase starts a transient path unit, `orbit-planned-reboot`, and returns. The pass's last step, after the report, removes the run folder and releases the unit. The unit then:
+
+1. stops Swamp serve, which finishes its runs for up to 5 minutes;
+2. stops the workers, which finish their active steps within the drain budget;
+3. reboots. The [shutdown guard](/reference/node-provisioning#shutdown-never-waits) ends what is left at once.
+
+While serve is down, the Gateway's starts of new runs fail as they do for any serve outage. Every five minutes, the Gateway reads the agent's `metrics` fact of each Node a pass `scheduled`: a boot after the pass ended, its observation time minus its uptime, confirms the reboot. Thirty minutes after the pass ended without one, the Gateway raises `reboot_unconfirmed`.
+
+### A cut Operation
+
+A reboot of the control path or of Node 209 can cut a Swamp run after the drain budget. The run ends `interrupted`, and the [reconciler](/reference/operations#read-an-operation) records its Operation `interrupted` with the failed step, as for any lost run. A terminal Operation never reopens: its caller starts a new one, such as the next rollout pass, the next automatic deploy, or the task orchestrator's repeat. Every machine phase is an idempotent playbook, so the new Operation repeats the cut phase safely.
+
+### What is reported
+
+The Operation result lists each Node in pass order with its outcome: `rebooted`, `scheduled`, `not_due`, `deferred` with `window`, `tasks_busy` or `ci_busy`, `skipped` with `halted` or `not_reached`, or `failed`. It also holds the kernel before and after, since when the reboot was due, the parked task guests and any newly failed units.
+
+Doctor reports `node.reboot_due` when the newest pass that visited a Node found it due more than 3 days ago and did not reboot it. When a pass ends with such a Node, the Gateway raises [`reboot_overdue`](#release-alerts) once.
 
 ## Limits
 

@@ -10,6 +10,7 @@ use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Nodes\NodeConvergeScope;
 use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\NodeNetworkReservation;
+use App\Domain\Nodes\NodeUpdatePolicy;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -81,6 +82,7 @@ it('captures base from recorded state, redacts its verifier and dispatches copie
         ->and($capture['intent']['agent'])->toMatchArray(['sha256' => str_repeat('b', 64), 'url' => 'https://artifacts.example/agent'])
         ->and($capture['intent']['kernel'])->toBe(['files' => [['path' => '/etc/modprobe.d/orbit-no-sctp.conf', 'content' => "install sctp /bin/false\n"]],
             'sysctl' => [['name' => 'net.ipv4.ip_nonlocal_bind', 'value' => '1', 'file' => '/etc/sysctl.d/60-orbit-nonlocal-bind.conf']]])
+        ->and($capture['intent']['updates'])->toBe(NodeUpdatePolicy::for($this->node))->and($capture['intent']['updates']['daily'])->toBeTrue()
         ->and($capture['execution_secrets']['agent_verifier']['key'])->toBe('node-converge-operation-'.$operation->id.'-agent-verifier')
         ->and(array_column($this->frames, 'type'))->toBe(['vault.put', 'workflow.run'])
         ->and($this->frames[1]['payload']['workflowIdOrName'])->toBe('operation-node-converge')

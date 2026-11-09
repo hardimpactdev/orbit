@@ -21,7 +21,9 @@ use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Infrastructure\Swamp\SwampScheduledResults;
+use App\Jobs\Fleet\AdmitFleetReboot;
 use App\Jobs\Fleet\AdmitFleetRollout;
+use App\Jobs\Fleet\CheckFleetRebootConfirmation;
 use App\Jobs\Operations\PollSwampScheduledResults;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\TaskVms\RefreshTaskVmImages;
@@ -88,6 +90,11 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // 03:00–06:00 Amsterdam window, so the rollout is also admitted once when that window opens.
         GatewaySchedule::job($schedule, new AdmitFleetRollout)->dailyAt('03:05')->timezone('Europe/Amsterdam')
             ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->boolean('fleet.rollout'));
+        // ADR 0251: the nightly drained reboot pass, admitted after the rollout in the same window; it waits while the rollout runs.
+        GatewaySchedule::job($schedule, new AdmitFleetReboot)->dailyAt('03:06')->timezone('Europe/Amsterdam')
+            ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->boolean('fleet.reboot'));
+        GatewaySchedule::job($schedule, new CheckFleetRebootConfirmation)->everyFiveMinutes()
+            ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->boolean('fleet.reboot'));
         // Release stale Incus task starts through task_vm.slot_release.
         GatewaySchedule::job($schedule, new SweepTaskVmHosts)->everyThirtyMinutes()
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);

@@ -32,6 +32,10 @@ final class OperationBudgetTable
         // converged; a full fleet of 7 converging at the same pace takes about 330 s, x 1.5, rounded up to five minutes.
         // Replace with the 14-day p95 once windowed visits have history.
         'fleet.rollout' => 600,
+        // No run yet. Basis: a pass over the 12 managed Linux Nodes, each with a 900 s drain budget at most, a reboot of about 2 minutes
+        // and a check; most Nodes drain at once. The window is three hours, and the pass never starts a Node it cannot finish before 06:00,
+        // so the budget is the window. Replace with the 14-day p95 after the first nights.
+        'fleet.reboot' => 10800,
         // No native run yet. Basis: the legacy runner's last 47 verified releases (p95 117 s, longest 125 s) plus the
         // Horizon drain, which waits for running jobs up to the longest supervisor timeout + 30 s (1,730 s); x 1.5 = 2,783 s,
         // rounded up to five minutes. An expiry pauses releases. Replace with the 14-day p95 after the first success.

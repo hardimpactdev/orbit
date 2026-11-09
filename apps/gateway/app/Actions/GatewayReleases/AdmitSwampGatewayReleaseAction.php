@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\GatewayReleases;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Fleet\FleetReboot;
 use App\Domain\GatewayReleases\GatewayReleaseAgent;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
@@ -63,6 +64,10 @@ final readonly class AdmitSwampGatewayReleaseAction
     {
         if (! GatewayReleaseCommit::isSha($commit)) {
             throw new GatewayReleaseException('deploy', 'gateway.release_commit_invalid', 'A Swamp release needs the full commit SHA.', 422);
+        }
+        // A fleet reboot pass may reboot the Gateway Node; a release waits for it as for another release (ADR 0251).
+        if (FleetReboot::open() instanceof Operation) {
+            throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'A fleet reboot pass is running.', 409);
         }
         $previous = $this->layout->isAdopted() ? $this->layout->currentReleaseId() : null;
         if ($previous === null) {

@@ -2,6 +2,9 @@
 - name: Reconcile the kernel policy
   ansible.builtin.import_tasks: node-kernel-policy.yml
   vars: { kernel_policy: "{{ intent.kernel }}" }
+- name: Reconcile the update policy
+  ansible.builtin.import_tasks: node-update-policy.yml
+  vars: { update_policy: "{{ intent.updates }}" }
 - name: Ensure the agent configuration directory
   ansible.builtin.file: { path: /etc/orbit/agent, state: directory, owner: root, group: root, mode: "0755" }
 - name: Inspect the agent secret without exposing it
