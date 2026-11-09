@@ -51,7 +51,8 @@ sequenceDiagram
   %%> - asks T3 for a one-time pairing token with T3's administrative scopes and the admitted client label
   Note over SW: Store the link in vault
   %%> How:
-  %%> - a typed data method reads the private response and publishes the credential as a native sensitive field
+  %%> - a typed data method reads the private response as T3's pairing result: id, credential, expiry and the echoed label; it ignores added fields
+  %%> - it publishes the credential as a native sensitive field
   %%> - its resource instance is unique to pairing 7, so concurrent pairings have different vault keys
   %%> What it does:
   %%> - writes the credential to the native key for pairing 7 and returns only public metadata and its key name
@@ -80,17 +81,19 @@ sequenceDiagram
   else T3 refuses or no reply
     T3--xSW: 401 or no answer
     %%> When:
-    %%> - T3 refuses the admin session, cannot be reached, or answers with invalid data
+    %%> - T3 refuses the admin session, refuses the call, answers with invalid data, or cannot be reached
     SW--xGW: Run failed<br/>conn.* error_code
     %%> The Gateway reads:
-    %%> - the failed step and its safe error code, such as `conn.session_rejected`
-    Note over GW: Mark pairing 7 failed<br/>task failed · ask again
+    %%> - the failed step's code: `conn.session_rejected` (401), `conn.request_refused` (another status), `conn.response_invalid` (2xx without T3's shape)
+    %%> - any other failure, such as no answer, is `conn.pairing_outcome_unknown`
+    Note over GW: Mark pairing 7 failed<br/>task failed
     %%> Result:
     %%> - pairing 7 is marked failed; task #5170 fails
     %%> On the T3 server:
-    %%> - a link minted before a lost reply stays unused and expires within minutes; that is harmless
+    %%> - a link minted before a lost or invalid reply stays unused and expires within minutes; that is harmless
     %%> Retry:
-    %%> - ask again; it is a new task with a new label
+    %%> - T3's answer is final: do not retry `session_rejected`, `request_refused` or `response_invalid` until the cause is fixed
+    %%> - after `pairing_outcome_unknown`, ask again; it is a new task with a new label
   end
   loop until terminal
     CLI->>GW: Read Operation #5170<br/>GET conn/operations/5170

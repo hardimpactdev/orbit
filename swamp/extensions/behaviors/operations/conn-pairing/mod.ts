@@ -7,10 +7,19 @@ const Intent = z.object({
     label: z.string().min(1).max(1024),
     request_body: z.string().min(1),
 }).strict();
+const Credential = z.string().min(1).max(16384);
+// T3's AuthPairingCredentialResult. T3 echoes the requested label, and a newer
+// T3 may add fields; only the stored resource below is strict.
+const Reply = z.object({
+    id: Id,
+    expiresAt: Time,
+    credential: Credential,
+    label: z.string().min(1).optional(),
+});
 const Issued = z.object({
     id: Id,
     expiresAt: Time,
-    credential: z.string().min(1).max(16384).meta({
+    credential: Credential.meta({
         sensitive: true,
         vaultName: "orbit-control-inputs",
     }),
@@ -40,23 +49,28 @@ export async function issue(
     const modelId = z.string().uuid().parse(ctx.modelId);
     const credentialKey =
         `nckrtl-conn-pairing-${modelId}-issue-issued-pairing-${args.intent.pairing_id}-credential`;
+    // T3 answered, so each outcome below is known and final for this pairing.
     const status = Number(args.http_status.trim());
     if (!(status >= 200 && status < 300)) {
         throw new Error(
-            status === 401
-                ? "conn.session_rejected"
-                : "conn.pairing_outcome_unknown",
+            status === 401 ? "conn.session_rejected" : "conn.request_refused",
         );
     }
-    let issued: z.infer<typeof Issued>;
+    let reply: z.infer<typeof Reply>;
     try {
         const file = `${args.directory}/reply.json`;
         if ((await Deno.stat(file)).size > 4194304) throw new Error();
-        issued = Issued.parse(JSON.parse(await Deno.readTextFile(file)));
+        reply = Reply.parse(JSON.parse(await Deno.readTextFile(file)));
     } catch {
-        throw new Error("conn.pairing_outcome_unknown");
+        throw new Error("conn.response_invalid");
     }
+    const issued = {
+        id: reply.id,
+        expiresAt: reply.expiresAt,
+        credential: reply.credential,
+    };
     if (
+        (reply.label !== undefined && reply.label !== args.intent.label) ||
         [issued.id, issued.expiresAt].some((value) =>
             value.includes(issued.credential) ||
             value.includes(args.env.ORBIT_CONN_ADMIN_SESSION)
@@ -81,7 +95,7 @@ export async function issue(
 }
 export const behavior = {
     type: "@nckrtl/conn-pairing",
-    version: "2026.11.02.2",
+    version: "2026.11.09.1",
     resources: {
         issued: { schema: Issued, lifetime: "infinite", garbageCollection: 10 },
         terminal: {
