@@ -1,0 +1,106 @@
+---
+# The container branch of the app-dev role on a Node of the build list (docs/reference/compute-drivers.md#prepare-an-instance-container-host).
+# The Gateway sends `instances` only for such a Node, so every other Node runs none of this. It shares the kernel, Incus and container
+# side with a task container host, then installs the two shared folders and builds the image. It creates no Instance.
+# The Node provides the Incus pool: ZFS, where a copy is a clone, or a directory pool on a nested proof Node, where a copy is a full copy.
+- name: Read the Instance pool
+  ansible.builtin.command: { argv: [incus, query, "--", "/1.0/storage-pools/{{ instances.pool }}"] }
+  register: instance_pool_read
+  changed_when: false
+  failed_when: false
+
+- name: Require the Instance pool
+  ansible.builtin.assert:
+    that:
+      - instance_pool_read.rc == 0
+      - (instance_pool_read.stdout | from_json).driver in ['zfs', 'dir']
+    fail_msg: "instance.host_unavailable: the Node needs the Incus storage pool {{ instances.pool }}, of driver zfs or dir"
+    quiet: true
+
+- name: Prepare the kernel and Incus for Instance containers
+  ansible.builtin.include_tasks: task-container-host-system.yml
+  vars:
+    container_host: &instance_host
+      kind: instances
+      fail: instance.host_unavailable
+      incus: "{{ instances.incus }}"
+      ids: "{{ instances.ids }}"
+      # An Instance container runs no WireGuard, Docker or nested bridges.
+      modules: []
+      project: "{{ instances.project }}"
+      network: "{{ instances.network }}"
+      address: "{{ instances.address }}"
+      alias: "{{ instances.stock }}"
+      pool: "{{ instances.pool }}"
+      probe: "{{ (instance_pool_read.stdout | from_json).driver == 'zfs' }}"
+    container_sysctls:
+      fs.inotify.max_queued_events: 1048576
+      fs.inotify.max_user_instances: 1048576
+      fs.inotify.max_user_watches: 1048576
+      kernel.keys.maxkeys: 2000
+      kernel.keys.maxbytes: 2000000
+      vm.max_map_count: 262144
+
+# The cap the system part sized from memory, never above the cap the Node already runs.
+- name: Keep the ZFS ARC within the Node's budget
+  when: (instance_pool_read.stdout | from_json).driver == 'zfs'
+  block:
+    - name: Keep the ARC cap after reboot
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/orbit-instances-zfs.conf
+        content: "# Orbit Instance container host: reserve RAM for host services.\noptions zfs zfs_arc_max={{ container_arc_max }}\n"
+        owner: root
+        group: root
+        mode: "0644"
+    - name: Read the running ARC cap
+      ansible.builtin.slurp: { src: /sys/module/zfs/parameters/zfs_arc_max }
+      register: instance_arc
+    - name: Apply the ARC cap now
+      when: (instance_arc.content | b64decode | trim) != (container_arc_max | string)
+      ansible.builtin.command:
+        argv: [tee, /sys/module/zfs/parameters/zfs_arc_max]
+        stdin: "{{ container_arc_max }}"
+      changed_when: true
+
+- name: Install the shared folders
+  ansible.builtin.include_tasks: instance-folder.yml
+  loop: [runtime, agent]
+  loop_control: { loop_var: folder_name }
+  vars:
+    folder: "{{ instances.folders[folder_name] }}"
+
+# The project lets containers mount only the two folders, read-only and idmapped, and publish T3 with a proxy device. Every
+# container gets an isolated ID map. The bridge reaches nothing by default: each Instance's own paths come with its create flow.
+- name: Prepare the Instance bridge, project and profile
+  ansible.builtin.include_tasks: task-container-host-prepare.yml
+  vars:
+    container_host: *instance_host
+    container_acl_name: "{{ instances.network }}-egress"
+    container_acl_rules: { description: Orbit Instance boundary, egress: [], ingress: [] }
+    container_network_config:
+      ipv4.nat: 'true'
+      ipv6.address: none
+      security.acls: "{{ instances.network }}-egress"
+      security.acls.default.ingress.action: reject
+      security.acls.default.egress.action: reject
+    container_network_args: >-
+      {{ container_network_config | dict2items | map(attribute='key') | zip(container_network_config.values()) | map('join', '=') | list }}
+    container_devices:
+      root: { type: disk, path: /, pool: "{{ instances.pool }}" }
+      eth0: { type: nic, name: eth0, network: "{{ instances.network }}", security.port_isolation: 'true' }
+      orbit-runtime:
+        { type: disk, source: "{{ instances.folders.runtime.path }}", path: "{{ instances.folders.runtime.path }}", readonly: 'true', shift: 'true' }
+      orbit-agent:
+        { type: disk, source: "{{ instances.folders.agent.path }}", path: "{{ instances.folders.agent.path }}", readonly: 'true', shift: 'true' }
+    container_restrictions:
+      restricted: 'true'
+      restricted.networks.access: "{{ instances.network }}"
+      restricted.containers.privilege: isolated
+      restricted.devices.disk: allow
+      restricted.devices.disk.paths: "{{ instances.folders.runtime.path }},{{ instances.folders.agent.path }}"
+      restricted.devices.proxy: allow
+      restricted.snapshots: allow
+      limits.virtual-machines: '0'
+
+- name: Build the Instance image
+  ansible.builtin.include_tasks: instance-image.yml

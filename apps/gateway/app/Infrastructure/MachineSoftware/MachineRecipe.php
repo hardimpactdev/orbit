@@ -15,6 +15,7 @@ final readonly class MachineRecipe
      * @param  array<string, list<string>>  $profiles  Effective, sorted tool sets, including common tools.
      * @param  array<string, PhpBuild>  $php  Keyed by PHP version, such as 8.5.
      * @param  array<string, string>  $agentDigests  Resolved Linux delivery pins; empty only for source intent.
+     * @param  ?InstanceFolders  $instances  The shared Instance folders; null only in a recipe built by hand in a test.
      */
     public function __construct(
         public string $identity,
@@ -30,6 +31,7 @@ final readonly class MachineRecipe
         public string $artifactMirror = '',
         public array $gitPackages = [],
         public array $agentDigests = [],
+        public ?InstanceFolders $instances = null,
     ) {}
 
     /**
@@ -48,6 +50,27 @@ final readonly class MachineRecipe
             : throw new InvalidArgumentException("The recipe has no agent platform for [{$architecture}].");
 
         return $this->agentDigests[$platform] ?? throw new InvalidArgumentException("The recipe has no resolved agent digest for [{$platform}].");
+    }
+
+    /**
+     * What a container host installs when it has no Incus: the recipe's Incus line, such as 7.0, and the pinned packages of
+     * `$architecture` with their candidate URLs, the mirror first. Null when the recipe has no Incus package for it.
+     *
+     * @return array{line: string, packages: list<array{name: string, sha256: string, urls: list<string>}>}|null
+     */
+    public function incus(string $architecture): ?array
+    {
+        $packages = [];
+        foreach (RecipeLoader::IncusPackages as $name) {
+            $artifact = ($this->tools[$name] ?? null)?->artifacts[$architecture] ?? null;
+            if ($artifact === null) {
+                return null;
+            }
+            $packages[] = ['name' => $name, 'sha256' => $artifact->digest, 'urls' => $artifact->candidateUrls($name, $this->artifactMirror)];
+        }
+
+        // The recipe pins one point release of one line, such as 7.0.2 of 7.0; the host runs that line, as the inner Incus does.
+        return ['line' => implode('.', array_slice(explode('.', $this->tools['incus']->version), 0, 2)), 'packages' => $packages];
     }
 
     public function php(string $version): PhpBuild

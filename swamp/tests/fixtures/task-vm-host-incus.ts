@@ -25,6 +25,12 @@ if (family === "query") {
   const [route, query = ""] = path.slice(5).split("?");
   const [resource, item] = route.split("/");
   const rows = state[resource];
+  if (
+    item && Array.isArray(rows) &&
+    !rows.find((r: { name: string }) => r.name === item)
+  ) {
+    fail(`${resource} not found`);
+  }
   if (path === "/1.0") {
     console.log(
       JSON.stringify({
@@ -88,10 +94,46 @@ if (family === "query") {
   console.log(JSON.stringify(state.images));
 } else if (family === "image" && action === "copy") {
   state.images.push({
+    fingerprint: `fp-${args[args.indexOf("--alias") + 1]}`,
     aliases: [{ name: args[args.indexOf("--alias") + 1] }],
     source: args[2],
     vm: args.includes("--vm"),
   });
+} else if (family === "image" && action === "alias") {
+  const [, , verb, alias, fingerprint] = args;
+  for (const image of state.images) {
+    image.aliases = image.aliases.filter((a: { name: string }) =>
+      a.name !== alias
+    );
+  }
+  if (verb === "create") {
+    state.images.find((i: { fingerprint: string }) =>
+      i.fingerprint === fingerprint
+    ).aliases.push({ name: alias });
+  }
+} else if (family === "image" && action === "delete") {
+  state.images = state.images.filter((i: { fingerprint: string }) =>
+    i.fingerprint !== name
+  );
+} else if (family === "publish") {
+  const alias = args[args.indexOf("--alias") + 1];
+  state.images.push({ fingerprint: `fp-${alias}`, aliases: [{ name: alias }] });
+} else if (family === "exec") {
+  if (!instance(action)) fail("Instance not found");
+} else if (family === "file" && action === "push") {
+  state.files ??= {};
+  state.files[args.at(-1)!] = {
+    content: await new Response(Deno.stdin.readable).text(),
+    mode: args[args.indexOf("--mode") + 1],
+    uid: args[args.indexOf("--uid") + 1],
+    gid: args[args.indexOf("--gid") + 1],
+  };
+} else if (family === "list") {
+  console.log(JSON.stringify(
+    state.instances.filter((r: { project: string; status: string }) =>
+      r.project === project && r.status === "Running"
+    ),
+  ));
 } else if (family === "init") {
   state.instances.push({ name: args[2], project, status: "Stopped" });
 } else if (family === "copy") {

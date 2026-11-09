@@ -186,7 +186,7 @@ function fixture(
     .replaceAll("/sys/module/zfs/parameters/zfs_arc_max", `${folder}/arc`)
     .replaceAll("/var/lib/incus/disks/", `${folder}/disks/`)
     .replaceAll(
-      "/etc/modules-load.d/orbit-task-containers.conf",
+      "/etc/modules-load.d/orbit-{{ container_host.kind }}.conf",
       `${folder}/modules.conf`,
     )
     .replaceAll("/etc/subuid", `${folder}/subuid`)

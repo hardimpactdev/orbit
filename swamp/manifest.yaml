@@ -86,6 +86,9 @@ additionalFiles:
   - ansible/task-vm-host.yml
   - ansible/tasks/task-vm-host-prepare.yml
   - ansible/tasks/task-container-host-system.yml
+  - ansible/tasks/instance-folder.yml
+  - ansible/tasks/instance-host.yml
+  - ansible/tasks/instance-image.yml
   - ansible/tasks/task-container-host-prepare.yml
   - ansible/task-vm-start.yml
   - ansible/tasks/task-vm-boot.yml

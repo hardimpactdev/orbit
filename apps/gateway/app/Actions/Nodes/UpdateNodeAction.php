@@ -76,6 +76,7 @@ final readonly class UpdateNodeAction
             if ($settings->isEmpty()) {
                 return $node;
             }
+            NodeBridges::lock($node);
             $merged = $settings->merge($this->normalizer->fromStored($node->settings));
             $normalized = $this->normalizer->normalize($merged);
             $this->validateHostBridge($node, $normalized);
@@ -158,12 +159,29 @@ final readonly class UpdateNodeAction
         return true;
     }
 
+    /**
+     * The Node's roots are prepared or inspected first, over SSH and outside any transaction. The bridge check and the write then
+     * run in one transaction under the bridge lock, so an Instance bridge allocation cannot slip between them.
+     */
     public function persistDuringProvisioning(Node $node, ?NodeSettingsData $settings): void
     {
         $normalized = $this->normalizer->normalize($settings);
+        // Refuse before any SSH work; the transaction checks both again under the lock.
         $this->validateHostBridge($node, $normalized);
         $this->keepLiveContainers($node, $this->normalizer->fromStored($node->settings)?->task_vms, $normalized?->task_vms);
-        $this->apply($node, $normalized);
+        $this->validator->validateGrammar($normalized);
+        if ($this->hasActiveAppDevRole($node)) {
+            $this->prepareEffectiveRoots($node, $normalized);
+        } elseif ($normalized instanceof NodeSettingsData) {
+            $this->inspectConfiguredRoots($node, $normalized);
+        }
+        DB::transaction(function () use ($node, $normalized): void {
+            NodeBridges::lock($node);
+            $node->refresh();
+            $this->validateHostBridge($node, $normalized);
+            $this->keepLiveContainers($node, $this->normalizer->fromStored($node->settings)?->task_vms, $normalized?->task_vms);
+            $this->persist($node, $normalized);
+        });
     }
 
     /** @return array{settings:array<string,mixed>|null,storage:array{root:string,user:string,group:string,create_missing:bool}|null} */
@@ -219,24 +237,6 @@ final readonly class UpdateNodeAction
         if (TaskVm::query()->live()->where('host_node_id', $node->id)->where('runtime', TaskVmRuntime::Container)->exists()) {
             throw new ResourceOperationException('task_vm.runtime_in_use', 'The host has a task container that is not destroyed, so its containers project, network and cidr stay.', 409);
         }
-    }
-
-    private function apply(Node $node, ?NodeSettingsData $normalized): void
-    {
-        $this->validator->validateGrammar($normalized);
-
-        if ($this->hasActiveAppDevRole($node)) {
-            $this->prepareEffectiveRoots($node, $normalized);
-            $this->persist($node, $normalized);
-
-            return;
-        }
-
-        if ($normalized instanceof NodeSettingsData) {
-            $this->inspectConfiguredRoots($node, $normalized);
-        }
-
-        $this->persist($node, $normalized);
     }
 
     private function prepareEffectiveRoots(Node $node, ?NodeSettingsData $normalized): void

@@ -1,0 +1,247 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Actions\Nodes\UpdateNodeAction;
+use App\Data\Nodes\NodeSettingsData;
+use App\Data\Nodes\NodeTaskVmsData;
+use App\Domain\Instances\InstanceFolderPlan;
+use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstanceImage;
+use App\Domain\Instances\InstanceNotes;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Projects\ProjectType;
+use App\Domain\WireGuard\Ipv4Subnet;
+use App\Infrastructure\Firewall\NodeFirewallDesiredRules;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\MachineSoftware\ArtifactPin;
+use App\Infrastructure\MachineSoftware\FolderPin;
+use App\Infrastructure\MachineSoftware\InstanceFolders;
+use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Models\Node;
+use App\Models\Operation;
+use App\Models\TaskVm;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
+
+uses(LazilyRefreshDatabase::class);
+
+function instanceHostNode(string $name = 'shark', string $ip = '10.44.0.11'): Node
+{
+    return Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'wireguard_ip' => $ip, 'public_ssh_host' => $ip, 'user' => 'orbit',
+    ]));
+}
+
+/** @return array<string, FolderPin> */
+function instanceFolderPins(string $version = '1.0'): array
+{
+    return ['tool' => new FolderPin($version, new ArtifactPin("https://example.test/tool-{$version}.tar.gz", 'sha256', str_repeat('a', 64)), ['tool' => "tool-{$version}/tool"])];
+}
+
+describe('the container branch of the app-dev converge', function (): void {
+    it('gives a Node that is not on the build list nothing and leaves its bridge unallocated', function (): void {
+        $node = instanceHostNode();
+
+        expect(app(InstanceHostIntent::class)->for($node))->toBeNull()
+            ->and($node->refresh()->instance_bridge)->toBeNull();
+    });
+
+    it('gives a task VM nothing, even on the build list', function (): void {
+        $node = instanceHostNode();
+        config(['instances.container_nodes' => [$node->id]]);
+        TaskVm::query()->create(['node_id' => $node->id, 'provider' => 'incus', 'name' => 'tvm-1', 'wireguard_ip' => '10.44.9.1', 'state' => 'ready']);
+
+        expect(app(InstanceHostIntent::class)->for($node))->toBeNull()
+            ->and($node->refresh()->instance_bridge)->toBeNull();
+    });
+
+    it('allocates the bridge on the first intent and names the project, pool, image and folders', function (): void {
+        $node = instanceHostNode();
+        config(['instances.container_nodes' => [$node->id]]);
+        $recipe = app(RecipeImageBuilds::class)->currentRecipe();
+
+        $intent = app(InstanceHostIntent::class)->for($node);
+
+        expect($node->refresh()->instance_bridge)->toBe('10.253.0.0/24')
+            ->and(array_diff_key($intent, array_flip(['incus', 'image', 'folders'])))->toBe([
+                'project' => 'orbit-instances', 'network' => 'orbitinst0', 'pool' => 'orbit-instances', 'cidr' => '10.253.0.0/24',
+                'address' => '10.253.0.1/24', 'build_address' => '10.253.0.254', 'stock' => 'ubuntu-26.04-instance-stock',
+                'ids' => 201 * 65536,
+            ])
+            ->and($intent['incus'])->toBe($recipe->incus('amd64'))
+            ->and($intent['image'])->toBe(InstanceImage::for('10.253.0.1'))
+            ->and($intent['folders'])->toBe(InstanceFolderPlan::for($recipe->instances))
+            // A second intent keeps the bridge.
+            ->and(app(InstanceHostIntent::class)->for($node)['cidr'])->toBe('10.253.0.0/24');
+    });
+
+    it('adds the branch to the app-dev runtime of a build-list Node only, so every other intent stays as it was', function (): void {
+        $listed = instanceHostNode();
+        $other = instanceHostNode('beast', '10.44.0.7');
+        config(['instances.container_nodes' => [$listed->id]]);
+        $capture = fn (Node $node, RoleName $role) => app(NativeNodeRoleRuntimeInput::class)
+            ->capture($node, $node->roles()->create(['role' => $role, 'status' => 'active']), [], new Operation)['intent'];
+
+        $keys = ['directories', 'files', 'secret_files', 'units', 'probes', 'groups', 'users', 'websocket', 'metrics', 'analytics',
+            'gateway_dns', 'gateway', 'swamp', 'ci_host'];
+        expect(array_keys($capture($other, RoleName::AppDev)))->toBe($keys)
+            ->and(array_keys($capture($listed, RoleName::CiRunner)))->toBe($keys)
+            ->and($capture($listed, RoleName::AppDev)['instances']['cidr'])->toBe('10.253.0.0/24')
+            ->and($other->refresh()->instance_bridge)->toBeNull();
+    });
+
+    it('lists the bridge\'s DHCP and DNS input rules under their own names for a build-list Node with a bridge', function (): void {
+        $node = instanceHostNode();
+        expect(app(NodeFirewallRuleCatalog::class)->instanceHostInput($node))->toBe([]);
+        config(['instances.container_nodes' => [$node->id]]);
+        app(AllocateInstanceBridgeAction::class)->execute($node);
+
+        $rules = app(NodeFirewallRuleCatalog::class)->instanceHostInput($node->refresh());
+
+        expect(array_map(static fn ($rule): string => $rule->shape->comment, $rules))->toBe(NodeFirewallRuleCatalog::InstanceInputComments)
+            ->and($rules[1]->arguments)->toBe(['sudo', 'ufw', 'allow', 'in', 'on', 'orbitinst0', 'proto', 'tcp', 'from', 'any', 'to', '10.253.0.1', 'port', '53', 'comment', 'orbit:instances-dns-tcp'])
+            ->and(array_map(static fn ($row): string => $row->shape->comment, app(NodeFirewallDesiredRules::class)->forNode($node)))
+            ->toContain(...NodeFirewallRuleCatalog::InstanceInputComments);
+    });
+});
+
+describe('the Instance image', function (): void {
+    it('lets only agent reach the model forwarder and only root and agent reach T3', function (): void {
+        expect(InstanceImage::firewall('10.253.0.1'))->toContain(
+            'ip daddr 10.253.0.1 tcp dport 8319 meta skuid != 2750 reject with tcp reset',
+            'tcp dport 3773 meta skuid != { 0, 2750 } reject with tcp reset',
+        );
+    });
+
+    it('runs T3 as agent from the agent folder, only in a named Instance, with the Claude updater off', function (): void {
+        $unit = InstanceImage::t3Unit();
+
+        expect($unit)->toContain(
+            "User=agent\n", "UMask=0007\n", "Requires=nftables.service\n", "ConditionPathExists=/etc/orbit/instance\n",
+            "Environment=PATH=/opt/orbit-agent/current/agent/bin:/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin\n",
+            "Environment=DISABLE_AUTOUPDATER=1\n", 'ExecStart=/opt/orbit-agent/current/agent/bin/t3 serve --host=0.0.0.0 --port=3773 --no-browser',
+        );
+    });
+
+    it('sets up the users, the workspace and no sudo, and turns the Codex update check off', function (): void {
+        $image = InstanceImage::for('10.253.0.1');
+        $files = array_column($image['files'], null, 'path');
+
+        expect($image['prepare'])->toContain(
+            'useradd --uid 2750 --gid agent', 'useradd --uid 1000 --gid orbit', 'groupadd --gid 2760 work', 'passwd --lock agent',
+            "find /etc/sudoers.d -mindepth 1 ! -name README -delete\n", 'install -d -o agent -g work -m 2770 /srv/workspace',
+            'd:u::rwX,d:g::rwX,d:g:work:rwX,d:o::---', 'hidepid=invisible',
+        )
+            ->and($image['packages'])->toBe(['acl', 'git', 'nftables'])
+            ->and($files['/etc/systemd/system/t3.service']['mode'])->toBe('0640')
+            ->and($files['/home/agent/.codex/config.toml'])->toMatchArray(['content' => "check_for_update_on_startup = false\n", 'uid' => 2750, 'mode' => '0600'])
+            ->and($files['/home/orbit/.gitconfig']['content'])->toBe("[safe]\n\tdirectory = /srv/workspace\n");
+    });
+
+    it('names each definition by its digest, so a change builds a new image', function (): void {
+        $alias = InstanceImage::for('10.253.0.1')['alias'];
+
+        expect($alias)->toMatch('/^orbit-instance-[0-9a-f]{12}$/')
+            ->and(InstanceImage::for('10.253.0.1')['alias'])->toBe($alias)
+            ->and(InstanceImage::for('10.253.1.1')['alias'])->not->toBe($alias);
+    });
+});
+
+describe('the shared folders', function (): void {
+    it('versions a folder by its whole content, notes included', function (): void {
+        $plan = InstanceFolderPlan::for(new InstanceFolders(instanceFolderPins(), instanceFolderPins()));
+
+        expect($plan['runtime']['version'])->toMatch('/^[0-9a-f]{12}$/')
+            ->and($plan['runtime']['path'])->toBe('/opt/orbit-runtime')
+            ->and($plan['agent']['path'])->toBe('/opt/orbit-agent')
+            ->and($plan['runtime']['parts'])->toBe([['name' => 'tool', 'version' => '1.0', 'url' => 'https://example.test/tool-1.0.tar.gz',
+                'archive' => 'tar', 'sha256' => str_repeat('a', 64), 'bin' => ['tool' => 'tool-1.0/tool']]])
+            ->and($plan['agent']['notes'])->toBe(InstanceNotes::all())
+            // The agent folder holds the notes too, so the same pins give it another version.
+            ->and($plan['agent']['version'])->not->toBe($plan['runtime']['version'])
+            ->and(InstanceFolderPlan::for(new InstanceFolders(instanceFolderPins('1.1'), instanceFolderPins()))['runtime']['version'])
+            ->not->toBe($plan['runtime']['version'])
+            ->and(InstanceFolderPlan::for(new InstanceFolders(instanceFolderPins('1.1'), instanceFolderPins()))['agent']['version'])
+            ->toBe($plan['agent']['version']);
+    });
+
+    it('installs the recipe\'s runtime and agent programs from their pinned artifacts', function (): void {
+        $plan = InstanceFolderPlan::for(app(RecipeImageBuilds::class)->currentRecipe()->instances);
+        $programs = static fn (array $folder): array => array_merge(...array_map(static fn (array $part): array => $part['bin'], $folder['parts']));
+
+        expect(array_keys($programs($plan['runtime'])))->toBe(['node', 'npm', 'npx', 'bun', 'composer', 'rg'])
+            ->and(array_keys($programs($plan['agent'])))->toBe(['t3', 'claude', 'codex'])
+            ->and(array_column($plan['runtime']['parts'], 'archive', 'name'))->toBe(['node' => 'tar', 'bun' => 'zip', 'composer' => 'file', 'ripgrep' => 'tar'])
+            ->and(array_column($plan['agent']['parts'], 'archive', 'name'))->toBe(['t3' => 'tar', 'claude-code' => 'tar', 'codex' => 'tar']);
+    });
+
+    it('links each kind of Project to its environment note', function (ProjectType $type, string $note): void {
+        expect(InstanceNotes::for($type))->toBe($note)
+            ->and(InstanceNotes::all())->toHaveKey($note);
+    })->with([
+        [ProjectType::LaravelApp, 'web-app'], [ProjectType::SymfonyApp, 'web-app'], [ProjectType::Monorepo, 'monorepo'],
+        [ProjectType::LaravelPackage, 'package'], [ProjectType::NodePackage, 'package'],
+    ]);
+
+    it('states facts only: the users, the workspace, the Instance file, no sudo and no internet', function (string $note): void {
+        expect(InstanceNotes::all()[$note])->toContain('`agent`', '`orbit`', '`/srv/workspace`', '`/etc/orbit/instance`', 'There is no sudo.', 'no direct internet');
+    })->with(['web-app', 'monorepo', 'package']);
+});
+
+describe('the bridge lock', function (): void {
+    /** @return list<array{sql: string, level: int}> */
+    function bridgeQueries(Closure $run): array
+    {
+        $queries = [];
+        DB::listen(static function (QueryExecuted $query) use (&$queries): void {
+            $queries[] = ['sql' => $query->sql, 'level' => DB::transactionLevel()];
+        });
+        $run();
+
+        return $queries;
+    }
+
+    function bridgeLockedBeforeRead(array $queries): bool
+    {
+        $lock = array_find_key($queries, static fn (array $q): bool => str_starts_with($q['sql'], 'update "nodes" set "instance_bridge" = instance_bridge'));
+        $read = array_find_key($queries, static fn (array $q, int $index): bool => $index > ($lock ?? PHP_INT_MAX)
+            && str_contains($q['sql'], 'select "id", "settings", "instance_bridge" from "nodes"'), );
+
+        return $lock !== null && $read !== null && $queries[$lock]['level'] > 0 && $queries[$read]['level'] === $queries[$lock]['level'];
+    }
+
+    it('takes the writer lock before an allocation reads the recorded bridges', function (): void {
+        $node = instanceHostNode();
+
+        expect(bridgeLockedBeforeRead(bridgeQueries(fn () => app(AllocateInstanceBridgeAction::class)->execute($node))))->toBeTrue();
+    });
+
+    it('takes the writer lock before provisioning checks and stores a task host\'s bridges, in one transaction', function (): void {
+        $node = instanceHostNode();
+        // The roots are inspected over SSH before the transaction; this fixture has no Node to reach.
+        app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
+        {
+            public function resolve(Node $node): ManagedUserAccount
+            {
+                return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
+            }
+        });
+        $settings = new NodeSettingsData(task_vms: NodeTaskVmsData::validated(['cidr' => '10.252.10.0/24', 'task_places' => 1, 'ci_places' => 0], Ipv4Subnet::from('10.44.0.0/24')));
+
+        $queries = bridgeQueries(fn () => app(UpdateNodeAction::class)->persistDuringProvisioning($node, $settings));
+        $write = array_find_key($queries, static fn (array $q): bool => str_starts_with($q['sql'], 'update "nodes" set "settings"'));
+
+        expect(bridgeLockedBeforeRead($queries))->toBeTrue()
+            ->and($write)->not->toBeNull()
+            ->and($queries[$write]['level'])->toBeGreaterThan(0)
+            ->and($node->refresh()->settings['task_vms']['cidr'])->toBe('10.252.10.0/24');
+    });
+
+});

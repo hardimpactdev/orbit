@@ -6,6 +6,8 @@ namespace App\Domain\Nodes;
 
 use App\Domain\TaskVms\TaskVmHost;
 use App\Models\Node;
+use Illuminate\Support\Facades\DB;
+use LogicException;
 
 /**
  * The bridge networks the fleet records: each task VM host's task bridges in Node `settings.task_vms`, and each Node's
@@ -42,6 +44,18 @@ final readonly class NodeBridges
         }
 
         return $bridges;
+    }
+
+    /**
+     * Takes SQLite's writer lock in the open transaction before any bridge is read, with a write that changes nothing. A bridge
+     * allocation and a task host's new bridges then never read the same recorded bridges and both write: the second waits.
+     */
+    public static function lock(Node $node): void
+    {
+        if (DB::transactionLevel() === 0) {
+            throw new LogicException('The bridge lock needs an open transaction.');
+        }
+        DB::table('nodes')->where('id', $node->id)->update(['instance_bridge' => DB::raw('instance_bridge')]);
     }
 
     /** @param  list<string>  $bridges */

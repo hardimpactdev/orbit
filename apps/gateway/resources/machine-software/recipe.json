@@ -1285,5 +1285,85 @@
             "git-man"
         ],
         "usn_since": "2026-08-11"
+    },
+    "instances": {
+        "runtime": {
+            "node": {
+                "tool": "node",
+                "bin": {
+                    "node": "node-v24.22.1-linux-x64/bin/node",
+                    "npm": "node-v24.22.1-linux-x64/bin/npm",
+                    "npx": "node-v24.22.1-linux-x64/bin/npx"
+                }
+            },
+            "bun": {
+                "tool": "bun",
+                "bin": {
+                    "bun": "bun-linux-x64/bun"
+                }
+            },
+            "composer": {
+                "version": "2.9.5",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://getcomposer.org/download/2.9.5/composer.phar",
+                        "sha256": "c86ce603fe836bf0861a38c93ac566c8f1e69ac44b2445d9b7a6a17ea2e9972a"
+                    }
+                },
+                "bin": {
+                    "composer": "composer.phar"
+                }
+            },
+            "ripgrep": {
+                "version": "15.2.0",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz",
+                        "sha256": "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c"
+                    }
+                },
+                "bin": {
+                    "rg": "ripgrep-15.2.0-x86_64-unknown-linux-musl/rg"
+                }
+            }
+        },
+        "agent": {
+            "t3": {
+                "version": "0.1.7",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://github.com/pingdotgg/t3code/releases/download/v0.1.7/t3-0.1.7-linux-x64.tar.gz",
+                        "sha256": "c089892bf7922e2e73c6f44a5d1ea125c99f70e378c18361cbbed2fba1920e6c"
+                    }
+                },
+                "bin": {
+                    "t3": "t3-0.1.7-linux-x64/t3"
+                }
+            },
+            "claude-code": {
+                "version": "2.1.311",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.311.tgz",
+                        "sha512": "764d6554cb7b9fe36562e70a33b74ba7f3dfacadf6a5aff8a0a42469c7dace54a3f2b1be8641faef09c39da146f46b366a5dce8caf0f4d51e06765861d7a1652"
+                    }
+                },
+                "bin": {
+                    "claude": "package/claude"
+                }
+            },
+            "codex": {
+                "version": "0.167.0",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.167.0-linux-x64.tgz",
+                        "sha512": "14d73b75a9df52783d4a9eb0f8587b9287cd1c766903a54cc8d296b16ad2dcec07972ebd832c1359e8aec2b50f5e9252868f037f8c6a46c1df1d13f38fbcd842"
+                    }
+                },
+                "bin": {
+                    "codex": "package/vendor/x86_64-unknown-linux-musl/bin/codex"
+                }
+            }
+        }
     }
 }

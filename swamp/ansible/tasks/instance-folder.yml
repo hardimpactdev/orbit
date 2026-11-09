@@ -1,0 +1,145 @@
+---
+# One shared folder of an Instance container host (docs/reference/development-containers.md#shared-folders), `folder_name` runtime or
+# agent. A version is a digest of the folder's whole content, so a version that exists is complete: it is built under a staging name
+# and renamed last. `current` then flips to it, and each running container restarts what runs from the folder, one after another:
+# T3 for the agent folder, its Orbit Processes for the runtime folder. A version that no process maps any more goes.
+- name: Name the folder version of {{ folder_name }}
+  ansible.builtin.set_fact:
+    folder_root: "{{ folder.path }}/{{ folder.version }}"
+    folder_stage: "{{ folder.path }}/.{{ folder.version }}.stage"
+    # The agent's programs sit one level down, in `agent/`, which only gid 2750 opens; the notes beside it stay public.
+    folder_parts: "{{ folder.path }}/.{{ folder.version }}.stage{{ '/agent' if folder_name == 'agent' else '' }}"
+
+- name: Read the folder version of {{ folder_name }}
+  ansible.builtin.stat: { path: "{{ folder_root }}", get_checksum: false, get_mime: false }
+  register: folder_present
+
+- name: Build the folder version of {{ folder_name }}
+  when: not folder_present.stat.exists
+  block:
+    - name: Create the folder and the artifact cache
+      ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0755" }
+      loop: ["{{ folder.path }}", /var/cache/orbit/instance-folders]
+    - name: Remove a staging copy a failed run left
+      ansible.builtin.file: { path: "{{ folder_stage }}", state: absent }
+    - name: Create the staging folders
+      ansible.builtin.file: { path: "{{ folder_parts }}/{{ item }}", state: directory, owner: root, group: root, mode: "0755" }
+      loop: "{{ ['bin'] + folder.parts | map(attribute='name') | list }}"
+    - name: Fetch the pinned artifacts
+      orbit_artifact:
+        urls: ["{{ item.url }}"]
+        dest: "/var/cache/orbit/instance-folders/{{ item.sha256 | default(item.sha512) }}"
+        sha256: "{{ item.sha256 | default(omit) }}"
+        sha512: "{{ item.sha512 | default(omit) }}"
+        transport_exit_codes: "{{ lookup('ansible.builtin.file', playbook_dir + '/transport-exit-codes.json') | from_json }}"
+      loop: "{{ folder.parts }}"
+      loop_control: { label: "{{ item.name }} {{ item.version }}" }
+    - name: Unpack the artifacts
+      ansible.builtin.command:
+        argv: >-
+          {{ (['tar', '-xf', cached, '-C', target, '--no-same-owner'] if item.archive == 'tar'
+              else ['unzip', '-q', cached, '-d', target] if item.archive == 'zip'
+              else ['install', '-m', '0755', cached, target ~ '/' ~ (item.url | urlsplit('path') | basename)]) }}
+      vars:
+        cached: "/var/cache/orbit/instance-folders/{{ item.sha256 | default(item.sha512) }}"
+        target: "{{ folder_parts }}/{{ item.name }}"
+      loop: "{{ folder.parts }}"
+      loop_control: { label: "{{ item.name }}" }
+      changed_when: true
+    - name: Link each program to its path in its part
+      ansible.builtin.file:
+        path: "{{ folder_parts }}/bin/{{ item.program }}"
+        src: "../{{ item.part }}/{{ item.path }}"
+        state: link
+        follow: false
+      loop: >-
+        {%- set links = [] -%}
+        {%- for part in folder.parts -%}
+          {%- for program, path in part.bin.items() -%}
+            {%- set _ = links.append({'part': part.name, 'program': program, 'path': path}) -%}
+          {%- endfor -%}
+        {%- endfor -%}
+        {{ links }}
+      loop_control: { label: "{{ item.program }}" }
+    - name: Read the linked programs
+      ansible.builtin.stat: { path: "{{ folder_parts }}/bin/{{ item }}", follow: true, get_checksum: false, get_mime: false }
+      loop: "{{ folder.parts | map(attribute='bin') | map('list') | flatten }}"
+      register: folder_programs
+    - name: Require that every program is an executable file
+      ansible.builtin.assert:
+        that: item.stat.exists and item.stat.isreg and item.stat.executable
+        fail_msg: "instance.host_unavailable: {{ item.item }} is not an executable file in the {{ folder_name }} folder"
+        quiet: true
+      loop: "{{ folder_programs.results }}"
+      loop_control: { label: "{{ item.item }}" }
+    - name: Write the environment notes
+      when: folder_name == 'agent'
+      block:
+        - name: Create the notes folder
+          ansible.builtin.file: { path: "{{ folder_stage }}/notes", state: directory, owner: root, group: root, mode: "0755" }
+        - name: Write each note
+          ansible.builtin.copy:
+            dest: "{{ folder_stage }}/notes/{{ item.key }}.md"
+            content: "{{ item.value }}"
+            owner: root
+            group: root
+            mode: "0644"
+          loop: "{{ folder.notes | dict2items }}"
+          loop_control: { label: "{{ item.key }}" }
+    # Everyone reads the runtime folder. Only root and gid 2750, the `agent` of every container, open the agent's programs: no Node
+    # account holds that gid, and an idmapped mount keeps it 2750 in every container.
+    - name: Set the folder owners and modes
+      ansible.builtin.command:
+        argv: "{{ item }}"
+      loop: >-
+        {{ [['chown', '-R', 'root:root', folder_stage], ['chmod', '-R', 'u+rwX,go+rX,go-w', folder_stage]]
+           + ([['chown', '-R', 'root:' ~ instance_agent_gid, folder_parts], ['chmod', '-R', 'o-rwx', folder_parts]] if folder_name == 'agent' else []) }}
+      vars: { instance_agent_gid: 2750 }
+      changed_when: true
+    - name: Make the version whole
+      ansible.builtin.command: { argv: [mv, "{{ folder_stage }}", "{{ folder_root }}"] }
+      changed_when: true
+
+- name: Read the folder in use of {{ folder_name }}
+  ansible.builtin.stat: { path: "{{ folder.path }}/current", get_checksum: false, get_mime: false }
+  register: folder_current
+
+- name: Flip the folder to the version of {{ folder_name }}
+  ansible.builtin.file: { path: "{{ folder.path }}/current", src: "{{ folder.version }}", state: link, force: true, owner: root, group: root }
+  register: folder_flip
+
+- name: Restart what runs from the folder in each running container of {{ folder_name }}
+  when: folder_flip is changed and folder_current.stat.exists
+  block:
+    - name: Read the running containers
+      ansible.builtin.command: { argv: [incus, list, --project, "{{ instances.project }}", --format, json, status=running] }
+      register: folder_running
+      changed_when: false
+    - name: Restart them one after another
+      ansible.builtin.command:
+        argv: >-
+          {{ ['incus', 'exec', '--project', instances.project, item, '--', 'systemctl', 'try-restart']
+             + (['t3.service'] if folder_name == 'agent' else ['orbit-*.service']) }}
+      loop: "{{ folder_running.stdout | from_json | map(attribute='name') | list }}"
+      changed_when: true
+
+# A process maps the files it runs, by their path inside its container, which is the path on the Node: a version that no process
+# names in its maps is unused.
+- name: Read the folder versions in use of {{ folder_name }}
+  ansible.builtin.shell:
+    cmd: set -o pipefail; cat /proc/[0-9]*/maps 2>/dev/null | grep -o "{{ folder.path }}/[0-9a-f]\{12\}/" | sort -u || true
+    executable: /bin/bash
+  register: folder_used
+  changed_when: false
+
+- name: Find the folder versions of {{ folder_name }}
+  ansible.builtin.find: { paths: "{{ folder.path }}", file_type: directory, patterns: "^[0-9a-f]{12}$", use_regex: true }
+  register: folder_versions
+
+- name: Remove the unused folder versions of {{ folder_name }}
+  ansible.builtin.file: { path: "{{ item.path }}", state: absent }
+  loop: "{{ folder_versions.files }}"
+  loop_control: { label: "{{ item.path | basename }}" }
+  when:
+    - item.path | basename != folder.version
+    - (item.path ~ '/') not in folder_used.stdout_lines

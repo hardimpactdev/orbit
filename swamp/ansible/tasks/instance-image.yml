@@ -1,0 +1,141 @@
+---
+# The Instance image (docs/reference/development-containers.md#inside-a-container). Its alias is a digest of the whole definition the
+# Gateway sends, so a host builds each definition once. A build container from the stock image installs the OS packages, sets up the
+# users, the workspace and the firewall, and is published under the alias; the stable alias `orbit-instance` then names it, and the
+# images it replaced go. Only the build container reaches the internet: it takes the bridge's last address, which no Instance gets,
+# through its own ACL and a route rule that the build removes again.
+- name: Read the Instance images
+  ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", image, list, --format, json] }
+  register: image_list
+  changed_when: false
+
+- name: Build the image
+  when: instances.image.alias not in (image_list.stdout | from_json | map(attribute='aliases') | flatten | map(attribute='name') | list)
+  vars:
+    build: orbit-instance-build
+    build_acl: "{{ instances.network }}-build"
+    in_build: [incus, exec, --project, "{{ instances.project }}", orbit-instance-build, --env, DEBIAN_FRONTEND=noninteractive, --]
+    build_acl_rules:
+      description: Orbit Instance image build
+      egress:
+        - { action: drop, destination: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,100.64.0.0/10,224.0.0.0/4,240.0.0.0/4", state: enabled }
+        - { action: allow, state: enabled }
+      ingress: []
+  block:
+    - name: Read the build ACL
+      ansible.builtin.command: { argv: [incus, query, "--", "/1.0/network-acls?project=default&recursion=1"] }
+      register: image_acls
+      changed_when: false
+    - name: Create the build ACL
+      when: build_acl not in (image_acls.stdout | from_json | map(attribute='name') | list)
+      ansible.builtin.command: { argv: [incus, network, acl, create, "{{ build_acl }}", --project, default] }
+      changed_when: true
+    - name: Converge the build ACL
+      ansible.builtin.command:
+        argv: [incus, network, acl, edit, "{{ build_acl }}", --project, default]
+        stdin: "{{ build_acl_rules | to_json }}"
+      changed_when: true
+    - name: Let the build container out through the Node
+      community.general.ufw:
+        rule: allow
+        route: true
+        interface_in: "{{ instances.network }}"
+        from_ip: "{{ instances.build_address }}"
+        comment: orbit:instances-build
+    - name: Remove a build container a failed run left
+      ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", delete, --force, "--", "{{ build }}"] }
+      register: image_leftover
+      changed_when: false
+      failed_when: image_leftover.rc != 0 and 'not found' not in image_leftover.stderr
+    - name: Create and start the build container
+      ansible.builtin.command: { argv: "{{ ['incus', '--project', instances.project] + item }}" }
+      loop:
+        - [init, "{{ instances.stock }}", "{{ build }}", --device, "eth0,ipv4.address={{ instances.build_address }}",
+           --device, "eth0,security.acls={{ build_acl }}"]
+        - [start, "{{ build }}"]
+      changed_when: true
+    # The stock image starts its network a moment after the container.
+    - name: Read the package index
+      ansible.builtin.command: { argv: "{{ in_build + ['apt-get', 'update'] }}" }
+      register: image_index
+      until: image_index.rc == 0
+      retries: 30
+      delay: 2
+      changed_when: true
+    - name: Install the OS packages
+      ansible.builtin.command: { argv: "{{ in_build + ['apt-get', 'install', '--yes', '--no-install-recommends', '--'] + instances.image.packages }}" }
+      changed_when: true
+    - name: Set up the users, the workspace and no sudo
+      ansible.builtin.command: { argv: "{{ in_build + ['sh', '-c', instances.image.prepare] }}" }
+      changed_when: true
+    - name: Write the image files
+      ansible.builtin.command:
+        argv: [incus, file, push, --project, "{{ instances.project }}", --create-dirs, --uid, "{{ item.uid }}", --gid, "{{ item.gid }}",
+               --mode, "{{ item.mode }}", "-", "{{ build }}{{ item.path }}"]
+        stdin: "{{ item.content }}"
+        stdin_add_newline: false
+      loop: "{{ instances.image.files }}"
+      loop_control: { label: "{{ item.path }}" }
+      changed_when: true
+    - name: Enable the units and clean up
+      ansible.builtin.command: { argv: "{{ in_build + item }}" }
+      loop: "{{ instances.image.finish }}"
+      changed_when: true
+    - name: Stop and publish the build container
+      ansible.builtin.command: { argv: "{{ ['incus', '--project', instances.project] + item }}" }
+      loop:
+        - [stop, "{{ build }}"]
+        - [publish, "{{ build }}", --alias, "{{ instances.image.alias }}"]
+      changed_when: true
+  always:
+    - name: Remove the build container
+      ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", delete, --force, "--", "{{ build }}"] }
+      register: image_removed
+      changed_when: false
+      failed_when: image_removed.rc != 0 and 'not found' not in image_removed.stderr
+    - name: Close the build container's way out
+      community.general.ufw:
+        rule: allow
+        route: true
+        interface_in: "{{ instances.network }}"
+        from_ip: "{{ instances.build_address }}"
+        comment: orbit:instances-build
+        delete: true
+
+- name: Read the Instance images after the build
+  ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", image, list, --format, json] }
+  register: image_built
+  changed_when: false
+
+- name: Select the image, the image of the stable alias, and the images the new one replaced
+  ansible.builtin.set_fact:
+    image_current: "{{ image_of[instances.image.alias] }}"
+    image_stable: "{{ image_of['orbit-instance'] | default('') }}"
+    # An image whose every alias is an older digest alias or the stable alias, which moves to the new image first.
+    # A container keeps what it was made from; only the image record goes.
+    image_retired: >-
+      {%- set out = [] -%}
+      {%- for image in image_built.stdout | from_json if image.aliases and image_of[instances.image.alias] != image.fingerprint -%}
+        {%- if image.aliases | map(attribute='name') | reject('match', '^orbit-instance(-[0-9a-f]{12})?$') | list | length == 0 -%}
+          {%- set _ = out.append(image.fingerprint) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+  vars:
+    image_of: >-
+      {%- set out = {} -%}
+      {%- for image in image_built.stdout | from_json -%}
+        {%- for alias in image.aliases -%}{%- set _ = out.update({alias.name: image.fingerprint}) -%}{%- endfor -%}
+      {%- endfor -%}
+      {{ out }}
+
+- name: Point the stable alias at the image
+  when: image_stable != image_current
+  ansible.builtin.command: { argv: "{{ ['incus', '--project', instances.project, 'image', 'alias'] + item }}" }
+  loop: "{{ ([['delete', 'orbit-instance']] if image_stable != '' else []) + [['create', 'orbit-instance', image_current]] }}"
+  changed_when: true
+
+- name: Remove the images the new one replaced
+  ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", image, delete, "{{ item }}"] }
+  loop: "{{ image_retired }}"
+  changed_when: true
