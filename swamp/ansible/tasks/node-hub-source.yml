@@ -96,7 +96,6 @@
     - name: Remove the earlier source files
       ansible.builtin.file: { path: "{{ item }}", state: absent }
       loop: ["{{ hub_source_owner.unit_path }}", "{{ hub_source_owner.script_path }}", "{{ hub_source_owner.networkd_path }}"]
-      register: hub_source_removed
     - name: Remove the earlier source rules and table
       ansible.builtin.shell:
         executable: /bin/bash
@@ -110,5 +109,5 @@
       register: hub_source_cleared
       changed_when: hub_source_cleared.stdout is search('changed')
     - name: Reload units after removing the source unit
-      when: hub_source_removed is changed
+      when: hub_source_installed.stat.exists
       ansible.builtin.systemd: { daemon_reload: true }
