@@ -25,6 +25,10 @@ use App\Support\ValidatedData;
  * The slots of the task VM hosts (docs/cli/task/start.mmd). A slot is one place in the request's pool; a task start
  * takes the lowest free slot number and mints a fresh identity for the VM it makes, `<host>-tvm-<n>`, and its release removes both
  * (docs/cli/task/cancel.mmd). Every task VM copies the host's base VM, so each has the size of a large one.
+ *
+ * A host with a `containers` side has container places beside its VM places. Normal placement takes them only while
+ * `task_vms.container_placement` is on, and only on a host with a container base; the row records the runtime of its
+ * place (docs/reference/task-containers.md#placement-before-the-switch).
  */
 final readonly class TaskVmSlotPool
 {
@@ -47,8 +51,9 @@ final readonly class TaskVmSlotPool
             throw new TaskCapacityException(TaskWait::Capacity, "Task VM: the task VM base carries only the checkout of Project {$this->proof->projectId()}.");
         }
         $size = TaskVmSize::Large;
-        $room = $this->room($group !== null, $host, $proof || $group === null);
-        $node = Node::query()->findOrFail(array_key_first($room));
+        // A refresh proves the VM base it just took, so it takes a VM place.
+        [$hostId, $runtime] = $this->room($group !== null, $host, $proof || $group === null, $group === null ? [TaskVmRuntime::Vm] : $this->runtimes())[0];
+        $node = Node::query()->findOrFail($hostId);
         $used = TaskVm::query()->live()->where('host_node_id', $node->id)->whereNotNull('slot_number')->get(['slot_number'])
             ->map(static fn (TaskVm $vm): ?int => $vm->slot_number)->all();
         $number = 1;
@@ -57,7 +62,7 @@ final readonly class TaskVmSlotPool
         }
         $vm = TaskVm::query()->create([
             'host_node_id' => $node->id, 'slot_number' => $number, 'slot_project_id' => $this->proof->projectId(),
-            'provider' => TaskVmProviderKind::Incus, 'capacity_pool' => $proof || $group === null ? 'ci' : 'task', 'size' => $size, 'name' => $node->name.'-tvm-'.$number, 'state' => TaskVmState::Provisioning,
+            'provider' => TaskVmProviderKind::Incus, 'runtime' => $runtime, 'capacity_pool' => $proof || $group === null ? 'ci' : 'task', 'size' => $size, 'name' => $node->name.'-tvm-'.$number, 'state' => TaskVmState::Provisioning,
             'group_id' => $group?->id, 'claimed_at' => now(),
             'wireguard_ip' => $this->addresses->nextIn($this->settings->wireguardRange,
                 array_values(TaskVm::query()->live()->get()->map(static fn (TaskVm $vm): string => $vm->wireguard_ip)->all())),
@@ -70,21 +75,43 @@ final readonly class TaskVmSlotPool
     /** Free CI places under the same image and seed policy as take(). Call in the admission transaction. */
     public function freeCiPlaces(): int
     {
-        return array_sum($this->room(true, null, true));
+        return array_sum(array_column($this->room(true, null, true, $this->runtimes()), 2));
     }
 
-    /** @return array<int,int> usable host id => free places */
-    private function room(bool $needsImage, ?int $host, bool $ci): array
+    /**
+     * The runtimes whose places normal placement takes: task VMs, and task containers after the switch.
+     *
+     * @return list<TaskVmRuntime>
+     */
+    private function runtimes(): array
     {
-        // A group needs a host with a base snapshot; a refresh proves the snapshot it just took, before the Gateway records it.
-        $hosts = array_values(array_filter($this->capacity->activeHosts(), fn (array $pair): bool => ($host === null || $pair[1]->id === $host)
-            && (! $needsImage || $this->currentImage($pair[1], $pair[0]) !== null)));
-        $free = $this->capacity->freeSlots($hosts, $ci);
-        arsort($free);
-        $room = array_filter($free, static fn (int $places): bool => $places > 0);
-        // A proof takes only a host whose base includes every change of what the base carries up to its merge base.
-        $skipped = ! $needsImage ? [] : array_filter($room, static fn (int $slots, int $id): bool => ! app(TaskVmSeedFloor::class)->allows($id), ARRAY_FILTER_USE_BOTH);
-        $room = array_diff_key($room, $skipped);
+        return $this->settings->containerPlacement ? [TaskVmRuntime::Vm, TaskVmRuntime::Container] : [TaskVmRuntime::Vm];
+    }
+
+    /**
+     * The places with room, most free first; equal room keeps the host order, then the runtime order.
+     *
+     * @param  list<TaskVmRuntime>  $runtimes
+     * @return non-empty-list<array{int, TaskVmRuntime, int}> host id, runtime, free places
+     */
+    private function room(bool $needsImage, ?int $host, bool $ci, array $runtimes): array
+    {
+        $room = [];
+        $skipped = [];
+        foreach ($runtimes as $runtime) {
+            // A group needs a host with a base snapshot of the runtime; a refresh proves the snapshot it just took, before the Gateway records it.
+            $hosts = array_values(array_filter($this->capacity->activeHosts(), fn (array $pair): bool => ($host === null || $pair[1]->id === $host)
+                && (! $needsImage || $this->hasBase($pair[1], $pair[0], $runtime))));
+            foreach ($this->capacity->freeSlots($hosts, $ci, $runtime) as $id => $places) {
+                // A proof takes only a host whose base includes every change of what the base carries up to its merge base.
+                if ($places > 0 && $needsImage && ! app(TaskVmSeedFloor::class)->allows($id)) {
+                    $skipped[$id] = $places;
+                } elseif ($places > 0) {
+                    $room[] = [$id, $runtime, $places];
+                }
+            }
+        }
+        usort($room, static fn (array $a, array $b): int => $b[2] <=> $a[2]);
         if ($room === []) {
             $names = Node::query()->whereKey(array_keys($skipped))->get()->mapWithKeys(static fn (Node $node): array => [$node->id => $node->name])->all();
             throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: waiting for a free '.($ci ? 'CI' : 'task').' place.'
@@ -92,6 +119,12 @@ final readonly class TaskVmSlotPool
         }
 
         return $room;
+    }
+
+    /** The host has a recorded base of `$runtime` that a start can copy. */
+    private function hasBase(Node $host, TaskVmHost $location, TaskVmRuntime $runtime): bool
+    {
+        return $runtime === TaskVmRuntime::Vm ? $this->currentImage($host, $location) !== null : $this->images->recorded($host, $location, $runtime) !== null;
     }
 
     /** @param array<int,string> $skipped host Node id => name */

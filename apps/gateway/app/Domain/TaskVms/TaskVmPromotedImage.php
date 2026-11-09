@@ -27,15 +27,16 @@ final readonly class TaskVmPromotedImage
     }
 
     /**
-     * The host's recorded base snapshot and the recipe identity it converged to, or null before the host's first refresh.
+     * The host's recorded base snapshot of `$runtime` and the recipe identity it converged to, or null before the
+     * host's first refresh of that runtime. A host keeps one base per runtime.
      *
      * @return array{recipe_identity:string,snapshot:string}|null
      */
-    public function recorded(Node $host, TaskVmHost $location): ?array
+    public function recorded(Node $host, TaskVmHost $location, TaskVmRuntime $runtime = TaskVmRuntime::Vm): ?array
     {
-        $build = $this->latest($host);
+        $build = $this->latest($host, $runtime);
         $base = $build?->images['base'] ?? null;
-        if (! $build instanceof TaskVmImageBuild || ! is_array($base) || ($base['project'] ?? null) !== $location->project
+        if (! $build instanceof TaskVmImageBuild || ! is_array($base) || ($base['project'] ?? null) !== $location->projectOf($runtime)
             || ($base['type'] ?? null) !== 'snapshot' || ! is_string($base['snapshot'] ?? null) || $base['snapshot'] === '') {
             return null;
         }
@@ -72,10 +73,10 @@ final readonly class TaskVmPromotedImage
         TaskVmImageBuild::query()->where('host_node_id', $host->id)->whereNotNull('promoted_at')->update(['promoted_at' => null]);
     }
 
-    /** The host's latest promoted refresh. A promoted image of the retired build is skipped, so it never replaces the base snapshot. */
-    public function latest(Node $host): ?TaskVmImageBuild
+    /** The host's latest promoted refresh of `$runtime`. A promoted image of the retired build is skipped, so it never replaces the base snapshot. */
+    public function latest(Node $host, TaskVmRuntime $runtime = TaskVmRuntime::Vm): ?TaskVmImageBuild
     {
-        return TaskVmImageBuild::query()->where('host_node_id', $host->id)->where('state', TaskVmImageBuildState::Succeeded)
+        return TaskVmImageBuild::query()->where('host_node_id', $host->id)->where('runtime', $runtime)->where('state', TaskVmImageBuildState::Succeeded)
             ->where('images->base->type', 'snapshot')->whereNotNull('promoted_at')->orderByDesc('promoted_at')->latest('id')->first();
     }
 }

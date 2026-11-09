@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
+use App\Domain\TaskVms\TaskVmRuntime;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -16,6 +17,7 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property int $host_node_id
+ * @property TaskVmRuntime $runtime the runtime whose base the refresh builds
  * @property string|null $recipe_identity
  * @property string|null $recipe_json
  * @property int|null $recipe_generation
@@ -43,13 +45,13 @@ final class TaskVmImageBuild extends Model
     #[\Override]
     protected $fillable = [
         'recipe_identity', 'recipe_json', 'recipe_generation', 'images', 'promoted_at',
-        'host_node_id', 'source_alias', 'source_fingerprint', 'from_stock', 'image_fingerprint',
+        'host_node_id', 'runtime', 'source_alias', 'source_fingerprint', 'from_stock', 'image_fingerprint',
         'current_step', 'current_program', 'state', 'steps', 'submission_pending_at', 'attempt',
     ];
 
     /** @var array<string, string> */
     #[\Override]
-    protected $attributes = ['state' => 'running', 'from_stock' => '0', 'steps' => '[]', 'attempt' => '1'];
+    protected $attributes = ['runtime' => 'vm', 'state' => 'running', 'from_stock' => '0', 'steps' => '[]', 'attempt' => '1'];
 
     /** @return array<string, string> */
     #[\Override]
@@ -57,6 +59,7 @@ final class TaskVmImageBuild extends Model
     {
         return [
             'state' => TaskVmImageBuildState::class,
+            'runtime' => TaskVmRuntime::class,
             'attempt' => 'integer',
             'recipe_generation' => 'integer',
             'images' => 'array',
