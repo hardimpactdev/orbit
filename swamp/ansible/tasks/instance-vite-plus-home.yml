@@ -1,0 +1,88 @@
+---
+# The Vite+ home of the runtime folder (docs/reference/compute-drivers.md#shared-instance-folders), `vite_plus` from the folder's
+# intent. `vp` runs only from a home that holds its locked `vite-plus` package and its Node, and a container has no internet to
+# fetch them. The host builds the home at its final path, because it holds absolute paths, the same way a Node builds its Vite+
+# store: the release's `vp`, the recipe lock installed with the folder's own npm, and the recipe's Node. `.complete` comes last,
+# so a home without it is a failed run's, and goes.
+- name: Read the Vite+ home
+  ansible.builtin.stat: { path: "{{ vite_plus.home }}/.complete", get_checksum: false, get_mime: false }
+  register: vite_plus_ready
+
+- name: Build the Vite+ home
+  when: not vite_plus_ready.stat.exists
+  vars:
+    vite_plus_env:
+      VP_HOME: "{{ vite_plus.home }}"
+      VP_NO_UPDATE_CHECK: "1"
+      PATH: "{{ vite_plus.home }}/bin:{{ folder_parts }}/bin:/usr/bin:/bin"
+  block:
+    - name: Remove a Vite+ home a failed run left
+      ansible.builtin.file: { path: "{{ vite_plus.home }}", state: absent }
+    - name: Create the Vite+ home folders and the npm cache
+      ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0755" }
+      loop:
+        - "{{ vite_plus.home }}/bin"
+        - "{{ vite_plus.home }}/node_modules"
+        - "{{ vite_plus.home }}/recipe/runtime"
+        - /var/cache/orbit/instance-folders/npm
+    - name: Copy vp into the home
+      ansible.builtin.copy:
+        src: "{{ folder_parts }}/{{ vite_plus.part }}/{{ vite_plus.binary }}"
+        dest: "{{ vite_plus.home }}/bin/vp"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+    - name: Mark the Vite+ launcher set up
+      ansible.builtin.copy: { dest: "{{ vite_plus.home }}/bin/.vp-setup-complete", content: "", owner: root, group: root, mode: "0644" }
+    - name: Write the Vite+ manifest and lock
+      ansible.builtin.copy:
+        dest: "{{ vite_plus.home }}/recipe/runtime/{{ item.name }}"
+        content: "{{ item.content }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - name: package.json
+          content: >-
+            {{ {'name': (vite_plus.lock | from_json).name, 'version': (vite_plus.lock | from_json).version, 'private': true,
+                'dependencies': {'vite-plus': vite_plus.version}} | to_json }}
+        - { name: package-lock.json, content: "{{ vite_plus.lock }}" }
+      loop_control: { label: "{{ item.name }}" }
+    - name: Install the locked Vite+ package
+      ansible.builtin.command:
+        argv: ["{{ folder_parts }}/bin/npm", ci, --ignore-scripts, --no-audit, --no-fund, --prefix, "{{ vite_plus.home }}/recipe/runtime"]
+      environment:
+        PATH: "{{ folder_parts }}/bin:/usr/bin:/bin"
+        npm_config_cache: /var/cache/orbit/instance-folders/npm
+      changed_when: true
+    - name: Link the Vite+ package and the Node shims
+      ansible.builtin.file: { src: "{{ item.src }}", dest: "{{ vite_plus.home }}/{{ item.dest }}", state: link, force: true }
+      loop:
+        - { src: "{{ vite_plus.home }}/recipe/runtime/node_modules/vite-plus", dest: node_modules/vite-plus }
+        - { src: vp, dest: bin/node }
+        - { src: vp, dest: bin/npm }
+        - { src: vp, dest: bin/npx }
+      loop_control: { label: "{{ item.dest }}" }
+    # `vp env default` only records the version; `vp env install` fetches that Node into the home, which containers cannot do.
+    - name: Make the recipe's Node the home's Node
+      ansible.builtin.command: { argv: [vp, env, "{{ item }}", "{{ vite_plus.node }}"], chdir: "{{ vite_plus.home }}" }
+      environment: "{{ vite_plus_env }}"
+      loop: [default, install]
+      changed_when: true
+    - name: Read the home's Node
+      ansible.builtin.command: { argv: [vp, env, exec, node, --version], chdir: "{{ vite_plus.home }}" }
+      environment: "{{ vite_plus_env }}"
+      register: vite_plus_node
+      changed_when: false
+    - name: Require the recipe's Node in the home
+      ansible.builtin.assert:
+        that: vite_plus_node.stdout | trim == 'v' ~ vite_plus.node
+        fail_msg: "instance.host_unavailable: the Vite+ home runs Node {{ vite_plus_node.stdout | trim }}, not {{ vite_plus.node }}"
+        quiet: true
+    # Everyone reads and runs it; nobody but root writes it.
+    - name: Set the Vite+ home modes
+      ansible.builtin.command: { argv: [chmod, -R, "u+rwX,go+rX,go-w", "{{ vite_plus.home }}"] }
+      changed_when: true
+    - name: Mark the Vite+ home complete
+      ansible.builtin.copy: { dest: "{{ vite_plus.home }}/.complete", content: "", owner: root, group: root, mode: "0644" }

@@ -1,0 +1,39 @@
+# The static PHP build of the Instance runtime folder (docs/reference/compute-drivers.md#static-php-build).
+# bin/static-php-build fills the @...@ values from the recipe's instances.php section and runs `spc craft` on the result.
+# Its digest is part of the build id, so any change here needs a new build and a new pin.
+php-version: "@PHP_VERSION@"
+
+# The recipe's extensions of this PHP version, without the ones a fully static binary cannot load.
+extensions: "@EXTENSIONS@"
+
+# Libraries no listed extension requires, named so that no suggestion adds an extension: gd's image formats,
+# curl's HTTP/2 and HTTP/3, and brotli and watcher for FrankenPHP.
+packages: "brotli,watcher,freetype,libjpeg,libwebp,libavif,nghttp2,nghttp3,ngtcp2,zstd"
+
+# One build gives both binaries the same PHP, extensions and options.
+sapi: "cli,frankenphp"
+
+clean-build: true
+
+build-options:
+  enable-zts: true
+  with-suggests: false
+  with-config-file-path: "/etc/orbit/php"
+  with-config-file-scan-dir: "/etc/orbit/php/conf.d"
+  no-strip: false
+  with-upx-pack: false
+  with-frankenphp-app: ""
+
+download-options:
+  parallel: 10
+  retry: 5
+  custom-url: ["php-src:https://www.php.net/distributions/php-@PHP_VERSION@.tar.xz"]
+  custom-local: ["frankenphp:@FRANKENPHP_SOURCE@"]
+
+extra-env:
+  SPC_CMD_VAR_FRANKENPHP_XCADDY_MODULES: "--with github.com/dunglas/caddy-cbrotli"
+  OPENSSLDIR: "/etc/ssl"
+
+craft-options:
+  doctor: true
+  download: true

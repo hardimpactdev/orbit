@@ -13,6 +13,7 @@ additionalFiles:
   - ansible/tasks/proof-gateway-release.yml
   - proof/cli-release.json
   - ansible/library/orbit_artifact.py
+  - ansible/library/orbit_static_php.py
   - ansible/tasks/artifact-fetch.yml
   - ansible/transport-exit-codes.json
   - ansible/operation-node-role-add.yml
@@ -88,6 +89,7 @@ additionalFiles:
   - ansible/tasks/task-vm-host-prepare.yml
   - ansible/tasks/task-container-host-system.yml
   - ansible/tasks/instance-folder.yml
+  - ansible/tasks/instance-vite-plus-home.yml
   - ansible/tasks/instance-host.yml
   - ansible/tasks/instance-image.yml
   - ansible/tasks/task-container-host-prepare.yml

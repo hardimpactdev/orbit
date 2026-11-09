@@ -18,6 +18,12 @@ final readonly class InstanceImage
     public const array Packages = ['acl', 'git', 'nftables'];
 
     /**
+     * The environment of every program from the runtime folder: Vite+ runs from the folder's prepared home (InstanceFolderPlan) and
+     * never updates its pinned, read-only copy.
+     */
+    public const array RuntimeEnvironment = ['VP_HOME' => InstanceHostIntent::RuntimeFolder.'/current/vite-plus-home', 'VP_NO_UPDATE_CHECK' => '1'];
+
+    /**
      * @return array{alias: string, packages: list<string>, prepare: string,
      *     files: list<array{path: string, content: string, uid: int, gid: int, mode: string}>, finish: list<list<string>>}
      */
@@ -34,6 +40,10 @@ final readonly class InstanceImage
                 ['path' => '/etc/sysctl.d/90-orbit-no-userns.conf', 'content' => "# Managed by Orbit.\nuser.max_user_namespaces = 0\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
                 ['path' => '/home/orbit/.gitconfig', 'content' => "[safe]\n\tdirectory = ".InstanceHostIntent::Workspace."\n",
                     'uid' => InstanceHostIntent::OrbitUid, 'gid' => InstanceHostIntent::OrbitUid, 'mode' => '0640'],
+                // The runtime environment for units (T3, its agents and every Orbit Process) and login shells; the Instance profile
+                // gives it to `incus exec` sessions.
+                ['path' => '/etc/systemd/system.conf.d/90-orbit-runtime.conf', 'content' => "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=".self::assignments()."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                ['path' => '/etc/profile.d/90-orbit-runtime.sh', 'content' => "# Managed by Orbit.\nexport ".self::assignments()."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
                 // Codex reads its update check only from its own configuration; the create flow adds the model provider.
                 ['path' => '/home/agent/.codex/config.toml', 'content' => "check_for_update_on_startup = false\n",
                     'uid' => InstanceHostIntent::AgentUid, 'gid' => InstanceHostIntent::AgentUid, 'mode' => '0600'],
@@ -46,6 +56,12 @@ final readonly class InstanceImage
         ];
 
         return ['alias' => self::StableAlias.'-'.substr(hash('sha256', json_encode($image, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)), 0, 12), ...$image];
+    }
+
+    private static function assignments(): string
+    {
+        return implode(' ', array_map(static fn (string $name, string $value): string => "{$name}={$value}",
+            array_keys(self::RuntimeEnvironment), self::RuntimeEnvironment));
     }
 
     private static function prepare(): string

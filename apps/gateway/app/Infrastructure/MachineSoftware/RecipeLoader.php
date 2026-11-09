@@ -190,7 +190,7 @@ final readonly class RecipeLoader
             $this->require(in_array((string) $version, $usedPhp, true), "php.versions.{$version}: no profile names php:{$version}.");
         }
         $this->require(array_diff(array_keys($tools), $used) === [], 'tools: unused tool entries.');
-        $instances = $this->instanceFolders($root->instances, $tools, $architectures);
+        $instances = $this->instanceFolders($root->instances, $tools, $architectures, $phpSets['versions']);
         // Locations of internal bytes and the Orbit agent are deliberately not software identity: a task image holds no agent.
         // Nor does it hold the shared Instance folders, so a new T3 or Claude Code rebuilds no image.
         $identityData = $root;
@@ -206,6 +206,43 @@ final readonly class RecipeLoader
 
         return new MachineRecipe('sha256:'.hash('sha256', $canonical), $snapshot, $architectures, $tools, $profiles, $canonical, $json, $php, $phpSets['ci'],
             new PhpPolicy($phpSets['rollback'], $phpSets['pcov'], $phpSets['opentelemetry']), $mirror, $gitPackages, $agent, $instances);
+    }
+
+    /**
+     * The static PHP builds of the runtime folder (docs/reference/compute-drivers.md#static-php-build). Each build takes its PHP version's extensions, less the ones that
+     * `without` names. `bin/static-php-build verify-pins` alone checks that `build` and `url` name the current definition;
+     * this reads their shape. A null `sha256` is a build that main has not published yet.
+     *
+     * @param  array<string, array{packages: list<string>, extensions: list<string>}>  $php
+     * @return array<string, StaticPhpBuild>
+     */
+    private function staticPhpBuilds(mixed $value, array $php): array
+    {
+        $raw = $this->object($value, 'instances.php', ['static_php_cli', 'frankenphp', 'without', 'versions']);
+        $this->require(preg_match('/\A[0-9a-f]{40}\z/', $this->text($raw->static_php_cli, 'instances.php.static_php_cli')) === 1, 'instances.php.static_php_cli: expected a full static-php-cli commit SHA.');
+        $frankenphp = $this->text($raw->frankenphp, 'instances.php.frankenphp');
+        $this->require(preg_match('/\A[0-9]+\.[0-9]+\.[0-9]+\z/', $frankenphp) === 1, 'instances.php.frankenphp: expected an exact FrankenPHP release, such as 1.13.5.');
+        $without = $this->strings($raw->without, 'instances.php.without');
+        $builds = [];
+        foreach (get_object_vars($this->object($raw->versions, 'instances.php.versions')) as $version => $rawBuild) {
+            $field = "instances.php.versions.{$version}";
+            $this->require(isset($php[$version]), "{$field}: expected a PHP version of the recipe.");
+            $pin = $this->object($rawBuild, $field, ['php_version', 'build', 'url', 'sha256']);
+            $phpVersion = $this->text($pin->php_version, "{$field}.php_version");
+            $this->require(preg_match('/\A'.preg_quote((string) $version, '/').'\.[0-9]+\z/', $phpVersion) === 1, "{$field}.php_version: expected a PHP {$version} release, such as {$version}.12.");
+            $build = $this->text($pin->build, "{$field}.build");
+            $this->require(preg_match('/\A[0-9a-f]{64}\z/', $build) === 1, "{$field}.build: expected the build id that bin/static-php-build definition prints.");
+            $url = $this->text($pin->url, "{$field}.url");
+            $this->require(str_starts_with($url, 'https://'), "{$field}.url: expected an HTTPS release URL.");
+            $this->require($pin->sha256 === null || (is_string($pin->sha256) && preg_match('/\A[0-9a-f]{64}\z/', $pin->sha256) === 1), "{$field}.sha256: expected the published SHA-256, or null before publication.");
+            $extensions = $php[$version]['extensions'];
+            $this->require(array_diff($without, $extensions) === [], 'instances.php.without: ['.implode(', ', array_diff($without, $extensions))."] are not PHP {$version} extensions.");
+            $builds[(string) $version] = new StaticPhpBuild((string) $version, $phpVersion, $frankenphp, array_values(array_diff($extensions, $without)), $build, $url,
+                $pin->sha256 === null ? null : new ArtifactPin($url, 'sha256', $pin->sha256, $phpVersion));
+        }
+        $this->require($builds !== [], 'instances.php.versions: expected at least one PHP version.');
+
+        return $builds;
     }
 
     /**
@@ -295,11 +332,13 @@ final readonly class RecipeLoader
      *
      * @param  array<string, ToolPin>  $tools
      * @param  list<string>  $architectures
+     * @param  array<string, array{packages: list<string>, extensions: list<string>}>  $php
      */
-    private function instanceFolders(mixed $value, array $tools, array $architectures): InstanceFolders
+    private function instanceFolders(mixed $value, array $tools, array $architectures, array $php): InstanceFolders
     {
-        $raw = $this->object($value, 'instances', ['runtime', 'agent']);
+        $raw = $this->object($value, 'instances', ['runtime', 'agent', 'php']);
         $folders = [];
+        $vitePlus = null;
         foreach (['runtime', 'agent'] as $folder) {
             $parts = [];
             $programs = [];
@@ -326,6 +365,10 @@ final readonly class RecipeLoader
                         continue;
                     }
                     $parts[$name] = new FolderPin($tool->version, $tool->artifacts[$architectures[0]], $bin);
+                    if ($part->tool === 'vp-cli') {
+                        $this->require($folder === 'runtime' && array_keys($bin) === ['vp'] && $vitePlus === null, "{$field}: expected the runtime folder's one Vite+ part, with the one program vp.");
+                        $vitePlus = new VitePlusHome((string) $name, $bin['vp'], $tools['vp'], $tools['node']->version);
+                    }
 
                     continue;
                 }
@@ -337,10 +380,12 @@ final readonly class RecipeLoader
                 $parts[$name] = new FolderPin($version, $this->artifact($artifacts->{$architectures[0]}, "{$field}.artifacts.{$architectures[0]}", $name, 'artifact', $version), $bin);
             }
             $this->require($parts !== [], "instances.{$folder}: expected at least one part.");
+            // Every container's environment names the Vite+ home, so the runtime folder always has one.
+            $this->require($folder !== 'runtime' || $vitePlus instanceof VitePlusHome, 'instances.runtime: expected a Vite+ part, the recipe tool vp-cli.');
             $folders[$folder] = $parts;
         }
 
-        return new InstanceFolders($folders['runtime'], $folders['agent']);
+        return new InstanceFolders($folders['runtime'], $folders['agent'], $this->staticPhpBuilds($raw->php, $php), $vitePlus);
     }
 
     /** @param array<string, ToolPin> $tools */

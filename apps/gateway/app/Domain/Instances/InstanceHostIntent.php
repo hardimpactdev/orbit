@@ -107,6 +107,11 @@ final readonly class InstanceHostIntent
             'incus' => $incus,
             'image' => InstanceImage::for($gateway),
             'folders' => InstanceFolderPlan::for($folders),
+            // `incus exec` sessions get the runtime folder's environment from the profile; the image gives it to units and login shells.
+            'profile_config' => array_combine(
+                array_map(static fn (string $name): string => "environment.{$name}", array_keys(InstanceImage::RuntimeEnvironment)),
+                InstanceImage::RuntimeEnvironment,
+            ),
         ];
     }
 

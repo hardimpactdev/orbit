@@ -1,0 +1,249 @@
+name: Static PHP build
+
+# Builds the static PHP CLI and FrankenPHP of the Instance runtime folder from the recipe's instances.php section, proves both
+# with the Gateway as a Laravel fixture, and on main, from a push or a manual run, publishes a build that has no release yet.
+# A recipe pin records the published SHA-256 in a later reviewed commit. See docs/reference/compute-drivers.md#static-php-build.
+on:
+  pull_request:
+    paths:
+      - apps/gateway/resources/machine-software/recipe.json
+      - bin/static-php-build
+      - tools/static-php/**
+      - swamp/ansible/library/orbit_static_php.py
+      - .github/workflows/static-php.yml
+  push:
+    branches: [main]
+    paths:
+      - apps/gateway/resources/machine-software/recipe.json
+      - bin/static-php-build
+      - tools/static-php/**
+      - swamp/ansible/library/orbit_static_php.py
+      - .github/workflows/static-php.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: static-php-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  definition:
+    name: Resolve the static PHP builds
+    runs-on: ubuntu-26.04
+    outputs:
+      missing: ${{ steps.missing.outputs.builds }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require each pin to name its definition
+        run: python3 bin/static-php-build verify-pins
+
+      # A build whose release exists is already proven and published; only a new definition builds.
+      - name: List the builds without a release
+        id: missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 bin/static-php-build definition --github-output "$RUNNER_TEMP/definition"
+          # Read the list first: a failure inside a process substitution would not stop the step.
+          builds="$(sed -n 's/^builds=//p' "$RUNNER_TEMP/definition" | jq -c '.[]')"
+          missing='[]'
+          while read -r build; do
+            [ -n "$build" ] || continue
+            tag="$(jq -r .tag <<< "$build")"
+            # Only a release that does not exist is missing; any other error stops the run.
+            if ! answer="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName 2>&1)"; then
+              grep -qx 'release not found' <<< "$answer" || { echo "::error::Cannot read release ${tag}: ${answer}"; exit 1; }
+              missing="$(jq -c --argjson build "$build" '. + [$build]' <<< "$missing")"
+            fi
+          done <<< "$builds"
+          echo "builds=${missing}" >> "$GITHUB_OUTPUT"
+          echo "Builds without a release: $(jq -r 'map(.tag) | join(", ")' <<< "$missing")"
+
+  build:
+    name: Build PHP ${{ matrix.build.php_version }}
+    needs: definition
+    if: needs.definition.outputs.missing != '[]'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 240
+    strategy:
+      matrix:
+        build: ${{ fromJSON(needs.definition.outputs.missing) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The proof job saves an archive under its build id only once it passed, so a cached archive is a proven one.
+      - name: Restore a proven build of this definition
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: static-php-${{ matrix.build.build }}
+          path: |
+            ${{ runner.temp }}/static-php/${{ matrix.build.asset }}
+            ${{ runner.temp }}/static-php/SHA256SUMS
+
+      # static-php-cli runs on PHP; the build itself compiles every library and PHP from source.
+      - uses: ./.github/actions/php
+        if: steps.cache.outputs.cache-hit != 'true'
+
+      - name: Build php and frankenphp
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 bin/static-php-build build --version "${{ matrix.build.version }}" --output "$RUNNER_TEMP/static-php"
+
+      - name: Upload the build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.build.tag }}
+          path: |
+            ${{ runner.temp }}/static-php/${{ matrix.build.asset }}
+            ${{ runner.temp }}/static-php/SHA256SUMS
+          if-no-files-found: error
+
+  prove:
+    name: Prove PHP ${{ matrix.build.php_version }}
+    needs: [definition, build]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        build: ${{ fromJSON(needs.definition.outputs.missing) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ matrix.build.tag }}
+          path: ${{ runner.temp }}/static-php
+
+      - name: Unpack the checked archive
+        working-directory: ${{ runner.temp }}/static-php
+        run: |
+          set -euo pipefail
+          sha256sum --check --strict SHA256SUMS
+          tar -xzf "${{ matrix.build.asset }}"
+          file bin/php bin/frankenphp
+          # A static-pie binary has no program interpreter: it needs no loader and no shared library.
+          for binary in bin/php bin/frankenphp; do
+            headers="$(readelf --program-headers --wide "$binary")"
+            if grep -q INTERP <<< "$headers"; then echo "::error::${binary} is not fully static."; exit 1; fi
+          done
+          echo "STATIC=$PWD/bin" >> "$GITHUB_ENV"
+
+      - name: Check both binaries against the recipe
+        run: python3 bin/static-php-build check --version "${{ matrix.build.version }}" --bin "$STATIC"
+
+      - name: Run the PHP command line
+        run: |
+          set -euo pipefail
+          "$STATIC/php" -v
+          "$STATIC/php" -i | grep -E '^(PHP Version|Thread Safety|Zend Extension Build)'
+          "$STATIC/php" -m
+          "$STATIC/php" -d memory_limit=1G -r 'echo ini_get("memory_limit"), "\n";' | grep -x 1G
+          "$STATIC/php" -r 'exit(function_exists("opcache_get_status") && extension_loaded("pdo_pgsql") ? 0 : 1);'
+          "$STATIC/frankenphp" version
+          "$STATIC/frankenphp" build-info
+
+      # The Gateway is an Orbit Laravel app with Pest: Composer runs its scripts, Artisan boots it, and Pest runs tests.
+      # The static PHP is first on PATH, so the scripts' own `php` calls use it too.
+      - name: Install the Gateway with the static PHP
+        working-directory: apps/gateway
+        env:
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"}}'
+        run: |
+          set -euo pipefail
+          export PATH="$STATIC:$PATH"
+          [ "$(command -v php)" = "$STATIC/php" ]
+          eval "$(python3 -c 'import runpy; b = runpy.run_path("../../bin/php-build"); print("version=" + b["COMPOSER_VERSION"], "digest=" + b["COMPOSER_SHA256"])')"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/composer.phar" "https://getcomposer.org/download/${version}/composer.phar"
+          echo "${digest}  $RUNNER_TEMP/composer.phar" | sha256sum --check
+          "$STATIC/php" "$RUNNER_TEMP/composer.phar" check-platform-reqs --lock
+          "$STATIC/php" "$RUNNER_TEMP/composer.phar" install --no-interaction --prefer-dist
+          "$STATIC/php" artisan --version
+
+      - name: Run Pest with the static PHP
+        working-directory: apps/gateway
+        run: |
+          set -euo pipefail
+          "$STATIC/php" -d memory_limit=1G vendor/bin/pest --version
+          "$STATIC/php" -d memory_limit=1G vendor/bin/pest tests/Unit/Infrastructure/MachineSoftware
+
+      - name: Serve the Gateway with FrankenPHP
+        working-directory: apps/gateway
+        env:
+          APP_ENV: production
+          APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          APP_DEBUG: 'false'
+          CACHE_STORE: file
+          DB_CONNECTION: sqlite
+          LOG_CHANNEL: stderr
+        run: |
+          set -euo pipefail
+          export ORBIT_HOME="$RUNNER_TEMP/orbit-home"
+          export DB_DATABASE="$ORBIT_HOME/gateway.sqlite"
+          mkdir -p "$ORBIT_HOME" && touch "$DB_DATABASE"
+          "$STATIC/frankenphp" php-server --root public --listen 127.0.0.1:8088 > "$RUNNER_TEMP/frankenphp.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true; cat "$RUNNER_TEMP/frankenphp.log"' EXIT
+          for _ in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:8088/up && break; sleep 1; done
+          status="$(curl -sS -o "$RUNNER_TEMP/up.html" -w '%{http_code}' http://127.0.0.1:8088/up)"
+          header="$(curl -sS -o /dev/null -D - http://127.0.0.1:8088/up | tr -d '\r' | grep -i '^x-powered-by:' || true)"
+          echo "GET /up answered ${status} (${header})"
+          [ "$status" = 200 ]
+          grep -qi "PHP/${{ matrix.build.php_version }}" <<< "$header"
+
+      - name: Keep the proven build under its build id
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: static-php-${{ matrix.build.build }}
+          path: |
+            ${{ runner.temp }}/static-php/${{ matrix.build.asset }}
+            ${{ runner.temp }}/static-php/SHA256SUMS
+
+  publish:
+    name: Publish PHP ${{ matrix.build.php_version }}
+    needs: [definition, prove]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'hardimpactdev/orbit'
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        build: ${{ fromJSON(needs.definition.outputs.missing) }}
+    steps:
+      - name: Download the proven build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ matrix.build.tag }}
+          path: release
+
+      # A published build is never replaced: its SHA-256 may already be pinned.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ matrix.build.tag }}
+        run: |
+          set -euo pipefail
+          sha256sum --check --strict release/SHA256SUMS
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release ${TAG} already exists. Published builds are never replaced."
+            exit 1
+          fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "Static PHP ${{ matrix.build.php_version }} (${TAG})" \
+            --notes "The static PHP CLI and FrankenPHP of the Instance runtime folder, built from ${GITHUB_SHA}. See docs/reference/compute-drivers.md#static-php-build." \
+            release/*

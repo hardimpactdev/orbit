@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""Build and check the static PHP CLI and FrankenPHP of the Instance runtime folder. See docs/reference/compute-drivers.md#static-php-build.
+
+  bin/static-php-build definition [--github-output FILE]  # each version's build id, release tag, asset and URL, as JSON
+  bin/static-php-build verify-pins                         # exit 1 when a recorded build id is not the definition's
+  bin/static-php-build build --version X.Y --output DIR    # one static-php-cli build of both binaries, packed with SHA256SUMS
+  bin/static-php-build check --version X.Y --bin DIR       # exit 1 unless both binaries load exactly the recipe's extensions
+
+The recipe's instances.php section names the PHP release, FrankenPHP, the static-php-cli commit and the extensions left out.
+The build id is a digest of those, the extension list, tools/static-php/craft.yml and this script, so any change to them
+needs a new build. static-php-cli resolves the library and extension sources at build time; sources.json in the archive
+records each one. The published archive's SHA-256, which a later reviewed commit records in the pin, fixes the bytes.
+"""
+import argparse
+import gzip
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import runpy
+import shutil
+import subprocess
+import sys
+import tarfile
+
+ROOT = Path(__file__).resolve().parent.parent
+RECIPE = ROOT / 'apps/gateway/resources/machine-software/recipe.json'
+CRAFT = ROOT / 'tools/static-php/craft.yml'
+CHECK = runpy.run_path(str(ROOT / 'swamp/ansible/library/orbit_static_php.py'))
+RELEASES = 'https://github.com/hardimpactdev/orbit/releases/download'
+PLATFORM = 'linux-x86_64'
+
+
+class BuildError(Exception):
+    pass
+
+
+def definitions(recipe=None):
+    """Every static build the recipe defines, keyed by PHP version, with its computed build id and release names."""
+    recipe = recipe or json.loads(RECIPE.read_text())
+    section = recipe['instances']['php']
+    craft = hashlib.sha256(CRAFT.read_bytes()).hexdigest()
+    script = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    builds = {}
+    for version, pin in section['versions'].items():
+        extensions = [name for name in recipe['php']['versions'][version]['extensions'] if name not in section['without']]
+        inputs = {'php_version': pin['php_version'], 'frankenphp': section['frankenphp'], 'static_php_cli': section['static_php_cli'],
+                  'extensions': extensions, 'craft_sha256': craft, 'script_sha256': script}
+        build = hashlib.sha256(json.dumps(inputs, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        tag = f'static-php-{pin["php_version"]}-{build[:12]}'
+        asset = f'{tag}-{PLATFORM}.tar.gz'
+        builds[version] = {**inputs, 'version': version, 'build': build, 'tag': tag, 'asset': asset, 'url': f'{RELEASES}/{tag}/{asset}',
+                           'recorded': {'build': pin['build'], 'url': pin['url']}, 'sha256': pin['sha256']}
+    return builds
+
+
+def verify_pins():
+    stale = [f'instances.php.versions.{version}.{key} is {item["recorded"][key]}, but the definition gives {item[key]}.'
+             for version, item in definitions().items() for key in ('build', 'url') if item['recorded'][key] != item[key]]
+    if stale:
+        raise BuildError('Record the new build id and URL, and set sha256 to null until main publishes the build:\n  ' + '\n  '.join(stale))
+    print('Every static PHP pin names its definition.')
+
+
+def run(argv, **kwargs):
+    print('+', ' '.join(str(arg) for arg in argv), flush=True)
+    subprocess.run([str(arg) for arg in argv], check=True, stdin=subprocess.DEVNULL, **kwargs)
+
+
+def fetch(repository, ref, destination):
+    """One commit or tag of a GitHub repository, without history."""
+    destination.mkdir(parents=True)
+    run(['git', 'init', '--quiet', destination])
+    run(['git', '-C', destination, 'fetch', '--quiet', '--depth', '1', f'https://github.com/{repository}.git', ref])
+    run(['git', '-C', destination, 'checkout', '--quiet', 'FETCH_HEAD'])
+
+
+def craft(item, frankenphp):
+    text = CRAFT.read_text()
+    for key, value in {'PHP_VERSION': item['php_version'], 'EXTENSIONS': ','.join(spc_names(item['extensions'])),
+                       'FRANKENPHP_SOURCE': str(frankenphp)}.items():
+        text = text.replace(f'@{key}@', value)
+    if re.search(r'@[A-Z_]+@', text):
+        raise BuildError('tools/static-php/craft.yml has a value the build does not fill.')
+    return text
+
+
+def spc_names(extensions):
+    """The recipe lists modules as `php -m` does; static-php-cli names the extensions to build. Built-in modules need no name."""
+    builtin = {'core', 'date', 'hash', 'json', 'lexbor', 'libxml', 'pcre', 'random', 'reflection', 'spl', 'standard', 'uri'}
+    return [{'zend opcache': 'opcache'}.get(name, name) for name in extensions if name not in builtin]
+
+
+def build(version, output):
+    item = definitions()[version]
+    output = output.resolve()
+    work = output / 'work'
+    if work.exists():
+        shutil.rmtree(work)
+    fetch('crazywhalecc/static-php-cli', item['static_php_cli'], work / 'static-php-cli')
+    fetch('php/frankenphp', f'refs/tags/v{item["frankenphp"]}', work / 'frankenphp')
+    run(['composer', 'install', '--no-dev', '--no-interaction', '--prefer-dist', '--working-dir', work / 'static-php-cli'])
+    (work / 'craft.yml').write_text(craft(item, work / 'frankenphp'))
+    # A fully static musl binary for the baseline CPU, as FrankenPHP's own static build makes it.
+    env = {**os.environ, 'SPC_TARGET': 'x86_64-linux-musl', 'SPC_TOOLCHAIN': ''}
+    run(['php', work / 'static-php-cli/bin/spc', 'craft', work / 'craft.yml'], cwd=work, env=env)
+
+    stage = work / 'stage'
+    (stage / 'bin').mkdir(parents=True)
+    for name in ('php', 'frankenphp'):
+        shutil.copy2(work / 'buildroot/bin' / name, stage / 'bin' / name)
+    manifest = {key: item[key] for key in ('version', 'php_version', 'frankenphp', 'static_php_cli', 'extensions', 'build', 'tag')}
+    (stage / 'build.json').write_text(json.dumps(manifest, indent=2) + '\n')
+    # static-php-cli's record of each source it fetched: the version, file or Git commit, and its hash.
+    shutil.copy2(work / 'downloads/.cache.json', stage / 'sources.json')
+    archive = output / item['asset']
+    with archive.open('wb') as raw, gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0) as packed, \
+            tarfile.open(fileobj=packed, mode='w') as tar:
+        for path in sorted(stage.rglob('*')):
+            info = tar.gettarinfo(path, path.relative_to(stage).as_posix())
+            info.uid = info.gid = 0
+            info.uname = info.gname = ''
+            info.mtime = 0
+            if path.is_file():
+                with path.open('rb') as handle:
+                    tar.addfile(info, handle)
+            else:
+                tar.addfile(info)
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    (output / 'SHA256SUMS').write_text(f'{digest}  {item["asset"]}\n')
+    print(f'{item["asset"]} {digest}')
+
+
+def check(version, folder):
+    item = definitions()[version]
+    folder = folder.resolve()
+    problems = CHECK['check'](str(folder / 'php'), str(folder / 'frankenphp'), item['php_version'], item['extensions'])
+    if problems:
+        raise BuildError('The static PHP build does not match the recipe:\n  ' + '\n  '.join(problems))
+    print(f'php and frankenphp report PHP {item["php_version"]} with the {len(item["extensions"])} recipe extensions.')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    commands = parser.add_subparsers(dest='command', required=True)
+    definition = commands.add_parser('definition')
+    definition.add_argument('--github-output', type=Path)
+    commands.add_parser('verify-pins')
+    build_command = commands.add_parser('build')
+    build_command.add_argument('--version', required=True)
+    build_command.add_argument('--output', required=True, type=Path)
+    check_command = commands.add_parser('check')
+    check_command.add_argument('--version', required=True)
+    check_command.add_argument('--bin', required=True, type=Path)
+    args = parser.parse_args()
+    try:
+        if args.command == 'definition':
+            builds = definitions()
+            if args.github_output:
+                with args.github_output.open('a') as handle:
+                    handle.write(f'builds={json.dumps(list(builds.values()), separators=(",", ":"))}\n')
+            print(json.dumps(builds, indent=2))
+        elif args.command == 'verify-pins':
+            verify_pins()
+        elif args.command == 'build':
+            build(args.version, args.output)
+        else:
+            check(args.version, args.bin)
+    except (BuildError, CHECK['StaticPhpError'], subprocess.CalledProcessError) as error:
+        print(f'static-php-build: {error}', file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

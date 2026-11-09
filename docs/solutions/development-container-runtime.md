@@ -213,17 +213,29 @@ The firewall uses no Molecule cases: the repository tests Ansible with fixture t
 
 ### PR 3b: the static PHP build
 
-Open as [#3294](https://github.com/hardimpactdev/orbit/pull/3294). This PR adds PHP to the runtime folder; it creates no Instance.
+Open as [#3294](https://github.com/hardimpactdev/orbit/pull/3294). This PR adds PHP and Vite+ to the runtime folder; it creates no Instance. No published release gives FrankenPHP and a PHP CLI from one build, so Orbit builds them. [Static PHP build](/reference/compute-drivers#static-php-build) holds the contract.
 
-- A build job makes `frankenphp` and `php` from one static-php-cli build per PHP version that Orbit supports, with the recipe's extension list. It publishes both to the artifact mirror.
-- The recipe pins them in the runtime folder as `php/<php-version>/bin`, with the extension list.
-- The converge checks that both binaries load exactly the listed extensions.
-- The environment notes name PHP and Composer from the runtime folder. Until then they name only Node, npm, Bun and rg.
+- The recipe's `instances.php` section defines one static-php-cli build per PHP version: PHP 8.5.12, FrankenPHP 1.13.5 and a pinned static-php-cli commit.
+- The extensions are the PHP build's, less `ffi` and `pcov`. A fully static binary cannot load them.
+- `bin/static-php-build` builds `php` and `frankenphp` together and checks both against the extension list.
+- The `Static PHP build` workflow builds and proves each new definition. On main it publishes the archive as a release.
+- A second reviewed commit records the release's SHA-256. From then on the runtime folder holds the build as `php/<php-version>/bin`, and its install checks both binaries with the Ansible module `orbit_static_php`.
+- The same pin PR names PHP and Composer in the environment notes. Until then the notes name Node, npm, Bun, Vite+ and rg.
 
-Tests: Pest for the pins and the extension check; a fixture test for the check. Live on Beast:
+The same PR adds Vite+ to the runtime folder:
 
-1. `php -v`, `php -i`, `php -d memory_limit=1G -r 1;` and a `composer install` with scripts all work in a test container.
-2. FrankenPHP's and the CLI's extension lists match.
+- The part `vite-plus` is the recipe's `vp-cli` release.
+- `vp` fetches its package and Node on first use, and a container has no internet. So the host builds a read-only [Vite+ home](/reference/compute-drivers#the-vite-home) with the locked package and the recipe's Node.
+- Every container process gets `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, from the Instance profile, systemd and `/etc/profile.d`.
+
+Tests: Pest for the pins, the folder parts, the Vite+ home and the image files; Python tests for the build script and the check; Ansible fixture tests for the `php/<version>` part, the Vite+ home and the profile environment. In CI, the workflow's proof job:
+
+1. Both binaries are fully static and load exactly the listed extensions, at the pinned PHP release.
+2. `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G` work.
+3. Composer installs the Gateway with its scripts, and Artisan and `php -d memory_limit=1G vendor/bin/pest` run.
+4. `frankenphp php-server` serves the Gateway's `/up`.
+
+Live on Beast, after the pin PR: `php -i`, a `composer install` with scripts and `vp --version` as `orbit` in a test container, and the folder install's extension check.
 
 ### PR 4: the first default Instance and its deployments
 
