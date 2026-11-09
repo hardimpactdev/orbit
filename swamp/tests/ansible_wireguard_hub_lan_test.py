@@ -105,6 +105,9 @@ class WireGuardHubLanTest(unittest.TestCase):
                                         **os.environ, 'PATH': f"{folder / 'bin'}:{os.environ['PATH']}", 'STUB_DIR': str(folder),
                                         'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg'), 'ANSIBLE_FORCE_COLOR': '0'})
             calls = (folder / 'calls.log').read_text() if (folder / 'calls.log').exists() else ''
+            # What the run left behind, for the tests that read files after a failed playbook.
+            self.left = {str(path.relative_to(folder)): path.read_text() for path in folder.rglob('*')
+                         if path.is_file() and path.parts[len(folder.parts)] in ('wg', 'loaded.log')}
             return result.returncode, result.stdout + result.stderr, calls
 
     def prove(self, route, keys, fingerprints):
@@ -184,94 +187,119 @@ class WireGuardHubLanTest(unittest.TestCase):
                  "ufw allow in on orbit to 10.44.0.1 port 22 proto tcp comment 'orbit:vpn-ssh'\n")
         code, output, calls = self.source(LIVE, RIGHT, installed={**self.INSTALLED, 'ufw-added.txt': added})
         self.assertEqual(code, 0, output)
-        self.assertIn('ufw delete allow from 10.1.1.0/24 to 10.1.1.2 port 22 proto tcp\n', calls)
-        self.assertNotIn('delete allow from 10.0.0.0/24', calls)
+        self.assertIn('ufw delete allow in proto tcp from 10.1.1.0/24 to 10.1.1.2 port 22\n', calls)
+        self.assertNotIn('from 10.0.0.0/24 to 10.0.0.2 port 22\n', calls.replace('ufw allow in proto tcp from 10.0.0.0/24', ''))
         self.assertNotIn('vpn-ssh', calls.replace('vpn-lan-ssh', ''))
 
 
-    def switch(self, previous, endpoint):
-        return self.run_tasks('node-converge-hub-switch.yml', {'hub_switch_previous': previous, 'hub_switch_endpoint': endpoint}, {},
-                              after=[{'ansible.builtin.debug': {'msg': 'switch={{ hub_switch | bool }}'}}])
+    def switch(self, files, endpoint):
+        return self.run_tasks('node-converge-hub-switch.yml', {'hub_switch_dir': '@DIR@/wg', 'hub_switch_endpoint': endpoint}, files,
+                              after=[{'ansible.builtin.debug': {'msg': 'present={{ hub_switch_present }} switch={{ hub_switch | bool }}'}}])
 
     PEERS = '[Peer]\nPublicKey = HUBKEY\nEndpoint = {}\nAllowedIPs = 10.44.0.0/24\nPersistentKeepalive = 25\n'
+    PUBLIC = '94.237.124.160:51820'
+    LAN = '10.0.0.2:51820'
 
     def test_a_new_hub_endpoint_in_the_files_is_a_switch(self):
-        for previous in (self.PEERS.format('94.237.124.160:51820'), ''):
-            with self.subTest(previous=previous):
-                code, output, _ = self.switch(previous, '10.0.0.2:51820')
-                self.assertEqual(code, 0, output)
-                self.assertIn('switch=True', output)
+        code, output, _ = self.switch({'wg/orbit.peers': self.PEERS.format(self.PUBLIC)}, self.LAN)
+        self.assertEqual(code, 0, output)
+        self.assertIn('present=True switch=True', output)
+        code, output, _ = self.switch({'wg/orbit.conf': 'only a conf\n'}, self.LAN)
+        self.assertIn('present=False switch=True', output)
 
     def test_an_unchanged_endpoint_is_no_switch_even_as_a_hostname_or_after_the_peer_roamed(self):
         # The files decide: `wg show` would print a hostname resolved, and the address a roamed peer moved to.
-        for endpoint in ('vpn.example.com:51820', '94.237.124.160:51820'):
+        for endpoint in ('vpn.example.com:51820', self.PUBLIC):
             with self.subTest(endpoint=endpoint):
-                code, output, _ = self.switch(self.PEERS.format(endpoint), endpoint)
+                code, output, _ = self.switch({'wg/orbit.peers': self.PEERS.format(endpoint)}, endpoint)
                 self.assertEqual(code, 0, output)
-                self.assertIn('switch=False', output)
+                self.assertIn('present=True switch=False', output)
 
-    def move(self, handshake):
+    def test_a_move_that_was_cut_off_is_decided_from_the_file_it_replaced(self):
+        files = {'wg/orbit.peers': self.PEERS.format(self.LAN), 'wg/orbit.peers.previous': self.PEERS.format(self.PUBLIC)}
+        code, output, _ = self.switch(files, self.LAN)
+        self.assertEqual(code, 0, output)
+        self.assertIn('switch=True', output)
+
+    def test_the_endpoint_is_read_on_the_node_so_no_key_in_the_file_leaves_it(self):
+        code, output, _ = self.switch({'wg/orbit.peers': '[Interface]\nPrivateKey = SECRETKEY\n' + self.PEERS.format(self.PUBLIC)}, self.LAN)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn('SECRETKEY', output)
+
+    WG = ('#!/bin/sh\necho "wg $*" >> "$STUB_DIR/calls.log"\n'
+          'case "$*" in\n'
+          '  "showconf orbit") echo "LIVE CONFIG" ;;\n'
+          '  "setconf orbit "*) echo "setconf: $(cat "$3")" >> "$STUB_DIR/loaded.log" ;;\n'
+          '  "syncconf orbit "*) cat "$3" >> "$STUB_DIR/loaded.log"; echo --- >> "$STUB_DIR/loaded.log" ;;\n'
+          '  "show orbit latest-handshakes") printf "HUBKEY\\t%s\\n" "$(cat "$STUB_DIR/handshake.txt")" ;;\n'
+          'esac\n')
+
+    def move(self, handshake, **extra):
         """Move a tunnel from the public to the LAN endpoint with a stand-in `wg` whose hub handshake is `handshake`."""
-        wg = ('#!/bin/sh\necho "wg $*" >> "$STUB_DIR/calls.log"\n'
-              'case "$*" in\n'
-              '  "syncconf orbit "*) cat "$3" >> "$STUB_DIR/loaded.log"; echo --- >> "$STUB_DIR/loaded.log" ;;\n'
-              '  "show orbit latest-handshakes") printf "HUBKEY\\t%s\\n" "$(cat "$STUB_DIR/handshake.txt")" ;;\n'
-              'esac\n')
-        old = '[Interface]\nPrivateKey = OLD\n' + self.PEERS.format('94.237.124.160:51820')
-        files = {'bin/wg': wg, 'bin/ping': '#!/bin/sh\nexit 0\n', 'handshake.txt': str(handshake),
-                 'wg/orbit.key': 'KEY\n', 'wg/orbit.conf': 'old conf\n', 'wg/orbit.peers': old,
-                 'wg/orbit.conf.next': 'new conf\n', 'wg/orbit.peers.next': self.PEERS.format('10.0.0.2:51820')}
-        with tempfile.TemporaryDirectory() as keep:
-            variables = {'hub_move': {'dir': '@DIR@/wg', 'key': 'HUBKEY', 'probe_ip': '10.44.0.1', 'interval': 0}}
-            after = [{'ansible.builtin.command': {'argv': ['cp', '-R', '{{ hub_move.dir }}', keep]}},
-                     {'ansible.builtin.command': {'argv': ['cp', '{{ hub_move.dir }}/../loaded.log', keep]}}]
-            code, output, calls = self.run_tasks('node-converge-hub-move.yml', variables, files, after=after)
-            tunnel = {path.name: path.read_text() for path in (Path(keep) / 'wg').iterdir()} if (Path(keep) / 'wg').exists() else {}
-            loaded = (Path(keep) / 'loaded.log').read_text() if (Path(keep) / 'loaded.log').exists() else ''
-            return code, output, calls, tunnel, loaded
+        files = {'bin/wg': self.WG, 'bin/ping': '#!/bin/sh\nexit 0\n', 'handshake.txt': str(handshake),
+                 'wg/orbit.key': 'KEY\n', 'wg/orbit.conf': 'old conf\n', 'wg/orbit.peers': self.PEERS.format(self.PUBLIC),
+                 'wg/orbit.conf.next': 'new conf\n', 'wg/orbit.peers.next': self.PEERS.format(self.LAN), **extra}
+        variables = {'hub_move': {'dir': '@DIR@/wg', 'key': 'HUBKEY', 'probe_ip': '10.44.0.1', 'interval': 0}}
+        files = {name: body for name, body in files.items() if body is not None}
+        return self.run_tasks('node-converge-hub-move.yml', variables, files)
 
     def test_a_move_with_a_fresh_handshake_keeps_the_new_files(self):
-        code, output, calls, tunnel, loaded = self.move(9_999_999_999)
+        code, output, calls = self.move(9_999_999_999)
         self.assertEqual(code, 0, output)
         self.assertIn('wg set orbit peer HUBKEY remove', calls)
-        self.assertIn('Endpoint = 10.0.0.2:51820', tunnel['orbit.peers'])
-        self.assertEqual(tunnel['orbit.conf'], 'new conf\n')
-        self.assertNotIn('orbit.peers.previous', tunnel)
-        self.assertIn('Endpoint = 10.0.0.2:51820', loaded)
+        self.assertIn(f'Endpoint = {self.LAN}', self.left['wg/orbit.peers'])
+        self.assertEqual(self.left['wg/orbit.conf'], 'new conf\n')
+        self.assertNotIn('wg/orbit.peers.previous', self.left)
+        self.assertNotIn('wg/orbit.live.previous', self.left)
 
-    def test_a_move_without_a_handshake_after_it_restores_and_loads_the_previous_files(self):
-        # A handshake from before the move went through the old endpoint and does not count. The playbook stops at the
-        # assert, so the files are read from the stand-in's log of what it loaded last.
-        code, output, calls, _, _ = self.move(1)
+    def test_a_move_without_a_handshake_after_it_restores_the_files_and_the_live_configuration(self):
+        # A handshake from before the move went through the old endpoint and does not count.
+        code, output, _ = self.move(1)
         self.assertNotEqual(code, 0)
         self.assertIn('node.hub_switch_no_handshake', output)
-        self.assertEqual(calls.count('remove'), 2)
+        self.assertIn(f'Endpoint = {self.PUBLIC}', self.left['wg/orbit.peers'])
+        self.assertEqual(self.left['wg/orbit.conf'], 'old conf\n')
+        self.assertTrue(self.left['loaded.log'].rstrip().endswith('setconf: LIVE CONFIG'))
+        self.assertNotIn('wg/orbit.live.previous', self.left)
 
-    def test_the_restore_loads_the_previous_peers_without_the_interface_section_node_add_wrote(self):
-        script = yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub-move.yml').read_text())[0]['ansible.builtin.shell']['cmd']
-        program = '/^\\[/ { skip = ($0 == "[Interface]") } !skip'
-        self.assertIn(f"awk '{program}'", script)
-        with tempfile.TemporaryDirectory() as folder:
-            peers = Path(folder) / 'peers'
-            peers.write_text('[Interface]\nPrivateKey = OLD\n' + self.PEERS.format('a:1'))
-            loaded = subprocess.run(['awk', program, str(peers)], capture_output=True, text=True, check=True).stdout
-        self.assertNotIn('[Interface]', loaded)
-        self.assertIn('Endpoint = a:1', loaded)
+    def test_a_move_without_a_previous_peer_file_still_goes_back_to_the_live_configuration(self):
+        code, _, _ = self.move(1, **{'wg/orbit.peers': None})
+        self.assertNotEqual(code, 0)
+        self.assertTrue(self.left['loaded.log'].rstrip().endswith('setconf: LIVE CONFIG'))
+        self.assertEqual(self.left['wg/orbit.conf'], 'old conf\n')
 
+    def test_a_rerun_after_a_cut_off_move_keeps_the_files_that_move_replaced(self):
+        code, _, _ = self.move(1, **{'wg/orbit.peers': self.PEERS.format(self.LAN),
+                                          'wg/orbit.peers.previous': self.PEERS.format(self.PUBLIC)})
+        self.assertNotEqual(code, 0)
+        self.assertIn(f'Endpoint = {self.PUBLIC}', self.left['wg/orbit.peers'])
+
+    def test_the_new_peers_are_loaded_without_the_interface_section_node_add_wrote(self):
+        code, output, _ = self.move(9_999_999_999, **{'wg/orbit.peers.next': '[Interface]\nPrivateKey = OLD\n' + self.PEERS.format(self.LAN)})
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.left['loaded.log'].count('[Interface]'), 1)
 
 class NetworkPhaseWiringTest(unittest.TestCase):
     def test_the_peer_phase_decides_from_the_previous_file_stages_the_files_and_moves_in_one_job(self):
         block = yaml.safe_load((ANSIBLE / 'tasks/node-converge-network.yml').read_text())[1]['block']
         names = [task['name'] for task in block]
-        order = [names.index(name) for name in ("Prove the hub's LAN endpoint before any WireGuard change", 'Read the previous hub peer file',
+        order = [names.index(name) for name in ("Prove the hub's LAN endpoint before any WireGuard change",
                                                 'Decide whether the hub endpoint changes', 'Reconcile recorded peer files',
                                                 'Move the tunnel to the new hub endpoint',
                                                 'Reconcile live peer state without copying its private key')]
         self.assertEqual(order, sorted(order))
         self.assertIn('.next', block[names.index('Reconcile recorded peer files')]['ansible.builtin.copy']['dest'])
+        self.assertNotIn('slurp', yaml.safe_dump(block))
         self.assertEqual(block[names.index('Reconcile live peer state without copying its private key')]['when'], 'not hub_switch | bool')
         move = yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub-move.yml').read_text())[0]
         self.assertEqual((move['async'] > 60, move['poll'] > 0), (True, True))
+
+    def test_node_add_refuses_to_move_any_live_tunnel_to_another_hub_endpoint(self):
+        play = next(play for play in yaml.safe_load((ANSIBLE / 'operation-node-add.yml').read_text()) if play['name'] == 'Set up the tunnel')
+        tasks = {task['name']: task for task in play['tasks']}
+        self.assertEqual(tasks['Decide whether the hub endpoint changes']['when'], 'not net.is_hub')
+        refusal = tasks['Leave the move of a live tunnel to node:converge']
+        self.assertEqual((refusal['when'], refusal['ansible.builtin.assert']['fail_msg']), ('not net.is_hub', 'node.hub_switch_by_converge'))
 
 
 if __name__ == '__main__':

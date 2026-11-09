@@ -108,24 +108,29 @@ it('marks the hub\'s WireGuard packets, and leaves the source rule to its own un
             ip -4 rule add priority 31820 fwmark 51820 to 172.16.0.0/12 lookup main
             ip -4 rule add priority 31820 fwmark 51820 to 192.168.0.0/16 lookup main
             ip -4 rule add priority 31821 fwmark 51820 lookup 51820
-            # The table copies the first default route of the main table and leaves from the endpoint address.
-            set -- $(ip -4 route show default | head -n 1)
-            route=
-            while [ "$#" -gt 0 ]; do
-              case "$1" in
-                via|dev) [ "$#" -gt 1 ] && route="$route $1 $2" && shift ;;
-                onlink) route="$route onlink" ;;
-              esac
-              shift
+            # The table copies the first default route of the main table and leaves from the endpoint address. At boot DHCP
+            # may not have set the default route yet, so the script waits for it.
+            for _ in $(seq 1 60); do
+              set -- $(ip -4 route show default | head -n 1)
+              route=
+              while [ "$#" -gt 0 ]; do
+                case "$1" in
+                  via|dev) [ "$#" -gt 1 ] && route="$route $1 $2" && shift ;;
+                  onlink) route="$route onlink" ;;
+                esac
+                shift
+              done
+              case "$route" in *via*) break ;; esac
+              sleep 1
             done
             ip -4 route replace default $route src 94.237.124.160 table 51820
 
             SH)
         // Wanted by the tunnel, never required: a failing rule cannot keep the tunnel down.
         ->and($intent['source']['unit'])->toContain("Before=wg-quick@orbit.service\n")->toContain("ExecStart=/bin/sh /etc/orbit/wireguard/hub-source\n")
-        ->toContain("WantedBy=wg-quick@orbit.service systemd-networkd.service multi-user.target\n")->not->toContain('Requires=')->not->toContain('BindsTo=')
-        // systemd-networkd deletes foreign rules when it starts; the unit runs again after it.
-        ->toContain("PartOf=systemd-networkd.service\n")->toContain('After=network-online.target systemd-networkd.service')
+        ->toContain("WantedBy=wg-quick@orbit.service multi-user.target\n")->not->toContain('Requires=')->not->toContain('BindsTo=')
+        // The networkd drop-in keeps the rules; a restart of networkd must not rerun the script before DHCP set a default route.
+        ->not->toContain('PartOf=')
         ->and($intent['source']['networkd'])->toBe("[Network]\nManageForeignRoutingPolicyRules=no\nManageForeignRoutes=no\n")
         ->and($intent['source']['priorities'])->toBe([31820, 31821])
         ->and($intent['lan_ssh_argv'])->toBe([['ufw', 'allow', 'in', 'proto', 'tcp', 'from', '10.0.0.0/24', 'to', '10.0.0.2', 'port', '22', 'comment', 'orbit:vpn-lan-ssh']]);
@@ -197,4 +202,33 @@ it('runs its script to the same rules every time, from the first default route o
         ->and($calls)->toContain("ip -4 rule add priority 31820 fwmark 51820 to 192.168.0.0/16 lookup main\nip -4 rule add priority 31821 fwmark 51820 lookup 51820\n")
         ->and($calls)->toContain("ip -4 route replace default via 85.9.216.1 dev eth0 onlink src 94.237.124.160 table 51820\n")
         ->and($calls)->not->toContain('10.0.0.1');
+});
+
+it('waits in its script for the default route that DHCP sets after boot', function (): void {
+    $hub = SwampNodeFixture::ensure();
+    $hub->forceFill(['public_ssh_host' => '94.237.124.160'])->saveQuietly();
+    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', port: 51820);
+    $folder = sys_get_temp_dir().'/orbit-hub-wait-'.bin2hex(random_bytes(4));
+    mkdir($folder.'/bin', 0o755, true);
+    file_put_contents($folder.'/script', NodeWireGuardHubInput::source($hub)['script']);
+    // No default route on the first read; the second read has it.
+    file_put_contents($folder.'/bin/ip', <<<'SH'
+        #!/bin/sh
+        echo "ip $*" >> "$STUB/calls.log"
+        case "$*" in
+          "-4 route show default") if [ -f "$STUB/seen" ]; then echo 'default via 85.9.216.1 dev eth0 proto dhcp metric 100'; else touch "$STUB/seen"; fi ;;
+          "-4 rule del priority "*) exit 1 ;;
+        esac
+        SH);
+    file_put_contents($folder.'/bin/sleep', "#!/bin/sh\nexit 0\n");
+    chmod($folder.'/bin/ip', 0o755);
+    chmod($folder.'/bin/sleep', 0o755);
+
+    $run = Process::path($folder)->env(['PATH' => $folder.'/bin:'.getenv('PATH'), 'STUB' => $folder])->run(['sh', $folder.'/script']);
+    $calls = (string) file_get_contents($folder.'/calls.log');
+    File::deleteDirectory($folder);
+
+    expect($run->successful())->toBeTrue($run->errorOutput())
+        ->and(substr_count($calls, "ip -4 route show default\n"))->toBe(2)
+        ->and($calls)->toContain("ip -4 route replace default via 85.9.216.1 dev eth0 src 94.237.124.160 table 51820\n");
 });

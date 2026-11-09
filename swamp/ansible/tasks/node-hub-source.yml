@@ -14,8 +14,9 @@
     wanted: "{{ hub_lan_ssh_argv | map('join', ' ') | map('regex_replace', pair, '\\1 \\2') | list }}"
   loop: "{{ hub_ufw_added.stdout_lines | select('search', 'orbit:vpn-lan-ssh') | list }}"
   when: (item | regex_replace(pair, '\\1 \\2')) not in wanted
+  # The delete names the rule the way the catalog adds it (`allow in proto tcp from … to … port 22`), without the comment.
   ansible.builtin.command:
-    argv: "{{ ['ufw', 'delete'] + (item | regex_replace('^ufw ', '') | regex_replace(\" comment '.*'$\", '')).split() }}"
+    argv: "{{ ['ufw', 'delete', 'allow', 'in', 'proto', 'tcp', 'from'] + (item | regex_replace(pair, '\\1 to \\2')).split() + ['port', '22'] }}"
   changed_when: true
 - name: Open SSH on the hub's LAN address to its private network
   ansible.builtin.command: { argv: "{{ item }}" }

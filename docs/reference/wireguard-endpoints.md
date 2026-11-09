@@ -76,7 +76,7 @@ Swamp reaches the Node through this tunnel, so the move runs as one detached job
 2. removes the hub peer from the live tunnel and loads the new files, so the old session ends;
 3. waits up to a minute for a hub handshake at or after the move. A handshake through the old endpoint does not count.
 
-When no such handshake comes, the job puts the previous files back and loads them, so the Node keeps the tunnel it had. The phase then fails with the assertion `node.hub_switch_no_handshake`. This is a rollback of the move, not a fallback: the Node stays on the endpoint it used before, and the converge reports the failure.
+When no such handshake comes, the job puts the previous files back and sets the live configuration it saved before the move, so the Node keeps the tunnel it had, also when a previous file was missing. A move that was cut off, for example by a reboot, leaves the files it replaced; the next converge decides the move from them and keeps them for its own rollback. The phase then fails with the assertion `node.hub_switch_no_handshake`. This is a rollback of the move, not a fallback: the Node stays on the endpoint it used before, and the converge reports the failure.
 
 `node:add` has no such rollback. When it finds a live tunnel whose hub endpoint would move, it stops before any tunnel change with the assertion `node.hub_switch_by_converge`; run `node:converge` for that Node.
 
@@ -99,7 +99,7 @@ The private ranges are RFC 1918, plus the WireGuard subnet if it lies outside th
 
 One Orbit-owned unit, `orbit-hub-source.service`, owns the rules and the table. It runs the Gateway-rendered script `/etc/orbit/wireguard/hub-source`, which deletes the rules at both priorities, flushes the table and adds them again. Running it twice gives the same state. The hub's network phase also writes a `systemd-networkd` drop-in that stops networkd from deleting rules and routes it did not create. The unit starts before `wg-quick@orbit` and the tunnel wants it, but does not require it, so a failing rule never stops the tunnel.
 
-Without that drop-in, `systemd-networkd` deletes rules and routes it did not create when it starts or configures a link. The unit is also part of `systemd-networkd.service` and runs again after every start of it. `orbit.conf` holds only the mark. No writer of `orbit.conf` can drop the rules: not a converge, not either path of `node:add`, not a removal, and not the older native hub projection of [`node:wireguard-key`](/cli/node/wireguard-key).
+Without that drop-in, `systemd-networkd` deletes rules and routes it did not create when it starts or configures a link. The drop-in takes effect at networkd's next start, which is when it matters. The script waits up to a minute for a default route, because at boot DHCP may not have set one yet. `orbit.conf` holds only the mark. No writer of `orbit.conf` can drop the rules: not a converge, not either path of `node:add`, not a removal, and not the older native hub projection of [`node:wireguard-key`](/cli/node/wireguard-key).
 
 The hub's network phase writes the script and the unit. It restarts the unit when either changes, or when the live rules, the source of a marked packet or its gateway differ from the rendered rules and the main default route. It then checks that a marked packet to a public address leaves from the endpoint address. The table copies the default gateway when the unit runs; after the hub's default gateway changes, the next converge of the hub sees it and runs the unit again.
 
