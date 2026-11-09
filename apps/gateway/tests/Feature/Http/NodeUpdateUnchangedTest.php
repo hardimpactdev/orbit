@@ -51,5 +51,5 @@ it('reports no skip when any value of the request changes', function (array $sec
 })->with([
     'another name' => [['name' => 'beast-2', 'task_vms' => UnchangedHost]],
     'other container places' => [['task_vms' => [...UnchangedHost, 'containers' => [...UnchangedHost['containers'], 'task_places' => 2]]]],
-    'the container side removed' => [['task_vms' => array_diff_key(UnchangedHost, ['containers' => true])]],
+    'other VM places' => [['task_vms' => [...UnchangedHost, 'ci_places' => 3]]],
 ]);
