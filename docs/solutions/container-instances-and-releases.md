@@ -22,7 +22,7 @@ The priority is fast, isolated development and deployment with few moving parts.
 | Production Instance | The stable Orbit identity, Route, environment, and database attachments for the deployed application. |
 | Release container | One candidate, active, or retained release beneath that production Instance. Creating a release does not create another production Instance. |
 
-The development baseline is one outer VM per Project and one inner container per Instance. The production baseline is Incus containers on the production VM/Node, with Caddy outside them. An UpCloud VPS can supply the outer VM boundary itself. It does not need another nested VM solely to run system containers. A separate provider provisioning test is still needed before calling that path supported.
+[ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) replaces the Project VM below: development Instances run as containers directly on the Node, and the agent direction is in [Agent runtime and manual mode](/solutions/agent-runtime-and-manual-mode). The development baseline here was one outer VM per Project and one inner container per Instance. The production baseline is Incus containers on the production VM/Node, with Caddy outside them. An UpCloud VPS can supply the outer VM boundary itself. It does not need another nested VM solely to run system containers. A separate provider provisioning test is still needed before calling that path supported.
 
 ## Why Incus, and how Lima and Docker relate
 
