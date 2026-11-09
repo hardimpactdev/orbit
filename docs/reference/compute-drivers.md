@@ -339,7 +339,7 @@ A build's extensions are its PHP version's `extensions` less `without`, so the N
 | `build --version X.Y --output DIR` | Fetches the pinned static-php-cli and FrankenPHP sources, runs `spc craft`, and packs `bin/php`, `bin/frankenphp`, `build.json` and `sources.json` with a `SHA256SUMS` file |
 | `check --version X.Y --bin DIR` | Fails unless both binaries report the pinned PHP release and load exactly the build's extensions |
 
-The check is the Ansible module `orbit_static_php`. The [runtime folder](/reference/development-containers#shared-folders) holds each published build as the part `php/<version>`, unpacked to `php/<version>/bin`, and its install runs the check on each one before the folder version is whole. A build whose `sha256` is still `null` is not in the folder. FrankenPHP runs its probe through `frankenphp php-cli`, and the CLI runs it with `php -n`.
+The check is the Ansible module `orbit_static_php`. The [runtime folder](/reference/development-containers#shared-folders) holds each published build as the part `php/<version>`, unpacked to `php/<version>/bin`, and its install runs the check on each one before the folder version is whole. A build whose `sha256` is still `null` is not in the folder. FrankenPHP runs its probe through `frankenphp php-cli`, and the CLI runs it with `php -n`. FrankenPHP's own SAPI module, such as `frankenphp-cli`, is not an extension, so the check leaves it out for FrankenPHP only.
 
 #### The static PHP workflow
 

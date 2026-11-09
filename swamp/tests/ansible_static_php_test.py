@@ -44,6 +44,13 @@ exit {code}
         frankenphp = self.binary('frankenphp', extensions=('Core', 'pdo_pgsql', 'apcu'), expect='php-cli')
         self.assertEqual(self.check(frankenphp=frankenphp), ['frankenphp lacks redis.', 'frankenphp also loads apcu.'])
 
+    def test_frankenphp_s_own_module_is_no_extension(self):
+        frankenphp = self.binary('frankenphp', extensions=('Core', 'pdo_pgsql', 'redis', 'frankenphp-cli'), expect='php-cli')
+        php = self.binary('php-with-sapi-module', extensions=('Core', 'pdo_pgsql', 'redis', 'frankenphp-cli'), expect='-n')
+        self.assertEqual(self.check(frankenphp=frankenphp), [])
+        # Only FrankenPHP has it: the CLI that reports one has an extra module.
+        self.assertEqual(self.check(php=php), ['php also loads frankenphp-cli.'])
+
     def test_another_php_version_fails(self):
         php = self.binary('php', version='8.5.11', expect='-n')
         self.assertEqual(self.check(php=php), ['php reports PHP 8.5.11, expected 8.5.12.'])
