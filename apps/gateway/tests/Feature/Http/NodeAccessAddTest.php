@@ -121,7 +121,10 @@ it('returns 404 for either unknown or inactive endpoint without changing records
     ['consumer', 'provisioning'], ['serving', 'provisioning'], ['consumer', 'removing'], ['serving', 'removing'],
 ]);
 
-it('refuses a task VM consumer without changing any record', function (): void {
+it('refuses a task VM consumer even for a pre-existing grant without changing any record', function (bool $existing): void {
+    if ($existing) {
+        $this->consumer->accessibleNodes()->attach($this->serving);
+    }
     TaskVm::query()->create([
         'node_id' => $this->consumer->id, 'provider' => 'incus', 'name' => 'access-worker',
         'wireguard_ip' => $this->consumer->wireguard_ip, 'state' => 'ready',
@@ -131,4 +134,4 @@ it('refuses a task VM consumer without changing any record', function (): void {
     $this->putJson($this->url)->assertStatus(409)->assertJsonPath('error.code', 'task_vm.access_refused');
 
     expect(accessAddSnapshot())->toBe($before);
-});
+})->with([false, true]);

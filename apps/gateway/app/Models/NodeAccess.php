@@ -33,10 +33,17 @@ final class NodeAccess extends Model
     {
         self::saving(static function (self $access): void {
             $consumer = Node::query()->find($access->consumer_node_id);
-            if ($consumer instanceof Node && TaskVm::forNode($consumer) !== null) {
-                throw new TaskVmException('task_vm.access_refused', "Node [{$consumer->id}] is a task VM and cannot access other Nodes.");
+            if ($consumer instanceof Node) {
+                self::requireEligibleConsumer($consumer);
             }
         });
+    }
+
+    public static function requireEligibleConsumer(Node $consumer): void
+    {
+        if (TaskVm::forNode($consumer) !== null) {
+            throw new TaskVmException('task_vm.access_refused', "Node [{$consumer->id}] is a task VM and cannot access other Nodes.");
+        }
     }
 
     /** @return BelongsTo<Node, $this> */

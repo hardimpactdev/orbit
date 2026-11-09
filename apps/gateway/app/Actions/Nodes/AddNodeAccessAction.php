@@ -17,6 +17,7 @@ final readonly class AddNodeAccessAction
     {
         $this->requireActive($consumer);
         $this->requireActive($serving);
+        NodeAccess::requireEligibleConsumer($consumer);
 
         $access = NodeAccess::query()->firstOrCreate([
             'consumer_node_id' => $consumer->id,
