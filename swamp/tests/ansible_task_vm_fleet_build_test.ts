@@ -5,6 +5,7 @@
  * root and systemd: what the build does before it is the subject here.
  */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
+import { parse } from "jsr:@std/yaml@1";
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
@@ -88,7 +89,11 @@ const intent = {
         checkout: "/home/orbit/apps/orbit/workspace",
         wireguard_ip: "10.45.0.10",
       },
-      agent_delivery: '{"commit":"c","version":"1","artifacts":{}}',
+      agent_delivery: JSON.stringify({
+        commit: "c",
+        version: "1",
+        artifacts: { "linux-x86_64": { sha256: "a".repeat(64) } },
+      }),
     },
   },
 };
@@ -98,7 +103,16 @@ const intent = {
  * Incus with its pools and network. `joined` records the operator stamp, which a complete fleet has. Returns the logged calls (incus,
  * swamp), the preseed, whether the operator stamp is still there, whether the play passed and its output.
  */
-function run(present: string[], initialised: boolean, joined = false) {
+function run(
+  present: string[],
+  initialised: boolean,
+  joined = false,
+  options: {
+    staleAgent?: boolean;
+    brokenUpdate?: boolean;
+    snapshots?: boolean;
+  } = {},
+) {
   const folder = Deno.makeTempDirSync();
   const bin = `${folder}/bin`;
   Deno.mkdirSync(bin);
@@ -112,6 +126,14 @@ function run(present: string[], initialised: boolean, joined = false) {
     ) => [name, layout[role as keyof typeof layout].address]),
   );
   Deno.writeTextFileSync(`${folder}/addresses.json`, JSON.stringify(addresses));
+  for (const guest of Object.values(guests)) {
+    Deno.writeTextFileSync(
+      `${folder}/${guest}.sha`,
+      (options.staleAgent && guest === guests["app-dev"] ? "b" : "a").repeat(
+        64,
+      ),
+    );
+  }
   // Each call is one log line; a created container shows in the next listing; an Orbit command admits the next Operation.
   Deno.writeTextFileSync(
     `${bin}/incus`,
@@ -129,7 +151,11 @@ case "$*" in
   *" -- cat /home/orbit/.orbit/ssh/id_ed25519.pub") echo "ssh-ed25519 AAAAgatewaykey orbit@nested-gateway" ;;
   *" -- ssh-keygen -lf "*) echo "256 SHA256:fp-$2 root@$2 (ED25519)" ;;
   "file push "*) cat >> "${folder}/pushed-input" ;;
-  *" php artisan orbit:"*) n=$(($(cat "${folder}/operations" 2>/dev/null || echo 0) + 1)); echo "$n" > "${folder}/operations"; echo "Operation #$n queued." ;;
+  *" -- sha256sum /usr/local/bin/orbit-agent") cat "${folder}/$2.sha" ;;
+  *" php artisan orbit:"*) n=$(($(cat "${folder}/operations" 2>/dev/null || echo 0) + 1)); echo "$n" > "${folder}/operations"; echo "Operation #$n queued."
+    case "$*" in *"orbit:node-converge "*) for last; do :; done; [ -n "$BROKEN_UPDATE" ] || printf '%s' '${
+      "a".repeat(64)
+    }' > "${folder}/nested-$last.sha" ;; esac ;;
   *" select status from operations "*) echo succeeded ;;
   *"/api/v1/doctor "*) echo '{"data":{"healthy":true}}' ;;
 esac
@@ -151,7 +177,7 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
     hosts: "localhost",
     gather_facts: false,
     vars: {
-      intent,
+      intent: { ...intent, direct: false },
       recipe: {
         tools: {
           swamp: {
@@ -173,6 +199,13 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
     tasks: [
       { "ansible.builtin.import_tasks": `${tasks}task-vm-incus.yml` },
       { "ansible.builtin.import_tasks": `${tasks}task-vm-fleet.yml` },
+      ...(options.snapshots
+        ? (parse(
+          Deno.readTextFileSync(
+            new URL("../ansible/task-vm-role.yml", import.meta.url),
+          ),
+        ) as { tasks: unknown[] }[]).at(-1)!.tasks
+        : []),
     ],
   }];
   Deno.writeTextFileSync(`${folder}/play.yml`, JSON.stringify(play));
@@ -193,6 +226,7 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
     env: {
       PATH: `${bin}:${Deno.env.get("PATH")}`,
       INITIALISED: initialised ? "1" : "",
+      BROKEN_UPDATE: options.brokenUpdate ? "1" : "",
       ANSIBLE_HOME: `${folder}/ansible`,
       ANSIBLE_LOCAL_TEMP: `${folder}/tmp`,
       ANSIBLE_NOCOLOR: "1",
@@ -376,6 +410,7 @@ Deno.test({
       Object.values(guests),
       true,
       true,
+      { snapshots: true },
     );
     assertEquals(stamped, true);
     assert(passed, output);
@@ -384,7 +419,66 @@ Deno.test({
       "incus storage list --format csv",
       "incus network list --format csv",
       "incus list --format json",
+      ...Object.values(guests).map((guest) =>
+        `incus exec ${guest} -- sha256sum /usr/local/bin/orbit-agent`
+      ),
     ]);
     assertStringIncludes(output, "changed=0");
+  },
+});
+
+Deno.test({
+  name:
+    "an old nested observer converges even when the delivery stamp is already current",
+  ignore: !hasAnsible,
+  fn() {
+    const { log, passed, output } = run(Object.values(guests), true, true, {
+      staleAgent: true,
+      snapshots: true,
+    });
+    assert(passed, output);
+    const admitted = log.filter((line) =>
+      line.includes("php artisan orbit:node-converge")
+    );
+    assertEquals(admitted.length, 1, output);
+    assert(admitted[0].endsWith("orbit:node-converge app-dev"), output);
+    assertEquals(
+      log.filter((line) => line.includes("exec nested-app-dev -- sha256sum"))
+        .length,
+      2,
+      output,
+    );
+    assert(
+      log.some((line) => line.includes("select status from operations")),
+      output,
+    );
+    assertEquals(
+      log.filter((line) => line.includes("snapshot create --reuse")).length,
+      3,
+      output,
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "a successful converge that leaves the wrong observer digest fails the fleet phase",
+  ignore: !hasAnsible,
+  fn() {
+    const { log, passed, output } = run(Object.values(guests), true, true, {
+      staleAgent: true,
+      brokenUpdate: true,
+      snapshots: true,
+    });
+    assertEquals(passed, false, output);
+    assertStringIncludes(
+      output,
+      "The nested observer does not match the released agent pin",
+    );
+    assertEquals(
+      log.filter((line) => line.includes("snapshot create --reuse")).length,
+      0,
+      output,
+    );
   },
 });

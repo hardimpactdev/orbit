@@ -89,7 +89,7 @@
       tags: [check]
       when: converge_due.check
 
-# The converge waits for no nested service, except the fleet build of a base VM that has no fleet: readiness belongs to a task start
+# The converge waits for a new fleet or a nested observer it just changed; other readiness belongs to a task start
 # (docs/cli/task/start.mmd).
 - name: Task VM image
   hosts: task_vm
@@ -103,7 +103,7 @@
     # when the fleet changed; a task start (a direct converge) leaves them as the base holds them.
     - name: Take the base snapshots
       tags: [fleet]
-      when: not (intent.direct | default(false)) and (fleet_new | length > 0 or "code" not in checkout_current or converge_due.operator or converge_due.tokens)
+      when: not (intent.direct | default(false)) and (fleet_new | length > 0 or "code" not in checkout_current or converge_due.operator or converge_due.tokens or fleet_agents_changed)
       ansible.builtin.command: { argv: [timeout, "180", incus, snapshot, create, --reuse, "{{ item }}", base] }
       loop: "{{ intent.fleet.guests.values() | list }}"
       changed_when: true

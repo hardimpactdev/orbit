@@ -84,3 +84,22 @@
         stdin_add_newline: false
       loop: "{{ ['code', 'agent', 'migrations'] | reject('in', checkout_current) | list }}"
       changed_when: true
+
+# A delivery stamp proves only which manifest was copied, not which observer is installed. Read the actual binaries even when every
+# stamp is current: older refreshes recorded the new pin without updating the nested observers.
+- name: Name the nested observer pin
+  ansible.builtin.set_fact:
+    fleet_agent_pin: "{{ (intent.fleet.bootstrap.agent_delivery | from_json).artifacts['linux-x86_64'].sha256 }}"
+    fleet_agents_changed: false
+- name: Read the nested observer digests
+  ansible.builtin.command:
+    argv: [timeout, "30", incus, exec, "{{ fleet_guests[item] }}", --, sha256sum, /usr/local/bin/orbit-agent]
+  loop: "{{ fleet_guests.keys() | list }}"
+  register: fleet_agent_read
+  changed_when: false
+  failed_when: false
+- name: Converge a mismatched nested observer
+  ansible.builtin.include_tasks: task-vm-fleet-agent.yml
+  loop: "{{ fleet_agent_read.results }}"
+  loop_control: { loop_var: fleet_agent, label: "{{ fleet_agent.item }}" }
+  when: fleet_agent.rc != 0 or (fleet_agent.stdout.split() | first | default('')) != fleet_agent_pin
