@@ -32,7 +32,7 @@ sequenceDiagram
     %%> What it does:
     %%> - outer VM: packages, tools, Swamp, orbit-agent, the Pi server, sshd and UFW at the release's pins; each part runs only when its digest changed
     %%> - the warm checkout: main at the release commit, installs only where a lock file changed
-    %%> - each container: migrations and restarts only when the code changed; no wait for nested services and no identity wipe
+    %%> - each container: migrations and restarts only when the code changed; mismatched observers converge through the nested Gateway and pass a digest check before snapshots; no identity wipe
     %%> - a base VM without a nested fleet builds it once, in the same converge: the containers from stock Ubuntu, the nested Gateway from one local `gateway-bootstrap` run, app-dev and app-prod through its own Orbit, and a Doctor wait; a base VM with its fleet skips the build
     SW->>H: Stop and snapshot<br/>VM and seed
     %%> What it does:

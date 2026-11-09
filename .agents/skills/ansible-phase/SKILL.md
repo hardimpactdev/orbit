@@ -125,3 +125,5 @@ An extraction `creates` guard proves only that a path exists. Once a live versio
 A restored proof Gateway keeps the base image's installed collections and generated grants. Prepare both from the candidate checkout before cases; a new callback or vault key pattern must not depend on rebuilding the image.
 
 `command` expands `~user` even with `argv`. Set `expand_argument_vars: false` for literal arguments such as DNS routing domain `~orbit`; otherwise it becomes the account's home path and drifts on every run. Test with a domain that names an existing account and read back the arguments before checking a zero-change repeat.
+
+An artifact delivery stamp proves which manifest was copied, not which binary runs. Before promoting reusable fleet snapshots, compare installed observer digests with the release pin, repair mismatches through normal Node convergence, and verify the digests again. Retake snapshots after that repair even when checkout stamps were already current.

@@ -1081,9 +1081,7 @@ The bootstrap input names the operator address of the VM, 10.45.0.10, so the nes
 
 The rest of the phase then runs as on any converge: the operator join, the renewal of the Swamp tokens and the code of the commit, each recorded as done. The `base` snapshots of the containers are taken last. The earlier standalone fleet build took 1,840 s (Operation 11816), so a new host's first refresh takes about 30 minutes more than the build of the outer VM.
 
-##### Not built
-
-- The converge of the nested Nodes through the nested Orbit. Stage 2 builds it.
+The fleet phase compares each installed nested observer's SHA-256 with the released agent pin. A mismatch, including a missing binary, runs the nested Gateway's normal `node.converge`, waits for its Operation to succeed and checks the installed digest again. An unchanged observer starts no Operation. The refresh retakes the containers' `base` snapshots after an observer changes; failure prevents promotion. Copying a delivery manifest alone does not update an installed observer. The frozen agent manifest is an image-freshness input, so proof cannot accept a base that predates its pin.
 
 ##### Apply and check the nested fleet
 
