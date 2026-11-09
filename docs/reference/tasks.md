@@ -277,7 +277,7 @@ When the turn ends, Swamp returns its receipt and measurements. The Gateway proj
 
 After a reviewer turn, Orbit records the checkout difference, resets to the check's commit, and removes untracked files. The result includes the removed difference and the state after reset. A consult is read-only but keeps the implementer's uncommitted tree: Orbit records its difference and never resets it.
 
-A Pi restart leaves the turn `working` while Durable resumes it. Durable retries transient provider errors inside that turn; the Gateway retries none. A crash-loop park or an exhausted provider retry budget ends the thread and operation `failed`, with the error in the result. Orbit raises no assistance for the external group. New task VMs need the [Durable artifact pin](/reference/pi-server#roll-out-a-new-binary).
+A Pi restart leaves the turn `working` while Durable resumes it. Durable retries transient provider errors inside that turn; the Gateway retries none. A crash loop at Durable's restart limit or an exhausted provider retry budget ends the thread and operation `failed`, with the error in the result. Orbit raises no assistance for the external group. New task VMs need the [Durable artifact pin](/reference/pi-server#roll-out-a-new-binary).
 
 Direct turn cancellation uses native Swamp cancellation and official SSH session teardown. It does not prove that the Pi session or remote descendants stopped. Normal group cleanup or VM destruction removes remaining work. A failed or disconnected Pi stream takes the separate interrupt action once before collecting a failed result. Native resume reuses completed steps, including the keyed message send; it adds no Gateway poller or ownership machinery.
 
