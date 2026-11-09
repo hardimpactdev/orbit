@@ -31,7 +31,7 @@ Node list and detail responses keep `roles` as a list of role names. Their share
 
 `NodeAccessAuthorizer` owns the shared Node access rule. The active Gateway Node, the host serving the Gateway, and a caller with a grant to the active Gateway have Gateway authority. They may read every recorded Node without a direct grant to each target. Other callers may read only Nodes to which they have a direct grant.
 
-A collection read is refused with `node_access.required` only when the caller has neither Gateway authority nor any direct Node grant. A target read requires Gateway authority or a direct grant to that target.
+A collection read is refused with `node_access.required` only when the caller has neither Gateway authority nor any direct Node grant. Any command on one target, a read or a change, requires Gateway authority or a direct grant to that target. Grant administration (`node:access:add` and `node:access:remove`) requires Gateway authority; a grant to the target is not enough.
 
 Removing task-host settings or changing the bridge or CIDR withdraws the owned DHCP/DNS input rules before saving the patch. Other task-host settings remain record-only. See [Node settings](/reference/node-settings).
 
