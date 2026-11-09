@@ -50,13 +50,20 @@ class HubPruneTest(unittest.TestCase):
             code, output, changed = self.prune(directory, keep=[3, 4, 9], newest=9)
             self.assertEqual((code, changed), (0, 0), output)
 
+    def test_the_hub_converge_runs_this_prune(self):
+        tasks = {task['name']: task for task in yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub.yml').read_text())}
+        self.assertEqual(tasks['Prune only removed peers']['ansible.builtin.import_tasks'], 'node-converge-hub-prune.yml')
+
     def test_node_add_loads_the_peer_files_the_hub_has_when_it_applies(self):
-        plays = yaml.safe_load((ANSIBLE / 'operation-node-add.yml').read_text())
-        tasks = {task['name']: task for task in next(play for play in plays if play['name'] == 'Add the peer on the hub')['tasks']}
-        shell = tasks['Apply the hub peers']['ansible.builtin.shell']
+        shell = yaml.safe_load((ANSIBLE / 'tasks/node-add-hub-peers.yml').read_text())[0]['ansible.builtin.shell']
         # No snapshot of the admitted peers: a Node that joined after admission has only its file, and must stay loaded.
         self.assertNotIn('stdin', shell)
         self.assertIn('/etc/wireguard/orbit-peers.d/*.conf', shell['cmd'])
+        plays = {play['name']: play['tasks'] for play in yaml.safe_load((ANSIBLE / 'operation-node-add.yml').read_text())}
+        # A joining Node's hub and a hub that enrolls itself both load the hub's files.
+        for play, task in (('Add the peer on the hub', 'Apply the hub peers'), ('Set up the tunnel', "Apply the hub's own peers")):
+            imported = next(item for item in plays[play] if item['name'] == task)
+            self.assertEqual(imported['ansible.builtin.import_tasks'], 'tasks/node-add-hub-peers.yml', play)
 
 
 if __name__ == '__main__':

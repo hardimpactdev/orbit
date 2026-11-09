@@ -34,7 +34,7 @@ it('prunes the peer files of Nodes that are gone or being removed, and keeps eve
     expect($goneId)->toBeLessThanOrEqual($intent['prune']['newest']);
 });
 
-it('keeps the peer file of a Node created after the intent, because its id is above the newest one', function (): void {
+it('records the newest Node id, below every Node created later, and removes only the removed Node\'s file', function (): void {
     $hub = SwampNodeFixture::ensure();
     $node = static fn (string $name, string $ip): Node => Node::withoutEvents(static fn (): Node => Node::query()->create([
         'name' => $name, 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => $ip, 'wireguard_public_key' => null,

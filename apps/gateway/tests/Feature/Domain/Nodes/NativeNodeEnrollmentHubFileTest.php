@@ -41,7 +41,9 @@ it('writes the hub file the hub converge writes, and keeps the hub\'s peers out 
     expect($network['is_hub'])->toBeTrue()
         ->and($file['content'])->toBe(NodeWireGuardHubInput::config($hub))
         ->and($file['content'])->toContain('wg addconf %i')->not->toContain($peer->wireguard_public_key)
-        ->and($network['sync_body'])->toContain($peer->wireguard_public_key);
+        // The hub loads the peer files it has at apply time: the run writes each recorded peer's file and carries no snapshot to load.
+        ->and(collect($network['files'])->firstWhere('path', NodeWireGuardHubInput::peerFile($peer->id))['content'])->toContain($peer->wireguard_public_key)
+        ->and($network['sync_body'])->toBe('')->and($network['port'])->toBe(NodeWireGuardHubInput::intent($hub)['port']);
 });
 
 it('rewrites the hub file of a joining Node as the hub converge does, and gives every peer its own file', function (): void {

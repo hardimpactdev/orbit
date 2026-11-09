@@ -11,4 +11,4 @@
   vars: { peer_id: "{{ item.path | basename | regex_replace('\\.conf$', '') }}" }
   when: >-
     not (peer_id is match('^[1-9][0-9]*$')
-    and (peer_id | int > hub_plan.prune.newest or peer_id | int in hub_plan.prune.keep))
+    and (peer_id | int > hub_plan.prune.newest | int or peer_id | int in hub_plan.prune.keep | map('int')))
