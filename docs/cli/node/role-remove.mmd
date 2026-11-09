@@ -1,99 +1,195 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, one Swamp run, Ansible phases for idempotent Node state (rule 22). docs/reference/node-provisioning.md.
-  %% status: reviewed
-  %% command: node:role:remove
-  %% kind: node.role_remove
-  autonumber
-  %% lane CLI icon=terminal pill=caller tone=gray
-  %% lane GW icon=gateway pill=intent tone=blue
-  %% lane SW icon=workflow pill=executes tone=green
-  %% lane N icon=server pill=target tone=amber
-  %% lane P icon=server pill=target tone=purple
-  participant CLI as CLI / MCP<br/>orbit · MCP tools
-  participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>workflow execution
-  participant N as Target Node<br/>reached over ssh
-  participant P as Fleet Nodes<br/>hub · DNS
-  CLI->>GW: node:role:remove<br/>NODE ROLE
-  %%> Command:
-  %%> - `orbit node:role:remove NODE ROLE`
-  %%> - syntax: `<node> <role> [--force] [--purge-data] [--offline] [--json]`
-  %%> Input:
-  %%> - the Node and the role to remove
-  %%> - `--force` is consent; without a terminal, `--purge-data` and `--offline` need it
-  %%> Who can call it:
-  %%> - the `orbit` CLI and the MCP tool send the same request
-  Note over GW: Validate, mark removing
-  %%> Requirements:
-  %%> - the calling Node has an access grant to the target Node
-  %%> - the target is an active, managed Linux Node, and the role is not `vpn`, `router` or `swamp`
-  %%> - the role is `active` or `failed`; a `provisioning` or `removing` role is refused until its claim is stale
-  %%> - `app-dev` and `app-prod` have no Route targets, `ingress` no public Routes, and `analytics` no tracking hosts
-  %%> - one add, converge or remove Operation per Node (`operation.target_busy`); a second removal after the first finished finds no such role (`http.404`)
-  %%> Result:
-  %%> - the assignment is recorded as `removing`, and a task is recorded with the full intent
-  GW->>SW: Start run, full intent<br/>node-role-remove
-  GW-->>CLI: 202 Accepted<br/>task ID
-  %%> What you get:
-  %%> - the task ID, at once
-  %%> Next:
-  %%> - the CLI follows the task with `operation:show`
-  SW->>N: Reach the Node<br/>SSH argv
-  %%> What it does:
-  %%> - probes the Node with its approved identity
-  %%> - an unreachable Node without `--offline` fails the run here (`node.removal_incomplete`); a reachable Node gets ordinary cleanup even with `--offline`
-  opt CI role is being removed
-    SW->>N: Require drained CI<br/>SSH argv · native assert
-    %%> Why:
-    %%> - the run fails here, `node.removal_incomplete`, while CI guests still run on the Node, and the rerun after they are drained succeeds
-  end
-  opt the last role leaves
-    SW->>N: Keep public SSH access<br/>SSH argv
-    %%> Why first:
-    %%> - removing the last role restores public recovery SSH before anything else is torn down, so the Node stays reachable
-  end
-  SW->>P: Withdraw from the fleet<br/>PHP · sites · DNS · Metrics
-  %%> What it does:
-  %%> - withdraws the role's PHP pools, Caddy sites, private DNS records, Metrics exporter entries and role certificates on the other Nodes
-  %%> - an `--offline` removal of an unreachable Node does only the work on other Nodes
-  opt Node reachable
-    SW->>N: Remove the role<br/>Ansible phase: remove
-    %%> What it does:
-    %%> - stops the role's services and removes its files, configuration, containers, firewall rules and certificates
-    %%> Retained:
-    %%> - role data, CI resources, release data and container volumes, unless `--purge-data`
-    opt --purge-data
-      SW->>N: Remove role data<br/>Ansible phase: purge
-      %%> What it does:
-      %%> - for `metrics`, the Prometheus and Grafana volumes and the stored credentials; for `websocket`, the Reverb checkout; for `ci-runner`, the Incus project, network and ACL
+    %% Target design: ADR 0244 task, one Swamp run, Ansible phases for idempotent Node state (rule 22). docs/reference/node-provisioning.md.
+    %% status: draft
+    %% command: node:role:remove
+    %% kind: node.role_remove
+    autonumber
+    %% Does: remove one assignment and its owned runtime duties.
+    %% Does not: delete the Node, its Instances or unrelated data, or repair the network.
+    %% lane CLI icon=terminal pill=caller tone=gray
+    %% lane GW icon=gateway pill=intent tone=blue
+    %% lane SW icon=workflow pill=executes tone=green
+    %% lane N icon=server pill=target tone=amber
+    %% lane P icon=server pill=target tone=purple
+    participant CLI as CLI
+    participant GW as Gateway
+    participant SW as Swamp
+    participant N as Target Node
+    participant P as Other Nodes<br/>Recorded duties
+
+    CLI->>GW: node:role:remove NODE ROLE
+    %%> Command:
+    %%> - orbit node:role:remove NODE ROLE
+    %%> - syntax: orbit node:role:remove [<node>] [<role>] [--force] [--purge-data] [--offline] [--idempotency-key=<key>] [--json]
+    %%> Input:
+    %%> - Shared selectors, consent, output and keyed replay are linked from the command page, not expanded here.
+    %%> Requirements:
+    %%> - The Gateway owns admission; every admission refusal creates no Operation and changes no state.
+    alt Node does not exist
+        %% path: unknown-node
+        GW-->>CLI: Node not found<br/>http.404
+        %%> Result:
+        %%> - No assignment or host changes.
+    else Caller has neither Gateway authority nor a target grant
+        %% path: no-access
+        GW-->>CLI: Access refused<br/>node_access.required
+        %%> Result:
+        %%> - Gateway authority or a target grant suffices; see /cli/node#authority.
+    else Node is not active managed Linux
+        %% path: ineligible-node
+        GW-->>CLI: Node ineligible<br/>validation.failed
+        %%> Result:
+        %%> - Inactive Node: validation.failed. Unmanaged or non-Linux Node: operation.kind_unavailable.
+    else Role is unknown or protected: vpn, router, swamp
+        %% path: role-refused
+        GW-->>CLI: Role refused
+        %%> Result:
+        %%> - Unknown role: validation.failed. Protected role: validation.failed.
+    else Assignment is absent
+        %% path: missing-assignment
+        alt Role is ingress
+            %% path: missing-ingress
+            GW-->>CLI: Nothing to remove<br/>node_role.absent
+            %%> Result:
+            %%> - Success with skip reason node_role.absent: role not assigned. Human and JSON output carry the reason; no Operation or state change.
+        else Any other role, including a completed removal
+            %% path: role-missing
+            GW-->>CLI: Assignment not found<br/>http.404
+            %%> Result:
+            %%> - Post-deletion repeats create no Operation and change nothing.
+        end
+    else Assignment has a live provisioning or removing claim
+        %% path: assignment-in-flight
+        GW-->>CLI: Assignment busy<br/>validation.failed
+        %%> Result:
+        %%> - Existing expiry rules govern stale-claim reclamation, not a new timeout or force bypass.
+    else app-dev or app-prod still hosts Instances
+        %% path: instances-attached
+        GW-->>CLI: Instances remain<br/>validation.failed
+        %%> Result:
+        %%> - Remove or transfer the dependencies through their owning commands first.
+    else App role has Route targets, or ingress still serves public Routes
+        %% path: routes-attached
+        GW-->>CLI: Routes remain<br/>validation.failed
+        %%> Result:
+        %%> - Do not withdraw a role still serving these dependencies.
+    else analytics still has a tracking host
+        %% path: tracking-hosts-attached
+        GW-->>CLI: Tracking hosts remain<br/>analytics.tracking_hosts_exist
+        %%> Result:
+        %%> - Leave the assignment and tracking hosts unchanged.
+    else Node Operation lock is held
+        %% path: node-busy
+        GW-->>CLI: Node busy<br/>operation.target_busy
+        %%> Result:
+        %%> - No new Operation or assignment change.
+    else Active, failed, or reclaimable stale assignment admitted
+        %% path: admitted
+        GW->>SW: Run role removal<br/>node:role:remove
+        %%> What it does:
+        %%> - Take the existing Node Operation lock and mark the assignment removing.
+        %%> - Capture immutable intent, recorded participants, publications, certificates and Metrics bindings; no network sweep.
+        %%> - Start one Swamp run. Swamp owns machine work, result and cleanup; renew the Node lock throughout.
+        GW-->>CLI: Operation accepted<br/>202 · Operation ID
+        %%> Result:
+        %%> - Follow this Operation rather than starting another run.
+        SW->>N: Reach the Node<br/>Ansible phase
+        %%> What it does:
+        %%> - Establish reachability; offline consent changes only the unreachable outcome.
+        alt Target is unreachable without offline consent
+            %% path: target-unreachable
+            Note over SW: Target unreachable
+            %%> Result:
+            %%> - Fail with node.removal_incomplete at the reachability step, retaining the assignment; do no target cleanup.
+        else Target is unreachable and offline is set
+            %% path: offline-unreachable
+            Note over SW: Skip target cleanup
+            %%> What it does:
+            %%> - Retain all target-host state for manual cleanup, including data even when purge was requested.
+            %%> - Continue withdrawal on recorded other Nodes; no claim that recovery SSH was restored.
+        else Target answers, including with offline set
+            %% path: reachable
+            opt Role is ci-runner
+                %% path: ci-pre-drain
+                SW->>N: Require drained CI<br/>Ansible phase
+                %%> What it does:
+                %%> - Require no containers, including stopped guests. Purge also requires no cached images, custom volumes or extra profiles.
+                %%> - Check before teardown. Never drain guests or deregister runners, even with force.
+                alt Guests remain, or purge resources are not empty
+                    %% path: ci-not-drained
+                    Note over SW: CI not drained
+                    %%> Result:
+                    %%> - Fail with node.removal_incomplete before CI teardown; retain the failed assignment and CI resources.
+                else CI is empty for the requested cleanup
+                    %% path: ci-drained
+                    Note over SW: CI ready for removal
+                    %%> Result:
+                    %%> - Continue teardown under the same lock.
+                end
+            end
+            opt Last role, after all prior checks pass
+                %% path: last-role
+                SW->>N: Keep public SSH access<br/>Ansible phase
+                %%> What it does:
+                %%> - Restore and verify orbit:public-ssh-recovery on the configured public SSH port before assignment deletion.
+                %%> Result:
+                %%> - Restore failure: remove:firewall-recovery / node.firewall_recovery_failed. Keep the failed assignment for retry.
+            end
+        end
+        opt All prior steps passed and recorded other-Node duties exist
+            %% path: fleet-withdrawal
+            SW->>P: Withdraw from the fleet<br/>Ansible phase
+            %%> What it does:
+            %%> - One invocation per participant, in parallel; withdraw captured publications, certificates, scrape bindings and owned allowlists.
+            %%> - Write complete desired configuration, not text edits; any participant failure fails removal.
+        end
+        opt All prior steps passed and target is reachable
+            %% path: target-cleanup
+            SW->>N: Remove the role<br/>Ansible phase
+            %%> What it does:
+            %%> - Stop and disable owned services; remove managed config, certificates and exact owned firewall rules; verify absence.
+            %%> - Keep unrelated rules and restored recovery SSH. If another role remains, public SSH stays closed.
+            %%> - Default: keep data, releases, volumes and CI resources. No broad firewall reload or separate reconciliation pass.
+            opt --purge-data
+                %% path: purge-data
+                SW->>N: Remove role data<br/>Ansible phase
+                %%> What it does:
+                %%> - Delete and verify only the documented Metrics, WebSocket or empty CI resources; preserve shared pools and unrelated data.
+            end
+        end
+        SW->>SW: Collect the removal result
+        %%> Result:
+        %%> - Retain completed changes, the actual failed step and error; no rollback.
+        SW->>SW: Remove the run folder
+        %%> What it does:
+        %%> - Native completion dependencies wait for the result and every dependent cleanup, on success or failure, before deleting shared run material.
+        %%> - Preserve the original failure and expose incomplete cleanup. A worker crash does not prove cleanup ran.
+        alt Every required phase and cleanup passed
+            %% path: removed
+            SW-->>GW: Removal succeeded
+            %%> Result:
+            %%> - The Gateway owns terminal projection, not Ansible.
+            GW->>GW: Finalize role removal
+            %%> What it does:
+            %%> - Delete the assignment, finalize its owned registry state, and release the Node lock; keep the Node and its other assignments.
+        else A phase, verification or cleanup failed
+            %% path: removal-failed
+            SW-->>GW: Removal failed
+            %%> Result:
+            %%> - Keep completed work and the actual failed step and error.
+            GW->>GW: Keep failed assignment<br/>remove:STEP
+            %%> What it does:
+            %%> - Record status failed, failed_step and error_code; preserve native step spelling, case and spaces, then release the lock.
+            %%> Retry:
+            %%> - Fix the cause and retry removal; completed teardown is safe to repeat.
+        end
+        loop Follow until terminal
+            %% path: follow-operation
+            CLI->>GW: operation:show ID
+            %%> What it does:
+            %%> - Read the Operation's recorded state.
+            GW-->>CLI: Operation status
+            %%> Result:
+            %%> - Render terminal success or failure using the shared output contract.
+        end
     end
-    SW->>N: Check the removal<br/>Ansible phase: check
-    %%> Why:
-    %%> - the one end check: the removed files, directories and containers are gone
-  end
-  alt every step passes
-    SW-->>GW: Run succeeded<br/>terminal event
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Delete the role
-    %%> Result:
-    %%> - the assignment is deleted
-  else a step fails
-    N--xSW: exit ≠ 0 or mismatch
-    SW--xGW: Run failed<br/>error_code, failed step
-    Note over GW: Mark the role failed
-    %%> Result:
-    %%> - the assignment stays, `failed` at `remove:STEP`, with the step's own error code
-    %%> - a failed public SSH restore leaves the Node reachable, and the rerun restores it
-    %%> On the Node:
-    %%> - finished steps stay; there is no rollback
-    %%> Retry:
-    %%> - run the same command again: each removal step is safe to repeat over what a failed convergence left
-  end
-  opt run completed or failed
-    SW->>SW: Remove the run folder<br/>private run files
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show TASK
-    GW-->>CLI: status + result
-  end

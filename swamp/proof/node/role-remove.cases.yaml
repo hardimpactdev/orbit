@@ -1,0 +1,325 @@
+# Does: remove one assignment and its owned runtime duties.
+# Does not: delete the Node, its Instances or unrelated data, or repair the network.
+# Budget: O=5 + one staged repeat + R=11 = 17 outcome/refusal slots.
+# Runnable: 2 O + repeat + 4 R = 7 authored / 7 expanded (no matrices).
+# Uncovered: 3 O + 7 R = 10 capability requests, not passing proof.
+# R counts local input/consent refusal once. CI pre-drain is post-admission;
+# the other R slots create no Operation. Missing-assignment refusal is in repeat.
+# No role-remove cases existed on origin/main; no inherited IDs/batches removed.
+# Node keys/placeholders are written relative to target: app-dev; the runner
+# exchanges them for each explicit case Node (Gateway or app-prod) at load.
+command: node:role:remove
+chart: node/role-remove
+target: app-dev
+sources: [gateway, app-prod]
+baseline: [node_records, operations, ufw]
+parallel: 1
+cases:
+  # The ready fleet already has WebSocket on the Gateway: do not add a second singleton.
+  - id: role-remove-ordinary
+    batch: fresh-fleet
+    node: gateway
+    covers: [main, admitted, reachable, target-cleanup, removed, follow-operation]
+    summary: Reachable offline consent still stops WebSocket runtime and preserves the other assignments and SSH policy.
+    timeout: 900
+    fails_today: Admission rejects offline with operation.kind_unavailable rather than probing and doing ordinary cleanup
+      on a reachable target.
+    setup:
+      - cli:
+          run: ['node:role:list', '${app-dev.id}']
+          expect:
+            exit: 0
+            json:
+              - {path: 'assignments[role=websocket].status', equals: active}
+          save:
+            'assignments[role=gateway]': kept-gateway
+            'assignments[role=vpn]': kept-vpn
+            'assignments[role=swamp]': kept-swamp
+      - service: {'on': app-dev, name: orbit-websocket.service, state: active}
+    act:
+      - cli:
+          run: ['node:role:remove', '${app-dev.id}', websocket, --force, --offline]
+          expect:
+            exit: 0
+            status: succeeded
+            steps: {name: Remove the role, count: 1}
+      - cli:
+          run: ['node:role:list', '${app-dev.id}']
+          expect:
+            exit: 0
+            json:
+              - {path: 'assignments[role=websocket]', absent: true}
+              - {path: 'assignments[role=gateway]', equals: '${kept-gateway}'}
+              - {path: 'assignments[role=vpn]', equals: '${kept-vpn}'}
+              - {path: 'assignments[role=swamp]', equals: '${kept-swamp}'}
+      - cli:
+          run: ['node:show', '${app-dev.id}']
+          expect:
+            exit: 0
+            json:
+              - {path: roles, equals: [gateway, vpn, swamp]}
+              - {path: status, equals: active}
+    expect:
+      - service: {'on': app-dev, name: orbit-websocket.service, state: inactive}
+      - unchanged: {since: act, what: [ufw]}
+      - doctor: {node: app-dev, drift: 0}
+  - id: role-remove-repeat
+    batch: fresh-fleet
+    node: app-dev
+    covers: [main, admitted, reachable, target-cleanup, removed, missing-assignment, role-missing, missing-ingress, follow-operation]
+    summary: Delete once, refuse the ordinary repeat without an Operation, but treat missing ingress as a no-op.
+    timeout: 900
+    fails_today: Admission looks up the assignment with firstOrFail for ingress too, so missing ingress returns http.404 instead
+      of success with skip reason node_role.absent.
+    setup:
+      - cli:
+          run: ['node:role:add', '${app-dev.id}', database]
+          expect: {exit: 0, status: succeeded}
+    stages:
+      - act:
+          - cli:
+              run: ['node:role:remove', '${app-dev.id}', database, --force]
+              expect: {exit: 0, status: succeeded}
+          - cli:
+              run: ['node:role:list', '${app-dev.id}']
+              expect:
+                exit: 0
+                json:
+                  - {path: 'assignments[role=database]', absent: true}
+                  - {path: 'assignments[role=app-dev].status', equals: active}
+                  - {path: 'assignments[role=app-dev].failed_step', equals: null}
+                  - {path: 'assignments[role=app-dev].error_code', equals: null}
+          - cli:
+              run: ['node:show', '${app-dev.id}']
+              expect:
+                exit: 0
+                json:
+                  - {path: roles, equals: [app-dev]}
+                  - {path: status, equals: active}
+        expect:
+          - service: {'on': app-dev, name: docker.service, state: active}
+          - unchanged: {since: act, what: [ufw]}
+      - act:
+          - cli:
+              run: ['node:role:remove', '${app-dev.id}', database, --force]
+              forms: [json, human]
+              expect: {exit: 1, code: http.404, request: none}
+        expect:
+          - unchanged: {since: act, what: [node_records, operations, ufw]}
+      - act:
+          - cli:
+              run: ['node:role:remove', '${app-dev.id}', ingress, --force]
+              expect: {exit: 0, skipped: node_role.absent, request: none}
+        expect:
+          - unchanged: {since: act, what: [node_records, operations, ufw]}
+  - id: role-remove-last-role
+    batch: fresh-fleet
+    node: app-prod
+    covers: [main, admitted, reachable, last-role, target-cleanup, removed, follow-operation]
+    summary: Last-role teardown restores real recovery SSH, deletes only the assignment, and retains the active Node.
+    timeout: 900
+    fails_today: Remove the role is not yet one consolidated Ansible phase with this Operation step name.
+    setup:
+      - cli:
+          run: ['node:show', '${app-dev.id}']
+          expect:
+            exit: 0
+            json:
+              - {path: roles, equals: [app-prod]}
+              - {path: status, equals: active}
+    act:
+      - cli:
+          run: ['node:role:remove', '${app-dev.id}', app-prod, --force]
+          expect:
+            exit: 0
+            status: succeeded
+            steps: {name: Remove the role, count: 1}
+      - cli:
+          run: ['node:role:list', '${app-dev.id}']
+          expect:
+            exit: 0
+            json:
+              - {path: assignments, equals: []}
+      - cli:
+          run: ['node:show', '${app-dev.id}']
+          expect:
+            exit: 0
+            json:
+              - {path: id, equals: '${app-dev.id}'}
+              - {path: name, equals: app-prod}
+              - {path: status, equals: active}
+              - {path: roles, equals: []}
+    expect:
+      - ufw:
+          'on': app-dev
+          family: 4
+          rows:
+            - {comment: 'orbit:public-ssh-recovery', to: 22/tcp, action: ALLOW IN, from: Anywhere}
+      - probe:
+          from: gateway
+          to: app-dev
+          family: 4
+          proto: tcp
+          port: 22
+          expect: connect
+  - id: role-remove-local-input
+    batch: fresh-fleet
+    node: app-dev
+    covers: []
+    summary: Reject invalid numeric IDs, names and unconsented flags locally without mutation.
+    fails_today: The CLI accepts Node names instead of requiring a positive numeric Node ID.
+    stages:
+      - act:
+          - cli:
+              run: ['node:role:remove', '0', vpn, --force]
+              forms: [json, human]
+              expect: {exit: 1, code: node.id_invalid, request: none}
+          - cli:
+              run: ['node:role:remove', --force, --, '-1', vpn]
+              forms: [json, human]
+              expect: {exit: 1, code: node.id_invalid, request: none}
+          - cli:
+              run: ['node:role:remove', app-dev, vpn, --force]
+              expect: {exit: 1, code: node.id_invalid, request: none}
+          - cli:
+              run: ['node:role:remove', '${app-dev.id}', database, --purge-data]
+              expect: {exit: 1, code: validation.failed, request: none}
+          - cli:
+              run: ['node:role:remove', '${app-dev.id}', database, --offline]
+              expect: {exit: 1, code: validation.failed, request: none}
+        expect:
+          - unchanged: {since: act, what: [node_records, operations, ufw]}
+  - id: role-remove-unknown-node
+    batch: fresh-fleet
+    node: app-dev
+    covers: [unknown-node]
+    summary: An unknown numeric Node is refused without changing any recorded Node state or creating an Operation.
+    act:
+      - cli:
+          run: ['node:role:remove', '2147483647', database, --force]
+          forms: [json, human]
+          expect: {exit: 1, code: http.404, request: none}
+    expect:
+      - unchanged: {since: act, what: [node_records, operations, ufw]}
+  - id: role-remove-authority
+    batch: no-grant
+    exclusive: true
+    node: app-dev
+    covers: [no-access, missing-assignment, role-missing]
+    summary: Gateway authority or a target grant suffices; neither refuses access; Metrics follows the same target-write rule.
+    fails_today: The Metrics roleMutation middleware still requires Gateway authority, so a target-only Metrics removal is
+      denied.
+    setup:
+      - cli:
+          run: ['node:access:add', '${app-prod.id}', '${gateway.id}']
+          expect:
+            exit: 0
+            json:
+              - {path: already_exists, equals: false}
+    stages:
+      - act:
+          - cli:
+              run: ['node:role:remove', '${app-dev.id}', ci-runner, --force]
+              as: app-prod
+              expect: {exit: 1, code: http.404, request: none}
+        expect:
+          - unchanged: {since: act, what: [node_records, operations, ufw]}
+      - act:
+          - cli:
+              run: ['node:access:remove', '${app-prod.id}', '${gateway.id}', --force]
+              expect: {exit: 0}
+        expect: []
+      - act:
+          - cli:
+              run: ['node:role:remove', '${app-dev.id}', ci-runner, --force]
+              as: app-prod
+              forms: [json, human]
+              expect: {exit: 1, code: node_access.required, request: none}
+        expect:
+          - unchanged: {since: act, what: [node_records, operations, ufw]}
+      - act:
+          - cli:
+              run: ['node:access:add', '${app-prod.id}', '${app-dev.id}']
+              expect:
+                exit: 0
+                json:
+                  - {path: already_exists, equals: false}
+        expect: []
+      - act:
+          - cli:
+              run: ['node:role:remove', '${app-dev.id}', ci-runner, --force]
+              as: app-prod
+              expect: {exit: 1, code: http.404, request: none}
+          - cli:
+              run: ['node:role:remove', '${app-dev.id}', metrics, --force]
+              as: app-prod
+              expect: {exit: 1, code: http.404, request: none}
+        expect:
+          - unchanged: {since: act, what: [node_records, operations, ufw]}
+      - act:
+          - cli:
+              run: ['node:access:remove', '${app-prod.id}', '${app-dev.id}', --force]
+              expect: {exit: 0}
+        expect: []
+      # Both temporary grants are gone; refusal observations must not include grant cleanup in their baseline.
+      - act:
+          - cli:
+              run: ['node:role:remove', '${app-dev.id}', ci-runner, --force]
+              as: app-prod
+              expect: {exit: 1, code: node_access.required, request: none}
+          - cli:
+              run: ['node:role:list', '${gateway.id}']
+              as: app-prod
+              expect: {exit: 1, code: node_access.required, request: none}
+        expect:
+          - unchanged: {since: act, what: [node_records, operations, ufw]}
+  - id: role-remove-protected
+    batch: fresh-fleet
+    node: app-dev
+    covers: [role-refused]
+    summary: Reject protected roles and unknown role values without an Operation or state changes.
+    act:
+      - cli:
+          run: ['node:role:remove', '${app-dev.id}', vpn, --force]
+          forms: [json, human]
+          expect: {exit: 1, code: validation.failed, request: none}
+      - cli:
+          run: ['node:role:remove', '${app-dev.id}', router, --force]
+          expect: {exit: 1, code: validation.failed, request: none}
+      - cli:
+          run: ['node:role:remove', '${app-dev.id}', swamp, --force]
+          expect: {exit: 1, code: validation.failed, request: none}
+      - cli:
+          run: ['node:role:remove', '${app-dev.id}', not-a-role, --force]
+          expect: {exit: 1, code: validation.failed, request: none}
+    expect:
+      - unchanged: {since: act, what: [node_records, operations, ufw]}
+uncovered:
+  path:purge-data: Add role-owned file, release, volume and credential snapshots and a nonempty purge fixture, so WebSocket
+    default retention and a later --force --purge-data removal can prove exactly the promised data changes and unchanged unrelated
+    data. Status alone cannot prove either outcome.
+  path:offline-unreachable: 'Add restorable target unreachability and recorded participant-duty fixtures with host and publication
+    observers. One staged exclusive case must prove --force --offline --purge-data withdraws existing other-Node duties, deletes
+    the assignment, preserves every target-host resource and restores reachability before leaving its batch (fleet-withdrawal).'
+  path:removal-failed: 'Add a named-phase fault and retained-work observer for one staged removal/failure/retry, including
+    last-role firewall recovery and a restorable unreachable-without-offline stage; the UFW-only fail_after shim cannot reliably
+    fault these phases. Assert failed assignment status, exact native remove:STEP and error_code, completed service/config
+    work retained, no premature deletion, original-error preservation through dependent cleanup, then successful retry and
+    assignment deletion (target-unreachable, last-role, fleet-withdrawal).'
+  path:ineligible-node: Add a restorable recorded managed/unmanaged and platform/status fixture for an existing Node. Assert
+    validation.failed for an inactive Node or operation.kind_unavailable for unmanaged/non-Linux Nodes, no Operation and unchanged Node records and machine state.
+  path:assignment-in-flight: Add restorable assignment lifecycle/claim-clock fixtures for live provisioning/removing claims
+    and the existing stale-claim boundary. Prove live-claim refusal leaves assignments unchanged and creates no Operation,
+    then reclaim the expired claim in the same staged case and verify real removal effects.
+  path:instances-attached: Add an attached-Instance fixture and restorable app-role assignment. Prove validation.failed
+    with no Operation and unchanged Instance, assignment and machine state.
+  path:routes-attached: Add restorable app Route-target and public-ingress dependency fixtures. Prove the same refusal without
+    an Operation or changes to Routes, assignments or machine state, rather than removing dependencies through this command.
+  path:tracking-hosts-attached: Add a restorable analytics tracking-host fixture. Prove analytics.tracking_hosts_exist with
+    no Operation and unchanged tracking host, assignment and machine state.
+  path:node-busy: Add a fixture holding the actual Node Operation lock used by role removal; busy_node currently holds the
+    firewall Operation lock instead. Prove operation.target_busy with no new Operation and unchanged records and machine state.
+  path:ci-pre-drain: 'Add restorable CI guest/storage fixtures and resource observers for one staged pre-drain case, including
+    stopped guests and nonempty purge resources. Prove --force never drains or deregisters runners, failed cleanup retains
+    the assignment and CI resources, and a drained retry keeps default CI resources while a requested purge removes only the
+    empty project, bridge and ACL, not the shared pool (ci-not-drained, ci-drained, removal-failed).'

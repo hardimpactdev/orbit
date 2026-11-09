@@ -1,53 +1,90 @@
 ---
 title: "orbit node:role:remove"
 sidebarTitle: "node:role:remove"
-description: "Remove one role from a Node."
+description: Remove one role assignment without deleting its Node.
 ---
 
+**Does:** remove one assigned role and its owned runtime and fleet artifacts, retaining data unless purged. **Does not:** delete the Node, relocate roles, remove protected roles, drain guests, delete unrelated resources or broaden `--force` beyond consent.
+
+## Usage
+
 ```bash
-orbit node:role:remove <node> <role> [--force] [--purge-data] [--offline] [--json]
+orbit node:role:remove [<node>] [<role>] [--force] [--purge-data] [--offline] [--idempotency-key=<key>] [--json]
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `node` | yes | Numeric Node ID. |
-| `role` | yes | The role to remove. |
-
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `--force` | prompt | Confirm the removal without prompting. Required without a terminal and with `--json`. |
-| `--purge-data` | off | Also delete role data. For `metrics`, the Prometheus and Grafana volumes and the stored credentials. For `websocket`, the Reverb checkout. For `ci-runner`, the Incus project, network and ACL. |
-| `--offline` | off | Remove the role from a Node Orbit cannot reach: only the work on other Nodes runs. A reachable Node still gets ordinary cleanup. |
-| `--json` | off | Print the final Operation as JSON. |
+For example, remove a database assignment while retaining its data:
 
 ```bash
 orbit node:role:remove 7 database --force
 ```
 
-In a terminal, an omitted Node is chosen from an interactive list and an omitted role from the Node's roles. Without `--force`, the CLI first shows the removal and its dependent cleanup, then asks to confirm with the Node's name and the role, with No selected; this is the consent for `--purge-data` and `--offline` too. Declining, Ctrl-C or end of input exits 1 with `input.cancelled`. A noninteractive or `--json` call without `--force` is refused with `validation.failed` (`field: force`, `reason: destructive_consent_required`); without the Node it is refused with `node.id_invalid`, and without the role with `node_role.role_required`. A declined or refused call starts no Operation.
+`<node>` is a positive numeric Node ID. `<role>` is a canonical role name. Omitted inputs use the shared [finite searchable selector contract](/reference/cli-ux#prompt-selection), choosing the Node first and then one of its removable assignments.
 
-`vpn`, `router` and `swamp` cannot be removed with this command. `app-dev` cannot be removed while the Node owns Instances, nor `app-dev` and `app-prod` while a Route targets them, nor `ingress` while public Routes use it, nor `analytics` while tracking hosts exist (`analytics.tracking_hosts_exist`). Removing the last role restores public SSH first, as [Public SSH](/reference/node-provisioning#public-ssh) describes. A CI role is not removed while CI guests still run on the Node: the run fails with `node.removal_incomplete`, and the rerun after they are drained succeeds. An unreachable Node is refused with `node.removal_incomplete` unless you pass `--offline --force`. Removal keeps role data, CI resources, release data and container volumes unless you pass `--purge-data`.
+### Options
 
-The command removes a role that is `active` or `failed`. A role that is `provisioning` or `removing` is refused until its claim is stale. A failed removal leaves the role `failed` at `remove:STEP` with the step's own error code. Finished steps stay and nothing is rolled back; run the same command again, because each removal step is safe to repeat. A failed public SSH restore leaves the Node reachable.
-
-Only one add, converge or remove runs on a Node at a time; a second call is refused with `operation.target_busy`. A role the Node does not hold, including one a finished removal already took, returns `http.404`, except `ingress`: a confirmed removal of an `ingress` role that the Node does not hold succeeds and changes nothing.
-
-The CLI follows the Operation and prints the final result with the request ID.
-
-## Errors
-
-| Code | Meaning |
+| Option | Effect |
 | --- | --- |
-| `node.id_invalid` | The Node is missing or is not a positive integer, and the CLI cannot prompt. |
-| `node_role.role_required` | The role is missing and the CLI cannot prompt. |
-| `validation.failed` | Consent is missing, the role is protected (`vpn`, `router`, `swamp`), the role is in progress, `app-dev` has Instances, or a Route depends on the role. Nothing changes. |
-| `analytics.tracking_hosts_exist` | Tracking hosts still use the `analytics` role (409). |
-| `operation.kind_unavailable` | The Node is not active, or not managed over SSH. |
-| `operation.target_busy` | Another add, converge or remove holds the Node. |
-| `node.removal_incomplete` | The Node is unreachable and `--offline` was not given, or CI guests still run. The role is `failed` at that step. |
-| `http.404` | The Node has no such role (except `ingress`), or the Node is unknown. |
-| `node_access.required` | The caller has no access grant to the Node. |
+| `--force` | Supplies [removal consent](/reference/cli-ux#consent); bypasses no guard. |
+| `--purge-data` | Also removes the role-owned data listed below. Requires `--force`. |
+| `--offline` | Allows removal when the target is unreachable. Requires `--force`. |
+| `--idempotency-key=<key>` | Uses [shared keyed start replay](/reference/operations#retry-a-start-with-a-key). |
+| `--json` | Uses the shared [human and JSON output contract](/reference/cli-ux#input-and-output-modes). |
 
 ## How it works
 
 <div className="flow-at" data-chart="node/role-remove"></div>
+
+Orbit follows one `node:role:remove` Operation to completion. It removes the role's owned services, managed configuration, certificates and exact owned firewall rules. It withdraws existing publications, certificate references, scrape bindings and owned allowlists on recorded participant Nodes, without a network sweep or changes to unrelated rules.
+
+Success deletes the assignment and its role-owned registry state. The Node record and its other assignments remain. Before last-role teardown, Orbit restores and verifies [public recovery SSH](/reference/node-provisioning#public-ssh). If another role remains, public SSH stays closed.
+
+### Data retention and purge
+
+Without `--purge-data`, Orbit keeps application data, release directories and persistent volumes. Removing a role does not remove Instances or storage Processes.
+
+`--purge-data` additionally removes only:
+
+| Role | Purged data |
+| --- | --- |
+| `metrics` | Prometheus and Grafana data volumes and stored Grafana credentials. |
+| `websocket` | The role's Reverb checkout and release directories. |
+| `ci-runner` | Its empty `orbit-ci` Incus project, `orbitci0` bridge and `orbit-ci-egress` ACL, subject to the checks below. |
+
+Other roles have no extra data purge. Unrelated files, volumes and resources are never purge targets.
+
+### CI pre-drain
+
+A reachable `ci-runner` target must have no containers in `orbit-ci`, including stopped guests. With `--purge-data`, cached images, custom volumes and extra profiles must also have been cleared already. Orbit does not drain guests, deregister or delete runners, or delete the shared storage pool. Without purge, the CI project, bridge, ACL and image cache remain. See the [CI runner teardown contract](/reference/node-provisioning#ci-runner-role).
+
+### Offline removal
+
+`--offline` skips target cleanup only when the target is unreachable. Its services, files, data, CI resources and firewall rules then remain for manual cleanup; neither `--purge-data` nor last-role recovery SSH can run there. Recorded participants still receive their existing withdrawals, and those withdrawals must finish before the assignment is deleted. A reachable target receives ordinary cleanup and all applicable guards, even with `--offline`.
+
+## Errors
+
+Admission refusals create no Operation and change neither assignments, related records nor machine state.
+
+| Code | Refusal |
+| --- | --- |
+| `node.id_invalid` | The supplied Node ID is not a positive integer; names are not accepted. |
+| `http.404` | The Node is unknown. |
+| `node_access.required` | The caller has neither [Gateway authority nor a grant to the target](/cli/node#authority). |
+| `validation.failed` | Required consent is missing, the Node is inactive, or the role is unknown or protected (`vpn`, `router`, `swamp`). |
+| `validation.failed` | A provisioning or removing assignment has a live claim. Active and failed assignments are removable. |
+| `validation.failed` | `app-dev` or `app-prod` still hosts Instances; an app role has Route targets; or `ingress` still serves public Routes. |
+| `analytics.tracking_hosts_exist` | Tracking hosts still use `analytics`. |
+| `operation.kind_unavailable` | The Node is unmanaged or does not run Linux. |
+| `operation.target_busy` | Another role operation holds the Node. |
+
+### Failures after admission
+
+A failure, including incomplete target or participant cleanup or purge, retains completed changes rather than rolling them back and does not delete the assignment. It remains `failed` with `failed_step: remove:STEP` and its error code. The actual step's spelling, case and spaces are preserved. Incomplete cleanup does not replace the original failure. Inspect `node:role:list` and the Operation to find the cause; removal can be retried safely without undoing completed teardown.
+
+| Code | Failure |
+| --- | --- |
+| `node.removal_incomplete` | The target is unreachable without `--offline`, or CI pre-drain fails. The assignment remains failed at the actual step. |
+| `node.firewall_recovery_failed` | Public SSH restoration fails. The failed assignment remains retryable with `failed_step: remove:firewall-recovery`. |
+
+### Repeat calls
+
+After successful deletion, another call normally returns `http.404`, creates no Operation and changes nothing. The exception is a missing `ingress` assignment: it succeeds with `Skipped — role not assigned (node_role.absent)` in human and JSON output, without an Operation or state change.
