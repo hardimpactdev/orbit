@@ -23,7 +23,7 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
 {
     /** The workflow steps whose failure has a code of its own; any other failed step of a turn is `tasks.turn_failed`. */
     private const array StepCodes = [
-        'Claim a slot' => 'tasks.provision_failed',
+        'Claim a task place' => 'tasks.provision_failed',
         'Check the draft' => 'tasks.prep_not_committed',
         'Plan the cases 0' => 'tasks.prep_plan_failed', 'Plan the cases 1' => 'tasks.prep_plan_failed', 'Plan the cases 2' => 'tasks.prep_plan_failed', 'Settle fix 1' => 'tasks.prep_not_committed', 'Settle fix 2' => 'tasks.prep_not_committed',
         'Review has no findings' => 'tasks.prep_review_unresolved',
@@ -61,7 +61,7 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
             $code = $failed ? (self::StepCodes[$step ?? ''] ?? ($step === 'Open a draft PR' ? TaskPrepResults::publishCode($data) : 'tasks.turn_failed')) : null;
             $claimed = is_array($native['provision'] ?? null);
             if ($status === 'succeeded' && ! $claimed) {
-                throw new ResourceOperationException('operation.invalid_result', 'The prep run reports no claimed slot.', 422);
+                throw new ResourceOperationException('operation.invalid_result', 'The prep run reports no claimed task place.', 422);
             }
 
             // The slot and the workspace of the group, as a claim records them. A run whose claim failed releases its slot.

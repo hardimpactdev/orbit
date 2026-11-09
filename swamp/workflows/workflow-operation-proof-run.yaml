@@ -69,7 +69,7 @@ jobs:
   labels: {role: swamp}
   steps:
   # Stage 2: the same claim every task uses. Its input is the one the Gateway captured at admission.
-  - name: Claim a slot
+  - name: Claim a place
     labels: {role: swamp}
     task:
       type: workflow
@@ -83,7 +83,7 @@ jobs:
   - name: Read the workspace commit
     labels: {role: swamp}
     dependsOn:
-    - step: Claim a slot
+    - step: Claim a place
       condition:
         type: succeeded
     task:
@@ -149,12 +149,12 @@ jobs:
   # Always, also after a failure: the VM is deleted. The Gateway captured this input with the claim.
   # A guard that is true SKIPS the step (Swamp: "a truthy result skips the step"). With `keep_failed`, a run that did not succeed in every part (claim, cases,
   # every verdict) skips it; the Gateway keeps the group and cancels it after 60 minutes.
-  - name: Release the slot
+  - name: Release the place
     labels: {role: swamp}
     writes: true
-    guard: '${{ inputs.?keep_failed.orValue(false) && !(steps[?"Claim a slot"].?status.orValue("") == "succeeded" && inputs.intent.verifications.all(v, v.step in steps && steps[v.step].status == "succeeded" && steps[v.step].?outputs.?report.?stdout.orValue("").trim() != "" && steps[v.step].outputs.report.stdout.trim().split("\n").filter(l, l != "").all(l, l.contains("\"verdict\": \"passed\"")))) }}'
+    guard: '${{ inputs.?keep_failed.orValue(false) && !(steps[?"Claim a place"].?status.orValue("") == "succeeded" && inputs.intent.verifications.all(v, v.step in steps && steps[v.step].status == "succeeded" && steps[v.step].?outputs.?report.?stdout.orValue("").trim() != "" && steps[v.step].outputs.report.stdout.trim().split("\n").filter(l, l != "").all(l, l.contains("\"verdict\": \"passed\"")))) }}'
     dependsOn:
-    - step: Claim a slot
+    - step: Claim a place
       condition: &always
         type: always
     - step: Prove assigned batches
@@ -172,7 +172,7 @@ jobs:
   - name: Report
     labels: {role: swamp}
     dependsOn:
-    - step: Release the slot
+    - step: Release the place
       condition: *always
     task:
       type: behavior

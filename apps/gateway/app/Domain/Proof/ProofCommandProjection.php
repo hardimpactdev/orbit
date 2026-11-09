@@ -120,7 +120,7 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
             // The slot and the workspace of the group, as a claim records them. The run releases the slot itself, always.
             $claimed = is_array($native['provision'] ?? null);
             if ($status === 'succeeded' && ! $claimed) {
-                throw new ResourceOperationException('operation.invalid_result', 'The proof run reports no claimed slot.', 422);
+                throw new ResourceOperationException('operation.invalid_result', 'The proof run reports no claimed place.', 422);
             }
             $this->provision->record(self::provisionView($operation), $claimed ? 'succeeded' : ($status === 'cancelled' ? 'cancelled' : 'failed'),
                 $claimed ? null : 'tasks.provision_failed', static fn (): Operation => $operation, release: false);
@@ -140,7 +140,7 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
 
             // The run's own destroy step ends the group. A failed run that kept its VM (`keep_failed`) leaves the group open for 60 minutes; any other end leaves the VM to the normal cancel.
             $kept = null;
-            if (NativeRunResult::stepStatus($native, 'Release the slot') === 'succeeded') {
+            if (NativeRunResult::stepStatus($native, 'Release the place') === 'succeeded') {
                 $group = Task::topLevel()->lockForUpdate()->find(ValidatedData::integer($input['group_id']));
                 if ($group instanceof Task && $group->status !== TaskGroupStatus::Cancelled) {
                     $this->ending->settle($group, ValidatedData::object($input['cancel']), 'tasks.cancel');
@@ -172,7 +172,7 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
     private function kept(Operation $run, array $input, array $native, array $data): ?array
     {
         if (($input['keep_failed'] ?? false) !== true || ($data['status'] ?? null) !== 'failed'
-            || NativeRunResult::stepStatus($native, 'Release the slot') !== 'skipped') {
+            || NativeRunResult::stepStatus($native, 'Release the place') !== 'skipped') {
             return null;
         }
         $groupId = ValidatedData::integer($input['group_id']);

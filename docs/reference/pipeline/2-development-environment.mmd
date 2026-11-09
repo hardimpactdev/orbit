@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design (agreed with Nick, 2026-11-07): stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, is a copy of the host's base VM snapshot with a fresh identity, named `<node>-tvm-<n>` by its slot under the host's `task_places`. The base holds everything installed and ready: orbit-agent, the Pi server, the tools, Swamp, sshd and UFW, a warm checkout of main with `vendor/` and `node_modules/`, and the nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) as Incus system containers that start with the VM, with a `base` snapshot each for the proof. The containers mount the outer VM's checkout as a disk device, so an edit reaches them at once. The task start: docs/cli/task/start.mmd.
+  %% Target design (agreed with Nick, 2026-11-07): stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, is a copy of the host's base VM snapshot with a fresh identity, named `<node>-tvm-<n>` by its place under the host's `task_places`. The base holds everything installed and ready: orbit-agent, the Pi server, the tools, Swamp, sshd and UFW, a warm checkout of main with `vendor/` and `node_modules/`, and the nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) as Incus system containers that start with the VM, with a `base` snapshot each for the proof. The containers mount the outer VM's checkout as a disk device, so an edit reaches them at once. The task start: docs/cli/task/start.mmd.
   %% status: draft
   %% command: development pipeline stage 2 · development environment
   %% kind: pipeline.2-development-environment
@@ -18,10 +18,10 @@ sequenceDiagram
   participant NT as Nested fleet<br/>3 containers
   Note over GW: Claim a task place<br/>mint its identity
   %%> Requirements:
-  %%> - an external task group in `todo`, a free slot under a host's `task_places` and a promoted base snapshot on that host
+  %%> - an external task group in `todo`, a free place under a host's `task_places` and a promoted base snapshot on that host
   %%> Result:
   %%> - a task place in the separate task pool; a full pool waits up to two hours without an identity or workspace
-  %%> - the group holds the slot; its Node, WireGuard key, host key, agent secret and Pi token are new, and the public keys are pinned on the Node. Every VM holds the same model key, the placeholder of the model router guard
+  %%> - the group holds the place; its Node, WireGuard key, host key, agent secret and Pi token are new, and the public keys are pinned on the Node. Every VM holds the same model key, the placeholder of the model router guard
   %%> - a proof is placed only on a host whose promoted image holds every change of what the image carries, up to the merge base of the proof commit with main (`TaskVmImageInputs`); otherwise the admission waits for a refreshed base within its two-hour budget
   GW->>SW: Start run, full intent<br/>tasks provision
   %%> Why:
@@ -43,7 +43,7 @@ sequenceDiagram
   %%> - one exec checks the agent, Pi, the tunnel and the three containers; Swamp's `assert` decides
   SW-->>GW: Environment ready<br/>terminal event
   %%> Result:
-  %%> - the group runs on the slot; the proof (stage 3) or the proof CI (stage 4) uses the fleet
+  %%> - the group runs on its VM; the proof (stage 3) or the proof CI (stage 4) uses the fleet
   %%> - target under 30 s from admission
   loop while the author develops
     VM->>NT: Edit, test, call the CLI<br/>the checkout is shared

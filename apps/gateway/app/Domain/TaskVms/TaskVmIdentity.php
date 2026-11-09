@@ -33,7 +33,7 @@ final readonly class TaskVmIdentity
      */
     public function identity(TaskVm $vm): array
     {
-        $guest = $vm->node ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its Node.', 409);
+        $guest = $vm->node ?? throw new ResourceOperationException('task_vm.slot_refused', 'A task VM needs its Node.', 409);
         $files = $this->enrollment->slotFiles($guest);
         $peer = NodeNetworkConvergeInput::peerFiles(ValidatedData::object(app(NodeNetworkInput::class)->capture($guest)['peer']));
         $gateway = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q

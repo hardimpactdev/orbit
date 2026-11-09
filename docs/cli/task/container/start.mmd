@@ -19,7 +19,7 @@ sequenceDiagram
   %%> - a host with `settings.task_vms.containers`, a free container place in the pool the request uses, and a base container snapshot that a refresh promoted on that host
   %%> - `task_vms.container_placement` on, or the request is the host's container refresh proof or an operator `proof:run --host`; until the switch, normal work goes to task VMs
   %%> Result:
-  %%> - the same records as a task VM start: the slot `HOST-tvm-N`, the Node with its `app-dev` role, a WireGuard key pair in the reserved range, the agent secret and an SSH host key, pinned on the Node
+  %%> - the same records as a task VM start: the place `HOST-tvm-N`, the Node with its `app-dev` role, a WireGuard key pair in the reserved range, the agent secret and an SSH host key, pinned on the Node
   %%> - the claim's Pi token and Pi models file in the vault; the models file holds the model router guard origin and the one fixed model key
   %%> - the intent records `runtime: container`; the row keeps it, so the release and the sweep take the same path later
   GW->>SW: Start run, full intent<br/>operation-task-provision

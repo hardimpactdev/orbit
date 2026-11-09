@@ -21,7 +21,7 @@ function skipped(guard: string, context: Record<string, unknown>): boolean {
 }
 
 const proof = await read("workflow-operation-proof-run.yaml");
-const release = step(proof, "Release the slot").guard!;
+const release = step(proof, "Release the place").guard!;
 
 const passed = '{"id": "main", "verdict": "passed", "secs": 9.5}';
 const failed = '{"id": "deny", "verdict": "failed", "cause": "assertion", "secs": 4, "failed": ["ufw"]}';
@@ -42,14 +42,14 @@ Deno.test("the proof run takes keep_failed as an optional boolean", () => {
 
 const created = { status: "succeeded" };
 const steps = (report: string | null, over: Record<string, unknown> = {}) => ({
-    "Claim a slot": created, ...(report === null ? {} : { "Prove assigned batches-0": proved(report) }), ...over,
+    "Claim a place": created, ...(report === null ? {} : { "Prove assigned batches-0": proved(report) }), ...over,
 });
 
 Deno.test("without keep_failed the release runs, whatever the cases did", () => {
     assert(!keeps({}, steps(failed)));
     assert(!keeps({ keep_failed: false }, steps(failed)));
     assert(!keeps({}, steps(passed)));
-    assert(!keeps({}, { "Claim a slot": { status: "failed" } }));
+    assert(!keeps({}, { "Claim a place": { status: "failed" } }));
 });
 
 Deno.test("with keep_failed a run whose cases did not all pass skips the release, so its slot stays", () => {
@@ -59,13 +59,13 @@ Deno.test("with keep_failed a run whose cases did not all pass skips the release
 
 Deno.test("with keep_failed a run that printed no verdict, or whose verify step failed, skips the release", () => {
     assert(keeps({ keep_failed: true }, steps("")));
-    assert(keeps({ keep_failed: true }, { "Claim a slot": created, "Prove assigned batches-0": { status: "failed" } }));
+    assert(keeps({ keep_failed: true }, { "Claim a place": created, "Prove assigned batches-0": { status: "failed" } }));
     assert(keeps({ keep_failed: true }, steps(null)));
 });
 
 Deno.test("with keep_failed a run that failed in its claim, before any case ran, skips the release too (M5 try 11)", () => {
-    assert(keeps({ keep_failed: true }, { "Claim a slot": { status: "failed" } }));
-    assert(keeps({ keep_failed: true }, { "Claim a slot": { status: "failed" }, "Prove assigned batches-0": { status: "skipped" } }));
+    assert(keeps({ keep_failed: true }, { "Claim a place": { status: "failed" } }));
+    assert(keeps({ keep_failed: true }, { "Claim a place": { status: "failed" }, "Prove assigned batches-0": { status: "skipped" } }));
     assert(keeps({ keep_failed: true }, {}));
 });
 

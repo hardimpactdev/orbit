@@ -395,7 +395,7 @@ The template builder verifies the guest account before it becomes a template. Cl
 
 ### From claim to workspace
 
-A task start (`tasks.provision`, [command](/cli/task/start)) takes the lowest free slot of a host and mints the identity of the slot. It copies the host's [base snapshot](#claims-copy-the-base-snapshot), writes the identity and the claim, and adds the hub peer. Then it converges the VM to the commit and starts the task branch. There is no provision, enrollment or bootstrap kind; the Node, its `app-dev` role and its `pi-server` Process are recorded at admission.
+A task start (`tasks.provision`, [command](/cli/task/start)) takes the lowest free place of a host and mints the identity of its VM. It copies the host's [base snapshot](#claims-copy-the-base-snapshot), writes the identity and the claim, and adds the hub peer. Then it converges the VM to the commit and starts the task branch. There is no provision, enrollment or bootstrap kind; the Node, its `app-dev` role and its `pi-server` Process are recorded at admission.
 
 1. On the next claim, Orbit creates the [task workspace](/reference/tasks#execution-ownership) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
 2. The claim starts the baseline check. Then the same claim projects the Route.
@@ -440,11 +440,11 @@ An ended group is `completed`, `failed`, or `cancelled`. The checkout lives on t
 
 Explicit completion runs the Project's teardown steps in the guest while the VM is `ready`, retains transcripts already recorded by turn operations, then admits the release and waits for it. A parked VM is released as it is: the release deletes a stopped VM too, and nothing starts it. Release admission locks the VM row and refuses while a resume is open.
 
-The release deletes the VM, its seed clone and its identity volume, and removes the hub peer. The Gateway then deletes the workspace Instance and the Node, unbinds the group from the workspace and ends its `removal_failure` request, clears the keys of the identity and records the slot `destroyed`. A release that fails leaves the slot `failed`; the host sweep, or the next cancel, releases it again. A refused teardown or release keeps the VM and the Instance, and the group asks for `removal_failure` assistance.
+The release deletes the VM, its seed clone and its identity volume, and removes the hub peer. The Gateway then deletes the workspace Instance and the Node, unbinds the group from the workspace and ends its `removal_failure` request, clears the keys of the identity and records the VM `destroyed`. A release that fails leaves the VM `failed`; the host sweep, or the next cancel, releases it again. A refused teardown or release keeps the VM and the Instance, and the group asks for `removal_failure` assistance.
 
-A VM of the old pool has no slot number. The release takes it the same way, by its name: it deletes the VM and its seed clone `<name>-topology-seed`, and removes its hub peer by the public key its Node records. A cancel carries this release, and the sweep releases such a VM again after a failed release. Rows the old pool left in `destroying` were recorded `destroyed`.
+A VM of the old pool has no place number. The release takes it the same way, by its name: it deletes the VM and its seed clone `<name>-topology-seed`, and removes its hub peer by the public key its Node records. A cancel carries this release, and the sweep releases such a VM again after a failed release. Rows the old pool left in `destroying` were recorded `destroyed`.
 
-The release deletes by name, so it releases only a task VM name: `<host>-tvm-<n>` for slot n, under the host name it had when the slot was taken, or `tvm-<id>` for the old pool. Its seed clone is `<name>-seed` or `<name>-topology-seed`. Any other name, such as a base VM or a seed, refuses with `task_vm.release_refused`. A VM whose host is not a configured task VM host is refused with `task_vm.unknown_host`. A Node without the WireGuard public key that names its hub peer is refused with `task_vm.slot_refused`.
+The release deletes by name, so it releases only a task VM name: `<host>-tvm-<n>` for place n, under the host name it had when the place was taken, or `tvm-<id>` for the old pool. Its seed clone is `<name>-seed` or `<name>-topology-seed`. Any other name, such as a base VM or a seed, refuses with `task_vm.release_refused`. A VM whose host is not a configured task VM host is refused with `task_vm.unknown_host`. A Node without the WireGuard public key that names its hub peer is refused with `task_vm.slot_refused`.
 
 A `ready` VM that is absent from its Incus host keeps its row and its reviewed work. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`. Cancel or complete its group to release it.
 
@@ -452,7 +452,7 @@ Keep a host's `settings.task_vms` until all its task VMs are `destroyed`, becaus
 
 ### Place task VMs
 
-Placement is serialized by the Gateway's SQLite transaction. The claim checks for an existing VM, counts occupied slots, records a new VM, and queues its creation after commit. `TaskVmSlotPool` selects the active host with the most free slots. Hosts with equal capacity use their configuration order.
+Placement is serialized by the Gateway's SQLite transaction. The claim checks for an existing VM, counts occupied places, records a new VM, and queues its creation after commit. `TaskVmSlotPool` selects the active host with the most free places. Hosts with equal capacity use their configuration order.
 
 Every host has two independent fixed pools, configured with `task_places` and `ci_places`. Each live VM holds one place in its admitted pool until deletion is confirmed, including failed or stopped VMs. Task provision, prep, build, fix turns and review rounds use the task pool. Only a `proof:run` from an authenticated active `ci-runner` Node uses the CI pool; base-refresh proofs use it too. Operator proofs use task places. Neither request flags nor reporting mode grants CI capacity.
 
@@ -590,7 +590,7 @@ A failed phase leaves finished work in place. A rerun skips each phase whose dig
 
 ### Park and resume
 
-Park, resume and release share one task VM name rule: a slot VM is `<host>-tvm-<slot_number>`, using the host name it had when created; an old-pool VM without a slot number is `tvm-<id>`. Any other name is refused before provider work. Prep corrections, builds and review rounds resume only a parked VM; they use a ready VM directly.
+Park, resume and release share one task VM name rule: a task VM is `<host>-tvm-<n>` for place n, using the host name it had when created; an old-pool VM without a place number is `tvm-<id>`. Any other name is refused before provider work. Prep corrections, builds and review rounds resume only a parked VM; they use a ready VM directly.
 
 New task work never parks a VM for review. Publication deletes it. A stored parked VM from earlier work may still resume or be released; it holds its admitted place until deletion is confirmed.
 
@@ -1035,9 +1035,9 @@ The Gateway admits the `task_vm.image_refresh` kind with the whole intent:
 - the SSH target of the host with its recorded host keys, the project and the pool;
 - the recorded base snapshot, if any, and the name of the new one;
 - the stock image, the size of the base VM and the cloud-init config for a base VM that does not exist yet;
-- the converge intent of a task start, and a free slot for the proof.
+- the converge intent of a task start, and a free place for the proof.
 
-It refuses a host that is not an active, configured task VM host, a host with no free slot, and a Gateway whose release has no commit. No step of the run calls the Gateway.
+It refuses a host that is not an active, configured task VM host, a host with no free place, and a Gateway whose release has no commit. No step of the run calls the Gateway.
 
 The workflow `operation-task-vm-image-refresh` runs from Node 209, one `command/shell` step per phase of the Ansible playbooks:
 
@@ -1048,7 +1048,7 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209, one `command/
 | `Start the base VM` | Phase `base-start` of `task-vm-host.yml`: makes the base VM of a new host, keeps `restricted.snapshots=allow`, starts the VM, waits for its first boot, and gives it the proof key. |
 | `Converge` | The converge of a task start (`task-vm-start` runs it with its host part), phases `software`, `tools`, `boot`, `checkout`, `fleet`, `check`. It wipes no identity. It builds a missing nested fleet. |
 | `Stop and snapshot` | Phase `base-snapshot`: stops the base VM and snapshots it and its seed volume under the run's name. |
-| `Prove the candidate` | `task-vm-candidate-proof`: one task start from the new snapshot in the free slot, then its release. |
+| `Prove the candidate` | `task-vm-candidate-proof`: one task start from the new snapshot in the free place, then its release. |
 | `Prune old snapshots` | Phase `base-prune`: keeps the new snapshot and the recorded one, which becomes `-previous`, and removes the others. |
 
 A failed run runs `Roll the base VM back` (phase `base-discard`): the base VM stops, the run's snapshot goes, and the VM rolls back to the recorded snapshot. A host keeps the base it had. The Gateway records the new snapshot as the host's latest promoted build only when the run passed, with the recipe identity of the release. A running task VM keeps its own clone of the older snapshot.
@@ -1057,7 +1057,7 @@ The converge of a refresh is bounded at 5,400 s, and the converge of a task star
 
 The candidate proof claims one CI place on its own host. A full CI pool waits within the two-hour admission budget. Task work cannot consume a CI place. The refresh VM of the old design and its group in the proof Project are not part of this run.
 
-A refresh that fails before its proof leaves its slot `failed`, and the [sweep](#sweep-task-vm-hosts) releases it. The sweep leaves alone only the slot that an open refresh holds. A refresh that waits for a CI place holds no slot, so the slots that earlier failed refreshes left are freed for it.
+A refresh that fails before its proof leaves its place `failed`, and the [sweep](#sweep-task-vm-hosts) releases it. The sweep leaves alone only the place that an open refresh holds. A refresh that waits for a CI place holds no place, so the places that earlier failed refreshes left are freed for it.
 
 ##### Build the nested fleet in the converge
 
@@ -1213,7 +1213,7 @@ The `tasks` extension depends on `ai-router`, and enabling `tasks` calls `assert
 
 The [Node settings field table](/reference/node-settings#task-vm-fields) owns the host configuration. The containing Node supplies host identity. `operator_owned` keeps listed resources out of the [stray report](#report-strays).
 
-Placement selects active Nodes with this setting and capacity reads their slot budget. Host preparation uses its pool, network, and image alias. The `app-dev` role is not a host marker.
+Placement selects active Nodes with this setting and capacity reads their place budget. Host preparation uses its pool, network, and image alias. The `app-dev` role is not a host marker.
 
 To replace `ORBIT_TASK_VMS_INCUS_HOSTS`, [configure and verify Node settings](/reference/node-settings#migrate-the-environment-host-list) before removing the variable from `gateway.env`. The Gateway does not read the environment list.
 
@@ -1278,7 +1278,7 @@ Packs on the standard input and output of the existing SSH commands need no new 
 
 Most groups wait for review far longer than they work. Deleting the VM at publication frees its whole place and removes the failed park path. Re-entry reconstructs the workspace from the base and the published task branch. Separate pools stop task work from consuming CI capacity. The sweep catches failed deletion and frees capacity only after confirmed removal.
 
-A topology declaration before the claim gives placement a known workload and the reviewer a declared set of Nodes to check. An agent's request during a turn would supply neither in advance. Resizing or moving a running group would change its environment during work. A fresh group makes that choice explicit. One size for every Orbit VM would waste capacity: most groups need no topology, but a large VM takes three slots. Measurements on beast put the test Gateway, an `app-dev` Node, and the operator at about 2.7 GiB together. Four test machines filled a large VM's 12 GiB under IO.
+A topology declaration before the claim gives placement a known workload and the reviewer a declared set of Nodes to check. An agent's request during a turn would supply neither in advance. Resizing or moving a running group would change its environment during work. A fresh group makes that choice explicit. One size for every Orbit VM would waste capacity: most groups need no topology, but a large VM takes three places. Measurements on beast put the test Gateway, an `app-dev` Node, and the operator at about 2.7 GiB together. Four test machines filled a large VM's 12 GiB under IO.
 
 These alternatives were also rejected:
 

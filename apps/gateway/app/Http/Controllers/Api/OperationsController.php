@@ -8,6 +8,7 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ListOperationsAction;
 use App\Actions\Operations\ReadOperationAction;
 use App\Data\Operations\OperationData;
+use App\Data\Operations\OperationListItemData;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -34,10 +35,11 @@ final class OperationsController extends Controller
             throw new ResourceOperationException('peer.identity_unknown', 'Active WireGuard peer identity required.', 403);
         }
 
-        return $this->respond($request, $action->execute($consumer, $request->filters())
-            ->map(static fn (Operation $operation): array => OperationData::fromModel($operation, $operation->caller_node_name)->toArray())
-            ->values()
-            ->all());
+        $page = $action->execute($consumer, $request->filters(), $request->limit(), $request->cursor());
+
+        return $this->respond($request, $page['operations']
+            ->map(static fn (Operation $operation): array => OperationListItemData::fromModel($operation, $operation->caller_node_name)->toArray())
+            ->all(), ['next_cursor' => $page['next_cursor']]);
     }
 
     #[RequiresNodeAccess(ServingNode::OperationOwning)]
@@ -54,12 +56,15 @@ final class OperationsController extends Controller
         return $this->respond($request, OperationData::summary($action->execute($operation), $callerNodeName)->toArray());
     }
 
-    /** @param array<int|string, mixed> $data */
-    private function respond(Request $request, array $data): JsonResponse
+    /**
+     * @param  array<int|string, mixed>  $data
+     * @param  array<string, mixed>  $meta
+     */
+    private function respond(Request $request, array $data, array $meta = []): JsonResponse
     {
         return response()->json([
             'data' => $data,
-            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id'), ...$meta],
         ]);
     }
 }

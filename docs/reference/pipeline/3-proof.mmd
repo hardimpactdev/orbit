@@ -19,7 +19,7 @@ sequenceDiagram
   %%> - runs the command's cases on the author's own development VM; no new VM
   %%> - the cases file (`swamp/proof/FAMILY/COMMAND.cases.yaml`) names the batch of each case; `swamp/proof/batches.yaml` defines the shared batches and their order; nothing is picked at run time
   %%> - one command per run; in CI, `proof:run` proves each affected command separately, on its own proof VM
-  %%> - a proof child claims a slot as any task provision does (Nick, 2026-11-07: docs/cli/task/start.mmd); the claim starts the slot, fetches the PR head onto the warm checkout and starts the containers from `base`, in under 30 s
+  %%> - a proof child claims a place as any task provision does (Nick, 2026-11-07: docs/cli/task/start.mmd); the claim starts the VM, fetches the PR head onto the warm checkout and starts the containers from `base`, in under 30 s
   %%> Built, not yet passed live:
   %%> - the command `orbit proof COMMAND` ([chart](/cli/proof/proof)): the Gateway finds the VM by the calling Node and admits the operation `proof.verify`; Swamp starts `proof-fleet-verify` with this VM as input, with `restore_first` and `final_restore` set; `proof:run` is the CI path on a VM of its own
   %%> - built: the cases file format, the runner and the Swamp workflows `proof-fleet-verify` and `proof-fleet-verify-batch`, which run the batches and the cases below, and `proof-fleet-restore`, which restores and starts `base`, checks readiness and applies the checkout before every batch but the first

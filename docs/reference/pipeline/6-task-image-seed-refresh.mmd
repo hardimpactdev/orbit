@@ -39,7 +39,7 @@ sequenceDiagram
     %%> - stops the base VM and snapshots it and its seed volume; ZFS snapshots, about 1 s
     SW->>H: Prove the candidate<br/>one task start
     %%> What it does:
-    %%> - steps 2 to 4 of a task start from the new snapshot with a free slot identity, then its release
+    %%> - steps 2 to 4 of a task start from the new snapshot in a free place, then its release
     SW->>H: Prune old snapshots<br/>keep -previous
     %%> What it does:
     %%> - keeps the new snapshot and the one before it; removes older ones

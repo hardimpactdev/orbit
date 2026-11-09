@@ -306,6 +306,21 @@ describe('operation commands', function (): void {
         expect(Artisan::call('operation:list', ['--status' => 'sleeping', '--json' => true, '--no-interaction' => true]))->toBe(1);
     });
 
+    it('pages the list with --limit and --cursor and names the next cursor', function (): void {
+        $mock = MockClient::global([
+            ListOperationsRequest::class => MockResponse::make(['data' => [cli_operation(['status' => 'succeeded'])], 'meta' => ['next_cursor' => '42']]),
+        ]);
+
+        expect(Artisan::call('operation:list', ['--limit' => '1', '--cursor' => '50', '--no-interaction' => true]))->toBe(0)
+            ->and(Artisan::output())->toContain('More operations: --cursor=42');
+        $mock->assertSent(static fn ($request): bool => $request instanceof ListOperationsRequest && $request->query()->all() === ['limit' => 1, 'cursor' => '50']);
+
+        expect(Artisan::call('operation:list', ['--json' => true, '--no-interaction' => true]))->toBe(0)
+            ->and(json_decode(Artisan::output(), true))->toMatchArray(['next_cursor' => '42'])
+            ->and(Artisan::call('operation:list', ['--limit' => '101', '--no-interaction' => true]))->toBe(1)
+            ->and(Artisan::call('operation:list', ['--cursor' => 'next', '--no-interaction' => true]))->toBe(1);
+    });
+
     it('lists waiting operations and passes the filter to the Gateway', function (): void {
         $mock = MockClient::global([
             ListOperationsRequest::class => MockResponse::make(['data' => [cli_operation(['status' => 'waiting', 'current_step' => 'external'])], 'meta' => []]),
