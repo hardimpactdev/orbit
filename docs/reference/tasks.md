@@ -35,7 +35,7 @@ Enable and disable the extension with `orbit extension:enable tasks` and `orbit 
 
 `task:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at` (always null), `merges`, and `capacity`. `merges` lists each open task whose pull request Orbit reviews and merges: a task with a `pr_url` in a review-and-merge Project, or a task that reviews an incoming pull request. An open task without a pull request, such as one in `backlog`, is absent. `capacity` is described in [Task places](#task-places).
 
-`assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. An ended task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
+`assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. An ended task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A subtask's assistance flag does not add its parent task to the list unless the parent also requests assistance. The view remains available while tasks is disabled.
 
 ## Model
 
