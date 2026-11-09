@@ -338,6 +338,7 @@ final readonly class RecipeLoader
     {
         $raw = $this->object($value, 'instances', ['runtime', 'agent', 'php']);
         $folders = [];
+        $vitePlus = null;
         foreach (['runtime', 'agent'] as $folder) {
             $parts = [];
             $programs = [];
@@ -364,6 +365,10 @@ final readonly class RecipeLoader
                         continue;
                     }
                     $parts[$name] = new FolderPin($tool->version, $tool->artifacts[$architectures[0]], $bin);
+                    if ($part->tool === 'vp-cli') {
+                        $this->require($folder === 'runtime' && array_keys($bin) === ['vp'] && $vitePlus === null, "{$field}: expected the runtime folder's one Vite+ part, with the one program vp.");
+                        $vitePlus = new VitePlusHome((string) $name, $bin['vp'], $tools['vp'], $tools['node']->version);
+                    }
 
                     continue;
                 }
@@ -378,7 +383,7 @@ final readonly class RecipeLoader
             $folders[$folder] = $parts;
         }
 
-        return new InstanceFolders($folders['runtime'], $folders['agent'], $this->staticPhpBuilds($raw->php, $php));
+        return new InstanceFolders($folders['runtime'], $folders['agent'], $this->staticPhpBuilds($raw->php, $php), $vitePlus);
     }
 
     /** @param array<string, ToolPin> $tools */

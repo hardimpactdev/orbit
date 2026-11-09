@@ -74,15 +74,17 @@
       - "(container_profile.stdout | from_json).devices.get('eth0', {}).get('type', 'nic') == 'nic'"
     fail_msg: "{{ container_host.fail }}"
 
+# `container_profile_config` adds profile keys, such as the environment of every process in a container; a task host sets none.
 - name: Converge the container profile
-  when: >-
-    (container_profile.stdout | from_json).devices !=
-    ((container_profile.stdout | from_json).devices | combine(container_devices, recursive=true))
+  vars:
+    container_profile_now: "{{ container_profile.stdout | from_json }}"
+    container_profile_want: >-
+      {{ container_profile_now | combine({'devices': container_profile_now.devices | combine(container_devices, recursive=true),
+                                          'config': container_profile_now.config | combine(container_profile_config | default({}))}) }}
+  when: container_profile_now != container_profile_want
   ansible.builtin.command:
     argv: [incus, profile, edit, default, --project, "{{ container_host.project }}"]
-    stdin: >-
-      {{ (container_profile.stdout | from_json)
-         | combine({'devices': (container_profile.stdout | from_json).devices | combine(container_devices, recursive=true)}) | to_json }}
+    stdin: "{{ container_profile_want | to_json }}"
   changed_when: true
 
 - name: Read the container project restrictions

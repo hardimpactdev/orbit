@@ -92,6 +92,7 @@ function writeTasks(folder: string) {
     const name of [
       "instance-host.yml",
       "instance-folder.yml",
+      "instance-vite-plus-home.yml",
       "instance-image.yml",
       "task-container-host-system.yml",
       "task-container-host-prepare.yml",
@@ -267,6 +268,10 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
     stock: "ubuntu-26.04-instance-stock",
     forwarder_port: 8319,
     ids: 201 * 65536,
+    profile_config: {
+      "environment.VP_HOME": "/opt/orbit-runtime/current/vite-plus-home",
+      "environment.VP_NO_UPDATE_CHECK": "1",
+    },
     incus: { line: "7.0", packages: [] },
     image: {
       alias: "orbit-instance-aaaaaaaaaaaa",
@@ -377,6 +382,11 @@ Deno.test({
         "restricted.devices.proxy": "allow",
         "restricted.snapshots": "allow",
         "limits.virtual-machines": "0",
+      });
+      // Every process in a container, `incus exec` sessions too, gets the runtime folder's environment.
+      assertEquals(state.profiles["orbit-instances"].config, {
+        "environment.VP_HOME": "/opt/orbit-runtime/current/vite-plus-home",
+        "environment.VP_NO_UPDATE_CHECK": "1",
       });
       assertEquals(state.profiles["orbit-instances"].devices, {
         root: { type: "disk", path: "/", pool: "orbit-instances" },
@@ -735,6 +745,208 @@ Deno.test({
       assert(!f.calls().some((c) => c.includes("publish")));
       assertEquals(after.instances, []);
       assert(!f.has("firewall-orbit_instances-build.json"));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+/** A tarball at `artifacts/<name>` of shell programs, each printing what its body prints. */
+async function program(
+  folder: string,
+  name: string,
+  files: Record<string, string>,
+) {
+  const work = Deno.makeTempDirSync();
+  for (const [path, body] of Object.entries(files)) {
+    Deno.mkdirSync(`${work}/${path}`.replace(/\/[^/]+$/, ""), {
+      recursive: true,
+    });
+    Deno.writeTextFileSync(`${work}/${path}`, `#!/bin/sh\n${body}\n`);
+    Deno.chmodSync(`${work}/${path}`, 0o755);
+  }
+  new Deno.Command("tar", {
+    args: ["-czf", `${folder}/artifacts/${name}`, "-C", work, "."],
+  }).outputSync();
+  Deno.removeSync(work, { recursive: true });
+  return await sha256(`${folder}/artifacts/${name}`);
+}
+
+/** What PHP prints for the check's probe: its version, then its extensions. */
+const probe = (version: string, extensions: string[]) =>
+  `printf '%s\\n' ${[version, ...extensions].join(" ")}`;
+
+Deno.test({
+  name:
+    "a static PHP build is installed as php/<version> with no link in bin, and a build whose extensions differ is refused",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture();
+    try {
+      const install = async (frankenphp: string[]) => {
+        const name = `static-php-${frankenphp.length}.tar.gz`;
+        const sha = await program(f.folder, name, {
+          "bin/php": probe("8.5.12", ["Core", "pdo_pgsql"]),
+          "bin/frankenphp": probe("8.5.12", frankenphp),
+        });
+        f.write({
+          ...f.instances,
+          folders: {
+            ...f.instances.folders,
+            runtime: {
+              ...f.instances.folders.runtime,
+              version: `44444444444${frankenphp.length}`,
+              parts: [...f.instances.folders.runtime.parts, {
+                name: "php/8.5",
+                version: "8.5.12",
+                url: `https://example.test/download/${name}`,
+                archive: "tar",
+                sha256: sha,
+                // The Gateway encodes an empty program list as a JSON list.
+                bin: [],
+                static_php: {
+                  php_version: "8.5.12",
+                  extensions: ["core", "pdo_pgsql"],
+                },
+              }],
+            },
+          },
+        });
+        return f.run();
+      };
+      let result = await install(["Core", "pdo_pgsql", "frankenphp-cli"]);
+      assert(result.ok, result.output);
+      const version = `${f.folder}/opt/orbit-runtime/444444444443`;
+      assert(f.has("opt/orbit-runtime/444444444443/php/8.5/bin/php"));
+      assert(f.has("opt/orbit-runtime/444444444443/php/8.5/bin/frankenphp"));
+      assert(!f.has("opt/orbit-runtime/444444444443/bin/php"));
+      assertEquals(
+        Deno.readLinkSync(`${version}/bin/tool`),
+        "../tool/tool-1.0/tool",
+      );
+
+      result = await install(["Core", "pdo_pgsql", "frankenphp-cli", "apcu"]);
+      assert(!result.ok);
+      assertStringIncludes(result.output, "frankenphp also loads apcu.");
+      // The refused version never becomes whole, and the folder stays on the checked one.
+      assert(!f.has("opt/orbit-runtime/444444444444"));
+      assertEquals(
+        Deno.readLinkSync(`${f.folder}/opt/orbit-runtime/current`),
+        "444444444443",
+      );
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "the runtime folder builds its Vite+ home once, links vp and the home into each version, and drops a home no version links",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture();
+    try {
+      const calls = `${f.folder}/vp-calls`;
+      // npm installs the locked package under its --prefix; vp records its calls and runs the home's Node.
+      const npm = await program(f.folder, "node-1.0.tar.gz", {
+        "node/bin/npm": `while [ "$1" != --prefix ]; do shift; done
+mkdir -p "$2/node_modules/vite-plus" && cp "$2/package-lock.json" "$2/node_modules/vite-plus/package.json"`,
+      });
+      const vp = await program(f.folder, "vp-1.4.0.tar.gz", {
+        vp: `echo "$VP_HOME $VP_NO_UPDATE_CHECK $*" >> ${calls}
+[ "$*" = "env exec node --version" ] && echo v24.22.1; exit 0`,
+      });
+      const runtime = (version: string, node: string, home: string) => ({
+        ...f.instances,
+        folders: {
+          ...f.instances.folders,
+          runtime: {
+            ...f.instances.folders.runtime,
+            version,
+            parts: [{
+              name: "node",
+              version: "1.0",
+              url: "https://example.test/download/node-1.0.tar.gz",
+              archive: "tar",
+              sha256: npm,
+              bin: { npm: "node/bin/npm" },
+            }, {
+              name: "vite-plus",
+              version: "1.4.0",
+              url: "https://example.test/download/vp-1.4.0.tar.gz",
+              archive: "tar",
+              sha256: vp,
+              bin: [],
+            }],
+            vite_plus: {
+              part: "vite-plus",
+              binary: "vp",
+              home: `${f.folder}/opt/orbit-runtime/vite-plus/${home}`,
+              version: "1.4.0",
+              node,
+              lock: JSON.stringify({
+                name: "orbit-recipe-vite-plus",
+                version: "1.4.0",
+              }),
+            },
+          },
+        },
+      });
+      f.write(runtime("555555555555", "24.22.1", "aaaaaaaaaaaa"));
+      let result = f.run();
+      assert(result.ok, result.output);
+      const home = `${f.folder}/opt/orbit-runtime/vite-plus/aaaaaaaaaaaa`;
+      const version = `${f.folder}/opt/orbit-runtime/555555555555`;
+      assert(f.has("opt/orbit-runtime/vite-plus/aaaaaaaaaaaa/.complete"));
+      assert(
+        f.has(
+          "opt/orbit-runtime/vite-plus/aaaaaaaaaaaa/recipe/runtime/node_modules/vite-plus/package.json",
+        ),
+      );
+      assertEquals(
+        Deno.readLinkSync(`${home}/node_modules/vite-plus`),
+        `${home}/recipe/runtime/node_modules/vite-plus`,
+      );
+      assertEquals(Deno.readLinkSync(`${home}/bin/node`), "vp");
+      assertEquals(Deno.readLinkSync(`${version}/vite-plus-home`), home);
+      assertEquals(
+        Deno.readLinkSync(`${version}/bin/vp`),
+        "../vite-plus-home/bin/vp",
+      );
+      assertEquals(Deno.readTextFileSync(calls).trim().split("\n"), [
+        `${home} 1 env default 24.22.1`,
+        `${home} 1 env install 24.22.1`,
+        `${home} 1 env exec node --version`,
+      ]);
+
+      // A complete home is not built again for another version of the folder.
+      f.write(runtime("666666666666", "24.22.1", "aaaaaaaaaaaa"));
+      result = f.run();
+      assert(result.ok, result.output);
+      assertEquals(Deno.readTextFileSync(calls).trim().split("\n").length, 3);
+
+      // Another release is another home; the old one goes once no version links it.
+      f.write(runtime("777777777777", "24.22.1", "bbbbbbbbbbbb"));
+      result = f.run();
+      assert(result.ok, result.output);
+      assert(f.has("opt/orbit-runtime/vite-plus/bbbbbbbbbbbb/.complete"));
+      assert(!f.has("opt/orbit-runtime/666666666666"));
+      assert(!f.has("opt/orbit-runtime/vite-plus/aaaaaaaaaaaa"));
+
+      // A home whose Node is not the recipe's is refused and never marked complete.
+      f.write(runtime("888888888888", "24.23.0", "cccccccccccc"));
+      result = f.run();
+      assert(!result.ok);
+      assertStringIncludes(
+        result.output,
+        "the Vite+ home runs Node v24.22.1, not 24.23.0",
+      );
+      assert(!f.has("opt/orbit-runtime/vite-plus/cccccccccccc/.complete"));
+      assertEquals(
+        Deno.readLinkSync(`${f.folder}/opt/orbit-runtime/current`),
+        "777777777777",
+      );
     } finally {
       f.cleanup();
     }

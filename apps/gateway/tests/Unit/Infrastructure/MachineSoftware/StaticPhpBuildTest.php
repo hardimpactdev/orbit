@@ -15,7 +15,7 @@ function staticPhpRecipe(callable $change): string
 
 it('pins the static build of PHP 8.5 with the Node extensions less those a static binary cannot load', function (): void {
     $recipe = new RecipeLoader()->source();
-    $build = $recipe->instances->php('8.5');
+    $build = $recipe->instances->php['8.5'];
 
     expect($build->phpVersion)->toStartWith('8.5.')
         ->and($build->extensions)->toBe(array_values(array_diff($recipe->php('8.5')->extensions, ['ffi', 'pcov'])))
@@ -23,19 +23,19 @@ it('pins the static build of PHP 8.5 with the Node extensions less those a stati
         ->and($build->url)->toContain("/static-php-{$build->phpVersion}-".substr($build->build, 0, 12).'/');
 });
 
-it('reads a published build as an artifact pin and refuses one that is not published yet', function (): void {
+it('reads a published build as an artifact pin, and one that is not published yet as none', function (): void {
     $digest = str_repeat('a', 64);
     $published = new RecipeLoader()->decode(staticPhpRecipe(function (object $section) use ($digest): void {
         $section->versions->{'8.5'}->sha256 = $digest;
-    }))->instances->php('8.5');
+    }))->instances->php['8.5'];
     $pending = new RecipeLoader()->decode(staticPhpRecipe(function (object $section): void {
         $section->versions->{'8.5'}->sha256 = null;
-    }))->instances->php('8.5');
+    }))->instances->php['8.5'];
 
-    expect($published->published()->location)->toBe($published->url)
-        ->and($published->published()->digest)->toBe($digest)
-        ->and($published->published()->algorithm)->toBe('sha256')
-        ->and(fn () => $pending->published())->toThrow(InvalidArgumentException::class, 'is not published yet');
+    expect($published->artifact?->location)->toBe($published->url)
+        ->and($published->artifact?->digest)->toBe($digest)
+        ->and($published->artifact?->algorithm)->toBe('sha256')
+        ->and($pending->artifact)->toBeNull();
 });
 
 it('keeps the static build out of the software identity of Nodes and images', function (): void {

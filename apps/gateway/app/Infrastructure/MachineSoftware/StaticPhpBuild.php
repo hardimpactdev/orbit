@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\MachineSoftware;
 
-use InvalidArgumentException;
-
 /**
  * One static PHP build of the Instance runtime folder (docs/reference/compute-drivers.md#static-php-build): a PHP CLI and
  * FrankenPHP from one static-php-cli build, with the extensions of the recipe's PHP version less those a fully static
@@ -29,9 +27,4 @@ final readonly class StaticPhpBuild
         public string $url,
         public ?ArtifactPin $artifact,
     ) {}
-
-    public function published(): ArtifactPin
-    {
-        return $this->artifact ?? throw new InvalidArgumentException("The static PHP {$this->version} build [{$this->build}] is not published yet: its recipe pin has no SHA-256.");
-    }
 }

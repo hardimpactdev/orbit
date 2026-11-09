@@ -21,6 +21,9 @@ it('reads the two shared folders, a tool part with the tool\'s own pin', functio
         ->and($recipe->instances->runtime['vite-plus']->artifact)->toBe($recipe->tools['vp-cli']->artifacts['amd64'])
         ->and($recipe->instances->runtime['vite-plus']->version)->toBe($recipe->tools['vp']->version)
         ->and($recipe->instances->runtime['vite-plus']->bin)->toBe(['vp' => 'vp'])
+        ->and($recipe->instances->vitePlus?->part)->toBe('vite-plus')
+        ->and($recipe->instances->vitePlus?->vp)->toBe($recipe->tools['vp'])
+        ->and($recipe->instances->vitePlus?->node)->toBe($node->version)
         ->and(array_keys($recipe->instances->agent))->toBe(['t3', 'claude-code', 'codex'])
         ->and($recipe->instances->runtime['node']->artifact)->toBe($node->artifacts['amd64'])
         ->and($recipe->instances->runtime['node']->version)->toBe($node->version)
@@ -67,6 +70,13 @@ it('refuses a malformed folder part', function (Closure $change, string $message
     'a short digest' => [static function (array &$recipe): void {
         $recipe['instances']['agent']['t3']['artifacts']['amd64']['sha256'] = 'abc';
     }, 'expected 64 lowercase hexadecimal characters'],
+    'Vite+ in the agent folder' => [static function (array &$recipe): void {
+        $recipe['instances']['agent']['vite-plus'] = $recipe['instances']['runtime']['vite-plus'];
+        unset($recipe['instances']['runtime']['vite-plus']);
+    }, "expected the runtime folder's one Vite+ part, with the one program vp"],
+    'Vite+ with a second program' => [static function (array &$recipe): void {
+        $recipe['instances']['runtime']['vite-plus']['bin']['vpx'] = 'vp';
+    }, "expected the runtime folder's one Vite+ part, with the one program vp"],
     'an empty folder' => [static function (array &$recipe): void {
         $recipe['instances']['agent'] = new stdClass;
     }, 'instances.agent: expected at least one part'],

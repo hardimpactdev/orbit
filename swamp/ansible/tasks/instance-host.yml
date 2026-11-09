@@ -96,6 +96,8 @@
       security.acls.default.egress.action: reject
     container_network_args: >-
       {{ container_network_config | dict2items | map(attribute='key') | zip(container_network_config.values()) | map('join', '=') | list }}
+    # Every process in a container gets the runtime folder's environment: `incus exec` sessions, units and login shells alike.
+    container_profile_config: "{{ instances.profile_config }}"
     container_devices:
       root: { type: disk, path: /, pool: "{{ instances.pool }}" }
       eth0: { type: nic, name: eth0, network: "{{ instances.network }}", security.port_isolation: 'true' }

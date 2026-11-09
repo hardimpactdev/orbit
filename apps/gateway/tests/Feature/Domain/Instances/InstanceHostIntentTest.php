@@ -24,6 +24,8 @@ use App\Infrastructure\MachineSoftware\ArtifactPin;
 use App\Infrastructure\MachineSoftware\FolderPin;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
 use App\Infrastructure\MachineSoftware\StaticPhpBuild;
+use App\Infrastructure\MachineSoftware\VitePlusHome;
+use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Node;
 use App\Models\Operation;
@@ -91,6 +93,8 @@ describe('the container branch of the app-dev converge', function (): void {
             'project' => 'orbit-instances', 'network' => 'orbitinst0', 'pool' => 'orbit-instances', 'cidr' => '10.253.0.0/24',
             'address' => '10.253.0.1/24', 'build_address' => '10.253.0.254', 'dhcp_range' => '10.253.0.2-10.253.0.253', 'stock' => 'ubuntu-26.04-instance-stock',
             'forwarder_port' => 8319, 'ids' => 201 * 65536,
+            // `incus exec` sessions, which neither systemd nor a login shell starts, get it from the profile.
+            'profile_config' => ['environment.VP_HOME' => '/opt/orbit-runtime/current/vite-plus-home', 'environment.VP_NO_UPDATE_CHECK' => '1'],
         ])
             ->and($intent['incus'])->toBe($recipe->incus('amd64'))
             ->and($intent['image'])->toBe(InstanceImage::for('10.253.0.1'))
@@ -163,22 +167,23 @@ describe('the Instance image', function (): void {
         );
     });
 
-    it('turns the Vite+ update check off for every unit and login shell', function (): void {
+    it('runs Vite+ from the folder\'s home with its update check off, for every unit and login shell', function (): void {
         $files = array_column(InstanceImage::for('10.253.0.1')['files'], null, 'path');
 
-        expect($files['/etc/systemd/system.conf.d/90-orbit-runtime.conf']['content'])->toBe("# Managed by Orbit.\n[Manager]\nDefaultEnvironment=VP_NO_UPDATE_CHECK=1\n")
-            ->and($files['/etc/profile.d/90-orbit-runtime.sh']['content'])->toBe("# Managed by Orbit.\nexport VP_NO_UPDATE_CHECK=1\n")
+        expect($files['/etc/systemd/system.conf.d/90-orbit-runtime.conf']['content'])
+            ->toBe("# Managed by Orbit.\n[Manager]\nDefaultEnvironment=VP_HOME=/opt/orbit-runtime/current/vite-plus-home VP_NO_UPDATE_CHECK=1\n")
+            ->and($files['/etc/profile.d/90-orbit-runtime.sh']['content'])->toBe("# Managed by Orbit.\nexport VP_HOME=/opt/orbit-runtime/current/vite-plus-home VP_NO_UPDATE_CHECK=1\n")
             ->and($files['/etc/profile.d/90-orbit-runtime.sh']['mode'])->toBe('0644');
     });
 
     it('installs each published static PHP build as php/<version>, checked against its extensions, and no unpublished one', function (): void {
         $recipe = app(RecipeImageBuilds::class)->currentRecipe()->instances;
-        $build = $recipe->php('8.5');
+        $build = $recipe->php['8.5'];
         $published = new StaticPhpBuild('8.5', $build->phpVersion, $build->frankenphp, $build->extensions, $build->build, $build->url,
             new ArtifactPin($build->url, 'sha256', str_repeat('d', 64), $build->phpVersion));
         $pending = new StaticPhpBuild('8.5', $build->phpVersion, $build->frankenphp, $build->extensions, $build->build, $build->url, null);
         $part = static fn (StaticPhpBuild $php): array => array_values(array_filter(
-            InstanceFolderPlan::for(new InstanceFolders($recipe->runtime, $recipe->agent, ['8.5' => $php]))['runtime']['parts'],
+            InstanceFolderPlan::for(new InstanceFolders($recipe->runtime, $recipe->agent, ['8.5' => $php], $recipe->vitePlus))['runtime']['parts'],
             static fn (array $part): bool => str_starts_with($part['name'], 'php/'),
         ));
 
@@ -233,10 +238,34 @@ describe('the shared folders', function (): void {
         $plan = InstanceFolderPlan::for(app(RecipeImageBuilds::class)->currentRecipe()->instances);
         $programs = static fn (array $folder): array => array_merge(...array_map(static fn (array $part): array => $part['bin'], $folder['parts']));
 
-        expect(array_keys($programs($plan['runtime'])))->toBe(['node', 'npm', 'npx', 'bun', 'composer', 'rg', 'vp'])
+        // `vp` is no program of its part: the folder links it from the Vite+ home.
+        expect(array_keys($programs($plan['runtime'])))->toBe(['node', 'npm', 'npx', 'bun', 'composer', 'rg'])
             ->and(array_keys($programs($plan['agent'])))->toBe(['t3', 'claude', 'codex'])
             ->and(array_column($plan['runtime']['parts'], 'archive', 'name'))->toBe(['node' => 'tar', 'bun' => 'zip', 'composer' => 'file', 'ripgrep' => 'tar', 'vite-plus' => 'tar'])
             ->and(array_column($plan['agent']['parts'], 'archive', 'name'))->toBe(['t3' => 'tar', 'claude-code' => 'tar', 'codex' => 'tar']);
+    });
+
+    it('builds one Vite+ home from the recipe\'s vp release, runtime lock and Node, at a path named by what goes into it', function (): void {
+        $recipe = app(RecipeImageBuilds::class)->currentRecipe();
+        $plan = InstanceFolderPlan::for($recipe->instances)['runtime'];
+        $vitePlus = $plan['vite_plus'];
+
+        expect(array_diff_key($vitePlus, ['home' => true, 'lock' => true]))->toBe([
+            'part' => 'vite-plus', 'binary' => 'vp', 'version' => $recipe->tools['vp']->version, 'node' => $recipe->tools['node']->version,
+        ])
+            ->and($vitePlus['home'])->toMatch('~^/opt/orbit-runtime/vite-plus/[0-9a-f]{12}$~')
+            ->and($vitePlus['lock'])->toBe(VitePlusRuntimeLock::read($recipe->tools['vp']))
+            ->and(array_column($plan['parts'], 'bin', 'name')['vite-plus'])->toBe([]);
+
+        // Another composer leaves the home alone; another Node builds a new one.
+        $composer = $recipe->instances->runtime['composer'];
+        $runtime = [...$recipe->instances->runtime, 'composer' => new FolderPin('9.9.9', new ArtifactPin('https://example.test/9.9.9/composer.phar', 'sha256', str_repeat('e', 64)), $composer->bin)];
+        $node = $recipe->instances->vitePlus;
+        $otherNode = new VitePlusHome($node->part, $node->binary, $node->vp, '24.99.0');
+        $home = static fn (array $runtime, VitePlusHome $vitePlus): string => InstanceFolderPlan::for(new InstanceFolders($runtime, $recipe->instances->agent, [], $vitePlus))['runtime']['vite_plus']['home'];
+
+        expect($home($runtime, $node))->toBe($vitePlus['home'])
+            ->and($home($recipe->instances->runtime, $otherNode))->not->toBe($vitePlus['home']);
     });
 
     it('links each kind of Project to its environment note', function (ProjectType $type, string $note): void {

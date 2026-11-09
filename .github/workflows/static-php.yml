@@ -51,15 +51,18 @@ jobs:
         run: |
           set -euo pipefail
           python3 bin/static-php-build definition --github-output "$RUNNER_TEMP/definition"
+          # Read the list first: a failure inside a process substitution would not stop the step.
+          builds="$(sed -n 's/^builds=//p' "$RUNNER_TEMP/definition" | jq -c '.[]')"
           missing='[]'
           while read -r build; do
+            [ -n "$build" ] || continue
             tag="$(jq -r .tag <<< "$build")"
             # Only a release that does not exist is missing; any other error stops the run.
             if ! answer="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName 2>&1)"; then
               grep -qx 'release not found' <<< "$answer" || { echo "::error::Cannot read release ${tag}: ${answer}"; exit 1; }
               missing="$(jq -c --argjson build "$build" '. + [$build]' <<< "$missing")"
             fi
-          done < <(sed -n 's/^builds=//p' "$RUNNER_TEMP/definition" | jq -c '.[]')
+          done <<< "$builds"
           echo "builds=${missing}" >> "$GITHUB_OUTPUT"
           echo "Builds without a release: $(jq -r 'map(.tag) | join(", ")' <<< "$missing")"
 
@@ -185,7 +188,7 @@ jobs:
           APP_ENV: production
           APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           APP_DEBUG: 'false'
-          CACHE_STORE: array
+          CACHE_STORE: file
           DB_CONNECTION: sqlite
           LOG_CHANNEL: stderr
         run: |
@@ -195,7 +198,7 @@ jobs:
           mkdir -p "$ORBIT_HOME" && touch "$DB_DATABASE"
           "$STATIC/frankenphp" php-server --root public --listen 127.0.0.1:8088 > "$RUNNER_TEMP/frankenphp.log" 2>&1 &
           server=$!
-          trap 'kill "$server"; cat "$RUNNER_TEMP/frankenphp.log"' EXIT
+          trap 'kill "$server" 2>/dev/null || true; cat "$RUNNER_TEMP/frankenphp.log"' EXIT
           for _ in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:8088/up && break; sleep 1; done
           status="$(curl -sS -o "$RUNNER_TEMP/up.html" -w '%{http_code}' http://127.0.0.1:8088/up)"
           header="$(curl -sS -o /dev/null -D - http://127.0.0.1:8088/up | tr -d '\r' | grep -i '^x-powered-by:' || true)"

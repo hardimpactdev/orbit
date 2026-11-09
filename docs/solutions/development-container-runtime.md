@@ -221,9 +221,14 @@ Open as [#3294](https://github.com/hardimpactdev/orbit/pull/3294). This PR adds 
 - The `Static PHP build` workflow builds and proves each new definition. On main it publishes the archive as a release.
 - A second reviewed commit records the release's SHA-256. From then on the runtime folder holds the build as `php/<php-version>/bin`, and its install checks both binaries with the Ansible module `orbit_static_php`.
 - The same pin PR names PHP and Composer in the environment notes. Until then the notes name Node, npm, Bun, Vite+ and rg.
-- The runtime folder gets Vite+: the part `vite-plus`, the recipe's `vp-cli` release binary as `vp`. The image sets `VP_NO_UPDATE_CHECK=1` for units and login shells.
 
-Tests: Pest for the pins, the folder parts and the image files; Python tests for the build script and the check. In CI, the workflow's proof job:
+The same PR adds Vite+ to the runtime folder:
+
+- The part `vite-plus` is the recipe's `vp-cli` release.
+- `vp` fetches its package and Node on first use, and a container has no internet. So the host builds a read-only [Vite+ home](/reference/compute-drivers#the-vite-home) with the locked package and the recipe's Node.
+- Every container process gets `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, from the Instance profile, systemd and `/etc/profile.d`.
+
+Tests: Pest for the pins, the folder parts, the Vite+ home and the image files; Python tests for the build script and the check; Ansible fixture tests for the `php/<version>` part, the Vite+ home and the profile environment. In CI, the workflow's proof job:
 
 1. Both binaries are fully static and load exactly the listed extensions, at the pinned PHP release.
 2. `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G` work.

@@ -35,8 +35,8 @@ PROBE = ("<?php echo PHP_VERSION, \"\\n\"; foreach (get_loaded_extensions() as $
          " foreach (get_loaded_extensions(true) as $e) echo $e, \"\\n\";\n")
 
 
-# FrankenPHP registers its own SAPI module, such as `frankenphp-cli` under `php-cli`. It is FrankenPHP, not an extension.
-FRANKENPHP_MODULE_PREFIX = 'frankenphp'
+# Under `php-cli`, FrankenPHP registers its own SAPI module. It is FrankenPHP, not an extension.
+FRANKENPHP_MODULE = 'frankenphp-cli'
 
 
 class StaticPhpError(Exception):
@@ -78,7 +78,7 @@ def check(php, frankenphp, php_version, extensions):
     for name, argv in (('php', [php, '-n']), ('frankenphp', [frankenphp, 'php-cli'])):
         version, names = loaded(argv)
         if name == 'frankenphp':
-            names = [module for module in names if not module.startswith(FRANKENPHP_MODULE_PREFIX)]
+            names = [module for module in names if module != FRANKENPHP_MODULE]
         found.extend(problems(name, version, names, php_version, expected))
     return found
 

@@ -48,6 +48,9 @@ exit {code}
         frankenphp = self.binary('frankenphp', extensions=('Core', 'pdo_pgsql', 'redis', 'frankenphp-cli'), expect='php-cli')
         php = self.binary('php-with-sapi-module', extensions=('Core', 'pdo_pgsql', 'redis', 'frankenphp-cli'), expect='-n')
         self.assertEqual(self.check(frankenphp=frankenphp), [])
+        # Only that exact module: another one whose name starts the same is an extension like any other.
+        other = self.binary('frankenphp-other', extensions=('Core', 'pdo_pgsql', 'redis', 'frankenphp-cli', 'frankenphp-extra'), expect='php-cli')
+        self.assertEqual(self.check(frankenphp=other), ['frankenphp also loads frankenphp-extra.'])
         # Only FrankenPHP has it: the CLI that reports one has an extra module.
         self.assertEqual(self.check(php=php), ['php also loads frankenphp-cli.'])
 

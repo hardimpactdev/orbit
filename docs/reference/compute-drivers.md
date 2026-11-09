@@ -89,10 +89,16 @@ The `instances` object pins the two shared folders of an [Instance container hos
 
 | Folder | Parts |
 | --- | --- |
-| `runtime` | `node` and `bun`, from the recipe's tools; `composer`, the release phar; `ripgrep`; `vite-plus`, the recipe's `vp-cli` release binary as `vp`. Each published [static PHP build](#static-php-build) adds `php/<version>` |
+| `runtime` | `node` and `bun`, from the recipe's tools; `composer`, the release phar; `ripgrep`; `vite-plus`, the recipe's `vp-cli` release, whose `vp` runs from the folder's [Vite+ home](#the-vite-home). Each published [static PHP build](#static-php-build) adds `php/<version>` |
 | `agent` | `t3`, the release tarball; `claude-code` and `codex`, the npm packages of the Linux x64 builds |
 
-The container image sets `VP_NO_UPDATE_CHECK=1` for every systemd unit and login shell, so `vp` never checks for a new release of its read-only, pinned copy. A container user's `vp` keeps its own store in `~/.vite-plus`.
+#### The Vite+ home
+
+`vp` runs only from a home that holds its locked `vite-plus` package and its Node, and it fetches both on first use. A container has no internet, so the host builds that home once and containers use it read-only. The home holds absolute paths, so the host builds it at its final path, `/opt/orbit-runtime/vite-plus/<digest>`. The digest names what goes into it: the `vp-cli` release, the [Vite+ runtime lock](#bump-vite) and the recipe's Node release.
+
+The folder install builds the home the way a Node builds its Vite+ store. It copies the release's `vp`, installs the locked package with the folder's own npm and `npm ci --ignore-scripts`, and links the `node`, `npm` and `npx` shims. Then `vp env default` and `vp env install` make the recipe's Node the home's Node, and the install checks that `vp env exec node` reports it. `.complete` comes last; the next run removes a home without it and builds it again.
+
+Each runtime folder version links `vite-plus-home` to its home and `bin/vp` to `vite-plus-home/bin/vp`. A home goes once no folder version links it. Every process in a container gets `VP_HOME=/opt/orbit-runtime/current/vite-plus-home` and `VP_NO_UPDATE_CHECK=1`: the Instance profile sets them for `incus exec` sessions, systemd's `DefaultEnvironment` for units, and `/etc/profile.d` for login shells. `InstanceImage::RuntimeEnvironment` holds the one list. So `vp` never checks for a release of its pinned copy, and a container user's `vp` writes nothing to the home.
 
 The object is not part of the [recipe identity](#recipe-identity): no task image or Node profile holds the folders, so a new T3 or Claude Code rebuilds no image. A Node gets the new pins with its next converge.
 

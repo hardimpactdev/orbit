@@ -6,6 +6,8 @@ namespace App\Domain\Instances;
 
 use App\Infrastructure\MachineSoftware\FolderPin;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
+use App\Infrastructure\MachineSoftware\VitePlusHome;
+use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
 
 /**
  * The two shared folders as a container host installs them (docs/reference/development-containers.md#shared-folders). A folder's
@@ -21,6 +23,9 @@ final readonly class InstanceFolderPlan
     public static function for(InstanceFolders $folders): array
     {
         $runtime = ['path' => InstanceHostIntent::RuntimeFolder, 'parts' => [...self::parts($folders->runtime), ...self::php($folders)]];
+        if ($folders->vitePlus instanceof VitePlusHome) {
+            $runtime = self::vitePlus($runtime, $folders->vitePlus);
+        }
         $agent = ['path' => InstanceHostIntent::AgentFolder, 'parts' => self::parts($folders->agent), 'notes' => InstanceNotes::all()];
 
         return ['runtime' => ['version' => self::version($runtime), ...$runtime], 'agent' => ['version' => self::version($agent), ...$agent]];
@@ -70,6 +75,26 @@ final readonly class InstanceFolderPlan
         }
 
         return $parts;
+    }
+
+    /**
+     * The Vite+ part gives the folder no program of its own: its `vp` goes into a home that the host builds once at the stable path
+     * `vite-plus/<digest>`, because the home holds absolute paths. Each folder version links `vite-plus-home` to it, and its `bin/vp`
+     * runs `vp` from that home, which `VP_HOME` names in every container.
+     *
+     * @param  array{path: string, parts: list<array<string, mixed>>}  $runtime
+     * @return array{path: string, parts: list<array<string, mixed>>, vite_plus: array<string, string>}
+     */
+    private static function vitePlus(array $runtime, VitePlusHome $home): array
+    {
+        $runtime['parts'] = array_map(static fn (array $part): array => $part['name'] === $home->part ? [...$part, 'bin' => []] : $part, $runtime['parts']);
+        $lock = VitePlusRuntimeLock::read($home->vp);
+        // The home is a digest of what goes into it: the `vp` release, the locked package and the Node release.
+        $release = array_values(array_filter($runtime['parts'], static fn (array $part): bool => $part['name'] === $home->part));
+        $digest = hash('sha256', json_encode([$release, $home->binary, hash('sha256', $lock), $home->node], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+
+        return [...$runtime, 'vite_plus' => ['part' => $home->part, 'binary' => $home->binary, 'home' => InstanceHostIntent::RuntimeFolder.'/vite-plus/'.substr($digest, 0, 12),
+            'version' => $home->vp->version, 'node' => $home->node, 'lock' => $lock]];
     }
 
     /** @param  array<string, mixed>  $folder */

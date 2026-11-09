@@ -81,6 +81,18 @@
         extensions: "{{ item.static_php.extensions }}"
       loop: "{{ folder.parts | selectattr('static_php', 'defined') | list }}"
       loop_control: { label: "{{ item.name }}" }
+    # The runtime folder's `vp` runs from the Vite+ home, which every version of the folder links as `vite-plus-home`.
+    - name: Build the Vite+ home of the runtime folder
+      when: folder.vite_plus is defined
+      ansible.builtin.include_tasks: instance-vite-plus-home.yml
+      vars: { vite_plus: "{{ folder.vite_plus }}" }
+    - name: Link the Vite+ home and vp into the version
+      when: folder.vite_plus is defined
+      ansible.builtin.file: { src: "{{ item.src }}", dest: "{{ item.dest }}", state: link, follow: false }
+      loop:
+        - { src: "{{ folder.vite_plus.home }}", dest: "{{ folder_stage }}/vite-plus-home" }
+        - { src: ../vite-plus-home/bin/vp, dest: "{{ folder_parts }}/bin/vp" }
+      loop_control: { label: "{{ item.dest | basename }}" }
     - name: Write the environment notes
       when: folder_name == 'agent'
       block:
@@ -175,3 +187,25 @@
   when:
     - item.path | basename != folder.version
     - (item.path ~ '/') not in folder_used.stdout_lines
+
+# A Vite+ home goes once no folder version left links it.
+- name: Read the Vite+ homes that a folder version links
+  when: folder_name == 'runtime'
+  ansible.builtin.shell:
+    cmd: for link in {{ folder.path }}/[0-9a-f]*/vite-plus-home; do [ -L "$link" ] && readlink "$link"; done; true
+    executable: /bin/bash
+  register: vite_plus_linked
+  changed_when: false
+
+- name: Find the Vite+ homes
+  when: folder_name == 'runtime'
+  ansible.builtin.find: { paths: "{{ folder.path }}/vite-plus", file_type: directory, patterns: "^[0-9a-f]{12}$", use_regex: true }
+  register: vite_plus_homes
+
+- name: Remove the Vite+ homes no folder version links
+  ansible.builtin.file: { path: "{{ item.path }}", state: absent }
+  loop: "{{ vite_plus_homes.files }}"
+  loop_control: { label: "{{ item.path | basename }}" }
+  when:
+    - folder_name == 'runtime'
+    - item.path not in vite_plus_linked.stdout_lines
