@@ -65,7 +65,7 @@ final readonly class AdmitSwampGatewayReleaseAction
         if (! GatewayReleaseCommit::isSha($commit)) {
             throw new GatewayReleaseException('deploy', 'gateway.release_commit_invalid', 'A Swamp release needs the full commit SHA.', 422);
         }
-        // A fleet reboot pass may reboot the Gateway Node; a release waits for it as for another release (ADR 0251).
+        // A fleet reboot pass may reboot the Gateway Node; a release waits for it as for another release (ADR 0253).
         if (FleetReboot::open() instanceof Operation) {
             throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'A fleet reboot pass is running.', 409);
         }

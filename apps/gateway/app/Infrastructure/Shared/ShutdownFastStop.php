@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Shared;
 
 /**
- * The one rule for every Orbit unit with a long stop drain (ADR 0251, docs/reference/node-provisioning.md#shutdown-never-waits):
+ * The one rule for every Orbit unit with a long stop drain (ADR 0253, docs/reference/node-provisioning.md#shutdown-never-waits):
  * a normal stop or restart drains as the unit configures, but a system shutdown never waits for it. systemd runs `ExecStop`
  * before it sends the kill signal, so while `systemctl is-system-running` reports `stopping`, the privileged guard kills the
  * whole unit at once, itself included, which `-` accepts. Otherwise it exits at once and the unit's own drain applies.

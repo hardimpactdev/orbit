@@ -16,7 +16,7 @@ use Carbon\CarbonImmutable;
 use InvalidArgumentException;
 
 /**
- * The alerts of the fleet reboot pass (ADR 0251, [Release alerts](/reference/gateway-recovery#release-alerts)): an Activity
+ * The alerts of the fleet reboot pass (ADR 0253, [Release alerts](/reference/gateway-recovery#release-alerts)): an Activity
  * entry, a filed problem and the signed webhook. Each incident names the Node and what went wrong, so a repeat of the same
  * fault raises no new alert. They run after the result is written, outside a transaction.
  */

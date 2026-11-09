@@ -1,5 +1,5 @@
 ---
-# After a confirmed reboot of a CI host: re-run the jobs that a stopped runner lost (ADR 0251). The drain stopped a runner only
+# After a confirmed reboot of a CI host: re-run the jobs that a stopped runner lost (ADR 0253). The drain stopped a runner only
 # when it ran no `Runner.Worker`, so a job that GitHub still counted as running on it at its freeze was lost when it stopped.
 # The App's own `Actions: write` token per repository, which the pass minted, is in `github_tokens`; no runner administration
 # is needed (ADR 0223). Each run with a lost job gets one call of the re-run-failed-jobs API, only while it is still at the

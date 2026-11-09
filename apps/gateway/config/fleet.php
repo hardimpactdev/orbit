@@ -10,7 +10,7 @@ return [
     // Gateway release that adds the units does not reach the fleet before its Nodes are ready.
     'rollout' => filter_var(env('ORBIT_FLEET_ROLLOUT', false), FILTER_VALIDATE_BOOL),
 
-    // The nightly drained reboot of the managed Linux Nodes (ADR 0251, /reference/gateway-recovery#fleet-reboot). On by default:
+    // The nightly drained reboot of the managed Linux Nodes (ADR 0253, /reference/gateway-recovery#fleet-reboot). On by default:
     // a Node that runs agent containers must boot into its kernel fixes without manual work.
     'reboot' => filter_var(env('ORBIT_FLEET_REBOOT', true), FILTER_VALIDATE_BOOL),
 

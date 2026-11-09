@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Admits one `fleet.reboot` pass (ADR 0251): the full intent of every Node it visits, in order. Swamp reads on each Node
+ * Admits one `fleet.reboot` pass (ADR 0253): the full intent of every Node it visits, in order. Swamp reads on each Node
  * whether it is due, drains it, reboots it and checks it, one Node at a time. The pass, a fleet rollout and a Gateway
  * release never overlap: each refuses while another runs.
  */

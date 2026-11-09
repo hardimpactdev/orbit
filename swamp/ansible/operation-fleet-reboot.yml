@@ -1,5 +1,5 @@
 ---
-# One Node of a fleet.reboot pass (ADR 0251, docs/reference/gateway-recovery.md#fleet-reboot): drain it, reboot it, check it.
+# One Node of a fleet.reboot pass (ADR 0253, docs/reference/gateway-recovery.md#fleet-reboot): drain it, reboot it, check it.
 # One tagged part per Swamp phase: `drain`, `reboot` and `check`, and `report`, which joins the records of the whole pass.
 # The Gateway's admitted intent is in the pass's run folder. Each phase reads and extends this Node's record there; once the
 # record has an outcome, later phases change nothing. A phase that fails writes `failed` with its step and error code first.
@@ -166,7 +166,7 @@
           when: target.kind == 'swamp'
         # The module reboots, waits up to 10 minutes for SSH and checks that the boot time changed.
         - name: Reboot and wait for the Node
-          ansible.builtin.reboot: { reboot_timeout: 600, msg: "Orbit fleet reboot (ADR 0251)" }
+          ansible.builtin.reboot: { reboot_timeout: 600, msg: "Orbit fleet reboot (ADR 0253)" }
           register: rebooted
         - name: Record the reboot time
           ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
@@ -217,11 +217,9 @@
           ansible.builtin.assert:
             that: [boot.failed_units | difference(record.failed_before) | length == 0]
             fail_msg: fleet.reboot_units_failed
+        # The Gateway admits the units: the agent, the Gateway's scheduler and Horizon, the hub's tunnel and source unit.
         - name: Wait for the Node's own services
-          ansible.builtin.command:
-            argv: >-
-              {{ ['systemctl', 'is-active', 'orbit-agent.service']
-              + ([target.gateway.horizon, target.gateway.scheduler] | select | list if target.gateway is not none else []) }}
+          ansible.builtin.command: { argv: "{{ ['systemctl', 'is-active'] + target.services }}" }
           register: services
           changed_when: false
           until: services.rc == 0

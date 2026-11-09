@@ -90,7 +90,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // 03:00–06:00 Amsterdam window, so the rollout is also admitted once when that window opens.
         GatewaySchedule::job($schedule, new AdmitFleetRollout)->dailyAt('03:05')->timezone('Europe/Amsterdam')
             ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->boolean('fleet.rollout'));
-        // ADR 0251: the nightly drained reboot pass, admitted after the rollout in the same window; it waits while the rollout runs.
+        // ADR 0253: the nightly drained reboot pass, admitted after the rollout in the same window; it waits while the rollout runs.
         GatewaySchedule::job($schedule, new AdmitFleetReboot)->dailyAt('03:06')->timezone('Europe/Amsterdam')
             ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->boolean('fleet.reboot'));
         GatewaySchedule::job($schedule, new CheckFleetRebootConfirmation)->everyFiveMinutes()

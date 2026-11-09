@@ -403,7 +403,7 @@ Both phases write the module file as root, mode `0644`. A file that already hold
 
 ### Update policy
 
-Every managed Linux Node gets the same update policy ([ADR 0251](/decisions/0251-patch-nodes-and-reboot-them-drained)). The Gateway renders it once, in `NodeUpdatePolicy`, and the same two phases as the kernel policy apply it. The Node installs Ubuntu security fixes itself; the nightly [fleet reboot](/reference/gateway-recovery#fleet-reboot) reboots it when a fix needs that.
+Every managed Linux Node gets the same update policy ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)). The Gateway renders it once, in `NodeUpdatePolicy`, and the same two phases as the kernel policy apply it. The Node installs Ubuntu security fixes itself; the nightly [fleet reboot](/reference/gateway-recovery#fleet-reboot) reboots it when a fix needs that.
 
 | File | Content |
 | --- | --- |

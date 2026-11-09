@@ -1,5 +1,5 @@
 ---
-# The update policy the Gateway renders for every managed Linux Node (ADR 0251, docs/reference/node-provisioning.md#update-policy).
+# The update policy the Gateway renders for every managed Linux Node (ADR 0253, docs/reference/node-provisioning.md#update-policy).
 # node.add and node.converge apply it from the same input: Ubuntu -security updates every day, never an automatic reboot, and
 # needrestart that leaves the protected units for the drained reboot of the fleet.reboot pass.
 - name: Install the update tools

@@ -7,6 +7,7 @@ namespace App\Domain\Fleet;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Nodes\NodeWireGuardHubInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectSourceAccess;
@@ -30,7 +31,7 @@ use Illuminate\Support\Facades\Config;
 use Throwable;
 
 /**
- * The nightly drained reboot of the managed Linux Nodes (ADR 0251, docs/reference/gateway-recovery.md#fleet-reboot).
+ * The nightly drained reboot of the managed Linux Nodes (ADR 0253, docs/reference/gateway-recovery.md#fleet-reboot).
  *
  * One `fleet.reboot` pass visits every managed Linux Node, one at a time, in risk order: the rollout's groups, then the
  * control path (the `vpn` hub, the Gateway, the Node that serves `swamp.orbit`), then the `swamp` Node itself. Swamp reads
@@ -157,6 +158,7 @@ final readonly class FleetReboot
         $roles = $this->roles($node);
         $settings = is_array($node->settings) ? $node->settings : [];
         $tasks = is_array($settings['task_vms'] ?? null) ? $settings['task_vms'] : null;
+        $gateway = in_array(RoleName::Gateway->value, $roles, true) ? self::gatewayUnits($node) : null;
 
         return ['node_id' => $node->id, 'name' => $node->name, 'group' => $this->group($node),
             'host' => $ssh['target']['host'], 'user' => $ssh['target']['user'], 'port' => $ssh['target']['port'],
@@ -164,7 +166,25 @@ final readonly class FleetReboot
             'kind' => in_array(RoleName::Swamp->value, $roles, true) ? 'swamp' : (in_array(RoleName::Gateway->value, $roles, true) ? 'gateway' : 'node'),
             'task_project' => is_string($tasks['project'] ?? null) && $tasks['project'] !== '' ? $tasks['project'] : null,
             'ci_project' => in_array(RoleName::CiRunner->value, $roles, true) ? 'orbit-ci' : null,
-            'gateway' => in_array(RoleName::Gateway->value, $roles, true) ? self::gatewayUnits($node) : null, 'defer' => null];
+            'gateway' => $gateway, 'services' => self::services($node, $roles, $gateway), 'defer' => null];
+    }
+
+    /**
+     * The units the check requires active after the boot: the agent on every Node, the scheduler and Horizon on the Gateway, and
+     * on the WireGuard hub its tunnel and, for an IPv4 endpoint, the unit that sends WireGuard from that address (ADR 0251). A
+     * reboot also starts `systemd-networkd` again, so the hub's networkd drop-in takes effect.
+     *
+     * @param  list<string>  $roles
+     * @param  array{horizon: string, scheduler: string}|null  $gateway
+     * @return list<string>
+     */
+    private static function services(Node $node, array $roles, ?array $gateway): array
+    {
+        $hub = in_array(RoleName::Vpn->value, $roles, true)
+            ? ['wg-quick@orbit.service', ...(NodeWireGuardHubInput::source($node) === null ? [] : [NodeWireGuardHubInput::SourceUnit])] : [];
+
+        return array_values(array_filter(['orbit-agent.service', ...($gateway === null ? [] : [$gateway['scheduler'], $gateway['horizon']]), ...$hub],
+            static fn (string $unit): bool => $unit !== ''));
     }
 
     /** @return array{horizon: string, scheduler: string} The units the drain stops and the check finds running again. */

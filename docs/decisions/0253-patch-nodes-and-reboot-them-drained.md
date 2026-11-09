@@ -1,10 +1,10 @@
 ---
-title: "ADR 0251: Patch Nodes and reboot them drained, one at a time"
-sidebarTitle: "0251 Patch and reboot Nodes"
+title: "ADR 0253: Patch Nodes and reboot them drained, one at a time"
+sidebarTitle: "0253 Patch and reboot Nodes"
 description: "In progress. Every managed Ubuntu Node installs security updates through unattended-upgrades without rebooting itself. A nightly fleet.reboot pass in Swamp drains each due Node, reboots it and checks that it came back, one Node at a time. A system shutdown never waits on a long unit drain."
 ---
 
-# ADR 0251: Patch Nodes and reboot them drained, one at a time
+# ADR 0253: Patch Nodes and reboot them drained, one at a time
 
 Every managed Ubuntu Node installs Ubuntu security updates on its own and never reboots on its own. When an update needs a reboot, a nightly Swamp pass reboots the due Nodes one at a time: it drains each Node's work, reboots it and checks that it came back. A system shutdown itself never waits on a long unit drain; the draining happens before it, while the network is up.
 

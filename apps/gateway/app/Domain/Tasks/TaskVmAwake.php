@@ -27,7 +27,7 @@ final class TaskVmAwake
         if (in_array($group->status, TaskGroupStatus::endedStatuses(), true) || self::held($group)) {
             return;
         }
-        // A fleet reboot pass drains this host: work that started now would be cut by its reboot (ADR 0251).
+        // A fleet reboot pass drains this host: work that started now would be cut by its reboot (ADR 0253).
         FleetReboot::refuseTaskWork($group);
         // The resume is its own Operation: it must not take the Idempotency-Key of the turn, check, publish or sync that asked for it.
         if (! app(OperationIdempotency::class)->suspended(static fn (): bool => app(WakeTaskVmAction::class)->forGroup($group))) {

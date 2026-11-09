@@ -87,7 +87,7 @@ final readonly class FactDoctor
             $check->issue('node.lifecycle_not_active', $node->id, $node->name, 'Node lifecycle is not active.', 'active', $node->status->value);
         }
         $check->observed($node->id, 'node.lifecycle_not_active');
-        // The fleet reboot pass records when a Node became due; the Gateway reads it, not the Node (ADR 0251).
+        // The fleet reboot pass records when a Node became due; the Gateway reads it, not the Node (ADR 0253).
         $due = FleetReboot::dueSince($node->id);
         if ($due !== null && $due->lessThan(CarbonImmutable::now()->subDays(FleetRebootAlerts::OverdueDays))) {
             $check->issue('node.reboot_due', $node->id, $node->name, 'The Node has needed a reboot for more than '.FleetRebootAlerts::OverdueDays.' days.',

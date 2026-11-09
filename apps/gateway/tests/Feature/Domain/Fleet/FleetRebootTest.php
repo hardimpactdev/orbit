@@ -13,6 +13,7 @@ use App\Domain\Fleet\FleetRebootProjection;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\NodeFacts\NodeFactKind;
+use App\Domain\Nodes\NodeWireGuardHubInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Proof\ProofVerifyIntent;
 use App\Domain\Releases\ReleaseAlert;
@@ -25,6 +26,7 @@ use App\Domain\Tasks\TaskVmAwake;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Jobs\Fleet\CheckFleetRebootConfirmation;
 use App\Models\Node;
 use App\Models\NodeFact;
@@ -110,6 +112,15 @@ it('gives Swamp what each Node needs to drain: task project, CI project and the 
         ->and($reboot->node($this->gateway)['gateway'])->toMatchArray(['scheduler' => 'orbit-gateway-schedule.service'])
         ->and($reboot->node($this->swamp)['kind'])->toBe('swamp')
         ->and($reboot->node($this->prod))->toMatchArray(['task_project' => null, 'ci_project' => null]);
+});
+
+it('requires the agent everywhere, the Gateway scheduler and Horizon, and the hub tunnel with its source unit after the boot', function (): void {
+    $reboot = app(FleetReboot::class);
+
+    expect($reboot->node($this->prod)['services'])->toBe(['orbit-agent.service'])
+        ->and($reboot->node($this->gateway)['services'])->toBe(['orbit-agent.service', 'orbit-gateway-schedule.service', ...(GatewayQueueRedis::configured() ? ['orbit-gateway-horizon.service'] : [])])
+        // The hub's public endpoint is an IPv4 address, so it has the source unit.
+        ->and($reboot->node($this->vpn)['services'])->toBe(['orbit-agent.service', 'wg-quick@orbit.service', NodeWireGuardHubInput::SourceUnit]);
 });
 
 it('only reads a task host with open task work, without holding its work, and admits the others with the window', function (): void {

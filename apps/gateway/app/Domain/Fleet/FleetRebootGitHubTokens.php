@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * The GitHub tokens of a `fleet.reboot` pass (ADR 0251): one `actions: write` token per admitted CI repository, which the
+ * The GitHub tokens of a `fleet.reboot` pass (ADR 0253): one `actions: write` token per admitted CI repository, which the
  * `rerun` phase uses to re-run the jobs a runner lost when the drain stopped it. The App already holds `Actions: write`; the
  * pass needs no runner administration (ADR 0223). Only the Swamp Node may mint, only for the pass's bound run, and only for
  * the repositories that admission froze in the intent.

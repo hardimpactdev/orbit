@@ -1,5 +1,5 @@
 #!/bin/sh
-# One round of the CI drain of a fleet.reboot pass (ADR 0251). Each running runner container of the Incus project in $1 is
+# One round of the CI drain of a fleet.reboot pass (ADR 0253). Each running runner container of the Incus project in $1 is
 # frozen while the host reads its processes, so its listener cannot start a job between the read and the stop. A container
 # without a `Runner.Worker` process is stopped; one with a job runs on. Autostart brings the stopped runners back at boot.
 # Exit 0 when no runner runs a job any more, 3 while one does. A job on a runner of the host itself also counts as busy.

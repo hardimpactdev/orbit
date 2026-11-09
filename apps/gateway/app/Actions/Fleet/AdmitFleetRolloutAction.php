@@ -37,7 +37,7 @@ final readonly class AdmitFleetRolloutAction
     /** @param list<int>|null $nodeIds */
     private function admit(?array $nodeIds): Operation
     {
-        // A fleet reboot pass shares the window; the rollout waits for it as for another rollout (ADR 0251).
+        // A fleet reboot pass shares the window; the rollout waits for it as for another rollout (ADR 0253).
         if (FleetReboot::open() instanceof Operation) {
             throw new ResourceOperationException('fleet.rollout_busy', 'A fleet reboot pass is running.', 409);
         }

@@ -2,7 +2,7 @@ import { assertEquals, assertMatch, assertNotEquals } from "jsr:@std/assert@1.0.
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { fileURLToPath } from "node:url";
 
-// The fleet.reboot pass (ADR 0251): its workflows, and the decisions of its playbook run against real Ansible on this machine.
+// The fleet.reboot pass (ADR 0253): its workflows, and the decisions of its playbook run against real Ansible on this machine.
 const ansible = fileURLToPath(new URL("../ansible/", import.meta.url));
 const playbook = `${ansible}operation-fleet-reboot.yml`;
 type Task = Record<string, unknown>;
@@ -165,7 +165,7 @@ Deno.test("only the swamp Node schedules its own reboot, behind a path unit that
     assertEquals(schedule.when, "target.kind == 'swamp'");
     assertEquals((schedule["ansible.builtin.command"] as Record<string, string[]>).argv.slice(0, 4),
         ["systemd-run", "--unit=orbit-planned-reboot", "--collect", "--path-property=PathExists={{ run }}.reboot"]);
-    assertEquals(reboot.find((t) => t.name === "Reboot and wait for the Node")!["ansible.builtin.reboot"], { reboot_timeout: 600, msg: "Orbit fleet reboot (ADR 0251)" });
+    assertEquals(reboot.find((t) => t.name === "Reboot and wait for the Node")!["ansible.builtin.reboot"], { reboot_timeout: 600, msg: "Orbit fleet reboot (ADR 0253)" });
     const cleanup = workflow("operation-fleet-reboot").jobs.find((job: Record<string, unknown>) => job.name === "pass").steps.find((step: Record<string, unknown>) => step.name === "cleanup");
     assertEquals(cleanup.task.inputs.run, 'timeout 30 rm -rf -- "$ORBIT_RUN"\nif timeout 10 systemctl is-active --quiet orbit-planned-reboot.path; then timeout 10 touch -- "$ORBIT_RUN.reboot"; fi');
 });

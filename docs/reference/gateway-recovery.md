@@ -649,7 +649,7 @@ A fleet rollout visit does not set `updating`. Its progress is in the Operation 
 
 ## Fleet reboot
 
-Every night, Swamp reboots the managed Linux Nodes that need it into their kernel and library fixes, one at a time, after it drained their work ([ADR 0251](/decisions/0251-patch-nodes-and-reboot-them-drained)). The Nodes install the fixes themselves through their [update policy](/reference/node-provisioning#update-policy); the pass only reboots. Each pass is one `fleet.reboot` Operation and its Swamp run. Read them with [`operation:list --kind=fleet.reboot`](/cli/operation/list) and [`operation:show`](/cli/operation/show).
+Every night, Swamp reboots the managed Linux Nodes that need it into their kernel and library fixes, one at a time, after it drained their work ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)). The Nodes install the fixes themselves through their [update policy](/reference/node-provisioning#update-policy); the pass only reboots. Each pass is one `fleet.reboot` Operation and its Swamp run. Read them with [`operation:list --kind=fleet.reboot`](/cli/operation/list) and [`operation:show`](/cli/operation/show).
 
 <div className="flow-at" data-chart="fleet/reboot"></div>
 
@@ -714,7 +714,9 @@ The `check` phase waits up to 5 minutes for the boot to finish, then reads the N
 
 - a new boot ID, the newest installed kernel, and no `/var/run/reboot-required`;
 - no failed unit that was not failed before the reboot;
-- `orbit-agent` active, and on the Gateway its scheduler and Horizon, within a minute.
+- `orbit-agent` active within a minute, and so are the Gateway's scheduler and Horizon on the Gateway Node, and the tunnel and [`orbit-hub-source.service`](/reference/wireguard-endpoints#the-hub-answers-from-its-endpoint-address) on the WireGuard hub.
+
+A reboot of the hub also starts `systemd-networkd` again, so the networkd drop-in of the hub's source unit takes effect.
 
 Then the Node records `rebooted` with its new kernel.
 

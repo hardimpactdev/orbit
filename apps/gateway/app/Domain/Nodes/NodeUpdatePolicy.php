@@ -9,7 +9,7 @@ use App\Models\Node;
 
 /**
  * The update policy of every managed Linux Node, applied by `node:add` and by the `agent` phase of `node:converge` from this one
- * rendering (ADR 0251, docs/reference/node-provisioning.md#update-policy). `unattended-upgrades` installs Ubuntu `-security`
+ * rendering (ADR 0253, docs/reference/node-provisioning.md#update-policy). `unattended-upgrades` installs Ubuntu `-security`
  * updates every day and never reboots; the nightly `fleet.reboot` pass reboots a due Node, drained.
  *
  * `needrestart` restarts the services that an update leaves on an old library, except the protected units: their restart drains
@@ -37,13 +37,13 @@ final readonly class NodeUpdatePolicy
                 ['path' => '/etc/apt/apt.conf.d/20auto-upgrades', 'mode' => '0644',
                     'content' => "// Managed by Orbit.\nAPT::Periodic::Update-Package-Lists \"1\";\nAPT::Periodic::Unattended-Upgrade \"1\";\n"],
                 ['path' => '/etc/apt/apt.conf.d/52orbit-unattended-upgrades', 'mode' => '0644',
-                    'content' => "// Managed by Orbit (ADR 0251): security updates only, and never a reboot; Orbit reboots the Node, drained.\n"
+                    'content' => "// Managed by Orbit (ADR 0253): security updates only, and never a reboot; Orbit reboots the Node, drained.\n"
                         ."#clear Unattended-Upgrade::Allowed-Origins;\n#clear Unattended-Upgrade::Origins-Pattern;\n"
                         ."Unattended-Upgrade::Allowed-Origins { \"\${distro_id}:\${distro_codename}-security\"; };\n"
                         ."Unattended-Upgrade::Automatic-Reboot \"false\";\nUnattended-Upgrade::Remove-Unused-Kernel-Packages \"true\";\n"],
                 ['path' => '/etc/needrestart/conf.d/50-orbit.conf', 'mode' => '0644', 'content' => self::needrestart()],
                 ['path' => '/etc/apt/apt.conf.d/53orbit-reboot-due', 'mode' => '0644',
-                    'content' => "// Managed by Orbit (ADR 0251): a protected unit on an old library makes the Node due for its reboot.\n"
+                    'content' => "// Managed by Orbit (ADR 0253): a protected unit on an old library makes the Node due for its reboot.\n"
                         .'DPkg::Post-Invoke { "if [ -x '.self::RebootDueScript.' ]; then '.self::RebootDueScript."; fi\"; };\n"],
                 ['path' => self::RebootDueScript, 'mode' => '0755', 'content' => self::rebootDue()],
             ]];
@@ -53,7 +53,7 @@ final readonly class NodeUpdatePolicy
     {
         $lines = array_map(static fn (string $pattern): string => '$nrconf{override_rc}->{qr('.$pattern.')} = 0;', self::ProtectedUnits);
 
-        return "# Managed by Orbit (ADR 0251): restart services automatically, except the units whose restart drains or cuts the fleet's work.\n"
+        return "# Managed by Orbit (ADR 0253): restart services automatically, except the units whose restart drains or cuts the fleet's work.\n"
             ."\$nrconf{restart} = 'a';\n".implode("\n", $lines)."\n";
     }
 
@@ -61,7 +61,7 @@ final readonly class NodeUpdatePolicy
     {
         $pattern = implode('|', self::ProtectedUnits);
 
-        return "#!/bin/sh\n# Managed by Orbit (ADR 0251). After each dpkg run: a protected unit that runs an old library makes the Node due for\n"
+        return "#!/bin/sh\n# Managed by Orbit (ADR 0253). After each dpkg run: a protected unit that runs an old library makes the Node due for\n"
             ."# its drained reboot. needrestart only lists here; its own hook restarts the other services.\nset -u\n"
             ."out=\$(needrestart -b -r l 2>/dev/null) || exit 0\n"
             ."units=\$(printf '%s\\n' \"\$out\" | sed -n 's/^NEEDRESTART-SVC: //p' | grep -E '{$pattern}') || exit 0\n"

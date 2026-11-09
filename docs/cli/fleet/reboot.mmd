@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0251, drained Node reboots one at a time; docs/reference/gateway-recovery.md#fleet-reboot.
+  %% Target design: ADR 0253, drained Node reboots one at a time; docs/reference/gateway-recovery.md#fleet-reboot.
   %% status: draft
   %% kind: fleet.reboot
   autonumber
@@ -34,7 +34,7 @@ sequenceDiagram
     %%> - the swamp Node instead schedules its own reboot after the run ends: `scheduled`
     SW->>N: Check the new boot<br/>check phase
     %%> Checks:
-    %%> - new boot ID, newest kernel, nothing due, no newly failed unit, agent (and on the Gateway its scheduler and Horizon) active
+    %%> - new boot ID, newest kernel, nothing due, no newly failed unit, agent, Gateway scheduler and Horizon, hub tunnel and source unit active
     opt a CI host whose drain stopped runners
       SW->>GW: Mint Actions write tokens<br/>github-token
       %%> Why:

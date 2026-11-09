@@ -16,7 +16,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
 /**
- * Confirms the reboot that Node 209 scheduled for itself at the end of a pass (ADR 0251). Its run cannot wait across its
+ * Confirms the reboot that Node 209 scheduled for itself at the end of a pass (ADR 0253). Its run cannot wait across its
  * own reboot, so the Gateway reads the boot from the Node's `metrics` fact: the agent reports its uptime, and a boot after
  * the pass ended confirms it. Thirty minutes after the pass ended without one, it raises `reboot_unconfirmed` once.
  * The next pass checks the Node and records the result.
