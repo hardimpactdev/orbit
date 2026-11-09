@@ -118,10 +118,13 @@ final readonly class TaskVmAdmission
 
                     return;
                 }
+                $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
+                if (TaskVm::forGroup($group) === null) {
+                    app(TaskVmSlotPool::class)->assertServes($group);
+                }
                 if (self::queue()->where('id', '<', $id)->exists()) {
                     throw new TaskCapacityException(TaskWait::Capacity, 'An earlier task is waiting for a place.');
                 }
-                $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
                 app(TaskOperations::class)->requireOpenExternal($group);
                 $request = ValidatedData::object($operation->input['capacity_request']);
                 if (in_array($operation->kind, ['tasks.provision', 'proof.command'], true)) {
@@ -149,6 +152,11 @@ final readonly class TaskVmAdmission
             });
         } catch (TaskCapacityException) {
             AdmitTaskVm::dispatch($id)->delay(now()->addSeconds(self::RetrySeconds));
+        } catch (ResourceOperationException $exception) {
+            $operation = Operation::query()->findOrFail($id);
+            if (! $operation->status->terminal()) {
+                $this->fail($operation, $exception->errorCode, $exception->getMessage());
+            }
         } catch (Throwable $exception) {
             report($exception);
             $operation = Operation::query()->findOrFail($id);

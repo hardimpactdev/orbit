@@ -1220,6 +1220,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.workspace_mismatch` | 409 | A group's workspace is not on its ready task VM |
 | `task_vm.foreign_instance` | 409 | An Instance on a task VM Node is not its group's workspace |
 | `task_vm.access_refused` | 409 | An access grant names a task VM Node as its consumer |
+| `task_vm.project_unsupported` | 409 | A group of a Project other than the proof Project needs a new task VM. The base carries only the proof Project's checkout |
 | `task_vm.range_in_use` | 409 | A Node that is not the Node of a live task VM holds an address in the reserved range |
 | `task_vm.fleet_unavailable` | 409 | The fleet has not exactly one active `vpn`, `gateway`, or `websocket` Node, the dev Cluster has no active router, or one of these Nodes has no WireGuard address |
 | `task_vm.setup_unavailable` | 409 | The setup script is missing, or the target Node has no WireGuard address |
