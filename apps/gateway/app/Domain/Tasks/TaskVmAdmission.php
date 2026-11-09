@@ -16,6 +16,7 @@ use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Domain\TaskVms\TaskVmPromotedImage;
+use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Jobs\Tasks\AdmitTaskVm;
@@ -46,8 +47,11 @@ final readonly class TaskVmAdmission
     {
         try {
             return DB::transaction(function () use ($group, $kind, $capture, $caller, $requestId): Operation {
-                if (TaskVm::forGroup($group) === null && self::queue()->exists()) {
-                    throw new TaskCapacityException(TaskWait::Capacity, 'An earlier task is waiting for a place.');
+                if (TaskVm::forGroup($group) === null) {
+                    app(TaskVmSlotPool::class)->assertServes($group);
+                    if (self::queue()->exists()) {
+                        throw new TaskCapacityException(TaskWait::Capacity, 'An earlier task is waiting for a place.');
+                    }
                 }
                 $input = $capture();
 

@@ -322,8 +322,30 @@ it('refuses a group of a Project whose checkout the base does not carry', functi
     slotPoolHost();
     $other = Project::query()->create(['name' => 'bench', 'slug' => 'bench', 'repository_url' => 'https://github.com/laravel/laravel.git', 'default_branch' => '13.x', 'root' => 'public']);
 
-    expect(fn () => app(TaskVmSlotPool::class)->take(slotPoolGroup($other)))->toThrow(TaskCapacityException::class, 'carries only the checkout of Project')
+    expect(fn () => app(TaskVmSlotPool::class)->take(slotPoolGroup($other)))->toThrow(TaskVmException::class, 'its base carries only that checkout')
         ->and(TaskVm::query()->count())->toBe(0);
+});
+
+it('refuses a task start of another Project at once, so it never waits in or holds up the task queue', function (): void {
+    Queue::fake();
+    [, $project] = slotPoolHost(taskPlaces: 1);
+    slotPoolSweepWorld();
+    slotPoolClaimServices();
+    $other = Project::query()->create(['name' => 'website', 'slug' => 'website', 'repository_url' => 'https://github.com/laravel/laravel.git', 'default_branch' => '13.x', 'root' => 'public']);
+    $foreign = slotPoolGroup($other);
+
+    try {
+        app(TaskProvisionIntent::class)->start($foreign, 'test', null, str_repeat('a', 40));
+        $this->fail('A group of another Project must be refused.');
+    } catch (TaskVmException $exception) {
+        expect($exception->errorCode)->toBe('task_vm.project_unsupported')->and($exception->status)->toBe(409);
+    }
+    expect(Operation::query()->where('target_id', $foreign->id)->exists())->toBeFalse()
+        ->and($foreign->refresh()->status)->toBe(TaskGroupStatus::Todo)->and($foreign->capacity_wait_reason)->toBeNull();
+
+    $group = slotPoolGroup($project);
+    expect(app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40))->status)->toBe(OperationStatus::Queued)
+        ->and(TaskVm::forGroup($group)?->capacity_pool)->toBe('task');
 });
 
 it('has the sweep leave a host alone while its refresh is open, and go on past a row whose release cannot be built', function (): void {

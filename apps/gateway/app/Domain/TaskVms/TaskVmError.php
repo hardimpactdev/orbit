@@ -45,6 +45,7 @@ enum TaskVmError: string
     case ForeignInstance = 'task_vm.foreign_instance';
     case Parked = 'task_vm.parked';
     case AccessRefused = 'task_vm.access_refused';
+    case ProjectUnsupported = 'task_vm.project_unsupported';
 
     // Base images.
     case ImageMismatch = 'task_vm.image_mismatch';
