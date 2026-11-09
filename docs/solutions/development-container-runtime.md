@@ -25,12 +25,12 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 | Parity gate | Orbit's command proof cases pass in an Orbit Instance container with the nested fleet on, with the same verdicts as on task VMs |
 | Swamp's T3 session | A dedicated `Orbit Swamp` session per Instance, kept in the vault and revoked on its own. PR 8 grants it only the scopes the thread tools need |
 | Turn cost | Recorded as null. T3 reports no cost per turn |
-| Turn failures | Orbit records T3's failure class as is, and Swamp decides assistance from it |
+| Turn failures | Changed by Nick, after review, 2026-11-09. Swamp translates T3's failure into Orbit's provider error codes, as [the map](/reference/development-containers#provider-errors) says. Retry, assistance and reports stay as today |
 | Repeated sends | Swamp relies on T3's idempotent `clientRequestId`, keyed per session, and renews the Swamp session only between turn operations. PR 8 proves it across a T3 restart |
 | Pause | An explicit pause and resume on the group. A paused group admits no Swamp turn, and the user drives from Conn |
 | Task capacity | Each Node has task and CI place counts, with the queue and two-hour wait of task places. The parity gate's peak memory sets the counts |
 | Inner Incus | `agent` joins the inner Incus admin group: root-equivalent inside its own container, with no sudo. `orbit` gets no access |
-| Nested-fleet egress | The shared package path of rollout step 2c, as every container. It widens for nested-fleet Instances only if a proof case needs it |
+| Nested-fleet egress | Changed by Nick, after review, 2026-11-09. Nested test Nodes get full public internet access through an [Orbit egress proxy](/reference/development-containers#egress-of-the-nested-fleet). `orbit` keeps the shared package path |
 | Task Nodes before the switch | Task clones and container CI proofs run on Beast and Shark, as `app-dev` Nodes on the build list, beside their task VMs |
 | Models | Through the per-Node [forwarder](/reference/ai-router#container-model-forwarder) to the model router guard. A container holds only the placeholder key |
 | Registration | A step in the Instance-create flow issues and checks the T3 sessions. The Gateway records the server from that step's result |
@@ -319,10 +319,10 @@ This PR lets Swamp drive a container's T3 for `task:turn`, as [Swamp drives T3](
 - **Gateway.** The task driver `t3` for groups in a container. Its thread row records the T3 thread id, the Node and the driver. It accepts Claude models.
 - **Pi.** The `pi` driver stays for task VM groups.
 - **Swamp.** The container branch of `operation-task-turn` with the calls of the contract: `t3_project_list`, `t3_thread_launch`, `t3_thread_send`, `t3_thread_wait`, `t3_thread_read` and `t3_thread_interrupt` over MCP, and `orchestration.getThreadProjection` and `orchestration.forceStopThread` over the WebSocket.
-- **Projection.** State, token metrics and the redacted transcript, by the mappings of the contract.
+- **Projection.** State, the provider error, token metrics and the redacted transcript, by the mappings of the contract.
 - **Sessions.** The step reads the Instance's `Orbit Swamp` session from the vault.
 
-Tests: Pest for the driver selection, the state map, the metric map with `partial` and `unavailable` usage, and the Claude admission. Swamp tests run the driver against a T3 server in a test container: a repeated `clientRequestId`, a lost wait, a T3 restart in a turn and a cancel. Live on Beast, in a task clone:
+Tests: Pest for the driver selection and the state map. Pest for the provider error map: a fixture per adapter code, a Claude 429 with a far `resetAt`, and a code with no mapping. Pest for the metric map with `partial` and `unavailable` usage, and the Claude admission. Swamp tests run the driver against a T3 server in a test container: a repeated `clientRequestId`, a lost wait, a T3 restart in a turn and a cancel. Live on Beast, in a task clone:
 
 1. An implementer turn with a Codex model and one with a Claude model edit files and write receipts.
 2. A reviewer turn on a handoff check runs, and Orbit resets the workspace after it.
@@ -355,7 +355,9 @@ This PR adds the [nested fleet](/reference/development-containers#nested-fleet) 
 - **Refusals.** The create flow refuses a `raw.*` key and any device beyond the root disk, the NIC, the shared folders and the T3 proxy.
 - **Fleet rules.** The AppArmor-off device on each nested container, and a fleet check that fails on any `LoadCredential` unit.
 
-Tests: Pest for the setting, the project choice and the refusals; Ansible fixture tests for the inner Incus, the tunnel unit and the fleet check. Live on Beast:
+The PR also adds the Node's [egress proxy](/reference/development-containers#egress-of-the-nested-fleet): the Process on the Node, the bridge ACL and input rules for a nested-fleet container, the container's forward-only rule, the proxy's egress facts, and the proxy settings of the nested Nodes.
+
+Tests: Pest for the setting, the project choice, the refusals and the proxy rules; Ansible fixture tests for the inner Incus, the tunnel unit, the fleet check and the proxy settings. Live on Beast:
 
 1. Orbit's default Instance builds with the fleet, from scratch.
 2. A clone of it starts, and `zfs get written` shows only a few MB.
@@ -363,6 +365,11 @@ Tests: Pest for the setting, the project choice and the refusals; Ansible fixtur
 4. As `agent`, `incus list` shows the fleet; as `orbit`, it is refused.
 5. A container of the test Project has no nesting and `user.max_user_namespaces=0`.
 6. The PR records the clone, nested start and `base` times.
+The egress proxy checks follow.
+
+7. A nested Node fetches a public package through the proxy, and the proxy logs the connection.
+8. A nested Node with the proxy unset reaches nothing outside, and `orbit` cannot reach the proxy.
+9. The proxy refuses `CONNECT` to the Gateway, to `127.0.0.1` and to a `.orbit` name.
 
 ### PR 11: command proofs in an Instance container
 
