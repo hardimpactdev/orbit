@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, task-host input withdrawal and apps.path are Node work, one node:update. docs/reference/node-settings.md.
-  %% status: reviewed
+  %% status: draft
   %% command: node:update
   %% kind: node.update
   autonumber
@@ -12,86 +12,112 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: node:update NODE<br/>--apps-path=PATH
+  CLI->>GW: node:update NODE<br/>setting patch
   %%> Command:
-  %%> - `orbit node:update NODE --apps-path=PATH`
-  %%> - syntax: `<node> [--name=NAME] [--platform=PLATFORM] [--apps-path=PATH] [--task-vms=JSON] [--json]`
-  %%> Input:
-  %%> - the Node, and at least one setting to change
-  %%> - an apps-folder change or withdrawal of existing task-host input rules needs Node work; other changes are records
-  %%> - an empty value unsets a setting: `--apps-path=` unsets the folder, `--task-vms=null` removes the task VM host settings
-  %%> Who can call it:
-  %%> - the `orbit` CLI and the MCP tool send the same request
+  %%> - `orbit node:update NODE` with at least one supported field option
+  %%> - syntax: `<node> [--name=NAME] [--platform=PLATFORM] [--apps-path=PATH] [--task-vms=JSON] [--idempotency-key=KEY] [--json]`
   Note over GW: Validate, lock the Node
   %%> Requirements:
-  %%> - the calling Node has an access grant to the target Node
-  %%> - `task_vms.task_places` and `task_vms.ci_places` are separate VM counts from 0 to 64; one live VM holds one place until deletion is confirmed
-  %%> - lowering either count removes no claim; task work and operator proofs share FIFO task admission, while authenticated CI proofs and base refresh use CI places
-  %%> - every value passes the checks that the Node settings reference lists; a failed check changes nothing
-  %%> - no other lifecycle change runs for the target; the Gateway holds the Node's name lock, and the new name's lock for a rename
-  %%> Decides:
-  %%> - whether the apps folder changes and needs Node work, so a run starts
-  alt apps folder changes or task host is removed or its bridge changes
-    GW->>SW: Start run, full intent<br/>operation-node-update
-    %%> Inputs:
-    %%> - the new apps folder, and the managed user and group that must own it
-    %%> - the target's address and SSH host keys; the SSH identity comes from the `swamp` role
-    %%> Not stored yet:
-    %%> - the settings stay unchanged until the run succeeds; a new name or platform in the same request is saved at once
-    %%> Unsetting on a Node with an active `app-dev` role:
-    %%> - prepares the default folder, `<managed-user-home>/apps`
-    GW-->>CLI: 202 Accepted<br/>task ID
-    %%> What you get:
-    %%> - the task ID, at once
-    %%> Next:
-    %%> - the CLI follows the task with `operation:show`
-    opt existing task host removed or bridge / CIDR changed
-      SW->>N: Withdraw task host input<br/>shared Ansible phase
+  %%> - access follows the [shared Node authority rule](/cli/node#authority)
+  %%> - validate the complete patch against [Node settings](/reference/node-settings#validation) before changing records
+  %%> - use the existing lifecycle locks for the current name and, on rename, the new name; use existing worker renewal and firewall ownership rules
+  alt unknown Node
+    %% path: unknown-node
+    GW--xCLI: Refused<br/>http.404
+    %%> Result:
+    %%> - no Operation or state change
+  else caller refused
+    %% path: caller-refused
+    GW--xCLI: Refused<br/>node_access.required
+    %%> Result:
+    %%> - no Operation or state change
+  else invalid field or setting
+    %% path: validation-refused
+    GW--xCLI: Refused<br/>validation or settings code
+    %%> Result:
+    %%> - no Operation or state change; the owning validation table supplies the code
+  else platform on managed Node
+    %% path: managed-platform
+    GW--xCLI: Refused<br/>node.platform_managed
+    %%> Requirements:
+    %%> - a platform edit requires no pinned SSH host fingerprint and no role
+    %%> Result:
+    %%> - no Operation or state change
+  else Node work needs Linux
+    %% path: unsupported-platform
+    GW--xCLI: Refused<br/>node.settings_platform_unsupported
+    %%> Result:
+    %%> - no Operation or state change; record-only edits do not require Linux
+  else lifecycle lock held
+    %% path: lifecycle-busy
+    GW--xCLI: Refused<br/>node.provisioning_busy
+    %%> Result:
+    %%> - no new Operation or state change
+  else admitted
+    %% path: admitted
+    alt every value already set
+      %% path: already-set
+      GW-->>CLI: Skipped — already set<br/>node.unchanged
+      %%> Result:
+      %%> - no write, Operation, run or Node contact
+    else Node work required
+      %% path: node-work
+      Note over GW: Save name and platform
+      %%> Result:
+      %%> - requested record fields commit now; requested apps and task-host settings wait for successful execution
+      GW->>SW: Start run, full intent<br/>operation-node-update
+      %%> Inputs:
+      %%> - the admitted patch, effective folder and managed owner, target address and pinned host keys, and catalog-owned task-host comments
+      %%> - secret references only; execution identity follows the shared Swamp contract
+      GW-->>CLI: 202 Accepted<br/>Operation ID
+      %%> Result:
+      %%> - one Operation follows one Swamp run
+      %%> - clients use the shared [Operation polling contract](/reference/operations#follow-an-operation-by-polling)
+      opt --task-vms removes host or changes bridge / CIDR
+        %% path: withdraw-input
+        SW->>N: Withdraw task host input<br/>Ansible phase
+        %%> What it does:
+        %%> - removes only rows with `orbit:task-vms-dhcp`, `orbit:task-vms-dns-tcp` or `orbit:task-vms-dns-udp` comments, including duplicates and IPv6 rows
+        %%> - rereads the firewall and asserts those comments are absent; other rules stay untouched
+      end
+      opt --apps-path requires folder preparation
+        %% path: prepare-folder
+        SW->>N: Prepare the apps folder<br/>Ansible phase
+        %%> What it does:
+        %%> - reads, creates missing parents and the folder, and checks a real folder with the managed user and group and mode `0755`, in one phase
+        %%> - changes only the folder itself, not its contents; existing Instances never move
+        %%> Default:
+        %%> - an unset path prepares `<managed-user-home>/apps` only with active `app-dev`; otherwise unsetting needs no folder
+        %%> Order:
+        %%> - depends on successful withdrawal when both phases are needed; no folder work follows failed withdrawal
+      end
+      SW->>SW: Cleanup
       %%> What it does:
-      %%> - removes only rules with the three catalog-owned task-host input comments, including duplicates and IPv6 rows
-      %%> - reads the firewall again and asserts none remain; failure keeps the stored settings
-    end
-    SW->>N: Create the apps folder<br/>@swamp/cfgmgmt/directory apply
-    %%> What it does:
-    %%> - only when an apps-folder change needs preparation: creates the folder and any missing folders above it
-    %%> - gives it the managed user and group and mode `0755`
-    %%> Not included:
-    %%> - existing Instances don't move; new development Instances use the new folder
-    SW->>N: Check owner and mode<br/>@swamp/ssh exec · stat
-    %%> Why:
-    %%> - it is the one end check: a real folder of the managed user and group, mode 0755
-    alt folder is ready
-      N-->>SW: owner, group, mode
-      SW-->>GW: Run succeeded<br/>terminal event
-      %%> How the Gateway learns it:
-      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-      Note over GW: Save the settings
+      %%> - removes run-owned temporary input and credentials after phases and dependent cleanup have stopped, on success and failure
+      %%> - preserves the original failure and reports incomplete cleanup; no folder or firewall rollback
+      alt phases and cleanup succeed
+        %% path: succeeded
+        SW-->>GW: Run succeeded<br/>terminal result
+        %%> Result:
+        %%> - the shared run reader delivers the result; no step calls back to the Gateway
+        Note over GW: Save deferred settings
+        %%> Result:
+        %%> - save only requested settings members, preserving unrelated stored members
+      else a phase or cleanup fails
+        %% path: phase-failed
+        SW--xGW: Run failed<br/>error code, failed phase
+        %%> Result:
+        %%> - old deferred settings remain; already committed name or platform remains
+        %%> - completed harmless folder work and any withdrawn rules remain; no all-fields rollback
+        %%> Retry:
+        %%> - after fixing the cause, the same command starts a fresh attempt; remaining work completes safely
+      end
+    else record-only change
+      %% path: record-save
+      Note over GW: Save requested records
       %%> Result:
-      %%> - the apps folder is set, and any task VM host change in the same request is saved with it
-      %%> - the task succeeds
-    else a step fails
-      N--xSW: wrong owner or exit ≠ 0
-      %%> When:
-      %%> - the folder can't be created, a file is in the way, or the check doesn't match
-      SW--xGW: Run failed<br/>error_code, failed step
-      Note over GW: Keep the old settings
-      %%> Result:
-      %%> - the settings stay unchanged and the task fails
-      %%> On the Node:
-      %%> - folders created before the failure stay; an empty folder is harmless and there is no rollback
-      %%> Retry:
-      %%> - run the same command again after fixing the cause; it is a new task
+      %%> - commit name, platform and settings at once without an Operation, run or Node contact
+      %%> - task and CI place counts remain separate; lowering counts removes no live VM claim
+      GW-->>CLI: 200 OK<br/>the updated Node
     end
-    loop every 2 s until terminal
-      CLI->>GW: operation:show TASK
-      GW-->>CLI: status + result
-    end
-  else only records change
-    Note over GW: Save the records
-    %%> What it does:
-    %%> - saves the name, platform or task VM host settings at once when no apps preparation or task-host input withdrawal is needed; no Node is contacted
-    %%> Skipped:
-    %%> - when every value equals the stored one, nothing is written and the result reports `Skipped — already set (node.unchanged)`
-    %%> - the skip reason is part of the successful result in human and machine output, not an error
-    GW-->>CLI: 200 OK<br/>the Node
   end

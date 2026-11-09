@@ -1,65 +1,80 @@
 ---
 title: "orbit node:update"
 sidebarTitle: "node:update"
-description: "Change the name, platform, apps folder, or task VM host settings of a Node. Only an apps folder change runs on the Node."
+description: "Change one Node's name, unmanaged platform, apps folder, or typed task VM host settings."
 ---
 
+Does: change these recorded fields, preparing the apps folder or withdrawing obsolete task-host input rules when needed. Does not: enroll or upgrade a Node, change roles or Instances, move checkouts, drain or delete VMs, or accept arbitrary settings.
+
+## Usage
+
 ```bash
-orbit node:update <node> [--name=NAME] [--platform=PLATFORM] [--apps-path=PATH] [--task-vms=JSON] [--json]
+orbit node:update <node> [--name=NAME] [--platform=PLATFORM] [--apps-path=PATH] [--task-vms=JSON] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `node` | yes | Numeric Node ID. |
+| `node` | yes | Positive numeric Node ID; omission follows the shared [finite searchable selector contract](/reference/cli-ux#prompt-selection). |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--name=NAME` | unchanged | New unique name. |
-| `--platform=PLATFORM` | unchanged | `linux`, `macos`, or `ipados`. Only an unmanaged Node takes a platform. |
-| `--apps-path=PATH` | unchanged | The [apps folder](/reference/node-settings#set-the-apps-root). An empty value, `--apps-path=`, unsets it. |
-| `--task-vms=JSON` | unchanged | The [task VM host settings](/reference/node-settings#configure-a-task-vm-host) as a JSON object. `--task-vms=null` removes them. |
-| `--json` | off | Print only the Node, or the final Operation of an apps folder run. |
+| `--name=NAME` | unchanged | Unique registry label: ASCII letters, digits, dashes and underscores, at most 63 characters. |
+| `--platform=PLATFORM` | unchanged | `linux`, `macos` or `ipados`, only on an unmanaged Node with no pinned SSH host fingerprint and no role. |
+| `--apps-path=PATH` | unchanged | Set the [apps folder](/reference/node-settings#set-the-apps-root); `--apps-path=` unsets the stored path. |
+| `--task-vms=JSON` | unchanged | Replace the [typed host settings](/reference/node-settings#task-vm-fields); `--task-vms=null` removes the setting. |
+| `--idempotency-key=KEY` | none | Shared [request retry contract](/reference/operations#retry-a-start-with-a-key). |
+| `--json` | off | Shared [machine-output contract](/reference/cli-ux#input-and-output-modes); the result is the updated Node for a record save, or the terminal Operation for Node work. |
 
 ```bash
 orbit node:update 3 --name=vpn
 orbit node:update 5 --platform=ipados
 orbit node:update 7 --apps-path=/mnt/apps
 orbit node:update 9 --task-vms='{"cidr":"10.251.77.0/24","task_places":2,"ci_places":2,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
+orbit node:update 7 --apps-path=
 ```
 
-The command needs at least one option. In a terminal, an omitted Node is chosen from an interactive list; without a terminal, or with `--json`, it is refused with `node.id_invalid`. Only an apps folder change runs on the Node. Every other change is a record that Orbit saves at once without contacting the machine.
+Supply at least one field option. Omitted fields stay unchanged. Target access follows [Node authority](/cli/node#authority), and edits use the existing [lifecycle locks](/reference/node-provisioning#one-lifecycle-owner-per-node-name) for the current name and any new name.
 
-Repeating a value that is already stored succeeds with `Skipped — already set (node.unchanged)` and writes nothing.
+### Record-only changes
 
-## Record fields
+A name or unmanaged-platform edit, adding task-host settings, or changing host settings without removing the host or changing its bridge or CIDR saves at once without contacting the Node or starting an Operation. Unsetting the apps path without an active `app-dev` role also needs no Node work. A name is only a label: addresses, keys, SSH identity and roles stay the same.
 
-- **Name.** ASCII letters, digits, dashes, and underscores, at most 63 characters, unique among Nodes. The name is only a label: keys, addresses, SSH identity, and roles stay the same. Orbit holds the [lifecycle lock](/reference/node-provisioning#one-lifecycle-owner-per-node-name) for the current name and for the new name, so a concurrent `node:add` cannot take the new name. The WireGuard hub configuration names each peer in a comment; that comment keeps the old name until Orbit next projects the hub. [Relocate the gateway role](/solutions/relocate-gateway-role) uses a rename to free the name `gateway` for a new machine.
-- **Platform.** Only an unmanaged Node takes a platform: it has no pinned SSH host fingerprint and no role. Use it to record what an operator-owned peer runs, such as an iPad on `ipados`. Enrollment observes a managed Node's platform, so a managed Node is refused with `node.platform_managed` and nothing changes. `node:add` does not accept `ipados`, and Orbit runs nothing on an `ipados` Node. [iPadOS peers](/reference/node-provisioning#ipados-peers) lists what is refused or skipped.
-- **Task VM host settings.** The JSON object supports the [typed host fields](/reference/node-settings#configure-a-task-vm-host). It has no `node_id`, because the selected Node supplies its identity. Keep the host's current values when you change it. Remove the settings only after you destroy the host's task VMs. An `app-dev` role alone never makes a Node a task VM host.
+Task-host settings use the selected Node's identity and accept only the fields in the linked table. Preserve the current host values when replacing the object. `task_places` and `ci_places` are separate counts from 0 to 64; lowering either count removes no live VM claim. An `app-dev` role alone does not make a task VM host. [Host retirement](/reference/compute-drivers#add-a-task-vm-host) owns VM cleanup; this command does not perform it.
 
-## The apps folder
+### Changes that need Node work
 
-A change to the apps folder runs on the Node when the folder must exist. The CLI follows the task and prints its final receipt. The folder is set only when the run succeeds. A new name or platform in the same request is saved at once. Unsetting the folder on a Node without an active `app-dev` role needs no folder, so it is saved at once. Unsetting it on a Node with that role prepares the default folder, `<managed-user-home>/apps`.
+Orbit prepares a changed apps folder and withdraws old task-host input rules when removing the host settings or changing its bridge or CIDR. Both actions require Linux. Settings in such a request commit only after all required work succeeds; a name or platform supplied in the same request commits immediately.
 
-A change never moves an existing checkout; new development Instances use the new folder. If the run fails, the setting stays as it was. Folders it created stay, and running the same command again after the cause is fixed finishes the change. [Node settings](/reference/node-settings#validation) lists the checks on the folder and their failure codes.
+Folder preparation creates missing parents and the folder, then checks that it is a real directory owned by the managed user and group with mode `0755`. It changes the folder itself, not its contents. Unsetting the path with active `app-dev` prepares the default, `<managed-user-home>/apps`, without storing the default path. Existing Instance checkouts stay where they are; new development Instances use the effective folder. [Node settings validation](/reference/node-settings#validation) owns path restrictions.
 
-## Output
+Task-host withdrawal removes only firewall rows carrying the catalog's task-host DHCP/DNS input comments, including duplicate and IPv6 rows, and checks that none remain. It does not repair other firewall rules. When both actions are needed, withdrawal completes before folder preparation begins.
 
-A saved change prints `Node #<id> [<name>] updated.` with the request ID. With `--json`, the CLI prints only the Node, or the final Operation.
+On failure, old deferred settings remain, but an already committed name or platform does not roll back. Completed harmless folder work and any rules already withdrawn remain. After fixing the cause, the same command makes a fresh attempt and completes the remaining work safely.
 
-## Errors
-
-| Code | Meaning |
-| --- | --- |
-| `node.id_invalid` | The Node is missing or is not a positive integer, and the CLI cannot prompt. |
-| `node.option_required` | None of `--name`, `--platform`, `--apps-path`, or `--task-vms` was given. |
-| `node.name_required`, `node.platform_required` | `--name` or `--platform` is empty. |
-| `node.setting_invalid` | `--task-vms` is not a typed JSON host object or `null`. |
-| `validation.failed` | The name is malformed or taken, or the platform is unknown. Nothing changes. |
-| `node.platform_managed` | The Node has a pinned SSH host fingerprint or a role. Nothing changes. |
-| `node.provisioning_busy` | Another lifecycle operation holds the Node's name lock or the new name's lock. Nothing changes. |
-| `node.settings_*` | The apps folder or the task VM host settings failed a check. [Node settings](/reference/node-settings#failure-codes) lists the codes. |
+A request whose values are all already stored succeeds with `Skipped — already set (node.unchanged)`, with no write, Operation or Node contact.
 
 ## How it works
 
 <div className="flow-at" data-chart="node/update"></div>
+
+The [verification cases](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/node/update.cases.yaml) map the chart's outcomes to proof obligations.
+
+## Errors
+
+Admission refusals create no Operation and leave records unchanged.
+
+| Code | Meaning |
+| --- | --- |
+| `node.reference_required` | The required Node was omitted; input handling follows the [CLI standard](/reference/cli-ux#input-and-output-modes). |
+| `node.id_invalid` | The supplied Node ID is not a positive integer. |
+| `http.404` | No Node has the supplied ID. |
+| `node_access.required` | The caller has neither Gateway authority nor a grant to the target; see [Node authority](/cli/node#authority). |
+| `node.option_required` | No field option was supplied. |
+| `node.name_required`, `node.platform_required` | The supplied name or platform is empty. |
+| `node.setting_invalid` | The task-host option is not a typed JSON host object or `null`. |
+| `validation.failed` | The name is malformed or taken, or the platform is unknown. |
+| `node.platform_managed` | A platform edit targets a Node with a pinned SSH host fingerprint or a role. |
+| `node.provisioning_busy` | Another lifecycle change holds the current or requested name's lock. |
+| `node.settings_*` | A setting fails the [owning validation and failure-code tables](/reference/node-settings#failure-codes); `node.settings_platform_unsupported` refuses Node work outside Linux, and `node.settings_root_failed` reports failed folder preparation. |
+
+Execution failures retain the failed phase and error in the Operation.

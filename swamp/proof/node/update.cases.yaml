@@ -1,0 +1,274 @@
+# Format: docs/reference/verification-cases.
+# Budget: O=4 (record-save, folder, withdrawal, partial failure), repeat=1, R=7.
+# Nine runnable cases, no variants; three outcome/refusal obligations are uncovered.
+# No update cases file exists on origin/main; no inherited IDs or batches removed.
+command: node:update
+chart: node/update
+target: app-dev
+sources: [gateway, app-prod]
+baseline: [operations, node_records, ufw]
+
+uncovered:
+  - paths: [main, admitted, node-work, prepare-folder, succeeded]
+    reason: Add a disposable filesystem fixture and owner/group/mode, real-directory and checkout-location assertions to prove explicit and default apps-folder preparation, including unsetting with active app-dev. Native recap inspection must accept node.update and descend into child phases to prove one logical Ansible phase per execution arrow; it currently accepts only role Operations.
+  - paths: [main, admitted, node-work, withdraw-input, prepare-folder, phase-failed, succeeded]
+    reason: Add a fault after folder creation but before verification, with deferred-settings and filesystem assertions, to prove retained name/platform, old deferred settings and harmless completed work, followed by successful recovery on the same command. Also expose run-owned input cleanup results so failure and interruption do not claim unverified cleanup or rollback.
+  - paths: [main, lifecycle-busy]
+    reason: Add a fixture that holds the existing Node lifecycle lock for the current or requested name; busy_node holds the firewall write lock, not this lock. Assert no new Operation and unchanged node_records and ufw for both names.
+  - paths: [record-save]
+    reason: Add a live task/CI claim fixture and claim snapshot to prove lowering the two independent place counts removes neither claim. The record-save case proves persisted counts only; the current runner has no claim provider.
+
+cases:
+  - id: record-save
+    batch: fresh-fleet
+    covers: [main, admitted, record-save]
+    summary: Gateway authority saves record-only edits without a direct grant, Node contact or an Operation.
+    setup:
+      - node_fixture: {kind: unmanaged, as: editable}
+    stages:
+      - act:
+          # This unreachable unmanaged Node has no direct grant from the Gateway.
+          - cli:
+              run: [node:update, "${editable.id}", "--name=proof-update-${editable.id}", --platform=macos, --apps-path=, '--task-vms={"cidr":"10.251.75.0/24","task_places":2,"ci_places":3}']
+              expect:
+                exit: 0
+                request: none
+                json: [{path: id, equals: '${editable.id}'}, {path: name, equals: 'proof-update-${editable.id}'}, {path: platform, equals: macos}, {path: settings.apps, equals: null}, {path: settings.task_vms.task_places, equals: 2}, {path: settings.task_vms.ci_places, equals: 3}]
+          - cli:
+              run: [node:show, "${editable.id}"]
+              expect:
+                exit: 0
+                json: [{path: name, equals: 'proof-update-${editable.id}'}, {path: platform, equals: macos}, {path: roles, equals: []}, {path: public_ssh_host, equals: 192.0.2.99}, {path: public_ssh_port, equals: 2222}, {path: user, equals: orbit}, {path: ssh_host_fingerprint, equals: null}, {path: settings.apps, equals: null}, {path: settings.task_vms.cidr, equals: 10.251.75.0/24}, {path: settings.task_vms.task_places, equals: 2}, {path: settings.task_vms.ci_places, equals: 3}]
+        expect:
+          - unchanged: {since: act, what: [operations, ufw]}
+      - act:
+          - cli:
+              run: [node:update, "${editable.id}", '--task-vms={"cidr":"10.251.75.0/24","task_places":1,"ci_places":0}']
+              expect: {exit: 0, request: none}
+          - cli:
+              run: [node:show, "${editable.id}"]
+              expect:
+                exit: 0
+                json: [{path: name, equals: 'proof-update-${editable.id}'}, {path: platform, equals: macos}, {path: settings.task_vms.task_places, equals: 1}, {path: settings.task_vms.ci_places, equals: 0}]
+        expect:
+          - unchanged: {since: act, what: [operations, ufw]}
+
+  - id: task-host-withdrawal
+    batch: fresh-fleet
+    covers: [main, admitted, node-work, withdraw-input, succeeded]
+    summary: Bridge change, CIDR change and removal withdraw only owned input, including duplicate comments and IPv6.
+    timeout: 300
+    setup:
+      - cli:
+          run: [node:show, "${app-dev.id}"]
+          expect: {exit: 0, request: none}
+          save: {settings: initial_settings, roles: prior_roles, public_ssh_host: prior_host, user: prior_user}
+      - cli:
+          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":1,"ci_places":1}']
+          expect: {exit: 0, request: none}
+      # Unrestricted UFW fixtures create IPv4 and IPv6 rows; the first stage proves both exist.
+      - ufw_rule: {as: dhcp, on: app-dev, action: allow, proto: udp, port: "1067", comment: 'orbit:task-vms-dhcp'}
+      - ufw_rule: {as: duplicate, on: app-dev, action: allow, proto: udp, port: "1068", comment: 'orbit:task-vms-dhcp'}
+      - ufw_rule: {as: dns_tcp, on: app-dev, action: allow, proto: tcp, port: "1053", comment: 'orbit:task-vms-dns-tcp'}
+      - ufw_rule: {as: dns_udp, on: app-dev, action: allow, proto: udp, port: "1053", comment: 'orbit:task-vms-dns-udp'}
+      - ufw_rule: {as: unrelated, on: app-dev, action: allow, proto: tcp, port: "1099", comment: proof-unrelated-input}
+    stages:
+      - act:
+          - cli:
+              run: [node:show, "${app-dev.id}"]
+              expect: {exit: 0, request: none}
+        expect:
+          - ufw: {on: app-dev, family: 4, rows: [{ref: dhcp}, {ref: duplicate}, {ref: dns_tcp}, {ref: dns_udp}, {ref: unrelated}]}
+          - ufw: {on: app-dev, family: 6, rows: [{ref: dhcp}, {ref: duplicate}, {ref: dns_tcp}, {ref: dns_udp}, {ref: unrelated}]}
+          - unchanged: {since: act, what: [operations, node_records]}
+      - act:
+          - cli:
+              run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","network":"orbittask1","task_places":1,"ci_places":1}']
+              expect: {exit: 0, status: succeeded}
+          - cli:
+              run: [node:show, "${app-dev.id}"]
+              expect:
+                exit: 0
+                json: [{path: roles, equals: '${prior_roles}'}, {path: public_ssh_host, equals: '${prior_host}'}, {path: user, equals: '${prior_user}'}, {path: settings.task_vms.network, equals: orbittask1}, {path: settings.task_vms.cidr, equals: 10.251.77.0/24}]
+        expect:
+          - ufw: {on: app-dev, family: 4, rows: [{ref: unrelated}], absent: [{comment: 'orbit:task-vms-dhcp'}, {comment: 'orbit:task-vms-dns-tcp'}, {comment: 'orbit:task-vms-dns-udp'}]}
+          - ufw: {on: app-dev, family: 6, rows: [{ref: unrelated}], absent: [{comment: 'orbit:task-vms-dhcp'}, {comment: 'orbit:task-vms-dns-tcp'}, {comment: 'orbit:task-vms-dns-udp'}]}
+      - act:
+          - cli:
+              run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.78.0/24","network":"orbittask1","task_places":1,"ci_places":1}']
+              expect: {exit: 0, status: succeeded}
+          - cli:
+              run: [node:show, "${app-dev.id}"]
+              expect: {exit: 0, json: [{path: settings.task_vms.network, equals: orbittask1}, {path: settings.task_vms.cidr, equals: 10.251.78.0/24}]}
+        expect:
+          - unchanged: {since: act, what: [ufw]}
+      - act:
+          - cli:
+              run: [node:update, "${app-dev.id}", --task-vms=null]
+              expect: {exit: 0, status: succeeded}
+          - cli:
+              run: [node:show, "${app-dev.id}"]
+              expect: {exit: 0, json: [{path: settings, equals: '${initial_settings}'}, {path: roles, equals: '${prior_roles}'}, {path: public_ssh_host, equals: '${prior_host}'}]}
+        expect:
+          - unchanged: {since: act, what: [ufw]}
+
+  - id: repeat
+    batch: fresh-fleet
+    covers: [main, admitted, record-save, already-set]
+    summary: A repeated record edit succeeds with node.unchanged and makes no second write or Operation.
+    fails_on_base: true
+    fails_today: UpdateNodeAction avoids saving an unchanged record through its isDirty guard, but returns Node detail without the node.unchanged skip result.
+    setup:
+      - node_fixture: {kind: unmanaged, as: repeated}
+    stages:
+      - act:
+          - cli:
+              run: [node:update, "${repeated.id}", "--name=proof-repeat-${repeated.id}"]
+              expect: {exit: 0, request: none, json: [{path: name, equals: 'proof-repeat-${repeated.id}'}]}
+        expect:
+          - unchanged: {since: act, what: [operations, ufw]}
+      - act:
+          - cli:
+              run: [node:update, "${repeated.id}", "--name=proof-repeat-${repeated.id}"]
+              forms: [json, human]
+              expect: {exit: 0, request: none, skipped: node.unchanged, human: ["Skipped", "already set", "node.unchanged"]}
+        expect:
+          - unchanged: {since: act, what: [operations, node_records, ufw]}
+
+  - id: invalid-input
+    batch: fresh-fleet
+    covers: []
+    summary: Local missing, invalid or empty inputs refuse before an Operation or record change.
+    fails_on_base: true
+    fails_today: The CLI accepts a registered name instead of enforcing the shared positive numeric selector contract.
+    setup:
+      - node_fixture: {kind: unmanaged, as: invalid}
+    act:
+      - cli:
+          run: [node:update, --name=proof-missing]
+          expect: {exit: 1, code: node.reference_required, request: none}
+      - cli:
+          run: [node:update, "0", --name=proof-invalid]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+      - cli:
+          run: [node:update, "${invalid.id}"]
+          expect: {exit: 1, code: node.option_required, request: none}
+      - cli:
+          run: [node:update, "${invalid.id}", --name=]
+          expect: {exit: 1, code: node.name_required, request: none}
+      - cli:
+          run: [node:update, "${invalid.id}", --platform=]
+          expect: {exit: 1, code: node.platform_required, request: none}
+      - cli:
+          run: [node:update, "${invalid.id}", '--task-vms=[]']
+          expect: {exit: 1, code: node.setting_invalid, request: none}
+      - cli:
+          run: [node:update, "${invalid.id}", '--task-vms={"cidr":"10.251.76.0/24","task_places":1,"ci_places":1,"unknown":true}']
+          expect: {exit: 1, code: node.setting_invalid, request: none}
+      - cli:
+          run: [node:update, "${invalid.name}", "--name=proof-invalid-${invalid.id}"]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations, node_records, ufw]}
+
+  - id: invalid-values
+    batch: fresh-fleet
+    covers: [main, validation-refused]
+    summary: Invalid names, platforms, paths and typed host values refuse the entire patch without side effects.
+    setup:
+      - node_fixture: {kind: unmanaged, as: validated}
+      - node_fixture: {kind: unmanaged, as: other}
+    act:
+      - cli:
+          run: [node:update, "${validated.id}", --name=not.a.label]
+          expect: {exit: 1, code: validation.failed, request: none}
+      - cli:
+          run: [node:update, "${validated.id}", "--name=${other.name}"]
+          expect: {exit: 1, code: validation.failed, request: none}
+      - cli:
+          run: [node:update, "${validated.id}", --platform=unknown]
+          expect: {exit: 1, code: validation.failed, request: none}
+      - cli:
+          run: [node:update, "${validated.id}", "--name=proof-validation-${validated.id}", --apps-path=relative/apps]
+          expect: {exit: 1, code: node.settings_path_invalid, request: none}
+      - cli:
+          run: [node:update, "${validated.id}", --apps-path=/etc/apps]
+          expect: {exit: 1, code: node.settings_path_protected, request: none}
+      - cli:
+          run: [node:update, "${validated.id}", '--task-vms={"cidr":"10.251.76.0/24","task_places":-1,"ci_places":1}']
+          expect: {exit: 1, code: node.settings_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations, node_records, ufw]}
+
+  - id: managed-platform
+    batch: fresh-fleet
+    covers: [main, managed-platform]
+    summary: Either a pinned fingerprint or a role independently prevents a platform edit, including a mixed rename.
+    setup:
+      - node_fixture: {kind: managed, as: pinned}
+      - node_fixture: {kind: retained, as: assigned, consumer: app-prod, serving: app-dev}
+    act:
+      - cli:
+          run: [node:update, "${pinned.id}", "--name=proof-pinned-${pinned.id}", --platform=macos]
+          expect: {exit: 1, code: node.platform_managed, request: none}
+      - cli:
+          run: [node:update, "${assigned.id}", --platform=macos]
+          expect: {exit: 1, code: node.platform_managed, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations, node_records, ufw]}
+
+  - id: unsupported-platform
+    batch: fresh-fleet
+    covers: [main, unsupported-platform]
+    summary: Apps-folder work on a non-Linux Node refuses without saving a simultaneous name edit.
+    setup:
+      - node_fixture: {kind: unmanaged, as: nonlinux}
+      - cli:
+          run: [node:update, "${nonlinux.id}", --platform=ipados]
+          expect: {exit: 0, request: none}
+    act:
+      - cli:
+          run: [node:update, "${nonlinux.id}", "--name=proof-nonlinux-${nonlinux.id}", --apps-path=/srv/proof-apps]
+          expect: {exit: 1, code: node.settings_platform_unsupported, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations, node_records, ufw]}
+
+  - id: unknown-node
+    batch: fresh-fleet
+    covers: [main, unknown-node]
+    summary: An unknown numeric Node ID refuses without creating an Operation or changing records.
+    act:
+      - cli:
+          run: [node:update, "2147483647", --name=proof-unknown]
+          expect: {exit: 1, code: http.404, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations, node_records, ufw]}
+
+  - id: caller-refused
+    batch: no-grant
+    covers: [main, caller-refused, admitted, record-save]
+    summary: Without Gateway authority a caller needs a direct grant; a granted target accepts the same record edit.
+    setup:
+      - node_access_remove: {consumer: app-prod, serving: gateway}
+      - node_fixture: {kind: unmanaged, as: permitted}
+      - cli:
+          run: [node:access:add, "${app-prod.id}", "${permitted.id}"]
+          expect: {exit: 0}
+    stages:
+      - act:
+          - cli:
+              run: [node:update, "${app-dev.id}", --name=proof-refused]
+              as: app-prod
+              expect: {exit: 1, code: node_access.required, request: none}
+        expect:
+          - unchanged: {since: act, what: [operations, node_records, ufw]}
+      - act:
+          - cli:
+              run: [node:update, "${permitted.id}", "--name=proof-granted-${permitted.id}"]
+              as: app-prod
+              expect: {exit: 0, request: none}
+          - cli:
+              run: [node:show, "${permitted.id}"]
+              expect: {exit: 0, json: [{path: name, equals: 'proof-granted-${permitted.id}'}, {path: platform, equals: linux}, {path: roles, equals: []}, {path: settings, equals: null}, {path: public_ssh_host, equals: 192.0.2.99}]}
+        expect:
+          - unchanged: {since: act, what: [operations, ufw]}
