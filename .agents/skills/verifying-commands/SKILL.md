@@ -52,3 +52,5 @@ The runner owns case expansion and comparison. CI publishes its exact base/head 
 Runner, selection code and selection-list changes disable narrowing for commands selected by the same diff. Tooling changes alone still select nothing. Keep this guard in the shared runner result.
 
 Exercise a case's JSON selectors against the shared runner before running the fleet. A rejected selector does not prove a missing record. Test native-output readers against complete recorded artifacts, and report safe exception types and locations when a guest helper fails; never print raw output or exception arguments.
+
+Match fixtures to the native behavior's artifact contract: `command/shell` writes structured stdout in `result` and plain text in `log`. Resolve the recorded `result` data ID and version; an invented `output` artifact can make a mock test pass while the real reader fails.

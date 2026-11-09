@@ -22,7 +22,8 @@ function roleAnsibleRecaps(SwampCommandStep $reader, string $runId, array $phase
             }
             $output = $step['outputs']['stdout'] ?? '';
             if (isset($step['dataArtifacts']) && $step['dataArtifacts'] !== []) {
-                $output = $artifact->invoke($reader, $step, 'output')['stdout'] ?? '';
+                // command/shell stores structured stdout in `result`; its separate `log` artifact is plain text.
+                $output = $artifact->invoke($reader, $step, 'result')['stdout'] ?? '';
             }
             // Recaps are at the end of full command output; the 4 KiB history summary cannot prove no changes.
             $recap = str_contains($output, 'PLAY RECAP') ? substr($output, strrpos($output, 'PLAY RECAP')) : '';

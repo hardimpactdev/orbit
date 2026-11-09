@@ -28,17 +28,21 @@ beforeEach(function (): void {
 
 afterEach(fn () => app(SwampConnection::class)->release());
 
-it('reads complete native artifacts by identity and returns only the requested phase recaps', function (): void {
+it('reads the command shell result artifact by identity rather than its text log or history summary', function (): void {
     $artifactId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
     $recap = "PLAY RECAP *********************************************************************\nn7 : ok=12 changed=0 unreachable=0 failed=0 skipped=4 rescued=0 ignored=0\n";
     $this->history = ['jobs' => [['steps' => [
         ['name' => 'Apply the role on the Node', 'status' => 'succeeded', 'outputs' => ['stdout' => $recap]],
         ['name' => 'Set up Tool Managers', 'status' => 'succeeded', 'outputs' => ['stdout' => 'truncated history'],
-            'dataArtifacts' => [['name' => 'output', 'dataId' => $artifactId, 'version' => 3]]],
+            'dataArtifacts' => [
+                ['name' => 'result', 'dataId' => $artifactId, 'version' => 3],
+                ['name' => 'log', 'dataId' => '0198e15c-bf97-7c23-8f1f-61b8fe67a845', 'version' => 3],
+            ]],
         ['name' => 'Other phase', 'status' => 'failed', 'outputs' => ['stdout' => 'secret-output']],
     ]]]];
-    $this->artifact = ['id' => $artifactId, 'name' => 'output', 'version' => 3,
-        'content' => json_encode(['stdout' => str_repeat('private-output', 400)."\n".$recap], JSON_THROW_ON_ERROR)];
+    // command/shell writes JSON resource `result` and text file `log`; data.query parses the JSON content.
+    $this->artifact = ['id' => $artifactId, 'name' => 'result', 'version' => 3,
+        'content' => ['exitCode' => 0, 'stdout' => str_repeat('private-output', 400)."\n".$recap, 'stderr' => '']];
 
     $result = roleAnsibleRecaps(app(SwampCommandStep::class), 'role-run', ['Apply the role on the Node', 'Set up Tool Managers']);
 
