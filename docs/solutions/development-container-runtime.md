@@ -98,7 +98,7 @@ The PRs land in this order, and PR 3b before PR 4. PR 4b can run beside PR 5. Th
 | 2 | Runtime records and the build list | Merged, [#3291](https://github.com/hardimpactdev/orbit/pull/3291) |
 | 3 | Node preparation and the shared folders | Merged, [#3292](https://github.com/hardimpactdev/orbit/pull/3292) |
 | 3b | The static PHP build | Open, [#3294](https://github.com/hardimpactdev/orbit/pull/3294) |
-| 4 | The first default Instance and its deployments | Open |
+| 4 | The first default Instance and its deployments | Open, [#3299](https://github.com/hardimpactdev/orbit/pull/3299) |
 | 4b | The Project's development Processes in a container | |
 | 5 | Create an Instance as a clone, with T3 and its sessions | |
 | 6 | Destroy a container Instance | |
