@@ -265,6 +265,7 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
     build_address: "10.253.0.254",
     dhcp_range: "10.253.0.2-10.253.0.253",
     stock: "ubuntu-26.04-instance-stock",
+    forwarder_port: 8319,
     ids: 201 * 65536,
     incus: { line: "7.0", packages: [] },
     image: {
@@ -415,8 +416,15 @@ Deno.test({
       const acls = Object.fromEntries(
         state["network-acls"].map((a: { name: string }) => [a.name, a]),
       );
-      // The bridge reaches nothing; only the build container's own ACL lets it out, and never to a private address.
-      assertEquals(acls["orbitinst0-egress"].egress ?? [], []);
+      // The bridge reaches only the model forwarder on its own address; only the build container's own ACL lets it out, and never
+      // to a private address.
+      assertEquals(acls["orbitinst0-egress"].egress, [{
+        action: "allow",
+        destination: "10.253.0.1/32",
+        protocol: "tcp",
+        destination_port: "8319",
+        state: "enabled",
+      }]);
       assertEquals(acls["orbitinst0-build"].egress.at(-1), {
         action: "allow",
         state: "enabled",

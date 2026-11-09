@@ -1038,7 +1038,7 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 | Project, bridge | `containers.project`, `containers.network` | `orbit-instances`, `orbitinst0` at the first address of the Node's bridge |
 | Kernel modules, sysctl files | `orbit-task-containers` | None; `60-orbit-instances.conf` |
 | Subordinate IDs | 101,000,000 per place and the base | 65,536 for each of 201 containers |
-| ACL egress | The VM bridge's rules | None |
+| ACL egress | The VM bridge's rules | Only the model forwarder, port 8319 of the bridge address |
 | Profile | Root disk and `eth0` | Also the folders `/opt/orbit-runtime` and `/opt/orbit-agent`, read-only and idmapped |
 | Restrictions | Nesting, interception, low-level keys | Isolated ID maps, host disks only at the two folders, proxy devices |
 | Input rules | `orbit:task-containers-*` | `orbit:instances-*` |

@@ -116,7 +116,7 @@ The host side reuses the container host tasks of the task containers (#3279):
 - The project, bridge, ACL, profile, stock image, input rules and clone probe.
 - The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge refuses a Node without it.
 - The project mounts only the two folders, read-only and idmapped, and allows proxy devices for T3.
-- Every container gets an isolated ID map. The bridge `orbitinst0` reaches nothing by default.
+- Every container gets an isolated ID map. The bridge `orbitinst0` reaches only the model forwarder by default.
 
 The image and the folders:
 

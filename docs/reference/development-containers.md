@@ -42,12 +42,16 @@ The `app-dev` role installs the container setup: the Incus project `orbit-instan
 
 This part is built. The `app-dev` role converge of a Node on the [build list](#the-build-list) runs a container branch; a task VM never does. The Gateway sends the branch's intent only for such a Node, so every other Node gets the same intent as before. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
 
-- **Bridge.** The first intent allocates the Node's bridge.
+- **Allocation.** The first intent allocates the Node's bridge.
 - **Pool.** The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge chooses no disk itself.
 - **Missing pool.** A Node without the pool is refused with `instance.host_unavailable`.
 - **Project.** Containers of `orbit-instances` must set an isolated ID map. They mount only the two shared folders, may have proxy devices, and cannot be VMs.
-- **Bridge.** `orbitinst0` has NAT and no IPv6. Its ACL reaches nothing; each Instance's own paths come with its create flow. DHCP leaves the last address free for the image build.
+- **Bridge.** `orbitinst0` has NAT and no IPv6. DHCP leaves the last address free for the image build.
+- **Bridge ACL.** A container reaches only the model forwarder, at port 8319 of the bridge address. Each Instance's own paths come with its create flow.
 - **Input rules.** The Node admits DHCP and DNS from the bridge, under `orbit:instances-dhcp`, `orbit:instances-dns-tcp` and `orbit:instances-dns-udp`.
+
+The converge then installs what the containers run:
+
 - **Image.** The converge builds the [container image](#inside-a-container) once per definition and names it with the stable alias `orbit-instance`.
 - **Folders.** It installs both [shared folders](#shared-folders).
 
@@ -139,7 +143,7 @@ When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/h
 
 ## Model access
 
-A container holds only a placeholder key, in `/home/agent/.config/orbit/model.env`. Claude Code and Codex send model calls to a forwarder at port 8319 of the bridge's gateway address. The [forwarder](/reference/ai-router#container-model-forwarder) passes them to the model router guard, which admits the agent Node and swaps in the real key. The real key stays off the Node. While the forwarder's table is loaded, only containers on the bridge reach the guard, through the forwarder. The guard accepts the `?beta=true` query that Claude Code sends.
+A container holds only a placeholder key, in `/home/agent/.config/orbit/model.env`. Claude Code and Codex send model calls to a forwarder at port 8319 of the bridge's gateway address. The [forwarder](/reference/ai-router#container-model-forwarder) passes them to the model router guard, which admits the agent Node and swaps in the real key. The real key stays off the Node. While the forwarder's table is loaded, only containers on the bridge reach the guard, through the forwarder. The guard accepts the `?beta=true` query that Claude Code sends. On a prepared Node, `ai-router:model-forwarder NODE --bridge=orbitinst0 --address=<bridge address>` places the forwarder.
 
 ## Network
 

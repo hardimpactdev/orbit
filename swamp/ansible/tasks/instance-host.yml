@@ -76,7 +76,17 @@
   vars:
     container_host: *instance_host
     container_acl_name: "{{ instances.network }}-egress"
-    container_acl_rules: { description: Orbit Instance boundary, egress: [], ingress: [] }
+    # Incus applies a bridge ACL to traffic to the Node too: the one way out is the model forwarder on the bridge's own address,
+    # which the image's nftables admits only for `agent`.
+    container_acl_rules:
+      description: Orbit Instance boundary
+      egress:
+        - action: allow
+          destination: "{{ instances.address.split('/')[0] }}/32"
+          protocol: tcp
+          destination_port: "{{ instances.forwarder_port | string }}"
+          state: enabled
+      ingress: []
     container_network_config:
       ipv4.dhcp.ranges: "{{ instances.dhcp_range }}"
       ipv4.nat: 'true'

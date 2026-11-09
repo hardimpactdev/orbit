@@ -82,6 +82,8 @@ final readonly class InstanceHostIntent
             // DHCP never hands out the gateway's neighbour range end, so the build address stays free.
             'dhcp_range' => long2ip((int) ip2long($gateway) + 1).'-'.long2ip((int) ip2long($last) - 1),
             'stock' => self::StockAlias,
+            // The bridge ACL lets containers reach only the model forwarder (docs/reference/ai-router.md#container-model-forwarder).
+            'forwarder_port' => self::ModelForwarderPort,
             'ids' => (self::Containers + 1) * self::IdMapSize,
             'incus' => $incus,
             'image' => InstanceImage::for($gateway),

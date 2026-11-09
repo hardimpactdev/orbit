@@ -73,7 +73,7 @@ describe('the container branch of the app-dev converge', function (): void {
             ->and(array_diff_key($intent, array_flip(['incus', 'image', 'folders'])))->toBe([
                 'project' => 'orbit-instances', 'network' => 'orbitinst0', 'pool' => 'orbit-instances', 'cidr' => '10.253.0.0/24',
                 'address' => '10.253.0.1/24', 'build_address' => '10.253.0.254', 'dhcp_range' => '10.253.0.2-10.253.0.253', 'stock' => 'ubuntu-26.04-instance-stock',
-                'ids' => 201 * 65536,
+                'forwarder_port' => 8319, 'ids' => 201 * 65536,
             ])
             ->and($intent['incus'])->toBe($recipe->incus('amd64'))
             ->and($intent['image'])->toBe(InstanceImage::for('10.253.0.1'))
