@@ -26,7 +26,7 @@ it('follows a footprint Operation and renders its final receipt', function (bool
     ]);
 
     try {
-        $this->artisan('node:converge', ['node' => (string) $node, '--force' => true,
+        $this->artisan('node:converge', ['node' => (string) $node, '--base' => true,
             '--idempotency-key' => 'converge-proof', '--json' => $json])
             ->expectsOutputToContain($json ? 'node.converge' : 'Node footprint')->assertExitCode(0);
         $mock->assertSent(fn ($pending): bool => $pending instanceof ConvergeNodeRequest

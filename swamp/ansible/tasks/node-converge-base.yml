@@ -1,0 +1,66 @@
+---
+- name: Ensure the agent configuration directory
+  ansible.builtin.file: { path: /etc/orbit/agent, state: directory, owner: root, group: root, mode: "0755" }
+- name: Inspect the agent secret without exposing it
+  ansible.builtin.stat: { path: /etc/orbit/agent/secret, checksum_algorithm: sha256 }
+  register: agent_secret
+  no_log: true
+- name: Require the admitted verifier
+  ansible.builtin.assert:
+    that: [agent_secret.stat.checksum | default('') == secrets.agent_verifier]
+    quiet: true
+  no_log: true
+- name: Protect the existing agent secret
+  ansible.builtin.file: { path: /etc/orbit/agent/secret, owner: root, group: root, mode: "0600" }
+- name: Reconcile the pinned agent binary
+  ansible.builtin.import_tasks: node-converge-replace.yml
+  vars:
+    converge_replacement:
+      path: /usr/local/bin/orbit-agent
+      url: "{{ intent.agent.url }}"
+      sha256: "{{ intent.agent.sha256 }}"
+- name: Remember whether the agent binary changed
+  ansible.builtin.set_fact:
+    agent_binary_changed: "{{ converge_replacement_commit is changed or converge_replacement_metadata is changed }}"
+- name: Reconcile the agent configuration and trust
+  ansible.builtin.copy: { dest: "{{ item.path }}", content: "{{ item.content }}", owner: root, group: root, mode: "0644" }
+  loop:
+    - { path: /etc/orbit/agent/config.toml, content: "{{ intent.agent.configuration }}" }
+    - { path: /etc/orbit/agent/ca.pem, content: "{{ intent.agent.certificate }}" }
+    - { path: /etc/systemd/system/orbit-agent.service, content: "{{ intent.agent.unit }}" }
+  register: agent_files
+- name: Ensure the agent unit's supplementary group
+  ansible.builtin.group: { name: orbit-env, system: true, state: present }
+- name: Start the agent and restart only for managed changes
+  ansible.builtin.systemd:
+    name: orbit-agent.service
+    enabled: true
+    daemon_reload: "{{ agent_files is changed }}"
+    state: "{{ 'restarted' if agent_binary_changed or agent_files is changed else 'started' }}"
+- name: Require a valid recorded CLI release
+  ansible.builtin.assert:
+    that: [intent.cli.plan_error == None]
+    quiet: true
+- name: Reconcile the recorded CLI release
+  block:
+    - name: Install the pinned CLI
+      ansible.builtin.import_tasks: node-converge-replace.yml
+      vars:
+        converge_replacement:
+          path: "/usr/local/bin/orbit-{{ intent.cli.release.version }}"
+          url: "{{ intent.cli.release.url }}"
+          sha256: "{{ intent.cli.release.sha256 }}"
+    - name: Select the pinned CLI release
+      ansible.builtin.import_tasks: node-converge-replace.yml
+      vars:
+        converge_replacement:
+          path: /usr/local/bin/orbit
+          link: "/usr/local/bin/orbit-{{ intent.cli.release.version }}"
+    - name: Create the CLI profile folder
+      ansible.builtin.file: { path: /root/.orbit, state: directory, owner: root, mode: "0700" }
+    - name: Reconcile the recorded CLI profile
+      ansible.builtin.copy:
+        dest: /root/.orbit/config.json
+        content: "{{ intent.cli.profile }}"
+        owner: root
+        mode: "0600"

@@ -1,0 +1,8 @@
+---
+# A restored Gateway can predate a collection used by the candidate's phases or callbacks.
+- name: Install the checkout's pinned Ansible collections
+  ansible.builtin.command:
+    argv: [timeout, "90", /opt/orbit/ansible/venv/bin/ansible-galaxy, collection, install, -r,
+           "{{ control.repository }}/ansible/requirements.yml", -p, /opt/orbit/ansible/collections]
+  register: current_ansible_collections
+  changed_when: "'Installing ' in current_ansible_collections.stdout"

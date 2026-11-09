@@ -14,9 +14,9 @@ covers:
 
 # Orbit self-update
 
-`orbit self-update` updates one machine to the Gateway's release. It replaces the `orbit` binary with the CLI release that CI published for the Gateway's commit. It never touches `orbit-agent`. A Node gets the Gateway's pinned agent through [install on mismatch](/reference/node-agent#install-on-mismatch). The Gateway serves what to install as the **desired fleet state**. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) runs this command on each managed Node, and an operator runs it on a Mac.
+`orbit self-update` updates one machine to the Gateway's release. It replaces the `orbit` binary with the CLI release that CI published for the Gateway's commit. It never touches `orbit-agent`. A Node gets the Gateway's pinned agent through [install on mismatch](/reference/node-agent#install-on-mismatch). The Gateway serves what to install as the **desired fleet state**. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) publishes the CLI and observer separately; an operator runs `self-update` on a Mac.
 
-Node footprint convergence includes a separate network digest and live WireGuard check. CLI self-update retains its existing delivery path.
+[`node:converge`](/cli/node/converge) is a separate managed-state repair. Its agent phase installs the admitted agent and CLI pins, then later phases repair the selected software, role configuration, Tools and network. `self-update` retains its CLI-only delivery path.
 
 ## Desired fleet state
 
@@ -129,7 +129,7 @@ When GitHub does not answer for an ancestor, the search stops and names nothing.
 
 CI normally publishes a release within minutes, so the 30 minutes let the fleet wait for the commit's own release and roll out once. A release that takes longer makes the fleet roll out twice: first the fallback, then the commit's own release.
 
-The expected footprint digest per Node joins this state when the footprint re-apply ships. A Gateway release record can store the state as it is served. The shared [Caddy package step](/reference/node-provisioning#package-sources) has its own source-based digest; renaming its source schedules one idempotent footprint run on Nodes that use Caddy.
+Standalone `node:converge` captures the desired release for each admitted attempt rather than skipping admission on a stored footprint digest. It requires an available CLI pin; a missing pin fails input preparation before machine changes. It can target a managed Linux Node that automatic rollout excludes, including a roleless Node or the Gateway Node. See [footprint convergence](/reference/node-provisioning#converge-the-orbit-footprint) for its scope and repeat contract.
 
 ## What the command does
 
@@ -152,9 +152,11 @@ Every download runs `curl --disable` with HTTPS only, at most 5 redirects, and a
 
 The CLI changes under one lock: `/run/lock/orbit-self-update.lock` as root on Linux, `/var/run/orbit-self-update.lock` as root on macOS, and `$ORBIT_HOME/self-update.lock` for any other user. A second run waits up to 120 seconds for the CLI step and then fails with `self_update.busy`.
 
-The [agent converge](/reference/node-agent#install-and-upgrade) takes the same lock from the secret check through the agent restart. It waits up to 300 seconds. Gateway releases do not update the Gateway Node's agent. Native CLI publication writes a new versioned file and switches the link atomically, so a concurrent self-update ends with one complete release on the link.
+The separate [agent installation and configuration path](/reference/node-agent#install-and-upgrade) takes the same lock from the secret check through the agent restart. It waits up to 300 seconds. Gateway releases do not update the Gateway Node's agent. Native CLI publication writes a new versioned file and switches the link atomically, so a concurrent self-update ends with one complete release on the link.
 
-Each candidate gets its own name, `.<file>.orbit-candidate-<random>`, created exclusively next to its target. A candidate with that pattern can only be left by an interrupted run, so the command deletes them before it downloads.
+Standalone `node:converge` uses that same Linux lock for each atomic replacement of the agent binary, versioned CLI binary and CLI selection link. It stages a drifted candidate beside its destination and verifies binary checksums before acquiring the lock. Each final rename waits up to 120 seconds under the lock; the lock does not cover the whole agent phase, configuration writes or service restart. A lock timeout fails the phase without replacing that destination, removes this replacement's staging directory, and leaves earlier completed changes in place. Matching artifacts need no replacement or lock acquisition.
+
+Each self-update candidate gets its own name, `.<file>.orbit-candidate-<random>`, created exclusively next to its target. A candidate with that pattern can only be left by an interrupted run, so the command deletes them before it downloads.
 
 ### Update the CLI
 

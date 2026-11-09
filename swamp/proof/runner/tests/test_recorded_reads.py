@@ -39,6 +39,42 @@ class RecordedReadsTest(unittest.TestCase):
         with self.assertRaises(steps.Infra):
             steps.json_value({'assignments': []}, 'assignments[4]')
 
+    def test_numeric_bound_is_inclusive_and_rejects_missing_or_non_numeric_results(self):
+        wanted = [{'path': 'result.elapsed_seconds', 'at_most': 120}]
+        for elapsed in (0, 119.5, 120, 120.0):
+            with self.subTest(elapsed=elapsed):
+                self.assertEqual(steps.check_json({'result': {'elapsed_seconds': elapsed}}, wanted), [])
+        for elapsed in (120.001, None, True, '120', [], float('nan'), float('inf'), -float('inf')):
+            with self.subTest(elapsed=elapsed):
+                self.assertTrue(steps.check_json({'result': {'elapsed_seconds': elapsed}}, wanted))
+        self.assertTrue(steps.check_json({'result': {}}, wanted))
+
+    def test_invalid_numeric_bound_is_an_infrastructure_error(self):
+        for bound in (None, True, '120', [], float('nan'), float('inf'), -float('inf')):
+            with self.subTest(bound=bound), self.assertRaises(steps.Infra):
+                steps.check_json({'elapsed': 1}, [{'path': 'elapsed', 'at_most': bound}])
+
+    def test_repeat_case_requires_a_bounded_no_op_only_on_the_second_operation(self):
+        root = Path(__file__).resolve().parents[4]
+        converge = spec.load(root / 'swamp/proof/node/converge.cases.yaml', runner.BATCHES)
+        repeat = converge.case('repeat')
+        operation = {'id': 17, 'status': 'succeeded', 'steps': [{'name': 'Check the Node', 'status': 'succeeded'}]}
+        self.run.cli = Mock(return_value={'rc': 0, 'json': operation})
+        first, second = [stage.act[0].args['expect'] for stage in repeat.stages]
+
+        def check(expect, result):
+            return steps.check_result(self.run, 'cli node:converge', 'json', ['json'],
+                                      {'rc': 0, 'json': {**operation, 'result': result}}, expect)
+
+        self.assertEqual(check(first, {'changed': 5, 'elapsed_seconds': 180}), [])
+        self.assertEqual(check(second, {'changed': 0, 'elapsed_seconds': 120}), [])
+        for result, path in (({'changed': 1, 'elapsed_seconds': 30}, 'result.changed'),
+                             ({'changed': 0, 'elapsed_seconds': 120.001}, 'result.elapsed_seconds'),
+                             ({'changed': 0}, 'result.elapsed_seconds'),
+                             ({'elapsed_seconds': 30}, 'result.changed')):
+            with self.subTest(result=result):
+                self.assertTrue(any(path in failure for failure in check(second, result)))
+
     def test_cli_saves_typed_projection_and_asserts_json(self):
         roles = [{'id': 8, 'role': 'app-dev', 'status': 'provisioning'}]
         self.run.cli = Mock(return_value={'rc': 0, 'json': {'assignments': roles}, 'stdout': '{}', 'stderr': ''})

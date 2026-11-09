@@ -43,7 +43,14 @@ Deno.test("the node phase gives an existing start cache to the swamp account, an
                 "tasks/swamp-start-cache.yml"
         ).map((task: Item) => [play.tags[0], task.vars.swamp_cache_check_only])
     );
-    assertEquals(imports, [["node", false], ["check", true]]);
+    const runtimeImport = load("operation-node-role-add.yml").find((play) =>
+        play.tags.includes("node") && play.hosts === "role_node"
+    )?.tasks[0];
+    assertEquals(runtimeImport["ansible.builtin.import_tasks"], "tasks/node-role-runtime.yml");
+    const runtime = load("tasks/node-role-runtime.yml").filter((task) =>
+        task["ansible.builtin.import_tasks"] === "swamp-start-cache.yml"
+    ).map((task) => ["node", task.vars.swamp_cache_check_only]);
+    assertEquals([...runtime, ...imports], [["node", false], ["check", true]]);
 });
 
 /** Every task of every play, including handlers and blocks, with the play it belongs to. */

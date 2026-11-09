@@ -1,0 +1,200 @@
+# Spec for node:converge. Format: docs/reference/verification-cases.
+# A planned case uses only implemented runner steps; uncovered entries request missing capabilities.
+command: node:converge
+chart: node/converge
+target: app-dev
+sources: [gateway, app-prod]
+baseline: [ufw, firewall_records, operations, listeners]
+parallel: 1
+
+uncovered:
+  "phases:ordered-desired-state": "Need ordered Operation-phase and Ansible-result assertions to prove input, agent, software, roles, tools, network, check on every run, with recipe.json pins held and no digest gating. Current code uses a digest-selected artifact plan and lacks this phase pipeline, the CLI installation and general role/software/Tool application."
+  "case:drift-repair": "Need a managed-artifact damage fixture plus content, permissions and Instance/role snapshot assertions to prove default converge repairs a damaged Orbit-owned file while Instance files, Instance records and role assignments remain unchanged. This must also exercise a matching previously recorded digest, which must not bypass repair."
+  "scope:base": "Need a multi-role Node fixture and before/after artifact, package and Tool snapshots to prove --base changes only the agent, CLI, Orbit-owned files and units, leaving role-owned state and Instances untouched. The base-scope case checks flag admission and the end phase; current code has no scope flag."
+  "scope:selected-roles": "Need a multi-role Node fixture and scoped state snapshots to prove --roles=a,b repairs only the base and those recorded roles, never another role, an Instance or an assignment. The selected-roles case checks flag admission and the end phase; current code has no role selection."
+  "path:unassigned-role": "Need a fixture with a known but unassigned role to prove the unassigned-role path returns validation.failed without assigning it, starting an Operation or touching the Node. Empty, unknown and conflicting scope inputs have executable cases below."
+  "case:keyed-retry-identity": "Need captured Operation-ID equality and native-run-count assertions to complete keyed-retry: the same --idempotency-key returns the same Operation and starts nothing. The executable case already proves the retry creates no Operation; current keyed admission is implemented."
+  "case:failure-after-partial-change": "Need phase-boundary fault injection and managed-state snapshots to fail after a real change, retain the changed state, and prove a fresh default attempt repairs the remainder from input without changing Instances or assignments. The firewall-only fault step cannot inject this failure reliably."
+  "path:unsupported-node": "Need recorded inactive, unmanaged and non-Linux target fixtures to prove node.converge_unsupported before an Operation or Node contact. The eligibility refusal exists in StartNodeConvergeAction."
+  "path:target-busy": "Need a held node.converge Operation on either the target or a different peer sharing its hub to prove operation.target_busy and no new Operation. busy_node only holds firewall writes; the converge reservation exists in NodeNetworkReservation."
+  "network:ordering-and-handshake": "Need network drift fixtures, hub/peer mutation-order assertions and handshake observations to prove hub-first repair, waiting for the handshake and no reload on matching state. The existing network workflow has live comparison and a handshake check but not the required shared Ansible phase."
+  "path:no-recorded-network": "Need no-network and peerless-hub fixtures plus phase-result assertions to prove the network phase makes no change without a recorded network in scope and applies a target hub once without a handshake if it has no peers. Every run still visits the phase."
+  "tools:isolated-failure": "Need recorded Tool fixtures, a Tool-only install fault and per-Tool result assertions to prove other Tools continue, held role packages stay pinned and the Operation succeeds when only one Tool fails. Current node convergence does not apply recorded Tools."
+  "path:cleanup": "Need private-run-file existence checks and cleanup/interruption fault injection to prove run-owned files are removed after work stops, completed changes remain and incomplete cleanup preserves the original failure. Current convergence has no private Ansible run directory or cleanup step."
+  "admission:recorded-only": "Need request-time contact tracing to prove admission uses recorded state and never contacts the Node before starting the Operation, including with missing or stale agent facts. A missing agent report is not an additional eligibility refusal."
+
+cases:
+  - id: required-only
+    batch: fresh-fleet
+    covers: [main, admitted, succeeded]
+    summary: Required arguments alone apply the default scope and reach the final phase.
+    fails_today: The existing artifact workflow has no Check the Node phase and does not apply the seven-phase desired state.
+    act:
+      - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
+    expect: []
+
+  - id: base-scope
+    batch: fresh-fleet
+    covers: [main, admitted, base-scope, succeeded]
+    summary: The base flag admits a converge limited to Orbit's own layer and reaches the final phase.
+    fails_today: The CLI and request have no --base option or base-only intent.
+    act:
+      - cli: {run: [node:converge, "${app-dev.id}", --base], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
+    expect: []
+
+  - id: selected-roles
+    batch: fresh-fleet
+    covers: [main, admitted, selected-roles, succeeded]
+    summary: A recorded role can be selected with the base without adding a role.
+    fails_today: The CLI and request have no --roles option or selected-role intent.
+    act:
+      - cli: {run: [node:converge, "${app-dev.id}", --roles=app-dev], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
+    expect: []
+
+  - id: repeat
+    batch: fresh-fleet
+    covers: [main, admitted, succeeded]
+    summary: An intentional repeat applies the phases again with zero target changes within 120 seconds.
+    stages:
+      - act:
+          - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
+        expect: []
+      - act:
+          - cli:
+              run: [node:converge, "${app-dev.id}"]
+              expect:
+                exit: 0
+                status: succeeded
+                steps: {name: Check the Node, count: 1}
+                json:
+                  - {path: result.changed, equals: 0}
+                  - {path: result.elapsed_seconds, at_most: 120}
+        expect: []
+
+  - id: keyed-retry
+    batch: fresh-fleet
+    covers: []
+    summary: A keyed retry creates no additional Operation; identity and run-count proof is uncovered above.
+    setup:
+      - cli: {run: [node:converge, "${app-dev.id}", --idempotency-key=proof-node-converge-retry], expect: {exit: 0, status: succeeded}}
+    act:
+      - cli: {run: [node:converge, "${app-dev.id}", --idempotency-key=proof-node-converge-retry], expect: {exit: 0, status: succeeded, request: none}}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: unknown-node
+    batch: fresh-fleet
+    covers: [main, unknown-node]
+    summary: An unknown numeric Node ID is refused without an Operation.
+    act:
+      - cli: {run: [node:converge, "2147483647"], expect: {exit: 1, code: http.404, request: none}}
+    expect:
+      - unchanged: {since: act}
+
+  - id: invalid-node-id
+    batch: fresh-fleet
+    covers: []
+    summary: Zero, negative and option-like IDs are refused locally without an Operation.
+    variants:
+      - {name: zero, id: "0"}
+      - {name: negative, id: "-1"}
+      - {name: option-like, id: "--not-a-node"}
+    fails_today: Option-like IDs are currently treated as Node names rather than invalid numeric IDs.
+    act:
+      - cli: {run: [node:converge, --, "${id}"], forms: [human], expect: {exit: 1, code: node.id_invalid, request: none}}
+    expect:
+      - unchanged: {since: act}
+
+  - id: nonnumeric-node-id
+    batch: fresh-fleet
+    covers: []
+    summary: A nonnumeric Node selector is invalid rather than a name lookup.
+    fails_today: NodeCommand currently accepts names and reports node.not_found for an unknown name.
+    act:
+      - cli: {run: [node:converge, not-a-node-id], expect: {exit: 1, code: node.id_invalid, request: none}}
+    expect:
+      - unchanged: {since: act}
+
+  - id: missing-node-id
+    batch: fresh-fleet
+    covers: []
+    summary: Missing required input in machine mode returns the command's invalid-ID error without an Operation.
+    fails_today: The required framework argument currently refuses before node.id_invalid can be rendered.
+    act:
+      - cli: {run: [node:converge], expect: {exit: 1, code: node.id_invalid, request: none}}
+    expect:
+      - unchanged: {since: act}
+
+  - id: conflicting-scope
+    batch: fresh-fleet
+    covers: []
+    summary: The two incompatible scope flags are refused before an Operation.
+    fails_today: The CLI has neither scope option nor their validation.
+    act:
+      - cli: {run: [node:converge, "${app-dev.id}", --base, --roles=app-dev], expect: {exit: 1, code: validation.failed, request: none}}
+    expect:
+      - unchanged: {since: act}
+
+  - id: invalid-role-selection
+    batch: fresh-fleet
+    covers: []
+    summary: Empty and unknown role selections are refused without an Operation.
+    variants:
+      - {name: empty, roles: ""}
+      - {name: unknown, roles: not-a-role}
+    fails_today: The CLI has no --roles option or selection validation.
+    act:
+      - cli: {run: [node:converge, "${app-dev.id}", "--roles=${roles}"], expect: {exit: 1, code: validation.failed, request: none}}
+    expect:
+      - unchanged: {since: act}
+
+  - id: no-force-option
+    batch: fresh-fleet
+    covers: []
+    summary: The removed force option cannot start a converge.
+    fails_today: The CLI still accepts --force and starts an artifact converge.
+    act:
+      - cli: {run: [node:converge, "${app-dev.id}", --force], expect: {exit: 1, request: none}}
+    expect:
+      - unchanged: {since: act}
+
+  - id: no-full-option
+    batch: fresh-fleet
+    covers: []
+    summary: There is no full option; required arguments already select every recorded role.
+    act:
+      - cli: {run: [node:converge, "${app-dev.id}", --full], expect: {exit: 1, request: none}}
+    expect:
+      - unchanged: {since: act}
+
+  - id: caller-refused
+    batch: no-grant
+    covers: [main, caller-refused]
+    summary: A caller with neither Gateway authority nor a target grant is refused without an Operation.
+    setup:
+      - node_access_remove: {consumer: app-prod, serving: gateway}
+    act:
+      - cli: {as: app-prod, run: [node:converge, "${app-dev.id}"], expect: {exit: 1, code: node_access.required, request: none}}
+    expect:
+      - unchanged: {since: act}
+
+  - id: gateway-authority-without-target-grant
+    batch: no-grant
+    covers: [main, admitted, succeeded]
+    summary: A caller granted Gateway access can converge the target without a direct target grant.
+    setup:
+      - node_access_remove: {consumer: app-prod, serving: app-dev}
+      - cli: {run: [node:access:add, "${app-prod.id}", "${gateway.id}"], expect: {exit: 0}}
+    act:
+      - cli: {as: app-prod, run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded}}
+    expect: []
+
+  - id: node-unreachable
+    batch: node-down
+    covers: [main, admitted, phase-failed]
+    summary: An unreachable Node fails its Operation instead of being refused by a live admission check.
+    setup:
+      - node_down: {node: app-dev}
+    act:
+      - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 1, status: failed, code: operation.native_failed}}
+    expect: []

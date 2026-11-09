@@ -1,0 +1,20 @@
+---
+- name: Read the JavaScript tool versions
+  ansible.builtin.command: { argv: ["{{ item }}", --version] }
+  loop: [/usr/local/bin/node, /usr/local/bin/pnpm, /usr/local/bin/bun, /usr/local/bin/vp]
+  register: js_versions
+  changed_when: false
+  failed_when: false
+- name: Read the Vite+ runtime
+  ansible.builtin.stat: { path: "{{ vp_home }}/recipe/vp-runtime-{{ recipe.tools.vp.lock_sha256 }}/node_modules/vite-plus/package.json" }
+  register: vp_runtime
+- name: Find the JavaScript tools that miss their pin
+  vars:
+    out: "{{ js_versions.results | map(attribute='stdout') | list }}"
+  ansible.builtin.set_fact:
+    js_current: >-
+      {{ out[0] | trim == 'v' ~ recipe.tools.node.version
+      and out[1] | trim == recipe.tools.pnpm.version
+      and out[2] | trim == recipe.tools.bun.version
+      and recipe.tools['vp-cli'].version in out[3]
+      and vp_runtime.stat.exists }}

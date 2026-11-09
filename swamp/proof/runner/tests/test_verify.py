@@ -90,5 +90,26 @@ class SetupTest(unittest.TestCase):
         self.assertEqual(code, 3)
 
 
+class FleetPreparationTest(unittest.TestCase):
+    def test_candidate_collections_and_grants_are_prepared_before_the_discovery_cli(self):
+        calls = []
+        with patch.object(fleet_module.Fleet, 'must', side_effect=lambda argv, why: calls.append(argv)), \
+                patch.object(fleet_module, 'discover', side_effect=lambda: calls.append('discover') or 'fleet'):
+            self.assertEqual(fleet_module.from_environment(), 'fleet')
+
+        self.assertEqual(calls[0], ['incus', 'exec', 'nested-gateway', '--', 'timeout', '110', 'env',
+                                   'ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg',
+                                   '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml',
+                                   '/home/orbit/orbit/swamp/ansible/proof-gateway.yml'])
+        self.assertEqual(calls[1], 'discover')
+
+    def test_failed_grant_preparation_stops_before_any_discovery_or_case(self):
+        with patch.object(fleet_module.Fleet, 'must', side_effect=fleet_module.FleetError('grant reload refused')), \
+                patch.object(fleet_module, 'discover') as discover:
+            with self.assertRaisesRegex(fleet_module.FleetError, 'grant reload refused'):
+                fleet_module.from_environment()
+            discover.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()

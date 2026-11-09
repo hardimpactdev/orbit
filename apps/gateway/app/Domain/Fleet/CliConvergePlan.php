@@ -11,7 +11,11 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use Throwable;
 
-/** Gateway reads that pin the CLI child to one desired release and target. */
+/**
+ * Gateway reads that pin the CLI child to one desired release and target.
+ *
+ * @phpstan-type CliInput array{user:string,release:?array{version:?string,url:string,sha256:string},profile:string,skip_reason:?string,plan_error:?string}
+ */
 final readonly class CliConvergePlan
 {
     public function __construct(private DesiredFleetState $desired, private FleetRolloutMembership $membership) {}
@@ -31,10 +35,26 @@ final readonly class CliConvergePlan
         return $reason;
     }
 
-    /** @return array{user:string,release:?array{version:?string,url:string,sha256:string},profile:string,skip_reason:?string,plan_error:?string} */
+    /** @return CliInput */
     public function input(Node $node): array
     {
-        $input = ['user' => $node->user, 'release' => null, 'profile' => '', 'skip_reason' => $this->exclusion($node), 'plan_error' => null];
+        return $this->capture($node, $this->exclusion($node));
+    }
+
+    /**
+     * An individually admitted Node is not limited to the automatic fleet rollout set.
+     *
+     * @return CliInput
+     */
+    public function nodeInput(Node $node): array
+    {
+        return $this->capture($node, null);
+    }
+
+    /** @return CliInput */
+    private function capture(Node $node, ?string $skipReason): array
+    {
+        $input = ['user' => $node->user, 'release' => null, 'profile' => '', 'skip_reason' => $skipReason, 'plan_error' => null];
         if ($input['skip_reason'] !== null) {
             return $input;
         }

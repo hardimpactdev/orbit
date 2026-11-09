@@ -1,0 +1,66 @@
+---
+- name: Reconcile a target hub exactly once
+  when: intent.network.mode == 'hub'
+  ansible.builtin.include_tasks: node-converge-hub.yml
+  vars: { hub_plan: "{{ intent.network.hub }}" }
+- name: Reconcile the peer after its hub has completed
+  when: intent.network.mode == 'peer'
+  block:
+    - name: Reconcile recorded peer files
+      ansible.builtin.copy: { dest: "{{ item.path }}", content: "{{ item.content }}", owner: root, group: root, mode: "0600" }
+      loop:
+        - { path: /etc/wireguard/orbit.conf, content: "{{ intent.network.apply.config }}" }
+        - { path: /etc/wireguard/orbit.peers, content: "{{ intent.network.apply.peers }}" }
+        - { path: /etc/wireguard/orbit.dns-link, content: "{{ intent.network.apply.dns_marker }}" }
+      register: peer_files
+    - name: Start the peer without restarting a matching tunnel
+      ansible.builtin.systemd: { name: wg-quick@orbit.service, enabled: true, state: started }
+    - name: Reconcile live peer state without copying its private key
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -euo pipefail
+          before=$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)
+          wg syncconf orbit <(printf '[Interface]\nPrivateKey = '; cat /etc/wireguard/orbit.key; cat /etc/wireguard/orbit.peers)
+          [ "$before" = "$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)" ] || echo changed
+      register: peer_sync
+      changed_when: peer_sync.stdout is search('changed')
+    - name: Repair the peer interface address
+      ansible.builtin.include_tasks: node-converge-address.yml
+      vars: { tunnel_address: "{{ intent.network.apply.peer.address }}" }
+    - name: Read live split DNS servers
+      ansible.builtin.command: { argv: [resolvectl, dns, orbit] }
+      register: peer_dns
+      changed_when: false
+    - name: Select the recorded DNS server
+      when: peer_dns.stdout.split(':', 1)[-1] | trim != intent.network.apply.peer.dns_server
+      ansible.builtin.command: { argv: [resolvectl, dns, orbit, "{{ intent.network.apply.peer.dns_server }}"] }
+      changed_when: true
+    - name: Read live split DNS domains
+      ansible.builtin.command: { argv: [resolvectl, domain, orbit] }
+      register: peer_domains
+      changed_when: false
+    - name: Select the recorded DNS domains
+      when: >-
+        peer_domains.stdout.split(':', 1)[-1].split() | sort !=
+        intent.network.apply.peer.domains | map('regex_replace', '^', '~') | sort
+      ansible.builtin.command:
+        argv: "{{ ['resolvectl', 'domain', 'orbit'] + intent.network.apply.peer.domains | map('regex_replace', '^', '~') | list }}"
+        expand_argument_vars: false
+      changed_when: true
+    - name: Trust the recorded WireGuard subnet
+      ansible.builtin.command: { argv: "{{ intent.network.apply.trust_argv }}" }
+      register: peer_trust
+      changed_when: peer_trust.stdout is not search('Skipping')
+    - name: Initiate the recorded tunnel
+      ansible.builtin.command: { argv: [ping, -c, '1', -W, '2', "{{ intent.network.probe_ip }}"] }
+      changed_when: false
+      failed_when: false
+    - name: Wait for the hub handshake
+      ansible.builtin.include_tasks: node-converge-handshake.yml
+      vars: { peer_key: "{{ intent.network.apply.peer.server_public_key }}" }
+- name: Wait for a target hub's recorded peer handshakes
+  when: intent.network.mode == 'hub'
+  ansible.builtin.include_tasks: node-converge-handshake.yml
+  loop: "{{ intent.network.hub.peer_keys }}"
+  loop_control: { loop_var: peer_key }

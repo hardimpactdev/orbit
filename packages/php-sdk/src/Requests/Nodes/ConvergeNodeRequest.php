@@ -18,10 +18,12 @@ final class ConvergeNodeRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::POST;
 
+    /** @param list<string>|null $roles */
     public function __construct(
         private readonly int $nodeId,
-        private readonly bool $force = false,
+        private readonly bool $base = false,
         private readonly ?string $idempotencyKey = null,
+        private readonly ?array $roles = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -40,9 +42,9 @@ final class ConvergeNodeRequest extends GatewayRequest implements HasBody
         return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
     }
 
-    /** @return array{force: bool} */
+    /** @return array{base: bool, roles?: list<string>} */
     protected function defaultBody(): array
     {
-        return ['force' => $this->force];
+        return ['base' => $this->base, ...($this->roles === null ? [] : ['roles' => $this->roles])];
     }
 }
