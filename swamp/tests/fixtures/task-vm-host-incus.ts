@@ -103,7 +103,9 @@ if (family === "query") {
   instance(named).status = family === "start" ? "Running" : "Stopped";
 } else if (family === "delete") {
   const named = args.at(-1)!;
-  if (!instance(named)) fail("Failed checking instance exists: Instance not found");
+  if (!instance(named)) {
+    fail("Failed checking instance exists: Instance not found");
+  }
   state.instances = state.instances.filter((r: { name: string }) =>
     r.name !== named
   );

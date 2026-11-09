@@ -101,16 +101,23 @@ function transform(task: Task, folder: string): Task[] {
 }
 
 function fixture(
-  { memory = 32 * GiB, written = "307200", installed = "1:7.0.1-ubuntu26.04", server = "7.0.1", subids = 1000000000, sctp = "install /bin/false ", sctpLoaded = false }:
-    {
-      memory?: number;
-      written?: string;
-      installed?: string;
-      server?: string;
-      subids?: number;
-      sctp?: string;
-      sctpLoaded?: boolean;
-    } = {},
+  {
+    memory = 32 * GiB,
+    written = "307200",
+    installed = "1:7.0.1-ubuntu26.04",
+    server = "7.0.1",
+    subids = 1000000000,
+    sctp = "install /bin/false ",
+    sctpLoaded = false,
+  }: {
+    memory?: number;
+    written?: string;
+    installed?: string;
+    server?: string;
+    subids?: number;
+    sctp?: string;
+    sctpLoaded?: boolean;
+  } = {},
 ) {
   const folder = Deno.makeTempDirSync();
   for (const dir of ["bin", "disks", "sysctl", "debs", "sys"]) {
@@ -149,6 +156,8 @@ function fixture(
     "dpkg-query": '[ -n "$INSTALLED" ] || exit 1; printf "%s" "$INSTALLED"',
     modprobe: 'printf "%s\\n" "$SCTP"',
     "apt-get": `printf "%s\\n" "$*" >> '${folder}/apt-get'`,
+    // The host's current values: Ubuntu's vm.max_map_count is above the floor and stays.
+    sysctl: 'printf "16384\\n128\\n65536\\n200\\n20000\\n1048576\\n"',
   };
   for (const [name, body] of Object.entries(scripts)) {
     Deno.writeTextFileSync(`${folder}/bin/${name}`, `#!/bin/sh\n${body}\n`);
@@ -260,22 +269,33 @@ Deno.test({
     try {
       let result = f.run();
       assert(result.ok, result.output);
-      assertEquals(f.read("modules.conf"), "wireguard\noverlay\nbr_netfilter\n");
+      assertEquals(
+        f.read("modules.conf"),
+        "wireguard\noverlay\nbr_netfilter\n",
+      );
       const sysctl = (key: string) => f.read(`sysctl/${key}`);
       assertEquals(
         sysctl("fs.inotify.max_user_instances"),
         "1048576 /etc/sysctl.d/60-orbit-task-containers.conf",
       );
-      assertEquals(sysctl("fs.inotify.max_user_watches").split(" ")[0], "1048576");
-      assertEquals(sysctl("fs.inotify.max_queued_events").split(" ")[0], "1048576");
+      assertEquals(
+        sysctl("fs.inotify.max_user_watches").split(" ")[0],
+        "1048576",
+      );
+      assertEquals(
+        sysctl("fs.inotify.max_queued_events").split(" ")[0],
+        "1048576",
+      );
       assertEquals(sysctl("kernel.keys.maxkeys").split(" ")[0], "2000");
       assertEquals(sysctl("kernel.keys.maxbytes").split(" ")[0], "2000000");
-      assertEquals(sysctl("vm.max_map_count").split(" ")[0], "262144");
+      assertEquals(sysctl("vm.max_map_count").split(" ")[0], "1048576");
       // One eighth of 32 GiB replaces the 2 GiB cap of the loop pool, now and after reboot.
       assertEquals(f.read("arc").trim(), String(4 * GiB));
       assertEquals(
         f.read("arc.conf"),
-        `# Orbit task container host: reserve RAM for host services.\noptions zfs zfs_arc_max=${4 * GiB}\n`,
+        `# Orbit task container host: reserve RAM for host services.\noptions zfs zfs_arc_max=${
+          4 * GiB
+        }\n`,
       );
 
       const state = f.state();
@@ -318,7 +338,10 @@ Deno.test({
       const acls = Object.fromEntries(
         state["network-acls"].map((a: { name: string }) => [a.name, a]),
       );
-      assertEquals(acls["orbittaskc0-egress"].egress, acls["orbittask0-egress"].egress);
+      assertEquals(
+        acls["orbittaskc0-egress"].egress,
+        acls["orbittask0-egress"].egress,
+      );
       assertEquals(acls["orbittaskc0-egress"].ingress, [{
         action: "allow",
         source: "10.252.11.1/32",
@@ -446,11 +469,16 @@ Deno.test({
       );
       assertEquals(
         f.read("apt-get").trim(),
-        `install --yes --no-install-recommends --no-remove -- ${debs.join(" ")}`,
+        `install --yes --no-install-recommends --no-remove -- ${
+          debs.join(" ")
+        }`,
       );
       const fetched = JSON.parse(Deno.readTextFileSync(debs[1]));
       assertEquals(fetched.sha256, "2".repeat(64));
-      assertEquals(fetched.urls[0], `https://mirror.example/incus-base_${"2".repeat(64)}.deb`);
+      assertEquals(
+        fetched.urls[0],
+        `https://mirror.example/incus-base_${"2".repeat(64)}.deb`,
+      );
     } finally {
       f.cleanup();
     }
@@ -464,10 +492,16 @@ Deno.test({
   fn() {
     const cases: [string, Parameters<typeof fixture>[0], string?][] = [
       ["incus line", { server: "6.0.5" }],
-      ["sctp rule", { sctp: "insmod /lib/modules/7.0.0/kernel/net/sctp/sctp.ko" }],
+      ["sctp rule", {
+        sctp: "insmod /lib/modules/7.0.0/kernel/net/sctp/sctp.ko",
+      }],
       ["sctp loaded", { sctpLoaded: true }],
       // Three places and the base need 404,000,000 IDs.
-      ["subordinate ids", { subids: 400000000 }, "root needs 404000000 subordinate IDs"],
+      [
+        "subordinate ids",
+        { subids: 400000000 },
+        "root needs 404000000 subordinate IDs",
+      ],
       ["taken bridge", {}],
     ];
     for (const [label, options, message] of cases) {
@@ -481,13 +515,18 @@ Deno.test({
             managed: true,
             config: { "ipv4.address": "10.252.99.1/24" },
           });
-          Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+          Deno.writeTextFileSync(
+            `${f.folder}/state.json`,
+            JSON.stringify(state),
+          );
         }
         const result = f.run();
         assertEquals(result.ok, false, `${label}: ${result.output}`);
         assertStringIncludes(result.output, message ?? "task_vm.setup_failed");
         assert(
-          !f.calls().some((c) => c.includes("orbittaskc0") && c[0] !== "query") &&
+          !f.calls().some((c) =>
+            c.includes("orbittaskc0") && c[0] !== "query"
+          ) &&
             !f.calls().some((c) => c.includes("orbit-task-containers")),
           `${label}: ${JSON.stringify(f.calls())}`,
         );
@@ -507,6 +546,42 @@ Deno.test({
       const result = f.run();
       assertEquals(result.ok, false, result.output);
       assertStringIncludes(result.output, "task_vm.setup_failed");
+      assertEquals(f.state().instances, []);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a clone probe that a failed run left is removed before the next probe",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const state = f.state();
+      state.instances = [
+        {
+          name: "orbit-clone-probe",
+          project: "orbit-task-containers",
+          status: "Stopped",
+        },
+        {
+          name: "orbit-clone-probe-copy",
+          project: "orbit-task-containers",
+          status: "Running",
+        },
+      ];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const result = f.run();
+      assert(result.ok, result.output);
+      const deletes = f.calls().filter((c) => c[2] === "delete").map((c) =>
+        c.at(-1)
+      );
+      assertEquals(deletes.slice(0, 2), [
+        "orbit-clone-probe",
+        "orbit-clone-probe-copy",
+      ]);
       assertEquals(f.state().instances, []);
     } finally {
       f.cleanup();

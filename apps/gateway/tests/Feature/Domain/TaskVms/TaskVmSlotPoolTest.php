@@ -540,7 +540,7 @@ it('refuses a task start while the ai-router has no guard', function (): void {
 });
 
 it('rebuilds the base from stock only when asked: the run deletes the base first, keeps no recorded snapshot, and cleans the host after', function (): void {
-    [$host, $project] = slotPoolHost();
+    [$host, $project] = slotPoolHost(ciPlaces: 3);
     slotPoolSweepWorld(dispatch: false);
     $services = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'services', 'status' => 'active', 'platform' => 'linux',
         'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.3', 'wireguard_ip' => '10.44.0.3', 'user' => 'orbit',
@@ -563,10 +563,20 @@ it('rebuilds the base from stock only when asked: the run deletes the base first
     try {
         $refresh = app(TaskVmImageRefreshIntent::class)->input($host)['intent'];
         $rebuild = app(TaskVmImageRefreshIntent::class)->input($host, fromStock: true)['intent'];
+        // A host with a container side gets it in the intent of its host phase.
+        $settings = app(TaskVmSettings::class);
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
+            [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 2, 4, '8GiB', '20GiB', ciPlaces: 3,
+                containers: new TaskVmContainers(1, 1, 'orbit-task-containers', 'orbittaskc0', '10.252.8.0/24'))],
+            '/pi', str_repeat('a', 64), ['gpt-6']));
+        $containers = app(TaskVmImageRefreshIntent::class)->input($host)['intent']['host']['containers'];
     } finally {
         File::deleteDirectory($home);
     }
 
+    expect($containers)->toMatchArray(['project' => 'orbit-task-containers', 'network' => 'orbittaskc0', 'address' => '10.252.8.1/24',
+        'alias' => 'ubuntu-26.04-ct', 'places' => 2])
+        ->and(array_column($containers['incus']['packages'], 'name'))->toBe(['incus', 'incus-base', 'incus-client']);
     expect($refresh['host'])->toMatchArray(['rebuild' => false, 'current' => 'r20261107120000', 'image' => 'ubuntu-26.04-vm', 'containers' => null])
         ->and($rebuild['host'])->toMatchArray(['rebuild' => true, 'current' => null])->and($rebuild['with_pi'])->toBeTrue()
         ->and($refresh['host']['clean'])->toBe(['keep_images' => ['ubuntu-26.04-vm'], 'prefixes' => ['orbit-topology-seed-', 'orbit-baseline-'],

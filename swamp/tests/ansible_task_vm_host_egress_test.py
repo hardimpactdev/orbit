@@ -21,6 +21,12 @@ SAFETY = {'egress.bridge_dual_stack', 'egress.acl_changed'}
 WARNINGS = {'egress.rules_missing', 'egress.dnsmasq_unset', 'egress.log_unreadable', 'egress.service_inactive', 'egress.setup_failed'}
 
 
+# The files of the part for a host without containers, as the part rendered them before container hosts. A host that keeps them
+# reloads nothing in its next refresh.
+VM_ONLY_NFT = 'table inet orbit_egress\ndelete table inet orbit_egress\ntable inet orbit_egress {\n    set seen {\n        type ipv4_addr . ipv4_addr . inet_proto . inet_service\n        flags dynamic,timeout\n        timeout 10m\n        size 262144\n    }\n    set flood {\n        type ipv4_addr\n        flags dynamic,timeout\n        timeout 1m\n        size 4096\n    }\n    chain forward {\n        type filter hook forward priority filter + 10; policy accept;\n        iifname "orbittask0" oifname != "orbittask0" ct state new meta l4proto { tcp, udp } ip daddr != { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4 } ip saddr . ip daddr . meta l4proto . th dport @seen return\n        iifname "orbittask0" oifname != "orbittask0" ct state new meta l4proto { tcp, udp } ip daddr != { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4 } add @flood { ip saddr limit rate over 50/second burst 200 packets } counter return\n        iifname "orbittask0" oifname != "orbittask0" ct state new meta l4proto { tcp, udp } ip daddr != { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4 } log prefix "orbit-egress " flags ether add @seen { ip saddr . ip daddr . meta l4proto . th dport }\n    }\n}\n'
+VM_ONLY_ROTATION = '/var/log/orbit/task-egress.log {\n    daily\n    rotate 7\n    maxsize 200M\n    compress\n    missingok\n    notifempty\n    create 0644 syslog adm\n    sharedscripts\n    postrotate\n        /usr/lib/rsyslog/rsyslog-rotate\n    endscript\n}\n\n/var/log/orbit/dnsmasq-orbittask0.log {\n    daily\n    rotate 7\n    maxsize 200M\n    compress\n    missingok\n    notifempty\n    copytruncate\n}\n'
+
+
 def command():
     return shutil.which('ansible-playbook') or str(Path(sys.executable).parent / 'ansible-playbook')
 
@@ -558,6 +564,15 @@ class TaskVmHostEgressTest(unittest.TestCase):
                                  str(PLAYBOOK)], check=False, capture_output=True, text=True, timeout=60,
                                 env={**os.environ, 'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg')})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
+    def test_a_host_without_containers_renders_the_files_it_had_before(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            result = render(folder)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual((folder / 'nft_rules').read_text(), VM_ONLY_NFT)
+            self.assertEqual((folder / 'logrotate_rules').read_text(), VM_ONLY_ROTATION)
 
     @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
     def test_a_container_host_logs_both_bridges_with_one_table_and_one_rotation(self):

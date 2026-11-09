@@ -940,7 +940,7 @@ The system file sets up the kernel and Incus side of the host.
 - **Incus.** The host runs the recipe's Incus line, as described below.
 - **SCTP.** The `sctp` module cannot load, as described below.
 - **Kernel modules.** `wireguard`, `overlay` and `br_netfilter` go in `/etc/modules-load.d/orbit-task-containers.conf` and load now. A container cannot load a module itself.
-- **Sysctls.** `/etc/sysctl.d/60-orbit-task-containers.conf` holds the Incus production values for nested systemd, Docker and file watchers, applied now.
+- **Sysctls.** `/etc/sysctl.d/60-orbit-task-containers.conf` holds the floors in the table below. They apply now.
 - **Subordinate IDs.** Root's range in `/etc/subuid` and in `/etc/subgid` must hold one [isolated range](/reference/task-containers#the-outer-container) per place and one for the base: `(containers.task_places + containers.ci_places + 1) × 101,000,000` IDs. A smaller range fails the phase with both numbers and changes nothing.
 - **ZFS ARC.** The cap is one eighth of the host's memory, at least 1 GiB. The ARC took 2.6 GB of an 8 GB UpCloud host.
 
@@ -948,7 +948,9 @@ A host without Incus gets `incus`, `incus-base` and `incus-client` from the reci
 
 The `install sctp /bin/false` rule comes from the [kernel policy](/reference/node-provisioning#kernel-policy) that `node:add` and `node:converge` write. This phase only checks it: `modprobe --dry-run` must show the rule, and the module must not be loaded. A loaded module needs a reboot.
 
-| Sysctl | Value |
+The sysctl floors are the Incus production values for nested systemd, Docker and file watchers. A higher host value stays, such as Ubuntu's `vm.max_map_count` of 1048576.
+
+| Sysctl | At least |
 | --- | --- |
 | `fs.inotify.max_queued_events` | 1048576 |
 | `fs.inotify.max_user_instances` | 1048576 |
@@ -957,7 +959,7 @@ The `install sctp /bin/false` rule comes from the [kernel policy](/reference/nod
 | `kernel.keys.maxbytes` | 2000000 |
 | `vm.max_map_count` | 262144 |
 
-The VM part applies the ARC cap now and after reboot, in `/etc/modprobe.d/orbit-task-vm-zfs.conf`. On a container host this size replaces the 2 GiB cap of a loop pool, and it applies to a native pool too. The cap stays when `containers` is removed, until the operator deletes the file.
+The VM part applies the ARC cap now and after reboot, in `/etc/modprobe.d/orbit-task-vm-zfs.conf`. On a container host this size replaces the 2 GiB cap of a loop pool, and it applies to a native pool too. When `containers` is removed, a loop pool gets its 2 GiB cap back. A native pool keeps the last cap until the operator deletes the file.
 
 #### The container side
 
@@ -985,8 +987,8 @@ Host-path disks and privileged containers stay forbidden.
 The phase then proves that a copy is a clone:
 
 1. It deletes a leftover `orbit-clone-probe` and its copy from a failed run.
-2. It starts and stops `orbit-clone-probe` from the stock image with an isolated ID map.
-3. It copies the container, and starts and stops the copy.
+2. It creates `orbit-clone-probe` from the stock image with an isolated ID map, without starting it.
+3. It copies the container, and starts and stops the copy. The start is where Incus would shift the files.
 4. `zfs get written` on the copy's dataset must stay under 8 MiB.
 5. It deletes both containers.
 

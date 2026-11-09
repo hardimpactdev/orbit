@@ -79,22 +79,21 @@
   community.general.modprobe: { name: "{{ item }}", state: present }
   loop: [wireguard, overlay, br_netfilter]
 
-# The Incus production values for nested systemd, Docker and file watchers.
+# At least the Incus production values for nested systemd, Docker and file watchers: a host value that is higher stays, such as
+# Ubuntu's own vm.max_map_count of 1048576.
+- name: Read the container sysctls
+  ansible.builtin.command: { argv: "{{ ['sysctl', '-n'] + container_sysctls.keys() | list }}" }
+  register: container_sysctls_now
+  changed_when: false
+
 - name: Set the container sysctls
   ansible.posix.sysctl:
-    name: "{{ item.key }}"
-    value: "{{ item.value }}"
+    name: "{{ item.0.key }}"
+    value: "{{ [item.0.value, item.1 | int] | max }}"
     sysctl_file: /etc/sysctl.d/60-orbit-task-containers.conf
     reload: true
-  loop: "{{ container_sysctls | dict2items }}"
-  vars:
-    container_sysctls:
-      fs.inotify.max_queued_events: '1048576'
-      fs.inotify.max_user_instances: '1048576'
-      fs.inotify.max_user_watches: '1048576'
-      kernel.keys.maxkeys: '2000'
-      kernel.keys.maxbytes: '2000000'
-      vm.max_map_count: '262144'
+  loop: "{{ container_sysctls | dict2items | zip(container_sysctls_now.stdout_lines) | list }}"
+  loop_control: { label: "{{ item.0.key }}" }
 
 # Each place and the base get an isolated range of 101,000,000 IDs, from root's range; a smaller range changes nothing.
 - name: Read the subordinate IDs
