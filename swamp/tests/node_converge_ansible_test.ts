@@ -53,6 +53,35 @@ async function localPlay(vars: Record<string, unknown>, tasks: unknown[], unchan
         if (unchanged) assertMatch(output, /changed=0\s/);
     } finally { await Deno.remove(folder, { recursive: true }); }
 }
+
+Deno.test("peer DNS routing domains stay literal and a second application changes nothing", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const state = `${folder}/domains`;
+        const resolvectl = `${folder}/resolvectl`;
+        await Deno.writeTextFile(state, "Link 2 (orbit): ~stale\n");
+        // ~root is a valid routing domain and also an existing account on Linux and macOS.
+        // The real command module must not turn it into that account's home directory.
+        await Deno.writeTextFile(resolvectl, `#!/bin/sh\nset -eu\nif [ "$#" -eq 2 ]; then\n  cat '${state}'\nelse\n  shift 2\n  printf 'Link 2 (orbit): %s\\n' "$*" > '${state}'\nfi\n`);
+        await Deno.chmod(resolvectl, 0o755);
+        const tasks = parse(await Deno.readTextFile(taskPath("node-converge-network"))) as Array<Record<string, unknown>>;
+        const peer = tasks.find((task) => task.name === "Reconcile the peer after its hub has completed")!;
+        const dns = structuredClone((peer.block as Array<Record<string, unknown>>).filter((task) =>
+            ["Read live split DNS domains", "Select the recorded DNS domains"].includes(task.name as string)
+        ));
+        for (const task of dns) {
+            const command = task["ansible.builtin.command"] as { argv: string | string[] };
+            if (Array.isArray(command.argv)) command.argv[0] = resolvectl;
+            else command.argv = command.argv.replace("'resolvectl'", `'${resolvectl}'`);
+        }
+        const vars = { intent: { network: { apply: { peer: { domains: ["root"] } } } } };
+        await localPlay(vars, dns, false);
+        assertEquals(await Deno.readTextFile(state), "Link 2 (orbit): ~root\n");
+        await localPlay(vars, dns);
+        assertEquals(await Deno.readTextFile(state), "Link 2 (orbit): ~root\n");
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
 for (const state of ["matching", "unavailable", "plan error", "invalid digest"]) {
     Deno.test(`input ${state === "matching" ? "accepts the matching" : "rejects the " + state} base CLI without writes`, async () => {
         const plays = parse(await Deno.readTextFile(new URL("../ansible/operation-node-converge.yml", import.meta.url))) as Array<{ tasks: Array<Record<string, unknown>> }>;

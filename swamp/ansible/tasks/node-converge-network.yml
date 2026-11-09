@@ -46,6 +46,7 @@
         intent.network.apply.peer.domains | map('regex_replace', '^', '~') | sort
       ansible.builtin.command:
         argv: "{{ ['resolvectl', 'domain', 'orbit'] + intent.network.apply.peer.domains | map('regex_replace', '^', '~') | list }}"
+        expand_argument_vars: false
       changed_when: true
     - name: Trust the recorded WireGuard subnet
       ansible.builtin.command: { argv: "{{ intent.network.apply.trust_argv }}" }
