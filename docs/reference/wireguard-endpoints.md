@@ -8,7 +8,7 @@ covers:
   - apps/gateway/app/Domain/Nodes/{NodeNetworkConvergeInput,NodeNetworkInput,NodeNetworkParticipantInput,NodeNetworkProjection,NodeWireGuardInput,NodeWireGuardHubInput}.php
   - apps/gateway/app/Infrastructure/Nodes/NodeVpnConfigurationSource.php
   - apps/gateway/database/migrations/2027_02_02_000000_drop_node_wireguard_endpoint_override.php
-  - swamp/ansible/tasks/{node-hub-lan-proof,node-converge-hub,node-hub-source,node-converge-handshake,node-add-hub-peers}.yml
+  - swamp/ansible/tasks/{node-hub-lan-proof,node-converge-hub,node-hub-source,node-converge-handshake,node-converge-hub-switch,node-add-hub-peers}.yml
   - apps/gateway/app/Domain/Nodes/NodeLanAddress.php
 ---
 
@@ -66,13 +66,15 @@ A failed check stops the run before any WireGuard file or peer changes. The phas
 
 Orbit does not fall back to the public endpoint. Fix the network, or clear the wrong `lan_ip` with [`node:update --lan-ip=`](/cli/node/update), and run the command again.
 
-The hub admits the scan with the firewall rule `orbit:vpn-lan-ssh`: TCP port 22 from the /24 of its `lan_ip` to that address. Its network phase applies the rule, which every converge of the hub or of a peer runs first.
+The hub admits the scan with the firewall rule `orbit:vpn-lan-ssh`: TCP port 22 from the /24 of its `lan_ip` to that address. The hub's network phase applies the rule and removes one left by an earlier LAN address. A `node:converge` of a peer runs the hub's network phase first; a `node:add` does not, so converge the hub before you add a Node on its private network.
 
-When the converge moves a Node to another hub endpoint, it removes the hub peer from the live tunnel before it loads the new one, so the old session ends. The handshake check then accepts only a handshake at or after that moment. A handshake through the old endpoint therefore fails the check for the new one.
+The converge decides that a Node moves to another hub endpoint from the `Endpoint` line of its previous `orbit.peers`, not from the live tunnel. `wg` shows a hostname endpoint resolved, and a peer that roamed shows the address it roamed to. On a move, the converge removes the hub peer from the live tunnel before it loads the new one, so the old session ends. The handshake check then accepts only a handshake at or after that moment, so a handshake through the old endpoint fails the check for the new one.
+
+When no such handshake comes, the converge writes the previous `orbit.conf` and `orbit.peers` back and loads them, so the Node keeps the tunnel it had. The phase then fails with the assertion `node.hub_switch_no_handshake`. This is a rollback of the move, not a fallback: the Node stays on the endpoint it used before, and the converge reports the failure.
 
 Set the addresses in this order:
 
-1. `node:update <hub> --lan-ip=<address>` on the `vpn` Node, then `node:converge <hub>`. That converge opens SSH on the LAN address.
+1. `node:update <hub> --lan-ip=<address>` on the `vpn` Node, then `node:converge <hub>`. That converge opens SSH on the LAN address and installs the source unit.
 2. `node:update <node> --lan-ip=<address>` on each Node on that network.
 3. `node:converge <node>` on each of those Nodes.
 
@@ -85,9 +87,11 @@ The hub therefore marks its WireGuard packets with `FwMark`, set to the WireGuar
 1. Priority 31820: marked packets to a private range look up the main table. They keep their normal route and source.
 2. Priority 31821: every other marked packet looks up the table numbered after the WireGuard port, peers in the hub's own public prefix included.
 
-The private ranges are RFC 1918, plus the WireGuard subnet if it lies outside them. The hub's table has one default route. It copies the gateway of the main default route and sets the source to the public endpoint address.
+The private ranges are RFC 1918, plus the WireGuard subnet if it lies outside them. The hub's table has one default route. It copies the gateway, device and `onlink` flag of the first main default route and sets the source to the public endpoint address.
 
-One Orbit-owned unit, `orbit-hub-source.service`, owns the rules and the table. It runs the Gateway-rendered script `/etc/orbit/wireguard/hub-source`, which deletes the rules at both priorities, flushes the table and adds them again. Running it twice gives the same state. The unit starts before `wg-quick@orbit` and the tunnel wants it, but does not require it, so a failing rule never stops the tunnel. `orbit.conf` holds only the mark. No writer of `orbit.conf` can drop the rules: not a converge, not either path of `node:add`, not a removal, and not the older native hub projection of [`node:wireguard-key`](/cli/node/wireguard-key).
+One Orbit-owned unit, `orbit-hub-source.service`, owns the rules and the table. It runs the Gateway-rendered script `/etc/orbit/wireguard/hub-source`, which deletes the rules at both priorities, flushes the table and adds them again. Running it twice gives the same state. The unit starts before `wg-quick@orbit` and the tunnel wants it, but does not require it, so a failing rule never stops the tunnel.
+
+When `systemd-networkd` starts, it deletes rules and routes that it did not create. The unit is therefore part of `systemd-networkd.service` and runs again after every start of it. `orbit.conf` holds only the mark. No writer of `orbit.conf` can drop the rules: not a converge, not either path of `node:add`, not a removal, and not the older native hub projection of [`node:wireguard-key`](/cli/node/wireguard-key).
 
 The hub's network phase writes the script and the unit. It restarts the unit when either changes, or when the live rules or the source of a marked packet differ from the rendered ones. It then checks that a marked packet to a public address leaves from the endpoint address. The table copies the default gateway when the unit runs; after the hub's default gateway changes, converge the hub.
 

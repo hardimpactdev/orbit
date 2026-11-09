@@ -3,6 +3,20 @@
 # oneshot unit that send marked WireGuard packets to public peers from the endpoint address; the unit, not orbit.conf, owns the
 # rules, so no writer of orbit.conf can drop them and a failing rule cannot keep the tunnel down. `hub_lan_ssh_argv` opens SSH
 # on the hub's LAN address to its private network, so a Node there can read the hub's host key before it moves to the LAN.
+- name: Read the hub's added firewall rules
+  ansible.builtin.command: { argv: [ufw, show, added] }
+  register: hub_ufw_added
+  changed_when: false
+  check_mode: false
+- name: Remove a LAN SSH rule of an earlier hub LAN address
+  vars:
+    pair: '^.* from (\S+) to (\S+) .*$'
+    wanted: "{{ hub_lan_ssh_argv | map('join', ' ') | map('regex_replace', pair, '\\1 \\2') | list }}"
+  loop: "{{ hub_ufw_added.stdout_lines | select('search', 'orbit:vpn-lan-ssh') | list }}"
+  when: (item | regex_replace(pair, '\\1 \\2')) not in wanted
+  ansible.builtin.command:
+    argv: "{{ ['ufw', 'delete'] + (item | regex_replace('^ufw ', '') | regex_replace(\" comment '.*'$\", '')).split() }}"
+  changed_when: true
 - name: Open SSH on the hub's LAN address to its private network
   ansible.builtin.command: { argv: "{{ item }}" }
   loop: "{{ hub_lan_ssh_argv }}"

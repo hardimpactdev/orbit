@@ -95,7 +95,7 @@ sequenceDiagram
       SW->>N: Apply peer, wait<br/>Ansible phase: network
       %%> What it does:
       %%> - when the rendered hub endpoint is the hub's LAN address, first proves that the kernel routes it directly from the Node's `lan_ip` and that an SSH host key there has the hub's recorded fingerprint; a failed proof fails the phase before any WireGuard change, with the assertion `node.hub_lan_unreachable` or `node.hub_lan_identity_mismatch`, with no fallback to the public endpoint
-      %%> - a changed hub endpoint ends the old session first, and the handshake check then accepts only a handshake from after the change
+      %%> - a changed hub endpoint, read from the previous `orbit.peers`, ends the old session first, and the handshake check then accepts only a handshake from after the change; without one, the previous files are written back and loaded, and the phase fails with the assertion `node.hub_switch_no_handshake`
       %%> - applies the recorded Node side and waits for the tunnel handshake
       %%> - both arrows are one phase; the peer arrow is only for a peer target
       %%> - a target hub is applied once and needs no handshake without peers

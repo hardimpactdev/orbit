@@ -1,0 +1,21 @@
+---
+# A Node that changes its hub endpoint ends the old session, so the handshake check after it proves the new endpoint (ADR 0251).
+# The switch is decided from the files: the Endpoint of the previous `orbit.peers` against the rendered one. The live endpoint
+# would not do: `wg` shows a hostname resolved, and a peer that roamed shows the address it roamed to.
+- name: Decide whether the hub endpoint changes
+  ansible.builtin.set_fact:
+    hub_switch_time: null
+    hub_switch: >-
+      {{ (hub_switch_previous | regex_search('(?m)^Endpoint = (\S+)$', '\1') or ['']) | first != hub_switch_endpoint }}
+- name: End the session to the previous hub endpoint
+  when: hub_switch | bool
+  block:
+    - name: Read the Node's time of the switch
+      ansible.builtin.command: { argv: [date, +%s] }
+      register: hub_switch_clock
+      changed_when: false
+    - name: Remove the hub peer from the live tunnel
+      ansible.builtin.command: { argv: [wg, set, orbit, peer, "{{ hub_switch_key }}", remove] }
+      changed_when: true
+    - name: Record the switch time
+      ansible.builtin.set_fact: { hub_switch_time: "{{ hub_switch_clock.stdout | trim }}" }

@@ -136,18 +136,22 @@ final readonly class NodeWireGuardHubInput
                 "ip -4 route flush table {$port} 2>/dev/null || true",
                 ...array_map(static fn (string $range): string => "ip -4 rule add priority {$main} fwmark {$port} to {$range} lookup main", $private),
                 "ip -4 rule add priority {$own} fwmark {$port} lookup {$port}",
-                '# The table copies the default gateway of the main table and leaves from the endpoint address.',
-                'set -- $(ip -4 route show default)',
+                '# The table copies the first default route of the main table and leaves from the endpoint address.',
+                'set -- $(ip -4 route show default | head -n 1)',
                 'route=',
-                'while [ "$#" -gt 1 ]; do',
-                '  case "$1" in via|dev) route="$route $1 $2"; shift ;; esac',
+                'while [ "$#" -gt 0 ]; do',
+                '  case "$1" in',
+                '    via|dev) [ "$#" -gt 1 ] && route="$route $1 $2" && shift ;;',
+                '    onlink) route="$route onlink" ;;',
+                '  esac',
                 '  shift',
                 'done',
                 "ip -4 route replace default \$route src {$address} table {$port}",
             ])."\n",
-            'unit' => "[Unit]\nDescription=Orbit hub WireGuard source address\nWants=network-online.target\nAfter=network-online.target\n"
-                ."Before=wg-quick@orbit.service\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/bin/sh ".self::SourceScript
-                ."\n\n[Install]\nWantedBy=wg-quick@orbit.service multi-user.target\n"];
+            // systemd-networkd deletes foreign rules and routes when it starts, so the unit runs again after every start of it.
+            'unit' => "[Unit]\nDescription=Orbit hub WireGuard source address\nWants=network-online.target\n"
+                ."After=network-online.target systemd-networkd.service\nPartOf=systemd-networkd.service\nBefore=wg-quick@orbit.service\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/bin/sh ".self::SourceScript
+                ."\n\n[Install]\nWantedBy=wg-quick@orbit.service systemd-networkd.service multi-user.target\n"];
     }
 
     /** RFC 1918 and the WireGuard subnet when it lies outside them: the destinations that keep the main table. @return list<string> */

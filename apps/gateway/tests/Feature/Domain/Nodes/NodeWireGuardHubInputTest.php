@@ -7,6 +7,8 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 use Symfony\Component\Yaml\Yaml;
 use Tests\Support\SwampNodeFixture;
 
@@ -106,11 +108,14 @@ it('marks the hub\'s WireGuard packets, and leaves the source rule to its own un
             ip -4 rule add priority 31820 fwmark 51820 to 172.16.0.0/12 lookup main
             ip -4 rule add priority 31820 fwmark 51820 to 192.168.0.0/16 lookup main
             ip -4 rule add priority 31821 fwmark 51820 lookup 51820
-            # The table copies the default gateway of the main table and leaves from the endpoint address.
-            set -- $(ip -4 route show default)
+            # The table copies the first default route of the main table and leaves from the endpoint address.
+            set -- $(ip -4 route show default | head -n 1)
             route=
-            while [ "$#" -gt 1 ]; do
-              case "$1" in via|dev) route="$route $1 $2"; shift ;; esac
+            while [ "$#" -gt 0 ]; do
+              case "$1" in
+                via|dev) [ "$#" -gt 1 ] && route="$route $1 $2" && shift ;;
+                onlink) route="$route onlink" ;;
+              esac
               shift
             done
             ip -4 route replace default $route src 94.237.124.160 table 51820
@@ -118,7 +123,9 @@ it('marks the hub\'s WireGuard packets, and leaves the source rule to its own un
             SH)
         // Wanted by the tunnel, never required: a failing rule cannot keep the tunnel down.
         ->and($intent['source']['unit'])->toContain("Before=wg-quick@orbit.service\n")->toContain("ExecStart=/bin/sh /etc/orbit/wireguard/hub-source\n")
-        ->toContain("WantedBy=wg-quick@orbit.service multi-user.target\n")->not->toContain('Requires=')->not->toContain('BindsTo=')
+        ->toContain("WantedBy=wg-quick@orbit.service systemd-networkd.service multi-user.target\n")->not->toContain('Requires=')->not->toContain('BindsTo=')
+        // systemd-networkd deletes foreign rules when it starts; the unit runs again after it.
+        ->toContain("PartOf=systemd-networkd.service\n")->toContain('After=network-online.target systemd-networkd.service')
         ->and($intent['lan_ssh_argv'])->toBe([['ufw', 'allow', 'in', 'proto', 'tcp', 'from', '10.0.0.0/24', 'to', '10.0.0.2', 'port', '22', 'comment', 'orbit:vpn-lan-ssh']]);
 });
 
@@ -160,4 +167,32 @@ it('fits the closed intent schema of the hub workflow that a removal runs, and c
         ->and($intent['interface'])->toBe(NodeWireGuardHubInput::interface(51820))
         ->and(array_key_exists('source', $intent))->toBeTrue()
         ->and(json_encode($workflow, JSON_THROW_ON_ERROR))->toContain('inputs.intent.interface');
+});
+
+it('runs its script to the same rules every time, from the first default route only', function (): void {
+    $hub = SwampNodeFixture::ensure();
+    $hub->forceFill(['public_ssh_host' => '94.237.124.160'])->saveQuietly();
+    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', port: 51820);
+    $folder = sys_get_temp_dir().'/orbit-hub-source-'.bin2hex(random_bytes(4));
+    mkdir($folder.'/bin', 0o755, true);
+    file_put_contents($folder.'/script', NodeWireGuardHubInput::source($hub)['script']);
+    // A stand-in `ip`: two default routes, the first on-link, and rule deletes that succeed twice before nothing is left.
+    file_put_contents($folder.'/bin/ip', <<<'SH'
+        #!/bin/sh
+        echo "ip $*" >> "$STUB/calls.log"
+        case "$*" in
+          "-4 route show default") printf 'default via 85.9.216.1 dev eth0 proto dhcp src 85.9.218.89 metric 100 onlink\ndefault via 10.0.0.1 dev eth1 metric 200\n' ;;
+          "-4 rule del priority "*) n=$(cat "$STUB/del" 2>/dev/null || echo 0); echo $((n + 1)) > "$STUB/del"; [ "$n" -lt 2 ] ;;
+        esac
+        SH);
+    chmod($folder.'/bin/ip', 0o755);
+
+    $run = Process::path($folder)->env(['PATH' => $folder.'/bin:'.getenv('PATH'), 'STUB' => $folder])->run(['sh', $folder.'/script']);
+    $calls = (string) file_get_contents($folder.'/calls.log');
+    File::deleteDirectory($folder);
+
+    expect($run->successful())->toBeTrue($run->errorOutput())
+        ->and($calls)->toContain("ip -4 rule add priority 31820 fwmark 51820 to 192.168.0.0/16 lookup main\nip -4 rule add priority 31821 fwmark 51820 lookup 51820\n")
+        ->and($calls)->toContain("ip -4 route replace default via 85.9.216.1 dev eth0 onlink src 94.237.124.160 table 51820\n")
+        ->and($calls)->not->toContain('10.0.0.1');
 });

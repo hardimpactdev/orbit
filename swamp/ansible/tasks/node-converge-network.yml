@@ -10,6 +10,11 @@
       when: intent.network.apply.peer.hub_lan is not none
       ansible.builtin.include_tasks: node-hub-lan-proof.yml
       vars: { hub_lan: "{{ intent.network.apply.peer.hub_lan }}" }
+    - name: Read the previous peer files
+      ansible.builtin.slurp: { src: "{{ item }}" }
+      loop: [/etc/wireguard/orbit.conf, /etc/wireguard/orbit.peers]
+      register: peer_previous
+      failed_when: false
     - name: Reconcile recorded peer files
       ansible.builtin.copy: { dest: "{{ item.path }}", content: "{{ item.content }}", owner: root, group: root, mode: "0600" }
       loop:
@@ -19,21 +24,22 @@
       register: peer_files
     - name: Start the peer without restarting a matching tunnel
       ansible.builtin.systemd: { name: wg-quick@orbit.service, enabled: true, state: started }
+    - name: End the session to a previous hub endpoint
+      ansible.builtin.include_tasks: node-converge-hub-switch.yml
+      vars:
+        hub_switch_previous: "{{ (peer_previous.results[1].content | default('') | b64decode) if peer_previous.results[1].content is defined else '' }}"
+        hub_switch_endpoint: "{{ intent.network.apply.peer.endpoint }}"
+        hub_switch_key: "{{ intent.network.apply.peer.server_public_key }}"
     - name: Reconcile live peer state without copying its private key
       ansible.builtin.shell:
         executable: /bin/bash
         cmd: |
           set -euo pipefail
           before=$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)
-          # A new hub endpoint drops the old session, so the handshake check below proves the new endpoint (ADR 0251).
-          if [ "$(wg show orbit endpoints | awk -v key={{ intent.network.apply.peer.server_public_key | quote }} '$1 == key { print $2 }')" != {{ intent.network.apply.peer.endpoint | quote }} ]; then
-            echo "switched=$(date +%s)"
-            wg set orbit peer {{ intent.network.apply.peer.server_public_key | quote }} remove
-          fi
           wg syncconf orbit <(printf '[Interface]\nPrivateKey = '; cat /etc/wireguard/orbit.key; cat /etc/wireguard/orbit.peers)
           [ "$before" = "$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)" ] || echo changed
       register: peer_sync
-      changed_when: peer_sync.stdout is search('changed|switched=')
+      changed_when: peer_sync.stdout is search('changed')
     - name: Repair the peer interface address
       ansible.builtin.include_tasks: node-converge-address.yml
       vars: { tunnel_address: "{{ intent.network.apply.peer.address }}" }
@@ -66,10 +72,28 @@
       changed_when: false
       failed_when: false
     - name: Wait for the hub handshake, newer than a switch of its endpoint
-      ansible.builtin.include_tasks: node-converge-handshake.yml
-      vars:
-        peer_key: "{{ intent.network.apply.peer.server_public_key }}"
-        handshake_since: "{{ (peer_sync.stdout | regex_search('switched=([0-9]+)', '\\1') or [none]) | first }}"
+      block:
+        - name: Wait for the hub handshake
+          ansible.builtin.include_tasks: node-converge-handshake.yml
+          vars: { peer_key: "{{ intent.network.apply.peer.server_public_key }}", handshake_since: "{{ hub_switch_time }}" }
+      rescue:
+        # A switch that gets no handshake goes back to the previous files, so the Node keeps the tunnel it had; the phase fails.
+        - name: Restore the previous peer files after a switch without a handshake
+          when: hub_switch_time is not none and peer_previous.results | selectattr('content', 'defined') | list | length == 2
+          ansible.builtin.copy: { dest: "{{ item.item }}", content: "{{ item.content | b64decode }}", owner: root, group: root, mode: "0600" }
+          loop: "{{ peer_previous.results }}"
+          loop_control: { label: "{{ item.item }}" }
+        - name: Load the previous hub endpoint after a switch without a handshake
+          when: hub_switch_time is not none and peer_previous.results | selectattr('content', 'defined') | list | length == 2
+          ansible.builtin.shell:
+            executable: /bin/bash
+            cmd: |
+              set -euo pipefail
+              wg set orbit peer {{ intent.network.apply.peer.server_public_key | quote }} remove
+              wg syncconf orbit <(printf '[Interface]\nPrivateKey = '; cat /etc/wireguard/orbit.key; cat /etc/wireguard/orbit.peers)
+          changed_when: true
+        - name: Fail the phase without a hub handshake
+          ansible.builtin.fail: { msg: "{{ 'node.hub_switch_no_handshake' if hub_switch_time is not none else 'node.hub_handshake_missing' }}" }
 - name: Wait for a target hub's recorded peer handshakes
   when: intent.network.mode == 'hub'
   ansible.builtin.include_tasks: node-converge-handshake.yml
