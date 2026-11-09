@@ -51,6 +51,13 @@
           ip -4 -j rule show
           echo "marked: $(ip -4 -o route get 192.0.2.1 mark {{ hub_source.mark | quote }} || true)"
           echo "main: $(ip -4 -o route get 192.0.2.1 || true)"
+          # Each connected prefix of the public interface, as a marked packet to it routes: on-link, from the endpoint.
+          dev=$(ip -4 route show default | head -n 1 | sed -n 's/.* dev \([^ ]*\).*/\1/p')
+          if [ -n "$dev" ]; then
+            ip -4 route show table main proto kernel scope link dev "$dev" | while read -r net _; do
+              echo "onlink: $(ip -4 -o route get "${net%/*}" mark {{ hub_source.mark | quote }} || true)"
+            done
+          fi
       register: hub_source_live
       changed_when: false
       check_mode: false
@@ -64,24 +71,46 @@
         marked: "{{ (hub_source_live.stdout | regex_search('(?m)^marked: (.*)$', '\\1') or ['']) | first }}"
         main: "{{ (hub_source_live.stdout | regex_search('(?m)^main: (.*)$', '\\1') or ['']) | first }}"
         hop: ' via (\S+) dev (\S+)'
-        # The table copies the main default gateway when the unit runs; a gateway that changed since is drift too.
+        onlink: "{{ hub_source_live.stdout | regex_findall('(?m)^onlink: (.*)$') }}"
+        # The table copies the main default gateway and the connected public prefix when the unit runs; either changed since,
+        # or a peer in that prefix routed through the gateway, is drift too.
         drift: >-
           {{ (ours.split() | sort) != (hub_source.rules | sort)
           or (' src ' ~ hub_source.address ~ ' ') not in marked
-          or (marked | regex_search(hop)) != (main | regex_search(hop)) }}
+          or (marked | regex_search(hop)) != (main | regex_search(hop))
+          or onlink | select('search', ' via ') | list | length > 0
+          or onlink | reject('search', ' src ' ~ hub_source.address ~ ' ') | list | length > 0 }}
       ansible.builtin.systemd:
         name: "{{ hub_source.unit_name }}"
         daemon_reload: "{{ hub_source_files is changed }}"
         enabled: true
         state: "{{ 'restarted' if hub_source_files is changed or drift | bool else 'started' }}"
     - name: Read the hub's WireGuard source again
-      ansible.builtin.command: { argv: [ip, -4, -o, route, get, 192.0.2.1, mark, "{{ hub_source.mark }}"] }
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+            ip -4 -j rule show
+            echo "marked: $(ip -4 -o route get 192.0.2.1 mark {{ hub_source.mark | quote }} || true)"
+            echo "main: $(ip -4 -o route get 192.0.2.1 || true)"
+            # Each connected prefix of the public interface, as a marked packet to it routes: on-link, from the endpoint.
+            dev=$(ip -4 route show default | head -n 1 | sed -n 's/.* dev \([^ ]*\).*/\1/p')
+            if [ -n "$dev" ]; then
+              ip -4 route show table main proto kernel scope link dev "$dev" | while read -r net _; do
+                echo "onlink: $(ip -4 -o route get "${net%/*}" mark {{ hub_source.mark | quote }} || true)"
+              done
+            fi
       register: hub_source_check
       changed_when: false
       check_mode: false
-    - name: Require the endpoint address as the source of public WireGuard packets
+    - name: Require the endpoint address as the source of public WireGuard packets, on-link within the public prefix
+      vars:
+        marked: "{{ (hub_source_check.stdout | regex_search('(?m)^marked: (.*)$', '\\1') or ['']) | first }}"
+        onlink: "{{ hub_source_check.stdout | regex_findall('(?m)^onlink: (.*)$') }}"
       ansible.builtin.assert:
-        that: (' src ' ~ hub_source.address ~ ' ') in hub_source_check.stdout
+        that:
+          - (' src ' ~ hub_source.address ~ ' ') in marked
+          - onlink | select('search', ' via ') | list | length == 0
+          - onlink | reject('search', ' src ' ~ hub_source.address ~ ' ') | list | length == 0
         fail_msg: vpn.source_route_failed
         quiet: true
 - name: Remove the source unit that an earlier IPv4 endpoint left

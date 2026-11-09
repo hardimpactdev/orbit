@@ -112,16 +112,20 @@ it('marks the hub\'s WireGuard packets, and leaves the source rule to its own un
             # may not have set the default route yet, so the script waits for it.
             for _ in $(seq 1 60); do
               set -- $(ip -4 route show default | head -n 1)
-              route=
+              route=; dev=
               while [ "$#" -gt 0 ]; do
                 case "$1" in
-                  via|dev) [ "$#" -gt 1 ] && route="$route $1 $2" && shift ;;
+                  via|dev) [ "$#" -gt 1 ] && route="$route $1 $2" && { [ "$1" = via ] || dev=$2; } && shift ;;
                   onlink) route="$route onlink" ;;
                 esac
                 shift
               done
               case "$route" in *via*) break ;; esac
               sleep 1
+            done
+            # Peers in the public prefix of that interface stay on-link, as in the main table, and also leave from the endpoint.
+            ip -4 route show table main proto kernel scope link dev "$dev" | while read -r net _; do
+              ip -4 route replace "$net" dev "$dev" scope link src 94.237.124.160 table 51820
             done
             ip -4 route replace default $route src 94.237.124.160 table 51820
 
@@ -189,6 +193,7 @@ it('runs its script to the same rules every time, from the first default route o
         echo "ip $*" >> "$STUB/calls.log"
         case "$*" in
           "-4 route show default") printf 'default via 85.9.216.1 dev eth0 proto dhcp src 85.9.218.89 metric 100 onlink\ndefault via 10.0.0.1 dev eth1 metric 200\n' ;;
+          "-4 route show table main proto kernel scope link dev eth0") echo '85.9.216.0/22 proto kernel scope link src 85.9.218.89' ;;
           "-4 rule del priority "*) n=$(cat "$STUB/del" 2>/dev/null || echo 0); echo $((n + 1)) > "$STUB/del"; [ "$n" -lt 2 ] ;;
         esac
         SH);
@@ -201,6 +206,8 @@ it('runs its script to the same rules every time, from the first default route o
     expect($run->successful())->toBeTrue($run->errorOutput())
         ->and($calls)->toContain("ip -4 rule add priority 31820 fwmark 51820 to 192.168.0.0/16 lookup main\nip -4 rule add priority 31821 fwmark 51820 lookup 51820\n")
         ->and($calls)->toContain("ip -4 route replace default via 85.9.216.1 dev eth0 onlink src 94.237.124.160 table 51820\n")
+        // services sits in the hub's own /22: it stays on-link in the hub's table, from the endpoint.
+        ->and($calls)->toContain("ip -4 route replace 85.9.216.0/22 dev eth0 scope link src 94.237.124.160 table 51820\n")
         ->and($calls)->not->toContain('10.0.0.1');
 });
 

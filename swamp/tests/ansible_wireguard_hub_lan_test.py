@@ -25,6 +25,9 @@ case "$*" in
   "-4 -j rule show") if [ -f "$STUB_DIR/applied" ]; then cat "$STUB_DIR/rules.applied.json"; else cat "$STUB_DIR/rules.json"; fi; echo ;;
   "-4 -o route get 192.0.2.1 mark "*) if [ -f "$STUB_DIR/applied" ]; then cat "$STUB_DIR/source.applied.txt"; else cat "$STUB_DIR/source.txt"; fi ;;
   "-4 -o route get 192.0.2.1") cat "$STUB_DIR/main.txt" 2>/dev/null || echo '192.0.2.1 via 85.9.216.1 dev eth0 src 85.9.218.89 uid 0' ;;
+  "-4 route show default") echo 'default via 85.9.216.1 dev eth0 proto dhcp src 85.9.218.89 metric 100' ;;
+  "-4 route show table main proto kernel scope link dev eth0") echo '85.9.216.0/22 proto kernel scope link src 85.9.218.89' ;;
+  "-4 -o route get 85.9.216.0 mark "*) if [ -f "$STUB_DIR/applied" ]; then echo '85.9.216.0 dev eth0 table 51820 src 94.237.124.160 mark 0xca6c uid 0'; else cat "$STUB_DIR/onlink.txt" 2>/dev/null || echo '85.9.216.0 dev eth0 table 51820 src 94.237.124.160 mark 0xca6c uid 0'; fi ;;
 esac
 """
 KEYSCAN = """#!/bin/sh
@@ -179,6 +182,14 @@ class WireGuardHubLanTest(unittest.TestCase):
         self.assertNotIn('restart', calls)
 
 
+    def test_a_peer_in_the_hubs_public_prefix_routed_through_the_gateway_restarts_the_unit(self):
+        # services sits in the hub's own /22: its marked packets must stay on-link, from the endpoint, not hairpin via the router.
+        via = {**self.INSTALLED, 'onlink.txt': '85.9.216.0 via 85.9.216.1 dev eth0 table 51820 src 94.237.124.160 mark 0xca6c uid 0\n'}
+        code, output, calls = self.source(LIVE, RIGHT, installed=via)
+        self.assertEqual(code, 0, output)
+        self.assertIn('restart', calls)
+        self.assertIn('ip -4 -o route get 85.9.216.0 mark 51820', calls)
+
     def test_a_default_gateway_that_changed_since_the_unit_ran_restarts_it(self):
         moved = {**self.INSTALLED, 'main.txt': '192.0.2.1 via 85.9.216.9 dev eth0 src 85.9.218.89 uid 0\n'}
         code, output, calls = self.source(LIVE, RIGHT, installed=moved)
@@ -282,6 +293,7 @@ class WireGuardHubLanTest(unittest.TestCase):
         code, output, _ = self.move(1)
         self.assertNotEqual(code, 0)
         self.assertIn('node.hub_switch_no_handshake', output)
+        self.assertNotIn('wg/orbit.move-result', self.left)
         self.assertIn(f'Endpoint = {self.PUBLIC}', self.left['wg/orbit.peers'])
         self.assertEqual(self.left['wg/orbit.conf'], 'old conf\n')
         self.assertTrue(self.left['loaded.log'].rstrip().endswith('setconf: LIVE CONFIG'))
@@ -326,8 +338,14 @@ class NetworkPhaseWiringTest(unittest.TestCase):
         self.assertIn('.next', block[names.index('Reconcile recorded peer files')]['ansible.builtin.copy']['dest'])
         self.assertNotIn('slurp', yaml.safe_dump(block))
         self.assertEqual(block[names.index('Reconcile live peer state without copying its private key')]['when'], 'not hub_switch | bool')
-        move = yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub-move.yml').read_text())[0]
+        tasks = yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub-move.yml').read_text())
+        move = tasks[0]
         self.assertEqual((move['async'] > 60, move['poll'] > 0), (True, True))
+        # A poll during the move may come back unreachable; the converge reaches the Node again and reads the recorded outcome.
+        self.assertTrue(move['ignore_unreachable'])
+        names = [task['name'] for task in tasks]
+        self.assertLess(names.index('Reach the Node again through the tunnel the move left'), names.index('Read the outcome of the move'))
+        self.assertIn('hub_move_outcome', tasks[-1]['ansible.builtin.assert']['that'])
 
     def test_the_peer_phase_drops_the_copies_of_a_cut_off_move_when_it_no_longer_moves(self):
         block = yaml.safe_load((ANSIBLE / 'tasks/node-converge-network.yml').read_text())[1]['block']

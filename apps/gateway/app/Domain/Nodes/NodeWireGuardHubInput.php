@@ -126,6 +126,8 @@ final readonly class NodeWireGuardHubInput
         $own = self::SourceRulePriority;
         $private = self::privateRanges();
         $mark = sprintf('0x%x', $port);
+        $rules = array_map(static fn (string $range): string => "{$main}:{$mark}:{$range}:main", $private);
+        $rules[] = "{$own}:{$mark}:all:{$port}";
 
         return ['address' => $address, 'mark' => $port, 'priorities' => [$main, $own],
             // systemd-networkd deletes rules and routes it did not create when it starts or configures a link; on the hub it keeps
@@ -133,7 +135,7 @@ final readonly class NodeWireGuardHubInput
             'networkd_path' => self::NetworkdDropIn,
             'networkd' => "[Network]\nManageForeignRoutingPolicyRules=no\nManageForeignRoutes=no\n",
             // Each rule as `ip -j rule show` reports it: priority, hexadecimal mark, destination and table.
-            'rules' => [...array_map(static fn (string $range): string => "{$main}:{$mark}:{$range}:main", $private), "{$own}:{$mark}:all:{$port}"],
+            'rules' => $rules,
             'script_path' => self::SourceScript, 'unit_path' => '/etc/systemd/system/'.self::SourceUnit, 'unit_name' => self::SourceUnit,
             'script' => implode("\n", [
                 '#!/bin/sh',
@@ -148,16 +150,20 @@ final readonly class NodeWireGuardHubInput
                 '# may not have set the default route yet, so the script waits for it.',
                 'for _ in $(seq 1 60); do',
                 '  set -- $(ip -4 route show default | head -n 1)',
-                '  route=',
+                '  route=; dev=',
                 '  while [ "$#" -gt 0 ]; do',
                 '    case "$1" in',
-                '      via|dev) [ "$#" -gt 1 ] && route="$route $1 $2" && shift ;;',
+                '      via|dev) [ "$#" -gt 1 ] && route="$route $1 $2" && { [ "$1" = via ] || dev=$2; } && shift ;;',
                 '      onlink) route="$route onlink" ;;',
                 '    esac',
                 '    shift',
                 '  done',
                 '  case "$route" in *via*) break ;; esac',
                 '  sleep 1',
+                'done',
+                '# Peers in the public prefix of that interface stay on-link, as in the main table, and also leave from the endpoint.',
+                'ip -4 route show table main proto kernel scope link dev "$dev" | while read -r net _; do',
+                "  ip -4 route replace \"\$net\" dev \"\$dev\" scope link src {$address} table {$port}",
                 'done',
                 "ip -4 route replace default \$route src {$address} table {$port}",
             ])."\n",
@@ -180,7 +186,11 @@ final readonly class NodeWireGuardHubInput
             'networkd_path' => self::NetworkdDropIn, 'priorities' => [self::MainRulePriority, self::SourceRulePriority], 'table' => self::port($hub)];
     }
 
-    /** RFC 1918 and the WireGuard subnet when it lies outside them: the destinations that keep the main table. @return list<string> */
+    /**
+     * RFC 1918 and the WireGuard subnet when it lies outside them: the destinations that keep the main table.
+     *
+     * @return list<string>
+     */
     private static function privateRanges(): array
     {
         $ranges = LanAddress::PrivateRanges;
