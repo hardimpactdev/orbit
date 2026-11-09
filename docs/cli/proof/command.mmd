@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% status: reviewed
+  %% status: draft
   %% command: none · started by proof:run
   %% kind: proof.command
   autonumber
@@ -7,7 +7,7 @@ sequenceDiagram
   participant SW as Swamp
   participant VM as Proof VM
   GW->>SW: Start one shard<br/>full intent
-  %%> Record one group and VM with its whole batch assignments and expected expanded case ids. Operator proofs instead carry one full command from task admission.
+  %%> Record one group and VM with its whole batch assignments and expected expanded case ids. Operator proofs instead carry one full command from task admission. Record the run budget of the shard from its batches: 600 s, 180 s a batch and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
   SW->>VM: Claim a slot
   SW->>VM: Read the workspace commit
   SW->>SW: Check the workspace commit
@@ -43,6 +43,8 @@ sequenceDiagram
       %%> Each replay must fail with cause assertion. A pass, another cause or missing evidence fails the proof with a CASE@merge-base verdict. Keep flags after merge; only a later case change opts them into another replay.
     end
     VM-->>SW: Batch verdicts
+    SW-->>GW: Batch run ended
+    %%> The Gateway reads each ended batch run with the parent's reconcile and records its full report artifact on the shard, once.
   end
   SW->>VM: Release the slot
   %%> Always after success or failure. Only operator proofs can keep a failed VM for 60 minutes. CI always deletes.
@@ -51,3 +53,4 @@ sequenceDiagram
   SW-->>GW: Native terminal result
   GW->>GW: Record all expected cases
   %%> Failed, missing, duplicate or unassigned verdicts fail the shard. A missing case becomes unrun. A missing or failed delete schedules normal group cancellation. The parent closes one merged report after all shards end.
+  %%> A shard that reaches its run budget is timed out: it keeps the recorded verdicts of the batches that ended, and only the cases of the other batches are unrun.

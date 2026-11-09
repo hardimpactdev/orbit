@@ -715,28 +715,49 @@ it('selects every case when the runner selection is unavailable', function (): v
         ->and($proof->error_code)->toBe('proof.execution_disabled');
 });
 
-it('waits for another CI place rather than plan a shard past the longest shard budget', function (): void {
+/**
+ * A CI proof of the batches `one`, `two` and `three`, each one case of 3,000 measured seconds, on one host with two CI places and a base;
+ * `$busy` of them are taken. Returns the admitted proof.
+ */
+function proofOverBudget(int $busy): Operation
+{
     $source = proofSource();
     $file = 'swamp/proof/firewall/allow.cases.yaml';
-    $source->documents = [PROOF_SHA.':swamp/proof/batches.yaml' => "batches:\n  one: {}\n  two: {}\n",
-        PROOF_SHA.':'.$file => "command: firewall:allow\ncases:\n  - {id: a, batch: one}\n  - {id: b, batch: two}\n"];
+    $source->documents = [PROOF_SHA.':swamp/proof/batches.yaml' => "batches:\n  one: {}\n  two: {}\n  three: {}\n",
+        PROOF_SHA.':'.$file => "command: firewall:allow\ncases:\n  - {id: a, batch: one}\n  - {id: b, batch: two}\n  - {id: c, batch: three}\n"];
     $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000');
     $source->ranges['dddddddddddd0000000000000000000000000000'] = new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles(str_repeat('f', 40), [], true));
     $host = Node::query()->where('name', 'beast')->firstOrFail();
-    // Both cases took 3,000 s: on one place their shard needs (600 + 2 x 180 + 6,000) x 1.5 s, more than one shard may take.
+    // On two places one shard holds two batches: (600 + 2 x 180 + 6,000) x 1.5 s, more than one shard may take.
     Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'node', 'target_id' => $host->id, 'node_id' => $host->id, 'status' => OperationStatus::Succeeded,
-        'input' => [], 'result' => ['cases' => [['program' => $file.'#a', 'seconds' => 3000], ['program' => $file.'#b', 'seconds' => 3000]]]]);
-    // One of the host's two CI places is taken.
-    TaskVm::query()->create(['host_node_id' => $host->id, 'provider' => 'incus', 'name' => 'beast-tvm-9', 'slot_number' => 9, 'wireguard_ip' => '10.44.0.199',
-        'state' => 'ready', 'capacity_pool' => 'ci', 'size' => 'large']);
+        'input' => [], 'result' => ['cases' => [['program' => $file.'#a', 'seconds' => 3000], ['program' => $file.'#b', 'seconds' => 3000], ['program' => $file.'#c', 'seconds' => 3000]]]]);
+    for ($slot = 1; $slot <= $busy; $slot++) {
+        TaskVm::query()->create(['host_node_id' => $host->id, 'provider' => 'incus', 'name' => 'beast-tvm-'.$slot, 'slot_number' => $slot, 'wireguard_ip' => '10.44.0.19'.$slot,
+            'state' => 'ready', 'capacity_pool' => 'ci', 'size' => 'large']);
+    }
     $caller = Node::query()->where('name', 'swamp')->firstOrFail();
     $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
 
     $proof = proofAdmitted(caller: $caller);
     Process::run(['rm', '-rf', $base]);
 
+    return $proof;
+}
+
+it('waits for another CI place rather than plan a shard past the longest shard budget', function (): void {
+    $proof = proofOverBudget(busy: 1);
+
     expect($proof->status)->toBe(OperationStatus::Running)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
         ->and($proof->state['capacity_wait_reason'])->toContain('Waiting for more CI places')
         ->and(ProofRunSettlement::children($proof->id))->toHaveCount(0)->and(Task::query()->count())->toBe(0);
     Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->operationId === $proof->id);
+});
+
+it('plans past the longest shard budget when every usable CI place is free, because no place can come to wait for', function (): void {
+    $proof = proofOverBudget(busy: 0);
+
+    // The plan goes on to the claims; this world has no task VM guard, so the claim stops there, not at the wait.
+    expect($proof->current_step)->not->toBe(ProofRunIntent::WaitStep)
+        ->and($proof->state['capacity_wait_reason'] ?? null)->toBeNull()
+        ->and($proof->error_code)->toBe('ai_router.disabled');
 });

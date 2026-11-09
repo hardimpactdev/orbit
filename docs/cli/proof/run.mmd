@@ -27,7 +27,7 @@ sequenceDiagram
   GW->>Q: Join by proof Operation id
   %%> Earlier open CI proofs without admitted runs block later proofs, including while selection is being read. Cancellation, failure and no selection remove a proof from admission.
   Q->>GW: Admit the front proof
-  %%> Under the admission lock, take every currently free usable CI place, at least one and at most the batch count. A full pool or stale base waits, up to two hours, then fails clearly. Never refuse capacity or skip green. A plan in which a shard of more than one batch needs more than the longest run budget of a shard, two hours, waits for another place.
+  %%> Under the admission lock, take every currently free usable CI place, at least one and at most the batch count. A full pool or stale base waits, up to two hours, then fails clearly. Never refuse capacity or skip green. A plan in which a shard of more than one batch needs more than the longest run budget of a shard, two hours, waits for another place while a usable place is taken; with every usable place free it runs.
   GW->>GW: Balance whole batches<br/>by measured time
   %%> Longest measured batch first; assign each to the least loaded VM. Selected cases of a batch stay together. Record expected cases and all shard operations atomically. Each shard records its run budget: 600 s for the shard, 180 s for each batch and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
   GW->>SW: Start one run per VM

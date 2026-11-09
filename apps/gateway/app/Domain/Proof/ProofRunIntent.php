@@ -138,9 +138,11 @@ final readonly class ProofRunIntent
                     ->where('input->ci_pool', true)->whereJsonLength('input->runs', 0)->where('id', '<', $proof->id)->exists()) {
                     throw new TaskCapacityException(TaskWait::Capacity, 'Waiting behind an earlier CI proof.');
                 }
-                $shards = $ci ? ProofBatchPlan::split($batches, app(TaskVmSlotPool::class)->freeCiPlaces()) : array_map(static fn (array $case): array => array_values(array_filter($batches, static fn (array $batch): bool => $batch['command'] === $case['command'])), $selection->cases);
-                // A shard that cannot finish within the longest shard budget waits for more places; it would end with its last batches unrun.
-                if ($ci && array_any($shards, ProofBatchPlan::overBudget(...))) {
+                $free = $ci ? app(TaskVmSlotPool::class)->freeCiPlaces() : 0;
+                $shards = $ci ? ProofBatchPlan::split($batches, $free) : array_map(static fn (array $case): array => array_values(array_filter($batches, static fn (array $batch): bool => $batch['command'] === $case['command'])), $selection->cases);
+                // A shard that cannot finish within the longest shard budget waits for more places while more can come; it would end
+                // with its last batches unrun. With every usable place free, it runs: the batches that end within the budget keep their verdicts.
+                if ($ci && $free < app(TaskVmSlotPool::class)->usableCiPlaces() && array_any($shards, ProofBatchPlan::overBudget(...))) {
                     throw new TaskCapacityException(TaskWait::Capacity, 'Waiting for more CI places: on '.count($shards).' place(s) a shard would run longer than '.ProofBatchPlan::MaxShardSeconds.' seconds.');
                 }
                 $runs = [];

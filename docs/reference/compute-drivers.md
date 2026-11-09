@@ -460,7 +460,9 @@ The capacity migration sets existing Beast and Shark hosts to two task and two C
 
 CI proofs join one first-come-first-served queue. The front proof takes every free CI place with a usable base, up to its batch count. Each place gets a fresh VM. Whole batches are balanced by measured case times; each VM restores its fleet and runs its assigned batches. Orbit merges the case verdicts into one report and deletes every VM before the proof finishes. A failed case or missing verdict fails the proof; a full pool never produces a passing report with no cases run.
 
-Each shard records its [run budget](/reference/operations#native-run-budgets) at admission: 600 seconds for the shard, 180 seconds for each batch and the measured case seconds, times 1.5, rounded up to five minutes, at most 7,200 seconds. A plan in which a shard of more than one batch needs more waits for another CI place, within the two-hour admission budget; a single batch is never split. The Gateway records the verdict lines of each batch on its shard as the batch ends. A shard that reaches its budget keeps the verdicts of the batches that ended; only the cases of the other batches are `unrun`.
+Each shard records its [run budget](/reference/operations#native-run-budgets) at admission: 600 seconds for the shard, 180 seconds for each batch and the measured case seconds, times 1.5, rounded up to five minutes, at most 7,200 seconds. A plan in which a shard of more than one batch needs more waits for another CI place while a usable CI place is taken, within the two-hour admission budget. With every usable CI place free there is nothing to wait for, and it runs. A single batch is never split.
+
+The Gateway records the verdict lines of each batch on its shard as the batch ends. A shard that reaches its budget keeps the verdicts of the batches that ended; only the cases of the other batches are `unrun`.
 
 Every task VM copies the base, which carries only the proof Project's checkout. When a group of any other Project needs a new VM, admission refuses it with `task_vm.project_unsupported` before it checks the queue or a pool, so the refusal never becomes a wait.
 

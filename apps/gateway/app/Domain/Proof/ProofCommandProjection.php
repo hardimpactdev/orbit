@@ -77,14 +77,14 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
     }
 
     /**
-     * A run the Gateway timed out keeps the verdicts of the batches that ended before it ({@see ProofVerifyProjection::applyChild()});
+     * A run the Gateway timed out keeps the verdicts of the batches that ended before it ({@see ProofBatchProjection::applyChild()});
      * the cases of the others are unrun. It may leave its VM; the group is cancelled the normal way.
      */
     public function timedOut(Operation $operation): void
     {
         $input = ValidatedData::object($operation->input);
         $lines = [];
-        foreach (ValidatedData::object($operation->state[ProofVerifyProjection::BatchReports] ?? []) as $key => $report) {
+        foreach (ValidatedData::object($operation->state[ProofBatchProjection::BatchReports] ?? []) as $key => $report) {
             foreach (explode("\n", trim(ValidatedData::string($report))) as $line) {
                 if (trim($line) !== '') {
                     $lines[] = $key."\t".trim($line);
