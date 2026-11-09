@@ -6,6 +6,8 @@ namespace Orbit\Extensions\Conn\Http\Controllers;
 
 use App\Data\Operations\OperationData;
 use App\Domain\Operations\OperationStatus;
+use App\Http\Authorization\RequiresNodeAccess;
+use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Requests\Operations\StartsOperation;
@@ -18,15 +20,22 @@ use Orbit\Extensions\Conn\Actions\IssueConnPairingAction;
 use Orbit\Extensions\Conn\Actions\RevokeConnPairingsAction;
 use Orbit\Extensions\Conn\Data\ConnPairingData;
 use Orbit\Extensions\Conn\Data\IssuedConnPairingData;
+use Orbit\Extensions\Conn\Domain\ConnServerAccess;
 use Orbit\Extensions\Conn\Domain\T3PairingUrl;
 use Orbit\Extensions\Conn\Http\Requests\RevokeConnPairingsRequest;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 
+/** A caller reaches a server's pairings through node access to the Node that registered it. */
+#[RequiresNodeAccess(ServingNode::Collection)]
 final class ConnPairingsController extends Controller
 {
+    public function __construct(private readonly ConnServerAccess $access) {}
+
     public function index(Request $request, ConnEnvironment $environment): JsonResponse
     {
+        $this->assertServer($request, $environment);
+
         return response()->json([
             'data' => ConnPairing::query()
                 ->where('conn_environment_id', $environment->id)
@@ -44,9 +53,7 @@ final class ConnPairingsController extends Controller
     #[StartsOperation('conn.pairing_create', bindCaller: true)]
     public function store(Request $request, ConnEnvironment $environment, IssueConnPairingAction $action): JsonResponse
     {
-        $node = $request->user();
-        assert($node instanceof Node, description: 'Authenticated peer must be a Node.');
-
+        $node = $this->assertServer($request, $environment);
         $operation = $action->admit($node, $environment);
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
@@ -55,8 +62,7 @@ final class ConnPairingsController extends Controller
     #[StartsOperation('conn.pairing_revoke', bindCaller: true)]
     public function revoke(RevokeConnPairingsRequest $request, ConnEnvironment $environment, RevokeConnPairingsAction $action): JsonResponse
     {
-        $caller = RequireActiveWireGuardPeer::activePeer($request);
-        abort_unless($caller instanceof Node, 403);
+        $caller = $this->assertServer($request, $environment);
 
         return response()->json([
             'data' => OperationData::fromModel($action->execute($request->node(), $environment, $caller))->toArray(),
@@ -66,6 +72,8 @@ final class ConnPairingsController extends Controller
 
     public function show(Request $request, ConnEnvironment $environment, ConnPairing $pairing): JsonResponse
     {
+        $this->assertServer($request, $environment);
+
         return $this->pairing($request, $environment, $pairing, 200);
     }
 
@@ -98,6 +106,15 @@ final class ConnPairingsController extends Controller
         abort_unless($issued instanceof IssuedConnPairingData, 409);
 
         return response()->json(['data' => $issued->toArray(), 'meta' => $this->meta($request)], $status)->header('Cache-Control', 'no-store');
+    }
+
+    private function assertServer(Request $request, ConnEnvironment $environment): Node
+    {
+        $caller = $request->user();
+        assert($caller instanceof Node, description: 'Authenticated peer must be a Node.');
+        $this->access->assert($caller, $environment);
+
+        return $caller;
     }
 
     /** @return array{request_id: string} */

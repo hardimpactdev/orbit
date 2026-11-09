@@ -1,0 +1,132 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\ShowTaskRequest",
+    "route": "GET /api/v1/tasks/{task}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "project_id": 1,
+            "project": "orbit",
+            "project_code": "ORB",
+            "taskable_type": null,
+            "taskable_id": null,
+            "title": "Add the tasks CLI",
+            "brief": "Add task:* commands.\nAccept when every route has a command.",
+            "status": "backlog",
+            "reviewer_agent_thread_id": null,
+            "pr_url": null,
+            "watched_pr_url": null,
+            "watched_pr_number": null,
+            "watched_pr_state": null,
+            "assistance_requested": false,
+            "assistance_kind": null,
+            "assistance_question": null,
+            "assistance_reason": null,
+            "implementer_model": "gpt-5.6-luna",
+            "reviewer_model": "gpt-5.6-luna",
+            "tokens": null,
+            "line_diff": null,
+            "lines_added": null,
+            "lines_deleted": null,
+            "duration_ms": null,
+            "questions": 0,
+            "escalations": 0,
+            "capacity_wait_reason": null,
+            "vm_power": null,
+            "preview": true,
+            "current_recipe": false,
+            "review": "manual",
+            "review_and_merge": null,
+            "orchestration": "external",
+            "parent_id": null,
+            "subtasks": [
+                {
+                    "id": 2,
+                    "position": 1,
+                    "title": "Add SDK requests",
+                    "brief": "One request class per route.",
+                    "deliverables": [
+                        {
+                            "id": "sdk-requests",
+                            "type": "file",
+                            "description": "One request class per tasks route",
+                            "path": "packages/php-sdk/src/Requests/Tasks/*.php",
+                            "change": "created"
+                        },
+                        {
+                            "id": "sdk-test",
+                            "type": "command",
+                            "description": "Every tasks route has a request",
+                            "command": "vendor/bin/pest tests/Unit/Requests/Tasks/TaskRequestsTest.php --filter='addresses every tasks route'",
+                            "directory": "packages/php-sdk"
+                        }
+                    ],
+                    "topology": [],
+                    "status": "todo",
+                    "implementer_agent_thread_id": null,
+                    "tokens": null,
+                    "line_diff": null,
+                    "lines_added": null,
+                    "lines_deleted": null,
+                    "duration_ms": null,
+                    "questions": 0,
+                    "escalations": 0,
+                    "type": "implementation",
+                    "completion_summary": null,
+                    "check": null,
+                    "assistance_requested": false,
+                    "assistance_kind": null,
+                    "assistance_question": null,
+                    "assistance_reason": null,
+                    "fixup_problem": null,
+                    "parent_id": 1
+                },
+                {
+                    "id": 3,
+                    "position": 2,
+                    "title": "Add CLI commands",
+                    "brief": "One command per route.",
+                    "deliverables": [
+                        {
+                            "id": "cli-commands",
+                            "type": "file",
+                            "description": "One command per tasks route",
+                            "path": "apps/cli/app/Commands/Tasks/*.php",
+                            "change": "created"
+                        },
+                        {
+                            "id": "command-names",
+                            "type": "review",
+                            "description": "Each command name equals its route name"
+                        }
+                    ],
+                    "topology": [],
+                    "status": "todo",
+                    "implementer_agent_thread_id": null,
+                    "tokens": null,
+                    "line_diff": null,
+                    "lines_added": null,
+                    "lines_deleted": null,
+                    "duration_ms": null,
+                    "questions": 0,
+                    "escalations": 0,
+                    "type": "implementation",
+                    "completion_summary": null,
+                    "check": null,
+                    "assistance_requested": false,
+                    "assistance_kind": null,
+                    "assistance_question": null,
+                    "assistance_reason": null,
+                    "fixup_problem": null,
+                    "parent_id": 1
+                }
+            ],
+            "last_activity_at": "2026-11-09T11:55:00+00:00",
+            "preview_url": "https://task-1.orbit.test"
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

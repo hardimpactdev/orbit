@@ -72,3 +72,5 @@ Each host has separate `task_places` and `ci_places`; one VM holds one place unt
 CI capacity is a bounded wait, never a passing no-case outcome. A proof report must account for every admitted case and every selected command. Read full Swamp output artifacts for merged reports; the native history summary keeps only 4 KiB.
 
 Released proof workflows run the runner from each PR head. Check its help for support before calling a new runner command; an older open PR can still use the previous interface.
+
+A PTY key driver must acknowledge consumed input, not rendered output. With color off, moving a selector highlight can produce no new bytes. Wait for the complete key to enter the stopped reader’s terminal queue, then for consumption before sending the next key. Start on a marker unique to the prompt, not a progress label.

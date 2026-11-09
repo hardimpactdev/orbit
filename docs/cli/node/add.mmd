@@ -74,6 +74,7 @@ sequenceDiagram
   %%> - pins the Node for later operations and appends the Swamp control public key to the bootstrap account when it is absent
   %%> - base packages (read through the package cache of the task VM for a Node of its nested fleet, else from the archive; `apt_proxy` in the intent), the managed account, a sudo rule that is validated before it replaces the old one, so no staged file stays, and the Orbit SSH keys
   %%> - the public recovery SSH rule, then the firewall
+  %%> - the kernel policy that `node:converge` also applies: SCTP blocked, non-local bind for Docker publications
   SW->>N: Set up the tunnel<br/>Ansible phase: tunnel
   %%> What it does:
   %%> - creates the WireGuard key and requires its public key to be unique, before any tunnel change: two Nodes with the same public key cannot both be peers, and an existing hub must keep its peer-facing key
@@ -87,6 +88,7 @@ sequenceDiagram
     SW->>HUB: Add the peer<br/>Ansible phase: hub
     %%> What it does:
     %%> - writes the peer entry, applies the hub peers and checks that the hub key did not change
+    %%> - the hub loads every peer file it has when it applies, not the peers of the admitted snapshot, so a Node that joined after admission keeps its live peer
     %%> - the hub peer stays after a failure; it is harmless and a rerun reuses it
     %%> Decided by the orchestrator, for Nick's review (2026-11-07): the hub's `orbit.conf` (written here, or by the `tunnel` phase when the Node is the hub) is the file the hub converge writes: no peer inline, and the `PostUp` loader of `orbit-peers.d`. Every peer the hub knows also gets its own file, so a peer that has only its file (the operator of a task VM's nested fleet) survives a restart of the hub
   end

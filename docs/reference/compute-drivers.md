@@ -460,7 +460,9 @@ The capacity migration sets existing Beast and Shark hosts to two task and two C
 
 CI proofs join one first-come-first-served queue. The front proof takes every free CI place with a usable base, up to its batch count. Each place gets a fresh VM. Whole batches are balanced by measured case times; each VM restores its fleet and runs its assigned batches. Orbit merges the case verdicts into one report and deletes every VM before the proof finishes. A failed case or missing verdict fails the proof; a full pool never produces a passing report with no cases run.
 
-When the chosen pool is full, admission waits without allocating a VM, Node identity or workspace. The wait ends after a two-hour admission budget with a clear timeout. Lowering a pool size deletes no VM; new claims wait until the pool has room. A task publishes its PR and releases its VM, workspace, keys and peer. Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
+Every task VM copies the base, which carries only the proof Project's checkout. When a group of any other Project needs a new VM, admission refuses it with `task_vm.project_unsupported` before it checks the queue or a pool, so the refusal never becomes a wait.
+
+When the chosen pool is full, admission waits without allocating a VM, Node identity or workspace. `task:status` shows each host's places and their holders, and a waiting task shows its position in the queue ([Task places](/reference/tasks#task-places)). The wait ends after a two-hour admission budget with a clear timeout. Lowering a pool size deletes no VM; new claims wait until the pool has room. A task publishes its PR and releases its VM, workspace, keys and peer. Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
 A host with a [`containers` setting](/reference/node-settings#task-container-fields) also has container task and CI places. Each live row records its runtime, `vm` or `container`, and holds a place of that runtime only, so container places never count against VM places. Normal placement takes container places only while `task_vms.container_placement` is on, and then only on a host with a recorded container base. The setting is off by default, so a host's task VMs keep their task groups and CI proofs. A base refresh takes a VM CI place. The host keeps one recorded base per runtime.
 
@@ -1223,6 +1225,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.workspace_mismatch` | 409 | A group's workspace is not on its ready task VM |
 | `task_vm.foreign_instance` | 409 | An Instance on a task VM Node is not its group's workspace |
 | `task_vm.access_refused` | 409 | An access grant names a task VM Node as its consumer |
+| `task_vm.project_unsupported` | 409 | A group of a Project other than the proof Project needs a new task VM. The base carries only the proof Project's checkout |
 | `task_vm.range_in_use` | 409 | A Node that is not the Node of a live task VM holds an address in the reserved range |
 | `task_vm.fleet_unavailable` | 409 | The fleet has not exactly one active `vpn`, `gateway`, or `websocket` Node, the dev Cluster has no active router, or one of these Nodes has no WireGuard address |
 | `task_vm.setup_unavailable` | 409 | The setup script is missing, or the target Node has no WireGuard address |
@@ -1285,7 +1288,7 @@ These alternatives were also rejected:
 
 ## Orbit Project
 
-A group of the `orbit` Project runs on a task VM, like the group of any other Project. Its workspace is the Instance `task-<group id>` without a Route, and every claim clones from the Gateway mirror and installs the dependencies of all five Composer projects and the web app. Its task check is root `composer check`, which runs `bin/review-check` on the VM as `orbit`.
+A group of the `orbit` Project runs on a task VM. It is the proof Project, and the only Project a task VM serves: the base carries only its checkout. Its workspace is the Instance `task-<group id>` without a Route, and every claim clones from the Gateway mirror and installs the dependencies of all five Composer projects and the web app. Its task check is root `composer check`, which runs `bin/review-check` on the VM as `orbit`.
 
 Configure the Project like this:
 

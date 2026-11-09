@@ -7,9 +7,15 @@ Loading Node metrics...
 └  Loaded Node metrics.
 
 
-┌  Node metrics: app-dev
+┌  Node app-dev metrics
 │
 ├  Node ID           1
+│
+├  Observed at       2026-11-06T10:00:00Z
+│
+├  Agent             online
+│
+├  Freshness         current
 │
 ├  Cores             12%, 34%, 8%, 21%
 │

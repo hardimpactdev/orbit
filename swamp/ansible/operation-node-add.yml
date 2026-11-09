@@ -69,6 +69,9 @@
       ansible.builtin.command: { argv: "{{ intent.public_ssh_argv }}" }
       register: recovery
       changed_when: recovery.stdout is not search('Skipping')
+    - name: Apply the kernel policy
+      ansible.builtin.import_tasks: tasks/node-kernel-policy.yml
+      vars: { kernel_policy: "{{ intent.kernel }}" }
     - name: Read the firewall state
       ansible.builtin.command: ufw status
       register: firewall
@@ -83,8 +86,9 @@
   become: "{{ intent.bootstrap.user != 'root' }}"
   vars: { net: "{{ intent.network }}" }
   tasks:
-    - name: Create the WireGuard folder
-      ansible.builtin.file: { path: /etc/wireguard, state: directory, owner: root, group: root, mode: "0700" }
+    - name: Create the WireGuard folders
+      ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0700" }
+      loop: "{{ ['/etc/wireguard'] + (['/etc/wireguard/orbit-peers.d'] if net.is_hub else []) }}"
     - name: Read the WireGuard key file
       ansible.builtin.stat: { path: "{{ net.private_key_file }}" }
       register: tunnel_key
@@ -142,7 +146,12 @@
       when: net.retired_address is not none and (' ' ~ net.retired_address ~ ' ') in tunnel_addresses.stdout
       ansible.builtin.command: ip address del {{ net.retired_address | quote }} dev orbit
       changed_when: true
+    - name: Apply the hub's own peers
+      when: net.is_hub
+      ansible.builtin.import_tasks: tasks/node-add-hub-peers.yml
+      vars: { hub_sync: "{{ net }}" }
     - name: Apply the tunnel peers
+      when: not net.is_hub
       ansible.builtin.shell:
         executable: /bin/bash
         cmd: |
@@ -181,19 +190,8 @@
       loop: "{{ files }}"
       loop_control: { label: "{{ item.path }}" }
     - name: Apply the hub peers
-      ansible.builtin.shell:
-        executable: /bin/bash
-        cmd: |
-          set -euo pipefail
-          umask 077
-          before=$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)
-          { printf '[Interface]\nPrivateKey = '; cat {{ hub.private_key_file | quote }}; cat; } > {{ hub.sync_path | quote }}
-          wg syncconf orbit {{ hub.sync_path | quote }}
-          [ "$before" = "$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)" ] || echo changed
-        stdin: "{{ hub.sync_body | replace('@KEY@', node_public_key) }}"
-        stdin_add_newline: false
-      register: hub_peers
-      changed_when: hub_peers.stdout is search('changed')
+      ansible.builtin.import_tasks: tasks/node-add-hub-peers.yml
+      vars: { hub_sync: "{{ hub }}" }
     - name: Read the hub public key
       ansible.builtin.command: wg show orbit public-key
       register: hub_key

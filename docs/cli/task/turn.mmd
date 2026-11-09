@@ -19,6 +19,7 @@ sequenceDiagram
   Note over GW: Admit the turn<br/>owned VM · current child
   %%> Requirements:
   %%> - group 42 is external and open; child 43 is current and open
+  %%> - group 42 is provisioned: while its `tasks.provision` Operation waits for a place or runs, the turn answers `tasks.not_provisioned` (409) with that Operation's ID in `details.operation_id`; follow it, then repeat the call
   %%> - your Node has an access grant to the workspace Node
   %%> - the task VM runs; a parked VM is woken by the admission, which records its resume, creates no Operation of this kind and answers `tasks.vm_resuming`; repeat the call once the VM runs
   %%> - a reviewer has an eligible check on the admitted candidate

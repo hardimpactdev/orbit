@@ -57,9 +57,9 @@ final readonly class NativeNodeEnrollmentInput
             'bootstrap' => ['host' => $candidate['public_ssh_host'], 'port' => $candidate['public_ssh_port'],
                 'user' => $bootstrapUser, 'fingerprint' => $spec['fingerprint']],
             'identity' => $identity,
-            'packages' => [], 'apt_proxy' => null, 'sudo' => ['path' => '', 'content' => ''],
+            'packages' => [], 'apt_proxy' => null, 'kernel' => ['files' => [], 'sysctl' => []], 'sudo' => ['path' => '', 'content' => ''],
             'agent' => ['url' => '', 'sha256' => '', 'unit' => '', 'environment_group' => NodeAgentSshExecutor::EnvGroup, 'files' => []],
-            'network' => ['is_hub' => false, 'sync_path' => '', 'private_key_file' => '', 'sync_body' => '', 'address' => '', 'retired_address' => null, 'other_public_keys' => [], 'required_public_key' => null,
+            'network' => ['is_hub' => false, 'sync_path' => '', 'private_key_file' => '', 'sync_body' => '', 'port' => null, 'address' => '', 'retired_address' => null, 'other_public_keys' => [], 'required_public_key' => null,
                 'files' => [], 'hubs' => [], 'hub_files' => [], 'trust_argv' => []],
             'public_ssh_argv' => [], 'roles' => [], 'dns' => [], 'private_dns' => [], 'cli' => null,
             'authorized_keys' => [$identity['public_key']], 'known_hosts_path' => '/home/orbit/.ssh/known_hosts'];
@@ -92,6 +92,7 @@ final readonly class NativeNodeEnrollmentInput
                 ...($request->settingsProvided ? ['settings' => app(NodeSettingsNormalizer::class)->storedOver($node->settings, $request->settings)] : [])])->saveQuietly();
             $base = app(NodeBootstrapCommandFactory::class)->input($node, $node->user, $spec['roleless_operator'] === true);
             $intent['packages'] = $base['packages'];
+            $intent['kernel'] = NodeKernelPolicy::intent();
             // The package cache of the task VM for a Node of its nested fleet; null for every other Node, which reads the archive directly.
             $intent['apt_proxy'] = TaskVmAptCache::for($node);
             $intent['sudo'] = ['path' => '/etc/sudoers.d/orbit-'.$node->user,
@@ -170,15 +171,17 @@ final readonly class NativeNodeEnrollmentInput
     {
         if ($node->roles()->where('role', RoleName::Vpn)->exists()) {
             $hub = NodeWireGuardHubInput::intent($node);
-            $peers = implode("\n", array_map(static fn (array $peer): string => ValidatedData::string($peer['content']), RouteExecutionProof::objects($hub['peers'])));
+            $peerFiles = array_map(static fn (array $peer): array => ['path' => ValidatedData::string($peer['file']), 'content' => ValidatedData::string($peer['content'])],
+                RouteExecutionProof::objects($hub['peers']));
             $trust = app(NodeFirewallRuleCatalog::class)->forNode($node)[1];
 
             // The hub's file is the one the hub converge writes: no peer in it, and wg-quick loads every peer file at start, so a peer
-            // that only has its file (the operator of a task VM's nested fleet) survives a restart.
+            // that only has its file (the operator of a task VM's nested fleet) survives a restart. Every recorded peer gets its file,
+            // and the hub loads the files it has when it applies, so a Node that joined after admission keeps its live peer.
             return ['is_hub' => true, 'files' => [['path' => '/etc/wireguard/orbit.conf', 'content' => ValidatedData::string($hub['config'])],
-                ['path' => '/etc/wireguard/orbit.peers', 'content' => '']],
+                ['path' => '/etc/wireguard/orbit.peers', 'content' => ''], ...$peerFiles],
                 'sync_path' => '/etc/wireguard/orbit.peers', 'private_key_file' => '/etc/wireguard/orbit.key',
-                'sync_body' => 'ListenPort = '.ValidatedData::integer($hub['port'])."\n\n".$peers,
+                'sync_body' => '', 'port' => $hub['port'],
                 'trust_argv' => ['timeout', '60', 'ufw', ...array_slice($trust->arguments, 2)],
                 'hubs' => [], 'hub_files' => [], 'participant_node_ids' => []];
         }
@@ -186,18 +189,13 @@ final readonly class NativeNodeEnrollmentInput
         $hub = Node::query()->findOrFail(ValidatedData::integer($network['hub_id']));
         $joining = ValidatedData::object($network['hub']);
         $hubPlan = NodeWireGuardHubInput::intent($hub);
-        $sections = [];
         $peerFiles = [];
         foreach (RouteExecutionProof::objects($hubPlan['peers']) as $peer) {
             $peer = ValidatedData::object($peer);
             if ($peer['node_id'] !== $node->id) {
-                $sections[] = ValidatedData::string($peer['content']);
                 $peerFiles[] = ['path' => ValidatedData::string($peer['file']), 'content' => ValidatedData::string($peer['content'])];
             }
         }
-        $sections[] = ValidatedData::string($joining['section']);
-        $peers = implode("\n", $sections);
-        $syncBody = 'ListenPort = '.ValidatedData::integer($hubPlan['port'])."\n\n".$peers;
         $ssh = ValidatedData::object($joining['ssh']);
         // Every peer the hub knows also gets its own file, so none of them depends on a list that the hub file no longer holds.
         $peerFiles = array_map(static fn (array $file): array => ['ssh' => $ssh, ...$file], $peerFiles);
@@ -205,9 +203,9 @@ final readonly class NativeNodeEnrollmentInput
             ['path' => '/etc/wireguard/orbit.peers', 'content' => '']];
 
         return ['is_hub' => false, 'files' => $files, 'sync_path' => '/etc/wireguard/orbit.peers',
-            'private_key_file' => '/etc/wireguard/orbit.key', 'sync_body' => ValidatedData::string($network['peers']), 'trust_argv' => ['timeout', '60', ...ValidatedData::stringList($network['trust_argv'])],
+            'private_key_file' => '/etc/wireguard/orbit.key', 'sync_body' => ValidatedData::string($network['peers']), 'port' => null, 'trust_argv' => ['timeout', '60', ...ValidatedData::stringList($network['trust_argv'])],
             'hubs' => [['ssh' => $ssh, 'sync_path' => '/etc/wireguard/orbit.enrollment-sync',
-                'private_key_file' => '/etc/wireguard/orbit.key', 'public_key' => $hub->wireguard_public_key, 'sync_body' => $syncBody]],
+                'private_key_file' => '/etc/wireguard/orbit.key', 'public_key' => $hub->wireguard_public_key, 'port' => $hubPlan['port']]],
             'hub_files' => [...$peerFiles, ['ssh' => $ssh, 'path' => $joining['file'], 'content' => $joining['section']],
                 ['ssh' => $ssh, 'path' => '/etc/wireguard/orbit.conf', 'content' => ValidatedData::string($hubPlan['config'])],
                 ['ssh' => $ssh, 'path' => '/etc/wireguard/orbit.enrollment-sync', 'content' => '']],

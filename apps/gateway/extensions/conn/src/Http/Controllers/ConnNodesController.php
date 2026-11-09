@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Http\Controllers;
 
+use App\Http\Authorization\RequiresNodeAccess;
+use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
@@ -12,6 +14,7 @@ use Orbit\Extensions\Conn\Actions\BindConnNodeProfileAction;
 use Orbit\Extensions\Conn\Data\ConnNodeData;
 use Orbit\Extensions\Conn\Http\Requests\BindConnProfileRequest;
 
+#[RequiresNodeAccess(ServingNode::Collection)]
 final class ConnNodesController extends Controller
 {
     public function show(Request $request): JsonResponse

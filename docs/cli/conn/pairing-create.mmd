@@ -22,7 +22,8 @@ sequenceDiagram
   %%> - there is no `orbit` command
   Note over GW: Check the server<br/>task #5170 · session to vault
   %%> Requirements:
-  %%> - the `conn` extension is on; the caller is an active Node; no access grant is needed
+  %%> - the `conn` extension is on; the caller is an active Node
+  %%> - the caller has node access to the Node that registered env-beast, else `node_access.required`
   %%> - env-beast is registered and the Gateway's admin session there has not expired, else `conn.session_expired`
   %%> What it does:
   %%> - records pairing 7 with a unique client label, such as `phone via Orbit k3j9x0qa`
@@ -51,7 +52,8 @@ sequenceDiagram
   %%> - asks T3 for a one-time pairing token with T3's administrative scopes and the admitted client label
   Note over SW: Store the link in vault
   %%> How:
-  %%> - a typed data method reads the private response and publishes the credential as a native sensitive field
+  %%> - a typed data method reads the private response as T3's pairing result: id, credential, expiry and the echoed label, which must match; it ignores added fields
+  %%> - it publishes the credential as a native sensitive field
   %%> - its resource instance is unique to pairing 7, so concurrent pairings have different vault keys
   %%> What it does:
   %%> - writes the credential to the native key for pairing 7 and returns only public metadata and its key name
@@ -77,20 +79,22 @@ sequenceDiagram
     %%> - reads pairing 7's native credential key once, keeps the link encrypted on pairing 7, then deletes the key with the native `vault.delete` frame
     %%> Result:
     %%> - pairing 7 gets its issued and expiry times; task #5170 succeeds
-  else T3 refuses or no reply
-    T3--xSW: 401 or no answer
+  else T3 refuses, answers badly or not at all
+    T3--xSW: refusal, bad reply or none
     %%> When:
-    %%> - T3 refuses the admin session, cannot be reached, or answers with invalid data
+    %%> - T3 refuses the admin session, refuses the call, answers with invalid data, or cannot be reached
     SW--xGW: Run failed<br/>conn.* error_code
     %%> The Gateway reads:
-    %%> - the failed step and its safe error code, such as `conn.session_rejected`
-    Note over GW: Mark pairing 7 failed<br/>task failed · ask again
+    %%> - the failed step's code: `conn.session_rejected` (401), `conn.request_refused` (another status), `conn.response_invalid` (2xx without T3's shape)
+    %%> - any other failure, such as no answer, is `conn.pairing_outcome_unknown`
+    Note over GW: Mark pairing 7 failed<br/>task failed
     %%> Result:
     %%> - pairing 7 is marked failed; task #5170 fails
     %%> On the T3 server:
-    %%> - a link minted before a lost reply stays unused and expires within minutes; that is harmless
+    %%> - a link minted before a lost or invalid reply stays unused and expires within minutes; that is harmless
     %%> Retry:
-    %%> - ask again; it is a new task with a new label
+    %%> - T3's answer is final for this pairing: callers do not retry `session_rejected`, `request_refused` or `response_invalid` on their own
+    %%> - after `pairing_outcome_unknown`, ask again; it is a new task with a new label
   end
   loop until terminal
     CLI->>GW: Read Operation #5170<br/>GET conn/operations/5170

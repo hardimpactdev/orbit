@@ -1,6 +1,6 @@
 # Orbit Pi server
 
-The Pi server runs [Pi](https://github.com/earendil-works/pi) coding-agent sessions on a task VM through Pi Durable 1.4.0. The Gateway's `pi` task driver creates sessions, starts turns, and reads transcripts through its HTTP API. One server runs per task VM, as a systemd Process, and every request needs its bearer token.
+The Pi server runs [Pi](https://github.com/earendil-works/pi) coding-agent sessions on a task VM through Pi Durable 1.5.0. The Gateway's `pi` task driver creates sessions, starts turns, and reads transcripts through its HTTP API. One server runs per task VM, as a systemd Process, and every request needs its bearer token.
 
 The [Pi server reference](../../docs/reference/pi-server.md) covers its flags, sign-in, installation on a task VM, API, and limits.
 
@@ -25,9 +25,9 @@ PI_SERVER_TOKEN=$(openssl rand -hex 32) bun dev/serve-faux.ts /path/to/workspace
 - `src/search-docs.ts`: the `search_docs` tool, which asks a Laravel app's Boost server.
 - `tests`: Vitest tests. `tests/support.ts` holds the shared fixtures.
 
-The engine resumes unfinished turns after restart and deduplicates sends by Durable `requestId`. It owns provider retries (1, 2, 4, 8 minutes; four retries) and reports crash-loop parking as failure. There is no JSONL import or coding-agent JavaScript extension loading.
+The engine resumes unfinished turns after restart and deduplicates sends by Durable `requestId`. It owns provider retries (1, 2, 4, 8 minutes; four retries) and reports a turn ended at its restart limit (a crash loop) as failure. There is no JSONL import or coding-agent JavaScript extension loading.
 
-`src/system-prompt.ts` is pinned to pi-coding-agent 1.4.0, `dist/core/system-prompt.js` (MIT notice in `LICENSE.pi`). The builder has no public export; fixed-input parity tests compare it with the installed upstream implementation.
+`src/system-prompt.ts` is pinned to pi-coding-agent 1.5.0, `dist/core/system-prompt.js` (MIT notice in `LICENSE.pi`). The builder has no public export; fixed-input parity tests compare it with the installed upstream implementation.
 
 ## Checks
 

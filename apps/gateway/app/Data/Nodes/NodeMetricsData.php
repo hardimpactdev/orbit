@@ -17,7 +17,7 @@ final class NodeMetricsData extends Data
      * @param  array{used: int, total: int}  $swap  Bytes.
      * @param  array{one: float, five: float, fifteen: float}  $load
      * @param  array{cpu: array{some_avg10: float}, memory: array{some_avg10: float}, io: array{some_avg10: float}}  $pressure
-     * @param  list<array{mount: string, used: int, total: int}>  $disks  Bytes.
+     * @param  list<array{mount: string, used: int|null, total: int|null, observed_at: string|null, stale: bool}>  $disks  Bytes.
      */
     public function __construct(
         public array $cores,
@@ -27,10 +27,13 @@ final class NodeMetricsData extends Data
         public int $uptimeSeconds,
         public array $pressure,
         public array $disks,
+        public string $observedAt,
+        public ?NodeAgentData $agent,
+        public bool $possiblyOutdated,
     ) {}
 
     /** @param array<string, mixed> $raw */
-    public static function fromRaw(array $raw): self
+    public static function fromRaw(array $raw, string $observedAt, ?NodeAgentData $agent, bool $possiblyOutdated): self
     {
         return new self(
             cores: self::floatList($raw['cores'] ?? null),
@@ -40,6 +43,9 @@ final class NodeMetricsData extends Data
             uptimeSeconds: is_int($raw['uptime_seconds'] ?? null) ? $raw['uptime_seconds'] : 0,
             pressure: self::pressure($raw['pressure'] ?? null),
             disks: self::disks($raw['disks'] ?? null),
+            observedAt: $observedAt,
+            agent: $agent,
+            possiblyOutdated: $possiblyOutdated,
         );
     }
 
@@ -99,7 +105,7 @@ final class NodeMetricsData extends Data
         ];
     }
 
-    /** @return list<array{mount: string, used: int, total: int}> */
+    /** @return list<array{mount: string, used: int|null, total: int|null, observed_at: string|null, stale: bool}> */
     private static function disks(mixed $value): array
     {
         if (! is_array($value)) {
@@ -115,8 +121,10 @@ final class NodeMetricsData extends Data
 
             $disks[] = [
                 'mount' => is_string($disk['mount'] ?? null) ? $disk['mount'] : '',
-                'used' => is_int($disk['used'] ?? null) ? $disk['used'] : 0,
-                'total' => is_int($disk['total'] ?? null) ? $disk['total'] : 0,
+                'used' => is_int($disk['used'] ?? null) ? $disk['used'] : null,
+                'total' => is_int($disk['total'] ?? null) ? $disk['total'] : null,
+                'observed_at' => is_string($disk['observed_at'] ?? null) ? $disk['observed_at'] : null,
+                'stale' => ($disk['stale'] ?? null) !== false,
             ];
         }
 

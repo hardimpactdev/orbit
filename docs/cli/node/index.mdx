@@ -21,6 +21,8 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 
 A Node's `updating` field is set only while a Gateway release runs on the Gateway Node ([Nodes being updated](/reference/gateway-recovery#nodes-being-updated)).
 
+Role-assignment `failed_step` values are recorded step labels, not lowercase identifiers. The client preserves capitalization and spaces, such as `converge:Require supported Ubuntu` and `converge:Check the role`. Labels must be nonempty UTF-8 text of at most 128 bytes, without control or formatting characters. Labels that contain credentials are rejected.
+
 `node:add` returns an enrollment Operation. The CLI follows its native result; JSON mode returns the terminal Operation, and `node:show` returns the enrolled Node.
 
 Node list and detail responses keep `roles` as a list of role names. Their shared `assignments` projection retains every assignment with its ID, role, lifecycle status, failed step and error code, using the same fields as `node:role:list`. Human show output adds non-active statuses and retained failure detail to each role name. Both reads include the recorded Cluster name and do not contact the Node.
@@ -29,7 +31,7 @@ Node list and detail responses keep `roles` as a list of role names. Their share
 
 `NodeAccessAuthorizer` owns the shared Node access rule. The active Gateway Node, the host serving the Gateway, and a caller with a grant to the active Gateway have Gateway authority. They may read every recorded Node without a direct grant to each target. Other callers may read only Nodes to which they have a direct grant.
 
-A collection read is refused with `node_access.required` only when the caller has neither Gateway authority nor any direct Node grant. A target read requires Gateway authority or a direct grant to that target.
+A collection read is refused with `node_access.required` only when the caller has neither Gateway authority nor any direct Node grant. Any command on one target, a read or a change, requires Gateway authority or a direct grant to that target. Grant administration (`node:access:add` and `node:access:remove`) requires Gateway authority; a grant to the target is not enough.
 
 Removing task-host settings or changing the bridge or CIDR withdraws the owned DHCP/DNS input rules before saving the patch. Other task-host settings remain record-only. See [Node settings](/reference/node-settings).
 
@@ -41,7 +43,7 @@ Removing task-host settings or changing the bridge or CIDR withdraws the owned D
 | [`node:converge`](/cli/node/converge) | Repair a Node's base, selected role configuration, recorded Tools and network without changing Instances or assignments. |
 | [`node:list`](/cli/node/list) | List the Nodes and their agent state. |
 | [`node:show`](/cli/node/show) | Show one Node, with agent liveness. |
-| [`node:metrics`](/cli/node/metrics) | Show one metrics snapshot of a Node. |
+| [`node:metrics`](/cli/node/metrics) | Read the latest agent-reported metrics snapshot and recorded agent state, even while the Node is offline. |
 | [`node:update`](/cli/node/update) | Change the name, platform, apps folder, or task VM host settings of a Node. |
 | [`node:wireguard-key`](/cli/node/wireguard-key) | Set an unmanaged Node's WireGuard public key and update its hub peer. |
 | [`node:role:add`](/cli/node/role-add) | Add a role, or converge an existing role. |

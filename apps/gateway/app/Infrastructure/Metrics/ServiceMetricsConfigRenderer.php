@@ -77,6 +77,10 @@ final readonly class ServiceMetricsConfigRenderer
         ], 8, 2);
     }
 
+    /**
+     * The exporter listens on the WireGuard address, so it starts after the tunnel. Cbox `v3.1.1` logs a failed listen and exits 0,
+     * which `on-failure` treats as a clean stop, so the unit restarts after every exit.
+     */
     public function unit(): string
     {
         $marker = self::Marker;
@@ -87,7 +91,7 @@ final readonly class ServiceMetricsConfigRenderer
             {$marker}
             [Unit]
             Description=Orbit production PHP-FPM metrics
-            After=network-online.target
+            After=network-online.target wg-quick@orbit.service
             Wants=network-online.target
 
             [Service]
@@ -95,7 +99,7 @@ final readonly class ServiceMetricsConfigRenderer
             Environment=TMPDIR=/run/orbit-fpm-exporter
             RuntimeDirectory=orbit-fpm-exporter
             RuntimeDirectoryMode=0755
-            Restart=on-failure
+            Restart=always
             RestartSec=5
             NoNewPrivileges=true
             ProtectHome=read-only

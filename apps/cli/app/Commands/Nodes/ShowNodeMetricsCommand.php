@@ -7,31 +7,58 @@ namespace App\Commands\Nodes;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
+use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
 use Orbit\Sdk\Responses\Nodes\NodeMetricsResponse;
+use Orbit\Sdk\Responses\Nodes\NodesResponse;
 
 final class ShowNodeMetricsCommand extends NodeCommand
 {
     #[\Override]
     protected $signature = 'node:metrics
-        {node : Numeric node ID or registered node name}
+        {node? : Numeric node ID}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Show one synchronous metrics snapshot for a node: cores, memory, swap, load, uptime, pressure, and disks.';
+    protected $description = 'Show the latest recorded metrics snapshot for a node.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
+        $nodeId = null;
+
+        if ($this->argument('node') !== null || ! $this->consoleMode()->mayPrompt) {
+            $nodeId = $this->positiveId('node', 'Node', 'node.id_invalid');
+
+            if ($nodeId === null) {
+                if ($this->option('json') !== true) {
+                    ConsoleWriter::write($this->output, "Code: node.id_invalid\n");
+                }
+
+                return self::FAILURE;
+            }
+        }
+
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
             return self::FAILURE;
         }
 
-        $nodeId = $this->resolveNodeId($connector, $this->argument('node'));
-
         if ($nodeId === null) {
-            return self::FAILURE;
+            $nodes = $this->sendWithProgress($connector, new ListNodesRequest, NodesResponse::class,
+                ['List Nodes', 'Loading Nodes', 'Loaded Nodes']);
+
+            if (! $nodes instanceof NodesResponse) {
+                return self::FAILURE;
+            }
+
+            $rows = [];
+
+            foreach ($nodes->nodes as $node) {
+                $rows[$node->id] = [(string) $node->id, $node->name];
+            }
+
+            $nodeId = (int) $this->commandPrompts()->selectEntity('Node', ['ID', 'Name'], $rows);
         }
 
         $metrics = $this->sendWithProgress(
@@ -51,8 +78,11 @@ final class ShowNodeMetricsCommand extends NodeCommand
             return self::SUCCESS;
         }
 
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Node metrics: {$metrics->nodeName}", [
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Node {$metrics->nodeName} metrics", [
             'Node ID' => $metrics->nodeId,
+            'Observed at' => $metrics->observedAt,
+            'Agent' => $metrics->agent?->label() ?? '—',
+            'Freshness' => $metrics->possiblyOutdated ? 'possibly outdated' : 'current',
             'Cores' => implode(', ', array_map(
                 static fn (float $ratio): string => round($ratio * 100).'%',
                 $metrics->cores,
@@ -71,7 +101,7 @@ final class ShowNodeMetricsCommand extends NodeCommand
         return self::SUCCESS;
     }
 
-    /** @param list<array{mount: string, used: int, total: int}> $disks */
+    /** @param list<array{mount: string, used: int|null, total: int|null, observed_at: string|null, stale: bool}> $disks */
     private function disksSummary(array $disks): string
     {
         if ($disks === []) {
@@ -79,7 +109,9 @@ final class ShowNodeMetricsCommand extends NodeCommand
         }
 
         return implode(', ', array_map(
-            fn (array $disk): string => "{$disk['mount']}: ".$this->bytesFraction($disk['used'], $disk['total']),
+            fn (array $disk): string => "{$disk['mount']}: "
+                .($disk['used'] === null || $disk['total'] === null ? '—' : $this->bytesFraction($disk['used'], $disk['total']))
+                .($disk['stale'] ? ' (stale)' : ''),
             $disks,
         ));
     }

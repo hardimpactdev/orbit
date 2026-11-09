@@ -9,7 +9,9 @@ orbit task:start <task> [--idempotency-key=KEY] [--json]
 
 Start the VM for a parent task in Todo. The task must use external orchestration and have no claimed workspace. Orbit admits the existing `tasks.provision` operation and returns its reference. The command follows that operation until it ends. It starts no subtask, check, turn, or publication.
 
-Orbit refuses unavailable capacity with HTTP 409 `tasks.capacity_unavailable`. Admission does not queue a task waiting for capacity. A failed start releases its slot. Changing a task's status with `task:update --status=todo` changes board state only; it does not start a VM.
+A task VM serves only the proof Project, because the base VM carries only its checkout. Orbit refuses a task of another Project at once with HTTP 409 `task_vm.project_unsupported` and records no Operation.
+
+When no task place is free, or an earlier task is waiting, the operation waits in the shared task queue, first come, first served. It holds no VM, and the task stays in Todo. `operation:show` and `task:show` report `capacity_wait`: the queue position and the tasks that hold the places, with each one's status and last activity. `task:status` shows the places of every host and the whole queue. The wait ends with `tasks.capacity_timeout` after two hours. [Task places](/reference/tasks#task-places) defines these fields. A failed start releases its slot. Changing a task's status with `task:update --status=todo` changes board state only; it does not start a VM.
 
 `--idempotency-key` reuses the same operation for a transport retry. Ctrl-C stops following and leaves the operation running. Use `task:cancel` to end the parent task.
 

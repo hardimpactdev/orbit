@@ -25,7 +25,7 @@ final readonly class GatewayControlPlan
 
     /**
      * @param  string  $checkout  The `swamp/` folder of the release on this machine, the Swamp repository serve reads.
-     * @return array{user:string,node_id:int,repository:string,units:array{serve:string,worker:string,renewal_service:string,renewal_timer:string},recorder:list<array{name:string,unit:string}>,grants:array<string,string>,hub:array{config:string,key_file:string,peer_directory:string}}
+     * @return array{user:string,node_id:int,repository:string,units:array{serve:string,worker:string,renewal_service:string,renewal_timer:string},recorder:list<array{name:string,unit:string}>,runtime_tmpfiles:array{path:string,content:string},grants:array<string,string>,hub:array{config:string,key_file:string,peer_directory:string}}
      */
     public function make(string $checkout): array
     {
@@ -46,6 +46,8 @@ final readonly class GatewayControlPlan
             'units' => SwampRoleUnits::for($node->user, $node->id, $checkout),
             // The scheduler and Horizon that record finished runs: the Gateway's first run, its own Node converge, comes before its role.
             'recorder' => app(GatewayRuntimeFiles::class)->recorder($node),
+            // The rule that creates `/run/orbit`, which the scheduler needs before it starts; the role later finds it unchanged.
+            'runtime_tmpfiles' => ['path' => GatewayRuntimeFiles::RuntimeTmpfiles, 'content' => GatewayRuntimeFiles::RuntimeTmpfilesRule],
             'grants' => $this->grants->render($checkout),
             // The hub of the Gateway's own private network. Its private key is made on the machine and stays there.
             'hub' => ['config' => NodeWireGuardHubInput::config($node), 'key_file' => NodeWireGuardHubInput::KeyFile,

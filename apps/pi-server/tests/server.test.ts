@@ -1,3 +1,6 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import { appendSessionEntries, type Harness, startHarness, waitFor } from "./support.ts";
@@ -224,6 +227,80 @@ describe("turns", () => {
         expect(sequences).toEqual([...sequences].sort((a, b) => a - b));
         expect(events.at(-1)).toMatchObject({ kind: "state", state: "done", error: null });
         expect(events.at(-1).usage.total).toBeGreaterThan(0);
+    });
+
+    it("streams the tool call and working state while the tool still runs", async () => {
+        const h = await created();
+        h.faux.setResponses([
+            fauxAssistantMessage(
+                [fauxToolCall("bash", { command: "while ! test -f release; do sleep 0.02; done" })],
+                { stopReason: "toolUse" },
+            ),
+            fauxAssistantMessage("released"),
+        ]);
+        const events: any[] = [];
+        const collecting = h.stream("thread-1", (seen) => {
+            events.splice(0, events.length, ...seen);
+            return seen.some((e) => e.kind === "state" && e.state === "done");
+        });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        await h.request("POST", "/sessions/thread-1/messages", { key: "k1", text: "go" });
+
+        // The tool blocks until the release file exists, so these events arrive mid-turn.
+        await waitFor(
+            async () => events,
+            (seen) =>
+                seen.some(
+                    (e) =>
+                        e.kind === "entry" &&
+                        e.entry.message.role === "assistant" &&
+                        e.entry.message.stopReason === "toolUse",
+                ),
+        );
+        expect(events.filter((e) => e.kind === "entry").map((e) => e.entry.message.role)).toEqual([
+            "user",
+            "assistant",
+        ]);
+        expect(events.findLast((e) => e.kind === "state")).toMatchObject({
+            state: "working",
+            turnId: "k1",
+        });
+        writeFileSync(join(h.workspace, "release"), "");
+        const done = await collecting;
+        expect(done.filter((e) => e.kind === "entry").map((e) => e.entry.message.role)).toEqual([
+            "user",
+            "assistant",
+            "toolResult",
+            "assistant",
+        ]);
+    });
+
+    it("streams and keeps every entry of a commit larger than Durable's view window", async () => {
+        const h = await created();
+        const stream = h.stream(
+            "thread-1",
+            (events) => events.filter((e) => e.kind === "entry").length >= 150,
+        );
+        const live = (h.registry as any).live.get("thread-1");
+        await waitFor(
+            async () => live.listeners.size,
+            (size) => size > 0,
+        );
+        // Durable's live view holds at most 100 entries; one commit may append more.
+        await live.conversation.commit(async (tx: any) => {
+            for (let index = 0; index < 150; index++) {
+                await tx.appendEntry(live.conversation.id, {
+                    kind: "pi.user",
+                    model: [{ role: "user", content: `entry ${index}`, timestamp: index }],
+                });
+            }
+        }, BACKGROUND_CONTEXT);
+        const expected = Array.from({ length: 150 }, (_, index) => `entry ${index}`);
+
+        const streamed = (await stream).filter((e) => e.kind === "entry");
+        expect(streamed.map((e) => e.entry.message.content)).toEqual(expected);
+        const snapshot = (await h.request("GET", "/sessions/thread-1")).body;
+        expect(snapshot.entries.map((entry: any) => entry.message.content)).toEqual(expected);
     });
 
     it("does not start a second turn for a repeated key", async () => {

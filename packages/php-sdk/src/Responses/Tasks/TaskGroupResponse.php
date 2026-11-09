@@ -47,6 +47,9 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
         public string $orchestration = 'tick',
         public bool $currentRecipe = false,
         public string $review = 'manual',
+        public ?string $lastActivityAt = null,
+        public ?string $previewUrl = null,
+        public ?TaskPlaceWaitResponse $capacityWait = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -89,6 +92,9 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
             review: ($data['review'] ?? null) === 'automatic' ? 'automatic' : 'manual',
             vmPower: in_array($data['vm_power'] ?? null, ['running', 'stopped', 'destroyed'], true) ? $data['vm_power'] : null,
             reviewAndMerge: TaskReviewAndMergeResponse::fromGatewayData($data['review_and_merge'] ?? null, $requestId),
+            lastActivityAt: TaskFields::nullableText($data, 'last_activity_at'),
+            previewUrl: TaskFields::nullableText($data, 'preview_url'),
+            capacityWait: TaskPlaceWaitResponse::fromGatewayData($data['capacity_wait'] ?? null, $requestId),
         );
     }
 
@@ -146,6 +152,9 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
             'preview' => $this->preview,
             'current_recipe' => $this->currentRecipe,
             'review' => $this->review,
+            'last_activity_at' => $this->lastActivityAt,
+            'preview_url' => $this->previewUrl,
+            'capacity_wait' => $this->capacityWait?->toArray(),
             ...($this->reviewAndMerge === null ? [] : ['review_and_merge' => $this->reviewAndMerge->toArray()]),
             'request_id' => $this->requestId,
         ];

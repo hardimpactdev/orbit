@@ -247,3 +247,42 @@ Deno.test("JavaScript repair replaces stale extracted runtimes and then skips ma
         ]);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
+
+Deno.test("node.add and node.converge apply the same kernel policy from the intent", async () => {
+    const base = parse(await Deno.readTextFile(taskPath("node-converge-base"))) as Array<Record<string, unknown>>;
+    const machine = (parse(await Deno.readTextFile(new URL("../ansible/operation-node-add.yml", import.meta.url))) as Array<{ tasks: Array<Record<string, unknown>> }>)[1];
+    const imports = [base.find((task) => task.name === "Reconcile the kernel policy")!, machine.tasks.find((task) => task.name === "Apply the kernel policy")!];
+    assertEquals(imports.map((task) => [String(task["ansible.builtin.import_tasks"]).replace(/^tasks\//, ""), task.vars]), [
+        ["node-kernel-policy.yml", { kernel_policy: "{{ intent.kernel }}" }], ["node-kernel-policy.yml", { kernel_policy: "{{ intent.kernel }}" }],
+    ]);
+});
+
+Deno.test("the kernel policy keeps a matching module file, such as one written by hand, and repairs a drifted one once", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        // Run the real task as a non-root user: only the ownership the fixture cannot set is left out.
+        const tasks = parse(await Deno.readTextFile(taskPath("node-kernel-policy"))) as Array<Record<string, unknown>>;
+        const copy = structuredClone(tasks.find((task) => task.name === "Write the kernel module policy")!);
+        const module = copy["ansible.builtin.copy"] as Record<string, unknown>;
+        delete module.owner;
+        delete module.group;
+        const path = `${folder}/orbit-no-sctp.conf`;
+        const vars = { kernel_policy: { files: [{ path, content: "install sctp /bin/false\n" }], sysctl: [] } };
+        await Deno.writeTextFile(path, "install sctp /bin/false\n");
+        await Deno.chmod(path, 0o644);
+        await localPlay(vars, [copy]);
+        await Deno.writeTextFile(path, "install sctp /bin/true\n");
+        await localPlay(vars, [copy], false);
+        assertEquals(await Deno.readTextFile(path), "install sctp /bin/false\n");
+        await localPlay(vars, [copy]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the Gateway role and bootstrap create /run/orbit from the tmpfiles rule before the scheduler starts", async () => {
+    const runtime = parse(await Deno.readTextFile(taskPath("gateway-runtime"))) as Array<Record<string, unknown>>;
+    const create = runtime.find((task) => task.name === "Create the Gateway runtime folder")!;
+    assertEquals(create["ansible.builtin.command"], { argv: ["systemd-tmpfiles", "--create", "{{ rt.gateway.tmpfiles }}"] });
+    const bootstrap = (parse(await Deno.readTextFile(taskPath("gateway-swamp"))) as Array<Record<string, unknown>>).map((task) => task.name);
+    const [write, apply, start] = ["Write the Gateway runtime folder rule", "Create the Gateway runtime folder", "Start the recorder"].map((name) => bootstrap.indexOf(name));
+    assertEquals([write >= 0, write < apply, apply < start], [true, true, true]);
+});

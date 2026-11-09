@@ -76,7 +76,7 @@ Before that restoration checkpoint, an exact `node.add` parent renders its conte
 
 ## Converge the hub
 
-`node:converge <node>` publishes the full peer list when its target is the active VPN owner. The Gateway records the full intent: one peer file per Node that has a key and is not being removed, the files to keep, and the hub's SSH target. The hub's private key never leaves the hub; the run carries no secret.
+`node:converge <node>` publishes the full peer list when its target is the active VPN owner. The Gateway records the full intent: one peer file per Node that has a key and is not being removed, the Nodes whose files to keep, the newest Node id, and the hub's SSH target. The hub's private key never leaves the hub; the run carries no secret.
 
 A removal does not rewrite the list. It deletes the file of the removed Node, whether or not the Gateway recorded its key, and loads the files that remain, so the live peer goes at once. It does not prune the files of Nodes that are already gone; the next converge of the hub does. It writes no other peer and keeps none, because the intent is a snapshot and a removal admitted at the same time as another would otherwise put the other's peer back.
 
@@ -87,16 +87,21 @@ The hub's private key never leaves the Node (Nick, 2026-11-02). The Gateway rend
 
 One file per peer lets a run that adds one Node, such as task VM enrollment, write only its own file. Runs that overlap then never drop each other's peers.
 
-One Swamp run on 209 reaches the hub over SSH as root, with no script on the hub:
+The converge's Ansible `network` phase reaches the hub over SSH as root:
 
-1. `@swamp/cfgmgmt/exec` moves the running key into `/etc/wireguard/orbit.key` (0600) once; it skips this when the file exists.
-2. `@swamp/cfgmgmt/file` writes `orbit.conf` and each peer file (0600, root).
-3. One `find` command deletes the peer files of Nodes that are gone or being removed. Every other Node keeps its file.
-4. One `bash -c` command runs `wg syncconf` on input it composes on the Node: `PrivateKey` read from `orbit.key`, the port, then every peer file.
+1. It writes `orbit.conf` and each peer file (0600, root).
+2. The prune deletes the peer files of Nodes that are gone or being removed. Every other Node keeps its file.
+3. It runs `wg syncconf` on input it composes on the Node: `PrivateKey` read from `orbit.key`, the port, then every peer file.
 
-A Node keeps its peer file even before the Gateway records its key, because its own run may have written it. The load adds new peers and removes stale ones. Unchanged peers keep their sessions, and the interface keeps its key.
+A Node keeps its peer file even before the Gateway records its key, because its own run may have written it.
 
-Node removal withdraws one peer the same way: it drops the peer from `orbit.conf` and its file from `orbit-peers.d`, and removes only that peer from the live interface with `wg set … remove`. A whole `wg syncconf` from one file would drop every peer that file does not list.
+The prune decides when it runs, not when the Gateway records the intent. It keeps the file of every Node in the snapshot and every file above the snapshot's newest Node id, and deletes every other `*.conf` file. The intent can be minutes old by then. A Node created meanwhile, such as a task VM claimed while the run waits, has a higher id, because Node ids only grow, so it keeps its peer. A keep-list alone deleted those peers and cut the Swamp worker off the new VM (proof runs 14547 and 14552, 2026-11-09).
+
+A gone Node whose id is above every remaining Node keeps its leftover file until a converge after a newer Node exists.
+
+`node:add` loads the peer files the hub has when it applies, not the peers of its admitted snapshot, for the same reason. The load adds new peers and removes stale ones. Unchanged peers keep their sessions, and the interface keeps its key.
+
+Node removal runs one Swamp run on 209 that reaches the hub over SSH as root, with no script on the hub. `@swamp/cfgmgmt/exec` moves the running key into `/etc/wireguard/orbit.key` (0600) once, and skips this when the file exists. `@swamp/cfgmgmt/file` writes `orbit.conf`. One `rm -f` deletes the removed Node's file, and one `bash -c` command runs `wg syncconf` on the files that remain, composed on the Node as above.
 
 `wg syncconf` removes the interface key when its input has none, which the topology proof showed. Composing the key in on the Node keeps it out of the Gateway, the vault and the run history.
 

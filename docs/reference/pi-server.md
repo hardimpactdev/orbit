@@ -12,7 +12,7 @@ The Pi server runs [Pi](https://github.com/earendil-works/pi) coding-agent sessi
 
 Orbit runs Pi only on task VMs. The Gateway installs and starts it there; see [Run Pi on a task VM](#run-pi-on-a-task-vm). No host Node runs Pi for task agents.
 
-The Pi packages are pinned exactly to 1.4.0, including transitive dependencies. Only the required `@earendil-works/*` packages are temporarily exempt from the three-day release-age gate in `apps/pi-server/bunfig.toml`; remove the exemptions once the 2026-10-21 release passes the gate. Each session runs on one Pi Durable Harness and one SQLite database. Orbit passes Pi’s tool context through when it delegates a read.
+The Pi packages are pinned exactly to 1.5.0, including transitive dependencies, and pass the normal three-day release-age gate. Each session runs on one Pi Durable Harness and one SQLite database. Orbit passes Pi’s tool context through when it delegates a read.
 
 ## Configure the server
 
@@ -161,6 +161,8 @@ Orbit stores uncached input as `input + cacheWrite` and cached input as `cacheRe
 
 Every stream event carries `run` and `sequence`. The run is a random ID that the server picks each time it loads a session. Sequence numbers start at 0 with each run and grow with each event. A transcript entry is streamed when Pi writes it. Pi writes an assistant message with a tool call when the call starts, and the tool result when the call ends.
 
+The server follows each session through Durable's live conversation view and its stored commits. The view shows a change as soon as Durable makes it, also progress that Durable stores up to a second later. The view holds only the newest 50 to 100 entries, so the server reads new entries from Durable's paged transcript; a commit with more entries than the view holds still streams every entry. Commits supply the submission records that settle a turn.
+
 Without a cursor, the stream starts with a `snapshot` event, the same as `GET /sessions/{id}`.
 
 To resume, pass the last event the client received as `?run={run}&after={sequence}`. When the run is the session's current run and the sequence is not ahead of it, the stream starts with a `resumed` event:
@@ -215,7 +217,7 @@ The server reports one of the Orbit thread states from its own evidence. The Gat
 | The current submission was answered with a normal stop | `done` |
 | The current submission failed, including compaction, a task failure, a provider error, an interruption, or the output limit | `failed`, with the error |
 | The server restarted while the turn was active | `working`, while Durable resumes the turn |
-| Durable parked a task after its restart limit | `failed`, with a clear crash-loop error |
+| Durable ended the turn at its restart limit (a crash loop) | `failed`, with a clear crash-loop error |
 | Durable is waiting to retry a transient provider error | `working`, with retry attempt, category, and due time in `error` |
 
 Provider-error failures may include `providerError` in snapshots, deltas, and stream state events: `overloaded`, `rate_limited`, or `server_error`. It is absent for other failures. Terminal state comes from the current Durable submission, including its persisted failure detail when compaction fails without an assistant answer. An earlier turn’s answer cannot make the current turn succeed. Classification reads the current turn’s provider failure, not tool output. Structured provider error codes and HTTP status codes take precedence over a narrow fallback for known capacity messages when the SDK preserves only text.
@@ -224,7 +226,7 @@ For `openai-responses` (the API used by `orbit-task-vm`) and `openai-codex-respo
 
 Codex sessions use SSE so HTTP and streamed error codes follow the same classification path; the SDK's WebSocket transport does not expose that evidence. The `openai-responses` adapter already uses SSE; Orbit keeps its transport settings.
 
-Durable 1.4.0 has no retry-decision hook. A Bun patch to pi-ai 1.4.0 makes its shared retry check honor `orbitProviderError` before its text fallback: a transient category permits retry, and explicit `null` forbids it. Orbit supplies that decision through the same classifier used for thread state, for generation and compaction alike. Durable remains the only retry owner and keeps the 1, 2, 4, and 8 minute waits.
+Durable 1.5.0 has no retry-decision hook. A Bun patch to pi-ai 1.5.0 makes its shared retry check honor `orbitProviderError` before its text fallback: a transient category permits retry, and explicit `null` forbids it. Orbit supplies that decision through the same classifier used for thread state, for generation and compaction alike. Durable remains the only retry owner and keeps the 1, 2, 4, and 8 minute waits.
 
 The boundary adds no headers, credentials, or raw error bodies to the transcript. Quota exhaustion, account usage limits, authentication errors, and refusals are not transient. Durable owns [automatic retries](/reference/tasks#execution-ownership). Exhausted retries end `failed` with the provider category; the Gateway asks for assistance.
 
@@ -234,7 +236,19 @@ Pi has no approvals, so a Pi thread never asks for input. A new turn changes a `
 
 Transcripts, submissions, tasks, and interruption evidence persist in `<agent dir>/durable/<id>.sqlite`. `<session dir>/<id>.orbit.json` holds only bootstrap configuration. Preserve both directories. `PI_SESSION_FILE` names the SQLite file. Sessions reload on first use and Durable resumes unfinished work. The turn stays `working`; the Gateway sends no re-orientation message or replacement turn. A repeated send key starts no second turn.
 
-Tools are replay-unsafe. A tool cut off by a restart becomes an interrupted result with retained output; Durable does not run it again. The model chooses what to do next. The systemd service must contain child processes when the server dies. After five cut-off runs of the same task, Durable parks it. The server reports `failed` so the Gateway requests assistance. An explicit interrupt clears the parked run before a new keyed turn can start.
+When a restart cuts off work, Durable does not simply run it again:
+
+| Cut off | What happens |
+| --- | --- |
+| A tool call | The call becomes an interrupted result with retained output. The model chooses what to do next |
+| A model request | Durable counts it as a failed provider attempt and retries after the backoff |
+| The same work five times in a row | Durable ends the work: a generation ends the turn `failed` with a crash-loop error, a tool call ends with an error result |
+
+Tools are replay-unsafe, so the systemd service must contain child processes when the server dies.
+
+While a cut-off request waits for its retry, the turn stays `working` with `Waiting for provider retry` in `error`. The first retry waits one minute. With no retry left, the turn ends `failed` with the interruption as its error, so a server that keeps crashing during requests ends this way. A retry charge that itself keeps being cut off ends with the crash-loop error.
+
+A turn that ended this way leaves the session idle: a new keyed turn starts without an interrupt.
 
 There is no import of old JSONL sessions. Task VMs are disposable per group, so roll out to new groups. Workspace skills, AGENTS.md, system and append prompt files, the role prompt, and the five tools remain available. Coding-agent JavaScript extensions are not loaded. Durable owns compaction; long-session compaction, load per host, and a crash during retry sleep remain unproven at the Orbit server level.
 
@@ -273,6 +287,8 @@ The worker ACL test copies the Bun runtime and the tool-output module into its t
 ### Fast test fixtures
 
 Most tests that provoke a provider failure disable Durable retries in their in-memory settings as well as the provider's HTTP retries. Retry regressions enable Durable with short delays and assert request counts for structured terminal failures and transient recovery. Production disables provider/SDK retries inside a request; Durable owns the four-retry budget. Tests assert one provider request, send a real streamed failure through the server, publish it, and reload it after restart, without waiting through retry backoff.
+
+The compiled crash-recovery worker retries a model request cut off by its kill after 1 ms instead of the production minute.
 
 Workspace TMPDIR tests call the workspace bash tool in-process with a private inherited TMPDIR; the worker ACL test still crosses the real user boundary.
 

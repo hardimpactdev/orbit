@@ -437,7 +437,40 @@ describe("compiled Bun crash recovery with no model network", () => {
             }
         },
     );
-    it("reports a parked crash-loop task as failed, including after another reopen", async () => {
+    it("reports no earlier turn's provider error while a cut-off request waits to retry", async () => {
+        const dir = join(root, "retry-wait");
+        const worker = await launch(dir, "rate-limited");
+        await worker.request("POST", "/sessions", {
+            id: "crash",
+            cwd: join(dir, "workspace"),
+            model: "faux/model-a",
+            thinkingLevel: "low",
+        });
+        await worker.request("POST", "/sessions/crash/messages", { key: "first", text: "go" });
+        expect(
+            await waitFor(
+                async () => (await worker.request("GET", "/sessions/crash?view=state")).body,
+                (value) => value.state === "failed",
+            ),
+        ).toMatchObject({ turnId: "first", providerError: "rate_limited" });
+        await worker.request("POST", "/sessions/crash/messages", { key: "second", text: "go" });
+        await waitFor(async () => existsSync(join(dir, "request-started")), Boolean);
+        const killed = once(worker.child, "exit");
+        worker.child.kill("SIGKILL");
+        await killed;
+
+        // Production's first retry waits a minute, so the wait stays visible here.
+        const recovered = await launch(dir, "retry-wait");
+        const waiting = await waitFor(
+            async () => (await recovered.request("GET", "/sessions/crash?view=state")).body,
+            (value) => value.error?.startsWith("Waiting for provider retry"),
+        );
+        expect(waiting).toMatchObject({ state: "working", turnId: "second" });
+        expect(waiting.error).toMatch(/^Waiting for provider retry 1\/4 at .*Z\.$/);
+        expect(waiting.providerError).toBeUndefined();
+    });
+
+    it("reports a crash-looped turn as failed, including after another reopen", async () => {
         const dir = join(root, "park");
         const worker = await launch(dir, "park");
         await worker.request("POST", "/sessions", {
@@ -458,14 +491,15 @@ describe("compiled Bun crash recovery with no model network", () => {
                 (value) => value.state === "failed",
             );
             expect(snapshot).toMatchObject({ state: "failed", turnId: "park-key" });
-            expect(snapshot.error).toMatch(/parked.*restart limit.*assistance/);
+            expect(snapshot.error).toMatch(
+                /restart limit \(crash loop\): The generation was interrupted .*assistance/,
+            );
             const exit = once(recovered.child, "exit");
             recovered.child.kill("SIGKILL");
             await exit;
         }
+        // The crash loop ended the turn, so a new keyed turn starts without an interrupt.
         const resumed = await launch(dir, "park-reopen");
-        await resumed.request("GET", "/sessions/crash");
-        await resumed.request("POST", "/sessions/crash/interrupt");
         expect(
             (
                 await resumed.request("POST", "/sessions/crash/messages", {

@@ -8,9 +8,7 @@
   loop: "{{ hub_plan.peers }}"
   loop_control: { label: "{{ item.node_id }}" }
 - name: Prune only removed peers
-  ansible.builtin.command: { argv: "{{ hub_plan.prune_argv[:-1] + ['-print', '-delete'] }}" }
-  register: hub_prune
-  changed_when: hub_prune.stdout | length > 0
+  ansible.builtin.import_tasks: node-converge-hub-prune.yml
 - name: Ensure persistent hub forwarding
   ansible.builtin.copy: { dest: /etc/sysctl.d/99-orbit-forwarding.conf, content: "net.ipv4.ip_forward = 1\n", owner: root, group: root, mode: "0644" }
 - name: Read live hub forwarding

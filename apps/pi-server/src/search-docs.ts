@@ -2,7 +2,7 @@ import { defineTool as defineDurableTool } from "@earendil-works/pi-durable";
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 
 import { workspaceTmpdir } from "./workspace-tmpdir.ts";

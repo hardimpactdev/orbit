@@ -36,11 +36,11 @@ Access follows the node family's [shared authority rule](/cli/node) (`NodeAccess
 Every run applies these phases in order, idempotently and within the selected scope:
 
 1. **Input.** Prepare the recorded desired state for this attempt.
-2. **Agent.** Apply the Node agent, Orbit CLI, Orbit-owned files and units at the release's versions. Restart services only when their managed files change.
+2. **Agent.** Apply the Node agent, Orbit CLI, Orbit-owned files and units at the release's versions, and the [kernel policy](/reference/node-provisioning#kernel-policy). Restart services only when their managed files change.
 3. **Software.** Read the selected software pins from `recipe.json`, install them and hold the packages at those pins.
 4. **Roles.** Repair the selected roles' configuration.
 5. **Tools.** Apply recorded Tools within scope. A failed Tool is marked failed on its own record; other Tools continue, and that Tool failure alone does not fail the Operation.
-6. **Network.** Apply the recorded network on the hub first, then the Node, and wait for the handshake. With no recorded network in scope there is nothing to apply. A target hub is applied once; with no peers it needs no handshake.
+6. **Network.** Apply the recorded network on the hub first, then the Node, and wait for the handshake. The hub side prunes only the peer files of Nodes that are gone or being removed; a Node that joins while the run waits keeps its peer ([Converge the hub](/reference/wireguard-endpoints#converge-the-hub)). With no recorded network in scope there is nothing to apply. A target hub is applied once; with no peers it needs no handshake.
 7. **Check.** Check the selected software, units, role configuration and recorded tunnel.
 
 A repeat starts a new Operation and applies all phases again; it is not skipped at admission. With no drift, it reports zero changed tasks on the Node and completes within 120 seconds.

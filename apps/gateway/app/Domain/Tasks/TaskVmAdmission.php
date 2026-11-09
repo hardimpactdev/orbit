@@ -17,6 +17,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Domain\TaskVms\TaskVmPromotedImage;
 use App\Domain\TaskVms\TaskVmRuntime;
+use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Jobs\Tasks\AdmitTaskVm;
@@ -27,6 +28,7 @@ use App\Models\TaskReviewRound;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Closure;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -46,8 +48,11 @@ final readonly class TaskVmAdmission
     {
         try {
             return DB::transaction(function () use ($group, $kind, $capture, $caller, $requestId): Operation {
-                if (TaskVm::forGroup($group) === null && Operation::query()->where('status', OperationStatus::Waiting)->where('target_type', 'task_group')->whereNotNull('input->capacity_request')->exists()) {
-                    throw new TaskCapacityException(TaskWait::Capacity, 'An earlier task is waiting for a place.');
+                if (TaskVm::forGroup($group) === null) {
+                    app(TaskVmSlotPool::class)->assertServes($group);
+                    if (self::queue()->exists()) {
+                        throw new TaskCapacityException(TaskWait::Capacity, 'An earlier task is waiting for a place.');
+                    }
                 }
                 $input = $capture();
 
@@ -61,6 +66,17 @@ final readonly class TaskVmAdmission
 
             return $operation;
         }
+    }
+
+    /**
+     * The task queue: every admission on a group that waits for a task place, front first (docs/reference/tasks.md#task-places).
+     *
+     * @return Builder<Operation>
+     */
+    public static function queue(): Builder
+    {
+        return Operation::query()->where('status', OperationStatus::Waiting)->where('target_type', 'task_group')
+            ->whereNotNull('input->capacity_request')->orderBy('id');
     }
 
     /** @param array<string,mixed> $request */
@@ -103,10 +119,13 @@ final readonly class TaskVmAdmission
 
                     return;
                 }
-                if (Operation::query()->where('status', OperationStatus::Waiting)->where('target_type', 'task_group')->whereNotNull('input->capacity_request')->where('id', '<', $id)->exists()) {
+                $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
+                if (TaskVm::forGroup($group) === null) {
+                    app(TaskVmSlotPool::class)->assertServes($group);
+                }
+                if (self::queue()->where('id', '<', $id)->exists()) {
                     throw new TaskCapacityException(TaskWait::Capacity, 'An earlier task is waiting for a place.');
                 }
-                $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
                 app(TaskOperations::class)->requireOpenExternal($group);
                 $request = ValidatedData::object($operation->input['capacity_request']);
                 if (in_array($operation->kind, ['tasks.provision', 'proof.command'], true)) {
@@ -134,6 +153,11 @@ final readonly class TaskVmAdmission
             });
         } catch (TaskCapacityException) {
             AdmitTaskVm::dispatch($id)->delay(now()->addSeconds(self::RetrySeconds));
+        } catch (ResourceOperationException $exception) {
+            $operation = Operation::query()->findOrFail($id);
+            if (! $operation->status->terminal()) {
+                $this->fail($operation, $exception->errorCode, $exception->getMessage());
+            }
         } catch (Throwable $exception) {
             report($exception);
             $operation = Operation::query()->findOrFail($id);
