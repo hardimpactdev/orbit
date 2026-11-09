@@ -15,7 +15,7 @@ final class StartProofVerifyRequest extends FormRequest
     /** @return array<string, list<string>> */
     public function rules(): array
     {
-        return ['command' => ['required', 'string', 'regex:/\A[a-z][a-z0-9_]*:[a-z][a-z0-9_-]*\z/D'], 'group' => ['sometimes', 'integer', 'min:1']];
+        return ['command' => ['required', 'string', 'regex:/\A[a-z][a-z0-9_]*(?::[a-z][a-z0-9_-]*)+\z/D'], 'group' => ['sometimes', 'integer', 'min:1']];
     }
 
     /** @return array<string, mixed> */

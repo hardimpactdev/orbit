@@ -23,12 +23,10 @@ final readonly class ProofVerifyIntent
 {
     public function __construct(private TaskOperations $operations, private ProofSettings $settings) {}
 
-    /** The cases file of a command: `firewall:allow` is `swamp/proof/firewall/allow.cases.yaml`. */
+    /** Resolve nested commands exactly as CI does. */
     public static function casesFile(string $command): string
     {
-        [$family, $name] = explode(':', $command, 2);
-
-        return 'swamp/proof/'.$family.'/'.$name.'.cases.yaml';
+        return ProofSelection::fileOf($command);
     }
 
     /**

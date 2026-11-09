@@ -504,7 +504,7 @@ For Caddy, the Gateway pins a release and the SHA-512 digest of its `amd64` `.de
 
 ### Role prerequisites
 
-New assignments from `node:role:add` run through one Swamp workflow. A native SSH step checks the Ubuntu release. Ansible phases apply prerequisites, role state, publications, firewall rules and Metrics changes, then check the result.
+New assignments from `node:role:add` run through one Swamp workflow. A native SSH step checks the Ubuntu release. Ansible phases apply prerequisites, role state, publications, firewall rules and Metrics changes, then check the result. Tool Manager commands and runtime copies run only when the admitted pin or lock differs from the last successful setup. The pin is recorded after its checks pass, so a failed setup retries.
 
 A Node inside the nested subnet of a [task VM](/reference/compute-drivers) (`10.232.2.0/24`) reads its apt packages through the `apt-cacher-ng` of that VM, at `http://10.232.2.1:3142`. The Gateway puts that address in the `apt_proxy` field of the intent of the Node enrollment (`node.add`), of each role add and converge, and of each metrics exporter.
 
@@ -585,7 +585,7 @@ The unit carries only token paths. Missing receipts log that renewal stopped and
 
 Orbit uses no worker-affinity groups. Later steps can queue on either survivor during a drain. Swamp fails an affinity group when its worker drains, so adding affinity requires a different renewal design.
 
-After the credentials are placed, release the Gateway and load Swamp, then converge with `orbit node:role:add swamp swamp --converge`. The Ansible `node` phase installs the renewal playbook, tasks and Gateway-rendered service/timer. The native **Apply Swamp worker unit** `@swamp/cfgmgmt/systemd` step applies the worker template. The worker-start job enables all three permanent workers; its dependent native job starts the timer. Swamp load alone does not apply host files. Convergence leaves active workers running and starts c; serve needs no restart.
+After the credentials are placed, release the Gateway and load Swamp, then converge with `orbit node:role:add swamp swamp --converge`. The Ansible `node` phase installs the renewal playbook, tasks and Gateway-rendered service/timer. The Ansible `swamp` phase applies the worker template, enables all three permanent workers without restarting live processes, then starts the timer. Swamp load alone does not apply host files. Convergence leaves active workers running and starts c; serve needs no restart.
 
 Watch `orbit-swamp-worker-renewal.service`, workers a/b/c and serve. Require all three connected before a drain, two workers/eight configured slots accepting throughout it, and the renewed instance accepting before another round. Keep long work and queued follow-on operations active across renewals. At the old eight-hour boundary, require no code 4002 or write-then-drop failure. All three workers remain enabled and running between successful rounds.
 
@@ -809,7 +809,7 @@ a nonempty cache owned by root or a symlink. Credential ownership stays the same
 
 ## Native role additions
 
-Adding `gateway`, `ingress`, `app-dev`, `app-prod`, `metrics`, `database`, `websocket`, `analytics`, or `ci-runner` records one `node.role_add` Operation and returns HTTP 202. `node:role:add` follows that Operation. `--converge` records `node.role_converge` for an existing assignment and uses its role convergence DAG. VPN and Router retain their protected-role policy.
+Adding `gateway`, `ingress`, `app-dev`, `app-prod`, `metrics`, `database`, `websocket`, `analytics`, `ci-runner`, or `swamp` records one `node.role_add` Operation and returns HTTP 202. `node:role:add` follows that Operation. `--converge` records `node.role_converge` for an eligible existing assignment and uses its role convergence DAG. Eligibility is recorded state: active, failed at a `converge:` step, or provisioning for at least 11 minutes without an Operation holding the Node. Recent provisioning, removal and unrelated failures are refused before host contact or mutation. Native initial-add failures retain a `converge:` failure marker, so explicit convergence can repair partial work. VPN and Router retain their protected-role policy.
 
 The Gateway freezes the role's public packages, files, services, certificate requests, publications and Metrics changes at admission. The control worker on Node 209 applies them over pinned SSH. Neither additions nor role convergence require a worker on the target. Both use the shared Swamp workflow and Ansible phases; Node convergence separately owns the observer and Orbit CLI.
 

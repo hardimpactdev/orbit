@@ -65,3 +65,5 @@ Official cfgmgmt version `2026.10.27.1` has no host-key connection input or loca
 ### Topology proof
 
 The topology proof showed the writer repairs an empty mode-0644 file to the exact admitted public pins at mode 0600, owned by the worker account. The Gateway records the matching digest and successful native step. It makes no production uptake or concurrent-publication claim.
+
+Tool Manager archives extract into a directory named by the admitted artifact digest. A changed pin cannot reuse the extracted bytes of an older pin. Role-add records a successful setup pin and lock before an unchanged convergence can skip manager commands.

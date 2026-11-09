@@ -54,3 +54,7 @@ Keep the tested Operation's public failed step and error code in failed CLI chec
 A disposable Gateway needs a revision and an installable CLI release even though a PR has no published release. Prepare its tested revision and the existing test-only static catalog before cases. Keep the CLI under test on candidate source, and pin the separate installation fixture to a real published binary and checksum.
 
 Runner, selection code and selection-list changes disable narrowing for commands selected by the same diff. Tooling changes alone still select nothing. Keep this guard in the shared runner result.
+
+Exercise a case's JSON selectors against the shared runner before running the fleet. A rejected selector does not prove a missing record. Test native-output readers against complete recorded artifacts, and report safe exception types and locations when a guest helper fails; never print raw output or exception arguments.
+
+Match fixtures to the native behavior and transport contracts: `command/shell` writes structured stdout in `result` and plain text in `log`. Resolve the recorded `result` data ID and version. A native WebSocket `data.query` with a map `select` returns values in `projected.rows` with an empty `results`, unlike the flattened CLI JSON. Capture the actual transport envelope before mocking it. An invented artifact name or response shape can make a mock test pass while the real reader fails.

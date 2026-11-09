@@ -7,55 +7,84 @@ import { assert, assertEquals, assertFalse } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.9";
 import { ROOT } from "../../../../bin/gate-test-support.ts";
 
-const WORKFLOW = "operation-node-role-add";
 // deno-lint-ignore no-explicit-any
-type Step = { name: string; dependsOn?: { step: string }[]; task: any };
-const steps = (): Step[] => {
-    // deno-lint-ignore no-explicit-any
-    const flow = parse(
-        Deno.readTextFileSync(`${ROOT}/workflows/workflow-${WORKFLOW}.yaml`),
-    ) as any;
-    return flow.jobs.flatMap((job: { steps: Step[] }) => job.steps);
-};
-const step = (name: string) => steps().find((s) => s.name === name)!;
-const after = (name: string) => (step(name).dependsOn ?? []).map((d) => d.step);
+type Task = Record<string, any>;
+const tasks = parse(
+    Deno.readTextFileSync(`${ROOT}/ansible/tasks/role-swamp.yml`),
+) as Task[];
+const task = (name: string) => tasks.find((item) => item.name === name)!;
+const preserve = task("Preserve a regular Swamp executable before linking");
+const childTask = (name: string) =>
+    preserve.block.find((item: Task) => item.name === name)!;
 
 Deno.test("the role installs beside the running binary, keeps it, links, then writes the units", () => {
-    const install = step("Install Swamp").task.globalArgs;
+    const names = tasks.map((item) => item.name);
+    const install =
+        task("Install pinned Swamp binary")["ansible.builtin.get_url"];
     assertEquals(
-        install.path.includes("binary.path"),
-        true,
+        install.dest,
+        "{{ rt.swamp.binary.path }}",
         "the release goes to its own versioned path",
     );
-    assertEquals(after("Keep the running Swamp"), ["Install Swamp"]);
-    assertEquals(after("Link Swamp"), ["Keep the running Swamp"]);
-    assertEquals(after("Apply Swamp serve"), ["Link Swamp"]);
-    assertEquals(after("Apply Swamp worker unit"), ["Link Swamp", "Close the Swamp worker credentials"]);
-    // Only the rename and the link touch the path serve and the workers run.
-    const writers = steps().filter((s) =>
-        s.task?.globalArgs?.path === "/usr/local/bin/swamp" &&
-        s.task.methodName === "apply"
+    assert(
+        names.indexOf("Install pinned Swamp binary") <
+            names.indexOf(preserve.name),
     );
-    assertEquals(writers.map((s) => s.name), ["Link Swamp"]);
-    assertEquals(step("Link Swamp").task.behaviorType, "@swamp/cfgmgmt/link");
+    assert(
+        names.indexOf(preserve.name) <
+            names.indexOf("Link the pinned Swamp executable"),
+    );
+    assert(
+        names.indexOf("Link the pinned Swamp executable") <
+            names.indexOf("Write Swamp service units"),
+    );
+    assertEquals(
+        preserve.when,
+        "swamp_executable.stat.exists and not swamp_executable.stat.islnk",
+    );
+    const writers = tasks.filter((item) =>
+        item["ansible.builtin.file"]?.path === "/usr/local/bin/swamp"
+    );
+    assertEquals(writers.map((item) => item.name), [
+        "Link the pinned Swamp executable",
+    ]);
+    assertEquals(writers[0]["ansible.builtin.file"].state, "link");
+    assertEquals(
+        childTask("Preserve the regular executable")["ansible.builtin.command"]
+            .argv[0],
+        "mv",
+    );
 });
-
-/** The Keep step's script, pointed at a scratch root instead of /usr/local. */
-const keepScript = (root: string) => {
-    const argv: string[] = step("Keep the running Swamp").task.inputs.argv;
-    return argv[argv.indexOf("-c") + 1]
-        .replaceAll("/usr/local/bin/swamp", `${root}/bin/swamp`)
-        .replaceAll("/usr/local/lib", `${root}/lib`);
-};
 const sh = (script: string, ...args: string[]) => {
     const out = new Deno.Command("/bin/sh", {
         args: ["-c", script, "sh", ...args],
     }).outputSync();
     assert(out.success, new TextDecoder().decode(out.stderr));
 };
-/** The keep step, with the release path the workflow passes. */
-const keep = (root: string, version: string) =>
-    sh(keepScript(root), `${root}/lib/orbit-swamp/${version}/swamp`);
+/** Apply the Ansible preserve block and link to scratch paths, using its actual rename argv. */
+const keep = (root: string, version: string) => {
+    if (!Deno.lstatSync(`${root}/bin/swamp`).isSymlink) {
+        const replaced = Deno.makeTempDirSync({
+            dir: `${root}/lib/orbit-swamp`,
+            prefix: "replaced-",
+        });
+        const mode = childTask(
+            "Allow workers to execute the preserved binary",
+        )["ansible.builtin.file"].mode;
+        Deno.chmodSync(replaced, Number.parseInt(mode, 8));
+        const argv: string[] = childTask(
+            "Preserve the regular executable",
+        )["ansible.builtin.command"].argv.map((value: string) =>
+            value.replaceAll("/usr/local/bin/swamp", `${root}/bin/swamp`)
+                .replaceAll("{{ swamp_replaced.path }}", replaced)
+        );
+        const output = new Deno.Command(argv[0], { args: argv.slice(1) })
+            .outputSync();
+        assert(output.success, new TextDecoder().decode(output.stderr));
+    }
+    // The next file task confirms (or changes) the link after the preserve block.
+    link(`${root}/lib/orbit-swamp/${version}/swamp`, `${root}/bin/swamp`);
+};
 const plainFile = async (root: string) => {
     await Deno.copyFile(SHELL, `${root}/bin/swamp`);
     await Deno.chmod(`${root}/bin/swamp`, 0o755);
@@ -103,7 +132,7 @@ Deno.test("the keep step renames the running file, so the link switch leaves it 
         await plainFile(root);
         const old = start(`${root}/bin/swamp`);
         keep(root, "v2");
-        // The path is a link to the release at once, before Link Swamp confirms it.
+        // The preserve block and link task leave the old inode live beside the release.
         assertEquals(
             Deno.readLinkSync(`${root}/bin/swamp`),
             `${root}/lib/orbit-swamp/v2/swamp`,
@@ -122,10 +151,10 @@ Deno.test("the keep step renames the running file, so the link switch leaves it 
 
         // The next pin: a process started through the link runs its version's file, which the switch never touches.
         const linked = start(`${root}/bin/swamp`);
-        keep(root, "v3"); // a link is left alone
+        keep(root, "v3"); // the existing release's inode is left alone
         assertEquals(
             Deno.readLinkSync(`${root}/bin/swamp`),
-            `${root}/lib/orbit-swamp/v2/swamp`,
+            `${root}/lib/orbit-swamp/v3/swamp`,
         );
         link(`${root}/lib/orbit-swamp/v3/swamp`, `${root}/bin/swamp`);
         assertEquals(exe(linked.pid), `${root}/lib/orbit-swamp/v2/swamp`);

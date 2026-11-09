@@ -8,7 +8,6 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
-use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -47,35 +46,50 @@ it('registers the exact node role add command signature surface', function (): v
         ]);
 });
 
+it('rejects missing selectors in non-interactive modes before connector io', function (array $arguments, string $code): void {
+    MockClient::global([]);
+    $this->artisan('node:role:add', $arguments)->expectsOutputToContain($code)->assertFailed();
+    MockClient::getGlobal()->assertNothingSent();
+})->with([
+    [['--json' => true], 'node_role.role_required'],
+    [['--json' => true, 'node' => '4'], 'node_role.role_required'],
+    [['--json' => true, 'role' => 'app-dev'], 'node.id_invalid'],
+    [['--no-interaction' => true], 'node_role.role_required'],
+    [['--no-interaction' => true, 'node' => '4'], 'node_role.role_required'],
+]);
+
 it('rejects an invalid node id before connector io', function (string $nodeId): void {
     $mockClient = MockClient::global();
 
     $this
         ->artisan('node:role:add', ['node' => $nodeId, 'role' => 'app-dev'])
         ->expectsOutputToContain('Node ID must be a positive integer.')
+        ->expectsOutputToContain('Code: node.id_invalid')
         ->assertExitCode(1);
 
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
     'zero' => '0',
     'negative' => '-1',
+    'recorded name' => 'app-dev',
+    'unknown name' => 'operator',
+    'overflow' => '999999999999999999999999',
 ]);
 
-it('rejects an unknown node name before the role request', function (): void {
-    $mockClient = MockClient::global([
-        ListNodesRequest::class => MockResponse::make([
-            'data' => [node_role_add_node_payload(id: 7, name: 'app-dev')],
-            'meta' => ['request_id' => node_role_add_request_id()],
-        ]),
-    ]);
+it('refuses Analytics storage options on another role without sending a request', function (string $option): void {
+    $mockClient = MockClient::global();
 
-    $this
-        ->artisan('node:role:add', ['node' => 'operator', 'role' => 'app-dev'])
-        ->expectsOutputToContain('Node [operator] is not registered.')
-        ->assertExitCode(1);
+    $this->artisan('node:role:add', [
+        'node' => '7', 'role' => 'app-dev', '--converge' => true, '--json' => true, $option => '41',
+    ])->expectsOutput(json_encode(['error' => [
+        'code' => 'validation.failed',
+        'message' => 'Analytics storage options are only valid for the analytics role.',
+        'details' => ['field' => $option],
+        'request_id' => null,
+    ]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))->assertExitCode(1);
 
-    $mockClient->assertNotSent(AddNodeRoleRequest::class);
-});
+    expect($mockClient->getLastPendingRequest())->toBeNull();
+})->with(['--postgres-process', '--clickhouse-process']);
 
 it('rejects an empty role before connector io', function (): void {
     $mockClient = MockClient::global();
@@ -138,6 +152,8 @@ describe('the analytics role', function (): void {
         'ClickHouse missing' => [['--postgres-process' => '41']],
         'not a number' => [['--postgres-process' => 'postgres', '--clickhouse-process' => '42']],
         'zero' => [['--postgres-process' => '41', '--clickhouse-process' => '0']],
+        'Postgres overflow' => [['--postgres-process' => '999999999999999999999999', '--clickhouse-process' => '42']],
+        'ClickHouse overflow' => [['--postgres-process' => '41', '--clickhouse-process' => '999999999999999999999999']],
     ]);
 
 });
@@ -164,36 +180,7 @@ function node_role_add_command_options(?SymfonyCommand $command): array
         ->all();
 }
 
-/** @return array<string, mixed> */
-
-/** @return array<string, mixed> */
-
-/** @return array<string, mixed> */
 function node_role_add_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
-}
-
-/** @return array<string, mixed> */
-function node_role_add_node_payload(int $id, string $name): array
-{
-    return [
-        'id' => $id,
-        'name' => $name,
-        'status' => 'active',
-        'platform' => 'linux',
-        'architecture' => 'x86_64',
-        'tld' => null,
-        'public_ssh_host' => '203.0.113.7',
-        'public_ssh_port' => 22,
-        'user' => 'orbit',
-        'wireguard_ip' => '10.44.0.7',
-        'wireguard_public_key' => 'key',
-        'wireguard_endpoint_override' => null,
-        'dns_server_override' => null,
-        'ssh_host_fingerprint' => null,
-        'failed_step' => null,
-        'error_code' => null,
-        'roles' => [],
-    ];
 }

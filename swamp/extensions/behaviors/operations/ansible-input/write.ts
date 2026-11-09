@@ -1,6 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import * as ci from "../node/ci_host_spec.ts";
 import { clickhouseFiles } from "../analytics/clickhouse_files.ts";
+import { roleAddPlans } from "./role_add_plans.ts";
 import { convergeResult, ReportInput } from "./converge_result.ts";
 import { convergeInput } from "./converge_input.ts";
 
@@ -31,6 +32,38 @@ export const behavior = {
         output: { schema: z.object({ stdout: z.string() }), lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
+        composeRole: {
+            description:
+                "Compose role resources from Ansible observations in the private run folder",
+            arguments: z.object({
+                path: Path,
+                phase: z.enum(["tools", "publication"]),
+            }).strict(),
+            async execute(
+                raw: { path: string; phase: "tools" | "publication" },
+            ) {
+                const path = Path.parse(raw.path);
+                const folder = path.slice(0, path.lastIndexOf("/"));
+                const intent = z.record(z.string(), z.unknown()).parse(
+                    JSON.parse(await Deno.readTextFile(path)),
+                );
+                const previous = JSON.parse(
+                    await Deno.readTextFile(folder + "/composed.json"),
+                );
+                const plans = JSON.parse(
+                    await Deno.readTextFile(folder + "/plans.json"),
+                );
+                const composed = await roleAddPlans(intent, folder, raw.phase);
+                await Deno.writeTextFile(
+                    folder + "/composed.json",
+                    JSON.stringify({
+                        plans: { ...plans, ...previous.plans, ...composed },
+                    }),
+                    { mode: 0o600 },
+                );
+                return {};
+            },
+        },
         convergeInput: {
             description: "Build a private, literal Node converge inventory with recorded SSH pins",
             arguments: ReportInput,
@@ -81,6 +114,12 @@ export const behavior = {
                     JSON.stringify({ ci, clickhouse: clickhouseFiles }),
                     { mode: 0o600 },
                 );
+                await Deno.writeTextFile(folder + "/composed.json", "{}", {
+                    mode: 0o600,
+                });
+                await Deno.writeTextFile(folder + "/composed.yml", "{}", {
+                    mode: 0o600,
+                });
                 const requirementsPath = ctx.extensionFile(
                     "ansible/requirements.txt",
                 );

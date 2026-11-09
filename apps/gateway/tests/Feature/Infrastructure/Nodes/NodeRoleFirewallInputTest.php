@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Firewall\NodeFirewallDesiredRules;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -33,4 +35,35 @@ it('refuses a Metrics firewall intent without one active Gateway', function (): 
 
     expect(fn () => app(NodeRoleFirewallInput::class)->convergeCommands($metrics, RoleName::Metrics))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('metrics.gateway_ambiguous'));
+});
+
+it('keeps prepared task host DHCP and DNS owned independently of role add and removal', function (): void {
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => 'task-host', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.3',
+        'public_ssh_host' => '10.44.0.3', 'user' => 'orbit',
+        'settings' => ['task_vms' => ['network' => 'proofbr0', 'cidr' => '10.252.42.0/24', 'task_places' => 2]],
+    ]));
+    $catalog = app(NodeFirewallRuleCatalog::class);
+    $input = $catalog->taskHostInput($node);
+    expect(array_map(fn ($rule) => $rule->shape->comment, $input))->toBe($catalog::TaskHostInputComments);
+    foreach ($input as $rule) {
+        expect($rule->shape->inInterface)->toBe('proofbr0');
+    }
+    expect($input[0]->shape->sourcePort)->toBe('68')
+        ->and($input[1]->shape->destination)->toBe('10.252.42.1')
+        ->and($input[2]->shape->destination)->toBe('10.252.42.1');
+    $node->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+    $desired = app(NodeFirewallDesiredRules::class)->forNode($node);
+    foreach ($catalog::TaskHostInputComments as $comment) {
+        $owned = array_values(array_filter($desired, fn ($rule) => $rule->name === $comment));
+        expect($owned)->toHaveCount(1)->and($owned[0]->role)->toBeNull();
+    }
+    $roles = app(NodeRoleFirewallInput::class);
+    $commands = $roles->convergeCommands($node, RoleName::CiRunner);
+    foreach ([...$commands['desired'], ...$commands['remove']] as $command) {
+        expect(in_array(end($command), $catalog::TaskHostInputComments, true))->toBeFalse();
+    }
+    foreach ($roles->remove($node, RoleName::CiRunner)['remove'] as $rule) {
+        expect(in_array($rule['comment'], $catalog::TaskHostInputComments, true))->toBeFalse();
+    }
 });

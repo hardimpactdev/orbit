@@ -92,7 +92,14 @@ function commandText(task: Item): string {
     const body = module === undefined ? undefined : task[module];
     if (typeof body === "string") return body;
     if (body?.cmd) return String(body.cmd);
-    if (Array.isArray(body?.argv)) return body.argv.join(" ");
+    if (Array.isArray(body?.argv)) {
+        // In argv mode, a pathname passed to mv/cp is data, not an executed binary.
+        // Shells and execution wrappers can execute the remaining arguments.
+        const executable = String(body.argv[0]);
+        return /(?:^|\/)(?:sh|bash|dash|env|sudo|runuser)$/.test(executable)
+            ? body.argv.join(" ")
+            : executable;
+    }
     return "";
 }
 

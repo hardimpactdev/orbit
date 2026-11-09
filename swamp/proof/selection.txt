@@ -66,6 +66,21 @@ apps/gateway/routes/api/node.php                             node:access:add nod
 packages/php-sdk/src/Requests/Nodes/**                       node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
 packages/php-sdk/src/Responses/Nodes/**                      node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
 
+# Role addition and explicit role convergence share one native workflow and cases file.
+apps/cli/app/Commands/Nodes/AddNodeRoleCommand.php          node:role:add
+apps/cli/app/Commands/Nodes/FollowsNodeRoleOperations.php   node:role:add
+apps/gateway/app/Actions/Nodes/AdmitNodeRoleOperationAction.php  node:role:add
+apps/gateway/app/Http/Requests/Nodes/AddNodeRoleRequest.php  node:role:add
+apps/gateway/app/Domain/Nodes/NativeNodeRoleAddInput.php     node:role:add
+apps/gateway/app/Domain/Nodes/NativeNodeRoleRuntimeInput.php  node:role:add
+apps/gateway/app/Domain/Nodes/NodeRoleDirectProjection.php   node:role:add
+packages/php-sdk/src/Requests/Nodes/AddNodeRoleRequest.php  node:role:add
+swamp/workflows/workflow-operation-node-role-add.yaml       node:role:add
+swamp/ansible/operation-node-role-add.yml                   node:role:add
+swamp/ansible/tasks/role-*.yml                             node:role:add
+swamp/extensions/behaviors/operations/node-bootstrap/tool_setup_plan.ts  node:role:add
+swamp/proof/node/role-add.cases.yaml                        node:role:add
+
 # Shared recorded-read dependencies outside the Node-family directories.
 apps/gateway/app/Models/NodeAccess.php                     node:list node:show
 apps/gateway/app/Models/Cluster.php                        node:list node:show

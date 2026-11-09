@@ -333,14 +333,20 @@ def json_value(document, path):
     """A dotted path, with optional array index or unique row selection: nodes[id=7].roles. Missing is not null."""
     value = document
     for part in path.split('.'):
-        match = re.fullmatch(r'([^\[\]]+)(?:\[(?:id=)?([0-9]+)\])?', part)
+        match = re.fullmatch(r'([^\[\]]+)(?:\[(?:([a-z_][a-z0-9_]*)=)?([a-zA-Z0-9_-]+)\])?', part)
         if not match or not isinstance(value, dict) or match[1] not in value:
             raise Infra(f'JSON path {path}: missing {part}')
         value = value[match[1]]
-        if match[2] is not None:
+        if match[3] is not None:
             if not isinstance(value, list):
                 raise Infra(f'JSON path {path}: {part} is not a list')
-            selected = [row for row in value if isinstance(row, dict) and row.get('id') == int(match[2])] if '[id=' in part else value[int(match[2]):int(match[2]) + 1]
+            if match[2] is not None:
+                expected = int(match[3]) if match[3].isdigit() else match[3]
+                selected = [row for row in value if isinstance(row, dict) and row.get(match[2]) == expected]
+            elif match[3].isdigit():
+                selected = value[int(match[3]):int(match[3]) + 1]
+            else:
+                raise Infra(f'JSON path {path}: {part} needs an index or field selector')
             if len(selected) != 1:
                 raise Infra(f'JSON path {path}: {part} selects {len(selected)} rows')
             value = selected[0]
@@ -480,6 +486,54 @@ def record(run, args):
     if 'min' in args and len(found) < args['min']:
         failures.append(f"{label}: {len(found)} rows match {json.dumps(where, sort_keys=True)}, expected at least {args['min']}")
     return failures + (in_order(label, found, args['order']) if 'order' in args else [])
+
+
+def service(run, args):
+    node = nodes_of(run, 'service', args['on'])[0]
+    if args['state'] not in ('active', 'inactive', 'stop'):
+        raise Infra('service state is active, inactive or stop')
+    command = ['systemctl', 'stop' if args['state'] == 'stop' else 'is-active', args['name']]
+    done = run.fleet.sh(node, shlex.join(command))
+    run.evidence_text('service-' + args['name'] + '.txt', done.stdout + done.stderr)
+    if args['state'] == 'stop':
+        return [] if done.returncode == 0 else [f'service {node}: stop failed: {done.stderr}']
+    return [] if done.stdout.strip() == args['state'] else [f'service {node} {args["name"]}: {done.stdout.strip()}, expected {args["state"]}']
+
+
+def package(run, args):
+    node = nodes_of(run, 'package', args['on'])[0]
+    for name in args['any']:
+        done = run.fleet.sh(node, shlex.join(['dpkg-query', '-W', '-f=${db:Status-Status}', name]))
+        if done.returncode == 0 and done.stdout.strip() == 'installed':
+            return []
+    return [f'package {node}: none of {args["any"]} is installed']
+
+
+def ansible_changes(run, args):
+    command = ['runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit',
+               'php', fleet_module.NODE_CHECKOUT + '/tools/swamp-proof-guest/ansible-recaps.php']
+    done = run.fleet.sh('gateway', shlex.join(command), timeout=120, stdin_text=json.dumps(args))
+    if done.returncode:
+        raise Infra(f'Ansible recap read: {done.stderr[-500:]}')
+    try:
+        document = json.loads(done.stdout)
+    except ValueError as error:
+        raise Infra('Ansible recap read returned no JSON') from error
+    run.evidence_text('ansible-recaps.json', json.dumps(document, indent=2))
+    return check_ansible_changes(document, args)
+
+
+def check_ansible_changes(document, args):
+    failures = []
+    for phase in args['phases']:
+        observed = document.get(phase, {})
+        hosts = observed.get('hosts', [])
+        if observed.get('status') != 'succeeded' or not hosts:
+            failures.append(f'Ansible {phase}: missing successful phase recap')
+        for host in hosts:
+            if host.get('changed') != args['changed'] or host.get('failed') != 0 or host.get('unreachable') != 0:
+                failures.append(f'Ansible {phase}: {host}')
+    return failures
 
 
 def doctor(run, args):
@@ -747,5 +801,5 @@ def unbuilt(name):
 
 FUNCTIONS = {name: unbuilt(name) for name in spec.STEPS}
 FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6_addresses, 'listener': listener, 'ufw_rule': ufw_rule, 'probe': probe, 'cli': cli, 'ufw': ufw, 'record': record, 'doctor': doctor,
-                  'unchanged': unchanged, 'ufw_delete': ufw_delete, 'agent_report': agent_report, 'node_down': node_down,
+                  'service': service, 'package': package, 'ansible_changes': ansible_changes, 'unchanged': unchanged, 'ufw_delete': ufw_delete, 'agent_report': agent_report, 'node_down': node_down,
                   'node_access_remove': node_access_remove, 'node_fixture': node_fixture, 'recorded_request': recorded_request})

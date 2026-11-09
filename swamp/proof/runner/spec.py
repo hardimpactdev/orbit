@@ -29,6 +29,9 @@ STEPS = {
     'probe': (SECTIONS, {'from', 'to', 'port', 'expect'}, {'id', 'proto', 'family'}),
     'ufw': (('expect',), {'on', 'rows'}, {'family', 'absent'}),
     'record': (('expect',), {'list'}, {'node', 'where', 'count', 'min', 'order', 'args', 'section'}),
+    'service': (('setup', 'act', 'expect'), {'on', 'name', 'state'}, set()),
+    'package': (('expect',), {'on', 'any'}, set()),
+    'ansible_changes': (('expect',), {'operation', 'phases', 'changed'}, set()),
     'doctor': (('expect',), {'node', 'drift'}, set()),
     'unchanged': (('expect',), {'since'}, {'except', 'what', 'request'}),
     'ufw_delete': (('setup', 'negative'), {'on', 'to'}, {'from'}),
@@ -45,7 +48,7 @@ DEFAULT_PARALLEL = 4
 GLOBAL_STEPS = {'fault', 'busy_node', 'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses', 'node_fixture', 'recorded_request'}
 # Steps that compare or wait on the whole state of their Node: no other case may work on that Node meanwhile.
 # Steps that name the Node they work on under `on` or `node`.
-NODE_WORK = {'listener', 'ufw_rule', 'ufw_delete', 'ufw', 'record', 'doctor'}
+NODE_WORK = {'listener', 'ufw_rule', 'ufw_delete', 'ufw', 'record', 'doctor', 'service', 'package'}
 # Step keys whose list value means one step per item.
 EXPAND = {'probe': ('from', 'proto', 'port', 'family'), 'ufw_rule': ('proto', 'family')}
 

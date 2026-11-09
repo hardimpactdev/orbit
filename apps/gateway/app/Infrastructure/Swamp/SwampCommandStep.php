@@ -607,7 +607,9 @@ final readonly class SwampCommandStep
             'predicate' => 'id == "'.$artifact['dataId'].'" && version == '.$artifact['version'],
             'limit' => 2, 'select' => '{"id": id, "name": name, "version": version, "content": content}',
         ]);
-        $rows = is_array($reply['data'] ?? null) ? ($reply['data']['results'] ?? null) : null;
+        // Native selects put their values in projected.rows and leave results empty.
+        $projected = is_array($reply['data'] ?? null) ? ($reply['data']['projected'] ?? null) : null;
+        $rows = is_array($projected) && ($projected['shape'] ?? null) === 'map' ? ($projected['rows'] ?? null) : null;
         $row = is_array($rows) && count($rows) === 1 ? array_first($rows) : null;
         if (! is_array($row) || ($row['id'] ?? null) !== $artifact['dataId'] || ($row['name'] ?? null) !== $name
             || ($row['version'] ?? null) !== $artifact['version']) {

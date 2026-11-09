@@ -183,6 +183,8 @@ describe('proof verify requests', function (): void {
         'family and action' => ['firewall:allow'],
         'underscore in the family' => ['ai_router:status'],
         'hyphen in the action' => ['node:ssh-access'],
+        'nested command' => ['node:role:add'],
+        'more nested parts' => ['family:part:sub-command:action'],
     ]);
 
     it('refuses a command that is not family:action', function (string $command): void {
@@ -191,7 +193,10 @@ describe('proof verify requests', function (): void {
         'no colon' => ['doctor'],
         'empty' => [''],
         'upper case' => ['Firewall:allow'],
-        'three segments' => ['firewall:rule:allow'],
+        'empty middle part' => ['node::add'],
+        'empty final part' => ['node:role:'],
+        'upper case nested part' => ['node:Role:add'],
+        'nested path' => ['node:role:../add'],
         'leading digit' => ['1firewall:allow'],
         'empty action' => ['firewall:'],
         'leading hyphen in the action' => ['firewall:-allow'],

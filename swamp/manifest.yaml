@@ -52,6 +52,12 @@ additionalFiles:
   - ansible/tasks/gateway-swamp-grants.yml
   - ansible/tasks/gateway-ansible-collections.yml
   - ansible/tasks/php.yml
+  - ansible/tasks/role-tool-manager.yml
+  - ansible/tasks/role-analytics.yml
+  - ansible/tasks/role-swamp.yml
+  - ansible/tasks/role-publication-read.yml
+  - ansible/tasks/role-publication-php.yml
+  - ansible/tasks/role-publication-dns.yml
   - ansible/tasks/exporter.yml
   - ansible/tasks/exporter-pool.yml
   - ansible/tasks/metrics.yml

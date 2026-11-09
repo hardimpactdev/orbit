@@ -108,7 +108,9 @@ function recordedTurnSocket(string $root, ?string $child, array $histories): Web
             }
             $data = match ($frame['type']) {
                 'workflow.run.search' => ['results' => $this->child === null ? [] : [['runId' => $this->child, 'parentRun' => ['runId' => $this->root]]]],
-                'data.query' => ['results' => $this->artifactReplies[$frame['payload']['predicate']] ?? $this->artifactRows],
+                'data.query' => ['results' => [], 'projected' => ['shape' => 'map',
+                    'columns' => ['id', 'name', 'version', 'content'],
+                    'rows' => $this->artifactReplies[$frame['payload']['predicate']] ?? $this->artifactRows]],
                 default => $this->histories[$frame['payload']['workflowIdOrName']],
             };
 

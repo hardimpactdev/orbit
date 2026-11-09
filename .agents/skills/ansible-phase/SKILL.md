@@ -116,6 +116,8 @@ An Incus bridge needs DHCP and DNS input allowances in UFW before a guest's firs
 
 An unpromoted base is a failed build artifact, not a reusable base. Recreate it and its seed from stock on the next refresh. Cloud-init can report completion on a later boot even though a one-shot package module failed earlier and never installed SSH; compare proxy and firewall evidence before changing network policy.
 
+Record a Tool Manager pin and lock only after setup and its checks succeed. Gate both runtime copies and manager commands on that successful configuration; a failed setup must retry, and an unchanged repeat must report zero changes.
+
 Keep outer command inputs under distinct names in `-e @vars.yml`. Extra vars outrank include and block vars, so shared role tasks cannot replace an outer `intent`, `secrets` or `plans`. Test the generated vars through the real phase invocation.
 
 An extraction `creates` guard proves only that a path exists. Once a live version check selects repair, unpack the verified archive again so a stale extracted binary cannot be published back.
