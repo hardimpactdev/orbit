@@ -841,7 +841,7 @@ async fn report_facts(
                 let filesystems: Vec<_> = disks
                     .borrow()
                     .iter()
-                    .map(|disk| disk.filesystem.clone())
+                    .filter_map(|disk| disk.filesystem())
                     .collect();
                 reporter
                     .report(

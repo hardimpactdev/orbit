@@ -1,6 +1,7 @@
 //! Read-only Linux metrics observations. CPU ratios compare per-core counters between host ticks;
 //! every other value comes from procfs or statvfs. No collector program or network request is run.
 
+use futures_util::{future::select_all, FutureExt};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::fs;
@@ -11,51 +12,143 @@ use tokio::{sync::watch, task::JoinHandle};
 const DISK_TIMEOUT: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Debug)]
-pub struct Disk {
-    pub filesystem: crate::facts::Filesystem,
+struct DiskReading {
     used: u64,
+    total: u64,
+    available: u64,
+    observed_at: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct Disk {
+    mount: String,
+    last_good: Option<DiskReading>,
+    stale: bool,
 }
 
 impl Disk {
     fn data(&self) -> Value {
-        json!({"mount": self.filesystem.mount, "used": self.used, "total": self.filesystem.size})
+        json!({
+            "mount": self.mount,
+            "used": self.last_good.as_ref().map(|disk| disk.used),
+            "total": self.last_good.as_ref().map(|disk| disk.total),
+            "observed_at": self.last_good.as_ref().map(|disk| &disk.observed_at),
+            "stale": self.stale,
+        })
+    }
+
+    pub fn filesystem(&self) -> Option<crate::facts::Filesystem> {
+        let disk = self.last_good.as_ref()?;
+        Some(crate::facts::Filesystem {
+            mount: self.mount.clone(),
+            size: disk.total,
+            free: disk.available,
+            observed_at: disk.observed_at.clone(),
+            stale: self.stale,
+        })
     }
 }
 
-/// A single blocking syscall may outlive its deadline. Keep its handle until it exits;
-/// abandoning it and starting another would accumulate stuck threads on a dead mount.
+type DiskRead = Arc<dyn Fn(String) -> Option<DiskReading> + Send + Sync>;
+
+#[derive(Default)]
+struct MountSample {
+    last_good: Option<DiskReading>,
+    stale: bool,
+    pending: Option<JoinHandle<Option<DiskReading>>>,
+}
+
+impl MountSample {
+    fn finish(&mut self, result: Result<Option<DiskReading>, tokio::task::JoinError>) {
+        self.pending = None;
+        self.stale = true;
+        if let Ok(Some(disk)) = result {
+            self.last_good = Some(disk);
+            self.stale = false;
+        }
+    }
+}
+
+/// One pass at a time; one outstanding call per mount. A blocked mount retains
+/// its last good reading and cannot prevent another mount from being refreshed.
 #[derive(Default)]
 struct DiskSampler {
-    pending: Option<JoinHandle<Option<Disk>>>,
+    mounts: BTreeMap<String, MountSample>,
+    current: Vec<String>,
 }
 
 impl DiskSampler {
-    async fn sample(
-        &mut self,
-        mounts: Vec<String>,
-        read: Arc<dyn Fn(String) -> Option<Disk> + Send + Sync>,
-    ) -> Vec<Disk> {
-        if let Some(pending) = self.pending.as_ref() {
-            if !pending.is_finished() {
-                return Vec::new();
+    async fn sample(&mut self, mounts: Vec<String>, read: DiskRead) {
+        self.current = root_first(mounts);
+        // A retired mount's blocked syscall still occupies its slot until it exits.
+        // Mount churn can therefore never accumulate more than 64 outstanding calls.
+        self.mounts.retain(|mount, sample| {
+            self.current.contains(mount)
+                || sample
+                    .pending
+                    .as_ref()
+                    .is_some_and(|call| !call.is_finished())
+        });
+        for mount in &self.current {
+            if !self.mounts.contains_key(mount) {
+                if self.mounts.len() == crate::facts::MAX_FILESYSTEMS {
+                    continue;
+                }
+                self.mounts.insert(mount.clone(), MountSample::default());
             }
-            // Discard a late result: it belongs to the expired observation.
-            let _ = self.pending.take().unwrap().await;
-        }
-        let mut disks = Vec::new();
-        for mount in mounts {
+            let sample = self.mounts.get_mut(mount).unwrap();
+            if let Some(call) = sample.pending.as_ref() {
+                if call.is_finished() {
+                    let result = sample.pending.take().unwrap().await;
+                    sample.finish(result);
+                }
+                continue;
+            }
             let read = read.clone();
-            let mut pending = tokio::task::spawn_blocking(move || read(mount));
-            match tokio::time::timeout(DISK_TIMEOUT, &mut pending).await {
-                Ok(Ok(Some(disk))) => disks.push(disk),
-                Ok(_) => {}
+            let path = mount.clone();
+            let mut call = tokio::task::spawn_blocking(move || read(path));
+            match tokio::time::timeout(DISK_TIMEOUT, &mut call).await {
+                Ok(result) => sample.finish(result),
                 Err(_) => {
-                    self.pending = Some(pending);
-                    break;
+                    sample.stale = true;
+                    sample.pending = Some(call);
                 }
             }
         }
-        disks
+    }
+
+    /// Consume a late success as soon as it arrives, without waiting for another tick.
+    async fn completed(&mut self) {
+        let calls: Vec<_> = self
+            .mounts
+            .iter_mut()
+            .filter_map(|(mount, sample)| {
+                sample
+                    .pending
+                    .as_mut()
+                    .map(|call| async move { (mount.clone(), call.await) }.boxed())
+            })
+            .collect();
+        if calls.is_empty() {
+            std::future::pending::<()>().await;
+            return;
+        }
+        let ((mount, result), _, _) = select_all(calls).await;
+        self.mounts.get_mut(&mount).unwrap().finish(result);
+    }
+
+    fn snapshot(&self) -> Vec<Disk> {
+        self.current
+            .iter()
+            .map(|mount| {
+                let sample = self.mounts.get(mount);
+                Disk {
+                    mount: mount.clone(),
+                    last_good: sample.and_then(|sample| sample.last_good.clone()),
+                    stale: sample.is_none_or(|sample| sample.stale),
+                }
+            })
+            .collect()
     }
 }
 
@@ -74,7 +167,7 @@ pub fn watch_disks() -> watch::Receiver<Vec<Disk>> {
 
 fn watch_disks_with(
     mounts: impl Fn() -> Vec<String> + Send + 'static,
-    read: Arc<dyn Fn(String) -> Option<Disk> + Send + Sync>,
+    read: DiskRead,
 ) -> watch::Receiver<Vec<Disk>> {
     let (sender, receiver) = watch::channel(Vec::new());
     tokio::spawn(async move {
@@ -84,10 +177,10 @@ fn watch_disks_with(
         loop {
             tokio::select! {
                 _ = sender.closed() => break,
-                _ = tick.tick() => {}
+                _ = tick.tick() => sampler.sample(mounts(), read.clone()).await,
+                _ = sampler.completed() => {}
             }
-            let disks = sampler.sample(root_first(mounts()), read.clone()).await;
-            if sender.send(disks).is_err() {
+            if sender.send(sampler.snapshot()).is_err() {
                 break;
             }
         }
@@ -95,18 +188,16 @@ fn watch_disks_with(
     receiver
 }
 
-fn read_disk(mount: String) -> Option<Disk> {
+fn read_disk(mount: String) -> Option<DiskReading> {
     let stat = rustix::fs::statvfs(mount.as_str()).ok()?;
-    Some(Disk {
-        filesystem: crate::facts::Filesystem {
-            mount,
-            size: stat.f_blocks.saturating_mul(stat.f_frsize),
-            free: stat.f_bavail.saturating_mul(stat.f_frsize),
-        },
+    Some(DiskReading {
+        total: stat.f_blocks.saturating_mul(stat.f_frsize),
+        available: stat.f_bavail.saturating_mul(stat.f_frsize),
         used: stat
             .f_blocks
             .saturating_sub(stat.f_bfree)
             .saturating_mul(stat.f_frsize),
+        observed_at: crate::facts::observed_at(),
     })
 }
 
@@ -325,60 +416,68 @@ mod tests {
         assert_eq!(root_first(mounts), vec!["/", "/tmp"]);
     }
 
+    fn reading(used: u64, second: u64) -> DiskReading {
+        DiskReading {
+            used,
+            total: 100,
+            available: 30,
+            observed_at: format!("2026-11-09T00:00:{second:02}Z"),
+        }
+    }
+
     #[tokio::test]
-    async fn a_stalled_mount_expires_while_other_facts_flow_and_only_one_call_stays_in_flight() {
+    async fn a_hung_mount_keeps_its_last_good_reading_while_healthy_disks_and_other_facts_refresh()
+    {
         use std::sync::{
             atomic::{AtomicUsize, Ordering},
             Mutex,
         };
 
-        let calls = Arc::new(AtomicUsize::new(0));
-        let counted = calls.clone();
+        let hung_calls = Arc::new(AtomicUsize::new(0));
+        let counted = hung_calls.clone();
+        let healthy_calls = Arc::new(AtomicUsize::new(0));
+        let healthy = healthy_calls.clone();
         let (started, waiting) = tokio::sync::oneshot::channel();
         let started = Mutex::new(Some(started));
         let (release, stalled) = std::sync::mpsc::channel::<()>();
         let stalled = Mutex::new(stalled);
         let mut disks = watch_disks_with(
-            || vec!["/stalled".into(), "/".into()],
+            || vec!["/hung".into(), "/".into()],
             Arc::new(move |mount| {
-                counted.fetch_add(1, Ordering::SeqCst);
-                if mount == "/stalled" {
-                    if let Some(started) = started.lock().unwrap().take() {
-                        let _ = started.send(());
+                if mount == "/hung" {
+                    let call = counted.fetch_add(1, Ordering::SeqCst);
+                    if call > 0 {
+                        if let Some(started) = started.lock().unwrap().take() {
+                            let _ = started.send(());
+                        }
+                        // Dropping `release` also releases the syscall after a failed assertion.
+                        let _ = stalled.lock().unwrap().recv();
                     }
-                    // Dropping `release` on a failed assertion also releases the fake syscall.
-                    let _ = stalled.lock().unwrap().recv();
+                    Some(reading(10, 1))
+                } else {
+                    let call = healthy.fetch_add(1, Ordering::SeqCst) as u64 + 1;
+                    Some(reading(call, call))
                 }
-                Some(Disk {
-                    filesystem: crate::facts::Filesystem {
-                        mount,
-                        size: 100,
-                        free: 30,
-                    },
-                    used: 60,
-                })
             }),
         );
+        tokio::time::timeout(Duration::from_secs(1), disks.changed())
+            .await
+            .unwrap()
+            .unwrap();
+        let initial = disks.borrow_and_update().clone();
+        assert_eq!(initial.len(), 2);
+        assert!(!initial[0].stale && !initial[1].stale);
+        let hung = initial[1].data();
+
+        tokio::time::pause();
+        tokio::time::advance(crate::facts::HOST_INTERVAL).await;
+        tokio::time::resume();
         tokio::time::timeout(Duration::from_secs(1), waiting)
             .await
             .unwrap()
             .unwrap();
 
-        // The pass expires with its healthy entry even though the syscall stays blocked.
-        tokio::time::timeout(Duration::from_secs(1), disks.changed())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            disks
-                .borrow_and_update()
-                .iter()
-                .map(Disk::data)
-                .collect::<Vec<_>>(),
-            vec![json!({"mount": "/", "used": 60, "total": 100})]
-        );
-
-        // Real fact requests still reach the Gateway while the fake statvfs is blocked.
+        // Real fact requests still reach the Gateway while the second disk call is blocked.
         let (received, mut facts) = tokio::sync::mpsc::unbounded_channel();
         let app = axum::Router::new().route(
             "/api/v1/agent/facts",
@@ -400,23 +499,113 @@ mod tests {
             .unwrap();
             assert_eq!(facts.recv().await.unwrap()["kind"], kind);
         }
+        tokio::time::timeout(Duration::from_secs(1), disks.changed())
+            .await
+            .unwrap()
+            .unwrap();
+        let snapshot = disks.borrow_and_update().clone();
+        assert_eq!(
+            snapshot[0].data(),
+            json!({
+                "mount": "/", "used": 2, "total": 100,
+                "observed_at": "2026-11-09T00:00:02Z", "stale": false,
+            })
+        );
+        let mut stale = hung.clone();
+        stale["stale"] = json!(true);
+        assert_eq!(snapshot[1].data(), stale);
+        let filesystem = snapshot[1].filesystem().unwrap();
+        assert_eq!(filesystem.observed_at, hung["observed_at"]);
+        assert!(filesystem.stale);
 
-        // Later passes omit disks instead of queuing more blocking syscalls.
+        // Another pass refreshes the healthy root again, without retrying the blocked mount.
         tokio::time::pause();
         tokio::time::advance(crate::facts::HOST_INTERVAL).await;
-        disks.changed().await.unwrap();
         tokio::time::resume();
-        assert!(disks.borrow_and_update().is_empty());
-        assert_eq!(calls.load(Ordering::SeqCst), 2);
-        // A blocked call also cannot prevent a later unit report.
-        reporter
-            .report("units", None, &json!({"changed": true}))
-            .await;
-        assert_eq!(facts.recv().await.unwrap()["kind"], "units");
-
+        tokio::time::timeout(Duration::from_secs(1), disks.changed())
+            .await
+            .unwrap()
+            .unwrap();
+        let snapshot = disks.borrow_and_update().clone();
+        assert_eq!(snapshot[0].data()["used"], 3);
+        assert!(!snapshot[0].stale);
+        assert_eq!(snapshot[1].data(), stale);
+        assert_eq!(hung_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(healthy_calls.load(Ordering::SeqCst), 3);
         drop(release);
         drop(disks);
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_slow_disk_publishes_late_successes_with_their_own_timestamp() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Mutex,
+        };
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let (release, stalled) = std::sync::mpsc::channel::<()>();
+        let stalled = Mutex::new(stalled);
+        let mut disks = watch_disks_with(
+            || vec!["/slow".into()],
+            Arc::new(move |_| {
+                let call = counted.fetch_add(1, Ordering::SeqCst) as u64 + 1;
+                let _ = stalled.lock().unwrap().recv();
+                Some(reading(call, call))
+            }),
+        );
+        tokio::time::timeout(Duration::from_secs(1), disks.changed())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            disks.borrow_and_update()[0].data(),
+            json!({
+                "mount": "/slow", "used": null, "total": null, "observed_at": null, "stale": true,
+            })
+        );
+        release.send(()).unwrap();
+        // A late answer is published immediately, without advancing to the next host tick.
+        tokio::time::timeout(Duration::from_secs(1), disks.changed())
+            .await
+            .unwrap()
+            .unwrap();
+        let first = disks.borrow_and_update()[0].data();
+        assert_eq!(
+            first,
+            json!({
+                "mount": "/slow", "used": 1, "total": 100,
+                "observed_at": "2026-11-09T00:00:01Z", "stale": false,
+            })
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        tokio::time::pause();
+        tokio::time::advance(crate::facts::HOST_INTERVAL).await;
+        tokio::time::resume();
+        tokio::time::timeout(Duration::from_secs(1), disks.changed())
+            .await
+            .unwrap()
+            .unwrap();
+        let mut stale = first;
+        stale["stale"] = json!(true);
+        assert_eq!(disks.borrow_and_update()[0].data(), stale);
+        release.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(1), disks.changed())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            disks.borrow()[0].data(),
+            json!({
+                "mount": "/slow", "used": 2, "total": 100,
+                "observed_at": "2026-11-09T00:00:02Z", "stale": false,
+            })
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        drop(disks);
+        drop(release);
     }
 
     #[test]

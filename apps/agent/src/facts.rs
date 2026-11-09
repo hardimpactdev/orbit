@@ -31,7 +31,7 @@ pub const GROUP: &str = "/etc/group";
 const MAX_ACCOUNTS: usize = 512;
 /// Filesystems that hold data; pseudo, network and snap mounts are left out.
 const DATA_FILESYSTEMS: [&str; 7] = ["ext2", "ext3", "ext4", "xfs", "btrfs", "zfs", "f2fs"];
-const MAX_FILESYSTEMS: usize = 64;
+pub(crate) const MAX_FILESYSTEMS: usize = 64;
 
 /// Maximum mount-table input, including entries excluded by the filesystem filter.
 const MAX_MOUNT_TABLE_BYTES: u64 = 256 * 1024;
@@ -89,6 +89,8 @@ pub struct Filesystem {
     pub mount: String,
     pub size: u64,
     pub free: u64,
+    pub observed_at: String,
+    pub stale: bool,
 }
 
 pub fn host_data(os: &str, arch: &str, filesystems: &[Filesystem]) -> Value {
@@ -97,7 +99,7 @@ pub fn host_data(os: &str, arch: &str, filesystems: &[Filesystem]) -> Value {
         "arch": arch,
         "filesystems": filesystems
             .iter()
-            .map(|fs| json!({"mount": fs.mount, "size": fs.size, "free": fs.free}))
+            .map(|fs| json!({"mount": fs.mount, "size": fs.size, "free": fs.free, "observed_at": fs.observed_at, "stale": fs.stale}))
             .collect::<Vec<_>>(),
     })
 }
@@ -972,11 +974,13 @@ mod tests {
             mount: "/".into(),
             size: 100,
             free: 40,
+            observed_at: "2026-11-09T00:00:00Z".into(),
+            stale: true,
         }];
 
         assert_eq!(
             host_data("linux", "x86_64", &fs),
-            json!({"os": "linux", "arch": "x86_64", "filesystems": [{"mount": "/", "size": 100, "free": 40}]})
+            json!({"os": "linux", "arch": "x86_64", "filesystems": [{"mount": "/", "size": 100, "free": 40, "observed_at": "2026-11-09T00:00:00Z", "stale": true}]})
         );
     }
 
