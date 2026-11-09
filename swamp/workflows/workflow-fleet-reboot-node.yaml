@@ -76,15 +76,12 @@ jobs:
     allowFailure: true
     queueTimeout: 30
     task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "fleet-reboot-mint-" + string(inputs.node_id) }}'
-      methodName: execute
+      type: workflow
+      workflowIdOrName: task-github-mint
       inputs:
-        run: "curl --fail --silent --show-error --proto =https --max-time 60 --max-filesize 65536 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_MINT_REQUEST\" \"$ORBIT_MINT_URL\"\n"
-        env:
-          ORBIT_MINT_URL: '${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/github-token" }}'
-          ORBIT_MINT_REQUEST: '${{ "{\"run_id\":\"" + inputs.root_run + "\"}" }}'
+        operation_id: '${{ inputs.operation_id }}'
+        run_id: '${{ inputs.root_run }}'
+        purpose: ci_rerun
     # Rerun: after the check, re-run once the jobs that a runner accepted just before the drain froze and stopped it.
   - name: 'rerun'
     labels: {role: swamp}

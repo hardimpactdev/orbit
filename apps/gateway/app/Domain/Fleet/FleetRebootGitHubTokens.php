@@ -29,6 +29,9 @@ final readonly class FleetRebootGitHubTokens implements NativeGitHubTokenIssuer
 {
     public function __construct(private DirectOperation $direct, private GitHubAppStore $store, private SwampCommandStep $step) {}
 
+    /** The purpose the rerun step names when it asks for the tokens. */
+    public const string Purpose = 'ci_rerun';
+
     /** @return array{vault: string, key: string} */
     public static function reference(Operation $operation): array
     {
@@ -39,7 +42,7 @@ final readonly class FleetRebootGitHubTokens implements NativeGitHubTokenIssuer
     {
         $operation->refresh();
         $this->direct->assertRun($operation, $runId);
-        if ($purpose !== null || $operation->kind !== FleetReboot::Kind || $callerNodeId !== SwampNode::id() || $operation->status->terminal()
+        if ($purpose !== self::Purpose || $operation->kind !== FleetReboot::Kind || $callerNodeId !== SwampNode::id() || $operation->status->terminal()
             || $operation->cancel_requested_at !== null) {
             throw new ResourceOperationException('operation.github_token_forbidden', 'Only the running fleet reboot pass may mint its Actions tokens.', 403);
         }
