@@ -1,0 +1,17 @@
+---
+- name: Reload withdrawn units
+  ansible.builtin.systemd: {daemon_reload: true}
+  when: reload_units | length > 0
+- name: Reload withdrawn Caddy
+  ansible.builtin.systemd: {name: caddy, state: reloaded}
+- name: Reload published PHP pools
+  ansible.builtin.systemd: {name: "php{{ item.item.key }}-fpm", state: reloaded}
+  loop: "{{ published_php.results | selectattr('changed') | list }}"
+- name: Reload withdrawn PHP pools
+  ansible.builtin.systemd: {name: "php{{ item.item }}-fpm", state: reloaded}
+  loop: "{{ withdrawn_php.results | selectattr('changed') | list }}"
+- name: Reload withdrawn DNS
+  ansible.builtin.systemd: {name: dnsmasq, state: reloaded}
+- name: Reload withdrawn Prometheus
+  ansible.builtin.command: docker kill --signal HUP orbit-metrics-prometheus
+  changed_when: true

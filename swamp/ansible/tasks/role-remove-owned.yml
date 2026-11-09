@@ -15,9 +15,7 @@
 - name: Remove captured managed files and certificate paths
   ansible.builtin.file: {path: "{{ item.path }}", state: absent}
   loop: "{{ files + directories + certificates }}"
-- name: Reload the service catalog after owned unit withdrawal
-  ansible.builtin.systemd: {daemon_reload: true}
-  when: reload_units | length > 0
+  notify: Reload withdrawn units
 - name: Withdraw the Gateway DNS link only when it is not owned by VPN
   when: commands | length > 0
   block:
@@ -29,9 +27,17 @@
       register: dns_tunnel
       failed_when: dns_tunnel.rc not in [0, 1]
       changed_when: false
+    - name: Read the managed link DNS configuration
+      ansible.builtin.command: {argv: [resolvectl, "{{ item }}", orbit]}
+      loop: [dns, domain]
+      when: not vpn_dns_link.stat.exists and dns_tunnel.rc == 0
+      register: dns_link_configuration
+      changed_when: false
     - name: Revert the withdrawn Gateway DNS link
       ansible.builtin.command: resolvectl revert orbit
-      when: not vpn_dns_link.stat.exists and dns_tunnel.rc == 0
+      when:
+        - not vpn_dns_link.stat.exists and dns_tunnel.rc == 0
+        - dns_link_configuration.results | selectattr('stdout', 'defined') | map(attribute='stdout') | select('search', ':\s+\S') | list | length > 0
       changed_when: true
 - name: Read the exact configured firewall rules
   ansible.builtin.command: ufw show added
@@ -67,15 +73,19 @@
         argv: [docker, exec, -i, orbit-metrics-prometheus, /bin/promtool, check, config, /dev/stdin]
         stdin: "{{ prometheus.configuration }}"
       changed_when: false
+    - name: Read the live Prometheus configuration fingerprint
+      ansible.builtin.stat: {path: /etc/orbit/metrics/prometheus.yml, checksum_algorithm: sha256}
+      register: prometheus_file
     - name: Publish Prometheus without replacing its bind-mounted inode
       ansible.builtin.command:
         argv: [dd, of=/etc/orbit/metrics/prometheus.yml, status=none]
         stdin: "{{ prometheus.configuration }}"
         stdin_add_newline: false
+      when: prometheus_file.stat.checksum | default('') != prometheus.configuration | hash('sha256')
       changed_when: true
-    - name: Reload Prometheus
-      ansible.builtin.command: docker kill --signal HUP orbit-metrics-prometheus
-      changed_when: true
+      notify: Reload withdrawn Prometheus
+    - name: Apply changed Prometheus configuration
+      ansible.builtin.meta: flush_handlers
     - name: Verify Prometheus readiness
       ansible.builtin.uri: {url: 'http://127.0.0.1:9090/-/ready'}
 - name: Verify removed managed paths
@@ -102,3 +112,5 @@
 - name: Prove owned containers are absent
   ansible.builtin.assert: {that: not item.exists, quiet: true}
   loop: "{{ removed_containers.results }}"
+- name: Apply withdrawn unit changes before completing
+  ansible.builtin.meta: flush_handlers

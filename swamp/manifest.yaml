@@ -17,6 +17,7 @@ additionalFiles:
   - ansible/transport-exit-codes.json
   - ansible/operation-node-role-remove.yml
   - ansible/tasks/role-remove-owned.yml
+  - ansible/tasks/role-remove-handlers.yml
   - ansible/tasks/role-remove-publication.yml
   - ansible/tasks/role-remove-ci.yml
   - ansible/tasks/role-remove-ci-purge.yml

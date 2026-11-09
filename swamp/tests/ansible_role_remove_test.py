@@ -42,6 +42,33 @@ class RoleRemovalInputTest(unittest.TestCase):
             self.assertEqual(json.loads(folder.joinpath('intent.json').read_text()), intent)
 
     @unittest.skipUnless(shutil.which('ansible-playbook'), 'Ansible is not installed')
+    def test_completed_target_cleanup_is_unchanged_on_retry(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            owned = folder / 'owned.conf'
+            owned.write_text('withdrawn role')
+            retained = folder / 'retained.conf'
+            retained.write_text('another role')
+            folder.joinpath('reach.json').write_text('{"reachable": true}')
+            duties = {key: [] for key in ('stop_units', 'remove_containers', 'publications', 'files', 'directories',
+                                         'certificates', 'reload_units', 'commands', 'firewall')}
+            duties.update(files=[{'path': str(owned)}], prometheus=None)
+            inventory = {'all': {'children': {'role_node': {'hosts': {'fixture': {
+                'ansible_connection': 'local', 'ansible_become': False, **duties}}}}}}
+            folder.joinpath('inventory.json').write_text(json.dumps(inventory))
+            folder.joinpath('vars.json').write_text(json.dumps({'intent': {}, 'run_folder': temp}))
+            for attempt in range(2):
+                result = subprocess.run(['timeout', '30', 'ansible-playbook', '-i', str(folder / 'inventory.json'),
+                                         '-e', '@' + str(folder / 'vars.json'), '--tags', 'remove',
+                                         str(ROOT / 'ansible/operation-node-role-remove.yml')],
+                                        check=False, capture_output=True, text=True, env={**os.environ, 'ANSIBLE_STDOUT_CALLBACK': 'default'})
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(owned.exists())
+                self.assertEqual(retained.read_text(), 'another role')
+                if attempt == 1:
+                    self.assertRegex(result.stdout, r'changed=0\s')
+
+    @unittest.skipUnless(shutil.which('ansible-playbook'), 'Ansible is not installed')
     def test_only_offline_consent_allows_an_unreachable_target(self):
         for offline in (False, True):
             with self.subTest(offline=offline), tempfile.TemporaryDirectory() as temp:

@@ -63,6 +63,9 @@
   become: true
   any_errors_fatal: true
   tags: [fleet]
+  handlers: &withdrawal_handlers
+    - name: Load withdrawal handlers
+      ansible.builtin.import_tasks: tasks/role-remove-handlers.yml
   tasks:
     - name: Withdraw from the fleet
       ansible.builtin.import_tasks: tasks/role-remove-owned.yml
@@ -71,6 +74,7 @@
   gather_facts: false
   become: true
   tags: [remove]
+  handlers: *withdrawal_handlers
   tasks:
     - name: Remove the role
       when: (lookup('file', run_folder ~ '/reach.json') | from_json).reachable

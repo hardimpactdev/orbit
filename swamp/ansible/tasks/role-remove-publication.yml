@@ -10,8 +10,7 @@
         group: caddy
         mode: '0640'
         validate: caddy validate --config %s --adapter caddyfile
-    - name: Reload the serving Caddy
-      ansible.builtin.systemd: {name: caddy, state: reloaded}
+      notify: Reload withdrawn Caddy
 - name: Publish complete PHP pool configuration
   when: publication.after.php is not none
   block:
@@ -29,22 +28,21 @@
         group: root
         mode: '0644'
       loop: "{{ publication.after.php.configurations | default({}, true) | dict2items }}"
+      register: published_php
+      notify: Reload published PHP pools
     - name: Remove withdrawn PHP pool versions
       ansible.builtin.file: {path: "/etc/php/{{ item }}/fpm/pool.d/orbit-scopes.conf", state: absent}
       loop: >-
         {{ (publication.before.php.configurations | default({}, true)).keys()
         | difference((publication.after.php.configurations | default({}, true)).keys()) }}
+      register: withdrawn_php
+      notify: Reload withdrawn PHP pools
     - name: Validate complete PHP pool configuration
       ansible.builtin.command: {argv: ["php-fpm{{ item }}", -t]}
       loop: >-
         {{ ((publication.before.php.configurations | default({}, true)).keys() | list
         + (publication.after.php.configurations | default({}, true)).keys() | list) | unique }}
       changed_when: false
-    - name: Reload published PHP pool versions
-      ansible.builtin.systemd: {name: "php{{ item }}-fpm", state: reloaded}
-      loop: >-
-        {{ ((publication.before.php.configurations | default({}, true)).keys() | list
-        + (publication.after.php.configurations | default({}, true)).keys() | list) | unique }}
 - name: Publish complete private DNS configuration
   when: publication.after.dns is not none
   block:
@@ -55,6 +53,7 @@
         owner: root
         group: root
         mode: '0644'
+      notify: Reload withdrawn DNS
     - name: Write private DNS catalog
       ansible.builtin.copy:
         dest: /var/lib/orbit/private-dns/catalog.json
@@ -62,8 +61,9 @@
         owner: root
         group: root
         mode: '0644'
+      notify: Reload withdrawn DNS
     - name: Validate private DNS
       ansible.builtin.command: dnsmasq --test
       changed_when: false
-    - name: Reload private DNS
-      ansible.builtin.systemd: {name: dnsmasq, state: reloaded}
+- name: Apply changed publication reloads before continuing
+  ansible.builtin.meta: flush_handlers
