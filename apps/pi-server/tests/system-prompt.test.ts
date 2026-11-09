@@ -43,14 +43,14 @@ const fixed: BuildSystemPromptOptions = {
     ],
 };
 
-describe("Pi 1.4.0 prompt parity", () => {
+describe("Pi 1.5.0 prompt parity", () => {
     it.each([
         fixed,
         { ...fixed, customPrompt: "Custom system instructions." },
         { ...fixed, hiddenTools: ["read"], sections: { orbit: "Extra section." } },
         { ...fixed, forceSystemPrompt: "Opaque prompt." },
     ])("matches the installed upstream builder for fixed inputs", (input) => {
-        expect(serverPackage.dependencies["@earendil-works/pi-coding-agent"]).toBe("1.4.0");
+        expect(serverPackage.dependencies["@earendil-works/pi-coding-agent"]).toBe("1.5.0");
         expect(buildSystemPrompt(input)).toBe(upstream.buildSystemPrompt(input));
     });
 });

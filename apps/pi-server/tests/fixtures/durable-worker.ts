@@ -6,22 +6,27 @@ import type { AddressInfo } from "node:net";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createPiServer } from "../../src/http.ts";
-import { SessionRegistry } from "../../src/registry.ts";
+import { PROVIDER_RETRY_POLICY, SessionRegistry } from "../../src/registry.ts";
 
 const [root, mode] = process.argv.slice(2);
 if (!root) throw new Error("Expected fixture root");
 const workspace = join(root, "workspace");
 mkdirSync(join(workspace, ".git"), { recursive: true });
 const faux = fauxProvider({ provider: "faux", models: [{ id: "model-a" }] });
+const hold = async (_context: unknown, options?: { signal?: AbortSignal }) => {
+    writeFileSync(join(root, "request-started"), "yes");
+    await new Promise<void>((resolve) =>
+        options!.signal!.addEventListener("abort", () => resolve(), { once: true }),
+    );
+    return fauxAssistantMessage("cut off");
+};
 if (mode === "hold" || mode === "park") {
+    faux.setResponses([hold]);
+} else if (mode === "rate-limited") {
+    // The first turn fails with a provider category; the second is cut off mid-request.
     faux.setResponses([
-        async (_context, options) => {
-            writeFileSync(join(root, "request-started"), "yes");
-            await new Promise<void>((resolve) =>
-                options!.signal!.addEventListener("abort", () => resolve(), { once: true }),
-            );
-            return fauxAssistantMessage("cut off");
-        },
+        fauxAssistantMessage("", { stopReason: "error", errorMessage: "429 Too Many Requests" }),
+        hold,
     ]);
 } else if (mode === "tool") {
     faux.setResponses([
@@ -47,7 +52,15 @@ modelRuntime.registerNativeProvider(faux.provider);
 await modelRuntime.setRuntimeApiKey("faux", "fixture");
 const registry = new SessionRegistry({
     modelRuntime,
-    harnessSettings: mode?.startsWith("park") ? { restartLimit: 1 } : {},
+    // Pi 1.5 charges a request cut off by the crash as a failed attempt; retry it at once,
+    // except where a test reads the wait.
+    harnessSettings: mode?.startsWith("park")
+        ? { restartLimit: 1 }
+        : mode === "rate-limited"
+          ? { retry: { enabled: false } }
+          : mode === "retry-wait"
+            ? {}
+            : { retry: { ...PROVIDER_RETRY_POLICY, baseDelayMs: 1 } },
     agentDir: join(root, "agent"),
     sessionDir: join(root, "sessions"),
     workspaceRoots: [root],
@@ -58,7 +71,7 @@ const registry = new SessionRegistry({
 const server = createPiServer({
     registry,
     token: "test-token-that-is-at-least-32-characters",
-    capabilities: async () => ({ piVersion: "1.4.0", models: await registry.availableModels() }),
+    capabilities: async () => ({ piVersion: "1.5.0", models: await registry.availableModels() }),
 });
 server.listen(0, "127.0.0.1", () =>
     console.log(

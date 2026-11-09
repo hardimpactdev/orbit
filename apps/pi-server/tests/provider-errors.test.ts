@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { type Model, normalizeContext } from "@earendil-works/pi-ai";
+import { type AssistantMessage, type Model, normalizeContext } from "@earendil-works/pi-ai";
+import { isRetryableAssistantError } from "@earendil-works/pi-ai/utils/retry";
 import { stream } from "@earendil-works/pi-ai/api/openai-codex-responses";
 import { withProviderErrors } from "../src/provider-errors.ts";
 import { deriveState } from "../src/state.ts";
@@ -185,5 +186,26 @@ describe("Codex provider-boundary errors", () => {
                 lastAssistant: await events.result(),
             }).providerError,
         ).toBe("overloaded");
+    });
+});
+
+describe("Durable's retry decision", () => {
+    // Durable asks pi-ai's shared check; the Bun patch makes it honor Orbit's category first.
+    it("follows orbitProviderError before the error text", () => {
+        const failed = { stopReason: "error" as const, errorMessage: "503 Service unavailable" };
+        expect(isRetryableAssistantError(failed as unknown as AssistantMessage)).toBe(true);
+        expect(
+            isRetryableAssistantError({
+                ...failed,
+                orbitProviderError: null,
+            } as unknown as AssistantMessage),
+        ).toBe(false);
+        expect(
+            isRetryableAssistantError({
+                stopReason: "error",
+                errorMessage: "Capacity temporarily unavailable.",
+                orbitProviderError: "overloaded",
+            } as unknown as AssistantMessage),
+        ).toBe(true);
     });
 });

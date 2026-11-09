@@ -1,8 +1,8 @@
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index 1ae291c296dc5d35a7b827e1098977e0d0db32cf..35daf79056aafa7fb115acf7b01489d846700674 100644
+index d33b8069b80bc454b0db59a221aba9332d522bf3..c9b80591d404d0fa4341fe148ace67b13888b9a5 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
-@@ -200,7 +200,13 @@ export async function retryAssistantCall(produce, policy, signal, callbacks) {
+@@ -203,7 +203,13 @@ export async function retryAssistantCall(produce, policy, signal, callbacks) {
   * before restarting the assistant turn.
   */
  export function isRetryableAssistantError(message) {
