@@ -64,7 +64,7 @@ final class OperationRunBudgets
         if (is_string($budget)) {
             $seconds = $operation->input[$budget] ?? null;
 
-            return is_int($seconds) && $seconds > 0 ? $seconds : 60;
+            return is_int($seconds) && $seconds > 0 ? $seconds : (OperationBudgetTable::UncapturedSeconds[$operation->kind] ?? 60);
         }
 
         return self::historySeconds($operation->kind);

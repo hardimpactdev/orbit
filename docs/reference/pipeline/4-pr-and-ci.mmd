@@ -68,7 +68,7 @@ sequenceDiagram
     %%> What it does:
     %%> - a job on the beast or shark runner passes only the full SHA and an idempotency key; it checks out only its own script and chooses no cases
     %%> - a new push cancels the proof run of the previous push on the same PR (GitHub concurrency), so only the latest push finishes its proof
-    %%> - the Gateway checks the commit, selects whole batches and queues CI proofs first come first served; the front proof takes every free usable CI place up to its batch count, balances by measured case time and starts one Swamp run per VM, as in the chart of `proof:run`
+    %%> - the Gateway checks the commit, selects whole batches and queues CI proofs first come first served; the front proof takes every free usable CI place up to its batch count, balances by measured case time and starts one Swamp run per VM, as in the chart of `proof:run`; a plan in which a shard would need more than two hours waits for another place while a usable one is taken
     %%> - the run starts a fresh task VM from the current images, mounts its checkout of the commit in the nested fleet, converges that VM once when the PR changes playbooks or pins, and takes `base`; each batch restores `base` once, nothing converges again
     %%> - the base images stay as they are; only the merge and the seed refresh (stage 6) change them
     %%> Built:

@@ -16,6 +16,7 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\TaskVm;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -46,6 +47,17 @@ final readonly class TaskVmImageRefreshIntent
     {
         return Operation::query()->where('kind', self::Kind)->where('target_type', 'task_vm_host')->where('target_id', $host instanceof Node ? $host->id : $host)
             ->whereNotIn('status', OperationStatus::terminalValues())->first();
+    }
+
+    /**
+     * Whether an open refresh runs its candidate proof in `$vm`. A refresh that waits for a CI place has no slot yet, so it holds none.
+     *
+     * @phpstan-impure
+     */
+    public static function holds(TaskVm $vm): bool
+    {
+        return Operation::query()->where('kind', self::Kind)->where('target_type', 'task_vm_host')->where('target_id', $vm->host_node_id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->where('input->task_vm_id', $vm->id)->exists();
     }
 
     /** Refuses a host that cannot refresh: not a configured, active task VM host. */

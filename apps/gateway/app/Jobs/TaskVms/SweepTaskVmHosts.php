@@ -42,19 +42,18 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
     /**
      * Releases each task VM of the host that no group holds and whose last release failed or whose Operation ended without its projection, such
      * as a refused start (docs/cli/task/vm-release.mmd); a VM of the old pool, which has no slot number, too. One that a task start or a refresh proof still uses is left alone.
+     * Only the slot of an open refresh is that refresh's: a refresh that waits for a CI place holds none, and the failed slots of earlier
+     * refreshes on the host are the places it waits for.
      */
     private function releaseStale(int $hostNodeId): void
     {
-        if (TaskVmImageRefreshIntent::open($hostNodeId) instanceof Operation) {
-            return;
-        }
         $stale = TaskVm::query()->where('host_node_id', $hostNodeId)->whereNull('group_id')
             ->whereIn('state', [TaskVmState::Failed, TaskVmState::Provisioning, TaskVmState::Releasing])->get()
-            ->reject(static fn (TaskVm $vm): bool => Operation::query()->where('target_type', 'task_vm')->where('target_id', $vm->id)
+            ->reject(static fn (TaskVm $vm): bool => TaskVmImageRefreshIntent::holds($vm) || Operation::query()->where('target_type', 'task_vm')->where('target_id', $vm->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists());
         foreach ($stale as $vm) {
             try {
-                $this->releaseIfStale($vm, $hostNodeId);
+                $this->releaseIfStale($vm);
             } catch (ResourceOperationException $refused) {
                 Log::warning('A task VM release was not admitted.', ['task_vm_id' => $vm->id, 'error_code' => $refused->errorCode, 'details' => $refused->details]);
             } catch (Throwable $broken) {
@@ -65,14 +64,14 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
     }
 
     /**
-     * Locks the row and asks again, before the release: a refresh that started after the selection made its group-less VM in the same
-     * transaction as its Operation, so an open refresh now leaves the row alone, and so does a row that changed meanwhile.
+     * Locks the row and asks again, before the release: a refresh makes its group-less VM in the same transaction as its Operation, so a
+     * refresh that holds the row now leaves it alone, and so does a row that changed meanwhile.
      */
-    private function releaseIfStale(TaskVm $vm, int $hostNodeId): void
+    private function releaseIfStale(TaskVm $vm): void
     {
-        DB::transaction(function () use ($vm, $hostNodeId): void {
+        DB::transaction(function () use ($vm): void {
             $vm = TaskVm::query()->lockForUpdate()->find($vm->id);
-            if (! $vm instanceof TaskVm || TaskVmImageRefreshIntent::open($hostNodeId) instanceof Operation || $vm->group_id !== null
+            if (! $vm instanceof TaskVm || TaskVmImageRefreshIntent::holds($vm) || $vm->group_id !== null
                 || ! in_array($vm->state, [TaskVmState::Failed, TaskVmState::Provisioning, TaskVmState::Releasing], true)) {
                 return;
             }

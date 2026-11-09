@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Operations\OperationBudgetTable;
+use App\Domain\Proof\ProofBatchPlan;
 
 it('gives each kind a fixed number of seconds or the captured admission field', function (): void {
     foreach (OperationBudgetTable::SecondsByKind as $kind => $budget) {
@@ -24,4 +25,9 @@ it('has no kind of a command that has a cases file, because a change to the tabl
 
     // When a command whose kind is budgeted here gets a cases file, map this file to that command in swamp/proof/selection.txt.
     expect(array_values(array_intersect($commands, $kinds)))->toBe([]);
+});
+
+it('lets serve run the longest proof shard, whose budget the table does not hold', function (): void {
+    // A proof shard captures its budget at admission, so the serve cap does not see it.
+    expect(OperationBudgetTable::longestFixedSeconds())->toBeGreaterThanOrEqual(ProofBatchPlan::MaxShardSeconds);
 });
