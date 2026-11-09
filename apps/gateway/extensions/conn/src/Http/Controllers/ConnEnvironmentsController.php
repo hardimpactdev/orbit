@@ -15,16 +15,21 @@ use Illuminate\Http\Request;
 use Orbit\Extensions\Conn\Actions\AdmitConnCleanupAction;
 use Orbit\Extensions\Conn\Actions\RegisterConnEnvironmentAction;
 use Orbit\Extensions\Conn\Data\ConnEnvironmentData;
+use Orbit\Extensions\Conn\Domain\ConnServerAccess;
 use Orbit\Extensions\Conn\Http\Requests\RegisterConnEnvironmentRequest;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Symfony\Component\HttpFoundation\Response;
 
 final class ConnEnvironmentsController extends Controller
 {
-    public function index(Request $request): JsonResponse
+    #[RequiresNodeAccess(ServingNode::Collection)]
+    public function index(Request $request, ConnServerAccess $access): JsonResponse
     {
+        $caller = $request->user();
+        assert($caller instanceof Node, description: 'Authenticated peer must be a Node.');
+
         return response()->json([
-            'data' => ConnEnvironment::query()
+            'data' => $access->visible($caller, ConnEnvironment::query())
                 ->with('node')
                 ->orderBy('label')
                 ->orderBy('id')

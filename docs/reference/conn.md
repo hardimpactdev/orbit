@@ -24,17 +24,23 @@ A caller is the active Node that owns its WireGuard address, as for every other 
 
 ## Access
 
-Conn uses the existing [node access](/cli/node/access-add) edges. It has no grant of its own.
+Conn uses the existing [node access](/cli/node/access-add) edges. It has no grant of its own. A T3 server belongs to the Node that registered it, so a server in a container counts as its host Node's server when that Node registers it.
 
-A T3 server belongs to the Node that registered it. A server in a container on a Node counts as that Node's server when that Node registers it. A caller may list a server, read its pairings, mint a pairing link on it, and revoke sessions on it only when it has node access to that Node. The environment list shows only those servers. A server whose Node was removed is visible only to callers with Gateway access.
+| Endpoints | The caller needs |
+| --- | --- |
+| Server list, pairing list, show, create and revoke | Node access to the Node that registered the server. The list shows only those servers. |
+| `GET /me`, `PUT /me/profile`, profiles and settings, Conn Operation show and cancel | Node access to at least one Node: the [collection rule](/cli/node#authority) that `node:list` uses. |
+| `POST /environments`, registration | No edge. |
 
-Profiles, their settings, `GET /me`, `PUT /me/profile`, and the Conn Operation endpoints need node access to at least one Node, the [collection rule](/cli/node#authority) that `node:list` uses.
+The Gateway Node, its serving host, and a Node with an edge to the Gateway Node have access to every Node, so they reach every server. When a server's Node was removed, only those callers reach it. A refused call gets `node_access.required` (403), with `details.consumer_node` and, for a server, `details.serving_node`.
 
-The Gateway Node, its serving host, and a Node with an edge to the Gateway Node have access to every Node, so they reach every server. A refused call gets `node_access.required` (403), with `details.consumer_node` and, for a server, `details.serving_node`.
+For example, a phone with an edge to `beast` sees and pairs with the servers that `beast` registered, and no others. A [task VM](/reference/compute-drivers#placement-invariant) Node never holds an edge, so it can use no Conn endpoint except registration.
 
-A [task VM](/reference/compute-drivers#placement-invariant) Node never holds an access edge, so it can use no Conn endpoint except registration.
+### Registration stays with its Node
 
-Registration needs no edge. It stays tied to the Node the server runs on: the calling Node becomes the server's Node. Once a Node registered an environment id, another Node cannot register it again: it gets `conn.environment_owned` (409). When the Node is removed, the server has no Node and the next registration takes it.
+The calling Node becomes the server's Node. Once a Node registered an environment id, another Node cannot register it again: it gets `conn.environment_owned` (409). When the Node is removed, the server has no Node, and the next registration takes it.
+
+### Removing an edge
 
 Removing an edge does not revoke sessions that the consumer already paired. Revoke them with `POST /environments/{environment_id}/pairings/revoke` and the consumer's `node_id`.
 

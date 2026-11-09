@@ -18,8 +18,8 @@ use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 /**
  * Registers a T3 server. The Gateway checks that the URL serves the named environment and that T3 accepts
- * the admin session the server's host issued, then stores that session encrypted. Registering again
- * replaces the session and records a revision for Swamp to clean earlier Gateway sessions.
+ * the admin session the server's host issued, then stores that session encrypted. Registering again from
+ * the same Node replaces the session and records a revision for Swamp to clean earlier Gateway sessions.
  */
 final readonly class RegisterConnEnvironmentAction
 {
@@ -33,6 +33,12 @@ final readonly class RegisterConnEnvironmentAction
 
     public function execute(Node $node, RegisterConnEnvironmentData $data): ConnEnvironment
     {
+        // A server stays with the Node that registered it; only its own Node registers it again.
+        $owner = ConnEnvironment::query()->where('environment_id', $data->environmentId)->first()?->node_id;
+        if ($owner !== null && $owner !== $node->id) {
+            throw new ResourceOperationException('conn.environment_owned', "Another Node registered environment {$data->environmentId}.", 409);
+        }
+
         $descriptor = $this->server->describe($data->url);
 
         if ($descriptor->environmentId !== $data->environmentId) {
