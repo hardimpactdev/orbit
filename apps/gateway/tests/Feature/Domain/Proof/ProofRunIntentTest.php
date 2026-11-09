@@ -9,6 +9,7 @@ use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofChangedFile;
 use App\Domain\Proof\ProofChangedFiles;
@@ -547,7 +548,7 @@ describe('proof:run admission', function (): void {
  * @param  array<string,mixed>  $proofInput
  * @return array<string,mixed>
  */
-function proofRunInput(array $proofInput): array
+function proofRunInput(array $proofInput, array $assignments = []): array
 {
     SwampNodeFixture::ensure();
     $guest = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'tvm-710', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
@@ -561,7 +562,7 @@ function proofRunInput(array $proofInput): array
     $method = new ReflectionMethod(ProofRunIntent::class, 'runInput');
 
     return $method->invoke(app(ProofRunIntent::class), $proof, PROOF_SHA, str_repeat('c', 40), ['command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml'],
-        ['node_id' => $guest->id, 'execution_secrets' => []], $group, $instance);
+        ['node_id' => $guest->id, 'execution_secrets' => []], $group, $instance, $assignments);
 }
 
 /** A host that cannot place the proof: with no VM settings every command is refused for capacity. */
@@ -600,6 +601,15 @@ describe('the intent of a run', function (): void {
 
         expect($input['verify'])->toMatchArray(['command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml', 'head' => PROOF_SHA, 'merge_base' => str_repeat('c', 40),
             'checkout_path' => '/home/orbit/apps/orbit/workspace']);
+    });
+
+    it('carries the run budget of the batches it proves', function (): void {
+        $batch = ['command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml', 'cases' => ['a'], 'seconds' => 400.0];
+        $input = proofRunInput([], [[...$batch, 'batch' => 'one'], [...$batch, 'batch' => 'two']]);
+
+        // (600 + 2 x 180 + 800) x 1.5 = 2,640, rounded up to five minutes.
+        expect($input['run_budget_seconds'])->toBe(2700)->and(OperationRunBudgets::seconds(new Operation(['kind' => 'proof.command', 'input' => $input,
+            'state' => ['swamp_run_id' => 'run'], 'attempts' => 1])))->toBe(2700);
     });
 
     it('carries keep_failed only for a proof that was started with it', function (array $proofInput, bool $carried): void {
@@ -703,4 +713,30 @@ it('selects every case when the runner selection is unavailable', function (): v
     expect($proof->input['cases'][0])->not->toHaveKey('only')
         ->and($proof->input['cases'][0]['reasons'])->toBe(['*' => 'selection uncertain'])
         ->and($proof->error_code)->toBe('proof.execution_disabled');
+});
+
+it('waits for another CI place rather than plan a shard past the longest shard budget', function (): void {
+    $source = proofSource();
+    $file = 'swamp/proof/firewall/allow.cases.yaml';
+    $source->documents = [PROOF_SHA.':swamp/proof/batches.yaml' => "batches:\n  one: {}\n  two: {}\n",
+        PROOF_SHA.':'.$file => "command: firewall:allow\ncases:\n  - {id: a, batch: one}\n  - {id: b, batch: two}\n"];
+    $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000');
+    $source->ranges['dddddddddddd0000000000000000000000000000'] = new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles(str_repeat('f', 40), [], true));
+    $host = Node::query()->where('name', 'beast')->firstOrFail();
+    // Both cases took 3,000 s: on one place their shard needs (600 + 2 x 180 + 6,000) x 1.5 s, more than one shard may take.
+    Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'node', 'target_id' => $host->id, 'node_id' => $host->id, 'status' => OperationStatus::Succeeded,
+        'input' => [], 'result' => ['cases' => [['program' => $file.'#a', 'seconds' => 3000], ['program' => $file.'#b', 'seconds' => 3000]]]]);
+    // One of the host's two CI places is taken.
+    TaskVm::query()->create(['host_node_id' => $host->id, 'provider' => 'incus', 'name' => 'beast-tvm-9', 'slot_number' => 9, 'wireguard_ip' => '10.44.0.199',
+        'state' => 'ready', 'capacity_pool' => 'ci', 'size' => 'large']);
+    $caller = Node::query()->where('name', 'swamp')->firstOrFail();
+    $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+
+    $proof = proofAdmitted(caller: $caller);
+    Process::run(['rm', '-rf', $base]);
+
+    expect($proof->status)->toBe(OperationStatus::Running)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
+        ->and($proof->state['capacity_wait_reason'])->toContain('Waiting for more CI places')
+        ->and(ProofRunSettlement::children($proof->id))->toHaveCount(0)->and(Task::query()->count())->toBe(0);
+    Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->operationId === $proof->id);
 });

@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofCommandProjection;
 use App\Domain\Proof\ProofRunSettlement;
+use App\Domain\Proof\ProofVerifyProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmProviderKind;
@@ -499,4 +501,46 @@ it('releases a proof claim after a definite Swamp start refusal', function (): v
     app(ProofCommandProjection::class)->refused($run);
     Queue::assertPushed(ReleaseTaskVmSlot::class, 1);
     expect($proof->refresh()->status)->toBe(OperationStatus::Failed);
+});
+
+describe('a run that ends at its budget', function (): void {
+    /** The report of a batch child, as `proof-fleet-verify` ends with it. */
+    $child = static fn (string $batch, string $lines): array => [
+        ['intent' => ['command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml', 'batch' => $batch]],
+        ['steps' => ['report' => ['status' => 'succeeded', 'stdout' => $lines]]],
+    ];
+
+    it('records the report of each assigned batch once, when the batch ends', function () use ($child): void {
+        [, [[$run]]] = proofRuns(['firewall:allow']);
+        $file = 'swamp/proof/firewall/allow.cases.yaml';
+        $run->update(['input' => [...$run->input, 'assignments' => [['command' => 'firewall:allow', 'file' => $file, 'batch' => 'one', 'cases' => ['main']]]]]);
+        $projection = app(ProofVerifyProjection::class);
+
+        expect($projection->acceptsParent($run))->toBeTrue()
+            ->and($projection->acceptsParent(new Operation(['kind' => 'proof.verify'])))->toBeFalse();
+        $projection->applyChild($run, ...$child('one', PROOF_PASSED));
+        $projection->applyChild($run, ...$child('one', PROOF_FAILED));
+        $projection->applyChild($run, ...$child('other', PROOF_PASSED));
+
+        expect($run->refresh()->state[ProofVerifyProjection::BatchReports])->toBe(["firewall:allow\t{$file}\tone" => PROOF_PASSED]);
+    });
+
+    it('keeps the verdicts of the batches that ended, and only the cases of the others are unrun', function () use ($child): void {
+        Queue::fake();
+        [$proof, [[$run]]] = proofRuns(['firewall:allow']);
+        $file = 'swamp/proof/firewall/allow.cases.yaml';
+        $batches = [['command' => 'firewall:allow', 'file' => $file, 'batch' => 'one', 'cases' => ['main']],
+            ['command' => 'firewall:allow', 'file' => $file, 'batch' => 'two', 'cases' => ['deny']]];
+        $run->forceFill(['input' => [...$run->input, 'ci_pool' => true, 'assignments' => $batches, 'run_budget_seconds' => 600], 'started_at' => now()->subSeconds(601)])->save();
+        $proof->update(['input' => [...$proof->input, 'selected_commands' => ['firewall:allow'], 'batches' => $batches]]);
+        app(ProofVerifyProjection::class)->applyChild($run, ...$child('one', PROOF_PASSED));
+
+        app(ExpireOperationAction::class)->execute($run->refresh());
+
+        $verdicts = collect($proof->refresh()->result['cases'])->mapWithKeys(static fn (array $case): array => [$case['case'] => $case['verdict']])->all();
+        expect($run->refresh()->error_code)->toBe('operation.timed_out')
+            ->and($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.cases_failed')
+            ->and($verdicts)->toBe(['main' => 'passed', 'deny' => 'unrun']);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
+    });
 });

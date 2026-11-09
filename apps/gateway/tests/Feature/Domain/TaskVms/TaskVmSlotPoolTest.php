@@ -355,25 +355,44 @@ it('refuses work of another Project at once, so it never waits in or holds up th
         ->and($foreign->refresh()->capacity_wait_reason)->toBeNull()->and($earlier->refresh()->status)->toBe(OperationStatus::Waiting);
 });
 
-it('has the sweep leave a host alone while its refresh is open, and go on past a row whose release cannot be built', function (): void {
+it('has the sweep leave only the slot of an open refresh alone, and go on past a row whose release cannot be built', function (): void {
     [$host, $project] = slotPoolHost(taskPlaces: 12);
     $pool = app(TaskVmSlotPool::class);
     $broken = $pool->take(slotPoolGroup($project));
     $stale = $pool->take(slotPoolGroup($project));
+    $proving = $pool->take(slotPoolGroup($project));
     // A row without its Node has no hub peer to remove, so its intent cannot be built.
     $broken->update(['group_id' => null, 'state' => TaskVmState::Failed, 'node_id' => null]);
     $stale->update(['group_id' => null, 'state' => TaskVmState::Failed]);
+    $proving->update(['group_id' => null]);
     slotPoolSweepWorld();
     $refresh = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
-        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+        'status' => OperationStatus::Running, 'input' => ['task_vm_id' => $proving->id], 'triggered_by' => 'test']);
 
-    app()->call([new SweepTaskVmHosts, 'handle']);
-    expect(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
-
-    $refresh->update(['status' => OperationStatus::Succeeded]);
     app()->call([new SweepTaskVmHosts, 'handle']);
     expect(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->pluck('target_id')->all())->toBe([$stale->id])
+        ->and($proving->refresh()->state)->toBe(TaskVmState::Provisioning)
         ->and($broken->refresh()->state)->toBe(TaskVmState::Failed);
+});
+
+it('frees the slots that failed refreshes left while the next refresh of the host waits for a CI place', function (): void {
+    Queue::fake();
+    [$host] = slotPoolHost(taskPlaces: 0);
+    slotPoolSweepWorld();
+    $pool = app(TaskVmSlotPool::class);
+    // Two refreshes failed before their candidate proof: each slot stays failed until a release frees it, and the CI pool is full.
+    $first = $pool->take(null, $host->id);
+    $second = $pool->take(null, $host->id);
+    $first->update(['state' => TaskVmState::Failed]);
+    $second->update(['state' => TaskVmState::Failed]);
+    $waiting = app(TaskVmAdmission::class)->wait('task_vm.image_refresh', 'task_vm_host', $host->id, $host->id, ['commit' => str_repeat('a', 40), 'from_stock' => false], 'test', null);
+    expect(fn () => $pool->take(null, $host->id))->toThrow(TaskCapacityException::class);
+
+    // The waiting refresh holds no slot, so it does not keep the sweep from the places it waits for.
+    app()->call([new SweepTaskVmHosts, 'handle']);
+
+    expect(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->orderBy('target_id')->pluck('target_id')->all())->toBe([$first->id, $second->id])
+        ->and($waiting->refresh()->status)->toBe(OperationStatus::Waiting);
 });
 
 it('leaves task VM Nodes out of the workers\' known hosts and keeps every other pinned Node', function (): void {
@@ -736,17 +755,17 @@ it('refuses the release of a VM whose Node has no WireGuard public key, which na
         ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
 });
 
-it('has the sweep leave a VM alone that a refresh started after the sweep selected it', function (): void {
+it('has the sweep leave a VM alone that a refresh took for its proof after the sweep selected it', function (): void {
     [$host] = slotPoolHost();
     slotPoolSweepWorld();
     $vm = oldPoolVm($host, state: TaskVmState::Provisioning);
     // The refresh commits between the sweep's first look at the host and its release: right after the sweep reads its candidates.
     $started = false;
-    TaskVm::retrieved(function () use (&$started, $host): void {
+    TaskVm::retrieved(function () use (&$started, $host, $vm): void {
         if (! $started) {
             $started = true;
             Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
-                'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+                'status' => OperationStatus::Running, 'input' => ['task_vm_id' => $vm->id], 'triggered_by' => 'test']);
         }
     });
 

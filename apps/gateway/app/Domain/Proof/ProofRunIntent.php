@@ -139,6 +139,10 @@ final readonly class ProofRunIntent
                     throw new TaskCapacityException(TaskWait::Capacity, 'Waiting behind an earlier CI proof.');
                 }
                 $shards = $ci ? ProofBatchPlan::split($batches, app(TaskVmSlotPool::class)->freeCiPlaces()) : array_map(static fn (array $case): array => array_values(array_filter($batches, static fn (array $batch): bool => $batch['command'] === $case['command'])), $selection->cases);
+                // A shard that cannot finish within the longest shard budget waits for more places; it would end with its last batches unrun.
+                if ($ci && array_any($shards, ProofBatchPlan::overBudget(...))) {
+                    throw new TaskCapacityException(TaskWait::Capacity, 'Waiting for more CI places: on '.count($shards).' place(s) a shard would run longer than '.ProofBatchPlan::MaxShardSeconds.' seconds.');
+                }
                 $runs = [];
                 foreach ($shards as $assignments) {
                     $case = $assignments[0];
@@ -257,6 +261,8 @@ final readonly class ProofRunIntent
         return [
             'proof_operation_id' => $proof->id, 'commit' => $commit, 'command' => $case['command'], 'file' => $case['file'],
             ...($assignments === [] ? [] : ['assignments' => $assignments]),
+            // The run budget of the Operation, from the batches the run proves (docs/reference/operations.md#native-run-budgets).
+            'run_budget_seconds' => ProofBatchPlan::budget($assignments),
             'caller_node_id' => $proof->input['caller_node_id'] ?? null, 'ci_pool' => ($proof->input['ci_pool'] ?? false) === true,
             'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $input['node_id'],
             'execution_secrets' => $input['execution_secrets'] ?? [],

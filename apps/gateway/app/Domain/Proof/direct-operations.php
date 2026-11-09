@@ -14,7 +14,8 @@ return [
     'proof.verify' => ['workflow' => 'proof-fleet-verify', 'projection' => ProofVerifyProjection::class, 'workflow_inputs' => true,
         'terminal_result' => ['job' => 'report', 'step' => 'report', 'native' => true]],
     // The Swamp workflow `operation-proof-run` proves one command on a slot of its own: the claim, the cases through `proof-fleet-verify`
-    // and the release of the slot, always. Its `Report` step joins the verdict lines; the Gateway reads it once, when the run ends.
+    // and the release of the slot, always. Its `Report` step joins the verdict lines; the Gateway reads it once, when the run ends. Each
+    // `proof-fleet-verify` child that ends records its batch on the run as it ends (ProofVerifyProjection::applyChild), for a run that reaches its budget.
     'proof.command' => ['workflow' => 'operation-proof-run', 'projection' => ProofCommandProjection::class, 'workflow_inputs' => true, 'github_token_issuer' => TaskGitHubTokens::class,
         'terminal_result' => ['job' => 'prove', 'step' => 'Report', 'native' => true, 'captures' => ['provision' => ['job' => 'prove', 'step' => 'Claim a slot'], 'report' => ['job' => 'prove', 'step' => 'Report', 'field' => 'stdout', 'artifact' => 'result']]],
         'execution_copies' => $provision['execution_copies']],

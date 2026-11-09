@@ -36,13 +36,12 @@ final class OperationBudgetTable
         // Horizon drain, which waits for running jobs up to the longest supervisor timeout + 30 s (1,730 s); x 1.5 = 2,783 s,
         // rounded up to five minutes. An expiry pauses releases. Replace with the 14-day p95 after the first success.
         'gateway.release' => 3000,
-        // No run yet. The proof the CLI follows closes when its last run ends, so its budget is the one of a run and five minutes.
-        'proof.run' => 11100,
-        // No run yet. Basis: the task provision (a task VM clone, enrolment and checkout, about 5 minutes with the nested fleet), the runner
-        // cases of firewall:allow, 16 cases, each about 85 s with its restore (65 s of it the wait for Doctor in the main case only) and at most
-        // 180 s; 14 cases x 120 s plus 2 batch restores is about 1,800 s, then the destruction of the VM (about 2 minutes); the sum x 1.5,
-        // rounded up to five minutes. Replace with the 14-day p95 after the first success.
-        'proof.command' => 3600,
+        // The proof the CLI follows closes when its last run ends: the two-hour admission wait, the longest run of a shard
+        // (ProofBatchPlan::MaxShardSeconds) and five minutes.
+        'proof.run' => 14700,
+        // The fixed work of the shard and of each of its batches and the measured case times, x 1.5, captured at admission
+        // (ProofBatchPlan::budget). Basis of the fixed parts: shards of proof 14337 took 996 to 1,909 s for 3 to 8 batches.
+        'proof.command' => 'run_budget_seconds',
         // No run yet. Basis: the cases of firewall:allow on the author's own VM, with no provision and no destruction: 14 cases x 120 s,
         // the restores before the first batch, between batches and after the last (about 16 s each), and a re-mint with its readiness check and
         // the new `base` (about 150 s); about 1,900 s x 1.5, rounded up to five minutes. Replace with the 14-day p95 after the first success.
