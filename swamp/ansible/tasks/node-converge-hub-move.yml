@@ -17,15 +17,18 @@
       umask 077
       d={{ hub_move.dir | quote }}; key={{ hub_move.key | quote }}
       rm -f "$d/orbit.move-result"
+      # By line number, last first: `iptables -S` may quote a comment, so a rule spec it prints is not read back.
       unpin() {
-        iptables -w -S INPUT | awk '/--comment orbit:hub-move/ { $1 = "-D"; print }' | while read -r rule; do iptables -w $rule; done
+        iptables -w -n -L INPUT --line-numbers | awk '/\/\* orbit-hub-move \*\// { print $1 }' | sort -rn | while read -r n; do
+          iptables -w -D INPUT "$n"
+        done
       }
       unpin
       ep={{ hub_move.endpoint | quote }}
       case "$ep" in
         *[!0-9.:]*) ;;
         *)
-          if ! iptables -w -I INPUT 1 -p udp --dport "$(wg show orbit listen-port)" ! -s "${ep%:*}" -m comment --comment orbit:hub-move -j DROP; then
+          if ! iptables -w -I INPUT 1 -p udp --dport "$(wg show orbit listen-port)" ! -s "${ep%:*}" -m comment --comment orbit-hub-move -j DROP; then
             echo unpinned > "$d/orbit.move-result"; exit 3
           fi
           trap unpin EXIT
