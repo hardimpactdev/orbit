@@ -48,6 +48,7 @@
       ansible.builtin.shell:
         executable: /bin/bash
         cmd: |
+          set -o pipefail
           ip -4 -j rule show
           echo "marked: $(ip -4 -o route get 192.0.2.1 mark {{ hub_source.mark | quote }} || true)"
           echo "main: $(ip -4 -o route get 192.0.2.1 || true)"
@@ -89,6 +90,7 @@
       ansible.builtin.shell:
         executable: /bin/bash
         cmd: |
+            set -o pipefail
             ip -4 -j rule show
             echo "marked: $(ip -4 -o route get 192.0.2.1 mark {{ hub_source.mark | quote }} || true)"
             echo "main: $(ip -4 -o route get 192.0.2.1 || true)"

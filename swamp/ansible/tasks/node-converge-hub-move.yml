@@ -10,7 +10,7 @@
   ansible.builtin.shell:
     executable: /bin/bash
     cmd: |
-      set -u
+      set -uo pipefail
       umask 077
       d={{ hub_move.dir | quote }}; key={{ hub_move.key | quote }}
       rm -f "$d/orbit.move-result"
