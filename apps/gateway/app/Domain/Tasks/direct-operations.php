@@ -7,6 +7,7 @@ use App\Domain\Tasks\TaskBuildProjection;
 use App\Domain\Tasks\TaskCancelProjection;
 use App\Domain\Tasks\TaskCheckProjection;
 use App\Domain\Tasks\TaskGitHubTokens;
+use App\Domain\Tasks\TaskIdleSaveProjection;
 use App\Domain\Tasks\TaskMaintenanceProjection;
 use App\Domain\Tasks\TaskPackageProjection;
 use App\Domain\Tasks\TaskPrepFixProjection;
@@ -34,6 +35,9 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
     'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the package', 'native' => true,
         'captures' => ['dependency_token' => ['job' => 'cleanup', 'step' => 'Remove the dependency auth', 'field' => 'result']]],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$']],
+], 'tasks.idle_save' => ['workflow' => 'operation-task-idle-save', 'projection' => TaskIdleSaveProjection::class, 'github_token_issuer' => TaskGitHubTokens::class, 'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the save', 'native' => true, 'captures' => ['saved' => ['job' => 'save', 'step' => 'Read the saved commit', 'field' => 'stdout']]],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']],
 ], 'tasks.publish' => ['workflow' => 'operation-task-publish', 'projection' => TaskPublishProjection::class, 'github_token_issuer' => TaskGitHubTokens::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm publication', 'native' => true, 'captures' => ['pull_receipt' => ['job' => 'publish', 'step' => 'Read PR result', 'field' => 'stdout', 'artifact' => 'output']]], 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']]], 'tasks.check' => ['workflow' => 'operation-task-check', 'github_token_issuer' => TaskGitHubTokens::class, 'projection' => TaskCheckProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'check', 'step' => 'Check the result', 'native' => true,
     'captures' => ['receipt' => ['job' => 'check', 'step' => 'Push the candidate', 'field' => 'finish']]],
     'scheduled_result' => ['workflow' => 'task-check-ci', 'workflow_id' => '4a2d9dd5-9f83-41d4-b8df-8e46367ed230',

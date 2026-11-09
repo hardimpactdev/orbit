@@ -1,0 +1,277 @@
+id: 7c508e3a-5d66-4335-9630-78b38e482861
+name: operation-task-idle-save
+description: >-
+  Save the workspace of an idle task group to origin before its VM is released (docs/cli/task/idle-save.mmd): one Ansible phase
+  commits the changes of the workspace, bundles HEAD and fetches the bundle to Node 209; 209 imports it and pushes it, with a token
+  minted when the push runs, to the save branch task-<id>-idle, which holds only the latest save. No credential reaches the VM.
+queueTimeout: 30
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: tasks.idle_save}
+    # The root run of the Operation, which the Gateway checks when it mints.
+    run_id: {type: string, pattern: '^[a-f0-9-]{36}$'}
+    intent:
+      type: object
+      properties:
+        group_id: {type: integer, minimum: 1}
+        instance_id: {type: integer, minimum: 1}
+        task_vm_id: {type: integer, minimum: 1}
+        node_id: {type: integer, minimum: 1}
+        checkout_path: {type: string, pattern: '^/'}
+        repository: {type: string, pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'}
+        remote: {type: string, pattern: '^https://github\.com/'}
+        save_branch: {type: string, pattern: '^task-[1-9][0-9]*-idle$'}
+        refspec: {type: string, pattern: '^\+refs/heads/candidate:refs/heads/task-[1-9][0-9]*-idle$'}
+        object_format: {type: string, enum: [sha1, sha256]}
+        ssh_execution: {type: object}
+      required: [group_id, instance_id, task_vm_id, node_id, checkout_path, repository, remote, save_branch, refspec, object_format, ssh_execution]
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        github_token:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-publish-token-[a-f0-9-]{36}$'}
+          required: [vault, key]
+          additionalProperties: false
+        git_authorization:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-publish-token-[a-f0-9-]{36}$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [github_token, git_authorization]
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: save
+  labels: {role: swamp}
+  steps:
+  - name: Write the intent
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ${{ "ansible-input-idle-save-" + string(inputs.intent.node_id) }}
+      methodName: write
+      inputs: {intent: '${{ {"ssh_execution": inputs.intent.ssh_execution, "checkout_path": inputs.intent.checkout_path} }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
+  - name: Write the playbook input
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    dependsOn:
+    - {step: Write the intent, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-idle-save-input-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" tasks.idle_save
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
+  # One phase on the VM: a failed status read, commit or bundle fails the save, so nothing is pushed and the VM is not released.
+  - name: Save the workspace
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    dependsOn:
+    - {step: Write the playbook input, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-idle-save-phase-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 240 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" -e "save_run=$ORBIT_RUN_ID" "$ORBIT_ANSIBLE/task-vm-idle-save.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_RUN_ID: ${{ run.id }}
+          ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
+          ANSIBLE_CONFIG: ${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=" + "/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: 'true'
+  - name: Init the bare repo
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    dependsOn:
+    - {step: Save the workspace, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-idle-save-init-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 git init --quiet --bare --template= --object-format="$ORBIT_OBJECT_FORMAT" "$ORBIT_REPOSITORY"
+        env:
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_NOSYSTEM: '1'
+          ORBIT_OBJECT_FORMAT: ${{ inputs.intent.object_format }}
+          ORBIT_REPOSITORY: ${{ "/tmp/orbit-ansible-" + run.id + "/repository.git" }}
+  - name: Import the bundle
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    dependsOn:
+    - {step: Init the bare repo, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-idle-save-import-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 60 git -C "$ORBIT_REPOSITORY" fetch --quiet --no-tags "$ORBIT_BUNDLE" HEAD:refs/heads/candidate
+        env:
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_NOSYSTEM: '1'
+          ORBIT_BUNDLE: ${{ "/tmp/orbit-ansible-" + run.id + "/save.bundle" }}
+          ORBIT_REPOSITORY: ${{ "/tmp/orbit-ansible-" + run.id + "/repository.git" }}
+  - name: Read the saved commit
+    labels: {role: swamp}
+    queueTimeout: 30
+    dependsOn:
+    - step: Import the bundle
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-idle-save-read-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 10 git -C "$ORBIT_REPOSITORY" rev-parse --verify refs/heads/candidate
+        env:
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_NOSYSTEM: '1'
+          ORBIT_REPOSITORY: ${{ "/tmp/orbit-ansible-" + run.id + "/repository.git" }}
+  - name: Mint the push token
+    labels: {role: swamp}
+    queueTimeout: 30
+    dependsOn:
+    - step: Read the saved commit
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: task-github-mint
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        run_id: '${{ has(inputs.run_id) ? inputs.run_id : run.id }}'
+        purpose: publish
+  - name: Push the save branch
+    labels: {role: swamp}
+    queueTimeout: 30
+    dependsOn:
+    - step: Mint the push token
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-idle-save-push-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        # The save branch belongs to this group alone and holds only the latest save, so the push replaces it. The token has
+        # `contents: write` only, so GitHub refuses a save that adds or changes a workflow; Read push result names that refusal.
+        run: timeout 60 git -C "$ORBIT_REPOSITORY" push --porcelain -- "$ORBIT_REMOTE" "$ORBIT_REFSPEC" >"$ORBIT_DIRECTORY/push.stdout" 2>"$ORBIT_DIRECTORY/push.stderr"
+        ignoreExitCode: true
+        env:
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_NOSYSTEM: '1'
+          GIT_TERMINAL_PROMPT: '0'
+          GIT_ALLOW_PROTOCOL: https
+          GIT_CONFIG_COUNT: '4'
+          GIT_CONFIG_KEY_0: credential.helper
+          GIT_CONFIG_VALUE_0: ''
+          GIT_CONFIG_KEY_1: core.hooksPath
+          GIT_CONFIG_VALUE_1: /dev/null
+          GIT_CONFIG_KEY_2: http.followRedirects
+          GIT_CONFIG_VALUE_2: 'false'
+          GIT_CONFIG_KEY_3: http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_3: ${{ vault.get(inputs.execution_secrets.git_authorization.vault, inputs.execution_secrets.git_authorization.key) }}
+          ORBIT_REPOSITORY: ${{ "/tmp/orbit-ansible-" + run.id + "/repository.git" }}
+          ORBIT_REMOTE: ${{ inputs.intent.remote }}
+          ORBIT_REFSPEC: ${{ inputs.intent.refspec }}
+          ORBIT_DIRECTORY: ${{ "/tmp/orbit-ansible-" + run.id }}
+    writes: true
+  - name: Read push result
+    labels: {role: swamp}
+    queueTimeout: 30
+    dependsOn:
+    - {step: Push the save branch, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-idle-save-pushed-" + string(inputs.intent.node_id) }}
+      methodName: pushed
+      inputs:
+        directory: ${{ "/tmp/orbit-ansible-" + run.id }}
+        exit_code: ${{ steps["Push the save branch"].outputs.exitCode }}
+- name: cleanup
+  labels: {role: swamp}
+  dependsOn:
+  - job: save
+    condition:
+      type: completed
+  steps:
+  - name: Revoke the token
+    labels: {role: swamp}
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-idle-save-revoke-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 gh api --method DELETE installation/token 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-task-idle-save-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+    guard: ${{ !("Mint the push token" in steps && steps["Mint the push token"].status == "succeeded") }}
+    allowFailure: true
+    writes: true
+  - name: Remove local scratch
+    labels: {role: swamp}
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-idle-save-local-cleanup-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 10 rm -rf -- "$ORBIT_DIRECTORY" "$ORBIT_GH_DIRECTORY"
+        env:
+          ORBIT_DIRECTORY: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_GH_DIRECTORY: ${{ "/tmp/orbit-task-idle-save-" + run.id + "-gh" }}
+    writes: true
+  - name: Confirm the save
+    labels: {role: swamp}
+    queueTimeout: 30
+    dependsOn:
+    - step: Revoke the token
+      condition:
+        type: completed
+    - step: Remove local scratch
+      condition:
+        type: completed
+    task:
+      type: assert
+      expr: '"Read push result" in steps && steps["Read push result"].status == "succeeded" && steps["Remove local scratch"].status == "succeeded"'
+      message: tasks.idle_save_failed
+      severity: high

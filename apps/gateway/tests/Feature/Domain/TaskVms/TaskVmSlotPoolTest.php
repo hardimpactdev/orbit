@@ -46,6 +46,8 @@ use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupEnding;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskIdleSave;
+use App\Domain\Tasks\TaskIdleSaveProjection;
 use App\Domain\Tasks\TaskPrepFixIntent;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskRemoteBranch;
@@ -55,6 +57,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTurnIntent;
 use App\Domain\Tasks\TaskTurnProjection;
 use App\Domain\Tasks\TaskVmAdmission;
+use App\Domain\Tasks\TaskVmIdleRelease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmContainers;
@@ -80,6 +83,7 @@ use App\Infrastructure\Swamp\SwampDispatch;
 use App\Infrastructure\Swamp\SwampWorkerKnownHostsInput;
 use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Jobs\Tasks\AdmitTaskVm;
+use App\Jobs\TaskVms\ReleaseIdleTaskVms;
 use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Cluster;
@@ -92,7 +96,9 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
@@ -1509,3 +1515,341 @@ it('counts the CI places a proof can wait for: VM places before the container sw
 
     expect(app(TaskVmSlotPool::class)->usableCiPlaces())->toBe($places);
 })->with(['before the switch' => [false, 2], 'after the switch' => [true, 5]]);
+
+/** One Operation on the group that ended this many minutes ago, or that is still open when $open is set. */
+function idleGroupOperation(Task $group, TaskVm $place, int $minutesAgo, bool $open = false, string $kind = 'tasks.build'): Operation
+{
+    $at = now()->subMinutes($minutesAgo);
+
+    return Operation::query()->forceCreate(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $place->host_node_id,
+        'status' => $open ? OperationStatus::Running : ($kind === TaskIdleSave::Kind ? OperationStatus::Failed : OperationStatus::Succeeded), 'input' => [], 'triggered_by' => 'test',
+        'created_at' => $at, 'updated_at' => $at, 'started_at' => $at, 'finished_at' => $open ? null : $at]);
+}
+
+/** Origin's task branch as the idle release reads it: its head, or unreadable when null. */
+function idleTaskBranch(?string $head): void
+{
+    app()->instance(RemoteBranchHeads::class, new readonly class($head) implements RemoteBranchHeads
+    {
+        public function __construct(private ?string $head) {}
+
+        public function head(Project $project, string $branch): string
+        {
+            return $this->head ?? throw new ResourceOperationException('source.head_unavailable', 'No such branch.', 502);
+        }
+    });
+}
+
+/** @return array{0: Task, 1: TaskVm} an open group whose ready VM ran its last Operation two hours ago, with approved commit A on origin */
+function idleWorld(TaskGroupStatus $status = TaskGroupStatus::Running): array
+{
+    $a = str_repeat('a', 40);
+    $origin = ['branch' => [$a]];
+    [$group, $place] = preservationWorld([$a], $origin, status: $status);
+    $place->update(['state' => TaskVmState::Ready]);
+    idleTaskBranch($a);
+
+    return [$group, $place];
+}
+
+/** @return Builder<Operation> */
+function idleOperations(Task $group, TaskVm $place): Builder
+{
+    return Operation::query()->where(fn ($query) => $query->where(fn ($save) => $save->where('kind', TaskIdleSave::Kind)->where('target_id', $group->id)->where('status', '!=', OperationStatus::Failed))
+        ->orWhere(fn ($release) => $release->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_id', $place->id)));
+}
+
+/** The terminal event of the group's idle save run, as the Gateway reads it from Swamp. */
+function idleSaveEnds(Operation $save, string $status, ?string $saved): Operation
+{
+    $save->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a']]);
+
+    return app(TaskIdleSaveProjection::class)->apply($save, ['run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => $status,
+        'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => $saved === null ? [] : ['saved' => $saved."\n"]]);
+}
+
+it('saves the workspace of an open group that ran no Operation for 30 minutes before anything releases its VM', function (): void {
+    [$group, $place] = idleWorld();
+    idleGroupOperation($group, $place, TaskVmIdleRelease::IdleMinutes + 1);
+
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([$place->id])->and($place->refresh()->state)->toBe(TaskVmState::Ready);
+    $save = Operation::query()->where('kind', TaskIdleSave::Kind)->sole();
+    expect($save->target_id)->toBe($group->id)->and($save->triggered_by)->toBe('task-vm-idle')
+        ->and($save->input)->toMatchArray(['task_vm_id' => $place->id, 'save_branch' => 'task-'.$group->id.'-idle',
+            'refspec' => '+refs/heads/candidate:refs/heads/task-'.$group->id.'-idle', 'remote' => 'https://github.com/hardimpactdev/orbit.git', 'object_format' => 'sha1'])
+        ->and($save->input['execution_secrets']['git_authorization']['key'])->toStartWith('task-publish-token-')
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse()
+        ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running);
+
+    // The save holds the group, so the next pass admits nothing more.
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([])->and(Operation::query()->where('kind', TaskIdleSave::Kind)->count())->toBe(1);
+});
+
+it('records the saved commit and admits the release once the save passed', function (): void {
+    [$group, $place] = idleWorld();
+    idleGroupOperation($group, $place, 120);
+    app(TaskVmIdleRelease::class)->release();
+    $saved = str_repeat('c', 40);
+
+    $projected = idleSaveEnds(Operation::query()->where('kind', TaskIdleSave::Kind)->sole(), 'succeeded', $saved);
+
+    expect($projected->status)->toBe(OperationStatus::Succeeded)->and($projected->result)->toBe(['saved_commit' => $saved, 'branch' => 'task-'.$group->id.'-idle', 'released' => true])
+        ->and($group->refresh()->idle_saved_commit)->toBe($saved)->and($group->idle_saved_at)->not->toBeNull()
+        ->and($group->status)->toBe(TaskGroupStatus::Running)
+        ->and($place->refresh()->state)->toBe(TaskVmState::Releasing)
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_id', $place->id)->sole()->triggered_by)->toBe('task-vm-idle');
+});
+
+it('keeps the VM when the save failed, and saves again at the next pass', function (): void {
+    [$group, $place] = idleWorld();
+    idleGroupOperation($group, $place, 120);
+    app(TaskVmIdleRelease::class)->release();
+
+    $projected = idleSaveEnds(Operation::query()->where('kind', TaskIdleSave::Kind)->sole(), 'failed', null);
+
+    expect($projected->status)->toBe(OperationStatus::Failed)->and($projected->error_code)->toBe('tasks.idle_save_failed')
+        ->and($group->refresh()->idle_saved_commit)->toBeNull()->and($place->refresh()->state)->toBe(TaskVmState::Ready)
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
+
+    // The failed save is no activity of the group: the next pass tries again at once.
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([$place->id])
+        ->and(Operation::query()->where('kind', TaskIdleSave::Kind)->count())->toBe(2);
+});
+
+it('records a passed save but keeps the VM while a resume of it is open', function (): void {
+    [$group, $place] = idleWorld();
+    idleGroupOperation($group, $place, 120);
+    app(TaskVmIdleRelease::class)->release();
+    Operation::query()->create(['kind' => 'task_vm.resume', 'target_type' => 'task_vm', 'target_id' => $place->id, 'node_id' => $place->host_node_id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'task-vm']);
+
+    $projected = idleSaveEnds(Operation::query()->where('kind', TaskIdleSave::Kind)->sole(), 'succeeded', str_repeat('c', 40));
+
+    expect($projected->result['released'])->toBeFalse()->and($group->refresh()->idle_saved_commit)->toBe(str_repeat('c', 40))
+        ->and($place->refresh()->state)->toBe(TaskVmState::Ready)->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
+});
+
+it('saves nothing for a group that worked within 30 minutes, has an open Operation, has none at all, or ended', function (string $case): void {
+    [$group, $place] = idleWorld($case === 'ended' ? TaskGroupStatus::Completed : TaskGroupStatus::Running);
+    if ($case !== 'none') {
+        idleGroupOperation($group, $place, $case === 'recent' ? TaskVmIdleRelease::IdleMinutes - 1 : 120);
+    }
+    if ($case === 'open') {
+        idleGroupOperation($group, $place, 120, open: true);
+    }
+
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([])->and($place->refresh()->state)->toBe(TaskVmState::Ready)->and(idleOperations($group, $place)->count())->toBe(0);
+})->with(['recent', 'open', 'none', 'ended']);
+
+it('saves nothing for an idle parked VM, which the save cannot reach, and saves it once it runs', function (): void {
+    [$group, $place] = idleWorld();
+    $place->update(['state' => TaskVmState::Parked, 'stop_confirmed_at' => now()]);
+    idleGroupOperation($group, $place, 120);
+
+    // The pass asks for the resume (TaskVmAwake); this fixture's guest cannot resume, which keeps the VM as well.
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([])->and(Operation::query()->where('kind', TaskIdleSave::Kind)->exists())->toBeFalse();
+
+    $place->update(['state' => TaskVmState::Ready]);
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([$place->id]);
+});
+
+it('saves nothing while a resume of the VM is open', function (): void {
+    [$group, $place] = idleWorld();
+    idleGroupOperation($group, $place, 120);
+    Operation::query()->create(['kind' => 'task_vm.resume', 'target_type' => 'task_vm', 'target_id' => $place->id, 'node_id' => $place->host_node_id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'task-vm']);
+
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([])->and(idleOperations($group, $place)->count())->toBe(0);
+});
+
+it('saves nothing while origin has no task branch to restore', function (): void {
+    [$group, $place] = idleWorld();
+    idleGroupOperation($group, $place, 120);
+    idleTaskBranch(null);
+
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([])->and(idleOperations($group, $place)->count())->toBe(0);
+});
+
+it('saves nothing while origin lacks the group\'s latest approved commit, and saves once publication put it there', function (): void {
+    [$a, $b] = [str_repeat('a', 40), str_repeat('b', 40)];
+    $origin = ['branch' => [$a]];
+    [$group, $place] = preservationWorld([$a, $b], $origin, status: TaskGroupStatus::Running);
+    $place->update(['state' => TaskVmState::Ready]);
+    idleTaskBranch($a);
+    idleGroupOperation($group, $place, 120);
+
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([]);
+
+    $origin['branch'] = [$b, $a];
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([$place->id]);
+});
+
+it('leaves CI proof VMs to their proof', function (): void {
+    [$group, $place] = idleWorld(TaskGroupStatus::Reserved);
+    $place->update(['capacity_pool' => 'ci']);
+    idleGroupOperation($group, $place, 120);
+
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([])->and(idleOperations($group, $place)->count())->toBe(0);
+});
+
+/**
+ * A group with an idle save, and a GitHub that compares the task branch head with it as `$status`, or fails when null, and whose save
+ * branch exists unless `$branch` is false.
+ */
+function idleRestoreWorld(?GitHubComparisonStatus $status, bool $branch = true): Task
+{
+    [, $project] = slotPoolHost();
+    $head = str_repeat('a', 40);
+    app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'read', 'read', 'hardimpactdev', 'organization', 'https://github.com/apps/read', 'unused'));
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($status, $head, $branch): void {
+        $github->shouldReceive('repositoryInstallation')->andReturn(7);
+        $github->shouldReceive('repositoryReadToken')->andReturn('contents-read');
+        $github->shouldReceive('branchHead')->withArgs(fn (string $token, GitHubRepository $repository, string $name): bool => str_ends_with($name, '-idle'))
+            ->andReturn($branch ? str_repeat('c', 40) : null);
+        $compare = $github->shouldReceive('compareCommits')->withArgs(fn (string $token, GitHubRepository $repository, string $base): bool => $token === 'contents-read' && $base === $head);
+        $status === null ? $compare->andThrow(GitHubApiException::unavailable())
+            : $compare->andReturn(new GitHubCommitComparison($status, $head, $status === GitHubComparisonStatus::Diverged ? str_repeat('0', 40) : $head));
+    }));
+
+    return Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running,
+        'idle_saved_commit' => str_repeat('c', 40)])->load('project');
+}
+
+it('starts a turn or a fix from an idle save ahead of the task branch, and a round or a build refuses it', function (bool $continue): void {
+    $group = idleRestoreWorld(GitHubComparisonStatus::Ahead);
+
+    if ($continue) {
+        expect(app(TaskIdleSave::class)->restore($group, str_repeat('a', 40), true))->toBe(str_repeat('c', 40));
+    } else {
+        expect(fn () => app(TaskIdleSave::class)->restore($group, str_repeat('a', 40), false))
+            ->toThrow(fn (ResourceOperationException $refused) => expect([$refused->errorCode, $refused->details['branch']])->toBe(['tasks.idle_save_pending', 'task-'.$group->id.'-idle']));
+    }
+})->with(['a turn' => [true], 'a review round' => [false]]);
+
+it('starts every claim from the task branch once it holds the idle save', function (GitHubComparisonStatus $status, bool $continue): void {
+    $group = idleRestoreWorld($status);
+
+    expect(app(TaskIdleSave::class)->restore($group, str_repeat('a', 40), $continue))->toBe(str_repeat('a', 40));
+})->with([[GitHubComparisonStatus::Behind, true], [GitHubComparisonStatus::Behind, false], [GitHubComparisonStatus::Identical, true]]);
+
+it('refuses a claim while the task branch moved away from the idle save or the comparison cannot be read', function (?GitHubComparisonStatus $status, string $code): void {
+    $group = idleRestoreWorld($status);
+
+    expect(fn () => app(TaskIdleSave::class)->restore($group, str_repeat('a', 40), true))
+        ->toThrow(fn (ResourceOperationException $refused) => expect($refused->errorCode)->toBe($code));
+    // The saved commit itself needs no comparison.
+    expect(app(TaskIdleSave::class)->restore($group, str_repeat('c', 40), true))->toBe(str_repeat('c', 40));
+})->with([[GitHubComparisonStatus::Diverged, 'tasks.idle_save_diverged'], [null, 'tasks.idle_save_unreadable']]);
+
+it('treats a deleted save branch as no save once the task branch holds its commit, and refuses with the way out otherwise', function (?GitHubComparisonStatus $status): void {
+    $group = idleRestoreWorld($status, branch: false);
+
+    if ($status === GitHubComparisonStatus::Behind) {
+        expect(app(TaskIdleSave::class)->restore($group, str_repeat('a', 40), true))->toBe(str_repeat('a', 40));
+
+        return;
+    }
+    expect(fn () => app(TaskIdleSave::class)->restore($group, str_repeat('a', 40), true))
+        ->toThrow(fn (ResourceOperationException $refused) => expect([$refused->errorCode, $refused->getMessage(), $refused->details['saved_commit']])
+            ->toBe(['tasks.idle_save_missing', 'The save branch task-'.$group->id.'-idle is gone and the task branch does not hold its commit '.str_repeat('c', 40)
+                .'. Push '.str_repeat('c', 40).' to task-'.$group->id.'-idle again, or merge it into the task branch, then try again. Cancel the group when that commit is lost.', str_repeat('c', 40)]));
+})->with(['the task branch holds it' => [GitHubComparisonStatus::Behind], 'the save is ahead' => [GitHubComparisonStatus::Ahead], 'the commit is gone' => [null]]);
+
+it('counts a save that reports success without a valid saved commit as failed, and releases nothing', function (?string $saved): void {
+    [$group, $place] = idleWorld();
+    idleGroupOperation($group, $place, 120);
+    app(TaskVmIdleRelease::class)->release();
+
+    $projected = idleSaveEnds(Operation::query()->where('kind', TaskIdleSave::Kind)->sole(), 'succeeded', $saved);
+
+    expect($projected->status)->toBe(OperationStatus::Failed)->and($projected->error_code)->toBe('tasks.idle_save_failed')
+        ->and($group->refresh()->idle_saved_commit)->toBeNull()->and($place->refresh()->state)->toBe(TaskVmState::Ready)
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
+})->with(['no commit' => [null], 'an empty commit' => [''], 'not a commit' => ['refs/heads/candidate']]);
+
+it('stops saving at once and asks for assistance when GitHub refuses a save that changes a workflow', function (): void {
+    [$group, $place] = idleWorld();
+    idleGroupOperation($group, $place, 120);
+    app(TaskVmIdleRelease::class)->release();
+    $save = Operation::query()->where('kind', TaskIdleSave::Kind)->sole();
+    $save->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a']]);
+
+    $projected = app(TaskIdleSaveProjection::class)->apply($save, ['run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'failed',
+        'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [],
+        'failure' => ['failed_step' => 'Read push result', 'detail' => 'tasks.workflows_permission']]);
+
+    expect($projected->error_code)->toBe('tasks.workflows_permission')
+        ->and($group->refresh()->assistance_kind)->toBe(AssistanceKind::Failure)->and($group->assistance_reason)->toContain('changes a GitHub workflow')
+        ->and($place->refresh()->state)->toBe(TaskVmState::Ready)
+        ->and(app(TaskVmIdleRelease::class)->release())->toBe([]);
+});
+
+it('counts a cancelled or interrupted save toward the bound', function (OperationStatus $status): void {
+    [$group, $place] = idleWorld();
+    idleGroupOperation($group, $place, 120);
+    foreach (range(1, TaskIdleSave::MaxFailures) as $attempt) {
+        idleGroupOperation($group, $place, 60 - $attempt, kind: TaskIdleSave::Kind)->update(['status' => $status]);
+    }
+
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([]);
+})->with([OperationStatus::Cancelled, OperationStatus::Interrupted]);
+
+it('stops saving after three failed saves in a row, asks for assistance, and saves again after the driver\'s next Operation', function (): void {
+    [$group, $place] = idleWorld();
+    idleGroupOperation($group, $place, 120);
+    foreach (range(1, TaskIdleSave::MaxFailures) as $attempt) {
+        expect(app(TaskVmIdleRelease::class)->release())->toBe([$place->id]);
+        idleSaveEnds(Operation::query()->where('kind', TaskIdleSave::Kind)->where('status', OperationStatus::Queued)->sole(), 'failed', null);
+    }
+
+    expect($group->refresh()->assistance_requested)->toBeTrue()->and($group->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->assistance_reason)->toContain('failed 3 times in a row')
+        ->and(app(TaskVmIdleRelease::class)->release())->toBe([]);
+
+    idleGroupOperation($group, $place, 60);
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([$place->id]);
+});
+
+it('claims a fresh VM at the idle save for a fix after the idle release, and a build refuses it', function (bool $fix): void {
+    Queue::fake();
+    [, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    slotPoolClaimServices();
+    [$head, $saved] = [str_repeat('a', 40), str_repeat('c', 40)];
+    app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'read', 'read', 'hardimpactdev', 'organization', 'https://github.com/apps/read', 'unused'));
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($head): void {
+        $github->shouldReceive('repositoryInstallation')->andReturn(7);
+        $github->shouldReceive('repositoryReadToken')->andReturn('contents-read');
+        $github->shouldReceive('branchHead')->andReturn(str_repeat('c', 40));
+        $github->shouldReceive('compareCommits')->andReturn(new GitHubCommitComparison(GitHubComparisonStatus::Ahead, $head, $head));
+    }));
+    idleTaskBranch($head);
+    $group = slotPoolGroup($project);
+    $group->update(['status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/1', 'watched_pr_state' => 'open',
+        'implementer_model' => 'gpt-6.1-sol', 'reviewer_model' => 'gpt-6-astra', 'idle_saved_commit' => $saved]);
+    $group->tasks()->create(['title' => 'Spec', 'brief' => 'Draft', 'position' => 1, 'status' => TaskStatus::Completed,
+        'deliverables' => [['id' => 'spec', 'type' => 'review', 'description' => 'The spec is right.']]]);
+    Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => 1,
+        'status' => OperationStatus::Succeeded, 'input' => ['command' => 'firewall:deny', 'draft' => ['thread_id' => 999]]]);
+
+    if (! $fix) {
+        expect(fn () => app(TaskBuildIntent::class)->start($group, $head, 'test', null))
+            ->toThrow(fn (ResourceOperationException $refused) => expect($refused->errorCode)->toBe('tasks.idle_save_pending'));
+        expect(TaskVm::forGroup($group))->toBeNull();
+
+        return;
+    }
+    $operation = app(TaskPrepFixIntent::class)->start($group, new StartTaskPrepFixData('Apply the owner review.'), 'test', null);
+
+    expect($operation->status)->toBe(OperationStatus::Queued)
+        ->and($operation->input['provision']['workspace'])->toMatchArray(['start_commit' => $saved, 'branch' => 'task-'.$group->id])
+        // The VM's converge checks the task branch out at the saved commit.
+        ->and(data_get($operation->input, 'provision.intent.converge.checkout'))->toMatchArray(['commit' => $saved, 'branch' => 'task-'.$group->id]);
+})->with(['a fix' => [true], 'a build' => [false]]);
+
+it('schedules the idle release every five minutes', function (): void {
+    Artisan::call('schedule:list');
+
+    expect(Artisan::output())->toMatch('/\*\/5\s+\* \* \* \*\s+'.preg_quote(ReleaseIdleTaskVms::class, '/').'/');
+});

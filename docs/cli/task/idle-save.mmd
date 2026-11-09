@@ -1,0 +1,60 @@
+sequenceDiagram
+  %% Target design (Nick 2026-11-09, PR #3288): an idle release never loses work. Before the VM of an idle group goes, its workspace is saved to origin, and the next claim continues from that save.
+  %% status: draft
+  %% command: none · the idle release of a task VM
+  %% kind: tasks.idle_save
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VM icon=terminal pill=target tone=amber
+  %% lane GH icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant VM as Task VM<br/>reached over ssh
+  participant GH as GitHub<br/>save branch
+  Note over GW: Find an idle group<br/>every five minutes
+  %%> Who calls it:
+  %%> - the Gateway job `ReleaseIdleTaskVms`, every five minutes; there is no command, route or MCP tool
+  %%> Requirements:
+  %%> - an open group whose task-pool VM is `ready`, with no open Operation on the group or on the VM, and no Operation other than an earlier idle save for 30 minutes
+  %%> - fewer than three failed idle saves in a row since the group's last other Operation
+  %%> - origin has the task branch `task-<id>`, and it reaches the group's latest approved commit
+  %%> - a `parked` VM gets its resume admitted instead; the next pass saves it once it runs
+  %%> What it does:
+  %%> - locks the group and the VM, asks again, and admits one `tasks.idle_save` run that holds the group
+  %%> - names two `task-publish-token-<uuid>` vault keys for the token and the Git authorization header; it mints no value at admission
+  GW->>SW: Start run, full intent<br/>operation-task-idle-save
+  SW->>VM: Save the workspace<br/>one Ansible phase
+  %%> What it does:
+  %%> - `swamp/ansible/task-vm-idle-save.yml`, run from Node 209 over the VM's pinned host key: reads `git status --porcelain`; only when it lists changes, `git add --all` and one commit `Save the idle workspace` by Orbit, without hooks; checks the workspace is clean; bundles HEAD and fetches the bundle into the run folder
+  %%> - a clean workspace keeps its HEAD; no empty commit is made
+  %%> - any failed task fails the phase, so nothing is pushed
+  %%> - files that `.gitignore` excludes, stashes, other branches and the Pi session are not saved
+  SW->>SW: Import the bundle<br/>bare repo on 209
+  %%> What it does:
+  %%> - imports the bundle into a bare repository in the run folder and reads the saved commit
+  SW->>GH: Push the save branch<br/>task-<id>-idle
+  %%> What it does:
+  %%> - mints a push token with `contents: write` only through `task-github-mint` (purpose `publish`) when the step runs; no credential reaches the VM
+  %%> - pushes the saved commit to `refs/heads/task-<id>-idle` with force: the branch belongs to this group and holds only its latest save
+  %%> - GitHub runs the push workflows a pushed commit defines; without `workflows: write` it refuses a save that adds or changes one, which `Read push result` names `tasks.workflows_permission`
+  %%> - the workflows on `main` push only for `main` and `task-*-handoff`, and the rulesets cover only `main`
+  SW->>SW: Read push result<br/>name a refusal
+  SW->>SW: Clean up<br/>revoke · scratch
+  alt the save passed
+    SW-->>GW: Native terminal result<br/>saved commit
+    Note over GW: Record and release<br/>saved commit · place release
+    %%> What it does:
+    %%> - records the saved commit on the group, which keeps its status
+    %%> - admits the release of the VM (`docs/cli/task/vm-release.mmd`) when the VM is still the group's and no Operation, such as a resume, is open on it
+    %%> Later:
+    %%> - a turn or a prep fix claims a fresh place at the saved commit when that holds the task branch head; a review round or a build refuses with `tasks.idle_save_pending` while the save holds work beyond its head
+    %%> - a task branch that holds the save restores the branch; one that moved away refuses with `tasks.idle_save_diverged`, so the next save cannot overwrite it; an unreadable comparison refuses with `tasks.idle_save_unreadable`; a deleted save branch is no save once the task branch holds its commit, and otherwise refuses with `tasks.idle_save_missing`, whose message names the commit to push back
+  else a step failed
+    SW--xGW: Native failed result<br/>tasks.idle_save_failed
+    %%> Result:
+    %%> - the VM stays and holds its place; nothing is released
+    %%> - the failed save is no activity of the group, so the next pass saves again
+    %%> - after three saves in a row that fail, are cancelled or are interrupted the idle release stops for the group, which asks for `failure` assistance; a `tasks.workflows_permission` refusal stops it at once; the driver's next Operation starts the count again
+    %%> - a run that reports success without a saved commit is a failed save
+  end

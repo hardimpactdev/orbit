@@ -67,7 +67,7 @@ final readonly class TaskReviewRoundIntent
         if (! $subtask instanceof Task || ! $candidate instanceof TaskCheck) {
             throw new ResourceOperationException('tasks_pr.no_checked_candidate', 'The head is not a passed handoff candidate of the current subtask, or a head that an earlier round pushed.', 409);
         }
-        $provision = TaskVmReentry::capture($group, $head);
+        $provision = TaskVmReentry::capture($group, $head, continue: false);
         $group->load('project', 'taskable');
         $instance = $group->taskable;
         $vm = TaskVm::forGroup($group);

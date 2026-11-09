@@ -741,7 +741,7 @@ SUMMARIES = {
     'task:pr-ready': 'Take a task pull request out of draft',
     'task:pr-merge': 'Squash-merge an approved task pull request',
     'task:check': 'Run a Task group check',
-    'task:turn': 'Run one agent turn',
+    'task:turn': 'Run one agent turn After an idle release the turn claims a fresh place at the group\'s idle save when that holds the task branch head, and refuses tasks.idle_save_diverged (409), tasks.idle_save_missing (409) and tasks.idle_save_unreadable (503) while the save cannot be restored. See /reference/tasks#release-an-idle-task-vm.',
     'task:park': 'Park a Task group VM for review',
     'task:start': 'Provision a Task group workspace', 'task:complete': 'Complete a Task group',
 }
