@@ -21,7 +21,6 @@ final class ProvisionNodeData extends Data
         public ?string $user = null,
         public ?string $orbitUser = null,
         public ?string $wireguardIp = null,
-        public ?string $wireguardEndpointOverride = null,
         public ?string $dnsServerOverride = null,
         public ?string $expectedSshHostFingerprint = null,
         public string $platform = 'linux',

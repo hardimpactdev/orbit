@@ -12,7 +12,6 @@ use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
-use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Models\Cluster;
 use App\Models\Node;
 
@@ -45,9 +44,6 @@ final readonly class NodeEnrollmentPolicy
         if ($node->exists && $managed !== $node->user && ($node->roles()->exists() || ($mac && $node->ssh_host_fingerprint !== null))) {
             throw $this->refuse('node.user_change_unsupported', 'The Node cannot change its managed account while it owns roles or an enrolled Mac identity.', 409);
         }
-        if ($data->wireguardEndpointOverride !== null && ! WireGuardEndpoint::isValid($data->wireguardEndpointOverride)) {
-            throw $this->refuse('vpn.endpoint_override_invalid', 'The WireGuard endpoint override is invalid.');
-        }
         if ($data->settingsProvided) {
             $this->storage->validateGrammar($data->settings);
             if ($node->exists) {
@@ -64,9 +60,8 @@ final readonly class NodeEnrollmentPolicy
             throw $this->refuse('cluster.not_found', 'The selected Cluster does not exist.', 404);
         }
         $lan = $data->lanIpProvided ? $data->lanIp : ($node->exists ? $node->lan_ip : null);
-        if ($clusterId !== null && $lan !== null && Node::query()->where('cluster_id', $clusterId)->where('lan_ip', $lan)
-            ->when($node->exists, static fn ($q) => $q->whereKeyNot($node->id))->exists()) {
-            throw $this->refuse('cluster.lan_ip_conflict', 'The LAN address is already assigned in the Cluster.', 409);
+        if ($lan !== null) {
+            NodeLanAddress::assertFree($lan, $clusterId, $node->exists ? $node->id : null);
         }
         $tld = $data->tldProvided || $data->tld !== null ? $data->tld : ($node->exists ? $node->tld : null);
         $appDev = in_array(RoleName::AppDev, $data->roles, true) || ($node->exists && $node->roles()->where('role', RoleName::AppDev)->exists());
@@ -102,7 +97,6 @@ final readonly class NodeEnrollmentPolicy
             if ($data->settingsProvided || ($data->tldProvided && $tld !== ($node->exists ? $node->tld : null))
                 || ($data->clusterProvided && $data->clusterId !== ($node->exists ? $node->cluster_id : null))
                 || ($data->lanIpProvided && $lan !== ($node->exists ? $node->lan_ip : null))
-                || ($data->wireguardEndpointOverride !== null && $data->wireguardEndpointOverride !== ($node->exists ? $node->wireguard_endpoint_override : null))
                 || ($data->dnsServerOverride !== null && $data->dnsServerOverride !== ($node->exists ? $node->dns_server_override : null))) {
                 throw $this->refuse('node.platform_unsupported', 'macOS enrollment does not change Cluster, DNS, tunnel, or storage settings.');
             }
@@ -141,7 +135,6 @@ final readonly class NodeEnrollmentPolicy
             'candidate' => ['cluster_id' => $clusterId, 'platform' => $platform, 'architecture' => $architecture, 'tld' => $tld, 'user' => $managed,
                 'public_ssh_host' => $host, 'public_ssh_port' => $node->exists ? $node->public_ssh_port : $data->publicSshPort,
                 'wireguard_ip' => $address, 'lan_ip' => $lan,
-                'wireguard_endpoint_override' => $data->wireguardEndpointOverride ?? $node->wireguard_endpoint_override,
                 'dns_server_override' => $data->dnsServerOverride ?? $node->dns_server_override,
                 'ssh_jump_node_id' => $data->sshJumpNodeId ?? $node->ssh_jump_node_id]];
     }
@@ -153,7 +146,7 @@ final readonly class NodeEnrollmentPolicy
             && ($data->publicSshHost === '' || $data->publicSshHost === $node->public_ssh_host)
             && ($data->wireguardIp === null || $data->wireguardIp === $node->wireguard_ip)
             && (! $data->lanIpProvided || $data->lanIp === $node->lan_ip) && ! $data->settingsProvided && ! $data->clusterProvided
-            && $data->wireguardEndpointOverride === null && $data->dnsServerOverride === null
+            && $data->dnsServerOverride === null
             && ($data->architecture === null || $data->architecture === $node->architecture);
     }
 

@@ -14,10 +14,10 @@ use Illuminate\Validation\ValidationException;
 use stdClass;
 use UnexpectedValueException;
 
-/** One closed object: a new name, a platform, the apps folder, or the task VM host settings; at least one. */
+/** One closed object: a new name, a platform, the LAN address, the apps folder, or the task VM host settings; at least one. */
 final class UpdateNodeRequest extends FormRequest
 {
-    private const array MEMBERS = ['name', 'platform', 'apps', 'task_vms'];
+    private const array MEMBERS = ['name', 'platform', 'lan_ip', 'apps', 'task_vms'];
 
     public function authorize(): bool
     {
@@ -32,6 +32,7 @@ final class UpdateNodeRequest extends FormRequest
         return [
             'name' => ['sometimes', 'string', 'alpha_dash:ascii', 'max:63', Rule::unique('nodes', 'name')->ignore($node instanceof Node ? $node->id : null)],
             'platform' => ['sometimes', 'string', Rule::in(['linux', 'macos', 'ipados'])],
+            'lan_ip' => ['sometimes', 'nullable', 'ipv4'],
             'apps' => ['sometimes', 'nullable', 'array:path'],
             'apps.path' => ['sometimes', 'nullable', 'string'],
             'task_vms' => ['sometimes', 'nullable', 'array:cidr,task_places,project,network,pool,pool_size,image_alias,zfs_dataset,cpus,memory,disk,operator_owned,slots,ci_places,containers'],
@@ -75,7 +76,7 @@ final class UpdateNodeRequest extends FormRequest
         $patch = $this->settings();
 
         return [
-            ...array_intersect_key($body, array_flip(['name', 'platform'])),
+            ...array_intersect_key($body, array_flip(['name', 'platform', 'lan_ip'])),
             ...($patch->hasApps ? ['apps' => $patch->apps === null ? null : ['path' => $patch->apps->path]] : []),
             ...($patch->hasTaskVms ? ['task_vms' => $patch->taskVms?->toArray()] : []),
         ];
@@ -93,6 +94,19 @@ final class UpdateNodeRequest extends FormRequest
         $platform = $this->validated()['platform'] ?? null;
 
         return is_string($platform) ? $platform : null;
+    }
+
+    /** Whether the body names `lan_ip`; null clears the address. */
+    public function hasLanIp(): bool
+    {
+        return array_key_exists('lan_ip', $this->validated());
+    }
+
+    public function lanIp(): ?string
+    {
+        $address = $this->validated()['lan_ip'] ?? null;
+
+        return is_string($address) ? $address : null;
     }
 
     /** The apps and task_vms members; the settings parser owns their shape and the `node.settings_*` codes. */
@@ -118,7 +132,7 @@ final class UpdateNodeRequest extends FormRequest
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
         if ($body === []) {
-            throw ValidationException::withMessages(['body' => ['The request body must contain at least one of name, platform, apps, or task_vms.']]);
+            throw ValidationException::withMessages(['body' => ['The request body must contain at least one of name, platform, lan_ip, apps, or task_vms.']]);
         }
 
         return $body;

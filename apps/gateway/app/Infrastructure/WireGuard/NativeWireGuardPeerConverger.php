@@ -25,7 +25,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
 
     public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
     {
-        $vpn = $this->configuration->forPeer($node);
+        $vpn = $this->provable($node);
         $domains = $rolelessOperator ? [$vpn->domain] : app(PeerDnsPolicy::class)->domains($node);
         $publicKey = $this->preflightPeerKey($node, $connection, false);
         $this->publishPeer($node, $connection, $publicKey, false, $rolelessOperator, $vpn, $domains);
@@ -33,7 +33,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
 
     public function convergeRecoverably(Node $node, SshConnection $connection, Closure $completion, bool $rolelessOperator = false): void
     {
-        $vpn = $this->configuration->forPeer($node);
+        $vpn = $this->provable($node);
         $domains = $rolelessOperator ? [$vpn->domain] : app(PeerDnsPolicy::class)->domains($node);
         $publicKey = $this->preflightPeerKey($node, $connection, true);
         // Publication restores its own failures. A lost result requires inspection, not another mutation.
@@ -50,6 +50,21 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
 
             throw $throwable;
         }
+    }
+
+    /** This path cannot prove the hub's LAN address from the Node, so it refuses before any Node change (ADR 0251). */
+    private function provable(Node $node): VpnConfiguration
+    {
+        $vpn = $this->configuration->forPeer($node);
+        if ($vpn->lan !== null) {
+            throw new NodeProvisioningException(
+                step: 'wireguard-configuration',
+                errorCode: 'node.hub_lan_unproven',
+                message: "Node [{$node->name}] is on the hub's private network. Run node:converge, which proves the hub's LAN address first.",
+            );
+        }
+
+        return $vpn;
     }
 
     private function preflightPeerKey(Node $node, SshConnection $connection, bool $existing): string

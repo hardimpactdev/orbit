@@ -16,10 +16,12 @@ inputs:
         ssh: {type: object}
         config: {type: string, maxLength: 65536}
         port: {type: integer, minimum: 1, maximum: 65535}
+        interface: {type: string, maxLength: 128}
+        source: {anyOf: [{type: object}, {type: 'null'}]}
         peers: {type: array, items: {type: object, properties: {node_id: {type: integer, minimum: 1}, file: {type: string}, content: {type: string, maxLength: 4096}}, required: [node_id, file, content], additionalProperties: false}}
         prune_argv: {type: array, items: {type: string}}
         peer_keys: {type: array, items: {type: string, pattern: '^[A-Za-z0-9+/]{43}=$'}}
-      required: [hub_id, ssh, config, port, peers, prune_argv, peer_keys]
+      required: [hub_id, ssh, config, port, interface, source, peers, prune_argv, peer_keys]
       additionalProperties: false
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -130,12 +132,12 @@ jobs:
           port: '${{ inputs.intent.ssh.target.port }}'
           identityFile: '${{ inputs.intent.ssh.identity_file }}'
         hosts: [{name: hub, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]
-      # The Node composes the full syncconf input at apply time: its own key file, the port, then every peer file.
-      # syncconf drops the interface key when its input has none, and the key never leaves the Node.
+      # The Node composes the full syncconf input at apply time: its own key file, the Gateway-rendered interface lines (port and
+      # mark), then every peer file. syncconf resets the key and the mark when its input has none, and the key never leaves the Node.
       inputs:
         hosts: 'name:hub'
         sudo: true
-        argv: [timeout, '30', bash, -c, 'wg syncconf orbit <(printf "[Interface]\nPrivateKey = %s\nListenPort = %s\n\n" "$(cat "$1")" "$2"; cat /etc/wireguard/orbit-peers.d/*.conf)', bash, /etc/wireguard/orbit.key, '${{ string(inputs.intent.port) }}']
+        argv: [timeout, '30', bash, -c, 'wg syncconf orbit <(printf "[Interface]\nPrivateKey = %s\n%s\n" "$(cat "$1")" "$2"; cat /etc/wireguard/orbit-peers.d/*.conf)', bash, /etc/wireguard/orbit.key, '${{ inputs.intent.interface }}']
 - name: check
   dependsOn: [{job: apply, condition: {type: succeeded}}]
   steps:

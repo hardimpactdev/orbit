@@ -6,8 +6,12 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WireGuard\HubEndpoint;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Domain\WireGuard\LanAddress;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Support\ValidatedData;
@@ -22,6 +26,19 @@ final readonly class NodeWireGuardHubInput
     /** A run puts the public key it prepared where this mark stands in a peer section. */
     public const string KeyMark = '@KEY@';
 
+    /** Marked hub packets to private ranges first take the main table, so LAN and WireGuard peers keep their route and source. */
+    public const int MainRulePriority = 31820;
+
+    /** Then the hub's own table, whose default route sends from the public endpoint address (ADR 0251). */
+    public const int SourceRulePriority = 31821;
+
+    /** The script that the hub's source unit runs; Gateway-rendered, like the task VM filter on the hub. */
+    public const string SourceScript = '/etc/orbit/wireguard/hub-source';
+
+    public const string SourceUnit = 'orbit-hub-source.service';
+
+    public const string NetworkdDropIn = '/etc/systemd/networkd.conf.d/orbit-hub-source.conf';
+
     /**
      * The hub's wg-quick file and one peer file per Node, from Gateway records. orbit.conf holds no peer: wg-quick loads
      * every file in the peer directory on start. A run that adds one peer writes only that peer's file, so concurrent
@@ -31,23 +48,22 @@ final readonly class NodeWireGuardHubInput
      * snapshot: Node ids only grow, and a Node created after the snapshot, such as a task VM that joins meanwhile, has a higher one.
      * A gone Node above every remaining one keeps its leftover file until a later converge, after a newer Node exists.
      *
-     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,peers:list<array{node_id:int,file:string,content:string}>,prune:array{directory:string,keep:list<int>,newest:int},peer_keys:list<string>}
+     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,interface:string,source:array{address:string,mark:int,priorities:list<int>,rules:list<string>,script_path:string,script:string,unit_path:string,unit_name:string,unit:string,networkd_path:string,networkd:string}|null,source_owner:array{unit_name:string,unit_path:string,script_path:string,networkd_path:string,priorities:list<int>,table:int},lan_ssh_argv:list<list<string>>,peers:list<array{node_id:int,file:string,content:string}>,prune:array{directory:string,keep:list<int>,newest:int},peer_keys:list<string>}
      */
     public static function intent(Node $hub): array
     {
         $peers = Node::query()->whereKeyNot($hub->id)->whereNotNull('wireguard_public_key')->whereNotNull('wireguard_ip')
             ->where('status', '!=', LifecycleStatus::Removing)->orderBy('id')->get();
         $keep = ValidatedData::integerList(Node::query()->whereKeyNot($hub->id)->where('status', '!=', LifecycleStatus::Removing)->orderBy('id')->pluck('id')->all());
-        $settings = app(VpnSettings::class);
-        $port = filter_var($settings->port(), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 65_535]]);
-        if (! is_int($port) || ! is_string($hub->wireguard_ip)) {
-            throw new ResourceOperationException('node.network_unsupported', 'The hub needs its WireGuard address and a valid port.', 422);
-        }
+        $port = self::port($hub);
 
         // The hub's private key never leaves the Node: orbit.conf reads its key file, and the apply step composes the key
         // with the peer files on the Node at apply time. No file, the intent nor the run holds it.
         return ['hub_id' => $hub->id, 'ssh' => app(SwampSshExecutionInput::class)->forNode($hub), 'port' => $port,
-            'config' => self::config($hub),
+            'config' => self::config($hub), 'interface' => self::interface($port), 'source' => self::source($hub),
+            'source_owner' => self::sourceOwner($hub),
+            'lan_ssh_argv' => array_map(static fn (UfwManagedRule $rule): array => array_slice($rule->arguments, 1),
+                app(NodeFirewallRuleCatalog::class)->vpnLanSsh($hub)),
             'peers' => array_values($peers->map(static fn (Node $peer): array => ['node_id' => $peer->id, 'file' => self::peerFile($peer->id),
                 'content' => self::section($peer->name, (string) $peer->wireguard_public_key, "{$peer->wireguard_ip}/32")])->values()->all()),
             'prune' => ['directory' => self::PeerDirectory, 'keep' => $keep, 'newest' => ValidatedData::integer(Node::query()->max('id'))],
@@ -55,32 +71,147 @@ final readonly class NodeWireGuardHubInput
     }
 
     /**
-     * What a run that removes one Node needs: the hub's target, file and port, nothing to write, and only that Node's file to delete. The
+     * What a run that removes one Node needs: the hub's target, file, port and interface lines, nothing to write, and only that Node's file to delete. The
      * intent is a snapshot from admission, so a removal that listed the other Nodes would write back, or delete, the peer of a Node that
      * another run adds or takes away meanwhile. The apply step loads the files that remain.
      *
-     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,peers:list<array{node_id:int,file:string,content:string}>,prune_argv:list<string>,peer_keys:list<string>}
+     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,interface:string,source:array{address:string,mark:int,priorities:list<int>,rules:list<string>,script_path:string,script:string,unit_path:string,unit_name:string,unit:string,networkd_path:string,networkd:string}|null,peers:list<array{node_id:int,file:string,content:string}>,prune_argv:list<string>,peer_keys:list<string>}
      */
     public static function removal(Node $hub, Node $removed): array
     {
         $intent = self::intent($hub);
 
         return ['hub_id' => $intent['hub_id'], 'ssh' => $intent['ssh'], 'port' => $intent['port'], 'config' => $intent['config'],
-            'peers' => [], 'prune_argv' => ['rm', '-f', '--', self::peerFile($removed->id)], 'peer_keys' => []];
+            'interface' => $intent['interface'], 'source' => $intent['source'], 'peers' => [], 'prune_argv' => ['rm', '-f', '--', self::peerFile($removed->id)], 'peer_keys' => []];
     }
 
-    /** The hub's wg-quick file. It holds no peer and no key: it reads the key file, and wg-quick loads every peer file. */
+    /**
+     * The hub's wg-quick file. It holds no peer and no key: it reads the key file, and wg-quick loads every peer file. It marks
+     * the hub's WireGuard packets; the source rule for marked packets lives in its own unit, which no writer of this file touches.
+     */
     public static function config(Node $hub): string
     {
-        $settings = app(VpnSettings::class);
-        $port = filter_var($settings->port(), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 65_535]]);
+        return "[Interface]\nAddress = {$hub->wireguard_ip}/".Ipv4Subnet::from(app(VpnSettings::class)->subnet())->prefixLength()
+            ."\n".self::interface(self::port($hub)).'PostUp = wg set %i private-key '.self::KeyFile
+            ."\nPostUp = for f in ".self::PeerDirectory.'/*.conf; do [ -e "$f" ] && wg addconf %i "$f"; done; true'."\n";
+    }
+
+    /**
+     * The interface lines of every `wg syncconf` input on the hub. `syncconf` resets a setting its input leaves out, so the
+     * mark travels with the port. The mark is the WireGuard port, and so is the hub's source table.
+     */
+    public static function interface(int $port): string
+    {
+        return "ListenPort = {$port}\nFwMark = {$port}\n";
+    }
+
+    /**
+     * The source rule that makes the hub send every WireGuard packet to a public peer from its public endpoint address (ADR
+     * 0251), as one Orbit-owned unit: a script that sets the rules and the table, and the oneshot unit that runs it before
+     * `wg-quick@orbit`. Marked packets to private ranges keep the main table; every other marked packet, the hub's own public
+     * prefix included, takes the hub's table, whose default route leaves from the endpoint address. The unit is wanted by the
+     * tunnel, never required, so a failing rule cannot keep the tunnel down. Null when the public endpoint is a hostname or
+     * IPv6: then the hub cannot know the address.
+     *
+     * @return array{address:string,mark:int,priorities:list<int>,rules:list<string>,script_path:string,script:string,unit_path:string,unit_name:string,unit:string,networkd_path:string,networkd:string}|null
+     */
+    public static function source(Node $hub): ?array
+    {
+        $port = self::port($hub);
+        $address = HubEndpoint::publicAddress($hub, app(VpnSettings::class));
+        if ($address === null) {
+            return null;
+        }
+        $main = self::MainRulePriority;
+        $own = self::SourceRulePriority;
+        $private = self::privateRanges();
+        $mark = sprintf('0x%x', $port);
+        $rules = array_map(static fn (string $range): string => "{$main}:{$mark}:{$range}:main", $private);
+        $rules[] = "{$own}:{$mark}:all:{$port}";
+
+        return ['address' => $address, 'mark' => $port, 'priorities' => [$main, $own],
+            // systemd-networkd deletes rules and routes it did not create when it starts or configures a link; on the hub it keeps
+            // them, from its next start on.
+            'networkd_path' => self::NetworkdDropIn,
+            'networkd' => "[Network]\nManageForeignRoutingPolicyRules=no\nManageForeignRoutes=no\n",
+            // Each rule as `ip -j rule show` reports it: priority, hexadecimal mark, destination and table.
+            'rules' => $rules,
+            'script_path' => self::SourceScript, 'unit_path' => '/etc/systemd/system/'.self::SourceUnit, 'unit_name' => self::SourceUnit,
+            'script' => implode("\n", [
+                '#!/bin/sh',
+                '# Managed by Orbit (ADR 0251): the hub sends WireGuard packets to public peers from '.$address.'.',
+                'set -eu',
+                "while ip -4 rule del priority {$main} 2>/dev/null; do :; done",
+                "while ip -4 rule del priority {$own} 2>/dev/null; do :; done",
+                "ip -4 route flush table {$port} 2>/dev/null || true",
+                ...array_map(static fn (string $range): string => "ip -4 rule add priority {$main} fwmark {$port} to {$range} lookup main", $private),
+                "ip -4 rule add priority {$own} fwmark {$port} lookup {$port}",
+                '# The table copies the first default route of the main table and leaves from the endpoint address. At boot DHCP',
+                '# may not have set the default route yet, so the script waits for it.',
+                'for _ in $(seq 1 60); do',
+                '  set -- $(ip -4 route show default | head -n 1)',
+                '  route=; dev=',
+                '  while [ "$#" -gt 0 ]; do',
+                '    case "$1" in',
+                '      via|dev) [ "$#" -gt 1 ] && route="$route $1 $2" && { [ "$1" = via ] || dev=$2; } && shift ;;',
+                '      onlink) route="$route onlink" ;;',
+                '    esac',
+                '    shift',
+                '  done',
+                '  case "$route" in *via*) break ;; esac',
+                '  sleep 1',
+                'done',
+                '# Peers in the public prefix of that interface stay on-link, as in the main table, and also leave from the endpoint.',
+                'ip -4 route show table main proto kernel scope link dev "$dev" | while read -r net _; do',
+                "  ip -4 route replace \"\$net\" dev \"\$dev\" scope link src {$address} table {$port}",
+                'done',
+                "ip -4 route replace default \$route src {$address} table {$port}",
+            ])."\n",
+            'unit' => "[Unit]\nDescription=Orbit hub WireGuard source address\nWants=network-online.target\n"
+                ."After=network-online.target\nBefore=wg-quick@orbit.service\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/bin/sh ".self::SourceScript
+                // A boot without a default route within the script's minute tries again, without holding the tunnel back.
+                ."\nRestart=on-failure\nRestartSec=30"
+                ."\n\n[Install]\nWantedBy=wg-quick@orbit.service multi-user.target\n"];
+    }
+
+    /**
+     * What the hub's source unit owns, also when the endpoint is no IPv4 address: then the hub phase removes a unit, its files,
+     * rules and table that an earlier IPv4 endpoint left.
+     *
+     * @return array{unit_name:string,unit_path:string,script_path:string,networkd_path:string,priorities:list<int>,table:int}
+     */
+    public static function sourceOwner(Node $hub): array
+    {
+        return ['unit_name' => self::SourceUnit, 'unit_path' => '/etc/systemd/system/'.self::SourceUnit, 'script_path' => self::SourceScript,
+            'networkd_path' => self::NetworkdDropIn, 'priorities' => [self::MainRulePriority, self::SourceRulePriority], 'table' => self::port($hub)];
+    }
+
+    /**
+     * RFC 1918 and the WireGuard subnet when it lies outside them: the destinations that keep the main table.
+     *
+     * @return list<string>
+     */
+    private static function privateRanges(): array
+    {
+        $ranges = LanAddress::PrivateRanges;
+        $subnet = Ipv4Subnet::from(app(VpnSettings::class)->subnet());
+        foreach ($ranges as $range) {
+            if (Ipv4Subnet::from($range)->contains($subnet->networkAddress())) {
+                return $ranges;
+            }
+        }
+
+        return [...$ranges, $subnet->value()];
+    }
+
+    private static function port(Node $hub): int
+    {
+        $port = filter_var(app(VpnSettings::class)->port(), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 65_535]]);
         if (! is_int($port) || ! is_string($hub->wireguard_ip)) {
             throw new ResourceOperationException('node.network_unsupported', 'The hub needs its WireGuard address and a valid port.', 422);
         }
 
-        return "[Interface]\nAddress = {$hub->wireguard_ip}/".Ipv4Subnet::from($settings->subnet())->prefixLength()
-            ."\nListenPort = {$port}\nPostUp = wg set %i private-key ".self::KeyFile
-            ."\nPostUp = for f in ".self::PeerDirectory.'/*.conf; do [ -e "$f" ] && wg addconf %i "$f"; done; true'."\n";
+        return $port;
     }
 
     /**

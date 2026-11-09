@@ -33,7 +33,6 @@ final readonly class NodeResponse
         public ?string $errorCode = null,
         public ?string $tld = null,
         public ?string $wireguardPublicKey = null,
-        public ?string $wireguardEndpointOverride = null,
         public ?string $dnsServerOverride = null,
         public ?NodeAccessResponse $access = null,
         public ?NodeSettings $settings = null,
@@ -65,9 +64,6 @@ final readonly class NodeResponse
             lanIp: is_string($data['lan_ip'] ?? null) ? $data['lan_ip'] : null,
             wireguardPublicKey: is_string($data['wireguard_public_key'] ?? null)
                 ? $data['wireguard_public_key']
-                : null,
-            wireguardEndpointOverride: is_string($data['wireguard_endpoint_override'] ?? null)
-                ? $data['wireguard_endpoint_override']
                 : null,
             dnsServerOverride: is_string($data['dns_server_override'] ?? null)
                 ? $data['dns_server_override']
@@ -107,7 +103,6 @@ final readonly class NodeResponse
             'wireguard_ip' => $this->wireguardIp,
             'lan_ip' => $this->lanIp,
             'wireguard_public_key' => $this->wireguardPublicKey,
-            'wireguard_endpoint_override' => $this->wireguardEndpointOverride,
             'dns_server_override' => $this->dnsServerOverride,
             'ssh_host_fingerprint' => $this->sshHostFingerprint,
             'failed_step' => $this->failedStep,

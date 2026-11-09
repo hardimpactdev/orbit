@@ -1,0 +1,144 @@
+---
+# The hub's Orbit-owned network extras (ADR 0251). `hub_source` (null for a hostname or IPv6 endpoint) is the script and the
+# oneshot unit that send marked WireGuard packets to public peers from the endpoint address; the unit, not orbit.conf, owns the
+# rules, so no writer of orbit.conf can drop them and a failing rule cannot keep the tunnel down. `hub_lan_ssh_argv` opens SSH
+# on the hub's LAN address to its private network, so a Node there can read the hub's host key before it moves to the LAN.
+- name: Read the hub's added firewall rules
+  ansible.builtin.command: { argv: [ufw, show, added] }
+  register: hub_ufw_added
+  changed_when: false
+  check_mode: false
+- name: Remove a LAN SSH rule of an earlier hub LAN address
+  vars:
+    pair: '^.* from (\S+) to (\S+) .*$'
+    wanted: "{{ hub_lan_ssh_argv | map('join', ' ') | map('regex_replace', pair, '\\1 \\2') | list }}"
+  loop: "{{ hub_ufw_added.stdout_lines | select('search', 'orbit:vpn-lan-ssh') | list }}"
+  when: (item | regex_replace(pair, '\\1 \\2')) not in wanted
+  # The delete names the rule the way the catalog adds it (`allow in proto tcp from … to … port 22`), without the comment.
+  ansible.builtin.command:
+    argv: "{{ ['ufw', 'delete', 'allow', 'in', 'proto', 'tcp', 'from'] + (item | regex_replace(pair, '\\1 to \\2')).split() + ['port', '22'] }}"
+  changed_when: true
+- name: Open SSH on the hub's LAN address to its private network
+  ansible.builtin.command: { argv: "{{ item }}" }
+  loop: "{{ hub_lan_ssh_argv }}"
+  register: hub_lan_ssh
+  changed_when: hub_lan_ssh.stdout is not search('Skipping')
+- name: Send public WireGuard packets from the endpoint address
+  when: hub_source is not none
+  block:
+    - name: Read the hub's endpoint address
+      ansible.builtin.command: { argv: [ip, -4, -o, address, show, to, "{{ hub_source.address }}/32"] }
+      register: hub_source_local
+      changed_when: false
+      check_mode: false
+    - name: Require the endpoint address on the hub
+      ansible.builtin.assert: { that: hub_source_local.stdout | trim | length > 0, fail_msg: vpn.endpoint_not_local, quiet: true }
+    - name: Create the source script and networkd folders
+      ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0755" }
+      loop: ["{{ hub_source.script_path | dirname }}", "{{ hub_source.networkd_path | dirname }}"]
+    - name: Write the source script and unit
+      ansible.builtin.copy: { dest: "{{ item.dest }}", content: "{{ item.content }}", owner: root, group: root, mode: "{{ item.mode }}" }
+      loop:
+        - { dest: "{{ hub_source.script_path }}", content: "{{ hub_source.script }}", mode: "0700" }
+        - { dest: "{{ hub_source.unit_path }}", content: "{{ hub_source.unit }}", mode: "0644" }
+        - { dest: "{{ hub_source.networkd_path }}", content: "{{ hub_source.networkd }}", mode: "0644" }
+      loop_control: { label: "{{ item.dest }}" }
+      register: hub_source_files
+    - name: Read the hub's WireGuard rules and source
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -o pipefail
+          ip -4 -j rule show
+          echo "marked: $(ip -4 -o route get 192.0.2.1 mark {{ hub_source.mark | quote }} || true)"
+          echo "main: $(ip -4 -o route get 192.0.2.1 || true)"
+          # Each connected prefix of the public interface, as a marked packet to it routes: on-link, from the endpoint.
+          dev=$(ip -4 route show default | head -n 1 | sed -n 's/.* dev \([^ ]*\).*/\1/p')
+          if [ -n "$dev" ]; then
+            ip -4 route show table main proto kernel scope link dev "$dev" | while read -r net _; do
+              echo "onlink: $(ip -4 -o route get "${net%/*}" mark {{ hub_source.mark | quote }} || true)"
+            done
+          fi
+      register: hub_source_live
+      changed_when: false
+      check_mode: false
+    - name: Start the source unit, again after a change or drift
+      vars:
+        live: "{{ (hub_source_live.stdout.split('\n') | first) | from_json }}"
+        ours: >-
+          {% for rule in live if rule.priority | default(-1) in hub_source.priorities %}{{ rule.priority }}:{{ rule.fwmark | default('') }}:{{
+          (rule.dst ~ '/' ~ rule.dstlen) if rule.dst is defined else 'all' }}:{{ rule.table | default('') }}
+          {% endfor %}
+        marked: "{{ (hub_source_live.stdout | regex_search('(?m)^marked: (.*)$', '\\1') or ['']) | first }}"
+        main: "{{ (hub_source_live.stdout | regex_search('(?m)^main: (.*)$', '\\1') or ['']) | first }}"
+        hop: ' via (\S+) dev (\S+)'
+        onlink: "{{ hub_source_live.stdout | regex_findall('(?m)^onlink: (.*)$') }}"
+        # The table copies the main default gateway and the connected public prefix when the unit runs; either changed since,
+        # or a peer in that prefix routed through the gateway, is drift too.
+        drift: >-
+          {{ (ours.split() | sort) != (hub_source.rules | sort)
+          or (' src ' ~ hub_source.address ~ ' ') not in marked
+          or (marked | regex_search(hop)) != (main | regex_search(hop))
+          or onlink | select('search', ' via ') | list | length > 0
+          or onlink | reject('search', ' src ' ~ hub_source.address ~ ' ') | list | length > 0 }}
+      ansible.builtin.systemd:
+        name: "{{ hub_source.unit_name }}"
+        daemon_reload: "{{ hub_source_files is changed }}"
+        enabled: true
+        state: "{{ 'restarted' if hub_source_files is changed or drift | bool else 'started' }}"
+    - name: Read the hub's WireGuard source again
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+            set -o pipefail
+            ip -4 -j rule show
+            echo "marked: $(ip -4 -o route get 192.0.2.1 mark {{ hub_source.mark | quote }} || true)"
+            echo "main: $(ip -4 -o route get 192.0.2.1 || true)"
+            # Each connected prefix of the public interface, as a marked packet to it routes: on-link, from the endpoint.
+            dev=$(ip -4 route show default | head -n 1 | sed -n 's/.* dev \([^ ]*\).*/\1/p')
+            if [ -n "$dev" ]; then
+              ip -4 route show table main proto kernel scope link dev "$dev" | while read -r net _; do
+                echo "onlink: $(ip -4 -o route get "${net%/*}" mark {{ hub_source.mark | quote }} || true)"
+              done
+            fi
+      register: hub_source_check
+      changed_when: false
+      check_mode: false
+    - name: Require the endpoint address as the source of public WireGuard packets, on-link within the public prefix
+      vars:
+        marked: "{{ (hub_source_check.stdout | regex_search('(?m)^marked: (.*)$', '\\1') or ['']) | first }}"
+        onlink: "{{ hub_source_check.stdout | regex_findall('(?m)^onlink: (.*)$') }}"
+      ansible.builtin.assert:
+        that:
+          - (' src ' ~ hub_source.address ~ ' ') in marked
+          - onlink | select('search', ' via ') | list | length == 0
+          - onlink | reject('search', ' src ' ~ hub_source.address ~ ' ') | list | length == 0
+        fail_msg: vpn.source_route_failed
+        quiet: true
+- name: Remove the source unit that an earlier IPv4 endpoint left
+  when: hub_source is none
+  block:
+    - name: Read whether a source unit is installed
+      ansible.builtin.stat: { path: "{{ hub_source_owner.unit_path }}" }
+      register: hub_source_installed
+    - name: Stop and disable the earlier source unit
+      when: hub_source_installed.stat.exists
+      ansible.builtin.systemd: { name: "{{ hub_source_owner.unit_name }}", state: stopped, enabled: false }
+    - name: Remove the earlier source files
+      ansible.builtin.file: { path: "{{ item }}", state: absent }
+      loop: ["{{ hub_source_owner.unit_path }}", "{{ hub_source_owner.script_path }}", "{{ hub_source_owner.networkd_path }}"]
+    - name: Remove the earlier source rules and table
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          for p in {{ hub_source_owner.priorities | join(' ') }}; do
+            while ip -4 rule del priority "$p" 2>/dev/null; do echo changed; done
+          done
+          if [ -n "$(ip -4 route show table {{ hub_source_owner.table | quote }} 2>/dev/null)" ]; then
+            ip -4 route flush table {{ hub_source_owner.table | quote }}; echo changed
+          fi
+      register: hub_source_cleared
+      changed_when: hub_source_cleared.stdout is search('changed')
+    - name: Reload units after removing the source unit
+      when: hub_source_installed.stat.exists
+      ansible.builtin.systemd: { daemon_reload: true }

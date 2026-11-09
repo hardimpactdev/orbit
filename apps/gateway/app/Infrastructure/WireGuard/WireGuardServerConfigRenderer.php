@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WireGuard;
 
+use App\Domain\Nodes\NodeWireGuardHubInput;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use Illuminate\Support\Collection;
@@ -19,10 +20,11 @@ final readonly class WireGuardServerConfigRenderer
     /** @param Collection<int, Node> $nodes */
     public function renderForHub(Node $hub, string $address, int $port, #[\SensitiveParameter] string $privateKey, Collection $nodes): string
     {
+        // The hub's interface lines carry the mark: `wg syncconf` on this file would otherwise reset it (ADR 0251).
         $lines = [
             '[Interface]',
             "Address = {$address}",
-            "ListenPort = {$port}",
+            ...explode("\n", rtrim(NodeWireGuardHubInput::interface($port))),
             "PrivateKey = {$privateKey}",
         ];
 

@@ -27,7 +27,7 @@ it('records list and show fixtures from the shared Node projection', function ()
         'id' => 2, 'cluster_id' => 1, 'name' => 'app-dev', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'tld' => 'app-dev.test', 'public_ssh_host' => '94.237.40.75', 'public_ssh_port' => 22, 'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3', 'lan_ip' => '10.0.0.3', 'wireguard_public_key' => 'app-dev-public-key',
-        'wireguard_endpoint_override' => '10.0.0.2:51820', 'dns_server_override' => '10.0.0.2',
+        'dns_server_override' => '10.0.0.2',
         'ssh_host_fingerprint' => 'SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo',
     ]));
     $gateway->roles()->forceCreate(['id' => 1, 'role' => 'gateway', 'status' => 'active']);

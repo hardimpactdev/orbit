@@ -50,7 +50,7 @@ function fixture(array $input): array
         $node->updateQuietly([
             'cluster_id' => $cluster->id, 'architecture' => 'x86_64', 'tld' => 'proof-'.$node->id.'.orbit',
             'lan_ip' => '192.168.88.2', 'wireguard_public_key' => 'recorded-proof-key',
-            'wireguard_endpoint_override' => '192.0.2.99:51820', 'dns_server_override' => '192.168.88.1',
+            'dns_server_override' => '192.168.88.1',
             'settings' => ['apps' => ['path' => '/srv/proof-apps']],
             'failed_step' => 'converge:apps', 'error_code' => 'node.enrollment_failed',
         ]);

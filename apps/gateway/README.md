@@ -107,9 +107,11 @@ php artisan orbit:node-provision operator '<PUBLIC_SSH_HOST>' \
 ```
 
 Orbit allocates the peer WireGuard address and uses the gateway WireGuard and
-DNS settings by default. For a peer that must use a private underlay, append the
-optional `--wireguard-endpoint='<PRIVATE_GATEWAY_IP>:51820'` and
-`--dns-server='<PRIVATE_DNS_IP>'` overrides.
+DNS settings by default. A peer on the hub's private network reaches the hub at
+its LAN address when both Nodes record a `lan_ip`; see
+[WireGuard endpoints](../../docs/reference/wireguard-endpoints.md#the-lan-endpoint).
+Append the optional `--dns-server='<PRIVATE_DNS_IP>'` override for a private DNS
+server.
 
 The versioned status endpoint is `GET /api/v1/gateway/status`.
 

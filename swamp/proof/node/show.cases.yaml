@@ -215,7 +215,7 @@ cases:
               - {path: user, equals: orbit}
               - {path: lan_ip, equals: 192.168.88.2}
               - {path: wireguard_public_key, equals: recorded-proof-key}
-              - {path: wireguard_endpoint_override, equals: "192.0.2.99:51820"}
+              - {path: wireguard_endpoint_override, absent: true}
               - {path: dns_server_override, equals: 192.168.88.1}
               - {path: settings.apps.path, equals: /srv/proof-apps}
               - {path: failed_step, equals: "converge:apps"}

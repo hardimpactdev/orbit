@@ -12,6 +12,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressPolicy;
 use App\Domain\Nodes\RoleName;
+use App\Domain\WireGuard\LanAddress;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Shared\LifecycleStatus;
@@ -137,7 +138,7 @@ final readonly class NodeFirewallRuleCatalog
                 new UfwRuleShape('orbit-ci-runners', 'allow', 'fwd', 'any', 'any', 'any', 'any', 'orbitci0', null, null),
                 ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbitci0', 'comment', 'orbit-ci-runners'],
             )],
-            RoleName::Vpn => app(TaskVmHubPolicy::class)->managedRules(),
+            RoleName::Vpn => [...app(TaskVmHubPolicy::class)->managedRules(), ...$this->vpnLanSsh($node)],
             RoleName::Router => $this->routerLanIngress($node),
             RoleName::Ingress => $this->ingressPublicHttp($node),
             RoleName::AppDev => [],
@@ -292,6 +293,26 @@ final readonly class NodeFirewallRuleCatalog
         }
 
         return $rules;
+    }
+
+    /**
+     * SSH to the hub's LAN address from its private network, so a Node there can read the hub's host key before it moves its
+     * tunnel to the LAN (ADR 0251). None while the hub records no IPv4 `lan_ip`.
+     *
+     * @return list<UfwManagedRule>
+     */
+    public function vpnLanSsh(Node $hub): array
+    {
+        $address = $hub->lan_ip;
+        if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            return [];
+        }
+        $network = LanAddress::network($address);
+
+        return [new UfwManagedRule(
+            new UfwRuleShape('orbit:vpn-lan-ssh', 'allow', 'in', $network, $address, '22', 'tcp', null, null, 'v4'),
+            ['sudo', 'ufw', 'allow', 'in', 'proto', 'tcp', 'from', $network, 'to', $address, 'port', '22', 'comment', 'orbit:vpn-lan-ssh'],
+        )];
     }
 
     public function routerLanIngressRule(

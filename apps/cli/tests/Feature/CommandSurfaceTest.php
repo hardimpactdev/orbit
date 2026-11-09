@@ -853,7 +853,6 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'cluster' => null,
                 'wireguard-ip' => null,
                 'lan-ip' => null,
-                'wireguard-endpoint' => null,
                 'dns-server' => null,
                 'setting' => [],
                 'json' => false,

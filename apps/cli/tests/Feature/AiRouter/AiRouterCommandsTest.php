@@ -260,7 +260,6 @@ function ai_router_cli_nodes_response(): MockResponse
             'user' => 'nckrtl',
             'wireguard_ip' => '10.44.0.7',
             'wireguard_public_key' => 'key',
-            'wireguard_endpoint_override' => null,
             'dns_server_override' => null,
             'ssh_host_fingerprint' => null,
             'failed_step' => null,
