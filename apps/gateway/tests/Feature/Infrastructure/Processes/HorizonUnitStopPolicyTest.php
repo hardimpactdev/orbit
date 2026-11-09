@@ -38,7 +38,7 @@ it('lets a system shutdown kill Horizon at once instead of waiting for the drain
 
     $unit = (new SystemdProcessRenderer)->render($process, $target);
 
-    expect($unit)->toContain("ExecStop=+/bin/sh -c '[ \"$$(/usr/bin/systemctl is-system-running)\" != stopping ] || exec /usr/bin/systemctl kill --kill-whom=all --signal=SIGKILL %n'\n");
+    expect($unit)->toContain("ExecStop=-+/bin/sh -c '[ \"$$(/usr/bin/systemctl is-system-running)\" != stopping ] || exec /usr/bin/systemctl kill --kill-whom=all --signal=SIGKILL %n'\n");
 });
 
 it('leaves the stop policy of every other Process alone', function (): void {

@@ -73,7 +73,7 @@ Admission records a provisioning Node and freezes its public resource plan. Boot
 | --- | --- |
 | Trust | Native steps collect the public SSH key, assert its approved fingerprint, read the platform and bootstrap account, then bind that identity into the frozen resources. |
 | Input | The intent, the private files and the inventory with pinned host keys are written to a run folder on 209. |
-| Baseline | Ansible phase `baseline`: pin the Node, authorize the control key, install packages, create the managed account and its sudo rule, open recovery SSH, enable the firewall. |
+| Baseline | Ansible phase `baseline`: pin the Node, authorize the control key, install packages, create the managed account and its sudo rule, open recovery SSH, apply the [kernel policy](#kernel-policy), enable the firewall. |
 | Network | Phase `tunnel` creates and checks the WireGuard key, writes the tunnel files and applies peers. A native step reads the public key. Phase `hub` adds the peer. |
 | Observer | Ansible phase `agent`: fetch the pinned binary, write its public configuration and mode-0600 secret, and start its systemd unit. |
 | Access | A native step logs in as the managed user and, on Linux, runs a command with passwordless sudo. |
@@ -391,6 +391,8 @@ Every managed Linux Node gets the same kernel policy. The Gateway renders it onc
 Nothing in Orbit uses SCTP, so the kernel never loads its module (decision of 2026-11-09). A module that is already loaded stays loaded until the next boot.
 
 Docker publishes [Database server](/reference/database-servers#private-publication) ports on the explicit WireGuard and LAN addresses. At boot, Docker can start a container before that address exists. Without the non-local bind, the bind fails with `cannot assign requested address`, and Docker does not retry.
+
+The non-local bind has a cost: a service bound to an address the Node does not hold, such as an old LAN address, starts and serves nothing instead of failing at start. Check a Process's publications after you change a Node's addresses.
 
 Both phases write the module file as root, mode `0644`. A file that already holds the same content, such as one an operator wrote by hand, stays unchanged. The phases also set `net.ipv4.ip_nonlocal_bind` on the running kernel, and `systemd-sysctl` sets it at every boot before Docker starts.
 

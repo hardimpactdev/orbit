@@ -102,7 +102,7 @@ Docker starts a server's container at boot, and it can do that before the WireGu
 
 The stored connection host stays WireGuard. Explicit LAN selection requires only that the server and consumer Nodes are active and each has an IPv4 LAN address. [LAN attachments](/reference/database-connections#choose-lan-for-an-instance) select LAN for an active consumer in the private network. A shared Cluster is not required.
 
-Existing servers keep their publications until an explicit create retry. That retry enables private publication and validates the selected server. Node provisioning and removal do not contact database hosts or install database filters. When a server address changes, retry creation before switching clients. A retry can recreate an active MySQL container to repair publication drift.
+Existing servers keep their publications until an explicit create retry. That retry enables private publication and validates the selected server. Node provisioning and removal do not contact database hosts or install database filters. When a server address changes, retry creation before switching clients. A publication on the old address still starts, because the Node allows non-local binds, but it serves nothing. A retry can recreate an active MySQL container to repair publication drift.
 
 Repeat creation repairs publication drift. A failed SQL repair keeps an active server active and records its failed step.
 

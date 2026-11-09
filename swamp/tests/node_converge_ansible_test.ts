@@ -277,3 +277,12 @@ Deno.test("the kernel policy keeps a matching module file, such as one written b
         await localPlay(vars, [copy]);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
+
+Deno.test("the Gateway role and bootstrap create /run/orbit from the tmpfiles rule before the scheduler starts", async () => {
+    const runtime = parse(await Deno.readTextFile(taskPath("gateway-runtime"))) as Array<Record<string, unknown>>;
+    const create = runtime.find((task) => task.name === "Create the Gateway runtime folder")!;
+    assertEquals(create["ansible.builtin.command"], { argv: ["systemd-tmpfiles", "--create", "{{ rt.gateway.tmpfiles }}"] });
+    const bootstrap = (parse(await Deno.readTextFile(taskPath("gateway-swamp"))) as Array<Record<string, unknown>>).map((task) => task.name);
+    const [write, apply, start] = ["Write the Gateway runtime folder rule", "Create the Gateway runtime folder", "Start the recorder"].map((name) => bootstrap.indexOf(name));
+    assertEquals([write >= 0, write < apply, apply < start], [true, true, true]);
+});
