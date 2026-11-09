@@ -89,6 +89,17 @@ class ShapeGateToolsTest(unittest.TestCase):
         for step in deno_tests:
             self.assertEqual(step.env.get('ANSIBLE_COLLECTIONS_PATH'), str(collections), step.name)
 
+    def test_each_deno_test_file_is_its_own_parallel_step(self):
+        steps = self.gate.plan('HEAD', self.system, self.system, self.system / 'collections')
+        files = sorted(str(path.relative_to(ROOT / 'swamp')) for path in (ROOT / 'swamp/tests').glob('*_test.ts'))
+        planned = [step.argv[-1] for step in steps if step.group == 'shape' and step.argv[:3] == ['deno', 'test', '-A'] and step.argv[-1].startswith('tests/')]
+        elsewhere = [step.argv[-1] for step in steps if step.group == 'validate' and step.argv[-1].startswith('tests/')]
+        self.assertTrue(set(elsewhere) <= set(self.gate.DENO_TESTS_ELSEWHERE))
+        self.assertTrue(set(self.gate.DENO_TESTS_ELSEWHERE) <= set(files), 'each file left out exists')
+        self.assertEqual(planned, [file for file in files if file not in self.gate.DENO_TESTS_ELSEWHERE])
+        self.assertIn('tests/ansible_instance_host_test.ts', planned)
+        self.assertTrue(all(step.parallel for step in steps if step.argv[-1] in planned))
+
 
 if __name__ == '__main__':
     unittest.main()

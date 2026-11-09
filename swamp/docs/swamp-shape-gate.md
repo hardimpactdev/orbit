@@ -1,6 +1,6 @@
 # Swamp shape gate
 
-Every pull request and main push runs `Swamp shape`. Run the same steps before a push with `bin/swamp-shape-gate`; the CI job calls that script. Existing violations are
+Every pull request and main push runs `Swamp shape`. Run the same steps before a push with `bin/swamp-shape-gate`; the CI job calls that script. The script runs the independent checks on up to four workers, and each file in `tests/` is its own check, so no single file list holds one worker for the whole run. Existing violations are
 listed by file and rule in `config/swamp-shape-baseline.json`. Entries and their
 counts may only decrease. Moving code does not transfer an exception. CI also
 runs the base revision's checker and dependencies against committed HEAD in

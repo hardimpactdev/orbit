@@ -52,13 +52,24 @@ DENO_UNIT_TESTS = (
     ('--allow-read', '--allow-run', 'bin/lint-behavior-names_test.ts'),
     ('-A', 'bin/swamp-liveness_test.ts'),
     ('-A', 'bin/source_test.ts'),
-    ('-A', '--ignore=tests/metrics_exporter_firewall_test.ts,tests/native_host_method_test.ts,tests/node_add_bootstrap_test.ts', 'tests/'),
     ('-A', 'extensions/behaviors/automatic-deploy', 'extensions/behaviors/composer-maintenance',
      'extensions/behaviors/js-maintenance', 'extensions/behaviors/projects'),
     ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/swamp-shape-python_test.ts'),
     ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/validate-swamp-workflows_test.ts'),
     ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/check-swamp-base-policy_test.ts'),
 )
+# The file names `deno test` takes from a directory.
+DENO_TEST_FILE = re.compile(r'(.*[._])?test\.(ts|tsx|mts|js|mjs|jsx)')
+# Not in the shape group: the validation group runs the enrollment trust test, the firewall test stays out until it passes,
+# and the host method test needs systemd and passwordless sudo.
+DENO_TESTS_ELSEWHERE = ('tests/metrics_exporter_firewall_test.ts', 'tests/native_host_method_test.ts', 'tests/node_add_bootstrap_test.ts')
+
+
+def deno_test_files():
+    """Each file in tests/ is its own command, so the workers share the playbook-heavy files.
+    As one serial command they took more than 15 of the 20 minutes CI gives the gate."""
+    files = sorted(str(path.relative_to(SWAMP)) for path in (SWAMP / 'tests').rglob('*') if DENO_TEST_FILE.fullmatch(path.name))
+    return [('-A', file) for file in files if file not in DENO_TESTS_ELSEWHERE]
 
 
 class Step:
@@ -82,7 +93,7 @@ def plan(base, reports, cache, collections):
     steps += [Step('shape', test, ['python3', '-I', test], parallel=True) for test in ANSIBLE_TESTS]
     steps.append(Step('shape', 'ruff', ['ruff', 'check', 'ansible/build_vars.py', 'ansible/library/orbit_artifact.py',
                                         *ANSIBLE_TESTS], parallel=True))
-    steps += [Step('shape', 'deno test ' + ' '.join(arguments[-1:]), ['deno', 'test', *arguments], env=ansible_env, parallel=True) for arguments in DENO_UNIT_TESTS]
+    steps += [Step('shape', 'deno test ' + ' '.join(arguments[-1:]), ['deno', 'test', *arguments], env=ansible_env, parallel=True) for arguments in (*DENO_UNIT_TESTS, *deno_test_files())]
     steps += [
         Step('shape', 'check-swamp-shape', ['deno', 'run', '--allow-env', '--allow-read', f'--allow-write={shape_report}', '--allow-run',
                                             'bin/check-swamp-shape.ts', '--base', base, '--report', str(shape_report)]),
