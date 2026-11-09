@@ -5,7 +5,7 @@ description: "Plan from 9 November 2026: a T3 server in each container is the ag
 
 # Agent runtime and threads
 
-A task group or a development Instance gets one isolated runtime: an Incus container with a T3 server inside. [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) decides the runtime and the engine. [Development containers](/reference/development-containers) specifies the Instance side.
+A task group or a development Instance gets one isolated runtime: an Incus container with a T3 server inside. [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) decides the runtime and the engine. [Instance containers](/reference/development-containers) specifies the Instance side.
 
 Starting a thread in an Orbit Project in Conn creates an Instance. The thread is a session of that Instance's T3 server. A task can attach to the Instance: while the task flow runs, Swamp drives the turns; otherwise the user drives from the thread. Both use the same sessions, so work passes from one to the other without a handover.
 
@@ -49,7 +49,7 @@ These facts come from reading T3, Pi Durable 1.5.0 and Orbit, and from two spike
 
 ### T3 in a container
 
-A stock T3 server ran in an unprivileged container as an unprivileged user, from a read-only shared folder. Claude Code and Codex turns ran through the AI router with only a placeholder key inside. T3 continued a turn after a restart in the middle of a tool call. Its changed-files view worked over WireGuard from a Mac. A copy of the container started with T3 ready in about 3 s. [Development containers](/reference/development-containers#evidence) has the numbers.
+A stock T3 server ran in an unprivileged container as an unprivileged user, from a read-only shared folder. Claude Code and Codex turns ran through the AI router with only a placeholder key inside. T3 continued a turn after a restart in the middle of a tool call. Its changed-files view worked over WireGuard from a Mac. A copy of the container started with T3 ready in about 3 s. [Instance containers](/reference/development-containers#evidence) has the numbers.
 
 ### What T3 already offers Swamp
 
@@ -83,20 +83,22 @@ Track A replaces task VMs and the Project VM with containers, in the order ADR 0
 | 2c | Define the container egress and DNS model on Beast. | Open |
 | 2d | Keep secrets off agent hosts. | Open |
 | 2e | Patch kernels automatically, with planned reboots. | In progress |
-| 3 | Build the task container runtime next to the task VM runtime, selected by a Node setting. | Specified in [Task containers](/reference/task-containers); plan in [Task container runtime](/solutions/task-container-runtime) |
-| 4 | Parity gate: the command proof cases on task containers match their task VM results. | Specified in [Parity gate](/solutions/task-container-runtime#parity-gate) |
-| 5 | Switch Beast, then Shark, in a window with no proofs or merges in flight. | Open |
-| 6 | Run development Instances in containers on every `app-dev` Node, with T3 inside, and migrate the checkout Instances. | Specified in [Development containers](/reference/development-containers); plan in [Development container runtime](/solutions/development-container-runtime) |
-| 7 | Remove the task VM runtime. | Open |
-| 8 | Run production Instances in containers on every `app-prod` Node. | Planned in [Production Instances](/solutions/development-container-runtime#production-instances) |
+| 3 | Run Instances in containers on the Nodes of a build list, with T3 inside. | Specified in [Instance containers](/reference/development-containers); plan in [Container runtime](/solutions/development-container-runtime) |
+| 4 | Run tasks in Instance containers, driven by Swamp through T3. | Planned in [Container runtime](/solutions/development-container-runtime#pr-7-run-a-task-in-a-clone) |
+| 5 | Add the nested fleet as a Project feature, and run command proofs in an Orbit Instance container. | Planned in [Container runtime](/solutions/development-container-runtime#pr-10-the-nested-fleet) |
+| 6 | Parity gate: Orbit's command proof cases in an Orbit Instance container with the nested fleet match their task VM results. | Specified in [Parity gate](/solutions/development-container-runtime#parity-gate) |
+| 7 | Switch task work on Beast, then Shark, in a window with no proofs or merges in flight. | Open |
+| 8 | Switch development: sleep and wake, threads from Conn, migration, every `app-dev` Node. | Planned in [Container runtime](/solutions/development-container-runtime#pr-13-sleep-and-wake) |
+| 9 | Remove the task VM runtime, the Pi server and the task container setting. | Open |
+| 10 | Run production Instances in containers on every `app-prod` Node. | Planned in [Production Instances](/solutions/development-container-runtime#production-instances) |
 
 ### Track B: threads and tasks
 
-Track B builds on step 6. Steps 3 to 5 are PRs of the [step 6 plan](/solutions/development-container-runtime#build-prs): PR 8, PR 9 and PR 12.
+Track B builds on steps 3 and 4. Its steps are PRs of the [container plan](/solutions/development-container-runtime#build-prs): PR 14, PR 9 and PR 7 with PR 8.
 
 1. **pi-server on Pi 1.5.0.** Done.
 2. **Drive an external task group from a T3 thread through the Orbit MCP.** What got in the way became fixes in the MCP. The last of them is in review.
 3. **Thread to Instance.** Starting a thread in an Orbit Project creates an Instance, registers its T3 server and pairs Conn with it.
 4. **Attach a task.** A task drives the turns of an existing Instance's thread through T3's MCP. Pausing the task leaves the thread to the user.
-5. **Task containers on T3.** Task containers lose their Node identity and the Pi server, and run T3 as Instances do.
+5. **Tasks on T3.** A task runs in an Instance container, and Swamp drives its T3. There is no separate task container.
 6. **Later.** A web UI on WireGuard shows the chat and the preview side by side. OAuth for MCP users outside the network follows it.

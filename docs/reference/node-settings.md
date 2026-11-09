@@ -114,7 +114,7 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 | `memory` | No | `4GiB` | Positive size in `MiB` or `GiB` for a normal VM |
 | `disk` | No | `20GiB` | Positive size in `MiB` or `GiB` for root disks |
 | `operator_owned` | No | `[]` | List of Incus instances and custom volumes excluded from stray reports, as `<project>/<name>` or `<project>/*` |
-| `containers` | No | absent | [Task container](/reference/task-containers) places of the host, with their own project, bridge and CIDR. See [Task container fields](#task-container-fields) |
+| `containers` | No | absent | Task container places of the host, which [the plan](/solutions/development-container-runtime#pr-17-remove-task-vms-the-pi-server-and-the-task-container-setting) removes, with their own project, bridge and CIDR. See [Task container fields](#task-container-fields) |
 
 ### Task container fields
 

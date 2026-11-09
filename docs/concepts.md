@@ -23,7 +23,7 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 - **Project Documents**: Folders and versioned files owned by a Project, independent of Git branches and Instances. See [Project Documents](/reference/project-documents).
 - **Instance**: One running copy of a Project on a Node, for development or production. See [Applications](/domains/applications).
 - **Default Instance**: The Instance named `default` of a Project. It runs the Project's default branch. See [Applications](/domains/applications#the-default-instance-keeps-its-name).
-- **Container Instance**: An Instance that runs in an Incus container on its Node. It is a clone of its Project's default Instance. See [Development containers](/reference/development-containers).
+- **Container Instance**: An Instance that runs in an Incus container on its Node. It is a clone of its Project's default Instance. See [Instance containers](/reference/development-containers).
 - **Placement**: The Node where an Instance runs. That Node's `app-dev` or `app-prod` role makes it a development or production Instance. Process and Schedule definitions name this kind `environments`.
 - **Route**: A domain that reaches an Instance or a Node-local service. See [Routes](/reference/routes).
 - **Process**: A long-running service that Orbit manages for an Instance or a Node, such as a queue worker. See [Processes and schedules](/reference/processes-and-schedules).

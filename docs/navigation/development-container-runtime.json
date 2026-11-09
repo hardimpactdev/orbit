@@ -8,5 +8,11 @@
         "solutions/development-container-runtime"
       ]
     }
+  ],
+  "redirects": [
+    {
+      "source": "/solutions/task-container-runtime",
+      "destination": "/solutions/development-container-runtime"
+    }
   ]
 }

@@ -1,35 +1,49 @@
 ---
-title: "Development container runtime"
-description: "Plan for steps 6 and 8 of ADR 0250: the build PRs for development and then production Instances in containers. With the decisions, tests, live checks, the parts to reuse and the reference page changes."
+title: "Container runtime"
+description: "One build plan for ADR 0250: Instance containers with T3, tasks in them driven by Swamp, the nested fleet, the parity gate, and then development and production. With the decisions, tests, live checks, reuse and open questions."
 ---
 
-# Development container runtime
+# Container runtime
 
-This is the plan for step 6 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order), development Instances in containers with a T3 server inside each, and for step 8, production Instances in containers. [Development containers](/reference/development-containers) specifies the target and its charts. This page orders the work. It is a plan, not a contract: each PR moves the part it builds into the owning reference pages.
+This is the plan for [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order): Instances in containers with a T3 server inside each, tasks in those containers, the nested fleet, the parity gate, and then the switch of development and production. [Instance containers](/reference/development-containers) specifies the target and its charts. This page orders the work. It is a plan, not a contract: each PR moves the part it builds into the owning reference pages.
+
+There is one container kind and one plan. A task runs in an Instance container, and Swamp drives that container's T3; a user drives the same T3 in development. This plan took in the earlier task container plan. Its PRs 1 and 2 are merged and reused below; its base container, start, resume and release PRs are dropped.
+
+Task work is the critical path. The Swamp migration waits until the [parity gate](#parity-gate) passes, and the CI proof becomes a required check again then. Development-only PRs run beside the task PRs where this page says so.
 
 ## Decided
 
 These decisions were made on 2026-11-09. The PRs build on them without asking again.
 
-| Date | Topic | Decision |
-| --- | --- | --- |
-| 2026-11-09 | Registration | A step in the Instance-create flow issues and checks the T3 session. The Gateway records the server from that step's result |
-| 2026-11-09 | New Instances | A new thread's Instance, and every new Instance, is a ZFS clone of the Project's default Instance. Its database is cloned too, with `CREATE DATABASE … TEMPLATE` on the same server |
-| 2026-11-09 | Web server | FrankenPHP, in development now and in production once it has proved itself. PHP also works on the command line |
-| 2026-11-09 | Nodes | No setting to opt in. Every `app-dev` and `app-prod` Node runs its Instances in containers, and the two roles change what they install |
-| 2026-11-09 | Shared runtime | PHP, FrankenPHP, Composer, Node, Bun and the other runtime binaries live once per Node in a versioned read-only folder. Every container mounts it, as the agent folder |
-| 2026-11-09 | Container contents | Containers install as little as possible |
-| 2026-11-09 | Production | Production Instances move into containers too, after development containers work |
-| 2026-11-09 | Sleep | A development container sleeps after one hour idle. Development Instances have no Schedules. Production containers never sleep |
-| 2026-11-09 | Setup | There are no development setup steps. Only a Project's first default Instance is built from scratch |
-| 2026-11-09 | Default Instance | It deploys every merge to the default branch, so clones match it; a clone installs its own dependency changes. There is no separate source container |
-| 2026-11-09 | Git | Orbit fetches and pushes from the Node |
-| 2026-11-09 | History | T3 history is deleted with its Instance. An archive comes later |
-| 2026-11-09 | Migration | Existing checkout Instances move into containers with their code and database |
-| 2026-11-09 | Databases | The database family clones every database: a template copy on the same server, a dump and restore across Nodes. Remote database servers are allowed |
-| 2026-11-09 | Pairing token | The pairing token that `t3 serve` prints to its journal is accepted |
-| 2026-11-09 | Task containers | Task containers move to T3 after development containers work through PR 9, before step 7 of ADR 0250 |
-| 2026-11-09 | Project files | MCP servers come from the project's own files. The agents use their own subagents only |
+| Topic | Decision |
+| --- | --- |
+| One kind | A development container and a task container are one Instance container. Only the driver differs: a user in Conn, or Swamp for a task |
+| Agent engine | A T3 server runs as `agent` in every development Instance container. Swamp drives it through T3's own API. No Conn or T3 fork, and no Pi server in a container |
+| Pi | The Pi server stays only on today's task VMs, until step 9 removes them |
+| Tasks | A task starts in a clone of the Project's default Instance, or attaches to an existing Instance |
+| Nested fleet | An optional feature of a Project. Orbit turns it on for its command proofs |
+| Parity gate | Orbit's command proof cases pass in an Orbit Instance container with the nested fleet on, with the same verdicts as on task VMs |
+| Models | Through the per-Node [forwarder](/reference/ai-router#container-model-forwarder) to the model router guard. A container holds only the placeholder key |
+| Registration | A step in the Instance-create flow issues and checks the T3 sessions. The Gateway records the server from that step's result |
+| New Instances | A new thread's Instance, a task's clone, and every new Instance, is a ZFS clone of the Project's default Instance. Its database is cloned too, with `CREATE DATABASE … TEMPLATE` on the same server |
+| Web server | FrankenPHP, in development now and in production once it has proved itself. PHP also works on the command line |
+| Nodes | No setting to opt in. Every `app-dev` and `app-prod` Node runs its Instances in containers, and the two roles change what they install |
+| Shared runtime | PHP, FrankenPHP, Composer, Node, Bun and the other runtime binaries live once per Node in a versioned read-only folder. Every container mounts it, as the agent folder |
+| Container contents | Containers install as little as possible |
+| Production | Production Instances move into containers too, after development containers work |
+| Sleep | A development container sleeps after one hour idle, never while a task runs in it. Development Instances have no Schedules. Production containers never sleep |
+| Setup | There are no development setup steps. Only a Project's first default Instance is built from scratch |
+| Default Instance | It deploys every merge to the default branch, so clones match it; a clone installs its own dependency changes. There is no separate source container |
+| Git | Orbit fetches and pushes from the Node |
+| History | T3 history is deleted with its Instance. Swamp records the transcript of each task turn, so task transcripts outlive a clone |
+| Migration | Existing checkout Instances move into containers with their code and database |
+| Databases | The database family clones every database: a template copy on the same server, a dump and restore across Nodes. Remote database servers are allowed |
+| Pairing token | The pairing token that `t3 serve` prints to its journal is accepted |
+| Project files | MCP servers come from the project's own files. The agents use their own subagents only |
+| Nested Nodes keep `wg-quick` | The fleet build's `bootcmd` turns off the `wg` and `wg-quick` profiles, and each nested container gets the AppArmor-off device. The shared Node converge does not change |
+| `LoadCredential` becomes a file only where it fails | Where a shared renderer fails in the nested fleet, PR 10 changes it, for every Node, to a file that only the unit's user reads |
+| A slow restore raises the limit | If the proof PR measures a restore over 45 seconds, the limit becomes the measured 95th percentile plus a margin |
+| UpCloud must pass the same gate | It is a verified container host and a target. The [UpCloud report](#upcloud-report) holds the spike's findings |
 
 ### The PHP command line
 
@@ -37,37 +51,63 @@ The command line runs a static PHP CLI from the same static build as FrankenPHP,
 
 ## Rules for every PR
 
-Every build PR keeps these rules, so the work in progress never breaks what runs today.
+Every build PR keeps these rules, so the work in progress never breaks what runs today. Another thread proves commands on the task VM proof fleet at the same time, so a regression on a task VM host stops its work.
 
 | Rule | How a PR keeps it |
 | --- | --- |
-| Nothing that runs today changes | Checkout Instances, task VMs and task containers keep their behavior. Until PR 11 switches the Nodes, only Nodes on the Gateway's build list run container Instances |
-| A changed command starts with its spec | The first commit updates the command's chart, page and cases. The container charts move from `docs/cli/instance/container/` into place when PR 11 switches the Nodes |
+| Nothing that runs today changes | Checkout Instances and task VMs keep their behavior. Until PR 12 and PR 16, only Nodes on the build list run container Instances, and only an operator starts a task in one |
+| The task VM intents stay the same | A Pest snapshot test per task intent shows that a task VM intent is unchanged, apart from fields the PR names |
+| The task VM task list changes only by its includes | A gate test compares `ansible-playbook --list-tasks` of the task VM tags with the base branch |
+| A changed command starts with its spec | The first commit updates the command's chart, page and cases. The container charts move from `docs/cli/instance/container/` into place when their kind switches |
 | Gateway and Swamp ship together | One PR, as the [contributor guide](/contributor-guide) requires |
 | Swamp has the shape | Ansible phases do the machine work, steps call the Gateway only to sign or mint, secrets come from the vault. `bin/swamp-shape-gate` passes |
-| `incus` gets no stray input | Every task and script that runs `incus` closes standard input |
-| No Orbit or provider secret enters a container | The placeholder model key and the Instance's own `.env` are all it holds. Git tokens stay on the Node; the Gateway's T3 session goes through the vault |
+| `incus` gets no stray input | Every task and script that runs `incus` closes standard input, which `incus` reads as YAML when it is not a terminal |
+| No Orbit or provider secret enters a container | The placeholder model key and the Instance's own `.env` are all it holds. Git tokens stay on the Node; the T3 sessions go through the vault |
 | The checks pass | `bin/swamp-shape-gate`, `bin/check-flows`, `composer docs-lint` and the tests of each changed project |
-| Live checks use a test Node | An `app-dev` test Node on the build list, with a test Laravel Project. Beast's checkout Instances keep running until PR 10 moves them |
-| Docs move with the code | A PR moves the part it builds from [Development containers](/reference/development-containers) into the owning page |
+| Live checks run on Beast | Beast is on the build list as an `app-dev` Node, with a test Laravel Project and, from PR 10, Orbit's own default Instance. Beast's task VMs and checkout Instances keep their work |
+| VM hosts prove themselves after the merge | The next release refreshes every task VM host. A failed refresh keeps the host's base, and the PR is reverted |
+| Docs move with the code | A PR moves the part it builds from [Instance containers](/reference/development-containers) into the owning page |
 
-The build list, the Gateway setting `instances.container_nodes` (`ORBIT_INSTANCES_CONTAINER_NODES`), exists for the build only. It is not a Node setting, and PR 11 removes it.
+The build list, the Gateway setting `instances.container_nodes` (`ORBIT_INSTANCES_CONTAINER_NODES`), exists for the build only. It is not a Node setting, and PR 16 removes it.
 
 ## Before the first build PR
 
 These come from other work and must land first.
 
-- **The model forwarder and guard change.** A separate PR builds the per-Node forwarder and lets the model router guard accept agent Nodes and the `?beta=true` query. The live checks of PR 3 and later need it.
+- **The model forwarder and guard change.** [#3290](https://github.com/hardimpactdev/orbit/pull/3290) built the per-Node forwarder and lets the model router guard accept agent Nodes and the `?beta=true` query. Merged.
 - **Container egress for dependencies.** Step 2c of ADR 0250 names the package path that dependency installs use. PR 4 needs it. The image build of PR 3 has its own way out, for its build container only.
 - **Pairing works.** The spike's pairings failed at the vault step. The pairing fix on `main` must pair with a container's server before PR 5 ends.
 
 ## Build PRs
 
-The PRs land in this order. PR 3b lands before PR 4, PR 7 can run beside PR 6, and PR 12 can land any time after PR 9.
+The PRs land in this order, and PR 3b before PR 4. The task track, PRs 7 to 12, is the critical path. PR 13 and PR 14 can run beside it after PR 6.
 
-### PR 1: this specification
+| PR | Part | State |
+| --- | --- | --- |
+| 1 | The specification | Merged, and replanned by this page |
+| 2 | Runtime records and the build list | Merged, [#3291](https://github.com/hardimpactdev/orbit/pull/3291) |
+| 3 | Node preparation and the shared folders | Merged, [#3292](https://github.com/hardimpactdev/orbit/pull/3292) |
+| 3b | The static PHP build | Open, [#3294](https://github.com/hardimpactdev/orbit/pull/3294) |
+| 4 | The first default Instance and its deployments | |
+| 5 | Create an Instance as a clone, with T3 and its sessions | |
+| 6 | Destroy a container Instance | |
+| 7 | Run a task in a clone: start, check, publish, end | |
+| 8 | The `t3` task driver: Swamp drives T3 | |
+| 9 | Attach a task to an Instance | |
+| 10 | The nested fleet | |
+| 11 | Command proofs in an Instance container | |
+| — | [Parity gate](#parity-gate) | |
+| 12 | Switch task work | |
+| 13 | Sleep and wake | |
+| 14 | Start a thread in an Orbit Project (Conn) | |
+| 15 | Migrate checkout Instances | |
+| 16 | Switch every `app-dev` Node | |
+| 17 | Remove task VMs, the Pi server and the task container setting | |
+| 18–22 | [Production Instances](#production-instances) | |
 
-ADR 0250 records the decisions, [Development containers](/reference/development-containers) specifies the target, the charts state the flows, and this page orders the work. No code.
+### PR 1: the specification
+
+ADR 0250 records the decisions, [Instance containers](/reference/development-containers) specifies the target, the charts state the flows, and this page orders the work. No code. The replan that merged the task container plan into this one is also a PR with no code.
 
 ### PR 2: the runtime records and the build list
 
@@ -101,7 +141,7 @@ These points stay open after PR 2. Each named PR settles its point.
 
 ### PR 3: prepare a Node and the shared folders
 
-This PR prepares a Node; it creates no Instance.
+Merged as [#3292](https://github.com/hardimpactdev/orbit/pull/3292). This PR prepares a Node; it creates no Instance.
 
 The Gateway decides which Node gets the branch:
 
@@ -130,7 +170,7 @@ The image and the folders:
 
 A folder update installs the new version beside the old one and flips `current`. Then it restarts T3 or the Processes (`orbit-*.service`) in each running container, one after another. It runs with the converge of each Node. A version that no process maps goes.
 
-Tests: the Ansible fixture tests for the Instance host phase and the task container host phase, which share their tasks; Pest for the recipe pins, the intent, the image files, the notes, the firewall catalog and the bridge transactions. Live on the test Node:
+Tests: the Ansible fixture tests for the Instance host phase and the task container host phase, which share their tasks; Pest for the recipe pins, the intent, the image files, the notes, the firewall catalog and the bridge transactions. Live on Beast:
 
 1. The converge runs twice; the second changes nothing.
 2. In a test container, `orbit` cannot run `t3`, `claude` or `codex`, and cannot read `/home/agent`.
@@ -164,14 +204,14 @@ The firewall uses no Molecule cases: the repository tests Ansible with fixture t
 
 ### PR 3b: the static PHP build
 
-This PR adds PHP to the runtime folder; it creates no Instance.
+Open as [#3294](https://github.com/hardimpactdev/orbit/pull/3294). This PR adds PHP to the runtime folder; it creates no Instance.
 
 - A build job makes `frankenphp` and `php` from one static-php-cli build per PHP version that Orbit supports, with the recipe's extension list. It publishes both to the artifact mirror.
 - The recipe pins them in the runtime folder as `php/<php-version>/bin`, with the extension list.
 - The converge checks that both binaries load exactly the listed extensions.
 - The environment notes name PHP and Composer from the runtime folder. Until then they name only Node, npm, Bun and rg.
 
-Tests: Pest for the pins and the extension check; a fixture test for the check. Live on the test Node:
+Tests: Pest for the pins and the extension check; a fixture test for the check. Live on Beast:
 
 1. `php -v`, `php -i`, `php -d memory_limit=1G -r 1;` and a `composer install` with scripts all work in a test container.
 2. FrankenPHP's and the CLI's extension lists match.
@@ -185,7 +225,7 @@ The spec commit adds [container/create-default.mmd](https://github.com/hardimpac
 - FrankenPHP and the other development Processes as `orbit` units in the container; the Route to FrankenPHP at the container's bridge address.
 - The automatic development deployment of each merge runs in the default container, and starts a sleeping one first.
 
-Tests: Pest for the intent and projection of both flows; Ansible `unit` cases; the cases of both. Live on the test Node:
+Tests: Pest for the intent and projection of both flows; Ansible `unit` cases; the cases of both. Live on Beast:
 
 1. The default Instance answers on its Route, served by FrankenPHP as `orbit`, with the PHP Data Bridge toolbar.
 2. A merge to the default branch deploys, and the Instance serves the new commit.
@@ -201,11 +241,12 @@ This PR changes `instance:create`, so its spec commit updates the create page an
 - The branch from the Node, the workspace, `.env`, the agent settings, the note links and `/etc/orbit/instance`.
 - The first start of T3, the Processes and the Route.
 - The registration step and the Gateway's record of the server from its result. The record names the Instance.
+- The `Orbit Swamp` session beside the Gateway's, kept in the vault, and the T3 project at `/srv/workspace`.
 - The container's NIC rule to its Instance's database server and port.
 - The T3 proxy device and its route rule.
 - The daily renewal run.
 
-Tests: Pest for the intent, the projection, the registration record from a result, `instance.default_missing`; Ansible `unit` cases; tests of the template clone and of the dump path; the `instance:create` cases for a container Node. Live on the test Node:
+Tests: Pest for the intent, the projection, the registration record from a result, `instance.default_missing`; Ansible `unit` cases; tests of the template clone and of the dump path; the `instance:create` cases for a container Node. Live on Beast:
 
 1. A clone answers on its Route, with the default's data and its own `.env`.
 2. Rows written in the clone are not in the default; the default answers again right after the template copy.
@@ -228,27 +269,155 @@ The disk, agent and failure checks follow.
 
 The spec commit adds [container/destroy.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/destroy.mmd) to the destroy page and cases.
 
-Tests: Pest for the refusals, `instance.default_has_clones`, the record removal and the port release. Live on the test Node:
+Tests: Pest for the refusals, `instance.default_has_clones`, the record removal and the port release. Live on Beast:
 
 1. Destroy refuses during a running turn, and with `--force` removes the Instance.
 2. The paired Mac loses the server at once.
 3. The container, the database, the proxy device and the firewall rules are gone; the default Instance and the other clones work.
 4. Destroying the default Instance refuses while it has clones.
 
-### PR 7: sleep and wake
+### PR 7: run a task in a clone
+
+This PR runs a task group in an Instance container, without agent turns yet. It changes `task:start`, `task:check`, `task:publish` and the group's end, so its spec commit adds their container charts beside the task VM charts, with their cases.
+
+- **Admission.** An operator `task:start --runtime=container` on a group whose Project has an active default Instance on a Node of the build list. Normal task placement stays on task VMs until PR 12.
+- **Start.** `tasks.provision` runs the create flow of PR 5 for the Instance `task-{id}` on branch `task-{id}`, with the task as owner.
+- **No task VM.** The group gets no task VM, no Node identity, no WireGuard address and no Pi server.
+- **Capacity.** The Node's task places count running task clones, as the [open question](#open-questions) settles.
+- **Workspace actions.** The checks, the Git evidence and the receipt run from the Node through `incus exec` as `agent` in `/srv/workspace`. Swamp reaches the Node over SSH.
+- **Publish.** Orbit reads the branch out of the container on the Node and pushes it with a minted write token.
+- **End.** Cancel, complete and the sweep destroy the owned clone through the destroy flow of PR 6.
+- **Egress log.** The Node's agent observes the Instance bridge as it observes the task container bridge of [#3279](https://github.com/hardimpactdev/orbit/pull/3279), so `task:egress` covers a task in a clone.
+
+Tests: Pest for the admission by runtime, the provision, check, publish and end intents of a container group, the unchanged task VM snapshots, and the owner rules; Ansible fixture tests for the workspace actions in a container. Live on Beast:
+
+1. A test group starts in a clone of the test Project's default Instance.
+2. Its baseline check passes in the container, and a handoff check runs on a commit made by hand.
+3. A publish pushes `task-{id}` and opens a draft pull request.
+4. Complete destroys the clone, its database and its Route; the default and other clones keep working.
+5. `task:egress` lists the clone's outside connections.
+6. The PR records the start time from admission to a ready workspace.
+
+### PR 8: the `t3` task driver
+
+This PR lets Swamp drive a container's T3 for `task:turn`, as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) specifies. The spec commit updates the `task:turn` chart and cases with a container branch.
+
+- **Gateway.** The task driver `t3` for groups in a container. Its thread row records the T3 thread id, the Node and the driver. It accepts Claude models.
+- **Pi.** The `pi` driver stays for task VM groups.
+- **Swamp.** The container branch of `operation-task-turn` with the calls of the contract: `t3_project_list`, `t3_thread_launch`, `t3_thread_send`, `t3_thread_wait`, `t3_thread_read` and `t3_thread_interrupt` over MCP, and `orchestration.getThreadProjection` and `orchestration.forceStopThread` over the WebSocket.
+- **Projection.** State, token metrics and the redacted transcript, by the mappings of the contract.
+- **Sessions.** The step reads the Instance's `Orbit Swamp` session from the vault.
+
+Tests: Pest for the driver selection, the state map, the metric map with `partial` and `unavailable` usage, and the Claude admission. Swamp tests run the driver against a T3 server in a test container: a repeated `clientRequestId`, a lost wait, a T3 restart in a turn and a cancel. Live on Beast, in a task clone:
+
+1. An implementer turn with a Codex model and one with a Claude model edit files and write receipts.
+2. A reviewer turn on a handoff check runs, and Orbit resets the workspace after it.
+3. `systemctl restart t3` during a 40-second tool call: the turn continues, and the thread ends `done`.
+4. A cancelled turn stops in the container.
+5. `task:agent:show` shows the recorded transcript and metrics after the clone is destroyed.
+6. The same T3 thread shows the turns in Conn while the clone lives.
+
+### PR 9: attach a task to an Instance
+
+This PR lets a task drive an Instance that a user also drives.
+
+- A task group can name an existing Instance of its Project. The task does not own it, and the group's end leaves it running.
+- Its turns go to that Instance's T3 through the driver of PR 8, with `queue`.
+- The task's check and publish run in the Instance's container.
+- Pausing the task stops Swamp from sending; the user drives from the thread.
+
+Tests: Pest for the attach admission, the ownership rules and the end without destroy. Live: attach a task to an Instance, see its turns in the Conn thread, pause it, send a turn as the user, resume it, and end the group with the Instance still running.
+
+### PR 10: the nested fleet
+
+This PR adds the [nested fleet](/reference/development-containers#nested-fleet) as a Project feature. It reuses the nested topology of the earlier task container plan; the default Instance takes the place of the base container.
+
+- **Setting.** A Project setting turns the nested fleet on. Orbit's own Project turns it on.
+- **Node.** The `app-dev` converge adds an Incus project for nested-fleet containers. It allows nesting, interception, isolated ID maps and low-level keys.
+- **IDs.** Root's subordinate IDs on the Node hold one isolated range per nested-fleet container.
+- **Default Instance.** The create and deploy flows of a nested-fleet Project build the inner Incus, its directory pool `topology-seed`, the network `oe-nested` and the fleet once.
+- **Ready copies.** The default keeps the three nested containers stopped, each with its `base` snapshot.
+- **Clone.** A clone carries the fleet. The create flow starts its nested containers, brings up `orbit-wg-nested.service` and checks the hub handshake.
+- **Refusals.** The create flow refuses a `raw.*` key and any device beyond the root disk, the NIC, the shared folders and the T3 proxy.
+- **Fleet rules.** The AppArmor-off device on each nested container, and a fleet check that fails on any `LoadCredential` unit.
+
+Tests: Pest for the setting, the project choice and the refusals; Ansible fixture tests for the inner Incus, the tunnel unit and the fleet check. Live on Beast:
+
+1. Orbit's default Instance builds with the fleet, from scratch.
+2. A clone of it starts, and `zfs get written` shows only a few MB.
+3. In the clone, each nested container shows `N` at `/sys/module/apparmor/parameters/enabled`, no unit has `LoadCredential`, and the nested hub handshake is recent.
+4. As `agent`, `incus list` shows the fleet; as `orbit`, it is refused.
+5. A container of the test Project has no nesting and `user.max_user_namespaces=0`.
+6. The PR records the clone, nested start and `base` times.
+
+### PR 11: command proofs in an Instance container
+
+This PR makes the proof flows run on a nested fleet in an Instance container. It changes `proof` and `proof:run`, so its spec commit updates their charts, pages and cases.
+
+- `proof.verify` runs on the fleet of a task group's Instance container, as it runs on a task VM's fleet today.
+- The step "Take base again" stops the nested containers before the snapshot.
+- `proof:run` gets the operator options `--node=<node>` and `--runtime=<vm|container>`. With `container`, each shard runs in its own clone of Orbit's default Instance on that Node, destroyed after the shard.
+- A `ci-runner` caller cannot use either option until PR 12.
+
+Tests: Pest for the admission of the options and the proof intents; `swamp workflow validate`. Live: `orbit proof firewall:allow --group <group>` on a group in an Orbit clone on Beast, and a short `proof:run --node=beast --runtime=container` with two cases. The PR records the restore times. If their 95th percentile is over 45 seconds, the limit becomes that percentile plus a margin, and the PR says which.
+
+## Parity gate
+
+Step 6 of ADR 0250 passes when every part below holds. All of it runs on Beast. The task VM half takes Beast's VM task places, so it runs in a window agreed with the operations migration thread.
+
+### Proof cases
+
+Both runs prove the same commit of `main`, picked after PR 11.
+
+1. Run `proof:run --all --node=beast --runtime=container` for that commit. Every case runs in a clone of Orbit's default Instance with the nested fleet on.
+2. Run `proof:run --all --node=beast --runtime=vm` for the same commit.
+3. Compare the verdicts per case. Every case that passes on a task VM must pass in the container.
+4. A case that fails on both runtimes is a case defect and does not block.
+5. A case that fails only in the container blocks. After its fix, the whole container run passes again.
+
+### Real tasks
+
+Real task work runs in clones and in an attached Instance.
+
+1. One real Orbit task group runs in a clone and publishes a pull request.
+2. Its turns include a Codex and a Claude implementer turn, a handoff check and a reviewer turn.
+3. Its threads show the right states, metrics and transcripts.
+4. One T3 restart during a turn does not end the turn.
+5. A task attached to an Instance turns, pauses for a user turn in Conn, and resumes.
+
+### Record
+
+The case table goes on this page, with the times of a start, a restore and a default deployment on both runtimes. The peak memory of one nested-fleet clone goes there too; it sets the Node's task and CI places.
+
+UpCloud passes the same gate before it runs task work.
+
+After the gate, the Swamp migration resumes, and PR 12 makes the CI proof run in containers and a required check again.
+
+### PR 12: switch task work
+
+This PR moves task work from task VMs to Instance containers, Beast first, then Shark, each in a window with no proofs or merges in flight. Running task VMs finish first.
+
+- Normal task placement starts every new group in a clone, on Nodes with places for it.
+- CI proof shards run in clones of Orbit's default Instance; the `ci-runner` caller gets the container runtime.
+- The CI proof becomes a required check again.
+- The host's task VM places go to zero.
+
+Tests: Pest for placement by runtime and the CI proof admission. Live: a normal `task:start` lands in a clone on Beast, and a pull request's CI proof passes in containers. Then the same on Shark.
+
+### PR 13: sleep and wake
 
 The spec commit adds [container/sleep.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/sleep.mmd) and [container/wake.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/wake.mmd) to the hibernation page.
 
-Tests: Pest for the sweep's choices, the wake admission by caller, and the joined wake. Live on the test Node:
+Tests: Pest for the sweep's choices, the wake admission by caller, and the joined wake. Live on Beast:
 
-1. An Instance idle for an hour stops, keep-alive Processes and all; one with a running turn does not.
+1. An Instance idle for an hour stops, keep-alive Processes and all; one with a running turn or a running task flow does not.
 2. A user who keeps an open thread active in Conn, without a request to the site, keeps the Instance awake.
 3. The PR names the T3 read that gives the last client activity. Without one, the PR stops and asks for a decision.
 4. A request to its Route shows the progress page and then the app, within 5 s.
 5. Conn opening the sleeping server wakes it.
 6. A session within seven days of its expiry is renewed at the wake.
 
-### PR 8: start a thread in an Orbit Project (Conn)
+### PR 14: start a thread in an Orbit Project (Conn)
 
 This is a Conn PR, with the Orbit parts it needs. It follows [container/thread.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/thread.mmd).
 
@@ -258,18 +427,7 @@ This is a Conn PR, with the Orbit parts it needs. It follows [container/thread.m
 
 Tests: Conn tests for the Project list, the create-then-pair flow, the queued send and the asleep state; Pest for any Orbit endpoint it adds. Live: a thread started on the Mac in an Orbit Project ends in a new clone with its first turn answered.
 
-### PR 9: attach a task to an Instance
-
-This PR lets the task flow drive an Instance that a user also drives.
-
-- A task group can name an existing Instance.
-- Its turns go to that Instance's thread through T3's MCP endpoint: a send with `queue`, a wait and a read.
-- The task's check and publish run in the Instance's container; publishing reads the branch out and pushes it from the Node.
-- Pausing the task stops Swamp from sending; the user drives from the thread.
-
-Tests: Pest for the attach admission and the turn intent; tests of the Swamp T3 driver against a T3 server. Live: attach a task to an Instance, see its turns in the Conn thread, pause it, send a turn as the user, resume it.
-
-### PR 10: migrate checkout Instances
+### PR 15: migrate checkout Instances
 
 The spec commit adds [container/migrate.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/migrate.mmd), the page of the temporary command `instance:migrate` and its cases. [Old paths](/reference/old-paths) lists the command until the last checkout Instance has moved.
 
@@ -281,20 +439,20 @@ The spec commit adds [container/migrate.mmd](https://github.com/hardimpactdev/or
 
 Tests: Pest for the admission, the default-first rule and the projection; Ansible `unit` cases; the cases. Live:
 
-1. On the test Node, a checkout default and one checkout feature with uncommitted files move.
+1. On Beast, a checkout default and one checkout feature with uncommitted files move.
 2. Both answer on their Routes, with the uncommitted files and matching data.
 3. After the default has moved, a feature still on its checkout keeps working until its own move.
 4. A migration that fails at the database clone leaves the checkout Instance serving.
 5. On every `app-dev` Node, each checkout Instance moves, default first, in a window agreed with the people who use them.
 
-### PR 11: switch every app-dev Node
+### PR 16: switch every app-dev Node
 
 This PR ends the build list.
 
 - It needs every development checkout Instance moved, on every `app-dev` Node.
-- Every `app-dev` Node except task Nodes converges the container setup, and the role stops installing PHP-FPM and checkout folders there.
+- Every `app-dev` Node converges the container setup, and the role stops installing PHP-FPM and checkout folders there.
 - The build list goes; `instance:create` makes containers on every `app-dev` Node.
-- `instance:clone` reads its candidate from the candidate's container, so production cloning keeps working until PR 15.
+- `instance:clone` reads its candidate from the candidate's container, so production cloning keeps working until PR 20.
 - The commands that only checkouts need go: `instance:setup`, the `instance:setup-step:*` commands, `instance:register` and the seed values `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`. [Old paths](/reference/old-paths) lists them.
 - Teardown steps stay.
 - `instance:transfer` refuses a container Instance until it gets a container path.
@@ -302,31 +460,37 @@ This PR ends the build list.
 
 Tests: Pest for create without the build list, the candidate read of `instance:clone`, and the removed commands; the role's Molecule cases without PHP-FPM. Live: every `app-dev` Node converges twice without change, a create on each makes a clone, and `instance:clone` makes a production Instance from a container candidate.
 
-### PR 12: task containers on T3
+### PR 17: remove task VMs, the Pi server and the task container setting
 
-Task containers lose the Node identity of their temporary exception and the Pi server, and run T3 as development containers do. This removes the exception from ADR 0250, before its step 7. It needs PR 9 and the parity gate of step 4.
+Step 9 of ADR 0250. It needs PR 12 on every task host and PR 16.
 
-Tests: Pest for the task intents without a Node identity, and the Swamp T3 driver tests of PR 9. Live: the parity gate runs again on task containers with T3 and gives the same verdicts as before; one real task group starts, turns, checks and publishes.
+- The task VM runtime goes. That is its provision, image, snapshot, power, resume and release workflows, and the base VMs and seeds.
+- The `pi` driver, the Pi server, `apps/pi-server` and the Pi artifact pins go.
+- The task container setting of [#3273](https://github.com/hardimpactdev/orbit/pull/3273) goes: `settings.task_vms.containers`, `task_vms.container_placement`, the `runtime` columns and the `orbit:task-containers-*` input rules.
+- Its host preparation stays, as the container host part of the `app-dev` role.
+- [Old paths](/reference/old-paths) lists each removed path until this PR lands.
+
+Tests: Pest for the removed admissions and settings; the task VM tests go with their code. Live: every task host converges without task VM parts, and a task and a CI proof still run in containers.
 
 ## Production Instances
 
-Step 8 of ADR 0250 moves production Instances into containers on every `app-prod` Node, after PR 11. The [container plan](/solutions/container-instances-and-releases#production-design) holds the release design that these PRs specify and build.
+Step 10 of ADR 0250 moves production Instances into containers on every `app-prod` Node, after PR 16. The [container plan](/solutions/container-instances-and-releases#production-design) holds the release design that these PRs specify and build.
 
 ### Production gate
 
-FrankenPHP reaches production only after it has proved itself in development. This plan proposes the criteria below; they are confirmed before PR 13. The development Instances on FrankenPHP meet them for four weeks:
+FrankenPHP reaches production only after it has proved itself in development. This plan proposes the criteria below; they are confirmed before PR 18. The development Instances on FrankenPHP meet them for four weeks:
 
 - No failure that comes from FrankenPHP itself and that PHP-FPM would not have.
 - The PHP Data Bridge toolbar and every development Process work as they did on PHP-FPM.
 - The median and 95th percentile response times of the default Instances are no worse than on PHP-FPM, measured before and after migration.
 
-When the gate fails, the production web server is decided again before PR 13.
+When the gate fails, the production web server is decided again before PR 18.
 
-### PR 13: production specification
+### PR 18: production specification
 
 The release flow in containers: preparation container, candidate clone, activation, readiness, Route switch, drain and retained releases, with FrankenPHP and Schedules inside. The charts of `instance:clone`, `instance:deploy`, `instance:rollback` and the production migration, with their pages and cases. A release pins the runtime folder version it was built with, so a new runtime version reaches production only through a deployment. No code.
 
-### PR 14: prepare an app-prod Node
+### PR 19: prepare an app-prod Node
 
 This PR prepares a Node; it moves no Instance.
 
@@ -335,7 +499,7 @@ This PR prepares a Node; it moves no Instance.
 
 Tests: Molecule `unit` cases and `ansible-lint`. Live on a test `app-prod` Node: the converge runs twice without change; a test container has no `agent` user and no agent folder.
 
-### PR 15: a production Instance in a container
+### PR 20: a production Instance in a container
 
 This PR serves one production Instance from a container.
 
@@ -345,7 +509,7 @@ This PR serves one production Instance from a container.
 
 Tests: Pest for the intent and projection; the cases. Live: a test Laravel Project serves in production from a container, a Schedule runs on time, and the hibernation sweep leaves the container running after an idle hour.
 
-### PR 16: releases and rollback
+### PR 21: releases and rollback
 
 This PR deploys and rolls back in containers.
 
@@ -360,7 +524,7 @@ Tests: Pest for the release records and the switch projection; the cases. Live:
 3. A bad candidate stays out.
 4. A rollback serves the old code.
 
-### PR 17: migrate production Instances and switch app-prod Nodes
+### PR 22: migrate production Instances and switch app-prod Nodes
 
 This PR ends checkouts in production.
 
@@ -391,32 +555,91 @@ These parts are dropped:
 - The pause protocol: the Conn fork RPCs `orbitRuntime.pause`, `status`, `resume` and `retire`, their scripts and the T3 cgroup containment.
 - Source restoration: `container-copy-receipt`, `ContainerSourceHold`, `ContainerSourceRecovery`, `orbit_postgres_fence.py` and the compensation admission.
 - `--from`, the setup step task `container-setup-step.yml`, the state volume, the `/workspace/app` path, the Node-local loopback listeners, the `--runtime` option and the `app` user.
-- The task park, prep and proof fleet changes, which belong to other work.
+- The task park and prep changes, which belong to other work. Its proof fleet changes are replaced by PR 10 and PR 11.
 
 Some commits fix shared code: reading an empty Swamp projection, reading rows from select queries, Route workflows without probes, key identifiers in signed TLS leaves, and the sandbox DNS upstream. None is on `main`. Each build PR checks whether `main` still has the defect it touches, and lands the fix as its own small PR if it does.
 
+## Reuse from the task container track
+
+The earlier task container plan built two PRs. This plan keeps what fits one container kind.
+
+| Part | Built in | Reuse |
+| --- | --- | --- |
+| Host preparation: Incus from the recipe, SCTP check, sysctls, subordinate IDs, ARC cap, project, bridge, ACL, profile, stock image, input rules and the clone probe | [#3279](https://github.com/hardimpactdev/orbit/pull/3279) | PR 3 runs these tasks as the container host part of the `app-dev` converge |
+| One egress observer per bridge in the Node agent | [#3279](https://github.com/hardimpactdev/orbit/pull/3279) | PR 7 points it at the Instance bridge |
+| The nested topology: inner Incus, directory pool, AppArmor-off device, `wg-nested` with `ip` and `wg`, the `LoadCredential` rule, `base` with stopped containers | Specified, not built | PR 10 and PR 11 |
+| `settings.task_vms.containers`, its places, `task_vms.container_placement`, the `runtime` columns, the container bridge and its input rules | [#3273](https://github.com/hardimpactdev/orbit/pull/3273), [#3279](https://github.com/hardimpactdev/orbit/pull/3279) | Not used. PR 17 removes them |
+
+Dropped from that plan: the base container and its refresh, the start by copy of a base snapshot, the resume of a stopped container, the Node identity of a task container, its Pi server, and the five task container charts.
+
+## UpCloud report
+
+A spike on 2026-11-09 ran the nested topology on an UpCloud server, which has no nested KVM. Verdict: it works with changes. UpCloud is a verified container host and a target: an UpCloud host passes the same parity gate before it runs task work.
+
+The spike used `STARTER-4xCPU-8GB` with a separate 20 GB block device for the pool. It ran the outer container, the inner Incus on a directory pool, Docker and WireGuard in nested containers, and the stop, snapshot and copy of the outer container.
+
+| Step | Time |
+| --- | --- |
+| Outer snapshot, stopped | 0.15 s |
+| Outer copy | 0.57 s |
+| Copy start to nested systemd ready | 5.3 s |
+| Take nested `base` (stop, snapshot, start) | 21.4 s |
+| Nested restore, 500 MB changed / small change | 3.9 s / 2.9 s |
+
+| Finding | Change |
+| --- | --- |
+| A restricted project refuses `security.idmap.size` | `restricted.containers.lowlevel=allow`, and the create flow refuses `raw.*` keys |
+| Incus 7 reports empty `kernel_features` | A test copy with `zfs get written` under a few MB replaces the `idmapped_mounts` check. The copy wrote 300 KB |
+| `wg-quick` segfaults in the outer container | `ip` and `wg` only for the outer container. Nested Nodes keep `wg-quick`, which works with the AppArmor-off device |
+| `LoadCredential` gives the unit no credential and no error | The rule stays: `SetCredential` or a file |
+| The template kernel lags and SCTP loads | Host preparation needs a full upgrade and reboot, the SCTP block, a `zfs_arc_max` cap and, on UpCloud, a separate pool device |
+| Zabbly stable is 7.6, Beast runs 7.0.1 | The recipe pins one Incus channel for host and inner Incus |
+| A directory pool copied the outer container in 55 s, btrfs moved it in 171 s | The host pool must be ZFS |
+| Nested restores took 3–4 s | The 45-second limit holds |
+| `incus` reads non-terminal standard input as YAML | Ansible tasks and Swamp scripts close standard input |
+
+An idle outer container with two nested containers and Docker used about 0.5 GB, and 2.5 GB of disk. The real fleet is heavier, so one nested-fleet Instance gets `STARTER-4xCPU-16GB` with a 50 GB pool disk until the parity gate measures one.
+
+## Open questions
+
+Each question names the PR that needs the answer. The recommendation is what that PR builds unless the answer differs.
+
+| Question | Options | Recommendation |
+| --- | --- | --- |
+| Which T3 session does Swamp use? (PR 5, PR 8) | (a) A dedicated `Orbit Swamp` session per Instance, kept in the vault. (b) The Gateway's session, handed to Swamp per step by a mint call. (c) `incus exec … t3 thread` in the container | (a): it is revoked on its own and stays in the vault. PR 8 checks which scopes the thread tools need |
+| What cost does a T3 turn record? (PR 8) | (a) Null, because T3 reports no cost per turn. (b) Orbit prices tokens from the model router's model list | (a): a guessed price would look exact. Insights already handle a null cost |
+| How does a T3 failure map to Orbit's provider errors? (PR 8) | (a) Record T3's failure class (`usage_limit`, `provider_error`, `transport_error`, `permission_error`, `validation_error`, `unknown`) as is. (b) Map it to Pi's `overloaded`, `rate_limited` and `server_error` | (a): the classes do not map one to one, and Swamp decides assistance from the class |
+| Is a repeated `clientRequestId` safe across a T3 restart? (PR 8) | (a) Rely on T3's idempotent launch and send, and prove it. (b) Swamp reads the thread's runs before every resend | (a), with the PR 8 test. If it fails, (b) |
+| How many task clones may a Node run? (PR 7) | (a) Task and CI place counts per Node, with the queue and two-hour wait of task places. (b) Admission by free memory. (c) No limit | (a), with counts from the gate's peak memory. It keeps the queue that tasks have today |
+| Is the nested fleet set per Project or per Instance? (PR 10) | (a) A Project setting, which the default Instance and every clone carry. (b) Per Instance. (c) Both | (a): a clone carries its default's fleet, so a per-Instance switch would need a second default |
+| How does the agent drive the inner Incus? (PR 10) | (a) `agent` joins the inner Incus admin group: root-equivalent inside its own container, no sudo. (b) Sudo for `agent` in nested-fleet containers. (c) Only Swamp drives the fleet, from the Node | (a): the agent needs its fleet for proofs, and `orbit` still gets nothing |
+| What egress does a nested-fleet Instance get? (PR 10, PR 11) | (a) The package path of step 2c, as every container. (b) Public addresses on every port, as a task VM has | (a). The parity gate shows whether a proof case needs more; then (b) for nested-fleet Instances only |
+| Where do task clones and CI proofs run before every task host is an `app-dev` Node? (PR 7, PR 12) | (a) On Beast and Shark as `app-dev` Nodes on the build list, beside their task VMs. (b) On new Nodes | (a): they are the task hosts today, and their host preparation already ran |
+
 ## Reference page changes
 
-Each PR moves its part into these pages. The specification stays on [Development containers](/reference/development-containers) until its PR lands.
+Each PR moves its part into these pages. The specification stays on [Instance containers](/reference/development-containers) until its PR lands.
 
 | Page | Change | PR |
 | --- | --- | --- |
-| [Concepts](/concepts) | Container Instance, default Instance as clone source | 2 |
-| [Compute drivers](/reference/compute-drivers) | The container image, the runtime and agent folders in the recipe, the folder update; the static PHP build | 3, 3b |
-| [Node provisioning](/reference/node-provisioning) | What the `app-dev` and `app-prod` roles install | 3, 11, 14, 17 |
+| [Concepts](/concepts) | Container Instance, default Instance as clone source, the two drivers | 2, 7 |
+| [Compute drivers](/reference/compute-drivers) | The container image, the runtime and agent folders in the recipe, the folder update; the static PHP build; later the task VM runtime goes | 3, 3b, 17 |
+| [Node provisioning](/reference/node-provisioning) | What the `app-dev` and `app-prod` roles install; the nested-fleet project | 3, 10, 16, 19, 22 |
 | [Database servers](/reference/database-servers) | Access from a container, the template clone and the dump path | 5 |
-| [Model router](/reference/ai-router) | The forwarder and agent Node admission | Separate PR |
-| [Applications](/domains/applications) | Instances in containers, the default Instance as clone source, migration | 4, 5, 10 |
-| [Instance releases](/reference/deployments) | Development deployment in the default container; later production releases in containers | 4, 16 |
+| [Applications](/domains/applications) | Instances in containers, the default Instance as clone source, migration | 4, 5, 15 |
+| [Instance releases](/reference/deployments) | Development deployment in the default container; later production releases in containers | 4, 21 |
 | [`instance:create`](/cli/instance/create) | The clone path, the first default, the new errors | 4, 5 |
-| [Conn layer](/reference/conn) | Registration by the create flow's result, the environment's Instance, the asleep state, `conn.environment_asleep` | 5, 7 |
-| [Processes and Schedules](/reference/processes-and-schedules) | Processes as `orbit` units in a container; production Schedules inside | 4, 15 |
+| [Conn layer](/reference/conn) | Registration by the create flow's result, the Swamp session, the environment's Instance, the asleep state, `conn.environment_asleep` | 5, 13 |
+| [Processes and Schedules](/reference/processes-and-schedules) | Processes as `orbit` units in a container; production Schedules inside | 4, 20 |
 | [PHP runtime](/reference/php-runtime) | FrankenPHP and the PHP CLI in containers | 4 |
 | [Routes](/reference/routes) | An upstream at a container's bridge address | 4 |
 | [Environment variables](/reference/environment-variables) | `.env` in a container, owned by `orbit` with group `work` | 4 |
 | [`instance:destroy`](/cli/instance/destroy) | The turn check, clones of a default, the loss of thread history | 6 |
-| [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation) | Whole-container sleep after one hour, the wake callers, no pruning | 7 |
-| [Tasks](/reference/tasks) | Attaching a task to an Instance; the T3 driver | 9, 12 |
-| [Old paths](/reference/old-paths) | `instance:migrate` and checkout Instances until the last one moves; the setup-step commands, `instance:register` and the seed values | 10, 11 |
-| [Pi server](/reference/pi-server) | Scope: task VMs only | 12 |
-| [`instance:clone`](/cli/instance/clone), [`instance:deploy`](/cli/instance/deploy), [`instance:rollback`](/cli/instance/rollback) | Production Instances and releases in containers | 13 to 16 |
+| [Tasks](/reference/tasks) | Tasks in a clone or an attached Instance; the `t3` driver and Claude for task agents; later the `pi` driver goes | 7, 8, 9, 17 |
+| [Node agent](/reference/node-agent) | The egress observer on the Instance bridge | 7 |
+| [`proof`](/cli/proof/proof), [`proof:run`](/cli/proof/run) | Proofs in an Instance container, `--node` and `--runtime` | 11, 12 |
+| [Node settings](/reference/node-settings), [Gateway environment](/reference/gateway-environment) | Task places per Node; the task container setting and `task_vms.container_placement` go | 7, 17 |
+| [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation) | Whole-container sleep after one hour, the wake callers, no pruning, no sleep during a task | 13 |
+| [Old paths](/reference/old-paths) | `instance:migrate` and checkout Instances until the last one moves; the setup-step commands, `instance:register` and the seed values; task VMs and Pi | 15, 16, 17 |
+| [Pi server](/reference/pi-server) | Removed | 17 |
+| [`instance:clone`](/cli/instance/clone), [`instance:deploy`](/cli/instance/deploy), [`instance:rollback`](/cli/instance/rollback) | Production Instances and releases in containers | 18 to 21 |

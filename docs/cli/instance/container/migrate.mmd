@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#migrate-a-checkout-instance): one checkout Instance moves into a container, with its code and its database. A default Instance moves before the other Instances of its Project, and keeps its checkout until its last worktree has moved. The command exists only until the last checkout Instance has moved.
+  %% Target design, container runtime (ADR 0250 step 8, docs/reference/development-containers.md#migrate-a-checkout-instance): one checkout Instance moves into a container, with its code and its database. A default Instance moves before the other Instances of its Project, and keeps its checkout until its last worktree has moved. The command exists only until the last checkout Instance has moved.
   %% status: draft
   %% command: instance:migrate
   %% kind: instance.migrate

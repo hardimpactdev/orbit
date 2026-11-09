@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#t3-registration-and-pairing): how Orbit registers a container's T3 server with the Conn layer. The step runs inside the Instance-create flow and wake, and in a daily renewal run. The container cannot call the Gateway, so the Gateway records the server from the run's result, with the checks of `POST /conn/environments` (docs/reference/conn.md#registration).
+  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#t3-registration-and-pairing): how Orbit registers a container's T3 server with the Conn layer. The step runs inside the Instance-create flow and wake, and in a daily renewal run. The container cannot call the Gateway, so the Gateway records the server from the run's result, with the checks of `POST /conn/environments` (docs/reference/conn.md#registration).
   %% status: draft
   %% command: none · step of create, wake, renewal
   %% kind: conn.environment_renew

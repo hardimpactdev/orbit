@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#create): every app-dev Node runs its Instances in containers, and every new Instance is a ZFS clone of the Project's default Instance on the Node, with a clone of its database. The kind and its step names follow docs/cli/instance/create.mmd; the intent carries `runtime: container`. The Project's first default Instance is container/create-default.mmd; when the charts move into place, it becomes the first-default branch of this chart.
+  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#create): every app-dev Node runs its Instances in containers, and every new Instance is a ZFS clone of the Project's default Instance on the Node, with a clone of its database. The kind and its step names follow docs/cli/instance/create.mmd; the intent carries `runtime: container`. The Project's first default Instance is container/create-default.mmd; when the charts move into place, it becomes the first-default branch of this chart.
   %% status: draft
   %% command: instance:create
   %% kind: instance.create
