@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#the-default-instance): the Project's first default Instance on an app-dev Node, the only Instance built from scratch. It runs no T3; it is the clone source of the Project's other Instances.
+  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#the-default-instance): the Project's first default Instance on an app-dev Node, the only Instance built from scratch. It runs no T3; it is the clone source of the Project's other Instances. When the charts move into place, this becomes the first-default branch of container/create.mmd.
   %% status: draft
   %% command: instance:create PROJECT NODE default
   %% kind: instance.create
@@ -53,7 +53,7 @@ sequenceDiagram
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record default Instance<br/>active · seed commit
     %%> Result:
-    %%> - the default Instance is active; its commit is the one its clones start from
+    %%> - the default Instance is active; its first `seed-<commit>` snapshot, taken with the Processes stopped for a moment, is what clones copy
   else a step fails or the budget ends
     SW--xGW: Run failed<br/>failed step, error_code
     %%> What stays:

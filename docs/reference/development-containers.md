@@ -29,7 +29,11 @@ The container flows keep the kinds of today's Instance flows. Their charts sit o
 
 ## Nodes
 
-Every `app-dev` Node runs its Instances in containers. There is no setting to opt in. The `app-dev` role installs the container setup instead of PHP-FPM and checkout folders: the Incus project `orbit-instances`, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the forwarder of the [model route](#model-access) and the firewall rules. The Gateway gives each Node a bridge network from a fleet range that overlaps no other bridge and not the VPN subnet, and records it on the Node. T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address.
+Every `app-dev` Node runs its Instances in containers. There is no setting to opt in. Task Nodes are the one exception: a task VM or task container keeps its checkout workspace until task containers move to T3.
+
+The `app-dev` role installs the container setup: the ZFS-backed Incus pool and project `orbit-instances`, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the Node's Incus pool must be ZFS.
+
+The Gateway gives each Node a bridge network from a fleet range that overlaps no other bridge and not the VPN subnet, and records it on the Node. T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address.
 
 The Node must meet the host requirements of ADR 0250: current kernel, SCTP off and no secrets. A Node that still has checkout Instances keeps them until [migration](#migrate-a-checkout-instance) moves them into containers. The `app-prod` role follows the same model in step 8 ([Production Instances](#production-instances)).
 
@@ -65,9 +69,9 @@ An agent may start its own development server, such as `npm run dev`, as `agent`
 
 ### PHP
 
-FrankenPHP serves the app, in classic mode, as an Orbit Process running as `orbit`. Its Caddy listens on the container's bridge address; the Node's Caddy terminates TLS for the Route and proxies to it.
+FrankenPHP serves the app, in classic mode, as an Orbit Process running as `orbit`. The runtime folder holds one static build per PHP version that Orbit supports, and each Instance uses the version that Orbit picks from its `composer.json`, as it does today. Its Caddy listens on the container's bridge address; the Node's Caddy terminates TLS for the Route and proxies to it.
 
-The command line runs a real PHP CLI: a static `php` built by the same static build as FrankenPHP, with the same PHP version and extensions. `frankenphp php-cli` behind a `php` shim does not fit yet. It refuses the `-d` options that Composer and test runners pass, and before PHP 8.6 it cannot run `php -i` or PHP without a script. Orbit runs PHP 8.5. The recipe declares the build's extension list, and the runtime folder's check compares both binaries with it. The shim can replace the CLI binary once FrankenPHP accepts `-d` and Orbit runs PHP 8.6.
+The command line runs a real PHP CLI: a static `php` from the same static build as the Instance's FrankenPHP, with the same PHP version and extensions. `frankenphp php-cli` behind a `php` shim does not fit yet. It refuses the `-d` options that Composer and test runners pass, and before PHP 8.6 it cannot run `php -i` or PHP without a script. Orbit runs PHP 8.5. The recipe declares the build's extension list, and the runtime folder's check compares both binaries with it. The shim can replace the CLI binary once FrankenPHP accepts `-d` and Orbit runs PHP 8.6.
 
 ## Shared folders
 
@@ -75,7 +79,8 @@ The software that the app and the agents run lives once per Node, in two version
 
 | Path | Content | Access |
 | --- | --- | --- |
-| `/opt/orbit-runtime/<version>/bin` | `frankenphp`, `php`, `composer`, Node, npm, npx, Bun, rg | Everyone |
+| `/opt/orbit-runtime/<version>/php/<php-version>/bin` | `frankenphp` and `php` of one PHP version | Everyone |
+| `/opt/orbit-runtime/<version>/bin` | `composer`, Node, npm, npx, Bun, rg | Everyone |
 | `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex` | `root:2750`, mode 0750 |
 | `/opt/orbit-agent/<version>/agent/{t3,claude-code,codex}` | The releases | `root:2750`, mode 0750 |
 | `/opt/orbit-agent/<version>/notes/<type>.md` | The [environment notes](#environment-notes) | Everyone |
@@ -83,6 +88,8 @@ The software that the app and the agents run lives once per Node, in two version
 The folders live on the Node's root filesystem. The idmapped mount keeps gid 2750 the same in every container, whatever its ID map. The spike proved this with one container; PR 3 proves it with two containers whose ID maps differ. `orbit` sees the folder `agent`, but not what is in it.
 
 An update installs the new version beside the old one and flips `current`. For the agent folder, Orbit then restarts T3 in each running container, one after another; T3 continues a running turn after its restart. For the runtime folder, Orbit restarts the FrankenPHP Process and the other Processes of each running container. A stopped container uses the new versions when it wakes. An old version stays until no process uses it. The CLI self-updaters are off: `DISABLE_AUTOUPDATER=1` for Claude Code, `check_for_update_on_startup = false` for Codex, and T3's own update check off.
+
+The OS packages of the image change rarely. The Node's patch run of ADR 0250 upgrades them in each running container from the Node; a sleeping container gets the upgrade when it next wakes.
 
 ## Environment notes
 
@@ -124,7 +131,7 @@ Every lifecycle flow runs from the Node, with `incus` and Ansible phases. Develo
 
 The default Instance is the clone source of its Project on the Node. Orbit builds the Project's first default Instance from scratch. It launches a container from the image and pushes in the default branch, fetched on the Node. The database family creates the database. Orbit writes `.env` and runs the Project's [development deploy steps](/reference/deployments#development-deploy-steps), which install dependencies and migrate. The [first default chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd) has the steps.
 
-After that, the default Instance deploys every merge to the default branch, as a checkout default does today ([development deployment](/reference/deployments)). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
+After that, the default Instance deploys every merge to the default branch, as a checkout default does today ([development deployment](/reference/deployments)). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
 
 There are no development setup steps. The default Instance has them done already, so a clone needs none.
 
@@ -132,31 +139,48 @@ There are no development setup steps. The default Instance has them done already
 
 `orbit instance:create PROJECT NODE NAME` clones the default Instance. It copies the default container with `incus copy`, a ZFS clone, and clones the default database through the database family. Then it starts the container, creates the Instance's branch from the default branch, and writes the `.env`, the agent settings, the note links and `/etc/orbit/instance`. Last, it starts T3 and the Processes, publishes the Route and registers the T3 server. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
 
-A clone starts at the default Instance's commit, with its dependencies installed. When the Instance's branch changes a lockfile later, the agent or the user installs the change in the workspace with the runtime folder's `composer` or `bun`. A sleeping default Instance is cloned as it is; a clone of a stopped container is the same ZFS clone.
+A clone starts at the commit of the default's newest seed snapshot, with its dependencies installed. It keeps the default's `APP_KEY`, because the cloned database holds data encrypted with it; the rest of `.env` is the Instance's own. When the Instance's branch changes a lockfile later, the agent or the user installs the change in the workspace with the runtime folder's `composer` or `bun`. A sleeping default Instance is cloned from its snapshot without a start. A seed snapshot stays while a clone depends on it; Orbit deletes older seed snapshots that no clone uses.
 
 ### Clone the database
 
-The database family clones every database, whether the server is on the Instance's Node or on another Node:
+The database family clones every database, whether the server is on the Instance's Node or on another Node. The clone lands on the default's server, unless `instance:create --database-server` names another one.
 
-- **Same server.** `CREATE DATABASE <new> TEMPLATE <default>`. PostgreSQL copies only from a database without other sessions.
+- **PostgreSQL, same server.** `CREATE DATABASE <new> TEMPLATE <default>`. PostgreSQL copies only from a database without other sessions.
 - **The moment of the copy.** Orbit refuses new connections to the default database and ends its sessions. It copies, then allows connections again. The default Instance sees refused connections for that moment.
-- **Another server.** `pg_dump` of the default database in one snapshot, restored into the new database with `pg_restore --no-owner --no-privileges --single-transaction`.
+- **A failed copy.** A cleanup step that always runs allows connections again.
+- **PostgreSQL, another server.** `pg_dump` of the default database in one snapshot, restored into the new database with `pg_restore --no-owner --no-privileges --single-transaction`.
+- **MySQL.** A dump and restore, as the database family copies MySQL today.
+- **SQLite.** A file in the workspace comes with the ZFS clone.
+- **Valkey.** No data is copied; the Instance gets its own connection, as `database:create` makes it.
 
-Orbit creates the owner and grants; neither path copies roles.
+Orbit creates the owner and grants; no path copies roles.
 
 ### Destroy
 
-`orbit instance:destroy INSTANCE` refuses while a T3 turn runs, and refuses unpushed work as today. Orbit fetches origin on the Node and compares it with the container's branches, so no token enters the container. `--force` overrides both checks. It revokes the pairings, withdraws the Route, deletes the container and the database, and marks the T3 server removed. The thread history goes with the container; an archive comes later. The default Instance cannot be destroyed while it has clones. The [destroy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/destroy.mmd) has the steps.
+`orbit instance:destroy INSTANCE` refuses while a T3 turn runs, and refuses unpushed work as today. Orbit fetches origin on the Node and compares it with the container's branches, so no token enters the container. `--force` overrides both checks. It revokes the pairings, withdraws the Route, deletes the container and the database, and marks the T3 server removed. The thread history goes with the container; an archive comes later.
+
+The default Instance cannot be destroyed while it has clones: they share its blocks. A broken default is repaired by a deployment; replacing a default container that has clones is not part of step 6. The [destroy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/destroy.mmd) has the steps.
 
 ### Sleep and wake
 
 After one hour without activity, Orbit stops the whole container. It counts both HTTP activity and T3 activity: a turn, or a client working in a thread. A running task keeps the container awake. Keep-alive Processes do not: the whole container stops. A stopped container uses no memory; its disk stays.
 
-The next request to its Route, a Conn connection, a task turn or a deployment wakes it. Orbit starts the container, and T3, the app and the Processes start with it in about 3 s. The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/sleep.mmd) and [wake](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/wake.mmd) charts have the steps. A container never prunes its dependencies: a stopped clone shares most of its blocks with the default Instance.
+The next request to its Route, a Conn connection, a task turn or a deployment wakes it. Orbit starts the container, and T3, the app and the Processes start with it in about 3 s.
+
+The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/sleep.mmd) and [wake](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/wake.mmd) charts have the steps. A container never prunes its dependencies: a stopped clone shares most of its blocks with the default Instance.
 
 ### Migrate a checkout Instance
 
-Orbit moves each existing checkout Instance into a container, with its code and its database. It copies the checkout as it is, uncommitted files included, into a new container and clones the database through the database family. Then it moves the Route to the container and removes the checkout. A default Instance moves first, so its Project's other Instances can follow as clones. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/migrate.mmd) has the steps.
+Orbit moves each existing checkout Instance into a container, with its code and its database, one Instance at a time. A default Instance moves first, and a non-default Instance before its default refuses with `instance.default_not_migrated`.
+
+- **Stop.** Orbit stops the Instance's Processes, and its Route shows the wake page.
+- **Repository.** A non-default checkout is a linked worktree of the default's repository. Orbit builds a standalone repository in the container: it fetches the Instance's branches on the Node and pushes them in.
+- **Files.** Orbit copies the uncommitted and ignored files of the checkout into the workspace, never its `.git`.
+- **Database.** The database family clones the checkout's database into a new one; the old one stays until the move succeeds.
+- **Route.** Orbit points the Route at FrankenPHP in the container.
+- **Removal.** Orbit removes the checkout and the old database. The default's checkout stays until its last worktree has moved.
+
+A failed move leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/migrate.mmd) has the steps.
 
 ## T3 registration and pairing
 
@@ -190,8 +214,8 @@ Step 8 of ADR 0250 moves production Instances into containers on `app-prod` Node
 
 - The `app-prod` role installs the container setup and the runtime folder, not PHP-FPM. It installs no agent folder.
 - A production container has only the user `orbit`: no T3, no agent and no model route.
-- FrankenPHP serves it, once it has proved itself in development.
-- Production containers never sleep, and production Schedules run inside them as `orbit`.
+- FrankenPHP serves it once it has proved itself in development, by the criteria of the plan's [production gate](/solutions/development-container-runtime#production-gate).
+- Production containers never sleep. Schedules stay native Swamp schedules that run their command in the container as `orbit`; the per-minute Laravel scheduler runs inside it.
 - Existing production checkouts are migrated, as development checkouts are.
 
 The release flow, with release containers, gets its own specification in the first production PR of the [plan](/solutions/development-container-runtime#production-instances).
@@ -208,6 +232,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | --- | --- | --- |
 | `instance.default_missing` | 409 | `instance:create` of a non-default Instance while the Project has no active default Instance on the Node |
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
+| `instance.default_not_migrated` | 409 | `instance:migrate` of a non-default Instance whose default Instance is still a checkout |
 | `instance.turn_running` | 409 | `instance:destroy` without `--force` while a T3 turn runs in the container |
 | `instance.t3_unready` | 502 | The T3 server did not answer after the container started |
 | `conn.environment_asleep` | 409 | A pairing with a sleeping Instance's T3 server |

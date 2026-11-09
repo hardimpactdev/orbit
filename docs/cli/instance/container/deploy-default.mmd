@@ -1,23 +1,24 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#the-default-instance): the automatic development deployment of docs/reference/deployments.md, in the default Instance's container. Every merge to the default branch reaches the default Instance, so new clones start current.
+  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#the-default-instance): the automatic development deployment of docs/reference/deployments.md, in the default Instance's container. Swamp's policy finds the commit, as it does today; the Gateway admits the deployment and records its result. When the charts move into place, this becomes the development branch of the deploy chart.
   %% status: draft
-  %% command: none · automatic deployment tick
+  %% command: none · automatic deployment policy
   %% kind: instance.deploy
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane N icon=server pill=target tone=amber
   %% lane C icon=server pill=target tone=purple
-  participant GW as Gateway<br/>deployment tick
-  participant SW as Swamp<br/>workflow execution
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>policy · execution
   participant N as app-dev Node<br/>reached over ssh
   participant C as Container<br/>default Instance
-  Note over GW: New default-branch commit<br/>deployment tick
-  %%> When:
-  %%> - the default branch has a commit that the default Instance has not deployed, as today
-  %%> Result:
-  %%> - a deployment task with the commit, the Instance lock and a repository read token in the vault
-  GW->>SW: Start run, full intent<br/>development-deploy
+  Note over SW: Policy tick finds a commit<br/>native schedule
+  %%> What it does:
+  %%> - Swamp's automatic deployment policy reads the default branch head and the checks, as it does today; it owns discovery, backoff and the retry limit
+  SW->>GW: Admit the deployment<br/>instance:deploy-automatic
+  %%> What it does:
+  %%> - the Gateway admits `instance.deploy` for that exact commit, with the Instance lock and a repository read token in the vault
+  GW->>SW: Start run, full intent<br/>instance-deploy-direct
   opt the default Instance is asleep
     SW->>N: Start the container<br/>incus start
   end
@@ -31,13 +32,17 @@ sequenceDiagram
   %%> What it does:
   %%> - the Project's development deploy steps, as `orbit`: they install changed dependencies and migrate
   %%> - restarts the Processes whose code changed
+  SW->>N: Take the seed snapshot<br/>incus snapshot seed-COMMIT
+  %%> What it does:
+  %%> - stops the default's Processes for a moment, snapshots the container and starts them again, so clones copy no half-written file
+  %%> - deletes older seed snapshots that no clone uses
   alt every required step passes
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record the seed commit
     %%> Result:
-    %%> - new clones start at this commit; existing clones do not change
+    %%> - new clones start at this snapshot; existing clones do not change
   else a required step fails
     SW--xGW: Run failed<br/>failed step
     %%> Result:
-    %%> - clones keep starting at the last commit that deployed; the tick retries after a backoff, at most three times
+    %%> - no new seed snapshot is taken, so clones keep starting at the last commit that deployed; Swamp's policy retries after its backoff
   end

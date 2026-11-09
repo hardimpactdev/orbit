@@ -7,7 +7,7 @@ description: "Plan from 9 November 2026: a T3 server in each container is the ag
 
 A task group or a development Instance gets one isolated runtime: an Incus container with a T3 server inside. [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) decides the runtime and the engine. [Development containers](/reference/development-containers) specifies the Instance side.
 
-Starting a thread in an Orbit Project in T3 creates an Instance. The thread is a session of that Instance's T3 server. A task can attach to the Instance: while the task flow runs, Swamp drives the turns; otherwise the user drives from the thread. Both use the same sessions, so work passes from one to the other without a handover.
+Starting a thread in an Orbit Project in Conn creates an Instance. The thread is a session of that Instance's T3 server. A task can attach to the Instance: while the task flow runs, Swamp drives the turns; otherwise the user drives from the thread. Both use the same sessions, so work passes from one to the other without a handover.
 
 The first version of this plan had a separate runtime object with two drivers and a "manual mode". That is dropped: Swamp is involved either way, so the Instance and an optional attached task are enough.
 
@@ -86,8 +86,9 @@ Track A replaces task VMs and the Project VM with containers, in the order ADR 0
 | 3 | Build the task container runtime next to the task VM runtime, selected by a Node setting. | Specified in [Task containers](/reference/task-containers); plan in [Task container runtime](/solutions/task-container-runtime) |
 | 4 | Parity gate: the command proof cases on task containers match their task VM results. | Specified in [Parity gate](/solutions/task-container-runtime#parity-gate) |
 | 5 | Switch Beast, then Shark, in a window with no proofs or merges in flight. | Open |
-| 6 | Run development Instances in containers on the Node, with T3 inside. | Specified in [Development containers](/reference/development-containers); plan in [Development container runtime](/solutions/development-container-runtime) |
+| 6 | Run development Instances in containers on every `app-dev` Node, with T3 inside, and migrate the checkout Instances. | Specified in [Development containers](/reference/development-containers); plan in [Development container runtime](/solutions/development-container-runtime) |
 | 7 | Remove the task VM runtime. | Open |
+| 8 | Run production Instances in containers on every `app-prod` Node. | Planned in [Production Instances](/solutions/development-container-runtime#production-instances) |
 
 ### Track B: threads and tasks
 

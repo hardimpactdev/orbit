@@ -63,7 +63,7 @@ These come from other work and must land first.
 
 ## Build PRs
 
-The PRs land in this order. PR 7 can run beside PR 6.
+The PRs land in this order. PR 7 can run beside PR 6, and PR 12 can land any time after PR 9.
 
 ### PR 1: this specification
 
@@ -80,13 +80,14 @@ This PR adds the records. No Node runs a container yet.
 - The Conn layer's environment gets a nullable Instance.
 - The Gateway setting `instances.container_nodes` lists the Nodes that run container Instances during the build.
 
-Tests: Pest for the records, the bridge allocation and its collisions, and the build list. No live check.
+Tests: Pest for the records, the bridge allocation and its collisions, and the build list. No live check: the PR changes only Gateway records.
 
 ### PR 3: prepare a Node and the shared folders
 
 This PR prepares a Node; it creates no Instance.
 
-- A container branch of the `app-dev` role converge sets up the Incus project `orbit-instances`, the bridge and the firewall rules for the T3 ports. It runs only on Nodes of the build list.
+- A container branch of the `app-dev` role converge sets up the Incus project `orbit-instances` on a ZFS pool, the bridge and the firewall rules.
+- The branch runs only on Nodes of the build list, never on task Nodes.
 - The container image: Ubuntu 26.04, `agent` 2750, `orbit` 1000, `work` 2760, no sudo, `nftables` with the two uid rules, `hidepid`, `acl`, and the T3 unit with its condition on `/etc/orbit/instance`.
 - The recipe pins the runtime folder: the static FrankenPHP and PHP CLI build with its extension list, Composer, Node, Bun and rg.
 - The recipe pins the agent folder: T3, Claude Code and Codex, with the three environment notes.
@@ -107,6 +108,9 @@ The isolation and update checks follow.
 7. From the second container, the first container's bridge address is unreachable.
 8. T3's published port answers from a WireGuard peer and refuses a task VM.
 9. An agent folder update during a `sleep 40` tool call restarts T3, and the turn completes.
+10. From a test container, a database server on the Node and one on another Node answer on their port. Every other address on those Nodes is dropped.
+11. A nested `app-dev` Node of the proof fleet runs a container Instance on its directory pool, where a copy is a full copy.
+12. The PR stops and asks where the `instance:*` proof cases run, if check 11 fails.
 
 ### PR 4: the first default Instance and its deployments
 
@@ -139,17 +143,18 @@ Tests: Pest for the intent, the projection, the registration record from a resul
 
 1. A clone answers on its Route, with the default's data and its own `.env`.
 2. Rows written in the clone are not in the default; the default answers again right after the template copy.
-3. A clone with a database server on another Node gets a dump and restore.
-4. Conn on a Mac pairs with the clone's T3 server through Orbit. A Claude turn and a Codex turn edit files, and the changed-files view shows them.
-5. The clone's T3 server has its own environment id.
+3. A create with `--database-server` naming a server on another Node gets a dump and restore.
+4. A template copy that fails leaves the default database open for connections again.
+5. Conn on a Mac pairs with the clone's T3 server through Orbit. A Claude turn and a Codex turn edit files, and the changed-files view shows them.
+6. The clone's T3 server has its own environment id.
 
 The disk, agent and failure checks follow.
 
-6. `zfs get written` on the clone shows only a few MB.
-7. An agent's `npm run dev` in the container shows in Conn's browser through T3's port preview. Without that, the PR stops and asks for a decision.
-8. A message that the user sends in Conn during a turn is queued, not steered.
-9. A failed step leaves a stopped container; the same create resumes it.
-10. The PR records the clone, database clone, first T3 start and whole create times, for a small and a 1 GB database.
+7. `zfs get written` on the clone shows only a few MB.
+8. An agent's `npm run dev` in the container shows in Conn's browser through T3's port preview. Without that, the PR stops and asks for a decision.
+9. A message that the user sends in Conn during a turn is queued, not steered.
+10. A failed step leaves a stopped container; the same create resumes it.
+11. The PR records the clone, database clone, first T3 start and whole create times, for a small and a 1 GB database.
 
 ### PR 6: destroy a container Instance
 
@@ -201,25 +206,33 @@ Tests: Pest for the attach admission and the turn intent; tests of the Swamp T3 
 The spec commit adds [container/migrate.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/migrate.mmd), the page of the temporary command `instance:migrate` and its cases. [Old paths](/reference/old-paths) lists the command until the last checkout Instance has moved.
 
 - The command moves one checkout Instance into a container: the checkout as it is, its database cloned through the database family, its Route moved.
-- A default Instance moves before the other Instances of its Project.
+- A default Instance moves before the other Instances of its Project, and keeps its checkout until its last worktree has moved.
+- A non-default checkout is a linked worktree, so the move builds a standalone repository from the Node and copies only the uncommitted and ignored files.
+- A non-default Instance before its default refuses with `instance.default_not_migrated`.
 - A failure leaves the checkout Instance running as before.
 
 Tests: Pest for the admission, the default-first rule and the projection; Ansible `unit` cases; the cases. Live:
 
 1. On the test Node, a checkout default and one checkout feature with uncommitted files move.
 2. Both answer on their Routes, with the uncommitted files and matching data.
-3. A migration that fails at the database clone leaves the checkout Instance serving.
-4. On Beast, each checkout Instance moves, default first, in a window agreed with the people who use them.
+3. After the default has moved, a feature still on its checkout keeps working until its own move.
+4. A migration that fails at the database clone leaves the checkout Instance serving.
+5. On every `app-dev` Node, each checkout Instance moves, default first, in a window agreed with the people who use them.
 
 ### PR 11: switch every app-dev Node
 
 This PR ends the build list.
 
-- Every `app-dev` Node converges the container setup. The role stops installing PHP-FPM and checkout folders once the Node has no checkout Instance.
+- It needs every development checkout Instance moved, on every `app-dev` Node.
+- Every `app-dev` Node except task Nodes converges the container setup, and the role stops installing PHP-FPM and checkout folders there.
 - The build list goes; `instance:create` makes containers on every `app-dev` Node.
-- The container charts replace the checkout charts of the same kinds.
+- `instance:clone` reads its candidate from the candidate's container, so production cloning keeps working until PR 15.
+- The commands that only checkouts need go: `instance:setup`, the `instance:setup-step:*` commands, `instance:register` and the seed values `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`. [Old paths](/reference/old-paths) lists them.
+- Teardown steps stay.
+- `instance:transfer` refuses a container Instance until it gets a container path.
+- The container charts replace the checkout charts of the same kinds; the first-default and development deploy charts become branches of the create and deploy charts.
 
-Tests: Pest for create without the build list; the role's Molecule cases without PHP-FPM. Live: every `app-dev` Node converges twice without change, and a create on each makes a clone.
+Tests: Pest for create without the build list, the candidate read of `instance:clone`, and the removed commands; the role's Molecule cases without PHP-FPM. Live: every `app-dev` Node converges twice without change, a create on each makes a clone, and `instance:clone` makes a production Instance from a container candidate.
 
 ### PR 12: task containers on T3
 
@@ -231,9 +244,19 @@ Tests: Pest for the task intents without a Node identity, and the Swamp T3 drive
 
 Step 8 of ADR 0250 moves production Instances into containers on every `app-prod` Node, after PR 11. The [container plan](/solutions/container-instances-and-releases#production-design) holds the release design that these PRs specify and build.
 
+### Production gate
+
+FrankenPHP reaches production only after it has proved itself in development. This plan proposes the criteria below; they are confirmed before PR 13. The development Instances on FrankenPHP meet them for four weeks:
+
+- No failure that comes from FrankenPHP itself and that PHP-FPM would not have.
+- The PHP Data Bridge toolbar and every development Process work as they did on PHP-FPM.
+- The median and 95th percentile response times of the default Instances are no worse than on PHP-FPM, measured before and after migration.
+
+When the gate fails, the production web server is decided again before PR 13.
+
 ### PR 13: production specification
 
-The release flow in containers: preparation container, candidate clone, activation, readiness, Route switch, drain and retained releases, with FrankenPHP and Schedules inside. The charts of `instance:clone`, `instance:deploy`, `instance:rollback` and the production migration, with their pages and cases. No code.
+The release flow in containers: preparation container, candidate clone, activation, readiness, Route switch, drain and retained releases, with FrankenPHP and Schedules inside. The charts of `instance:clone`, `instance:deploy`, `instance:rollback` and the production migration, with their pages and cases. A release pins the runtime folder version it was built with, so a new runtime version reaches production only through a deployment. No code.
 
 ### PR 14: prepare an app-prod Node
 
@@ -249,9 +272,10 @@ Tests: Molecule `unit` cases and `ansible-lint`. Live on a test `app-prod` Node:
 This PR serves one production Instance from a container.
 
 - `instance:clone` makes a production Instance's container from its candidate.
-- FrankenPHP serves it; Schedules run as systemd timers inside, as `orbit`; it never sleeps.
+- FrankenPHP serves it, and it never sleeps.
+- Schedules stay native Swamp schedules that run their command in the container as `orbit`; the per-minute Laravel scheduler runs inside it.
 
-Tests: Pest for the intent and projection; the cases. Live: a test Laravel Project serves in production from a container, and a Schedule runs on time.
+Tests: Pest for the intent and projection; the cases. Live: a test Laravel Project serves in production from a container, a Schedule runs on time, and the hibernation sweep leaves the container running after an idle hour.
 
 ### PR 16: releases and rollback
 
@@ -325,6 +349,6 @@ Each PR moves its part into these pages. The specification stays on [Development
 | [`instance:destroy`](/cli/instance/destroy) | The turn check, clones of a default, the loss of thread history | 6 |
 | [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation) | Whole-container sleep after one hour, the wake callers, no pruning | 7 |
 | [Tasks](/reference/tasks) | Attaching a task to an Instance; the T3 driver | 9, 12 |
-| [Old paths](/reference/old-paths) | `instance:migrate` and checkout Instances, until the last one moves | 10 |
+| [Old paths](/reference/old-paths) | `instance:migrate` and checkout Instances until the last one moves; the setup-step commands, `instance:register` and the seed values | 10, 11 |
 | [Pi server](/reference/pi-server) | Scope: task VMs only | 12 |
 | [`instance:clone`](/cli/instance/clone), [`instance:deploy`](/cli/instance/deploy), [`instance:rollback`](/cli/instance/rollback) | Production Instances and releases in containers | 13 to 16 |

@@ -1,12 +1,12 @@
 ---
 title: "ADR 0250: Run instances and task groups in Incus containers"
 sidebarTitle: "0250 Instances and task groups in containers"
-description: "In progress. Every development and production Instance runs in one Incus container on its Node, development ones with a T3 server inside, and every task group runs in one outer container with its topology as nested containers. A shared kernel is the accepted risk; patching, SCTP off and no secrets on agent hosts are requirements."
+description: "In progress. Every development and production Instance runs in Incus containers on its Node, development ones with a T3 server inside, and every task group runs in one outer container with its topology as nested containers. A shared kernel is the accepted risk; patching, SCTP off and no secrets on agent hosts are requirements."
 ---
 
 # ADR 0250: Run instances and task groups in Incus containers
 
-Every Instance runs in one unprivileged Incus container directly on its Node: on every `app-dev` Node, and on every `app-prod` Node from step 8. A development Instance has a T3 server inside as its agent engine. A task group runs in one unprivileged outer container, and its topology runs as Incus containers nested inside it. There is no task VM, no Project VM and no VM per Node. All containers on a Node share that Node's kernel.
+Every Instance runs in unprivileged Incus containers directly on its Node: one container per development Instance on every `app-dev` Node, and release containers per production Instance on every `app-prod` Node from step 8. A development Instance has a T3 server inside as its agent engine. A task group runs in one unprivileged outer container, and its topology runs as Incus containers nested inside it. There is no task VM, no Project VM and no VM per Node. All containers on a Node share that Node's kernel.
 
 ## Status
 
@@ -38,7 +38,7 @@ Orbit has one runtime kind for Instances and agent work: an unprivileged Incus c
 
 ### One runtime kind: the container
 
-- **Every Node with Instances.** Every `app-dev` and `app-prod` Node runs its Instances in containers; there is no setting to opt in. The two roles install the container setup and the [shared folders](#shared-folders) instead of PHP-FPM and checkout folders. Existing checkout Instances are migrated into containers, code and database.
+- **Every Node with Instances.** Every `app-dev` and `app-prod` Node runs its Instances in containers; there is no setting to opt in. Task Nodes keep their checkout workspace until task containers move to T3. The Nodes' Incus pools are ZFS, which clones need. The two roles install the container setup and the [shared folders](#shared-folders) instead of PHP-FPM and checkout folders. Existing checkout Instances are migrated into containers, code and database.
 - **Development Instance.** One container per Instance, recorded as the Instance's runtime. The Project's first default Instance on a Node is built from scratch. Every other Instance is a ZFS clone of that default Instance, and its database is a clone of the default's database through the database family. The default Instance deploys every merge to the default branch, so a clone starts current; there are no development setup steps. The default Instance never runs T3.
 - **Production Instance.** Containers on its `app-prod` Node, with the user `orbit` only and no agent. Production containers never sleep. Step 8 moves them, after development containers work.
 - **Task group.** One outer container per group, owned by a task group runtime. Its topology (Gateway, app-dev, app-prod, database) runs as nested containers under an Incus inside it.
@@ -96,7 +96,7 @@ An update installs a new version and flips the link. Orbit then restarts T3, or 
 
 ### PHP
 
-FrankenPHP serves every container Instance, in classic mode, as an Orbit Process: in development now, and in production once it has proved itself there. The command line runs a static PHP CLI from the same static build, with the same version and extensions. `frankenphp php-cli` behind a `php` shim does not fit yet: it refuses the `-d` options that Composer and test runners pass, and before PHP 8.6 it cannot run without a script.
+FrankenPHP serves every container Instance, in classic mode, as an Orbit Process: in development now, and in production once it has proved itself in development, by the criteria of the plan's production gate. The command line runs a static PHP CLI from the same static build, with the same version and extensions. `frankenphp php-cli` behind a `php` shim does not fit yet: it refuses the `-d` options that Composer and test runners pass, and before PHP 8.6 it cannot run without a script.
 
 Each Project type has one environment note: a web app with previews, a monorepo, or a package. In the agent's home, `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` link to the note of the Instance's Project type. This is a narrow exception to "the runtime injects no prompts": a note states facts about the environment only, never instructions about the work.
 
