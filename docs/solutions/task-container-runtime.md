@@ -33,12 +33,14 @@ The PRs land in this order. PR 5 can run beside PR 4.
 
 ### PR 1: the container setting and its records
 
-This PR changes the Gateway and the `node:update` command. No workflow reads the new fields yet. `node:update` has no cases file today, so the spec commit adds `swamp/proof/node/update.cases.yaml` with the new member and its refusals.
+This PR changes the Gateway, the CLI, the PHP SDK and the `node:update` command. No workflow reads the new fields yet, and nothing creates a container. `node:update` had no cases file, so the spec commit adds `swamp/proof/node/update.cases.yaml` with the new member and its refusals, and gives each branch of its chart a path id.
 
 - `settings.task_vms` gets the optional member `containers` with `task_places`, `ci_places`, `project`, `network` and `cidr`.
-- `config/task_vms.php` `host_defaults`, the settings data and `AgentWatchListAction::egress()` know the container defaults and the second bridge.
+- `config/task_vms.php` `host_defaults.containers` holds the container defaults. `TaskVmHost` validates the member, and the settings data stores it.
+- `containers` uses another project and bridge name than the host's VMs.
+- Its `cidr` overlaps neither the VPN subnet, the host's VM bridge nor any bridge of another host.
+- `node:update` refuses a collision with `node.settings_invalid`. Stored settings that break the rule fail with `task_vm.invalid_config`.
 - A host with a live task container keeps its `containers` member. A settings update that removes it, or changes its `project`, `network` or `cidr`, fails with HTTP 409 `task_vm.runtime_in_use`.
-- A `containers` bridge that collides with the host's VM bridge or another host's fails with `task_vm.invalid_config`.
 - A migration adds `runtime` to `task_vms` and `task_vm_image_builds`, default `vm`.
 
 The rest of the Gateway then reads the runtime:
@@ -46,11 +48,12 @@ The rest of the Gateway then reads the runtime:
 - Capacity counts container places apart from VM places.
 - Normal placement skips container places while `task_vms.container_placement` is `false`, the default.
 - Placement reads the recorded base per host and runtime. A row records the runtime it starts with.
-- The refresh admits one run per host and runtime, each with its own queue.
-- Every task VM intent carries `runtime`. The provision intent also carries `slot.tunnel_unit`, which is `wg-quick@orbit.service` on a VM.
-- The API, the MCP schema, the web types and `node:update --task-vms` accept `containers`.
+- A base refresh takes a VM CI place.
+- The API, the MCP schema, the web types, the SDK and `node:update --task-vms` accept `containers`.
 
-Tests: Pest for the validation, the defaults, both refusals, separate capacity, placement by runtime and by `container_placement`, the refresh per runtime, and the intent snapshots.
+Tests: Pest for the validation, the defaults, both refusals, the cross-host overlap, separate capacity, and placement by runtime and by `container_placement`.
+
+The first plan also put the refresh per runtime, `runtime` and `slot.tunnel_unit` in every intent, and the container bridge in the agent's egress watch list into this PR. They moved: nothing reads them before a container host is prepared and a container starts. The egress bridge goes to PR 2 and the rest to PR 3.
 
 ### PR 2: prepare a container host
 
@@ -64,6 +67,8 @@ This PR adds the container branch of the `host-prepare` phase.
 - The recipe pins one Incus channel for the host and the inner Incus. Beast runs 7.0.1, and a fresh host would get 7.6.
 - The egress log part runs on the container bridge unchanged. Only its input names the bridge.
 - The Gateway's refresh intent names the container project, bridge and alias.
+- `AgentWatchListAction::egress()` names the container bridge too, and the agent's egress fact covers both bridges. The watch list names one bridge today. This changes its contract with the agent.
+- A change of the container bridge withdraws its DHCP and DNS input rules, as a change of the VM bridge does.
 
 Tests: Molecule `unit` cases for the modules and sysctl templates, `ansible-lint`, and Pest for the refresh intent. Live: the container phase twice on Beast, the second time with no change. Beast's VM project, bridge and rules stay unchanged.
 
@@ -89,6 +94,15 @@ The start, the release and the Gateway get these parts:
 - **Device check.** The start refuses a copy with a device beyond its root disk and NIC, or with a `raw.*` key.
 - **Release.** `incus delete --force`. The readiness step reads `slot.tunnel_unit`.
 - **Gateway.** Refresh admission for container hosts, and the start and release intents.
+
+The refresh and the intents learn the runtime:
+
+- **Refresh per runtime.** The refresh admits one run per host and runtime, each with its own queue. It records the runtime on its build row.
+- **Container candidate.** The candidate proof of a container refresh takes a container CI place.
+- **Intents.** Every task VM intent carries `runtime`. The provision intent also carries `slot.tunnel_unit`, which is `wg-quick@orbit.service` on a VM. A Pest snapshot test per intent shows that a VM intent gains only these two fields.
+
+The other parts:
+
 - **Doctor.** The stray report covers the container project.
 - **Power.** The agent's `incus.vm-state` reads only VMs. The agent only observes and gets no new command, so a container's presence comes from `incus.instances`.
 - **Running state.** The container's own agent heartbeat gives its running state.
@@ -97,7 +111,7 @@ If the heartbeat is not exact enough for power, the PR stops and asks for a deci
 
 Where a shared unit renderer with `LoadCredential` fails in the nested fleet, the PR changes that renderer to pass a file that only the unit's user reads, for every Node. Renderers that work stay as they are. If `wg-quick` does not run two levels down with the `bootcmd` and the AppArmor device, the PR stops and asks for a decision.
 
-Tests: Pest for the intents and the stray report, Molecule `unit` cases for the two WireGuard units and the identity files, `swamp workflow validate`, the shape gate and the behavior-name lint.
+Tests: Pest for the intents, their VM snapshots, the refresh per runtime and the stray report, Molecule `unit` cases for the two WireGuard units and the identity files, `swamp workflow validate`, the shape gate and the behavior-name lint.
 
 Live, on Beast's container side:
 

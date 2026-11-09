@@ -365,7 +365,7 @@ Tracking a live PPA would make it a second owner of Git, and an exact APT versio
 
 ## Task VMs
 
-[Task containers](/reference/task-containers) specify a second runtime for task groups, selected per host. It is not built; every host runs task VMs.
+[Task containers](/reference/task-containers) specify a second runtime for task groups, added to a host by its [`containers` setting](/reference/node-settings#task-container-fields). Only the setting, the separate container places and the placement switch are built; every task group still runs on a task VM.
 
 Publication releases the task VM. Later work claims a fresh task place and restores its published branch. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
@@ -461,6 +461,8 @@ The capacity migration sets existing Beast and Shark hosts to two task and two C
 CI proofs join one first-come-first-served queue. The front proof takes every free CI place with a usable base, up to its batch count. Each place gets a fresh VM. Whole batches are balanced by measured case times; each VM restores its fleet and runs its assigned batches. Orbit merges the case verdicts into one report and deletes every VM before the proof finishes. A failed case or missing verdict fails the proof; a full pool never produces a passing report with no cases run.
 
 When the chosen pool is full, admission waits without allocating a VM, Node identity or workspace. The wait ends after a two-hour admission budget with a clear timeout. Lowering a pool size deletes no VM; new claims wait until the pool has room. A task publishes its PR and releases its VM, workspace, keys and peer. Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
+
+A host with a [`containers` setting](/reference/node-settings#task-container-fields) also has container task and CI places. Each live row records its runtime, `vm` or `container`, and holds a place of that runtime only, so container places never count against VM places. Normal placement takes container places only while `task_vms.container_placement` is on, and then only on a host with a recorded container base. The setting is off by default, so a host's task VMs keep their task groups and CI proofs. A base refresh takes a VM CI place. The host keeps one recorded base per runtime.
 
 Every new VM copies the base and has the Large profile: 6 vCPU, 12 GiB of memory and a 60 GiB disk. VM size does not multiply its capacity charge.
 
@@ -1184,6 +1186,7 @@ Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway
 | Key | Variable | Meaning |
 | --- | --- | --- |
 | `task_vms.enabled` | `ORBIT_TASK_VMS_ENABLED` | Allows new task VMs. Default `false` |
+| `task_vms.container_placement` | `ORBIT_TASK_VMS_CONTAINER_PLACEMENT` | Lets normal placement take [container places](#place-task-vms). Default `false`. It applies to every host; turn it on only when a host [switches](/reference/task-containers#switch-a-host) |
 | `task_vms.dev_cluster_id` | `ORBIT_TASK_VMS_DEV_CLUSTER_ID` | The ID of the Cluster that task VM Nodes join |
 | `task_vms.wireguard_range` | `ORBIT_TASK_VMS_WIREGUARD_RANGE` | The reserved WireGuard range. Default `10.44.0.128/25`, the upper half of the default VPN subnet `10.44.0.0/24` |
 | `task_vms.swamp_host` | `ORBIT_TASK_VMS_SWAMP_HOST` | One DNS hostname for the private Swamp Route, such as `swamp.orbit`, served on TCP 443 by the `swamp` Node. No scheme, port, path, wildcard, or list. Unset or empty admits no Swamp site |

@@ -5,7 +5,7 @@ description: "Not built. The task container runtime of ADR 0250: a task group ru
 
 # Task containers
 
-**Not built.** This page specifies the runtime that step 3 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) builds. It describes the target. The build PRs in [Task container runtime](/solutions/task-container-runtime) make it true, one part at a time, and remove this note. Until then, every task group runs on a [task VM](/reference/compute-drivers#task-vms).
+**Partly built.** This page specifies the runtime that step 3 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) builds. It describes the target. The build PRs in [Task container runtime](/solutions/task-container-runtime) make it true, one part at a time, and remove this note. Built so far: the host setting, its records and the separate container places. Until the runtime is complete, every task group runs on a [task VM](/reference/compute-drivers#task-vms).
 
 A task container is an unprivileged Incus system container on a container host. It takes the place of a task VM for one task group. It is a copy of the host's base container snapshot. The base holds the same software as the base VM: the agent, the Pi server, the tools, Swamp and a warm checkout of main. It also holds the nested fleet of three containers (Gateway, app-dev, app-prod) under an Incus inside the container. A host can run task containers beside its task VMs, in their own project, bridge and places. Task VMs do not change.
 
@@ -25,17 +25,7 @@ The workspace has no chart of its own. Its parts reach a task container over Wir
 
 ## Add containers to a host
 
-The host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) gets one more member, `containers`. A host with it runs task containers beside its task VMs:
-
-| Field of `containers` | Required | Default | Meaning |
-| --- | --- | --- | --- |
-| `task_places` | Yes | | Task places for containers, integer from 0 to 64 |
-| `ci_places` | Yes | | CI places for containers, integer from 0 to 64 |
-| `project` | No | `orbit-task-containers` | Incus project of the containers and their base |
-| `network` | No | `orbittaskc0` | Bridge of the containers, with the same name rule as a VM bridge |
-| `cidr` | Yes | | Bridge network; it must not overlap the VPN subnet, the host's VM bridge or any other bridge |
-
-The pool, `cpus`, `memory`, `disk` and `operator_owned` of the host apply to both runtimes. `cpus`, `memory` and `disk` size the container's `limits.cpu`, `limits.memory` and root disk. `image_alias` stays a VM field: a container host has no base image, only a base snapshot.
+The host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) gets one more member, `containers`. A host with it runs task containers beside its task VMs. [Task container fields](/reference/node-settings#task-container-fields) lists its fields: its own task and CI places, Incus project, bridge and CIDR. `cpus`, `memory` and `disk` of the host size the container's `limits.cpu`, `limits.memory` and root disk. `image_alias` stays a VM field: a container host has no base image, only a base snapshot.
 
 Container places are separate from the host's VM places. A place of either runtime holds one task VM or one task container. The Gateway records the runtime on each `task_vms` row and each base build row, and a row keeps the runtime it started with. So a host keeps one base per runtime, and the release, the sweep and Doctor take the path of the row.
 
@@ -43,7 +33,7 @@ Orbit refuses to remove `containers`, or to change its `project`, `network` or `
 
 ### Placement before the switch
 
-Normal placement skips container places until the switch. The Gateway setting `task_vms.container_placement` (`ORBIT_TASK_VMS_CONTAINER_PLACEMENT`, default `false`) turns it on. While it is off, only two requests reach a container place: the candidate proof of the host's container refresh, and an operator `proof:run --host=<host> --runtime=container`. So the host's task VMs keep their task groups and CI proofs, and no work lands on an unproven runtime.
+Normal placement skips container places until the switch. The Gateway setting [`task_vms.container_placement`](/reference/compute-drivers#configure-task-vms) (`ORBIT_TASK_VMS_CONTAINER_PLACEMENT`, default `false`) turns it on. While it is off, only two requests reach a container place: the candidate proof of the host's container refresh, and an operator `proof:run --host=<host> --runtime=container`. So the host's task VMs keep their task groups and CI proofs, and no work lands on an unproven runtime.
 
 Beast is the container test host. It keeps its task VM places and gets a small container side for the build PRs and the parity gate.
 
@@ -238,7 +228,9 @@ The container runtime adds one error code and one cause of an existing code.
 | Code | HTTP | Cause |
 | --- | --- | --- |
 | `task_vm.runtime_in_use` | 409 | `containers` is removed, or its `project`, `network` or `cidr` changes, while the host has a task container that is not `destroyed` |
-| `task_vm.invalid_config` | 500 | A `containers` field is invalid, or its `project`, `network` or `cidr` collides with the host's VM resources or another host's |
+| `task_vm.invalid_config` | 500 | A stored `containers` field is invalid, or collides with a VM project, a VM bridge or another host's bridge |
+
+`node:update` refuses an invalid or colliding `containers` member at admission with `node.settings_invalid`. So `task_vm.invalid_config` only meets settings stored another way.
 
 A failed host preparation, base build or start fails its run with the failed step, as for a VM host.
 
