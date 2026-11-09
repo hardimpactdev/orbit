@@ -17,6 +17,7 @@ Another thread proves commands on the task VM proof fleet at the same time. A re
 | The VM intent stays the same | A Pest snapshot test per intent shows that a VM intent gains only `runtime: vm` and `slot.tunnel_unit` |
 | Old intents keep working | Ansible and the workflows read a missing `runtime` as `vm`, so a run admitted before the release still passes |
 | Container work has its own task files | Ansible includes `tasks/task-container-*.yml` only on a container host |
+| `incus` gets no stray input | Every task and script that runs `incus` closes standard input, which `incus` reads as YAML when it is not a terminal |
 | The VM task list changes only by its includes | A gate test compares `ansible-playbook --list-tasks` of the VM tags with the base branch. The only new lines are the named container includes |
 | Workflow step names stay | A step whose machine work differs reads it from the intent or the phase |
 | Gateway and Swamp ship together | One PR, as the [contributor guide](/contributor-guide) requires |
@@ -56,9 +57,11 @@ Tests: Pest for the validation, the defaults, both refusals, separate capacity, 
 This PR adds the container branch of the `host-prepare` phase.
 
 - `tasks/task-vm-host-prepare.yml` includes `tasks/task-container-host-prepare.yml` on a container host.
-- The new file sets up the project, its restrictions with `limits.virtual-machines=0`, the stock container alias, the kernel modules and the sysctls.
-- It checks the host's subordinate ID range and that `sctp` cannot load.
-- It checks that `incus info` reports `idmapped_mounts`. Without them, every copy would shift its files and stop being a clone.
+- The new file sets up the project, its restrictions with `restricted.containers.lowlevel=allow` and `limits.virtual-machines=0`, the stock container alias, the kernel modules and the sysctls.
+- It caps `zfs_arc_max` to the host's size and installs Incus from the channel that the recipe pins.
+- It checks the host's subordinate ID range, that the pool is ZFS, and that `sctp` cannot load.
+- It copies a small isolated test container and requires `zfs get written` under a few MB. Otherwise every copy would shift its files and stop being a clone.
+- The recipe pins one Incus channel for the host and the inner Incus. Beast runs 7.0.1, and a fresh host would get 7.6.
 - The egress log part runs on the container bridge unchanged. Only its input names the bridge.
 - The Gateway's refresh intent names the container project, bridge and alias.
 
@@ -83,7 +86,7 @@ The converge and the fleet build get these branches:
 The start, the release and the Gateway get these parts:
 
 - **Start.** `incus copy` of the snapshot, the identity by `incus file push`, the limits, `boot.autostart=true`, and `incus start`.
-- **Device check.** The start refuses a copy with a device beyond its root disk and NIC.
+- **Device check.** The start refuses a copy with a device beyond its root disk and NIC, or with a `raw.*` key.
 - **Release.** `incus delete --force`. The readiness step reads `slot.tunnel_unit`.
 - **Gateway.** Refresh admission for container hosts, and the start and release intents.
 - **Doctor.** The stray report covers the container project.
@@ -116,7 +119,7 @@ This PR makes the proof flows work on a container and lets the parity gate choos
 
 Tests: Pest for the admission of `--host` and `--runtime` (operator only, an active configured host, a usable base of that runtime) and for the proof intents, and `swamp workflow validate`.
 
-Live: `orbit proof firewall:allow --group <group>` on a group in a container on Beast. The PR records the restore times. If the 95th percentile is over 45 seconds, the limit becomes that percentile plus a margin, and the PR says which.
+Live: `orbit proof firewall:allow --group <group>` on a group in a container on Beast. The PR records the restore times. The UpCloud spike measured 3–4 s, so the limit should hold. If the 95th percentile is over 45 seconds, the limit becomes that percentile plus a margin, and the PR says which.
 
 ### PR 5: start a stopped container again
 
@@ -144,9 +147,33 @@ A case that fails only on a container blocks the gate. The whole run passes agai
 
 ## UpCloud report
 
-A separate proof runs this runtime on an UpCloud server, which has no nested KVM. UpCloud is a target: an UpCloud host passes the same parity gate before it gets container placement.
+A spike on 2026-11-09 ran this runtime on an UpCloud server, which has no nested KVM. Verdict: it works with changes. UpCloud is a verified container host and a target: an UpCloud host passes the same parity gate before it gets container placement.
 
-Findings: pending. The report of that proof goes here, with what it changes in this plan.
+The spike used `STARTER-4xCPU-8GB` with a separate 20 GB block device for the pool. It ran the outer container, the inner Incus on a directory pool, Docker and WireGuard in nested containers, and the stop, snapshot and copy of the base.
+
+| Step | Time |
+| --- | --- |
+| Outer snapshot, stopped | 0.15 s |
+| Outer copy | 0.57 s |
+| Copy start to nested systemd ready | 5.3 s |
+| Take nested `base` (stop, snapshot, start) | 21.4 s |
+| Nested restore, 500 MB changed / small change | 3.9 s / 2.9 s |
+
+The findings changed this plan and the [reference](/reference/task-containers):
+
+| Finding | Change |
+| --- | --- |
+| A restricted project refuses `security.idmap.size` | `restricted.containers.lowlevel=allow`, and the start refuses `raw.*` keys |
+| Incus 7 reports empty `kernel_features` | A test copy with `zfs get written` under a few MB replaces the `idmapped_mounts` check. The copy wrote 300 KB |
+| `wg-quick` segfaults in the outer container | `ip` and `wg` only for the outer container. Nested Nodes keep `wg-quick`, which works with the AppArmor-off device |
+| `LoadCredential` gives the unit no credential and no error | The rule stays: `SetCredential` or a file |
+| The template kernel lags and SCTP loads | Host preparation needs a full upgrade and reboot, the SCTP block, a `zfs_arc_max` cap and, on UpCloud, a separate pool device |
+| Zabbly stable is 7.6, Beast runs 7.0.1 | The recipe pins one Incus channel for host and inner Incus |
+| A directory pool copied the base in 55 s, btrfs moved it in 171 s | The host pool must be ZFS |
+| Nested restores took 3–4 s | The 45-second limit holds |
+| `incus` reads non-terminal standard input as YAML | Ansible tasks and Swamp scripts close standard input |
+
+An idle task container with two nested containers and Docker used about 0.5 GB, and the base used 2.5 GB of disk. The real fleet is heavier, so one task group gets `STARTER-4xCPU-16GB` with a 50 GB pool disk until the parity gate measures a place. An 8 GB server fits one group only with the ARC capped near 1 GiB.
 
 ## Decided
 
@@ -156,9 +183,9 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 | --- | --- |
 | A task container keeps the task VM's Node identity until step 6 | The workspace, Pi, Git, the guards and every Swamp step work unchanged. [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#one-runtime-kind-the-container) records it as a temporary exception, and step 6 removes it |
 | Beast is the container test host | The build PRs and the parity gate run on Beast's container places. Normal placement skips them until the switch, so Beast's task VMs keep their work |
-| UpCloud must pass the same gate | It is a target, not the test host. Its findings go in the [UpCloud report](#upcloud-report) |
+| UpCloud must pass the same gate | It is a verified container host and a target, not the test host. The [UpCloud report](#upcloud-report) holds the spike's findings |
 | Nested Nodes keep `wg-quick` | The fleet build's `bootcmd` turns off the `wg` and `wg-quick` profiles, and each nested container gets the AppArmor-off device. The shared Node converge does not change |
 | Container places get the VM place counts until the parity gate | The gate measures a place's peak memory, and the counts follow from it |
-| A slow restore raises the limit | If PR 4 measures a restore over 45 seconds, the limit becomes the measured 95th percentile plus a margin |
+| A slow restore raises the limit | If PR 4 measures a restore over 45 seconds, the limit becomes the measured 95th percentile plus a margin. The UpCloud spike measured 3–4 s |
 | `LoadCredential` becomes a file only where it fails | PR 3 changes a shared renderer to a file that only the unit's user reads, for every Node, only where it finds one that fails in the nested fleet |
 | Names stay until step 7 | `settings.task_vms`, `HOST-tvm-N`, the `task_vm.*` kinds and codes, and the VM step names. Step 7 renames them once |

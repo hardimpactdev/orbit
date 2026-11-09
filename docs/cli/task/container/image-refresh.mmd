@@ -21,9 +21,12 @@ sequenceDiagram
   SW->>H: Prepare the host<br/>shared Ansible phase
   %%> What it does, for a container host:
   %%> - the pool, the bridge `orbittaskc0` with its egress ACL and port isolation, the forwarding rule and the DHCP and DNS input rules, as for a VM host
-  %%> - the project `orbit-task-containers` with `restricted.containers.nesting=allow`, `restricted.containers.interception=allow`, `restricted.containers.privilege=isolated` and `restricted.snapshots=allow`; host-path disks stay forbidden, so no container can mount the host's Incus socket
+  %%> - the project `orbit-task-containers` with `restricted.containers.nesting=allow`, `restricted.containers.interception=allow`, `restricted.containers.privilege=isolated`, `restricted.containers.lowlevel=allow` (for `security.idmap.size`) and `restricted.snapshots=allow`; host-path disks stay forbidden, so no container can mount the host's Incus socket
   %%> - the stock image alias `ubuntu-26.04-ct` from `images:ubuntu/26.04/cloud`, the container variant
   %%> - the kernel modules the containers need, loaded now and at boot, and the host sysctls; root's subordinate ID range must hold one isolated range per place and one for the base, or the phase fails
+  %%> - the pool must be ZFS; `zfs_arc_max` is capped to the host; Incus comes from the channel the recipe pins; `sctp` is blocked
+  %%> - a small isolated test copy must write under a few MB (`zfs get written`), which proves idmapped mounts; Incus 7 reports no `kernel_features`
+  %%> - every `incus` call closes standard input, which `incus` reads as YAML when it is not a terminal
   SW->>H: Log egress<br/>host bridge, log only
   %%> What it does:
   %%> - the egress log of the container bridge, the same part as for a VM host

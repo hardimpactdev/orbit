@@ -58,7 +58,9 @@ After the [parity gate](/solutions/task-container-runtime#parity-gate) passes, a
 
 ### UpCloud
 
-An UpCloud server has no nested KVM, so task VMs cannot run there and task containers must. UpCloud is a target of this runtime. An UpCloud host must pass the same parity gate before it gets container placement. A separate proof of this runtime on an UpCloud server is running; its findings go in [UpCloud report](/solutions/task-container-runtime#upcloud-report).
+An UpCloud server has no nested KVM, so task VMs cannot run there and task containers must. UpCloud is a target of this runtime. An UpCloud host must pass the same parity gate before it gets container placement. A spike on 2026-11-09 ran the nested topology on an UpCloud server with the same results as on Beast; the [UpCloud report](/solutions/task-container-runtime#upcloud-report) records it.
+
+On UpCloud the template's root disk is ext4 on the whole disk, so the ZFS pool needs a separate block device. One task group fits `STARTER-4xCPU-16GB` with a 50 GB pool disk until the parity gate measures a place.
 
 ## Prepare a container host
 
@@ -66,23 +68,30 @@ The first phase of every refresh prepares the host, as for a [VM host](/referenc
 
 | Part | On a container host |
 | --- | --- |
-| Pool | The ZFS pool, as for a VM host. Task containers and the base share it |
+| Pool | The ZFS pool, as for a VM host, shared by task containers and the base. It must be ZFS: a base copy took 55 s on a directory pool |
+| ZFS ARC | `zfs_arc_max` capped to the host's size, now and after reboot. The ARC took 2.6 GB of an 8 GB UpCloud host |
+| Incus | The Incus package from the channel that the recipe pins, the same channel as the inner Incus. A fresh host otherwise gets the newest stable release |
 | Bridge | `orbittaskc0` with IPv4 NAT, no IPv6 and the egress ACL |
 | NIC | `security.port_isolation=true` on the profile's NIC |
 | Forwarding | The existing UFW rule `route allow in on orbittask+`, which covers every bridge whose name starts with `orbittask` |
 | Egress log | The [egress log](/reference/compute-drivers#log-task-vm-egress) part, run on the bridge that `host.network` names |
 | Input rules | DHCP and DNS to the bridge address, under the existing catalog names |
 | Project | `orbit-task-containers` with `features.networks=false` |
-| Restrictions | `restricted=true`, `restricted.networks.access=orbittaskc0`, `restricted.containers.nesting=allow`, `restricted.containers.interception=allow`, `restricted.containers.privilege=isolated`, `restricted.snapshots=allow` and `limits.virtual-machines=0`. Host-path disks and privileged containers stay forbidden |
+| Restrictions | `restricted=true`, `restricted.networks.access=orbittaskc0`, `restricted.containers.nesting=allow`, `restricted.containers.interception=allow`, `restricted.containers.privilege=isolated`, `restricted.snapshots=allow`, `restricted.containers.lowlevel=allow` and `limits.virtual-machines=0`. Host-path disks and privileged containers stay forbidden |
 | Stock image | The alias `ubuntu-26.04-ct` from `images:ubuntu/26.04/cloud`, the container variant |
-| Kernel modules | The modules that containers cannot load themselves, such as `wireguard` and `overlay`, in `/etc/modules-load.d/orbit-task-containers.conf`. The build PR fixes the list |
+| Kernel modules | `wireguard`, `overlay` and `br_netfilter`, which containers cannot load themselves, in `/etc/modules-load.d/orbit-task-containers.conf` |
+| SCTP | `install sctp /bin/false` in `/etc/modprobe.d/orbit-no-sctp.conf`. SCTP loads by default on the UpCloud template |
 | Sysctls | The limits that nested systemd, Docker and file watchers need, such as `fs.inotify.max_user_instances`, in `/etc/sysctl.d/60-orbit-task-containers.conf` |
 
 The phase checks root's subordinate ID range in `/etc/subuid` and `/etc/subgid` on the host. It must hold one [isolated range](#the-outer-container) per container place and one for the base: `(containers.task_places + containers.ci_places + 1) × 101,000,000` IDs. The default Incus range of 1,000,000,000 IDs fits nine. A range that is too small fails the phase with the numbers it needs, and changes nothing.
 
-The phase also checks that `incus info` reports the kernel feature `idmapped_mounts`. Without it, Incus shifts the owner of every file when it copies an isolated container, so a start would rewrite the whole root disk instead of making a clone.
+`security.idmap.size` is a low-level key, so the project needs `restricted.containers.lowlevel=allow`. That also allows `raw.*` keys, so the start refuses a copy with any `raw.*` key, as it refuses an extra device.
 
-The phase requires the host hardening of ADR 0250 step 2. It checks that `sctp` cannot load.
+The phase proves that a copy is a clone. It copies a small isolated test container and requires `zfs get written` on the copy to stay under a few MB, then deletes it. Without idmapped mounts, Incus would shift the owner of every file, and a start would rewrite the whole root disk. Incus 7 reports empty `kernel_features` on Beast and on UpCloud, so `incus info` cannot answer this.
+
+The phase requires the host hardening of ADR 0250 step 2: a full upgrade and a reboot into the current kernel before first use, and the SCTP block. It checks that `sctp` cannot load.
+
+`incus` reads standard input as YAML when it is not a terminal. So every Ansible task and Swamp script that runs `incus` closes standard input, unless it passes input on purpose.
 
 ### Egress and DNS
 
@@ -158,9 +167,11 @@ The start writes the identity into the stopped copy with `incus file push` from 
 
 The base enables the identity's units: `orbit-wireguard.service`, `orbit-agent.service` and the Pi unit. Each has a `ConditionPathExists=` on its identity file, so it does not start in the base, and starts at the first boot of a copy.
 
-`orbit-wireguard.service` brings up the interface `orbit` with `ip link add`, `wg setconf`, the address, the routes and `ip link set up`. Ubuntu 26.04's AppArmor profile for `wg-quick` crashes `wg-quick` in a container, so the outer container does not use it. The readiness check reads the unit name from the intent, `slot.tunnel_unit`, and the handshake from `wg show orbit` as before.
+`orbit-wireguard.service` brings up the interface `orbit` with `ip link add`, `wg setconf`, the address, the routes and `ip link set up`. Ubuntu 26.04's AppArmor profile for `wg-quick` makes `wg-quick` segfault in the outer container, so the outer container does not use it. The readiness check reads the unit name from the intent, `slot.tunnel_unit`, and the handshake from `wg show orbit` as before.
 
 ### Pi
+
+A task container runs the Pi server as a task VM does, so the parity gate compares like with like. Which agent engine runs in containers after the switch, Pi Durable or a T3 server inside, is [open](/solutions/agent-runtime-and-manual-mode#open-questions).
 
 The Pi server is in the base, at the pin of the release. The start writes the claim's Pi token and models file and the Pi unit, which listens on the container's WireGuard address and `ORBIT_PI_PORT`. Everything else is as in [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm).
 
@@ -179,9 +190,9 @@ WireGuard of the nested Nodes works like this:
 
 - The nested Nodes keep `wg-quick` from the nested Gateway's own Node converge.
 - The fleet build's cloud-init `bootcmd` turns off the `wg` and `wg-quick` profiles, as in a task VM.
-- The AppArmor device keeps any profile from loading. PR 3 proves that `wg-quick` runs two levels down.
+- The AppArmor device keeps any profile from loading, so `wg-quick` works there. The UpCloud spike proved it.
 
-`LoadCredential` fails without an error in nested containers. So a unit that the nested fleet runs reads its secret from `SetCredential` or a file, not from `LoadCredential`. The fleet check fails on a unit that breaks this rule. Some shared unit renderers use `LoadCredential` today. Where PR 3 finds one that fails in the nested fleet, its renderer passes a file that only the unit's user reads, for every Node.
+`LoadCredential` does not work in nested containers: systemd reports no credential error, but the unit sees no credential and fails. So a unit that the nested fleet runs reads its secret from `SetCredential` or a file, not from `LoadCredential`. The fleet check fails on a unit that breaks this rule. Some shared unit renderers use `LoadCredential` today. Where PR 3 finds one that fails in the nested fleet, its renderer passes a file that only the unit's user reads, for every Node.
 
 ### How the agent reaches its fleet
 
@@ -195,7 +206,7 @@ The agent reaches its fleet as on a task VM, with one difference in the operator
 
 ### Take and restore `base`
 
-A proof restores each nested container to its `base` snapshot, as on a task VM ([proof chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/container/proof.mmd)). On a directory pool a restore copies back the files that changed since `base`, so its time grows with the change. The 45-second limit stays. If PR 4 measures a slower restore, the limit becomes the measured 95th percentile plus a margin.
+A proof restores each nested container to its `base` snapshot, as on a task VM ([proof chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/container/proof.mmd)). On a directory pool a restore copies back the files that changed since `base`, so its time grows with the change. The 45-second limit stays. The UpCloud spike measured 3–4 s for a restore and 21 s to take `base` again, so the limit holds. If PR 4 measures a slower restore, the limit becomes the measured 95th percentile plus a margin.
 
 Two places take `base`: the task "Take the base snapshots" of the role playbook, in the refresh, and the step "Take base again" of a proof, after a token renewal. On a container, both stop the three nested containers first, then snapshot them and start them again. A snapshot of a running container on a directory pool is a file copy, not a consistent state. The readiness check follows.
 

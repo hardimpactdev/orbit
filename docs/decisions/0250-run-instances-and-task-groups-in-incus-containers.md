@@ -46,14 +46,17 @@ Orbit has one runtime kind for agent work: an unprivileged Incus container on th
 
 The spike of 2026-11-09 settled how a task group's outer container runs its fleet:
 
-- The outer container is unprivileged with `security.nesting=true` and intercepted `mknod` and `setxattr`.
+- The outer container is unprivileged with `security.nesting=true`, intercepted `mknod` and `setxattr`, and an isolated ID map. Its Incus project allows low-level keys (`restricted.containers.lowlevel=allow`), because `security.idmap.size` is one, and the start refuses `raw.*` keys.
+- The host's pool is ZFS. A copy of the outer container is a clone only with idmapped mounts, which a test copy proves with `zfs get written`.
 - The inner Incus gets a subordinate ID range that fits inside the outer one (`/etc/subuid` and `/etc/subgid`, for example `root:1000000:100000000`).
 - The inner storage pool is a directory pool inside the outer container's filesystem. An outer snapshot and copy then carry the whole fleet: 0.3 s and 0.5 s in the spike. A ZFS dataset delegated to the outer container is not used, because `incus copy` does not copy its child datasets.
 - A nested container that runs Docker gets nesting and a read-only device that presents `N` at `/sys/module/apparmor/parameters/enabled`. Docker then skips its own AppArmor profile, which cannot load two levels below the host. The host's profile for the outer container stays in force.
-- The outer container's own tunnels are set up with `ip` and `wg`, not `wg-quick`, whose AppArmor profile crashes it in containers on Ubuntu 26.04. The nested Nodes keep `wg-quick` from the shared Node converge: a cloud-init `bootcmd` turns off the `wg` and `wg-quick` profiles in each nested container, and the AppArmor device below keeps any profile from loading.
-- Units that need secrets use `SetCredential` or files, not `LoadCredential`, which fails silently in nested containers.
+- Only the outer container needs `ip` and `wg` for its tunnels: Ubuntu 26.04's AppArmor profile makes `wg-quick` segfault there. The nested Nodes keep `wg-quick` from the shared Node converge, which works with the AppArmor-off device above and a cloud-init `bootcmd` that turns off the `wg` and `wg-quick` profiles.
+- Units that need secrets use `SetCredential` or files, not `LoadCredential`. In nested containers systemd reports no credential error, but the unit gets no credential and fails.
 
 A base snapshot is taken after the fleet converges, with its nested containers stopped, so the snapshot holds no half-written database pages.
+
+A second spike on 2026-11-09 ran the same setup on an UpCloud server, which has no nested KVM, with the same results. Its findings are in the [UpCloud report](/solutions/task-container-runtime#upcloud-report).
 
 ### Users and kernel surface
 
@@ -111,4 +114,4 @@ The Node's agent reads per-container metrics from Incus (`/1.0/metrics`) and per
 - Components: apps/gateway, apps/cli, apps/docs
 - ADRs: replaces the outer task VM boundary of task groups and the Project VM of the development container plan
 - Detail: [Task containers](/reference/task-containers) and its plan [Task container runtime](/solutions/task-container-runtime), [Compute drivers](/reference/compute-drivers), [Tasks](/reference/tasks), [Pi server](/reference/pi-server), [Node provisioning](/reference/node-provisioning), [Metrics](/reference/metrics), and the plan in [Container instances and releases](/solutions/container-instances-and-releases). The change also touches `swamp/` (task VM provision, image, snapshot and power workflows, the proof fleet setup and the development container workflows) and the Node agent (container and Process metrics).
-- Verify: the command proof cases on task containers match their task VM results on Beast, and on an UpCloud host before it switches; a feature copy with its database boots in a container on the Node; kernel, SCTP and secret checks pass on every agent Node
+- Verify: the command proof cases on task containers match their task VM results on a container host: Beast first, and an UpCloud host before it switches; a feature copy with its database boots in a container on the Node; kernel, SCTP and secret checks pass on every agent Node
