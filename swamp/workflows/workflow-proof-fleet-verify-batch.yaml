@@ -78,7 +78,7 @@ jobs:
       inputs:
         hosts: name:target
         okExitCodes: any
-        timeoutSec: 180
+        timeoutSec: 480
         argv:
         - python3
         - ${{ inputs.checkout_path + "/swamp/proof/runner/runner.py" }}

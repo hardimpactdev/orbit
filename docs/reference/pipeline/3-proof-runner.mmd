@@ -31,6 +31,14 @@ sequenceDiagram
     %%> - restores the task's plain snapshot `base` of the three nested containers (a reboot); skipped when the fleet is still at `base`, as for the first batch
     %%> - a restore that fails or is not healthy within 45 s stops the run; the cases that did not run become `unrun` with cause `infrastructure`
     %%> - built, not yet passed live: the step is the workflow `proof-fleet-restore` (restore, start, boot wait, readiness, apply the checkout), which `proof-fleet-verify-batch` calls; 0 of 2 runs succeeded by 2026-11-06; the old `runner restore` was removed
+    VM->>VM: Read the candidate observer pin
+    %%> Reads linux-x86_64 from the candidate's frozen-manifest.json, never the seed's installed version.
+    VM->>NT: Install the pinned observers
+    %%> Ansible uses the normal Node convergence's SHA-256-verified atomic replacement task on all three nested Nodes. Matching binaries stay in place.
+    VM->>NT: Start the observers
+    %%> Restarts a changed binary; starts an inactive observer. Existing Node identity and configuration stay in place.
+    VM->>NT: Verify the installed digests
+    %%> A download, checksum, service or digest failure stops discovery and cases as infrastructure. Repeat after every restore; never save a new base snapshot.
     opt the batch declares a start state
       SW->>VM: Set up the batch<br/>batch setup steps
       %%> What it does:

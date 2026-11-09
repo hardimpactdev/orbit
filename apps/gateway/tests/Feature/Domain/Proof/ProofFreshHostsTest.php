@@ -93,7 +93,6 @@ it('names a host stale when main moved by a change of what the image carries', f
 })->with([
     'a playbook' => 'swamp/ansible/tasks/task-vm-software.yml',
     'a pin' => 'apps/gateway/resources/machine-software/recipe.json',
-    'the released observer pin' => 'apps/gateway/resources/agent/frozen-manifest.json',
     'the root lock file' => 'composer.lock',
     'the lock file of an app' => 'apps/gateway/composer.lock',
     'the bun lock file of an app' => 'apps/web/bun.lock',

@@ -9,8 +9,6 @@ it('says whether the image carries a path, the rule the proof asks the ready cop
 })->with([
     'a playbook' => ['swamp/ansible/tasks/task-vm-software.yml', true],
     'the folder of the ansible roles' => ['swamp/ansible/operation-node-add.yml', true],
-    'the released observer pin' => ['apps/gateway/resources/agent/frozen-manifest.json', true],
-    'an unrelated agent resource' => ['apps/gateway/resources/agent/README.md', false],
     'a pin' => ['apps/gateway/resources/machine-software/recipe.json', true],
     'the root composer lock' => ['composer.lock', true],
     'the composer lock of an app' => ['apps/gateway/composer.lock', true],

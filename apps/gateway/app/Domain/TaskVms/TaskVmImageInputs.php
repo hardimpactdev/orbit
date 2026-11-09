@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 /**
- * What a task image carries from a release: the playbooks of the task VM role, the recipe and observer pins and the lock files of
+ * What a task image carries from a release: the playbooks of the task VM role, the pins of the recipe and the lock files of
  * the repository. The proof asks whether the ready copies of a host include every change of these files
  * (stage 6, docs/reference/pipeline/6-task-image-seed-refresh.mmd).
  */
@@ -29,7 +29,6 @@ final readonly class TaskVmImageInputs
             }
         }
 
-        return $path === 'apps/gateway/resources/agent/frozen-manifest.json'
-            || array_any(self::Locks, fn ($pattern) => fnmatch($pattern, $path, FNM_PATHNAME));
+        return array_any(self::Locks, fn ($pattern) => fnmatch($pattern, $path, FNM_PATHNAME));
     }
 }

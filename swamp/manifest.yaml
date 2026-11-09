@@ -8,6 +8,7 @@ behaviors:
   - operations/ansible-input/write.ts
 additionalFiles:
   - ansible/proof-gateway.yml
+  - ansible/proof-observers.yml
   - ansible/tasks/proof-gateway-release.yml
   - proof/cli-release.json
   - ansible/library/orbit_artifact.py
@@ -79,7 +80,6 @@ additionalFiles:
   - ansible/tasks/task-vm-boot.yml
   - ansible/tasks/task-vm-checkout.yml
   - ansible/tasks/task-vm-branch.yml
-  - ansible/tasks/task-vm-fleet-agent.yml
   - ansible/tasks/task-vm-fleet.yml
   - ansible/tasks/task-vm-fleet-build.yml
   - ansible/tasks/task-vm-nested-wait.yml
