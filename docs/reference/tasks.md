@@ -97,6 +97,8 @@ Publishing a task PR releases its VM, workspace, Node identity, keys and VPN pee
 
 Task work and operator proofs claim task places. Authenticated CI proofs claim CI places. Proofs of a refreshed base use that pool too. Each VM holds one place until deletion is confirmed. Full pools record a waiting Operation without a workspace or identity.
 
+A task VM serves only the proof Project: the base VM carries only its checkout. Work that needs a new VM for a group of another Project, such as provision, prep or a build, returns HTTP 409 `task_vm.project_unsupported` at once and records no Operation. A waiting Operation that reaches that check fails with the same code. Freed places cannot change that, so such a group never joins the wait queue, where it would hold up every later admission.
+
 Task provision, prep, build and review leave each host’s [CI/refresh reserve](/reference/compute-drivers#place-task-vms) free. Operator proofs do too. Only a command proof from an authenticated active Node with an active `ci-runner` role, or a refresh candidate proof, can use it. Orbit records CI eligibility before queueing admission; report-only mode does not grant access. Another proof cannot preempt CI.
 
 Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a claimed group returns HTTP 409 `tasks.already_claimed`.

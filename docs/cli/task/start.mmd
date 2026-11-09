@@ -16,6 +16,7 @@ sequenceDiagram
   %%> Started by:
   %%> - `task:start` for a todo group, from proof CI or feature work
   %%> Result:
+  %%> - a group of any Project but the proof Project is refused at once with `task_vm.project_unsupported`: the base carries only the proof Project's checkout, so no free place can serve it, and it never joins the wait queue
   %%> - a task place in the separate task pool; a full pool waits up to two hours without an identity or workspace
   %%> - the lowest free slot number under the capacity of the host with the most room: `shark-tvm-3`
   %%> - a fresh identity: the Node record with its `app-dev` role, a WireGuard key pair, the agent secret and an SSH host key, pinned on the Node from the start so nothing is read back

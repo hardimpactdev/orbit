@@ -120,11 +120,23 @@ it('records a full task pool as waiting and leaves todo admission unchanged', fu
     });
     SwampNodeFixture::ensure();
     Queue::fake();
+    config(['proof.project' => $this->project->id]);
     $this->parent->update(['status' => TaskGroupStatus::Todo]);
     $this->postJson('/api/v1/tasks/'.$this->parent->id.'/start')
         ->assertAccepted()->assertJsonPath('data.status', 'waiting');
     expect($this->parent->fresh()->status)->toBe(TaskGroupStatus::Todo)
         ->and(Operation::query()->where('kind', 'tasks.provision')->count())->toBe(1);
+});
+
+it('refuses to start a group of a Project that no task VM serves, without recording a wait', function (): void {
+    SwampNodeFixture::ensure();
+    Queue::fake();
+    config(['proof.project' => $this->project->id + 100]);
+    $this->parent->update(['status' => TaskGroupStatus::Todo]);
+    $this->postJson('/api/v1/tasks/'.$this->parent->id.'/start')
+        ->assertConflict()->assertJsonPath('error.code', 'task_vm.project_unsupported');
+    expect($this->parent->fresh()->status)->toBe(TaskGroupStatus::Todo)
+        ->and(Operation::query()->where('kind', 'tasks.provision')->count())->toBe(0);
 });
 
 it('filters children by status and rejects fields from the other create level', function (): void {

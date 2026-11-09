@@ -16,6 +16,7 @@ use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Domain\TaskVms\TaskVmPromotedImage;
+use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Jobs\Tasks\AdmitTaskVm;
@@ -46,8 +47,11 @@ final readonly class TaskVmAdmission
     {
         try {
             return DB::transaction(function () use ($group, $kind, $capture, $caller, $requestId): Operation {
-                if (TaskVm::forGroup($group) === null && self::queue()->exists()) {
-                    throw new TaskCapacityException(TaskWait::Capacity, 'An earlier task is waiting for a place.');
+                if (TaskVm::forGroup($group) === null) {
+                    app(TaskVmSlotPool::class)->assertServes($group);
+                    if (self::queue()->exists()) {
+                        throw new TaskCapacityException(TaskWait::Capacity, 'An earlier task is waiting for a place.');
+                    }
                 }
                 $input = $capture();
 
@@ -114,10 +118,13 @@ final readonly class TaskVmAdmission
 
                     return;
                 }
+                $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
+                if (TaskVm::forGroup($group) === null) {
+                    app(TaskVmSlotPool::class)->assertServes($group);
+                }
                 if (self::queue()->where('id', '<', $id)->exists()) {
                     throw new TaskCapacityException(TaskWait::Capacity, 'An earlier task is waiting for a place.');
                 }
-                $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
                 app(TaskOperations::class)->requireOpenExternal($group);
                 $request = ValidatedData::object($operation->input['capacity_request']);
                 if (in_array($operation->kind, ['tasks.provision', 'proof.command'], true)) {
@@ -145,6 +152,11 @@ final readonly class TaskVmAdmission
             });
         } catch (TaskCapacityException) {
             AdmitTaskVm::dispatch($id)->delay(now()->addSeconds(self::RetrySeconds));
+        } catch (ResourceOperationException $exception) {
+            $operation = Operation::query()->findOrFail($id);
+            if (! $operation->status->terminal()) {
+                $this->fail($operation, $exception->errorCode, $exception->getMessage());
+            }
         } catch (Throwable $exception) {
             report($exception);
             $operation = Operation::query()->findOrFail($id);

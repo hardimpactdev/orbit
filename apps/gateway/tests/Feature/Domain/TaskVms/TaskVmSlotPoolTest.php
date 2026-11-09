@@ -322,8 +322,34 @@ it('refuses a group of a Project whose checkout the base does not carry', functi
     slotPoolHost();
     $other = Project::query()->create(['name' => 'bench', 'slug' => 'bench', 'repository_url' => 'https://github.com/laravel/laravel.git', 'default_branch' => '13.x', 'root' => 'public']);
 
-    expect(fn () => app(TaskVmSlotPool::class)->take(slotPoolGroup($other)))->toThrow(TaskCapacityException::class, 'carries only the checkout of Project')
+    expect(fn () => app(TaskVmSlotPool::class)->take(slotPoolGroup($other)))->toThrow(TaskVmException::class, 'its base carries only that checkout')
         ->and(TaskVm::query()->count())->toBe(0);
+});
+
+it('refuses work of another Project at once, so it never waits in or holds up the task queue', function (): void {
+    Queue::fake();
+    [, $project] = slotPoolHost(taskPlaces: 0);
+    slotPoolSweepWorld();
+    slotPoolClaimServices();
+    $earlier = app(TaskProvisionIntent::class)->start(slotPoolGroup($project), 'test', null, str_repeat('a', 40));
+    $other = Project::query()->create(['name' => 'website', 'slug' => 'website', 'repository_url' => 'https://github.com/laravel/laravel.git', 'default_branch' => '13.x', 'root' => 'public']);
+    $foreign = slotPoolGroup($other);
+
+    expect($earlier->status)->toBe(OperationStatus::Waiting);
+    try {
+        app(TaskProvisionIntent::class)->start($foreign, 'test', null, str_repeat('a', 40));
+        $this->fail('A group of another Project must be refused.');
+    } catch (TaskVmException $exception) {
+        expect($exception->errorCode)->toBe('task_vm.project_unsupported')->and($exception->status)->toBe(409);
+    }
+    expect(Operation::query()->where('target_id', $foreign->id)->exists())->toBeFalse()
+        ->and($foreign->refresh()->status)->toBe(TaskGroupStatus::Todo)->and($foreign->capacity_wait_reason)->toBeNull();
+
+    // A wait recorded before admission refused such a group fails with the refusal, even behind an earlier waiter.
+    $waiting = app(TaskVmAdmission::class)->wait('tasks.provision', 'task_group', $foreign->id, (int) $earlier->node_id, ['commit' => str_repeat('a', 40)], 'test', null);
+    app(TaskVmAdmission::class)->admit($waiting->id);
+    expect($waiting->refresh()->status)->toBe(OperationStatus::Failed)->and($waiting->error_code)->toBe('task_vm.project_unsupported')
+        ->and($foreign->refresh()->capacity_wait_reason)->toBeNull()->and($earlier->refresh()->status)->toBe(OperationStatus::Waiting);
 });
 
 it('has the sweep leave a host alone while its refresh is open, and go on past a row whose release cannot be built', function (): void {

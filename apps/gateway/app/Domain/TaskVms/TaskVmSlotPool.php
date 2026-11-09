@@ -38,13 +38,13 @@ final readonly class TaskVmSlotPool
      * Takes one place in the request's pool on a host with a base snapshot, or on `$host`. A refresh uses the CI pool.
      * Records the VM and mints its fresh Node identity and keys before execution.
      *
-     * @throws TaskCapacityException when no host has room, or the group's Project is not the one whose checkout the base carries
+     * @throws TaskCapacityException when no host has room
+     * @throws TaskVmException `task_vm.project_unsupported` when the group's Project is not the one whose checkout the base carries
      */
     public function take(?Task $group, ?int $host = null, bool $proof = false): TaskVm
     {
-        // The base VM carries the checkout of the proof Project only, so a task VM can serve no other Project.
-        if ($group !== null && $group->project_id !== $this->proof->projectId()) {
-            throw new TaskCapacityException(TaskWait::Capacity, "Task VM: the task VM base carries only the checkout of Project {$this->proof->projectId()}.");
+        if ($group !== null) {
+            $this->assertServes($group);
         }
         $size = TaskVmSize::Large;
         $room = $this->room($group !== null, $host, $proof || $group === null);
@@ -65,6 +65,19 @@ final readonly class TaskVmSlotPool
         $this->pin($this->keys->ensure($vm));
 
         return $vm->refresh();
+    }
+
+    /**
+     * The base VM carries the checkout of the proof Project only, so a task VM can serve no other Project. No place that frees up
+     * changes that, so admission refuses such a group at once instead of queueing it, where it would hold up every later admission.
+     *
+     * @throws TaskVmException `task_vm.project_unsupported`
+     */
+    public function assertServes(Task $group): void
+    {
+        if ($group->project_id !== $this->proof->projectId()) {
+            throw new TaskVmException(TaskVmError::ProjectUnsupported, "A task VM serves only Project {$this->proof->projectId()}: its base carries only that checkout.");
+        }
     }
 
     /** Free CI places under the same image and seed policy as take(). Call in the admission transaction. */
