@@ -296,20 +296,21 @@ Deno.test("node.add and node.converge apply the same update policy from the inte
     ]);
 });
 
-Deno.test("the update policy writes each file with its mode once, and sets the daily timers from the intent", async () => {
+Deno.test("the update policy creates the missing folders and writes each file with its mode once, and sets the daily timers from the intent", async () => {
     const folder = await Deno.makeTempDir();
     try {
         // Run the real file task as a non-root user: only the ownership the fixture cannot set is left out.
         const tasks = parse(await Deno.readTextFile(taskPath("node-update-policy"))) as Array<Record<string, unknown>>;
-        const copy = structuredClone(tasks.find((task) => task.name === "Write the update policy")!);
-        const module = copy["ansible.builtin.copy"] as Record<string, unknown>;
-        delete module.owner;
-        delete module.group;
+        const [mkdir, copy] = ["Create the update policy folders", "Write the update policy"].map((name) => structuredClone(tasks.find((task) => task.name === name)!));
+        for (const module of [mkdir["ansible.builtin.file"], copy["ansible.builtin.copy"]] as Array<Record<string, unknown>>) {
+            delete module.owner;
+            delete module.group;
+        }
         const files = [{ path: `${folder}/52orbit-unattended-upgrades`, content: "Unattended-Upgrade::Automatic-Reboot \"false\";\n", mode: "0644" },
-            { path: `${folder}/reboot-due`, content: "#!/bin/sh\n", mode: "0755" }];
-        await localPlay({ update_policy: { files } }, [copy], false);
-        assertEquals((await Deno.stat(`${folder}/reboot-due`)).mode! & 0o777, 0o755);
-        await localPlay({ update_policy: { files } }, [copy]);
+            { path: `${folder}/lib/orbit/reboot-due`, content: "#!/bin/sh\n", mode: "0755" }];
+        await localPlay({ update_policy: { files } }, [mkdir, copy], false);
+        assertEquals((await Deno.stat(`${folder}/lib/orbit/reboot-due`)).mode! & 0o777, 0o755);
+        await localPlay({ update_policy: { files } }, [mkdir, copy]);
         const timers = tasks.find((task) => task.name === "Set the daily update timers")!["ansible.builtin.systemd_service"] as Record<string, unknown>;
         assertEquals([timers.enabled, timers.state], ["{{ update_policy.daily }}", "{{ 'started' if update_policy.daily else 'stopped' }}"]);
     } finally { await Deno.remove(folder, { recursive: true }); }

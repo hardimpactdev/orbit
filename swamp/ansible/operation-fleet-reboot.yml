@@ -135,6 +135,10 @@
       block:
         # The swamp Node runs this pass. Its own reboot waits in a path unit until the pass run has ended, then drains serve and the
         # workers and reboots (files/fleet-reboot-planned.sh). The Gateway confirms the new boot from the Node's agent.
+        # A Node not yet converged with the update policy has no /usr/local/lib/orbit.
+        - name: Create the folder of the planned reboot
+          ansible.builtin.file: { path: /usr/local/lib/orbit, state: directory, owner: root, group: root, mode: "0755" }
+          when: target.kind == 'swamp'
         - name: Install the planned reboot of the swamp Node
           ansible.builtin.copy: { src: files/fleet-reboot-planned.sh, dest: /usr/local/lib/orbit/planned-reboot, owner: root, group: root, mode: "0755" }
           when: target.kind == 'swamp'

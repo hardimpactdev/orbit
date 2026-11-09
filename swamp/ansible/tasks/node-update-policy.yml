@@ -10,6 +10,10 @@
     cache_valid_time: 86400
     lock_timeout: 300
   environment: { DEBIAN_FRONTEND: noninteractive, NEEDRESTART_MODE: l }
+# A fresh Node has no /usr/local/lib/orbit yet, and the copy module creates no folder.
+- name: Create the update policy folders
+  ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0755" }
+  loop: "{{ update_policy.files | map(attribute='path') | map('dirname') | unique | list }}"
 - name: Write the update policy
   ansible.builtin.copy: { dest: "{{ item.path }}", content: "{{ item.content }}", owner: root, group: root, mode: "{{ item.mode }}" }
   loop: "{{ update_policy.files }}"
