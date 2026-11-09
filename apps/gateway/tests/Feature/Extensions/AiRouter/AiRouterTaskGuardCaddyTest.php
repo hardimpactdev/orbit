@@ -27,7 +27,7 @@ function guardFreePort(): int
  * Runs the Caddyfile the Gateway renders on a real Caddy, moved onto loopback: loopback stands in for the task VM range, the key files
  * for the systemd credentials, and a second Caddy site for CLIProxyAPI, which echoes what it receives.
  */
-it('passes only a POST of the task key from the range to the three inference routes, with the anchor key in its place', function (): void {
+it('passes only a POST of the task key from the range to the inference routes, with the anchor key in its place', function (): void {
     if (! is_executable(trim((string) shell_exec('command -v caddy')))) {
         $this->markTestSkipped('Caddy is not installed.');
     }
@@ -43,7 +43,7 @@ it('passes only a POST of the task key from the range to the three inference rou
     mkdir($directory);
     file_put_contents("{$directory}/task.key", 'task-key');
     file_put_contents("{$directory}/anchor.key", 'anchor-key');
-    $caddyfile = strtr(app(AiRouterTaskGuard::class)->caddyfile($node), [
+    $caddyfile = strtr(app(AiRouterTaskGuard::class)->caddyfile($node, []), [
         'bind 10.44.0.3' => 'bind 127.0.0.1', 'remote_ip 10.44.0.128/25' => 'remote_ip 127.0.0.1/32',
         AiRouterTaskGuard::Credentials => $directory, 'http://:'.AiRouterTaskGuard::Port => "http://:{$guard}",
     ])."http://:{$upstream} {\n\tbind 127.0.0.1\n\trespond \"auth={header.Authorization} api={header.X-Api-Key} uri={uri}\"\n}\n";
@@ -55,14 +55,18 @@ it('passes only a POST of the task key from the range to the three inference rou
             ($response = Http::withHeaders(array_filter(['Authorization' => $key === null ? null : "Bearer {$key}", 'X-Api-Key' => 'other']))
                 ->send($method, "http://127.0.0.1:{$guard}{$uri}"))->status(), $response->body()];
 
-        foreach (['/v1/responses', '/v1/chat/completions', '/v1/messages'] as $path) {
-            expect($send('POST', $path))->toBe([200, "auth=Bearer anchor-key api= uri={$path}"]);
+        foreach (['/v1/responses', '/v1/chat/completions', '/v1/messages', '/v1/messages/count_tokens',
+            '/v1/messages?beta=true', '/v1/messages/count_tokens?beta=true'] as $uri) {
+            expect($send('POST', $uri))->toBe([200, "auth=Bearer anchor-key api= uri={$uri}"]);
         }
         // The HTTP client resolves `..` before it sends, so a dot-segment path is not among these; the matcher reads the path as sent.
         foreach ([['GET', '/v1/responses', 'task-key'], ['POST', '/v1/responses', 'wrong'], ['POST', '/v1/responses', null],
             ['POST', '/v1/responses', 'anchor-key'], ['POST', '/v0/management/config', 'task-key'], ['POST', '/v1/models', 'task-key'],
             ['POST', '/v1//responses', 'task-key'], ['POST', '/V1/Responses', 'task-key'],
-            ['POST', '/v1/responses?key=x', 'task-key']] as [$method, $uri, $key]) {
+            ['POST', '/v1/responses?key=x', 'task-key'], ['POST', '/v1/responses?beta=true', 'task-key'],
+            ['POST', '/v1/chat/completions?beta=true', 'task-key'], ['POST', '/v1/messages?beta=true&key=x', 'task-key'],
+            ['POST', '/v1/messages?beta=false', 'task-key'], ['POST', '/v1/messages?key=x', 'task-key'],
+            ['POST', '/v1/messages?beta=true', 'wrong']] as [$method, $uri, $key]) {
             expect($send($method, $uri, $key)[0])->toBe(403, "{$method} {$uri} with ".($key ?? 'no key'));
         }
     } finally {

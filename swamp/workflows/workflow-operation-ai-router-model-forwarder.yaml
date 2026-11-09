@@ -1,0 +1,151 @@
+id: 9b3d6f2e-41a8-4c7e-8d15-6a0f2c9e7b54
+name: operation-ai-router-model-forwarder
+description: "ai_router.model_forwarder: the model router guard re-applied with an agent Node added to its sources or dropped, then the container model forwarder on that Node applied or removed by Ansible, and the path proved from the Node."
+vaults:
+- orbit-control-inputs
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: ai_router.model_forwarder}
+    intent:
+      type: object
+      properties:
+        ssh: {type: object}
+        state: {type: string, const: present}
+        origin: {type: string, format: uri}
+        directory: {type: string}
+        unit: {type: string}
+        caddyfile: {type: string}
+        firewall:
+          type: object
+          properties:
+            desired: {type: array, minItems: 1}
+            remove: {type: array}
+          required: [desired, remove]
+          additionalProperties: false
+        forwarder:
+          type: object
+          properties:
+            ssh: {type: object}
+            state: {type: string, enum: [present, absent]}
+            bridge: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,14}$'}
+            address: {type: string, format: ipv4}
+            origin: {type: string, format: uri}
+            guard_origin: {type: string, format: uri}
+            directory: {type: string}
+            unit: {type: string}
+            caddyfile: {type: string}
+            firewall:
+              type: object
+              properties:
+                desired: {type: array}
+                remove: {type: array}
+              required: [desired, remove]
+              additionalProperties: false
+          required: [ssh, state, bridge, address, origin, guard_origin, directory, unit, caddyfile, firewall]
+          additionalProperties: false
+      required: [ssh, state, origin, directory, unit, caddyfile, firewall, forwarder]
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        task_key:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^ai-router-task-key-node-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+        anchor_key:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^ai-router-anchor-key-node-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [task_key, anchor_key]
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: forwarder
+  labels: {role: swamp}
+  steps:
+    # Input: the intent and the shipped playbooks, as the run folder the phase reads.
+  - name: 'input'
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: '${{ ("ansible-input-ai-router-forwarder-guard-" + string(inputs.node_id)).split(".").join("-") }}'
+      methodName: write
+      inputs:
+        intent: '${{ inputs.intent }}'
+        path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+    # The guard phase of `ai_router.task_guard`, always applied, with the Node's WireGuard address added to its sources or dropped. It
+    # ends with its own checks: from the router Node and from the swamp Node, a source outside the guard's sources is refused.
+  - name: 'Apply the guard'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'input', condition: {type: succeeded}}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("ai-router-forwarder-guard-" + string(inputs.node_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 150 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_TAGS" "$ORBIT_ANSIBLE/ai-router-task-guard.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+          ORBIT_TAGS: apply
+          ORBIT_TASK_KEY: '${{ vault.get(inputs.execution_secrets.task_key.vault, inputs.execution_secrets.task_key.key) }}'
+          ORBIT_ANCHOR_KEY: '${{ vault.get(inputs.execution_secrets.anchor_key.vault, inputs.execution_secrets.anchor_key.key) }}'
+    # The forwarder on the agent Node, from the `forwarder` part of the same intent file; it gets no key. It ends with its check from the
+    # Node: through the forwarder the guard answers 403 to no key, or, after a removal, the guard port does not answer the Node.
+  - name: 'Apply the forwarder'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Apply the guard', condition: {type: succeeded}}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("ai-router-forwarder-" + string(inputs.node_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 150 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_TAGS" "$ORBIT_ANSIBLE/ai-router-model-forwarder.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+          ORBIT_TAGS: '${{ inputs.intent.forwarder.state == "absent" ? "remove" : "apply" }}'
+- name: cleanup
+  labels: {role: swamp}
+  dependsOn:
+  - {job: forwarder, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+  steps:
+  - name: Remove the playbook input
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("ai-router-forwarder-guard-" + string(inputs.node_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_RUN"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
