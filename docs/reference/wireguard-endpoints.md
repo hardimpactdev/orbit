@@ -74,7 +74,9 @@ Swamp reaches the Node through this tunnel, so the move runs as one detached job
 
 1. installs the staged files and keeps the previous ones;
 2. removes the hub peer from the live tunnel and loads the new files, so the old session ends;
-3. waits up to a minute for a hub handshake at or after the move, with the live hub endpoint equal to the rendered one. A handshake through the old endpoint does not count, nor one the hub started to an old address.
+3. waits up to a minute for a hub handshake at or after the move, with the live hub endpoint equal to the rendered one.
+
+A handshake through the old endpoint does not count. Neither does one that the hub started to an old address.
 
 When no such handshake comes, the job puts the previous files back and sets the live configuration it saved before the move. The Node keeps the tunnel it had, also when a previous file was missing. After a cut-off move the job loads the previous files instead, because the live tunnel may already run the new ones. A new file without a previous copy is deleted, so the next converge reads no endpoint and moves again with the same rollback.
 
