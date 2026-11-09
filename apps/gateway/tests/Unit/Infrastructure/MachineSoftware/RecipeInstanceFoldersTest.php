@@ -72,8 +72,10 @@ it('refuses a malformed folder part', function (Closure $change, string $message
     }, 'expected 64 lowercase hexadecimal characters'],
     'Vite+ in the agent folder' => [static function (array &$recipe): void {
         $recipe['instances']['agent']['vite-plus'] = $recipe['instances']['runtime']['vite-plus'];
-        unset($recipe['instances']['runtime']['vite-plus']);
     }, "expected the runtime folder's one Vite+ part, with the one program vp"],
+    'no Vite+' => [static function (array &$recipe): void {
+        unset($recipe['instances']['runtime']['vite-plus']);
+    }, 'instances.runtime: expected a Vite+ part, the recipe tool vp-cli.'],
     'Vite+ with a second program' => [static function (array &$recipe): void {
         $recipe['instances']['runtime']['vite-plus']['bin']['vpx'] = 'vp';
     }, "expected the runtime folder's one Vite+ part, with the one program vp"],

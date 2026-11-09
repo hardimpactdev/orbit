@@ -380,6 +380,8 @@ final readonly class RecipeLoader
                 $parts[$name] = new FolderPin($version, $this->artifact($artifacts->{$architectures[0]}, "{$field}.artifacts.{$architectures[0]}", $name, 'artifact', $version), $bin);
             }
             $this->require($parts !== [], "instances.{$folder}: expected at least one part.");
+            // Every container's environment names the Vite+ home, so the runtime folder always has one.
+            $this->require($folder !== 'runtime' || $vitePlus instanceof VitePlusHome, 'instances.runtime: expected a Vite+ part, the recipe tool vp-cli.');
             $folders[$folder] = $parts;
         }
 

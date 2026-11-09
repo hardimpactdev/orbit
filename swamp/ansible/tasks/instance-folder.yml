@@ -188,7 +188,16 @@
     - item.path | basename != folder.version
     - (item.path ~ '/') not in folder_used.stdout_lines
 
-# A Vite+ home goes once no folder version left links it.
+# A Vite+ home goes once no folder version left links it and no process maps it. A process maps a home by its own path, not
+# through a version's `vite-plus-home` link, so a running `vp` or its Node keeps its home after its version went.
+- name: Read the Vite+ homes that a process maps
+  when: folder_name == 'runtime'
+  ansible.builtin.shell:
+    cmd: set -o pipefail; cat /proc/[0-9]*/maps 2>/dev/null | grep -o "{{ folder.path }}/vite-plus/[0-9a-f]\{12\}/" | sort -u || true
+    executable: /bin/bash
+  register: vite_plus_mapped
+  changed_when: false
+
 - name: Read the Vite+ homes that a folder version links
   when: folder_name == 'runtime'
   ansible.builtin.shell:
@@ -209,3 +218,4 @@
   when:
     - folder_name == 'runtime'
     - item.path not in vite_plus_linked.stdout_lines
+    - (item.path ~ '/') not in vite_plus_mapped.stdout_lines

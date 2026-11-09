@@ -926,12 +926,21 @@ mkdir -p "$2/node_modules/vite-plus" && cp "$2/package-lock.json" "$2/node_modul
       assert(result.ok, result.output);
       assertEquals(Deno.readTextFileSync(calls).trim().split("\n").length, 3);
 
-      // Another release is another home; the old one goes once no version links it.
+      // Another release is another home. The old one stays while a process maps it, even after its version went.
+      Deno.writeTextFileSync(
+        `${f.folder}/maps`,
+        `7f00-7f01 r-xp 0 00:00 1 ${home}/bin/vp\n`,
+      );
       f.write(runtime("777777777777", "24.22.1", "bbbbbbbbbbbb"));
       result = f.run();
       assert(result.ok, result.output);
       assert(f.has("opt/orbit-runtime/vite-plus/bbbbbbbbbbbb/.complete"));
       assert(!f.has("opt/orbit-runtime/666666666666"));
+      assert(f.has("opt/orbit-runtime/vite-plus/aaaaaaaaaaaa/.complete"));
+      // Once no process maps it and no version links it, it goes.
+      Deno.writeTextFileSync(`${f.folder}/maps`, "");
+      result = f.run();
+      assert(result.ok, result.output);
       assert(!f.has("opt/orbit-runtime/vite-plus/aaaaaaaaaaaa"));
 
       // A home whose Node is not the recipe's is refused and never marked complete.

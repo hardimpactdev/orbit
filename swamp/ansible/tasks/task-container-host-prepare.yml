@@ -74,7 +74,8 @@
       - "(container_profile.stdout | from_json).devices.get('eth0', {}).get('type', 'nic') == 'nic'"
     fail_msg: "{{ container_host.fail }}"
 
-# `container_profile_config` adds profile keys, such as the environment of every process in a container; a task host sets none.
+# `container_profile_config` adds or changes profile keys, such as the environment of every process in a container; it never
+# removes one. A task host sets none.
 - name: Converge the container profile
   vars:
     container_profile_now: "{{ container_profile.stdout | from_json }}"
