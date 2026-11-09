@@ -65,6 +65,9 @@ This PR adds the container branch of the `host-prepare` phase.
 - It checks the host's subordinate ID range, that the pool is ZFS, and that `sctp` cannot load.
 - It copies a small isolated test container and requires `zfs get written` under a few MB. Otherwise every copy would shift its files and stop being a clone.
 - The recipe pins one Incus channel for the host and the inner Incus. Beast runs 7.0.1, and a fresh host would get 7.6.
+
+The Gateway and the egress log get these parts:
+
 - The egress log part runs on the container bridge unchanged. Only its input names the bridge.
 - The Gateway's refresh intent names the container project, bridge and alias.
 - `AgentWatchListAction::egress()` names the container bridge too, and the agent's egress fact covers both bridges. The watch list names one bridge today. This changes its contract with the agent.
