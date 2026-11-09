@@ -16,7 +16,6 @@ use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\DatabaseConnection;
-use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -31,6 +30,8 @@ use Orbit\Extensions\Conn\Domain\ConnInstanceLifecycle;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 uses(LazilyRefreshDatabase::class);
+
+require_once __DIR__.'/ContainerInstanceHelpers.php';
 
 beforeEach(function (): void {
     Queue::fake();

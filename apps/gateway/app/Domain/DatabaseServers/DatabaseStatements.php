@@ -285,16 +285,16 @@ final readonly class DatabaseStatements
         }
         $owned = static fn (string $from): string => "{$from} AND n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\\_toast%'";
         $own = "DO \$orbit\$ DECLARE r record; BEGIN\n"
-            ."FOR r IN SELECT c.oid::regclass AS name, c.relkind FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE "
+            .'FOR r IN SELECT c.oid::regclass AS name, c.relkind FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE '
             .$owned("c.relowner = '{$sourceOwner}'::regrole AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')")
             // A sequence that belongs to a column changes owner with its table.
             ." AND NOT (c.relkind = 'S' AND EXISTS (SELECT FROM pg_depend d WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid AND d.deptype IN ('a', 'i')))\n"
             ."LOOP EXECUTE format('ALTER %s %s OWNER TO %I', CASE r.relkind WHEN 'S' THEN 'SEQUENCE' WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' WHEN 'f' THEN 'FOREIGN TABLE' ELSE 'TABLE' END, r.name, '{$targetOwner}'); END LOOP;\n"
-            ."FOR r IN SELECT p.oid::regprocedure AS name, p.prokind FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE "
+            .'FOR r IN SELECT p.oid::regprocedure AS name, p.prokind FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE '
             .$owned("p.proowner = '{$sourceOwner}'::regrole")
             ." AND NOT EXISTS (SELECT FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')\n"
             ."LOOP EXECUTE format('ALTER %s %s OWNER TO %I', CASE r.prokind WHEN 'p' THEN 'PROCEDURE' WHEN 'a' THEN 'AGGREGATE' ELSE 'FUNCTION' END, r.name, '{$targetOwner}'); END LOOP;\n"
-            ."FOR r IN SELECT t.oid::regtype AS name, t.typtype FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE "
+            .'FOR r IN SELECT t.oid::regtype AS name, t.typtype FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE '
             .$owned("t.typowner = '{$sourceOwner}'::regrole AND (t.typtype IN ('e', 'd', 'r') OR t.typtype = 'c' AND (SELECT relkind FROM pg_class WHERE oid = t.typrelid) = 'c')")
             ."\nLOOP EXECUTE format('ALTER %s %s OWNER TO %I', CASE r.typtype WHEN 'd' THEN 'DOMAIN' ELSE 'TYPE' END, r.name, '{$targetOwner}'); END LOOP;\n"
             ."FOR r IN SELECT nspname FROM pg_namespace WHERE nspowner = '{$sourceOwner}'::regrole LOOP EXECUTE format('ALTER SCHEMA %I OWNER TO %I', r.nspname, '{$targetOwner}'); END LOOP;\n"
