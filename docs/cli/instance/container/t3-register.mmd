@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#t3-registration-and-pairing): how Orbit registers a container's T3 server with the Conn layer. The step runs inside the Instance-create flow and wake, and in a daily renewal run. The container cannot call the Gateway, so the Gateway records the server from the run's result, with the checks of `POST /conn/environments` (docs/reference/conn.md#registration).
+  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#t3-registration-and-pairing): how Orbit registers a container's T3 server with the Conn layer. The step runs inside the Instance-create flow (built), and later in wake and a daily renewal run (PR 13 of the plan). The container cannot call the Gateway, so the Gateway records the server from the run's result, with the checks of `POST /conn/environments` (docs/reference/conn.md#registration).
   %% status: draft
   %% command: none · step of create, wake, renewal
   %% kind: conn.environment_renew
@@ -27,7 +27,7 @@ sequenceDiagram
   %%> - after recording, the Gateway's cleanup revokes earlier `Orbit Gateway` sessions on this server
   SW->>C: Issue the Swamp session<br/>t3 auth session issue
   %%> Command, as `agent`:
-  %%> - `t3 auth session issue --label "Orbit Swamp" --token-only`, with only the scopes the thread tools and `orchestration.forceStopThread` need
+  %%> - `t3 auth session issue --label "Orbit Swamp" --token-only`; PR 8 narrows it to the scopes the thread tools and `orchestration.forceStopThread` need
   %%> What it does:
   %%> - the session goes to the Instance's Swamp vault key, which Swamp reads when it drives T3 for a task; it never enters the run or the Gateway's records
   %%> When:
@@ -44,10 +44,10 @@ sequenceDiagram
   alt the checks pass
     SW-->>GW: Run succeeded<br/>environment id · URL
     %%> Returns:
-    %%> - the environment id, the URL `http://NODE-WG:PORT`, the session's expiry and its vault key
+    %%> - the environment id, the server version, the URL `http://NODE-WG:PORT`, the session's expiry and the vault keys of both sessions
     Note over GW: Record the T3 server
     %%> What it does:
-    %%> - moves the session from the vault into its encrypted record and deletes the vault copy, as the pairing result does with its link
+    %%> - reads the session from the vault into its encrypted record; the vault copy stays, as a pairing's credential does
     %%> Result:
     %%> - the server's Node is the container's Node; the record names the Instance
     %%> - cleanup of earlier `Orbit Gateway` and `Orbit Swamp` sessions starts

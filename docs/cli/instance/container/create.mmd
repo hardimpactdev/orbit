@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#create): every app-dev Node runs its Instances in containers, and every new Instance is a ZFS clone of the Project's default Instance on the Node, with a clone of its database. The kind and its step names follow docs/cli/instance/create.mmd; the intent carries `runtime: container`. The Project's first default Instance is container/create-default.mmd; when the charts move into place, it becomes the first-default branch of this chart.
+  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#create): every new Instance is a ZFS clone of the Project's default Instance on its Node, with a clone of its database. Built for the Nodes of the build list. The kind and its step names follow docs/cli/instance/create.mmd; the intent's `container.clone` marks a clone. The Project's first default Instance is container/create-default.mmd; when the charts move into place, it becomes the first-default branch of this chart.
   %% status: draft
   %% command: instance:create
   %% kind: instance.create
@@ -21,47 +21,54 @@ sequenceDiagram
   Note over GW: Validate, reserve Instance<br/>address · T3 port · .env
   %%> Requirements:
   %%> - the calling Node has node access to the target Node, an active `app-dev` Node
-  %%> - the Project has an active default Instance on the Node, else `instance.default_missing`
-  %%> - no other change runs on the Instance or the default Instance; the Gateway holds the Route's Nodes
+  %%> - the Project's `default` Instance runs in a container on this Node, is active and has a seed snapshot, else `instance.default_missing`
+  %%> - Conn is enabled, and the model router has its guard, else `operation.kind_unavailable`
+  %%> - a database on a Database server clones on the default's server; another server refuses `instance.database_clone_unsupported`
   %%> Result:
-  %%> - the Instance is reserved with its runtime record: container name, bridge address, a free T3 port and its Route
-  %%> - `.env` is rendered from the Project's env template; the placeholder model key and a repository read token go to the vault
-  %%> - the intent names the vault key where the run stores the new Gateway session for this T3 server
-  %%> - a task is recorded with the full intent, `runtime: container`
+  %%> - the Instance is reserved with its runtime record: container name, bridge address, the lowest free T3 port from 3800 and the default as clone source
+  %%> - `.env` is rendered from the Project's env template; it, the placeholder model key and a repository read token go to the vault
+  %%> - a task is recorded with the full intent and `container.clone`
   GW->>SW: Start run, full intent<br/>operation-instance-create
   GW-->>CLI: 202 Accepted<br/>task ID
-  SW->>N: Clone default container<br/>Ansible · tags container
+  SW->>N: Clone default container<br/>Ansible · tags clone
   %%> What it does:
-  %%> - `incus copy` of the default container's newest `seed-<commit>` snapshot, a ZFS clone; a sleeping default needs no start
-  %%> - sets the bridge address with `security.port_isolation`, `limits.cpu`, `limits.memory`, the idmapped mounts of `/opt/orbit-runtime` and `/opt/orbit-agent`, and the T3 proxy device
-  %%> - adds the firewall rules for the T3 port and for the database server's port
+  %%> - `incus copy` of the default container's snapshot `seed-<commit>`, a ZFS clone; a stopped default needs no start
+  %%> - the copy gets its own bridge address and ACL, and the proxy device `t3`: NAT from the Node's WireGuard address and the T3 port to T3's port 3773
+  %%> - the container's ACL lets the Node's Caddy reach port 8080, WireGuard peers reach port 3773, and the container reach its database server's port
+  %%> - UFW: a route rule admits WireGuard peers to T3, below a deny for the task VM range; a rule admits the container to its database server's port
+  %%> - starts the copy: nftables, `hidepid` and the image's units start; T3 does not, because `/etc/orbit/instance` does not exist yet
   %%> Branch:
-  %%> - fetches the Instance's branch on the Node with the read token, or creates it at the seed commit; the token stays on the Node
-  SW->>N: Clone the database<br/>child database-clone
-  %%> What it does, through the database family:
-  %%> - creates the Instance's owner, then clones the default database
-  %%> - on the default's server, or the one `--database-server` names
-  %%> - PostgreSQL on the same server: `CREATE DATABASE … TEMPLATE`, after a moment without connections to the default database; a cleanup that always runs allows them again
-  %%> - another server: one `pg_dump` snapshot, restored with `pg_restore --single-transaction`; MySQL is a dump and restore
-  %%> Runs beside the step before it: Swamp starts both at once.
-  SW->>N: Start the container<br/>incus start
-  %%> What it does:
-  %%> - nftables, `hidepid` and the image's units start; T3 does not, because `/etc/orbit/instance` does not exist yet
+  %%> - fetches the Instance's branch into the Node's mirror with the read token, or creates it at the seed commit; the token stays on the Node
+  opt database on a Database server
+    SW->>N: Create the database<br/>child operation-database-create
+    %%> What it does, through the database family:
+    %%> - creates the Instance's owner and an empty database on the default's server
+    SW->>N: Clone the default database<br/>docker exec · admin login
+    %%> What it does:
+    %%> - PostgreSQL: refuses new connections to the default database and ends its sessions, then `CREATE DATABASE … TEMPLATE`, and gives the clone's objects to the new owner
+    %%> - a cleanup that always runs allows connections to the default database again
+    %%> - MySQL: a dump of the default database restored into the new one
+    %%> Runs beside the clone step: Swamp starts both at once.
+  end
   SW->>C: Prepare the workspace<br/>Ansible · tags workspace
   %%> What it does:
-  %%> - pushes the branch in and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
+  %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
   %%> - writes `.env` for `orbit` with group `work`; it keeps the default's `APP_KEY`, because the cloned data is encrypted with it
-  %%> - writes the placeholder key, Claude Code and Codex settings for `agent`
-  %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type
-  %%> - writes `/etc/orbit/instance`, owned by root and readable by all
   %%> No setup steps:
   %%> - the default Instance installed the dependencies and migrated; a later lockfile change is installed in the workspace
-  SW->>C: Start T3 and Processes<br/>systemctl start
+  SW->>C: Prepare the agent<br/>Ansible · tags agent
+  %%> What it does:
+  %%> - writes the placeholder key for `agent`, and the Claude Code and Codex settings that point at the model forwarder
+  %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type
+  %%> - writes `/etc/orbit/instance`, owned by root and readable by all
+  SW->>C: Start Processes<br/>Ansible · tags processes
+  %%> What it does:
+  %%> - rewrites FrankenPHP's unit for the clone's own bridge address and restarts it as `orbit`
+  SW->>C: Start T3<br/>Ansible · tags t3
   %%> What it does:
   %%> - T3 starts for the first time and creates its identity; the T3 project `/srv/workspace` is added as `agent`
-  %%> - the Processes start as `orbit` units, FrankenPHP among them
   %%> Check:
-  %%> - waits up to 30 s for `/.well-known/t3/environment` and the units, else `instance.t3_unready`
+  %%> - waits up to 30 s for `/.well-known/t3/environment`, else `instance.t3_unready`
   opt web-serving Project
     SW->>N: Create the Route<br/>child operation-route-create
     %%> What it adds:
@@ -70,7 +77,7 @@ sequenceDiagram
   end
   SW->>C: Register the T3 server<br/>sensitive output · vault
   %%> What it does:
-  %%> - see container/t3-register.mmd: the session goes to the vault, and the step checks the environment id and scopes
+  %%> - see container/t3-register.mmd: the sessions go to the vault, and the step checks the environment id and scopes
   alt all steps pass in budget
     C-->>SW: T3 and site answer
     SW-->>GW: Run succeeded<br/>terminal event
