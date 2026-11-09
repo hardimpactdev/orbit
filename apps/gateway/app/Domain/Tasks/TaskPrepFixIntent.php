@@ -71,7 +71,7 @@ final readonly class TaskPrepFixIntent
             throw new TaskCapacityException(TaskWait::Capacity, 'The previous task VM is still being deleted.');
         }
         $provision = $vm === null
-            ? TaskVmReentry::capture($group, app(RemoteBranchHeads::class)->head($group->project, TaskWorkspaceName::for($group))) : null;
+            ? TaskVmReentry::capture($group, app(RemoteBranchHeads::class)->head($group->project, TaskWorkspaceName::for($group)), continue: true) : null;
         [$prep, $vm, $instance] = $this->context($group);
         $earlier = ValidatedData::object($prep->input);
         $author = AgentThread::query()->where('task_group_id', $group->id)->where('role', 'implementer')->find(ValidatedData::integer(ValidatedData::object($earlier['draft'])['thread_id']));

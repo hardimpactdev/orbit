@@ -7,9 +7,9 @@ covers:
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskPullRequestController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{TaskPullRequestGateCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskReviewRound,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/{publish,transcript}.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-review-round,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
+  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/{publish,transcript}.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-idle-save,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-review-round,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
-  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save}.php"
 ---
 
 # Tasks
@@ -89,7 +89,7 @@ Every task group is external. Swamp owns its lifecycle. The Gateway rejects non-
 
 #### Release a task VM for review
 
-Publishing a task PR releases its VM, workspace, Node identity, keys and VPN peer. The group waits for review without holding a place. A build, fix turn or review round claims a task place again and restores the task branch on a fresh copy of the base. Full pools wait for up to two hours. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
+Publishing a task PR releases its VM, workspace, Node identity, keys and VPN peer. The group waits for review without holding a place. An [idle](#release-an-idle-task-vm) VM goes too. A build, fix turn or review round claims a task place again and restores the task branch on a fresh copy of the base. Full pools wait for up to two hours. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
 #### Provision an external group
 
@@ -168,9 +168,47 @@ Task work waits for a task place in one first-come, first-served queue: the `tas
 
 A holder is one live task VM: `vm`, `pool` (`task` or `ci`), and the group it serves as `group_id`, `title`, `status`, `last_activity_at` and `active_operation_id`. The group fields are null for a VM that serves no group, such as a CI proof VM. Each live VM holds its place until its deletion is confirmed, so a failed or parked VM counts.
 
-A group's `last_activity_at` is the newest time any Operation on the group was created, started or ended, or null when it has none. `active_operation_id` is the Operation on the group that has not ended, or null. A holder with an old `last_activity_at` and no active Operation is idle: it keeps its place until it publishes, ends or is cancelled.
+A group's `last_activity_at` is the newest time any Operation on the group was created, started or ended, or null when it has none. `active_operation_id` is the Operation on the group that has not ended, or null. A holder with no active Operation is idle.
 
 A waiting Operation on a group, and `task:show` of its group, return `capacity_wait`: `operation_id`, `position`, and `holders`, the holders of the task pool on every host. `capacity_wait` is null when the group or Operation is not waiting for a task place.
+
+#### Release an idle task VM
+
+This section owns the rule. A task VM holds its place only while its group works. Between two steps, such as a build and the driver's check, the VM stays for the next step. A group whose task-pool VM is `ready`, that has no active Operation, and whose last Operation other than an idle save ended more than 30 minutes ago gives its place back. An idle release never loses work: it saves the workspace to origin first. Every five minutes the Gateway job `ReleaseIdleTaskVms` finds such a group and admits `tasks.idle_save` ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/idle-save.mmd)). The group keeps its status, subtasks and threads.
+
+Thirty minutes is longer than the pause of a driver that is working, and short enough that a stalled driver does not starve the task queue. Group 4118 held a place for hours after its build while preps waited.
+
+The save runs only when the next claim can use it:
+
+- Origin must have the task branch, because the next claim starts from it or from the save. A group that never pushed keeps its VM.
+- Origin's task branch must reach the group's latest approved commit, as for [cancel](#cancel-a-stuck-task). Until `task:publish` pushes that commit, the group keeps its VM.
+- An open Operation on the VM itself, such as a resume, keeps the VM.
+- A `parked` VM gets its resume admitted. A later pass saves it once it runs.
+
+The save is one Ansible phase on the VM. It commits the workspace changes that Git tracks or would track as `Save the idle workspace`, by Orbit, checks that the workspace is clean, and bundles the head. Node 209 pushes that commit to the save branch `task-<id>-idle`, which holds only the latest save. A failed read, commit or bundle fails the whole save, so nothing is pushed.
+
+The push token is minted when the push runs and never reaches the VM. It has `contents: write` only. GitHub runs the `push` workflows that a pushed commit defines, so a save that adds or changes a file under `.github/workflows/` is refused with `tasks.workflows_permission` rather than pushed with a broader token. The workflows on `main` and the repository rulesets do not cover the save branch.
+
+The save holds what the next claim restores: the committed workspace. It does not hold files that `.gitignore` excludes, the content of a nested Git repository (a clean one is saved as a gitlink, a dirty one fails the save), stashes, other local branches, or the Pi session of the VM. The save commit stays in the workspace, also when the push or the release does not follow, and the next turn continues on top of it.
+
+The Gateway records the saved commit on the group, then admits the [release](/reference/compute-drivers#release-a-task-vm) of the VM, as publication does. A failed save keeps the VM. It is no activity of the group, so the next pass saves again. After three saves in a row that fail, are cancelled or are interrupted, the idle release stops for that group.
+
+A save refused for changing a workflow stops the idle release at once, because a retry changes nothing; a turn and a publish carry that work. The group then asks for `failure` assistance, and the VM keeps its place. The driver's next Operation starts the count again.
+
+The next claim compares the save with the head it would start from: the task branch head for a turn or a prep fix, the named head for a review round or a build.
+
+| The save | Turn or prep fix | Review round or build |
+| --- | --- | --- |
+| Holds work beyond the head | Starts from the save | Refuses with `tasks.idle_save_pending` (409) |
+| Is in the head, or is the head | Starts from the head | Starts from the head |
+| Has moved apart from the head | Refuses with `tasks.idle_save_diverged` (409) | Refuses with `tasks.idle_save_diverged` (409) |
+| Cannot be compared | Refuses with `tasks.idle_save_unreadable` (503) | Refuses with `tasks.idle_save_unreadable` (503) |
+| Its branch is gone and the head holds it | Starts from the head | Starts from the head |
+| Its branch is gone and the head lacks it | Refuses with `tasks.idle_save_missing` (409) | Refuses with `tasks.idle_save_missing` (409) |
+
+A turn that starts from the save continues where the group stopped. A pending save asks for a turn and a publish before the review round. A diverged save stays on `task-<id>-idle`, and the next save cannot overwrite it. Merge that branch into the task branch, with `-s ours` to drop the save, then try again. An unreadable comparison starts nothing; try again. For a missing save, push the commit that `details.saved_commit` names to `task-<id>-idle` again, or merge it into the task branch, and try again. When that commit is lost, cancel the group. Delete a save branch only after its group ended.
+
+A check or a publish needs the fresh workspace first and returns `tasks.no_workspace` until a turn claims it. The save branch stays on origin after the group ends, and a person deletes it then.
 
 #### Keep command output out of run history
 
@@ -436,7 +474,7 @@ The native `operation-task-build` workflow is one parent run, with existing work
 - `Sync the refs` runs `operation-task-sync`, so the workspace holds the approved head in `refs/remotes/origin`.
 - `Run the first turn` runs `operation-task-turn`. Its prompt is the title, brief and deliverables of the subtask, then the instruction to build the command.
 
-The Gateway projects the terminal event once: the task VM as ready, the metrics of the thread and `{ branch, head }`. The group stays `running` for its driver. A failed run records the failed step with `task_vm.resume_failed`, `tasks.sync_failed` or `tasks.turn_failed`, and the group stays `running` for the orchestrator.
+The Gateway projects the terminal event once: the task VM as ready, the metrics of the thread and `{ branch, head }`. The group stays `running` for its driver, and the VM stays for the driver's next step unless the [idle release](#release-an-idle-task-vm) takes it. A failed run records the failed step with `task_vm.resume_failed`, `tasks.sync_failed` or `tasks.turn_failed`, and the group stays `running` for the orchestrator.
 
 ### Task lifecycle
 

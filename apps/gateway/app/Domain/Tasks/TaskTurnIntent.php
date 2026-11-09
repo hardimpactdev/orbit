@@ -46,7 +46,7 @@ final readonly class TaskTurnIntent
         }
         $provision = null;
         if ($vm === null) {
-            $provision = TaskVmReentry::capture($group, app(RemoteBranchHeads::class)->head($group->project, TaskWorkspaceName::for($group)));
+            $provision = TaskVmReentry::capture($group, app(RemoteBranchHeads::class)->head($group->project, TaskWorkspaceName::for($group)), continue: true);
             if ($data->thread !== 'new') {
                 $earlier = AgentThread::query()->where('task_group_id', $group->id)->where('role', $data->threadRole()->value)->find((int) $data->thread);
                 if (! $earlier instanceof AgentThread || $data->model !== null) {

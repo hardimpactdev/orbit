@@ -1,0 +1,45 @@
+---
+# The save of an idle task group's workspace (docs/cli/task/idle-save.mmd), run from Node 209 against the task VM: commit the changes the
+# workspace holds, bundle its HEAD and fetch the bundle into the run folder on 209, where the run pushes it. One phase, so a failed read,
+# commit or bundle fails the save and nothing is pushed or released.
+- name: Save the idle workspace
+  hosts: task_vm
+  gather_facts: false
+  vars:
+    save_checkout: "{{ intent.checkout_path }}"
+    save_bundle: "/tmp/orbit-task-idle-save-{{ save_run }}.bundle"
+  tasks:
+    - name: Save and fetch the head
+      block:
+        - name: Read the status
+          ansible.builtin.command: { argv: [timeout, "60", git, -C, "{{ save_checkout }}", status, --porcelain] }
+          register: save_status
+          changed_when: false
+        - name: Add the workspace files
+          when: save_status.stdout | trim | length > 0
+          ansible.builtin.command: { argv: [timeout, "60", git, -C, "{{ save_checkout }}", add, --all] }
+          changed_when: true
+        - name: Commit the workspace
+          when: save_status.stdout | trim | length > 0
+          ansible.builtin.command:
+            argv: [timeout, "60", git, -C, "{{ save_checkout }}", -c, core.hooksPath=/dev/null, -c, commit.gpgSign=false,
+                   commit, --quiet, --no-verify, --message, Save the idle workspace]
+          environment:
+            GIT_AUTHOR_NAME: Orbit
+            GIT_AUTHOR_EMAIL: orbit@users.noreply.github.com
+            GIT_COMMITTER_NAME: Orbit
+            GIT_COMMITTER_EMAIL: orbit@users.noreply.github.com
+          changed_when: true
+        - name: Check the workspace is clean
+          ansible.builtin.command: { argv: [timeout, "60", git, -C, "{{ save_checkout }}", status, --porcelain] }
+          register: save_after
+          changed_when: false
+          failed_when: save_after.rc != 0 or save_after.stdout | trim | length > 0
+        - name: Bundle the head
+          ansible.builtin.command: { argv: [timeout, "60", git, -C, "{{ save_checkout }}", bundle, create, "{{ save_bundle }}", HEAD] }
+          changed_when: true
+        - name: Fetch the bundle
+          ansible.builtin.fetch: { src: "{{ save_bundle }}", dest: "{{ run_dir }}/save.bundle", flat: true }
+      always:
+        - name: Remove the bundle from the VM
+          ansible.builtin.file: { path: "{{ save_bundle }}", state: absent }

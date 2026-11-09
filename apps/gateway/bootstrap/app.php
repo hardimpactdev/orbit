@@ -25,6 +25,7 @@ use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Jobs\Operations\PollSwampScheduledResults;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\TaskVms\RefreshTaskVmImages;
+use App\Jobs\TaskVms\ReleaseIdleTaskVms;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Jobs\WebSocket\CloseWebSocketOperations;
 use Illuminate\Console\Scheduling\Schedule;
@@ -89,6 +90,9 @@ $app = Application::configure(basePath: dirname(__DIR__))
             ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->boolean('fleet.rollout'));
         // Release stale Incus task starts through task_vm.slot_release.
         GatewaySchedule::job($schedule, new SweepTaskVmHosts)->everyThirtyMinutes()
+            ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
+        // A group that runs no Operation for 30 minutes gives its task VM back to the pool.
+        GatewaySchedule::job($schedule, new ReleaseIdleTaskVms)->everyFiveMinutes()
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
     })
     ->withMiddleware(function (Middleware $middleware): void {

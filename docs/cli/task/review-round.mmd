@@ -19,6 +19,7 @@ sequenceDiagram
   %%> - the PR head is eligible: a passed handoff candidate of the current subtask, or the `pushed_commit` of an earlier round of this group; a pushed fix has no hosted handoff CI, because the PR's own CI is the merge check below, and the row of its local check is no candidate for a review turn or a manual publish, because no `tasks.check` operation backs it
   %%> - the group used fewer than 3 rounds, and the merge check of the PR is green on the head
   %%> - the task VM of the group is parked or running, and its Pi credential is there
+  %%> - after an idle release (docs/reference/tasks.md#release-an-idle-task-vm), the group's idle save holds no work beyond the head this run acts on, else `tasks.idle_save_pending` (409): run a turn and publish first; a save that moved apart from that head answers `tasks.idle_save_diverged` (409), a deleted save branch whose commit the head lacks `tasks.idle_save_missing` (409), and an unreadable comparison `tasks.idle_save_unreadable` (503)
   %%> What it does:
   %%> - captures, in one transaction, the VM identity and the reviewer turn in a new thread, with the repository and PR number of the comment; captures resume only when the VM is parked
   %%> - in rounds 1 and 2 it also captures the fix: the author turn, the local check and the push. Round 3 captures no fix, so findings in round 3 end the run

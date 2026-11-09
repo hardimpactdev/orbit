@@ -23,6 +23,7 @@ sequenceDiagram
   %%> - your Node has an access grant to the workspace Node
   %%> - the task VM runs; a parked VM is woken by the admission, which records its resume, creates no Operation of this kind and answers `tasks.vm_resuming`; repeat the call once the VM runs
   %%> - a reviewer has an eligible check on the admitted candidate
+  %%> - after an idle release (docs/reference/tasks.md#release-an-idle-task-vm), the group's idle save can be restored: a save that moved apart from the task branch answers `tasks.idle_save_diverged` (409), a deleted save branch whose commit the task branch lacks answers `tasks.idle_save_missing` (409), and an unreadable comparison answers `tasks.idle_save_unreadable` (503); each error says what to do
   %%> What it does:
   %%> - composes the prompt the VM receives: the title, brief and deliverables of the subtask, then the prompt of the caller, for every role
   %%> - records the composed prompt as the admitted intent
@@ -31,7 +32,7 @@ sequenceDiagram
   %%> - the agent in the VM sees only what the admission sends, so the subtask the Gateway holds reaches it from the Gateway, not from the driver
   opt publication deleted the workspace
     Note over GW: Wait for a task place
-    %%> Use the shared first-come-first-served task queue, with a two-hour admission budget. Read the task branch head and admit a fresh VM from the base at that commit, with a new Pi session.
+    %%> Use the shared first-come-first-served task queue, with a two-hour admission budget. Read the task branch head and admit a fresh VM from the base at that commit, or at the group's idle save when that holds the head, with a new Pi session.
   end
   GW->>SW: Start one run<br/>operation-task-turn
   %%> Inputs:
@@ -41,7 +42,7 @@ sequenceDiagram
   %%> - follow the Operation while Swamp runs the turn
   opt a fresh task place was admitted
     SW->>N: Claim a task place
-    %%> The common task provision child rebuilds the workspace from the base plus the task branch before the turn starts. A failed claim fails the turn and releases its claim.
+    %%> The common task provision child rebuilds the workspace from the base plus the task branch, or plus the idle save when that holds the task branch head, before the turn starts. A failed claim fails the turn and releases its claim.
   end
   Note over SW: prepare
   %%> What it does:
