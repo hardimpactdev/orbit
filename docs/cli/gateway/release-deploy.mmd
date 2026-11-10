@@ -48,55 +48,62 @@ sequenceDiagram
   %%> On failure:
   %%> - from here until the switch, the release pauses with the old release live
   %%> - the record's message ends with the migration's output
-  Note over SW: Load Swamp on Node 209<br/>operation-gateway-swamp-load
+  SW->>GN: Wait for active Operations<br/>Gateway DB · at most 10 minutes
   %%> What it does:
-  %%> - the load child: checkout, grants the new release rendered, serve reload
-  SW->>GN: Admit VM refreshes<br/>artisan · new release
-  %%> What it does:
-  %%> - runs `task-vms:refresh-images --commit <sha>` from the new release: one `task_vm.image_refresh` run per task VM host, admitted by the new commit's code, started on the workflows the load installed, and running while the release goes on to switch (docs/cli/task/vm-image-refresh.mmd)
-  %%> - every release refreshes, code-only ones too: the base holds the warm checkout and the nested Gateway agent of the commit
-  %%> - Swamp has only just reloaded, so a host whose run Swamp cannot take yet (`swamp.vault_sync_unavailable`) is asked again, up to 6 rounds 5 s apart; the other hosts are not held
+  %%> - checks queued, running and waiting `instance.create`, `instance.deploy*`, `conn.*` and `process.*` Operations every 5 seconds
   %%> On failure:
-  %%> - best effort: the release never fails for it, and the hand-over waits only for the admission, a few seconds
-  %%> - it runs before the switch, so a release that later fails or switches back has refreshed the base to its commit; the next release refreshes again
-  Note over SW: Hand over the release<br/>gateway-release-activate
-  %%> Why:
-  %%> - the child runs from the definition the load installed, so the switch runs the new commit's steps
-  AC->>GN: Drain Horizon<br/>systemctl stop · SIGTERM only
-  %%> What it does:
-  %%> - waits until the unit's whole control group is empty, as long as the drain allows; Horizon's jobs open SSH connections of their own, so no shared connection master stays in the group, and the wait covers any other process a job leaves
-  %%> - refuses to stop a unit that lacks the stop policy (`KillMode=mixed`, `SendSIGKILL=no`), because it would kill a running job
-  %%> On failure:
-  %%> - the run fails with `gateway.release_horizon_unit_stale` for a unit without the policy, or `gateway.release_horizon_not_drained` when the unit did not stop in time; Horizon is started again below
-  AC->>GN: Switch the release<br/>gateway-rollback · Horizon
-  %%> Why:
-  %%> - the same script an operator rolls back with: links, PHP-FPM reload, running services restart
-  AC->>GN: Verify the Gateway<br/>/up · status version
-  opt the check failed
-    AC->>GN: Switch back<br/>gateway-rollback previous
-  end
-  AC->>GN: Start Horizon<br/>always · also after a failure
-  %%> Why:
-  %%> - the release drained Horizon, so every end of the run leaves it running: the old release after a failed drain or a switch back, the new one after a verified switch
-  %%> - starting a running unit changes nothing
-  %%> Decided by the orchestrator, for Nick's review:
-  %%> - the drain relies on the unit's stop policy alone; the rollback script no longer starts a stopped Horizon, because this step does after every end of the run
-  AC->>GN: Resume document cleanup<br/>best effort
-  %%> Why:
-  %%> - the scheduler restart paused the release cleanups; one that stays paused never fails the release
-  AC->>GN: Prune old releases<br/>best effort
-  alt every step succeeded
-    SW-->>GW: Run succeeded<br/>terminal result
-    Note over GW: Record verified<br/>fleet rollout follows
-    %%> Next:
-    %%> - the Gateway queues one `fleet.rollout` admission for the Nodes behind this commit (`fleet:rollout`)
-  else a step before Migrate fails
-    SW--xGW: Run failed<br/>failed step
-    Note over GW: Mark failed<br/>nothing changed · rerun safe
-  else the check failed, switched back
-    SW--xGW: Run failed<br/>failed step
-    Note over GW: Record switched back<br/>alert · next commit releases
-  else another step from Migrate on fails
-    SW--xGW: Run failed<br/>failed step
-    Note over GW: Pause automatic releases<br/>snapshot named · alert
+  %%> - refuses with `gateway.release_busy` and the blocking Operation IDs; the old release and Horizon stay live, and automatic releases pause because migrations ran
+  alt Operations still active after 10 minutes
+    SW--xGW: gateway.release_busy<br/>blocking Operation IDs
+  else idle
+    Note over SW: Load Swamp on Node 209<br/>operation-gateway-swamp-load
+    %%> What it does:
+    %%> - the load child: checkout, grants the new release rendered, serve reload
+    Note over SW: Hand over the release<br/>gateway-release-activate
+    %%> Why:
+    %%> - the child runs from the definition the load installed, so the switch runs the new commit's steps
+    AC->>GN: Drain Horizon<br/>systemctl stop · SIGTERM only
+    %%> What it does:
+    %%> - waits until the unit's whole control group is empty, as long as the drain allows; Horizon's jobs open SSH connections of their own, so no shared connection master stays in the group, and the wait covers any other process a job leaves
+    %%> - refuses to stop a unit that lacks the stop policy (`KillMode=mixed`, `SendSIGKILL=no`), because it would kill a running job
+    %%> On failure:
+    %%> - the run fails with `gateway.release_horizon_unit_stale` for a unit without the policy, or `gateway.release_horizon_not_drained` when the unit did not stop in time; Horizon is started again below
+    AC->>GN: Switch the release<br/>gateway-rollback · Horizon
+    %%> Why:
+    %%> - the same script an operator rolls back with: links, PHP-FPM reload, running services restart
+    AC->>GN: Verify the Gateway<br/>/up · status version
+    opt the check failed
+      AC->>GN: Switch back<br/>gateway-rollback previous
+    end
+    AC->>GN: Start Horizon<br/>always · also after a failure
+    %%> Why:
+    %%> - the release drained Horizon, so every end of the run leaves it running: the old release after a failed drain or a switch back, the new one after a verified switch
+    %%> - starting a running unit changes nothing
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - the drain relies on the unit's stop policy alone; the rollback script no longer starts a stopped Horizon, because this step does after every end of the run
+    AC->>GN: Admit VM refreshes<br/>artisan · verified release
+    %%> What it does:
+    %%> - only after verification succeeds and Start Horizon finishes, admits one `task_vm.image_refresh` per task VM host with the new release's artisan
+    %%> - the new Horizon workers consume the queued start jobs; the release waits only for admission, never for refresh completion
+    %%> On failure:
+    %%> - best effort: admission failure never fails the release
+    AC->>GN: Resume document cleanup<br/>best effort
+    %%> Why:
+    %%> - the scheduler restart paused the release cleanups; one that stays paused never fails the release
+    AC->>GN: Prune old releases<br/>best effort
+    alt every step succeeded
+      SW-->>GW: Run succeeded<br/>terminal result
+      Note over GW: Record verified<br/>fleet rollout follows
+      %%> Next:
+      %%> - the Gateway queues one `fleet.rollout` admission for the Nodes behind this commit (`fleet:rollout`)
+    else a step before Migrate fails
+      SW--xGW: Run failed<br/>failed step
+      Note over GW: Mark failed<br/>nothing changed · rerun safe
+    else the check failed, switched back
+      SW--xGW: Run failed<br/>failed step
+      Note over GW: Record switched back<br/>alert · next commit releases
+    else another step from Migrate on fails
+      SW--xGW: Run failed<br/>failed step
+      Note over GW: Pause automatic releases<br/>snapshot named · alert
+    end
   end

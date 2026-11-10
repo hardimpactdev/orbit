@@ -131,11 +131,13 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 | Snapshot the database | Writes `backups/pre-<id>-<time>-<hex>.sqlite` with `VACUUM INTO`. The newest three stay, and the one a pause names. |
 | Migrate | Runs `artisan migrate --force --isolated` from the new release and prints the end of its output with its exit code. |
 | Check the migration | Fails the run when the migration's exit code is not 0. The paused record's message ends with the migration's output. |
+| Wait for active Operations | Checks the Gateway DB every 5 seconds for up to 600 seconds. Refuses with `gateway.release_busy` and the blocking Operation IDs if queued, running or waiting `instance.create`, `instance.deploy*`, `conn.*` or `process.*` Operations remain. |
 | Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
-| Admit VM refreshes | Runs `task-vms:refresh-images --commit <sha>` from the new release: one base refresh per task VM host, beside the hand-over. Best effort. |
-| Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed. |
+| Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed: Drain Horizon → Switch the release → Verify the Gateway → Start Horizon → Admit VM refreshes. |
 
-The admission step runs for every release, also one that later fails or switches back, and the hand-over waits only for it to end, never for the refresh. A refresh to a commit that never went live is harmless.
+The busy guard runs immediately before Swamp load, while the old release and Horizon still serve. It reads current Operation state on each poll and proceeds as soon as none blocks. It does not stop new admissions. A refusal leaves the old release live and pauses automatic releases because migrations already ran. `force` skips only the ancestry check; it never skips this guard.
+
+The activate child admits VM refreshes only after verification succeeds and Start Horizon finishes (or is skipped because no Horizon unit is configured). It uses the new release’s artisan, so its queued `StartAdmittedSwampRun` jobs reach the new workers. A failed verification, switch back or failed Horizon start admits no refreshes. Admission is best effort (`allowFailure: true`): failure does not fail the release, and the release waits only for admission to end, never for refresh completion.
 
 The build adds the worktree of the fetched commit, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
 
@@ -153,7 +155,7 @@ The Gateway records the run's terminal result. The Gateway reads the snapshot pa
 
 A run that switched back is `switched_back`: it raises a `release_failed` alert, and the next green commit releases. Any other failure from Migrate on pauses automatic releases with reason `migration_failure` and names the snapshot, such as a failed switch-back. The record carries the failed step's own code when the step printed one, such as `gateway.release_downgrade`; otherwise it carries the step's code from the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd).
 
-A cancelled or interrupted run may have migrated, so it pauses with `gateway.release_run_failed`. The run budget is 3,000 seconds. A run that outlives it pauses with `gateway.release_run_timed_out`, even when Swamp later reports an end. Read the run before you resume.
+A cancelled or interrupted run may have migrated, so it pauses with `gateway.release_run_failed`. The run budget is 3,600 seconds, including the 600-second busy guard. A run that outlives it pauses with `gateway.release_run_timed_out`, even when Swamp later reports an end. Read the run before you resume.
 
 While the run is active, every release path refuses with `gateway.release_in_progress`: manual releases, automatic releases and rollbacks use the same admission path. Settling dead records skips the run's record. Admission holds the release lock until the run owns its record.
 
@@ -337,7 +339,7 @@ It runs `config:cache` locally into a temporary file, sets mode `0600`, then ren
 
 The Gateway scheduler runs `gateway:release:auto` every five minutes through `GatewaySchedule::command`. PRs merge straight into main, so the merges of those five minutes go out in one release of the newest green commit. With the [Gateway queue](/reference/gateway-queue#scheduled-work) configured, each tick is a queued job. It looks for the newest green commit and admits a Swamp run. Automatic releases are disabled by default. Turn them on after the Gateway runs from the [release layout](#release-layout) and a first manual release succeeds.
 
-Every release also admits the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of each task VM host, from its step "Admit VM refreshes", as soon as Swamp has loaded the commit. The refresh runs while the release switches, and it never holds the release: the step is best effort. A refresh that is open on a host keeps running, and the newest commit waits behind it.
+Every release also admits the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of each task VM host, from its step "Admit VM refreshes", after verification succeeds and Start Horizon finishes. Refresh admission failure never fails the release; the release waits for admission only, while the refresh runs separately. A refresh that is open on a host keeps running, and the newest commit waits behind it.
 
 ```bash
 orbit gateway:auto-release:enable
