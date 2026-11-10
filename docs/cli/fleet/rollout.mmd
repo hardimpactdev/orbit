@@ -20,7 +20,7 @@ sequenceDiagram
   %%> - the verified release admits the rollout, as `gateway:release:deploy` says; the deleted `fleet-maintenance` schedule did it each minute until 2026-11-06
   %%> - most releases land outside the window, so a daily pass at window open visits the Nodes they deferred
   %%> - the admission waits while another rollout runs; Nodes without CLI intent need no CLI release
-  %%> - a Node with CLI intent waits for its CLI release; this does not hold back Nodes without CLI intent
+  %%> - a Node with CLI intent waits for its CLI release; the admission keeps its one-minute retry after admitting other Nodes
   %%> Picks:
   %%> - a Node whose last visit for this commit did not converge it, a drifted Node, or a Node not visited yet
   %%> - at most once per 5 minutes per Node; the last visit is read from earlier rollout results

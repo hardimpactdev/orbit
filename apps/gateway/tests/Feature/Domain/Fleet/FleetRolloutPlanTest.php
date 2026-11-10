@@ -20,6 +20,7 @@ use App\Domain\Releases\ReleaseAlertReceipt;
 use App\Domain\Releases\ReleaseAlertStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Fleet\StaticCliRelease;
 use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\GatewayRelease;
@@ -29,6 +30,8 @@ use App\Models\ProblemFingerprint;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Queue;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -240,4 +243,52 @@ it('plans all workload Nodes without a CLI release', function (): void {
     Cache::flush();
 
     expect(plannedNames())->toBe(['dev', 'db', 'prod']);
+});
+
+it('revisits a successful no-CLI Node when it gains a CI caller', function (): void {
+    $visit = rolloutRun(['dev' => 'converged', 'db' => 'converged', 'prod' => 'converged'], minutes: 20);
+    $nodes = $visit->result['nodes'];
+    $nodes[0]['cli_version'] = null;
+    $visit->update(['result' => ['nodes' => $nodes]]);
+    Node::query()->findOrFail($this->nodes['dev'])->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+
+    expect(plannedNames())->toBe(['dev']);
+});
+
+it('retains the minute retry after partial admission and admits CI callers when their CLI appears', function (): void {
+    Queue::fake();
+    $gateway = SwampNodeFixture::ensure();
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    app(GatewayServingHost::class)->remember($gateway);
+    config(['swamp.run_token' => 'test-token']);
+    foreach ($this->nodes as $id) {
+        Node::query()->findOrFail($id)->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned'])->saveQuietly();
+    }
+    file_put_contents($this->base.'/agent.json', json_encode(['commit' => RolloutCommit, 'version' => '1.2.3',
+        'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('b', 64), 'url' => 'https://artifacts.example/agent']]], JSON_THROW_ON_ERROR));
+    app()->instance(AgentDelivery::class, new AgentDelivery($this->base.'/agent.json', '/unused'));
+    Node::query()->findOrFail($this->nodes['dev'])->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    $catalog = file_get_contents($this->base.'/cli.json');
+    unlink($this->base.'/cli.json');
+    Cache::flush();
+
+    $job = new AdmitFleetRollout()->withFakeQueueInteractions();
+    app()->call([$job, 'handle']);
+
+    $job->assertReleased(60);
+    $partial = Operation::query()->where('kind', 'fleet.rollout')->sole();
+    expect(array_column($partial->input['nodes'], 'node_id'))->toBe([$this->nodes['db'], $this->nodes['prod']]);
+    expect(array_column($partial->input['nodes'], 'release'))->toBe([null, null]);
+    $partial->update(['status' => 'succeeded', 'lock_key' => null]);
+    rolloutRun(['db' => 'converged', 'prod' => 'converged'], minutes: 10);
+    file_put_contents($this->base.'/cli.json', $catalog);
+    Cache::flush();
+
+    $retry = new AdmitFleetRollout()->withFakeQueueInteractions();
+    app()->call([$retry, 'handle']);
+
+    $retry->assertNotReleased();
+    $next = Operation::query()->where('kind', 'fleet.rollout')->latest('id')->firstOrFail();
+    expect(array_column($next->input['nodes'], 'node_id'))->toBe([$this->nodes['dev']]);
+    expect($next->input['nodes'][0]['release']['url'])->toBe('https://example.test/orbit');
 });

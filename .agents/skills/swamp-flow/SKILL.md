@@ -75,3 +75,5 @@ Use the official workflow references to check guard, dependency and output seman
 Keep target identity outside optional lifecycle inputs. A ready task VM skips resume, but vault setup and terminal projection still need its VM id.
 
 After a landed behavior change, replace the affected rule in `docs/swamp/porting.md` the same hour. Keep Swamp mechanics in the official swamp skill, shared flow rules in flow-tighten and playbook rules in ansible-phase.
+
+Optional client publication must leave observer SSH intent and terminal checks intact. A partial fleet admission retains the publication retry for waiting clients; a Node that gains a client caller treats a previously absent client version as drift.
