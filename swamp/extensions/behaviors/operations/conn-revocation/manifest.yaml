@@ -1,8 +1,10 @@
 manifestVersion: 1
 name: '@nckrtl/conn-revocation-plan'
-version: 2026.11.02.2
+version: 2026.11.10.1
 visibility: private
 license: MIT
-description: Public Conn revocation planning over curl reads of the T3 API.
+description: Conn revocation data and a shipped upstream T3 auth snapshot reader.
 behaviors:
   - operations/conn-revocation/mod.ts
+additionalFiles:
+  - read_sessions.ts

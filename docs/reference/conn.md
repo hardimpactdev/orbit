@@ -198,7 +198,7 @@ A device asks the Gateway for a pairing link to one registered T3 server. The na
 
 The device opens the returned `pairing_url` and pairs as it does today, but without a manual step. The link is one-time and short-lived, so the device pairs right away.
 
-To revoke, the Gateway lists `GET <url>/api/auth/clients`. It revokes each session whose label belongs to the Node's open pairings on that server with `POST <url>/api/auth/clients/revoke`, and it revokes each pairing link that was not used with `POST <url>/api/auth/pairing-links/revoke`. It never revokes its own current session. The device loses that server at once; its WireGuard access does not change.
+To revoke, Orbit reads the initial `payload.clientSessions` snapshot from upstream T3’s `subscribeAuthAccess` WebSocket RPC at `/ws?orchestrationProtocol=2`, authenticated with the same admin bearer session. This path serves both stock T3 container servers and Conn host servers. It revokes each session whose label belongs to the Node's open pairings on that server with `POST <url>/api/auth/clients/revoke`, and it revokes each pairing link that was not used with `POST <url>/api/auth/pairing-links/revoke`. It never revokes its own current session. The device loses that server at once; its WireGuard access does not change.
 
 ## API
 

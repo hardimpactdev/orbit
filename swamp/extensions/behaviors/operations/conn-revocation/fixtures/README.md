@@ -1,0 +1,3 @@
+`stock-0.1.7-client-sessions.json` is the initial `payload.clientSessions` from clone 1831 at `http://10.44.0.7:3800`, read on 2026-11-10 with its existing Gateway admin bearer session. Only session ids, subjects, labels, IP addresses and user agents are anonymized. Field shapes, scopes, timestamps and current-session flags are retained. The same read passed against Beast's Conn host at port 3773. No session or pairing was revoked.
+
+Upstream v0.1.7: `pingdotgg/t3code` commit `322f6544dfad0a3c8a0c8cbecf2c7f7874b14268`, `apps/server/src/ws.ts` (`loadAuthAccessSnapshot`, `subscribeAuthAccess`, `/ws`, `RpcSerialization.layerJson`), and `packages/contracts/src/environment.ts` (protocol 2). The installed container binary reports `t3 v0.1.7`.

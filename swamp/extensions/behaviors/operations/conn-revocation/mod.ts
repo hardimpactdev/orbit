@@ -70,8 +70,12 @@ export async function readReplies(
 }
 export const behavior = {
     type: "@nckrtl/conn-revocation-plan",
-    version: "2026.11.02.2",
+    version: "2026.11.10.1",
     resources: {
+        private: {
+            schema: z.object({ directory: Directory, reader: z.string() }),
+            lifetime: "1d", garbageCollection: 10,
+        },
         selection: {
             schema: Selection,
             lifetime: "infinite",
@@ -84,6 +88,17 @@ export const behavior = {
         },
     },
     methods: {
+        prepare: {
+            description: "Create private replies and locate the shipped upstream T3 reader",
+            arguments: z.object({}),
+            execute: async (_args: Record<string, never>, ctx: Context & { extensionFile(path: string): string }) => {
+                const reader = ctx.extensionFile("read_sessions.ts");
+                const directory = await Deno.makeTempDir({ prefix: "orbit-conn-revoke.", dir: "/tmp" });
+                const value = { directory, reader };
+                await ctx.writeResource("private", "private", value);
+                return value;
+            },
+        },
         select: {
             description:
                 "Select admitted non-current sessions from the private T3 reply",
