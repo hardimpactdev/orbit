@@ -10,6 +10,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Mirrored by the guest emitter; the clone tests keep the two sets in sync.
+GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "systemctl", "t3")
+
 
 def main():
     container = json.loads(sys.argv[1])
@@ -67,7 +70,9 @@ def main():
             if re.fullmatch(
                 r"instance\.container_"
                 + member
-                + r"_failed: command [a-zA-Z0-9_.-]+ exited -?[0-9]+",
+                + r"_failed: command (?:"
+                + "|".join(GUEST_COMMANDS)
+                + r") exited -?[0-9]+",
                 diagnostic,
             ):
                 raise RuntimeError(diagnostic)

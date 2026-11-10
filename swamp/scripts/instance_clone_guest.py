@@ -10,6 +10,9 @@ import sys
 import time
 from contextlib import closing
 
+# Mirrored by the Node boundary; the clone tests keep the two sets in sync.
+GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "systemctl", "t3")
+
 
 def phase_main(phase, raw):
     c = json.loads(raw)
@@ -361,13 +364,16 @@ if __name__ == "__main__":
     try:
         phase_main(sys.argv[1], sys.argv[2])
     except subprocess.CalledProcessError as error:
+        command = os.path.basename(error.cmd[0])
         print(
             "instance.container_"
             + sys.argv[1]
-            + "_failed: command "
-            + os.path.basename(error.cmd[0])
-            + " exited "
-            + str(error.returncode),
+            + "_failed"
+            + (
+                ": command " + command + " exited " + str(error.returncode)
+                if command in GUEST_COMMANDS
+                else ""
+            ),
             file=sys.stderr,
         )
         raise SystemExit(1)

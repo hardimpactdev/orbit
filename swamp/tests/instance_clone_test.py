@@ -1,5 +1,6 @@
 """Check Node-side clone command diagnostics without Incus or private output."""
 
+import ast
 import contextlib
 import io
 import json
@@ -14,6 +15,23 @@ SCRIPT = Path(__file__).parents[1] / "scripts/instance_clone.py"
 
 
 class CloneTest(unittest.TestCase):
+    def test_guest_and_node_command_names_stay_in_sync(self):
+        def commands(path):
+            tree = ast.parse(path.read_text())
+            return next(
+                ast.literal_eval(node.value)
+                for node in tree.body
+                if isinstance(node, ast.Assign)
+                and any(
+                    isinstance(target, ast.Name) and target.id == "GUEST_COMMANDS"
+                    for target in node.targets
+                )
+            )
+
+        self.assertEqual(
+            commands(SCRIPT), commands(SCRIPT.with_name("instance_clone_guest.py"))
+        )
+
     def invoke(self, stderr, phase="sessions", fail="incus"):
         with tempfile.TemporaryDirectory() as folder:
             container = {
@@ -55,13 +73,18 @@ class CloneTest(unittest.TestCase):
             return error.getvalue()
 
     def test_preserves_only_the_guest_command_and_exit_code(self):
-        self.assertEqual(
-            self.invoke("instance.container_sessions_failed: command php exited 17\n"),
-            "instance.container_sessions_failed: command php exited 17\n",
-        )
+        for command in ["curl", "git", "mkdir", "php", "systemctl", "t3"]:
+            with self.subTest(command=command):
+                diagnostic = (
+                    "instance.container_sessions_failed: command "
+                    + command
+                    + " exited 17\n"
+                )
+                self.assertEqual(self.invoke(diagnostic), diagnostic)
 
     def test_rejects_private_or_mismatched_guest_diagnostics(self):
         for stderr in [
+            "instance.container_sessions_failed: command SECRET_TOKEN_abcd1234 exited 17",
             "PRIVATE-STDERR",
             "instance.container_sessions_failed: command php exited 17\nPRIVATE-STDERR",
             "instance.container_agent_failed: command php exited 17",
