@@ -69,6 +69,8 @@ The job downloads the recipe's Deno 2.9.8 artifact and checks its SHA-256 before
 
 The CI policy tests run actionlint on the complete CI workflow to check Actions syntax, types and context availability. The checker downloads pinned actionlint 1.7.12 and verifies its archive's SHA-256 before extraction, including cache hits. Its runner-label catalog predates `ubuntu-26.04`, so the actionlint configuration adds that label explicitly.
 
+Gateway bootstrap tests supply a fixed RSA key at the process boundary. The key has 4096 bits and is only for tests. Random prime search cannot consume the test deadline before the database's lazy migrations. Certificate signing, SSH-key generation and migration execution remain real; the tests check the requested key size and that a second bootstrap generates no new CA key.
+
 All Gateway paths select Pest, including tests, configuration and Composer inputs. CLI and SDK paths also select it, as do Swamp workflows, Ansible, operation behaviors and shared behavior helpers, operation metadata and proof inputs read by the suite. CLI flow charts select it because the proof tests inspect operation metadata derived from charts. Shared CI and bootstrap inputs select it too. Unrelated Docs and Web changes leave Pest unselected.
 
 The job depends on input selection; only an explicit false selection skips it. Required checks has a static dependency on the job and validates the exact selection keys and boolean values before accepting the results. A selected failure, cancellation or unexpected skip fails the gate independently of `ORBIT_SLOW_CHECKS_BLOCKING`.

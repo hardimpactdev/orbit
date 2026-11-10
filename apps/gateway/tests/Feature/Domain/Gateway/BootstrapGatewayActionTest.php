@@ -11,6 +11,8 @@ use App\Domain\Nodes\SwampNode;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Node;
 use App\Models\Route;
@@ -28,7 +30,31 @@ function bootstrapFixture(): array
     $bytes = pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32);
     file_put_contents($home.'.hostkey.pub', 'ssh-ed25519 '.base64_encode($bytes)." root@fixture\n");
 
-    return [$home, 'SHA256:'.rtrim(base64_encode(hash('sha256', $bytes, true)), '=')];
+    $processes = new class(app(ProcessRunner::class), $home) implements ProcessRunner
+    {
+        public int $keyGenerations = 0;
+
+        public function __construct(private ProcessRunner $native, private string $home) {}
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            if (array_slice($invocation->arguments, 0, 2) !== ['openssl', 'genrsa']) {
+                return $this->native->run($invocation);
+            }
+
+            // Prime search has unbounded runtime. Keep a real 4096-bit key, signing and SSH generation; fix only that input.
+            expect($invocation->arguments)->toBe(['openssl', 'genrsa', '-out', $this->home.'/ca/root.key', '4096']);
+            if (! copy(__DIR__.'/../../../Fixtures/gateway-bootstrap-root.key', $this->home.'/ca/root.key')) {
+                throw new RuntimeException('Could not copy the test-only Gateway CA key.');
+            }
+            $this->keyGenerations++;
+
+            return new CommandResult(0, '', '', 0, false);
+        }
+    };
+    app()->instance(ProcessRunner::class, $processes);
+
+    return [$home, 'SHA256:'.rtrim(base64_encode(hash('sha256', $bytes, true)), '='), $processes];
 }
 
 function bootstrapData(string $ip = '10.45.0.1', ?string $operator = null): BootstrapGatewayData
@@ -38,12 +64,14 @@ function bootstrapData(string $ip = '10.45.0.1', ?string $operator = null): Boot
 }
 
 it('records the Gateway, makes its CA and SSH key, and keeps them on a second run', function (): void {
-    [$home, $fingerprint] = bootstrapFixture();
+    [$home, $fingerprint, $processes] = bootstrapFixture();
     $action = new BootstrapGatewayAction(app(AssignRoleAction::class), app(VpnSettings::class),
         app(ProcessRunner::class), app(GatewayServingHost::class), $home.'.hostkey.pub');
 
     $node = $action->execute(bootstrapData());
 
+    expect($processes->keyGenerations)->toBe(1)
+        ->and(openssl_pkey_get_details(openssl_pkey_get_private(file_get_contents($home.'/ca/root.key')))['bits'])->toBe(4096);
     expect($node->name)->toBe('gateway')
         ->and(SwampNode::id())->toBe($node->id)
         ->and($node->status)->toBe(LifecycleStatus::Active)
@@ -64,6 +92,7 @@ it('records the Gateway, makes its CA and SSH key, and keeps them on a second ru
 
     expect(file_get_contents($home.'/ca/root.pem'))->toBe($ca)
         ->and(file_get_contents($home.'/ssh/id_ed25519.pub'))->toBe($key)
+        ->and($processes->keyGenerations)->toBe(1)
         ->and(Node::query()->count())->toBe(1)
         ->and(Route::query()->count())->toBe(1);
 });
