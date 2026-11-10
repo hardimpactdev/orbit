@@ -92,13 +92,17 @@ Deno.test("create finalization evaluates checkout, default and clone receipts wi
   const registration = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-create-16210-t3-register.json", import.meta.url))).step;
   const server = JSON.parse(registration.outputs.stdout);
   const steps = {
-    checkout: workspace, container: succeeded, workspace, seed: succeeded, agent: succeeded, t3: succeeded,
-    "container-processes": succeeded, "t3-sessions": succeeded,
-    "t3-register": registration,
+    checkout: workspace, container: succeeded, workspace, seed: succeeded,
+    "container-processes": succeeded, "clone-container": succeeded, "clone-workspace": workspace,
+    "clone-agent": succeeded, "clone-t3": { ...succeeded, outputs: { stdout: "{}" } },
+    "clone-sessions": { ...succeeded, outputs: { stdout: "{}" } },
+    "clone-register": registration,
   };
   for (const container of [null, { clone: null }, { clone: { source: "instance-7" } }]) {
-    const intent = { instance_id: 8, already_active: false, container, server_database: null, processes: [], setup_steps: [], route: null };
-    const phaseSteps = { ...steps, "t3-register": container?.clone ? steps["t3-register"] : { status: "skipped" } };
+    // StartDevelopmentInstanceCreateAction always admits database, including null when no SQLite copy is needed.
+    // Keep that key: Swamp's CEL treats an omitted map key as an error, not null.
+    const intent = { instance_id: 8, already_active: false, container, database: null, server_database: null, processes: [], setup_steps: [], route: null };
+    const phaseSteps = { ...steps, "clone-register": container?.clone ? registration : { status: "skipped" } };
     const values = Object.fromEntries(Object.entries(expressions).map(([key, value]) => [
       key, environment.evaluate(value.trim().slice(3, -2).trim(), { inputs: { intent }, steps: phaseSteps }),
     ]));

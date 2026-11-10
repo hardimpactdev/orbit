@@ -115,6 +115,124 @@ jobs:
           ORBIT_REAL_KERNEL_TESTS: '1'
         run: vendor/bin/pest --default-time-limit=5 --group privileged tests/Feature/Domain/Instances/InstanceEgressTest.php --filter 'on a real kernel'
 
+  gateway-tests:
+    name: Gateway Pest suite
+    needs: changes
+    if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['gateway-tests']) != 'false' }}
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/php
+        with:
+          coverage: none
+      - name: Give every PHP worker 1 GiB
+        run: |
+          mkdir -p "$RUNNER_TEMP/gateway-tests-php"
+          echo 'memory_limit=1G' > "$RUNNER_TEMP/gateway-tests-php/memory.ini"
+          echo "PHP_INI_SCAN_DIR=${PHP_INI_SCAN_DIR:-}:$RUNNER_TEMP/gateway-tests-php" >> "$GITHUB_ENV"
+      - name: Set the firewall dependency cache directory
+        run: echo "DENO_DIR=$RUNNER_TEMP/gateway-tests-deno" >> "$GITHUB_ENV"
+      - name: Cache Gateway test dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/gateway/vendor
+          key: gateway-tests-dev-${{ runner.os }}-8.5-${{ hashFiles('apps/gateway/composer.json', 'apps/gateway/composer.lock', 'packages/php-sdk/composer.json', 'packages/php-sdk/composer.lock') }}
+      - name: Cache CLI test dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/cli/vendor
+          key: cli-tests-dev-${{ runner.os }}-8.5-${{ hashFiles('apps/cli/composer.json', 'apps/cli/composer.lock', 'packages/php-sdk/composer.json', 'packages/php-sdk/composer.lock') }}
+      - name: Install Gateway and CLI dev dependencies
+        run: |
+          cp apps/gateway/.env.example apps/gateway/.env
+          composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-scripts
+          composer install --working-dir=apps/cli --no-interaction --prefer-dist --no-scripts
+      - name: Build the test API contracts
+        run: bin/build-api
+      - name: Cache pinned Deno download
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/orbit-gateway-tests/deno
+          key: gateway-tests-deno-download-${{ runner.os }}-${{ runner.arch }}-2.9.8-${{ hashFiles('apps/gateway/resources/machine-software/recipe.json') }}
+      - name: Verify and extract the recipe Deno
+        run: |
+          python3 - <<'PYTHON'
+          import hashlib, json, os, subprocess, urllib.request, zipfile
+          from pathlib import Path
+          tool = json.loads(Path('apps/gateway/resources/machine-software/recipe.json').read_text())['tools']['deno']
+          if tool['version'] != '2.9.8':
+              raise SystemExit('Update the Gateway test Deno pin with the recipe')
+          artifact = tool['artifacts']['amd64']
+          archive = Path.home() / '.cache/orbit-gateway-tests/deno/deno_2.9.8_linux_amd64.zip'
+          archive.parent.mkdir(parents=True, exist_ok=True)
+          if not archive.exists():
+              urllib.request.urlretrieve(artifact['url'], archive)
+          if hashlib.sha256(archive.read_bytes()).hexdigest() != artifact['sha256']:
+              raise SystemExit('Deno checksum mismatch')
+          destination = Path(os.environ['RUNNER_TEMP']) / 'gateway-tests-deno-bin'
+          with zipfile.ZipFile(archive) as release:
+              release.extract('deno', destination)
+          binary = destination / 'deno'
+          binary.chmod(0o755)
+          if subprocess.check_output([str(binary), '--version'], text=True).split()[:2] != ['deno', '2.9.8']:
+              raise SystemExit('Deno version mismatch')
+          with open(os.environ['GITHUB_PATH'], 'a') as output:
+              output.write(str(binary.parent) + '\n')
+          PYTHON
+      - name: Cache firewall Deno dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.DENO_DIR }}
+          key: gateway-tests-deno-${{ runner.os }}-${{ runner.arch }}-2.9.8-${{ hashFiles('swamp/deno.lock', 'swamp/extensions/behaviors/operations/firewall/**', 'swamp/extensions/behaviors/_lib/**') }}
+      - name: Warm firewall imports
+        working-directory: swamp
+        run: deno cache --no-lock extensions/behaviors/operations/firewall/firewall_test.ts
+      - name: Cache pinned Caddy download
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/orbit-gateway-tests/caddy
+          key: gateway-tests-caddy-${{ runner.os }}-${{ runner.arch }}-2.11.7-${{ hashFiles('apps/gateway/resources/machine-software/recipe.json') }}
+      - name: Verify and extract the recipe Caddy
+        run: |
+          python3 - <<'PYTHON'
+          import hashlib, json, os, subprocess, urllib.request
+          from pathlib import Path
+          tool = json.loads(Path('apps/gateway/resources/machine-software/recipe.json').read_text())['tools']['caddy']
+          if tool['version'] != '2.11.7':
+              raise SystemExit('Update the Gateway test Caddy pin with the recipe')
+          artifact = tool['artifacts']['amd64']
+          archive = Path.home() / '.cache/orbit-gateway-tests/caddy/caddy_2.11.7_linux_amd64.deb'
+          archive.parent.mkdir(parents=True, exist_ok=True)
+          if not archive.exists():
+              urllib.request.urlretrieve(artifact['url'], archive)
+          if hashlib.sha512(archive.read_bytes()).hexdigest() != artifact['sha512']:
+              raise SystemExit('Caddy checksum mismatch')
+          destination = Path(os.environ['RUNNER_TEMP']) / 'gateway-tests-caddy'
+          subprocess.run(['dpkg-deb', '-x', str(archive), str(destination)], check=True)
+          binary = destination / 'usr/bin/caddy'
+          if subprocess.check_output([str(binary), 'version'], text=True).split()[0] != 'v2.11.7':
+              raise SystemExit('Caddy version mismatch')
+          with open(os.environ['GITHUB_PATH'], 'a') as output:
+              output.write(str(binary.parent) + '\n')
+          PYTHON
+      - name: Run the complete Gateway Pest suite
+        working-directory: apps/gateway
+        run: |
+          php -r 'if (ini_get("memory_limit") !== "1G") { exit(1); }'
+          command -v caddy
+          vendor/bin/pest --parallel --processes=4 --default-time-limit=5 --fail-on-skipped --compact --colors=never --log-junit="$RUNNER_TEMP/gateway-tests.xml"
+      - name: Publish Gateway Pest results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gateway-tests-junit
+          path: ${{ runner.temp }}/gateway-tests.xml
+          if-no-files-found: error
+          retention-days: 7
+
   cli:
     name: CLI build
     uses: ./.github/workflows/orbit-cli-binary.yml
@@ -543,14 +661,14 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [php, gateway-static, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, pi, agent, proof, gateway-release, changes]
+    needs: [php, gateway-static, gateway-tests, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, pi, agent, proof, gateway-release, changes]
     runs-on: ubuntu-26.04
     permissions:
       contents: read
       statuses: read
       actions: read
     steps:
-      - name: Require builds and static checks
+      - name: Require builds, static checks and Gateway tests
         env:
           NEEDS: ${{ toJSON(needs) }}
           PROOF_REQUIRED: ${{ github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' }}
@@ -640,10 +758,10 @@ jobs:
 
   cli-release:
     name: Start the CLI release
-    # Orbit CLI Release also starts when the whole CI run succeeds. With slow checks non-blocking, start it as soon as
-    # Required checks passes on main, so a slow or failed non-blocking job does not hold the manifest back.
+    # Start after Required checks passes on main, independently of the slow-check policy.
+    # The CI-completion trigger is safe: release runs serialize by commit and skip an existing complete release.
     needs: required
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ORBIT_SLOW_CHECKS_BLOCKING == 'false'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
     permissions:
       actions: write

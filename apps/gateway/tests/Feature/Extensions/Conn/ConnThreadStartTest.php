@@ -222,7 +222,11 @@ describe('the server list', function (): void {
 
         $data = collect(threadCall($this->phone, 'GET', 'environments')->assertOk()->json('data'))->keyBy('environment_id');
 
-        expect($data['env-clone'])->toMatchArray(['instance_id' => $clone->id, 'power_state' => 'stopped'])
-            ->and($data['env-beast'])->toMatchArray(['instance_id' => null, 'power_state' => null]);
+        expect($data['env-clone'])->toMatchArray(['instance_id' => $clone->id, 'power_state' => 'stopped',
+            'project_id' => $default->project_id, 'project_name' => 'Tool', 'project_slug' => 'tool',
+            'instance_name' => 'fix-login-k3j9', 'node_name' => 'beast', 'instance_url' => null])
+            ->and($data['env-beast'])->toMatchArray(['instance_id' => null, 'power_state' => null,
+                'project_id' => null, 'project_name' => null, 'project_slug' => null,
+                'instance_name' => null, 'node_name' => null, 'instance_url' => null]);
     });
 });

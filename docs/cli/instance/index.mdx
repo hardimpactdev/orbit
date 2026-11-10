@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Actions/Instances/{StartDevelopmentInstanceCreateAction,RenameInstanceAction}.php
   - apps/gateway/app/Data/Instances/{CreateInstanceData,RenameInstanceData}.php
   - apps/gateway/app/Http/Requests/Instances/{StoreInstanceRequest,RenameInstanceRequest}.php
-  - packages/php-sdk/src/Requests/Instances/{Create,Register,Rename,Show,Update,Destroy,Clone,Transfer}InstanceRequest.php
+  - packages/php-sdk/src/Requests/Instances/{Create,Register,Rename,Show,Update,Destroy,Clone,Transfer,Migrate}InstanceRequest.php
   - packages/php-sdk/src/Requests/Instances/ListInstancesRequest.php
   - packages/php-sdk/src/Responses/Instances/**
 ---
@@ -26,7 +26,7 @@ Every command accepts `--json`. Machine output never supplies consent. Human lis
 
 Placement commands create, adopt, inspect, and remove an Instance on one Node.
 
-`instance:create`, `instance:clone`, `instance:transfer`, and `instance:destroy` return an Operation. `instance:rename` records the branch at once from the Node agent's report and returns the Instance. `instance:register` returns the Instance at once when the checkout's `.env` is absent or private, and otherwise an Operation for the run that protects `.env`. The Gateway validates and records intent, then queues the native start. The API returns the Operation before that start runs. Swamp executes the work. The CLI follows the Operation and prints its final receipt in JSON mode. `--idempotency-key=KEY` retries the same admission without creating another Operation. Ctrl+C stops following; it leaves the Operation running. Use `operation:show` to read it again.
+`instance:create`, `instance:clone`, `instance:transfer`, `instance:migrate`, and `instance:destroy` return an Operation. `instance:rename` records the branch at once from the Node agent's report and returns the Instance. `instance:register` returns the Instance at once when the checkout's `.env` is absent or private, and otherwise an Operation for the run that protects `.env`. The Gateway validates and records intent, then queues the native start. The API returns the Operation before that start runs. Swamp executes the work. The CLI follows the Operation and prints its final receipt in JSON mode. `--idempotency-key=KEY` retries the same admission without creating another Operation. Ctrl+C stops following; it leaves the Operation running. Use `operation:show` to read it again.
 
 | Command | Result |
 | --- | --- |
@@ -45,6 +45,7 @@ Placement commands create, adopt, inspect, and remove an Instance on one Node.
 | [`instance:show`](/cli/instance/show) | Show one Instance with its Route, source, and deploy steps. |
 | [`instance:rename`](/cli/instance/rename) | Record an already checked-out development branch. |
 | [`instance:transfer`](/cli/instance/transfer) | Move a development Instance to another Node. |
+| [`instance:migrate`](/cli/instance/migrate) | Move a development checkout Instance into an Instance container. Temporary: it goes when the last checkout has moved. |
 | [`instance:destroy`](/cli/instance/destroy) | Remove an Instance and its owned Processes, Schedules, and Route. |
 | [`instance:logs`](/cli/instance/logs) | Return the application log tail, or follow new lines. |
 

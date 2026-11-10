@@ -337,3 +337,7 @@ The Instance is the only runnable application model. Orbit keeps no conversion t
 ## Native source inspection
 
 Development registration and branch rename run from Node 209 through official SSH using captured checkout intent and pinned host keys. Git observations and environment-file protection are separate native steps. For registration the Gateway checks the read facts itself; for rename it records the terminal source result from the commits feed. In both, steps do not read intent or report progress through callbacks. Registration adopts the checkout in place. Rename records a branch that is already checked out and never changes Git HEAD.
+
+## Move a checkout Instance into a container
+
+[`instance:migrate`](/cli/instance/migrate) moves one development checkout Instance into an [Instance container](/reference/development-containers#migrate-a-checkout-instance) on its Node: its branch with the commits that were never pushed, its changed, untracked and ignored files, and its Route. Its database stays where it is. A Project's default Instance moves first, and a move that fails leaves the checkout Instance serving as before. The command is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.

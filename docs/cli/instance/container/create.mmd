@@ -27,12 +27,13 @@ sequenceDiagram
   %%> Result:
   %%> - the Instance is reserved with its runtime record: container name, bridge address, the lowest free T3 port from 3800 and the default as clone source
   %%> - `.env` is rendered from the Project's env template; it, the placeholder model key and a repository read token go to the vault
+  %%> - the clone workspace reads one private JSON vault value with `.env` and the Process environment files; SSH stdin takes the whole value
   %%> - a task is recorded with the full intent and `container.clone`
   Note over GW: Commit, push copies<br/>queue start · answer 202
   GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start run from queue<br/>operation-instance-create
-  par container and T3 preparation
-    SW->>N: Clone default container<br/>Ansible · tags clone
+  par isolated container job · native progress per phase
+    SW->>N: Clone default container<br/>native clone-container
     %%> What it does:
     %%> - the copy supplies the full root disk device (type, path, pool and size), whether the seed inherits it or stores it locally
     %%> - `incus copy` of the default container's snapshot `seed-<commit>`, a ZFS clone; a stopped default needs no start
@@ -53,39 +54,38 @@ sequenceDiagram
       %%> - MySQL: a dump of the default database restored into the new one
       %%> Runs beside the clone step: Swamp starts both at once.
     end
-    SW->>C: Prepare the workspace<br/>Ansible · tags workspace
+    SW->>C: Prepare the workspace<br/>native clone-workspace
     %%> What it does:
     %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
     %%> - writes `.env` for `orbit` with group `work`; it keeps the default's `APP_KEY`, because the cloned data is encrypted with it
     %%> No setup steps:
     %%> - the default Instance installed the dependencies and migrated; a later lockfile change is installed in the workspace
-    SW->>C: Prepare the agent<br/>Ansible · tags agent
+    SW->>C: Prepare the agent<br/>native clone-agent
     %%> What it does:
     %%> - writes the placeholder key for `agent`, and the Claude Code and Codex settings that point at the model forwarder
     %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type
     %%> - writes `/etc/orbit/instance`, owned by root and readable by all
-    SW->>C: Start Processes<br/>Ansible · tags processes
     %%> What it does:
     %%> - rewrites FrankenPHP's unit for the clone's own bridge address and restarts it as `orbit`
-    SW->>C: Start T3<br/>Ansible · tags t3
+    SW->>C: Start T3<br/>native clone-t3
     %%> What it does:
     %%> - T3 starts for the first time and creates its identity; the T3 project `/srv/workspace` is added as `agent`
     %%> Check:
     %%> - waits up to 30 s for `/.well-known/t3/environment`, else `instance.t3_unready`
-  and Route publication
+    SW->>C: Register the T3 server<br/>native clone-sessions · private copy · vault
+    %%> What it does:
+    %%> - see container/t3-register.mmd: the sessions go to the vault, and the step checks the environment id and scopes
+  and independent Route job · no depth link
     opt web-serving Project
       SW->>N: Make, sign Route key<br/>child route-create-csr
       SW->>N: Create the Route<br/>child operation-route-create
       %%> What it adds:
       %%> - the same steps as `route:create`, with the signed certificate, then a TLS handshake check; no HTTP request waits for app startup
       %%> - the Node's Caddy proxies the Route to FrankenPHP at the container's bridge address
-      %%> - Swamp step `clone-route` waits only for `route-csr`; the admitted upstream address needs no running container
-      %%> - the prepared Route skips workspace ACL and environment writes; the container chain owns those
+      %%> - the Route job waits only for its CSR; a separate job prevents depth scheduling from delaying the container phases
+      %%> - the prepared Route skips workspace ACL and environment writes; the container job owns those
     end
   end
-  SW->>C: Register the T3 server<br/>sensitive output · vault
-  %%> What it does:
-  %%> - see container/t3-register.mmd: the sessions go to the vault, and the step checks the environment id and scopes
   alt all steps pass in budget
     C-->>SW: T3 and site answer
     SW-->>GW: Run succeeded<br/>terminal event
@@ -93,6 +93,7 @@ sequenceDiagram
     %%> Result:
     %%> - the Instance, its runtime and its Route become active; the runtime records the default Instance it came from
     %%> - the Conn layer records the T3 server from the result; its Node is the container's Node and it names the Instance
+    %%> - the receipt includes when T3 answered, its sessions passed, and the Route TLS probes passed
   else Instance already created
     Note over GW: Skipped — already created<br/>instance.exists
   else a step fails or the budget ends

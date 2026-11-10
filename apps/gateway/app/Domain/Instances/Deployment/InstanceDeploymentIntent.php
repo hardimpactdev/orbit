@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Deployment;
 
 use App\Actions\Instances\InstanceDeploymentConfigResolver;
+use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
@@ -44,6 +45,8 @@ final readonly class InstanceDeploymentIntent
     public function snapshot(Instance $instance, bool $rollback = false): array
     {
         $instance->refresh()->loadMissing(['project', 'node']);
+        // An Instance that moves into a container takes no deployment until the move has ended.
+        InstanceMigration::assertSettled($instance);
         if ($instance->placedOnAppDev() && ! $rollback) {
             $this->assertDevelopment($instance);
             $development = $this->development->ordered($instance->project);

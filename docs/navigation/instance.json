@@ -46,7 +46,8 @@
             "cli/instance/analytics-enable",
             "cli/instance/analytics-show",
             "cli/instance/analytics-disable",
-            "cli/instance/transfer"
+            "cli/instance/transfer",
+            "cli/instance/migrate"
           ]
         }
       ]

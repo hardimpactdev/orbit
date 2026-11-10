@@ -86,8 +86,6 @@ Each active Instance of a web-serving Project has exactly one Route without a we
 
 A visitable development `default` serves its web root from its checkout, which each [deployment](/reference/deployments#development-defaults) updates in place. Defaults without a Route are also kept current.
 
-A successful update of a development Instance's authoritative Route clears its pending publication marker. This completion belongs to the Route, so a default whose seed already matches its branch needs no automatic-deploy policy run to settle it.
-
 ## Route record
 
 The Gateway stores these fields for each Route. `route:show` returns them.
@@ -425,7 +423,7 @@ When the Router and the workload share one Node, one Caddy service serves the Ro
 
 ### Development-server endpoint
 
-The reserved path `/__orbit/vite` serves live frontend assets and hot module replacement (HMR) on the Route's HTTPS domain, on port 443. Workload Caddy proxies that path to the Instance's assigned `vite_port` on loopback and keeps the path prefix. When the Instance has no assigned `vite_port`, Caddy does not proxy that path. Router Caddy forwards it like any other path. HTTPS and WSS terminate with the Route's Orbit CA certificates.
+The reserved path `/__orbit/vite` serves live frontend assets and hot module replacement (HMR) on the Route's HTTPS domain, on port 443. For a checkout Instance, workload Caddy proxies that path to the assigned `vite_port` on loopback and keeps the path prefix. For a container with a migrated `vp-dev` Process, it uses the container’s bridge address and assigned port. When the Instance has no assigned `vite_port`, Caddy does not proxy that path. Router Caddy forwards it like any other path. HTTPS and WSS terminate with the Route's Orbit CA certificates.
 
 Each development Instance on a Node has its own port, and separate Nodes can reuse a port. See [Assigned Vite ports](/reference/assigned-vite-ports). When nothing listens on the port, Caddy returns a proxy error for that path only, and never picks another Instance.
 
@@ -438,7 +436,7 @@ A development systemd Process gets these values from the Route domain:
 | `ORBIT_DEV_SERVER_PATH` | `/__orbit/vite` |
 | `ORBIT_DEV_SERVER_PORT` | The Instance's assigned port |
 
-A Vite server that follows this contract binds its port on loopback and publishes the Route origin:
+A checkout Instance’s Vite server binds loopback and publishes the Route origin, as below. A migrated container preset binds `0.0.0.0` so the Node can reach it:
 
 ```js
 import { defineConfig } from 'vite'
@@ -695,7 +693,7 @@ Instance removal deletes a Route whose last target it removes, before it finaliz
 
 Only one operation publishes private Caddy, DNS, or Metrics configuration at a time. The Gateway takes an exclusive lock on one file, `$ORBIT_HOME/.dnsmasq-projections.lock`, before it reads Route, target, Cluster, and Router state. It holds the lock through Caddy builds, DNS publication, and activation. Nested calls in one request share it. A competitor waits up to 30 seconds, or the rest of its command time when that is shorter. Then it returns HTTP 409 `app-dev.projection_busy` before it changes anything.
 
-Route writes also hold their Nodes (decided by the orchestrator, for Nick's review, 2026-11-06). When the Gateway admits a Route write (`route:create`, `route:update`, `route:destroy`, `route:target:set`, `instance:create`, `instance:destroy`, `instance:clone` or `instance:transfer`), it records one hold for each Node that serves the Route's site, through Caddy or PHP. The task keeps the hold until it reaches a terminal state.
+Route writes also hold their Nodes (decided by the orchestrator, for Nick's review, 2026-11-06). When the Gateway admits a Route write (`route:create`, `route:update`, `route:destroy`, `route:target:set`, `instance:create`, `instance:destroy`, `instance:clone`, `instance:transfer` or `instance:migrate`), it records one hold for each Node that serves the Route's site, through Caddy or PHP. The task keeps the hold until it reaches a terminal state.
 
 A second Route write that needs a held Node is admitted with status `waiting`. It starts no Swamp run and gets no 409. It starts when every Node it needs is free, oldest first. A newer write also waits behind an older waiting one that shares a Node. Its time budget counts from its start, and an operator can cancel it while it waits.
 

@@ -22,6 +22,31 @@ function progressRows(Operation $operation): array
     return array_values($operation->refresh()->state['native_progress']['steps']);
 }
 
+it('keeps all five clone phases visible while publication runs in its own job', function (): void {
+    $operation = progressOperation();
+    $operation->update(['kind' => 'instance.create']);
+    $progress = app(NativeRunProgress::class);
+    $sequence = 0;
+    $progress->apply($operation->id, 'run-1', ['kind' => 'step_started', 'jobId' => 'publication', 'stepId' => 'clone-route',
+        'startedAt' => '2026-11-10T20:00:00.000Z', 'seq' => ++$sequence]);
+    foreach (['container', 'workspace', 'agent', 't3', 'sessions'] as $index => $phase) {
+        $started = sprintf('2026-11-10T20:00:%02d.000Z', $index + 1);
+        $finished = sprintf('2026-11-10T20:00:%02d.500Z', $index + 1);
+        $progress->apply($operation->id, 'run-1', ['kind' => 'step_started', 'jobId' => 'clone', 'stepId' => 'clone-'.$phase,
+            'startedAt' => $started, 'seq' => ++$sequence]);
+        expect($operation->refresh()->current_step)->toBe('clone-'.$phase);
+        $progress->apply($operation->id, 'run-1', ['kind' => 'step_completed', 'jobId' => 'clone', 'stepId' => 'clone-'.$phase,
+            'completedAt' => $finished, 'seq' => ++$sequence]);
+    }
+
+    $rows = progressRows($operation);
+    expect(array_column($rows, 'name'))->toBe(['clone-route', 'clone-container', 'clone-workspace', 'clone-agent', 'clone-t3', 'clone-sessions'])
+        ->and(array_column(array_slice($rows, 1), 'status'))->toBe(array_fill(0, 5, 'succeeded'))
+        ->and(array_column(array_slice($rows, 1), 'started_at'))->not->toContain(null)
+        ->and(array_column(array_slice($rows, 1), 'finished_at'))->not->toContain(null)
+        ->and($operation->current_step)->toBe('clone-route');
+});
+
 it('ends a forEach item whose end event carries no index on the row its start opened', function (): void {
     $operation = progressOperation();
     $progress = app(NativeRunProgress::class);

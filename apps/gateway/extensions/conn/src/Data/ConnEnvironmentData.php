@@ -25,12 +25,18 @@ final class ConnEnvironmentData extends Data
         public bool $cleanupPending,
         public int $cleanupVersion,
         public ?int $instanceId,
+        public ?int $projectId,
+        public ?string $projectName,
+        public ?string $projectSlug,
+        public ?string $instanceName,
+        public ?string $nodeName,
+        public ?string $instanceUrl,
         public ?string $powerState,
     ) {}
 
     public static function fromModel(ConnEnvironment $environment): self
     {
-        $environment->loadMissing(['node', 'instance.runtime']);
+        $environment->loadMissing(['node', 'instance.runtime', 'instance.project', 'instance.node', 'instance.routes']);
 
         return new self(
             environmentId: $environment->environment_id,
@@ -45,6 +51,12 @@ final class ConnEnvironmentData extends Data
             cleanupVersion: $environment->cleanup_version,
             // The server of a container Instance names it, and the container's power state: a stopped one is asleep.
             instanceId: $environment->instance_id,
+            projectId: $environment->instance?->project_id,
+            projectName: $environment->instance?->project->name,
+            projectSlug: $environment->instance?->project->slug,
+            instanceName: $environment->instance?->name,
+            nodeName: $environment->instance?->node->name,
+            instanceUrl: $environment->instance?->url(),
             powerState: $environment->instance?->runtime?->power_state->value,
         );
     }

@@ -17,7 +17,7 @@ final readonly class ContainerDestroyExecutionCopies
     {
         $keys = [];
         foreach (Operation::query()->where('target_type', 'instance')->where('target_id', $destroy->target_id)
-            ->whereIn('kind', ['instance.create', 'instance.destroy', 'instance.deploy'])->get() as $operation) {
+            ->whereIn('kind', ['instance.create', 'instance.destroy', 'instance.deploy', 'instance.migrate'])->get() as $operation) {
             $keys = [...$keys, ...$this->references($operation->input), ...$this->references($operation->result ?? [])];
             // These run-start copies are deterministic, rather than persisted in the public Operation input.
             foreach (['instance-git-operation-', 'instance-git-credential-'] as $prefix) {
@@ -31,6 +31,11 @@ final readonly class ContainerDestroyExecutionCopies
                     $keys[] = 'database-create-owner-'.$intent;
                 }
                 foreach (['instance-create-environment-input-', 'instance-create-environment-testing-', 'instance-create-model-', 'instance-create-processes-'] as $prefix) {
+                    $keys[] = $prefix.$operation->id;
+                }
+            }
+            if ($operation->kind === 'instance.migrate') {
+                foreach (['instance-migrate-model-', 'instance-migrate-processes-'] as $prefix) {
                     $keys[] = $prefix.$operation->id;
                 }
             }

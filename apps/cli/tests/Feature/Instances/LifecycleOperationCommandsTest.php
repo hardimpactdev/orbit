@@ -10,6 +10,7 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Instances\CloneInstanceRequest;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
+use Orbit\Sdk\Requests\Instances\MigrateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
@@ -54,5 +55,33 @@ it('follows lifecycle admission and emits only the final Operation in JSON', fun
     'clone' => ['instance:clone', CloneInstanceRequest::class, ['candidate' => 501, 'node' => 10, 'name' => 'prod', '--preview-name' => 'preview'],
         ['node_id' => 10, 'name' => 'prod', 'preview_name' => 'preview']],
     'transfer' => ['instance:transfer', TransferInstanceRequest::class, ['instance' => 501, 'node' => 10, '--force' => true], ['node_id' => 10]],
+    'migrate' => ['instance:migrate', MigrateInstanceRequest::class, ['instance' => 501, '--force' => true], []],
     'destroy' => ['instance:destroy', DestroyInstanceRequest::class, ['instance' => 501, '--yes' => true, '--force' => true], ['force' => true]],
+]);
+
+it('names blockers in human and JSON migration failures', function (bool $json, string $code, string $message): void {
+    $final = ['id' => 901, 'kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => 501,
+        'status' => 'failed', 'sequence' => 8, 'error_code' => $code,
+        'result' => ['instance_id' => 501, 'moved' => false, 'error_message' => $message]];
+    MockClient::global([
+        MigrateInstanceRequest::class => MockResponse::make(['data' => $final], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final]),
+    ]);
+
+    $exit = Artisan::call('instance:migrate', ['instance' => 501, '--force' => true, '--json' => $json, '--no-interaction' => true]);
+    $output = trim(Artisan::output());
+
+    expect($exit)->toBe(1);
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result']['error_message'])->toBe($message);
+    } else {
+        expect(str_replace(["\n", "\r"], '', $output))->toContain('/fixture', $code);
+        expect(preg_replace('/\s+/', '', $output))->toContain(preg_replace('/\s+/', '', $message));
+    }
+})->with(['human' => false, 'json' => true])->with([
+    'worktrees and files' => ['instance.migrate_retirement_blocked', 'Cannot retire checkout "/fixture". Other worktrees: /detached. Changed files: index.php.'],
+    'unpushed commits' => ['instance.migrate_unpushed_commits', 'Cannot retire checkout "/fixture". Branch spare has 2 unpushed commits.'],
+    'stashes' => ['instance.migrate_stashes_present', 'Cannot retire checkout "/fixture". Stashes: 2.'],
+    'symlinks' => ['instance.migrate_symlink_unsupported', 'Cannot migrate checkout "/fixture". Unsupported symlinks: [{"path":"public/storage","target":"/missing/storage","reason":"broken"},{"path":"local-package","target":"/shared/package","reason":"outside checkout"}].'],
 ]);
