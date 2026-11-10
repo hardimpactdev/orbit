@@ -7,6 +7,7 @@ use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
@@ -80,6 +81,22 @@ function seededDefault(Node $node, ?ProjectType $type = null): Instance
 }
 
 describe('a clone of the container default', function (): void {
+    it('limits every default and clone to the same CPU memory process and root disk budget', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $operation = containerCreate($default->project, $node, 'bounded');
+        $runtime = InstanceRuntime::query()->where('instance_id', $default->id)->sole();
+        $defaultIntent = app(InstanceContainer::class)->intent($default, $runtime);
+
+        foreach ([$defaultIntent, containerIntentOf($operation)] as $container) {
+            expect($container)->toMatchArray([
+                'project' => 'orbit-instances',
+                'config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096'],
+                'root_disk_size' => '40GiB',
+            ]);
+        }
+    });
+
     it('takes the next address, the lowest free T3 port and the default as its clone source', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);

@@ -4,6 +4,9 @@
 - name: Name the container commands
   ansible.builtin.set_fact:
     incus_project: [incus, --project, "{{ container.project }}"]
+    resource_args: >-
+      {{ (['--config'] | product(container.config.items() | map('join', '=')) | list | flatten)
+         + ['--device', 'root,size=' ~ container.root_disk_size] }}
     as_orbit: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/orbit', container.name,
           '--', 'runuser', '-u', 'orbit', '--'] }}
@@ -61,7 +64,7 @@
               '--device', 'eth0,ipv4.address=' ~ container.address,
               '--device', 'eth0,security.acls=' ~ container.network ~ '-egress,' ~ container.acl,
               '--device', 'eth0,security.acls.default.egress.action=reject',
-              '--device', 'eth0,security.acls.default.ingress.action=reject'] }}
+              '--device', 'eth0,security.acls.default.ingress.action=reject'] + resource_args }}
       changed_when: true
 
 # A clone copies the default's seed snapshot, which the default took with its units stopped: a ZFS clone that needs no start of the
@@ -89,7 +92,7 @@
         argv: >-
           {{ incus_project + ['copy', container.clone.source ~ '/' ~ container.clone.snapshot, container.name,
               '--device', 'eth0,ipv4.address=' ~ container.address,
-              '--device', 'eth0,security.acls=' ~ container.network ~ '-egress,' ~ container.acl] }}
+              '--device', 'eth0,security.acls=' ~ container.network ~ '-egress,' ~ container.acl] + resource_args }}
       changed_when: true
     - name: Read the copy's devices
       ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }

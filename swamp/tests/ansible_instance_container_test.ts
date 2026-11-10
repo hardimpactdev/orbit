@@ -79,6 +79,8 @@ function fixture() {
     project: "orbit-instances",
     name: "instance-7",
     image: "orbit-instance",
+    config: { "limits.cpu": "4", "limits.memory": "8GiB", "limits.processes": "4096" },
+    root_disk_size: "40GiB",
     address: "10.253.0.2",
     network: "orbitinst0",
     acl: "instance-7",
@@ -169,8 +171,9 @@ Deno.test({
         "eth0,security.acls=orbitinst0-egress,instance-7",
         "eth0,security.acls.default.egress.action=reject",
         "eth0,security.acls.default.ingress.action=reject",
+        "root,size=40GiB",
       ]);
-      assertEquals(state.containers["instance-7"].config, "security.idmap.isolated=true");
+      assertEquals(state.containers["instance-7"].config, ["security.idmap.isolated=true", "limits.cpu=4", "limits.memory=8GiB", "limits.processes=4096"]);
       assertEquals(state.containers["instance-7"].status, "Running");
       // `php` on every PATH in the container is the Project's static build.
       assertEquals(
@@ -338,10 +341,12 @@ Deno.test({
       }
       const state = f.state();
       assertEquals(state.containers["instance-8"].source, `instance-7/seed-${seed}`);
-      assertEquals(state.containers["instance-8"].devices, ["eth0,ipv4.address=10.253.0.3", "eth0,security.acls=orbitinst0-egress,instance-8"]);
+      assertEquals(state.containers["instance-8"].devices, ["eth0,ipv4.address=10.253.0.3", "eth0,security.acls=orbitinst0-egress,instance-8", "root,size=40GiB"]);
       assertEquals(state.containers["instance-8"].added, {
         t3: { type: "proxy", settings: ["listen=tcp:10.44.0.7:3800", "connect=tcp:10.253.0.3:3773", "nat=true"] },
       });
+      assertEquals(state.containers["instance-8"].config, ["limits.cpu=4", "limits.memory=8GiB", "limits.processes=4096"]);
+      assert(state.containers["instance-8"].devices.includes("root,size=40GiB"));
       assertEquals(state["network-acls"].find((acl: { name: string }) => acl.name === "instance-8"), { name: "instance-8", ...f.container.acl_rules });
       // The task VM range's deny comes before the allow.
       assertEquals(Deno.readTextFileSync(`${f.folder}/ufw`).trim().split("\n").map((line) => JSON.parse(line).comment),

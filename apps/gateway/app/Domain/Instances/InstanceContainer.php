@@ -171,6 +171,8 @@ final readonly class InstanceContainer
 
         return [
             'instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
+            'config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096'],
+            'root_disk_size' => '40GiB',
             'image' => self::Image, 'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
             'acl' => $runtime->container_name,
             // The bridge ACL keeps the ways to the model forwarder and the egress proxy; this one lets only the Node's Caddy reach

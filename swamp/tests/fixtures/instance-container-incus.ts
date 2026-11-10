@@ -79,7 +79,9 @@ if (family === "init") {
   const name = args[2];
   const devices: string[] = [];
   for (let device = take("--device"); device !== null; device = take("--device")) devices.push(device);
-  state.containers[name] = { project, image: args[1], status: "Stopped", devices, config: take("--config"), snapshots: [], uuid: uuid(name) };
+  const config: string[] = [];
+  for (let setting = take("--config"); setting !== null; setting = take("--config")) config.push(setting);
+  state.containers[name] = { project, image: args[1], status: "Stopped", devices, config, snapshots: [], uuid: uuid(name) };
   Deno.mkdirSync(`${rootfs(name)}/srv/workspace`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/etc/systemd/system`, { recursive: true });
   for (const home of ["agent/.codex", "agent/.config/orbit", "orbit"]) {
@@ -102,7 +104,9 @@ if (family === "init") {
   for (const path of ["home/agent/.codex", "home/agent/.config/orbit", "etc/orbit"]) {
     Deno.mkdirSync(`${rootfs(name)}/${path}`, { recursive: true });
   }
-  state.containers[name] = { project, source: from, status: "Stopped", devices, snapshots: [], uuid: uuid(name) };
+  const config: string[] = [];
+  for (let setting = take("--config"); setting !== null; setting = take("--config")) config.push(setting);
+  state.containers[name] = { project, source: from, status: "Stopped", devices, config, snapshots: [], uuid: uuid(name) };
 } else if (family === "config" && args[1] === "device" && args[2] === "add") {
   const [, , , name, device, type, ...settings] = args;
   state.containers[name].added ??= {};
