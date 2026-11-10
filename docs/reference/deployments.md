@@ -107,11 +107,15 @@ If the default has pending Route publication, the automatic policy admits a norm
 
 ### Container source facts
 
-Before admitting a manual or automatic deployment of a development default in a container, Orbit refreshes the Project's source facts with the same capture used by `project:update`: PHP version, source classification and environment template. It reads the requested commit. Without `--commit`, it reads the default branch head once and pins the deployment to the returned SHA. The container intent, including its PHP paths and Process units, is rendered after that capture; a later branch change cannot substitute another commit. The fetch still checks that the pinned commit is on the branch's first-parent chain.
+Before admitting a manual or automatic deployment of a development default in a container, Orbit refreshes the Project's source facts with the same capture used by `project:update`: PHP version, source classification and environment template. It reads the requested commit. Without `--commit`, it reads the default branch head once and pins the deployment to the returned SHA.
+
+The source read runs before the admission write transaction. Under admission ownership, Orbit rechecks idempotency, automatic-deploy eligibility and the source configuration before recording the facts. A changed source configuration refuses with `deployment.source_changed` (409). The container intent, including its PHP paths and Process units, is rendered after the facts are recorded; a later branch change cannot substitute another commit. The fetch still checks that the pinned commit is on the branch's first-parent chain.
 
 A failed read refuses admission with `project.source_unavailable` (502), or the source-access error when credentials cannot be obtained. Invalid or unsupported PHP or framework metadata refuses with its classification code (422), such as `app-dev.php_version_unsupported`. A web-serving Project without PHP refuses with `project.source_defaults_incomplete` (422); a missing static PHP build refuses with `instance.host_unavailable` (409). These refusals start no deployment and leave the stored facts unchanged. Orbit never deploys using stale PHP or framework facts after a capture failure. Environment-template merging and invalid-file handling follow the [existing template rules](/domains/applications#how-the-template-changes).
 
-A successful admission stores the refreshed facts and environment template even if a later deployment step fails. The seed changes only after a successful deployment. A successful seed carries the selected runtime to the next clones; existing clones do not change. Checkout Instances and production deployments do not refresh Project source facts through deployment.
+A successful admission updates the Project-wide facts and environment template at once. Failure or cancellation of that deployment does not restore them. New container intents and later rendering of existing container Process units use the current Project PHP version. Running units change only when an operation applies their new configuration.
+
+The seed changes only after a successful deployment and determines the files a clone copies, not its PHP selection: after a failed or cancelled deploy, a clone can copy the older seed while selecting the newer admitted PHP version. Checkout Instances and production deployments do not refresh Project source facts through deployment.
 
 ### Seeds
 
