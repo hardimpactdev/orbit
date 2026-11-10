@@ -325,7 +325,7 @@ Deno.test({
           files: [
             { path: "/etc/orbit/instance", uid: 0, gid: 0, mode: "0644", content: "ORBIT_INSTANCE_ID=8\n" },
             { path: "/home/agent/.codex/config.toml", uid: 2750, gid: 2750, mode: "0600", content: "model_provider = \"orbit\"\n" },
-            { path: "/home/agent/.t3/userdata/settings.json", uid: 2750, gid: 2750, mode: "0600", content: '{"linkedEnvironmentsEnabled": true}\n' },
+            { path: "/home/agent/.t3/userdata/settings.json", uid: 2750, gid: 2750, mode: "0600", json: { linkedEnvironmentsEnabled: true } },
           ],
           links: [{ path: "/home/agent/.claude/CLAUDE.md", target: "/opt/orbit-agent/current/notes/web-app.md" }],
         },
@@ -373,6 +373,79 @@ Deno.test({
         assertEquals(again.changed, 0, `${phase}: ${again.output}`);
       }
       assertEquals(f.state().projects, ["/srv/workspace"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    const rootfs = `${f.folder}/containers/instance-7`;
+    const claude = "/home/agent/.claude.json";
+    const t3 = "/home/agent/.t3/userdata/settings.json";
+    try {
+      const created = f.run("container");
+      assert(created.ok, created.output);
+      Deno.mkdirSync(`${rootfs}/home/agent/.config/orbit`, { recursive: true });
+      Object.assign(f.container, {
+        clone: {
+          files: [
+            { path: claude, uid: 2750, gid: 2750, mode: "0600", json: { hasCompletedOnboarding: true } },
+            { path: t3, uid: 2750, gid: 2750, mode: "0600", json: { linkedEnvironmentsEnabled: true } },
+          ],
+          model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" },
+          links: [],
+        },
+      });
+      f.write();
+      const read = (path: string) => JSON.parse(Deno.readTextFileSync(rootfs + path));
+      const first = f.run("agent");
+      assert(first.ok, first.output);
+      assertEquals(read(claude), { hasCompletedOnboarding: true });
+      assertEquals(read(t3), { linkedEnvironmentsEnabled: true });
+      for (const path of [claude, t3]) {
+        assertEquals(Deno.statSync(rootfs + path).mode! & 0o777, 0o600);
+        assertEquals(f.state().files[path], { uid: "2750", gid: "2750", mode: "0600" });
+      }
+
+      // T3 and Claude add their identity, migration state and preferences after the first start.
+      const runtimeClaude = { machineID: "machine-7", userID: "user-7", firstStartTime: "2026-11-10T10:00:00Z",
+        firstStartVersion: "2.1", migrationVersion: 4, pluginUsage: {}, seenNotifications: ["welcome"] };
+      const runtimeT3 = { idleCompaction: { enabled: true }, projectSettingsFolded: { tool: false } };
+      const populated = [
+        { path: claude, value: { ...runtimeClaude, hasCompletedOnboarding: true } },
+        { path: t3, value: { ...runtimeT3, linkedEnvironmentsEnabled: true } },
+      ];
+      for (const { path, value } of populated) Deno.writeTextFileSync(rootfs + path, JSON.stringify(value, null, 4));
+      const unchanged = f.run("agent");
+      assert(unchanged.ok, unchanged.output);
+      for (const { path, value } of populated) {
+        assertEquals(read(path), value);
+        assertEquals(Deno.readTextFileSync(rootfs + path), JSON.stringify(value, null, 4));
+      }
+      assertEquals(unchanged.changed, 0, unchanged.output);
+
+      // An incorrect managed value and a missing managed key are repaired without losing the runtime's keys.
+      Deno.writeTextFileSync(rootfs + claude, JSON.stringify({ ...runtimeClaude, hasCompletedOnboarding: false }));
+      Deno.writeTextFileSync(rootfs + t3, JSON.stringify(runtimeT3));
+      const repaired = f.run("agent");
+      assert(repaired.ok, repaired.output);
+      assertEquals(repaired.changed, 1, repaired.output);
+      for (const { path, value } of populated) assertEquals(read(path), value);
+      const again = f.run("agent");
+      assert(again.ok, again.output);
+      assertEquals(again.changed, 0, again.output);
+
+      // A damaged runtime file fails the phase rather than replacing the runtime's state with defaults.
+      Deno.writeTextFileSync(rootfs + claude, '{"machineID":');
+      const damaged = f.run("agent");
+      assert(!damaged.ok, damaged.output);
+      assertEquals(Deno.readTextFileSync(rootfs + claude), '{"machineID":');
+      assertEquals(f.result(), { error_code: "instance.container_agent_failed" });
     } finally {
       f.cleanup();
     }
