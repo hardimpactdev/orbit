@@ -196,6 +196,7 @@ def run_step(step, environment, strict):
 
 def execute(steps, environment, strict, workers):
     results = []
+    order = {id(step): index for index, step in enumerate(steps)}
 
     def record(completed):
         result, output = completed
@@ -216,7 +217,8 @@ def execute(steps, environment, strict, workers):
         else:
             for step in group:
                 record(run_step(step, environment, strict))
-    return results
+    # Keep the summary and callers in plan order while command output streams in completion order.
+    return sorted(results, key=lambda result: order[id(result[0])])
 
 
 def main(argv=None):

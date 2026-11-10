@@ -124,7 +124,7 @@ class ShapeGateToolsTest(unittest.TestCase):
                 self.assertTrue(reported.wait(1), 'completed command output is held behind the slow command')
             finally:
                 release.set()
-            self.assertEqual([item[0].name for item in result.result(timeout=2)], ['fast', 'slow'])
+            self.assertEqual([item[0].name for item in result.result(timeout=2)], ['slow', 'fast'])
 
 
 if __name__ == '__main__':
