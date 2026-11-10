@@ -3,8 +3,8 @@
 # bounded critical section so a concurrent publication cannot select a deleted binary.
 - name: Reconcile retired managed CLI files under the update lock
   ansible.builtin.shell: |
-    set -eu
-    flock --wait 120 /run/lock/orbit-self-update.lock sh -eu -c '
+    set -euo pipefail
+    flock --wait 120 /run/lock/orbit-self-update.lock bash -euo pipefail -c '
       remove="$1"
       managed="orbit-0[.][1-9][0-9]{0,9}[.]0"
       if [ -L /usr/local/bin/orbit ] && readlink /usr/local/bin/orbit | grep -Eq "^(/usr/local/bin/)?$managed$"; then
@@ -20,7 +20,9 @@
         printf "%s\n" /root/.orbit/config.json
         if [ "$remove" = true ]; then rm -- /root/.orbit/config.json; fi
       fi
-    ' sh {{ cli_remove | bool | lower }}
+    ' bash {{ cli_remove | bool | lower }}
+  args:
+    executable: /bin/bash
   register: cli_retired
   changed_when: cli_remove | bool and cli_retired.stdout | length > 0
   failed_when: cli_retired.rc != 0 or (not cli_remove | bool and cli_retired.stdout | length > 0)
