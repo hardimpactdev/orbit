@@ -723,7 +723,7 @@
       when: t3_project.rc != 0
       block:
         - name: Add the project
-          ansible.builtin.command: { argv: "{{ as_agent + [container.clone.t3.t3, 'project', 'add', container.workspace] }}" }
+          ansible.builtin.command: { argv: "{{ as_agent + [container.clone.t3.t3, 'project', 'add', container.workspace, '--title', container.clone.t3.title] }}" }
           register: t3_added
           changed_when: true
         - name: Keep the project's id

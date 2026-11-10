@@ -66,6 +66,18 @@ function egress_world(TaskVmState $state = TaskVmState::Ready, bool $grouped = t
     return [$host, $group, $vm];
 }
 
+/** Store the full production row limit in batches that fit SQLite's parameter limit. */
+function fill_egress_group(Task $group): void
+{
+    $now = now()->toDateTimeString();
+    foreach (array_chunk(range(1, RecordTaskGroupEgressAction::MaxRows), 500) as $batch) {
+        TaskGroupEgress::query()->insert(array_map(static fn (int $i): array => [
+            'task_id' => $group->id, 'vm_name' => 'shark-tvm-1', 'destination' => "h{$i}.example", 'kind' => 'name', 'port' => 443, 'protocol' => 'tcp',
+            'addresses' => '[]', 'sources' => '["dns"]', 'flags' => '[]', 'first_seen_at' => $now,
+        ], $batch));
+    }
+}
+
 it('accepts the egress fact the agent reports', function (): void {
     $fact = egress_fact(egress_row(), egress_row(['destination' => '140.82.121.4', 'kind' => 'address', 'port' => 22, 'addresses' => ['140.82.121.4'], 'sources' => ['conn'], 'flags' => ['dot']]),
         egress_row(['destination' => 'example.com', 'port' => null, 'protocol' => null, 'sources' => ['dns']]));
@@ -162,11 +174,7 @@ it('keeps the rows of a group after its VM is destroyed and gives a reused VM na
 
 it('stops a group at the row limit', function (): void {
     [$host, $group] = egress_world();
-    $now = now()->toDateTimeString();
-    TaskGroupEgress::query()->insert(array_map(static fn (int $i): array => [
-        'task_id' => $group->id, 'vm_name' => 'shark-tvm-1', 'destination' => "h{$i}.example", 'kind' => 'name', 'port' => 443, 'protocol' => 'tcp',
-        'addresses' => '[]', 'sources' => '["dns"]', 'flags' => '[]', 'first_seen_at' => $now,
-    ], range(1, RecordTaskGroupEgressAction::MaxRows)));
+    fill_egress_group($group);
 
     expect(app(RecordTaskGroupEgressAction::class)->execute($host, 'shark-tvm-1', egress_fact()))->toBe(0)
         ->and(TaskGroupEgress::query()->where('task_id', $group->id)->count())->toBe(RecordTaskGroupEgressAction::MaxRows);
@@ -257,11 +265,7 @@ it('lists a name without a port only until the VM connected to it', function ():
 
 it('takes no write lock for a report of a group at its row limit', function (): void {
     [$host, $group] = egress_world();
-    $now = now()->toDateTimeString();
-    TaskGroupEgress::query()->insert(array_map(static fn (int $i): array => [
-        'task_id' => $group->id, 'vm_name' => 'shark-tvm-1', 'destination' => "h{$i}.example", 'kind' => 'name', 'port' => 443, 'protocol' => 'tcp',
-        'addresses' => '[]', 'sources' => '["dns"]', 'flags' => '[]', 'first_seen_at' => $now,
-    ], range(1, RecordTaskGroupEgressAction::MaxRows)));
+    fill_egress_group($group);
     $transactions = 0;
     Event::listen(TransactionBeginning::class, static function () use (&$transactions): void {
         $transactions++;

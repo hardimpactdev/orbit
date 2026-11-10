@@ -50,9 +50,15 @@ ExecStart=/usr/local/bin/vp dev --host=127.0.0.1 --port=${ORBIT_DEV_SERVER_PORT}
 
 Orbit writes `ORBIT_DEV_SERVER_PORT` to the environment file before each start. Systemd reads it at start, so a new port needs no unit change. The removed certificate variables keep Vite on plain HTTP; Caddy terminates TLS.
 
+## Migrated container presets
+
+[Migration](/cli/instance/migrate) carries a supported `vp-dev` Process into its Instance container. The Process keeps its identity, assigned port and desired state. It uses `/opt/orbit-runtime/current/bin/vp`, binds `0.0.0.0`, and reads its mapped workspace environment file and private Process environment. Its unit carries the assigned port directly; it needs no Node Vite environment file. Start and restart use the same container systemd controls as other Processes and do not reassign a host port.
+
+Only the Node can reach the assigned Vite port in the container. Caddy sends `/__orbit/vite` and its descendants, including HMR, to that bridge address and port. The shared container intent preserves the ingress rule after a deployment. Unknown preset versions, custom commands, external paths and recorded port conflicts refuse before migration downtime.
+
 ## Start, restart, and wake
 
-Every start of the preset runs one preparation step:
+Every start of the preset on a checkout Instance runs one preparation step. These preparation, port reassignment and readiness rules apply to checkout Instances; migrated presets use container systemd controls:
 
 1. If the preset's Vite already answers on the port, start returns without restarting it.
 2. This also applies to automatic starts during wake, transfer restore, and activation. Orbit does not suspend traffic or re-project Caddy for a healthy endpoint.
@@ -66,7 +72,7 @@ When a port is taken between the check and the bind, Orbit retries with a new po
 
 ## Application setup
 
-The workload Caddy proxies `https://<domain>/__orbit/vite/` to the port and keeps the `/__orbit/vite/` prefix. Every Process of a development Instance with a Route gets these variables. Instances without a Route get none:
+The workload Caddy proxies `https://<domain>/__orbit/vite/` to the port and keeps the `/__orbit/vite/` prefix. Every Process of a development Instance with a Route gets these variables. Without a Route, only a migrated preset receives `ORBIT_DEV_SERVER_PORT`; origin, host and path remain absent:
 
 | Variable | Value |
 | --- | --- |

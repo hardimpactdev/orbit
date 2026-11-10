@@ -255,15 +255,21 @@ it('passes the placeholder through the forwarder unchanged, so the guard alone d
         'bind 10.251.33.1' => 'bind 127.0.0.1', 'http://10.44.0.3:8318' => "http://127.0.0.1:{$guardPort}",
         'http://:'.AiRouterModelForwarder::Port => "http://:{$forwarderPort}",
     ]);
-    $echo = "http://:{$upstream} {\n\tbind 127.0.0.1\n\trespond \"auth={header.Authorization} uri={uri}\"\n}\n";
-    $run = static function (string $caddyfile) use ($directory, $forwarder, $echo, $forwarderPort) {
+    // The echo server needs its own admin listener too; Caddy otherwise binds the shared default :2019.
+    $echo = "{\n\tadmin 127.0.0.1:0\n\tpersist_config off\n}\nhttp://:{$upstream} {\n\tbind 127.0.0.1\n\trespond \"auth={header.Authorization} uri={uri}\"\n}\n";
+    $run = static function (string $caddyfile) use ($directory, $forwarder, $echo, $upstream, $guardPort, $forwarderPort) {
         // One Caddy per configuration: the snippets each open with a global options block.
         $files = [];
         foreach (['guard' => $caddyfile, 'forwarder' => $forwarder, 'echo' => $echo] as $name => $content) {
             file_put_contents($files[] = "{$directory}/{$name}.Caddyfile", $content);
         }
         $caddies = array_map(static fn (string $file) => Process::start(['caddy', 'run', '--adapter', 'caddyfile', '--config', $file]), $files);
-        retry(50, static fn () => Http::post("http://127.0.0.1:{$forwarderPort}/"), 100);
+        // A listening forwarder can return 502 while either downstream Caddy is still starting.
+        retry(50, static function () use ($upstream, $guardPort, $forwarderPort): void {
+            foreach ([$upstream, $guardPort, $forwarderPort] as $port) {
+                Http::post("http://127.0.0.1:{$port}/");
+            }
+        }, 100);
 
         return $caddies;
     };

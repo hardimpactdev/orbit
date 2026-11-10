@@ -203,6 +203,7 @@ jobs:
         kind: gateway.swamp_load
         intent:
           sha: ${{ inputs.intent.sha }}
+          force: ${{ inputs.intent.force }}
           grants:
             grants/orbit-gateway.yaml: '${{ steps["Build the release"].outputs.stdout.split("---\n")[0] }}'
             grants/orbit-serve.yaml: '${{ steps["Build the release"].outputs.stdout.split("---\n")[1] }}'

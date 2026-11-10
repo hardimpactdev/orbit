@@ -16,6 +16,8 @@ covers:
 
 An [Instance container](/reference/development-containers#processes) runs FrankenPHP and development workers as `orbit-*` units inside the container. A shared runtime folder update restarts those units in each running container. The [clone copy](/reference/development-containers#lifecycle) supplies its complete root disk device, including when the seed inherited it from the Node's profile.
 
+Preparing an `app-dev` Node for [Instance containers](/reference/development-containers#prepare-a-node) keeps its existing checkout Instances. Each checkout moves only through [`instance:migrate`](/cli/instance/migrate), after the container host is ready.
+
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 
 Standalone `node.converge`, `node.ssh_access_converge`, `node.agent_rekey` and apps-root `node.update` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings, converge, SSH access and rekey use official `@swamp/cfgmgmt` behaviors and ship no script. Converge applies each role part in its own step; it calls no agent command and never rotates the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.

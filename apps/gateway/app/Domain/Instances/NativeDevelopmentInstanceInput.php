@@ -51,6 +51,13 @@ final readonly class NativeDevelopmentInstanceInput
             }
         }
 
+        $processEnvironments = $container === null ? null : app(ContainerProcesses::class)->environments($instance, ValidatedData::object($container)['processes']);
+        // A clone's workspace phase takes one private JSON value through native SSH stdin.
+        if ($container !== null && (ValidatedData::object($container)['clone'] ?? null) !== null) {
+            $processEnvironments = json_encode(['environment' => $environment->content($instance),
+                'processes' => json_decode(ValidatedData::string($processEnvironments), false, 512, JSON_THROW_ON_ERROR)], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        }
+
         $testing = $environment->testing($instance);
         $server = ($plan['server_database'] ?? null) === null ? null : $this->serverDatabase($operation, ValidatedData::object($plan['server_database']));
 
@@ -72,9 +79,9 @@ final readonly class NativeDevelopmentInstanceInput
                 // A clone's placeholder model key and model origin, for T3's unit.
                 ...(($container === null ? null : ValidatedData::object($container)['clone'] ?? null) === null ? [] : ['model_environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-model-'.$operation->id,
                     app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), app(TaskVmModelRoute::class)->key()))]),
-                // The container's Process environment files, which only the processes phase reads.
+                // Process environments for a default, or the clone workspace's environment and Process files.
                 ...($container === null ? [] : ['process_environments' => $vault->executionCopy('orbit-control-inputs', 'instance-create-processes-'.$operation->id,
-                    app(ContainerProcesses::class)->environments($instance, ValidatedData::object($container)['processes']))]),
+                    ValidatedData::string($processEnvironments))]),
                 'git_credential' => InstanceGitHubReadTokens::credentialReference($operation),
                 'environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-input-'.$operation->id, $environment->content($instance)),
                 ...($testing === null ? [] : ['environment_testing' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-testing-'.$operation->id, $testing)]),

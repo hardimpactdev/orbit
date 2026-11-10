@@ -1,0 +1,42 @@
+---
+# Remove the container of a move, and what the move added for it on the Node: its ACL, its firewall rules and its mirror. The
+# checkout and the database are not touched. Every part is removed only when it is there, so a rerun changes nothing.
+- name: Read the move's container
+  ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
+  register: discard_container
+  changed_when: false
+  failed_when: false
+
+- name: Delete the move's container
+  when: discard_container.rc == 0
+  ansible.builtin.command: { argv: "{{ ['incus', '--project', container.project, 'delete', '--force', container.name] }}" }
+  changed_when: true
+
+- name: Read the network ACLs
+  ansible.builtin.command: { argv: [incus, query, "--", "/1.0/network-acls?project=default&recursion=1"] }
+  register: discard_acls
+  changed_when: false
+
+- name: Delete the container's ACL
+  when: container.acl in (discard_acls.stdout | from_json | map(attribute='name') | list)
+  ansible.builtin.command: { argv: [incus, network, acl, delete, "{{ container.acl }}", --project, default] }
+  changed_when: true
+
+- name: Remove the container's paths on the Node
+  when: container.firewall | default([]) | length > 0
+  community.general.ufw:
+    rule: "{{ item.rule }}"
+    route: "{{ item.route | default('no') | bool }}"
+    interface_in: "{{ item.interface_in }}"
+    interface_out: "{{ item.interface_out | default(omit) }}"
+    from_ip: "{{ item.from_ip }}"
+    to_ip: "{{ item.to_ip }}"
+    to_port: "{{ item.to_port }}"
+    proto: "{{ item.proto }}"
+    comment: "{{ item.comment }}"
+    delete: true
+  loop: "{{ container.firewall }}"
+  loop_control: { label: "{{ item.comment }}" }
+
+- name: Remove the Instance's mirror
+  ansible.builtin.file: { path: "{{ container.mirror }}", state: absent }

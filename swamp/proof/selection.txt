@@ -49,6 +49,14 @@ apps/gateway/routes/api/firewall.php                       firewall:allow firewa
 packages/php-sdk/src/Requests/Firewall/**                  firewall:allow firewall:deny firewall:list firewall:remove
 packages/php-sdk/src/Responses/Firewall/**                 firewall:allow firewall:deny firewall:list firewall:remove
 
+# instance:migrate, until the last checkout Instance has moved. Its cases are the refusals of the CLI and of the admission; its
+# Swamp code stays uncovered until a proof Node has the Instance pool.
+swamp/proof/instance/migrate.cases.yaml                             instance:migrate
+apps/cli/app/Commands/Instances/MigrateInstanceCommand.php         instance:migrate
+apps/gateway/app/Actions/Instances/StartInstanceMigrateAction.php  instance:migrate
+apps/gateway/app/Http/Controllers/Api/InstanceMigrationsController.php  instance:migrate
+packages/php-sdk/src/Requests/Instances/MigrateInstanceRequest.php  instance:migrate
+
 # The Node family. List and show proofs cover shared paths; the remaining commands are reported as uncovered.
 swamp/proof/node/list.cases.yaml                          node:list
 apps/cli/app/Commands/Nodes/**                               node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key

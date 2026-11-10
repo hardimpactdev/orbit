@@ -7,7 +7,6 @@ namespace App\Data\Instances;
 use App\Data\Nodes\NodeIdentityData;
 use App\Data\Projects\ProjectIdentityData;
 use App\Data\Routes\RouteData;
-use App\Domain\Instances\Deployment\DevelopmentSeed;
 use App\Domain\Instances\Deployment\InstanceDeployStepStore;
 use App\Domain\Instances\Deployment\SharedPaths;
 use App\Models\Instance;
@@ -57,11 +56,13 @@ final class InstanceData extends Data
         public array $sharedPaths = [],
         public ?InstanceAutoDeployData $autoDeploy = null,
         public ?int $developmentProjectionRouteId = null,
+        public ?string $retainedGitPath = null,
+        public ?string $retainedGitAt = null,
     ) {}
 
     public static function fromModel(Instance $instance): self
     {
-        $instance->loadMissing(['project', 'node', 'routes.targets', 'deploySteps', 'runtime']);
+        $instance->loadMissing(['project', 'node', 'routes.targets', 'deploySteps']);
         $route = $instance->authoritativeRoute() ?? $instance->routes->first();
         $removal = InstanceRemoval::query()
             ->with('members')
@@ -81,10 +82,12 @@ final class InstanceData extends Data
             vitePort: $instance->vite_port,
             ssrPort: $instance->ssr_port,
             seedPath: $instance->seed_path,
-            seedCommit: DevelopmentSeed::commit($instance),
+            seedCommit: $instance->seed_commit,
             name: $instance->name,
             sourceLayout: $instance->source_layout,
             checkoutPath: $instance->checkout_path,
+            retainedGitPath: $instance->retained_git_path,
+            retainedGitAt: $instance->retained_git_at?->toIso8601String(),
             productionUser: $instance->production_user,
             productionHome: $instance->production_home,
             root: $instance->root,
@@ -101,7 +104,7 @@ final class InstanceData extends Data
                 ->map(static fn (Route $candidate): RouteData => RouteData::fromModel($candidate))
                 ->all()),
             domain: $route?->domain,
-            url: $route instanceof Route ? "https://{$route->domain}" : null,
+            url: $instance->url(),
             removal: $removal instanceof InstanceRemoval
                 ? InstanceRemovalData::fromModel($removal)
                 : null,

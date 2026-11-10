@@ -17,6 +17,8 @@ const Output = z.object({
     assets: z.string().startsWith("/"),
     requirements: z.string(),
     collections: z.string(),
+    clone_argv: z.array(z.string()),
+    clone_private: z.string(),
 });
 type Context = {
     extensionFile(path: string): string;
@@ -133,7 +135,16 @@ export const behavior = {
                 const collections = await Deno.readTextFile(
                     ctx.extensionFile("ansible/requirements.yml"),
                 );
+                const container = args.intent.container as { clone?: unknown; instance_id: number } | null | undefined;
+                const privatePath = `/tmp/orbit-clone-${container?.instance_id ?? 0}-${folder.split("/").at(-1)?.slice("orbit-ansible-".length)}`;
+                const cloneArgv = container?.clone ? [
+                    "python3", "-c", await Deno.readTextFile(ctx.extensionFile("scripts/instance_clone.py")),
+                    JSON.stringify(container), await Deno.readTextFile(ctx.extensionFile("scripts/instance_clone_guest.py")),
+                    (args.intent.ssh_execution as { target: { user: string } }).target.user, privatePath,
+                ] : [];
                 const value = Output.parse({
+                    clone_argv: cloneArgv,
+                    clone_private: privatePath,
                     path: args.path,
                     assets,
                     requirements,

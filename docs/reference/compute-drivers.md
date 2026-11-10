@@ -87,9 +87,11 @@ A profile's effective set is the union of `common` and its own list, sorted by t
 
 The `instances` object pins the two shared folders of an [Instance container host](#prepare-an-instance-container-host). Each of `runtime` and `agent` maps a part name to one part. A part either pins its own artifact, as a tool does, with `version`, `artifacts` and `bin`, or names a recipe artifact `tool` with `tool` and `bin`, so that a Node and its containers share one pin. `bin` maps each program the part gives the folder to a relative path inside the unpacked artifact. A program name appears once in a folder, and a path never leaves the artifact.
 
+A part that pins its own artifact may leave `bin` out: it gives the folder files that a container reads by path, and no program.
+
 | Folder | Parts |
 | --- | --- |
-| `runtime` | `node`, `bun` and `deno`, from the recipe's tools; `composer`, the release phar; `ripgrep`; `vite-plus`, the recipe's `vp-cli` release, whose `vp` runs from the folder's [Vite+ home](#the-vite-home). Each published [static PHP build](#static-php-build) adds `php/<version>` |
+| `runtime` | `node`, `bun` and `deno`, from the recipe's tools; `composer`, the release phar; `ripgrep`; `php-data-bridge`, with no program; `vite-plus`, the recipe's `vp-cli` release, whose `vp` runs from the folder's [Vite+ home](#the-vite-home). Each published [static PHP build](#static-php-build) adds `php/<version>` |
 | `agent` | `t3`, the release tarball; `claude-code` and `codex`, the npm packages of the Linux x64 builds |
 
 #### The Vite+ home
@@ -176,7 +178,7 @@ Extensions with their own release, such as `igbinary`, `imagick`, `opentelemetry
 
 PCOV loads in the CLI of the `php.pcov` profiles only, and never in PHP-FPM. Those are the machines that run checks and share CI caches, so their loaded extension set matches CI's. The other PHP profiles, `app-prod`, `websocket`, and `gateway`, keep PCOV installed but not loaded.
 
-OpenTelemetry is installed for the `php.opentelemetry` profiles and enabled in PHP-FPM only. The `app-dev` profile needs its `OpenTelemetry\Instrumentation\hook()` API for php-data-bridge, an FPM-only bridge that instruments web requests. The installer always disables OpenTelemetry in the CLI, including links enabled by Sury's package hooks. This preserves the CLI extension parity with CI that PHPStan's shared result cache needs.
+OpenTelemetry is installed for the `php.opentelemetry` profiles and enabled in PHP-FPM only. The `app-dev` profile needs its `OpenTelemetry\Instrumentation\hook()` API for php-data-bridge, which instruments web requests and loads on a Node in PHP-FPM only. The installer always disables OpenTelemetry in the CLI, including links enabled by Sury's package hooks. This preserves the CLI extension parity with CI that PHPStan's shared result cache needs.
 
 On a Node with both app-dev and app-prod, dedicated production FPM masters also load OpenTelemetry because they share the Node's FPM extension configuration. Production, CI-runner, base, and Gateway profiles do not install its packages. If a Node loses app-dev, convergence keeps an installed OpenTelemetry package as a known disabled package and disables it in both CLI and FPM. The recipe lists OpenTelemetry among the build's packages and modules; the CLI module check always excludes it.
 

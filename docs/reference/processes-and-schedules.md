@@ -64,7 +64,7 @@ Run the sibling Deno unit tests for Orbit's Process and Schedule logic. Workflow
 
 An Instance Process serves one Instance. The Gateway derives its Node and systemd user and default working directory from the Instance. Docker keeps the image's working directory instead. [Instance removal](/reference/instance-removal) removes it.
 
-An Instance in a container runs its Processes as `orbit` units in the container, from the Project's development definitions only. Swamp reaches them through `incus exec` on the Node, never through the Node agent. [Instance containers](/reference/development-containers#processes) has the differences.
+An Instance in a container runs its Processes as `orbit` units in the container. New Instances use the Project's development definitions; [migration](/cli/instance/migrate) moves an existing Instance's systemd Processes with their ids and desired states. Swamp reaches them through `incus exec` on the Node, never through the Node agent. [Instance containers](/reference/development-containers#processes) has the differences.
 
 A Node Process serves the Node itself, for example a shared Docker database. A systemd Process runs as the Node's managed user, with `/home/{managed user}` as its default working directory, unless `user` names another account. A Docker Process keeps the image's working directory unless an explicit directory is supplied. A Node Process reads no Instance environment file.
 
@@ -158,6 +158,8 @@ A preset configures a development Instance Process. It sets the command, the run
 | `vp-dev` | Runs VitePlus on an [assigned Vite port](/reference/assigned-vite-ports). The default restart policy is `on-failure`. |
 
 A preset needs a development Instance target. The Gateway refuses a Node target with `validation.failed` on `target_type`, and any other Instance with `process.preset_target_invalid`. An Instance has at most one Process of each preset. Another name for the same preset fails with `process.preset_exists`. The same request again returns the existing Process and keeps its desired state. A Process name alone never selects a preset.
+
+A supported `vp-dev` Process also moves during [Instance migration](/cli/instance/migrate). It keeps its preset identity, assigned port and desired state, uses the shared runtime in the container, and follows the ordinary container Process controls after cutover.
 
 ## Create a Process
 
