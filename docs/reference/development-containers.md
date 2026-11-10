@@ -35,7 +35,7 @@ The container flows keep the kinds of today's Instance flows. Their charts sit o
 | Wake an Instance | [container/wake.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/wake.mmd) |
 | Register and renew the T3 server | [container/t3-register.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/t3-register.mmd) |
 | Start a thread in an Orbit Project | [container/thread.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/thread.mmd) |
-| Move a checkout Instance into a container | [container/migrate.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/migrate.mmd) |
+| Move a checkout Instance into a container | [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) |
 
 ## Nodes
 
@@ -436,16 +436,45 @@ The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/c
 
 ### Migrate a checkout Instance
 
-Orbit moves each existing checkout Instance into a container, with its code and its database, one Instance at a time. A default Instance moves first, and a non-default Instance before its default refuses with `instance.default_not_migrated`.
+[`orbit instance:migrate INSTANCE`](/cli/instance/migrate) moves one existing checkout Instance into a container on its Node, with its code. A default Instance moves first, and a non-default Instance before its default refuses with `instance.default_not_migrated`. The command is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.
 
-- **Stop.** Orbit stops the Instance's Processes, and its Route shows the wake page.
-- **Repository.** A non-default checkout is a linked worktree of the default's repository. Orbit builds a standalone repository in the container: it fetches the Instance's branches on the Node and pushes them in.
-- **Files.** Orbit copies the uncommitted and ignored files of the checkout into the workspace, never its `.git`.
-- **Database.** The database family clones the checkout's database into a new one; the old one stays until the move succeeds.
+- **Stop.** Orbit removes the Instance's awake marker, so its Route shows the wake page. The Gateway starts no wake while the move runs.
+- **Repository.** A non-default checkout is a linked worktree of the default's repository. Orbit builds a standalone repository in the container: it fetches the Instance's branch from the checkout into the Node's mirror and pushes it in.
+- **Files.** Orbit copies the files that differ from the commit, the untracked files and the ignored files into the workspace, never the checkout's `.git`.
+- **Database.** A database on a Database server stays where it is, and the container gets its own way to it. A SQLite file in the checkout moves with the files.
+- **Start.** FrankenPHP starts as `orbit`. A non-default Instance gets its T3 server, registered as in [Create](#create). A default gets its first seed snapshot.
 - **Route.** Orbit points the Route at FrankenPHP in the container.
-- **Removal.** Orbit removes the checkout and the old database. The default's checkout stays until its last worktree has moved.
+- **Removal.** Orbit removes the checkout. The default's checkout stays until its last worktree has moved.
 
-A failed move leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/migrate.mmd) has the steps.
+A failed move leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) has the steps.
+
+#### What is built for the move
+
+The move is built for the Nodes of the [build list](#the-build-list).
+
+| Part | What Orbit does |
+| --- | --- |
+| Admission | An active checkout Instance on a Node of the build list, else `instance.migrate_unsupported`. A non-default Instance needs its default in a container, active and with a seed snapshot |
+| Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the lowest free T3 port. It names no clone source |
+| Until the end | The Instance keeps its checkout path, and its site, its deployments and its wake keep to the checkout. Only the end of a move that succeeded makes the container the Instance's runtime |
+| Branch | The Node's mirror fetches the recorded branch from the checkout itself, so commits that were never pushed come along and no token is needed |
+| Files | One `tar` stream from the checkout into `/srv/workspace`, extracted as `orbit`: the paths of `git diff HEAD` and of `git ls-files --others`. Tracked files that the checkout deleted are removed |
+| `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace`, and the Gateway rewrites its stored values the same way |
+| Database server | The container's ACL and the Node's firewall rule to the server's port, as a [clone](#what-is-built-for-clones) gets them. The move checks the port from inside the container |
+| SQLite | The file moves with the files. The Gateway drops the connection record of a SQLite file inside the checkout |
+| Route | The same Route, domain and certificate. One publication replaces the checkout's site and PHP-FPM pool with the container's site; its restore side puts them back |
+
+The end of the move and its failure:
+
+| Part | What Orbit does |
+| --- | --- |
+| Seed | A default takes `seed-<commit>` with its units stopped, so its Project's other Instances can be clones from then on |
+| T3 | A non-default Instance gets the proxy device `t3`, the agent's files and its T3 server, and the Conn layer records the server from the run's result |
+| Kept refs | Before a repository goes, its local branches and its stash go into the Instance's mirror under `refs/migrated/` |
+| Removal | The checkout, and its worktree entry in the default's repository. The last other checkout Instance of a Project also removes the default's old checkout |
+| Failure | The Route's restore side when the run had moved it, then the container, its ACL, its firewall rules and its mirror go. The Gateway drops the reserved runtime row |
+
+The code changed two points of the first design. The database is not cloned: an Instance's database name, owner and connection come from its Project and name, so a second database for the same Instance has no name to take, and a clone would end with a drop of the old one. Leaving it in place cannot lose data. And an Instance with Processes refuses with `operation.kind_unavailable`: its Processes move through the container Process step of the [plan](/solutions/development-container-runtime#pr-15-migrate-checkout-instances).
 
 ## T3 registration and pairing
 
@@ -742,6 +771,10 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node. Also when the Project's default runs on another Node |
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
 | `instance.default_not_migrated` | 409 | `instance:migrate` of a non-default Instance whose default Instance is still a checkout |
+| `instance.migrate_unsupported` | 409 | `instance:migrate` of an Instance that is not an active development checkout on a Node of the build list |
+| `instance.migrate_branch_changed` | 409 | The checkout is not on the branch that Orbit records for the Instance |
+| `instance.database_unreachable` | 502 | The new container of a move could not reach the Instance's database server |
+| `instance.migrate_<step>_failed` | 502 | A step of a move failed, such as `instance.migrate_workspace_failed`. The checkout serves as before |
 | `instance.turn_running` | 409 | `instance:destroy` without `--force` while a T3 turn runs in the container |
 | `instance.t3_unready` | 502 | The T3 server did not answer within 30 seconds of its first start in a clone |
 | `instance.default_seed_moved` | 409 | A deployment of the default replaced the seed that a clone's create admitted, before the copy. The step's report names it; run the same command again |

@@ -1,0 +1,38 @@
+# Format: docs/reference/verification-cases.
+# These cases run on the proof fleet as it is. The cases that move an Instance need a proof Node with the Instance pool and the
+# container image, which the proof fleet does not build yet (docs/solutions/development-container-runtime.md, PR 4). Until then
+# the Pest, Deno and Ansible fixture tests cover the move, and the live check on a build-list Node proves it.
+command: instance:migrate
+chart: instance/migrate
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+
+cases:
+  - id: invalid-id
+    batch: fresh-fleet
+    covers: []
+    summary: A nonpositive or noninteger Instance ID is refused locally, before any request.
+    variants:
+      - {name: zero, value: "0"}
+      - {name: name, value: default}
+      - {name: fractional, value: "1.5"}
+    act:
+      - cli:
+          run: [instance:migrate, "${value}", --force]
+          forms: [json, human]
+          expect: {exit: 1, code: instance.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: unknown-instance
+    batch: fresh-fleet
+    covers: []
+    summary: An unknown Instance ID is refused without creating an Operation.
+    act:
+      - cli:
+          run: [instance:migrate, "2147483647", --force]
+          forms: [json, human]
+          expect: {exit: 1, code: http.404, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}

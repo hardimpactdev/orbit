@@ -1,0 +1,87 @@
+sequenceDiagram
+  %% Container runtime (ADR 0250 step 8, docs/reference/development-containers.md#migrate-a-checkout-instance): one checkout Instance moves into a container, with its code. Its database stays where it is, and the container gets its own way to it. A default Instance moves before the other Instances of its Project, and keeps its checkout until its last worktree has moved. The command exists only until the last checkout Instance has moved (docs/reference/old-paths.md). The container steps are the phases of docs/cli/instance/container/create-default.mmd and create.mmd.
+  %% status: draft
+  %% command: instance:migrate
+  %% kind: instance.migrate
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane C icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-dev Node<br/>reached over ssh
+  participant C as New container<br/>via incus exec
+  CLI->>GW: instance:migrate 42
+  %%> Command:
+  %%> - `orbit instance:migrate INSTANCE`
+  %%> - syntax: `<instance> [--force] [--idempotency-key=KEY] [--json]`
+  Note over CLI: Confirm the downtime
+  %%> What it asks:
+  %%> - the Instance goes down during the move, and its checkout is deleted after it; `--force` answers yes
+  Note over GW: Validate, reserve runtime<br/>address · T3 port
+  %%> Requirements:
+  %%> - the Instance is an active checkout Instance on an `app-dev` Node of the build list, else `instance.migrate_unsupported`
+  %%> - a non-default Instance needs its Project's default Instance in a container first, else `instance.default_not_migrated`
+  %%> - the Instance has no Processes; a non-default Instance needs Conn and the model router, as a clone does
+  %%> - a database on a Database server has an IPv4 address and a port, else `instance.database_clone_unsupported`
+  %%> Result:
+  %%> - the runtime record is reserved: the next bridge address and, for a non-default Instance, the lowest free T3 port
+  %%> - the checkout stays the Instance's runtime until the run succeeds; the Route's Node is held for the run
+  %%> - a non-default Instance's placeholder model key goes to the vault
+  GW->>SW: Start run, full intent<br/>operation-instance-migrate
+  GW-->>CLI: 202 Accepted<br/>task ID
+  SW->>N: Stop the Instance<br/>Ansible · tags quiesce
+  %%> What it does:
+  %%> - checks that the checkout is on the recorded branch, else `instance.migrate_branch_changed`
+  %%> - removes the awake marker, so the Route shows the wake page and nothing writes the checkout or the database during the move
+  SW->>N: Launch the container<br/>Ansible · tags container
+  %%> What it does:
+  %%> - creates the container from the image with its bridge address and ACL, and starts it
+  %%> - a database on a Database server: the ACL and a firewall rule on the Node let the container reach the server's port
+  %%> - fetches the Instance's branch from the checkout into the Node's mirror, with its commits that were never pushed
+  SW->>C: Build the workspace<br/>Ansible · tags workspace
+  %%> What it does:
+  %%> - pushes the branch in as a bundle and checks it out in a standalone repository in `/srv/workspace`
+  %%> - a non-default checkout is a linked worktree, so its `.git` is never copied
+  SW->>C: Copy the files<br/>Ansible · tags files
+  %%> What it does:
+  %%> - copies every file that differs from the commit, every untracked file and every ignored file, `.env` among them
+  %%> - removes the tracked files that the checkout deleted, and rewrites the checkout's path in `.env` to `/srv/workspace`
+  %%> - checks that the container reaches its database server, else `instance.database_unreachable`
+  %%> - a non-default Instance gets the proxy device that publishes its T3 port
+  SW->>C: Start the container<br/>Processes · T3 · seed
+  %%> What it does:
+  %%> - starts FrankenPHP as `orbit`
+  %%> - a non-default Instance gets `/etc/orbit/instance`, the agent settings and its T3 server, registered as in create
+  %%> - a default Instance gets its first `seed-<commit>` snapshot
+  SW->>N: Move the Route<br/>child route-mutation-forward
+  %%> What it does:
+  %%> - points the Instance's Route at FrankenPHP in the container, and withdraws the checkout's PHP-FPM pool
+  alt all steps pass
+    SW->>N: Remove the checkout<br/>Ansible · tags retire
+    %%> What it does:
+    %%> - removes the checkout and writes the awake marker; a default's checkout stays until its last worktree has moved
+    %%> - before a repository goes, its local branches and its stash are kept in the Node's mirror under `refs/migrated/`
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Record container runtime
+    %%> Result:
+    %%> - the Instance's workspace is the container's; the runtime runs, a default's row holds its seed commit
+    %%> - the Conn layer records a non-default Instance's T3 server from the result
+  else a step fails
+    SW->>N: Restore the checkout<br/>Route · container removed
+    %%> What it does:
+    %%> - puts the Route back on the checkout when the run had moved it
+    %%> - deletes the new container, its ACL, its firewall rules and its mirror, and writes the awake marker
+    %%> - the checkout and its database are untouched, so the Instance serves as before
+    SW--xGW: Run failed<br/>failed step, error_code
+    Note over GW: Drop the reserved runtime
+    %%> Retry:
+    %%> - run the same command again; it starts with a new container
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
+  end

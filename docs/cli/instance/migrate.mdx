@@ -1,0 +1,79 @@
+---
+title: "orbit instance:migrate"
+sidebarTitle: "instance:migrate"
+description: "Move a development checkout Instance into an Instance container. A temporary command: it goes when the last checkout Instance has moved."
+---
+
+```bash
+orbit instance:migrate <instance> [--force] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID of an active development checkout Instance. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--force` | prompt | Confirm the downtime and the deletion of the checkout. Required without a terminal and with `--json`. |
+| `--idempotency-key=KEY` | none | Reuse a key to retry this operation start. |
+| `--json` | off | Print the final task as JSON, with every step, and nothing while it follows. |
+
+```bash
+orbit instance:migrate 12
+orbit instance:migrate 12 --force --json > migrate.json
+```
+
+The command moves one checkout Instance into an [Instance container](/reference/development-containers#migrate-a-checkout-instance) on the same Node. It is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.
+
+In a terminal, the CLI asks to confirm that the Instance goes down during the move and that its checkout is deleted after it, with No selected. Declining, Ctrl-C or end of input ends with `input.cancelled` and starts no move.
+
+## What moves
+
+| Part | What Orbit does |
+| --- | --- |
+| Branch | The checkout's current branch, with its commits that were never pushed. Orbit fetches it from the checkout on the Node |
+| Files | Every file that differs from the commit, every untracked file and every ignored file, such as `vendor`, `node_modules`, `storage` and `.env` |
+| `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace` |
+| Database on a Database server | It stays where it is. The container gets its own way to the server's port |
+| SQLite file in the checkout | It moves with the files. Orbit drops its database connection record: the file is part of the workspace |
+| Route | The same domain and certificate. It points at FrankenPHP in the container, and the checkout's PHP-FPM pool goes |
+| T3 | A non-default Instance gets its T3 server, registered as a [new Instance's](/cli/instance/create) is. The default runs none |
+
+These do not move: the staging state of the index, stashes, and branches that no Instance has checked out. Before Orbit removes a repository, it keeps the repository's local branches and its stash in the Instance's mirror on the Node, under `refs/migrated/`.
+
+## Order
+
+A Project's default Instance moves first. A non-default Instance before its default refuses with `instance.default_not_migrated`.
+
+A non-default checkout is a linked worktree of the default's repository. So the default keeps its checkout on the Node until the last other checkout Instance of the Project has moved. That last move removes it.
+
+After the default has moved, an Instance that is still a checkout keeps working until its own move.
+
+## Failure
+
+A move that fails leaves the checkout Instance serving as before. Orbit puts the Route back when the run had moved it, deletes the new container and drops the reserved runtime record. The checkout and the database are never changed before the move has succeeded. Run the same command again to retry.
+
+The command starts a task and follows it until it ends, as [`instance:deploy`](/cli/instance/deploy) does. Ctrl-C stops following, not the move, and exits 130.
+
+## How it works
+
+<div className="flow-at" data-chart="instance/migrate"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance is missing in a call that cannot prompt, or is not a positive integer. |
+| `input.cancelled` | You declined, pressed Ctrl-C, or the input ended. |
+| `instance.confirmation_required` | The call cannot prompt and has no `--force`. |
+| `instance.migrate_unsupported` | The Instance already runs in a container, is not active, is a production Instance, or its Node is not on the [build list](/reference/development-containers#the-build-list). |
+| `instance.default_not_migrated` | The Project's default Instance is still a checkout, or its move has not ended. Move it first. |
+| `instance.lifecycle_busy` | A transfer, a removal or another move of the Instance is unfinished. |
+| `operation.kind_unavailable` | The Instance has Processes, which reach a container in a later part of the runtime; or a non-default Instance has no Conn layer. |
+| `instance.database_clone_unsupported` | The Instance's database server has no IPv4 address and port that a container can reach. |
+| `instance.host_unavailable` | The Node has no Instance bridge, the bridge is full, no T3 port is free, or the runtime folder lacks the Project's PHP build. |
+| `instance.migrate_branch_changed` | The checkout is not on the branch that Orbit records. Check out that branch, or record the new one with [`instance:rename`](/cli/instance/rename). |
+| `instance.database_unreachable` | The new container could not reach the database server's port. |
+| `instance.migrate_<step>_failed` | A step of the move failed, such as `instance.migrate_workspace_failed`. The checkout serves as before. |
+| `http.404` | The Instance is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |

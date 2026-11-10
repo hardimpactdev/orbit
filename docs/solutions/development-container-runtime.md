@@ -567,7 +567,7 @@ The code changed these points of this plan:
 
 ### PR 15: migrate checkout Instances
 
-The spec commit adds [container/migrate.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/migrate.mmd), the page of the temporary command `instance:migrate` and its cases. [Old paths](/reference/old-paths) lists the command until the last checkout Instance has moved.
+The spec commit adds [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd), the page of the temporary command `instance:migrate` and its cases. [Old paths](/reference/old-paths) lists the command until the last checkout Instance has moved.
 
 - The command moves one checkout Instance into a container: the checkout as it is, its database cloned through the database family, its Route moved.
 - A default Instance moves before the other Instances of its Project, and keeps its checkout until its last worktree has moved.
