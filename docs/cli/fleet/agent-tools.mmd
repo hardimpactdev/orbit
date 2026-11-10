@@ -1,0 +1,57 @@
+sequenceDiagram
+  %% Target design: ADR 0255, daily agent CLI and model router updates; docs/reference/gateway-recovery.md#agent-tool-updates.
+  %% status: draft
+  %% kind: fleet.agent_tools
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  %% lane R icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant H as T3 hosts<br/>reached over ssh
+  participant R as Router Node<br/>reached over ssh
+  Note over GW: Pick the hosts<br/>and the router
+  %%> When:
+  %%> - every day at 02:41 Europe/Amsterdam, before the fleet window
+  %%> - while `ORBIT_FLEET_AGENT_TOOLS` is on (the default)
+  %%> Picks:
+  %%> - hosts: active managed Linux Nodes whose own T3 server Conn recorded; no Mac, container or task VM
+  %%> - router: the one CLIProxyAPI Process on the AI router's Node, while the AI router is on and set up
+  %%> Requirements:
+  %%> - no other run and no fleet reboot pass; a reboot pass waits for this run
+  GW->>SW: Start run, full intent<br/>operation-fleet-agent-tools
+  SW->>H: Update the agent CLIs<br/>cli phase
+  %%> Picks:
+  %%> - every host at once, beside the router steps
+  %%> - the configured Vite+ globals the host has, in one `vp i -g <pkg>@latest`
+  %%> - Grok's own install (`grok update`), the Cursor installer, the Antigravity Homebrew cask, where installed
+  %%> Why:
+  %%> - each host keeps its install method; a running session keeps its binary, the next one starts the new one
+  %%> - a failed tool is recorded and the other tools and hosts go on
+  SW->>R: Stage the latest release<br/>router-stage phase
+  %%> Checks:
+  %%> - the archive matches the release's checksums.txt; the new binary reports its version
+  %%> Why:
+  %%> - beside the host updates; unpacked beside the other releases, then `current` flips in one rename
+  %%> - an up-to-date router changes nothing
+  opt a newer release was staged
+    SW->>R: Restart the router<br/>operation-process-control
+    SW->>R: Send one request<br/>router-check phase
+    %%> Checks:
+    %%> - one token through the new release with a client key of its configuration; 200 or 429 passes
+    %%> - after a pass, the two newest other releases stay and older ones go
+    opt the restart or the request failed
+      SW->>R: Flip back and restart<br/>operation-process-control
+      %%> Why:
+      %%> - the router runs the release before again; the run fails
+    end
+  end
+  SW->>SW: Collect the records<br/>report phase
+  alt every host and the router ended well
+    SW-->>GW: Run succeeded<br/>versions before and after
+  else a host, a tool or the router failed
+    SW--xGW: Run failed<br/>each part's result
+    %%> Why:
+    %%> - the report still lists every host; tomorrow's run tries again
+  end

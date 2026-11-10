@@ -1,7 +1,7 @@
 ---
 title: "ADR 0214: Pin the AI router version and flag upgrades"
 sidebarTitle: "0214 AI router upgrades"
-description: "In progress. The ai-router extension pins the driver version, a daily check stores the latest upstream release, Doctor reports an informational update finding that the problem collector still records, and ai-router:update upgrades the router, also while task groups run."
+description: "Superseded on 2026-11-10 by ADR 0255 before it was built. It planned a pinned router version, a daily release check, an informational Doctor finding and an operator-run ai-router:update; Orbit now upgrades the router itself, every day, with a checked restart."
 ---
 
 # ADR 0214: Pin the AI router version and flag upgrades
@@ -10,7 +10,9 @@ The `ai-router` extension of [ADR 0212](/decisions/0212-turn-proxycli-into-the-a
 
 ## Status
 
-In progress.
+Superseded on 2026-11-10 by ADR 0255.
+
+[ADR 0255](/decisions/0255-keep-agent-clis-and-the-model-router-current) replaced it before any of it was built. Nick approved a daily automatic router upgrade: a stale router makes every new Claude model fail at once. The daily `fleet.agent_tools` run installs the latest release, checks one request and flips back on failure. The pin, the release check, `role.update_available` and `ai-router:update` are not built. The record below is kept as written.
 
 Principle: [Agents operate, humans steer](/mission#principles). Orbit reports a newer router release and files a task for it, and the operator chooses when to run the upgrade command.
 

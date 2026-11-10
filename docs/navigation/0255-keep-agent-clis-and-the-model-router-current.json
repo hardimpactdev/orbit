@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 255,
+      "pages": [
+        "decisions/0255-keep-agent-clis-and-the-model-router-current"
+      ]
+    }
+  ]
+}

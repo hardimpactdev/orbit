@@ -105,12 +105,15 @@ Core receives tagged implementations through constructor parameters marked with 
 | `App\Domain\Operations\DirectOperationContribution` | The shared direct-start registry | `definitions()` |
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
 | `App\Domain\Instances\InstanceLifecycleContribution` | [`instance:create`](/cli/instance/create) of a container clone | `assertCreateAvailable()` at admission, `projectCreate()` in the create's projection |
+| `App\Domain\Fleet\AgentToolsContribution` | The daily [agent tool update](/reference/gateway-recovery#agent-tool-updates) admission | `hosts()` and `router()` |
 
 `DirectOperationContribution::definitions()` contributes fixed workflow and projection declarations to the shared direct-start helper. Providers tag contributions with this interface. Declarations remain available while an extension is disabled so existing Operations can finish; family admission keeps its extension gate. Conn and Vault contribute their converted kind declarations. Conn session cleanup projects the native child receipt and needs no private-material provider. Core imports neither extension. Native bootstrap reads use execution-copy vault references, so core registers no Gateway-local bootstrap identity source. A declaration may select a typed `NativeGitHubTokenIssuer` at the existing numeric Operation GitHub mint endpoint.
 
 The issuer checks its admitted repository and current run before and after minting, returns only native vault descriptors, and revokes a fresh credential if authority changes. An omitted issuer keeps the fixed-grant mint policy. This adds no endpoint or private-input reader.
 
 `InstanceLifecycleContribution::assertCreateAvailable()` runs in the admission of a container clone, before anything changes; a clone with no contribution refuses with `operation.kind_unavailable`. `projectCreate()` receives the clone's T3 server from the run's result inside the create's projection transaction, so a refusal leaves the Instance unfinished. Conn contributes it, loaded while the extension is off, so an admitted create can finish.
+
+`AgentToolsContribution` runs when the Gateway admits the daily `fleet.agent_tools` run. Conn returns the Nodes whose own T3 server it recorded from `hosts()`; the AI router returns its router, with the Process restart intent, from `router()`. Each returns nothing while its extension is off, so a disabled extension's host or router is not updated. The run takes every distinct host and the first router.
 
 `ProcessRemovalGuard::assertRemovable()` runs under the Process runtime lease before removal changes the record or the runtime. A guard may refuse with a `ResourceOperationException`. Core tags the Analytics and Database server guards; the AI router tags its collector guard from its provider. The action receives all guards through `#[Tag]` and calls each one. Guard order is not part of the contract: a guard must not depend on another guard running first. The owning feature can still remove its own Process through the existing internal removal path.
 

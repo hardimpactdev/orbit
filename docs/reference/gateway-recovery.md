@@ -6,7 +6,7 @@ covers:
   - apps/gateway/config/{app,logging,retention}.php
   - apps/gateway/app/{Infrastructure/Logging/**,Infrastructure/Database/**,Providers/Domains/DatabaseServiceProvider.php}
   - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/sigstore/trusted_root.json}
-  - "{apps/gateway/app/Actions/Fleet/*Rollout*.php,apps/gateway/app/Actions/Fleet/AdmitFleetCliAction.php}"
+  - "{apps/gateway/app/Actions/Fleet/*Rollout*.php,apps/gateway/app/Actions/Fleet/AdmitFleetCliAction.php,apps/gateway/app/Actions/Fleet/AdmitAgentToolsAction.php,apps/gateway/app/Jobs/Fleet/AdmitAgentTools.php}"
   - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
   - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Data/Fleet/**,config/fleet.php}
@@ -760,6 +760,68 @@ A reboot of the control path or of Node 209 can cut a Swamp run after the drain 
 The Operation result lists each Node in pass order with its outcome: `rebooted`, `scheduled`, `not_due`, `deferred` with `window`, `tasks_busy` or `ci_busy`, `skipped` with `halted` or `not_reached`, or `failed`. It also holds the kernel before and after, since when the reboot was due, the parked task guests, any newly failed units, the stopped CI runners with their freeze times, and the CI runs it re-ran.
 
 Doctor reports `node.reboot_due` when the newest pass that read a Node found it due more than 3 days ago and did not reboot it. A record without a due time, such as `halted`, does not count; Doctor looks at the pass before it. When a pass ends with such a Node, the Gateway raises [`reboot_overdue`](#release-alerts) once.
+
+## Agent tool updates
+
+Every day, Swamp brings the agent CLIs on each T3 host and the model router to their latest release ([ADR 0255](/decisions/0255-keep-agent-clis-and-the-model-router-current)). Each run is one `fleet.agent_tools` Operation and its Swamp run. Read them with [`operation:list --kind=fleet.agent_tools`](/cli/operation/list) and [`operation:show`](/cli/operation/show).
+
+<div className="flow-at" data-chart="fleet/agent-tools"></div>
+
+### Daily admission
+
+The Gateway admits a run every day at 02:41 Europe/Amsterdam, before the fleet window. A run that cannot start waits for the next day.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `ORBIT_FLEET_AGENT_TOOLS` | `true` | Admit runs |
+| `ORBIT_FLEET_AGENT_TOOLS_ROUTER_MODEL` | `claude-haiku-5-5` | The model of the router check |
+
+| Refusal | When |
+| --- | --- |
+| `fleet.agent_tools_busy` | A run is still open |
+| `fleet.agent_tools_waiting` | A [fleet reboot](#fleet-reboot) pass runs. A pass that would start while a run is open waits for it with `fleet.reboot_waiting` |
+| `fleet.agent_tools_not_ready` | Runs are off, or there is no host and no router to update |
+
+### Hosts and tools
+
+A run updates every `active` Linux Node with a WireGuard address and a pinned SSH host key whose own T3 server [Conn](/reference/conn) recorded: a server that names no Instance, at the Node's WireGuard address. macOS Nodes, container servers and task VMs stay out. Containers run the pinned [shared agent folder](/reference/development-containers#shared-folders). While Conn is off, a run updates no host.
+
+Swamp updates all hosts at once, over SSH as each Node's user. A host keeps the install method it has; the phase updates only what it finds:
+
+| Tool | Found at | Update |
+| --- | --- | --- |
+| Vite+ globals | `vp` in `~/.vite-plus/bin` or `~/.local/share/vite-plus/bin` | The packages in `fleet.agent_tools_packages` that `vp list -g` shows, in one `vp i -g <package>@latest`: Claude Code, Codex, Grok and OpenCode |
+| Grok's own install | `~/.grok/bin/grok` | `grok update` |
+| Cursor agent | `~/.local/share/cursor-agent/versions` | The installer from `https://cursor.com/install` |
+| Antigravity CLI | The `antigravity-cli` cask of `/home/linuxbrew/.linuxbrew/bin/brew` | `brew upgrade --cask antigravity-cli` |
+
+The phase changes no `PATH` and moves no binary, so T3 finds each CLI where it did. A running agent session keeps the binary it started with; the next session starts the new one. No session is stopped.
+
+Each tool has its own rescue: a failed tool is recorded and the host's other tools still update. A host that SSH does not reach writes no record and is reported `failed` with `fleet.agent_tools_host_unreachable`.
+
+### The router
+
+While the [AI router](/reference/ai-router) is on and set up, a run also updates the router on its Node. [Upgrade the router](/reference/ai-router#upgrade-the-router) describes the checked restart and the rollback.
+
+### The run's report
+
+The Operation's result lists every host in Node order, and the router:
+
+| Part | Fields |
+| --- | --- |
+| Host | `node_id`, `name`, `outcome` (`updated`, `current` or `failed`), `error_code`, and `tools`: each with `name`, `method`, `before`, `after`, `outcome` and, on a failure, `error` |
+| Router | `node_id`, `name`, `outcome` (`updated`, `current`, `rolled_back` or `failed`), `before`, `latest`, `after`, `pruned`, `step`, `error_code`; `null` when the run had no router |
+
+The run, and so the Operation, fails when a host, a tool or the router failed. Its `error_code` is the first failed part's. Every other part still ran and is in the report. The next day's run tries again.
+
+| Error | Meaning |
+| --- | --- |
+| `fleet.agent_tools_tool_failed` | A tool's update failed on that host |
+| `fleet.agent_tools_host_unreachable` | The run reached no record of that host |
+| `fleet.agent_tools_router_check_failed` | The new router release did not answer the check; the release before runs again |
+| `fleet.agent_tools_router_restart_failed` | The router did not restart on the new release; the release before runs again |
+| `fleet.agent_tools_router_rollback_failed` | The restart on the release before failed too. Restart the router Process by hand |
+| `fleet.agent_tools_router_failed` | The router phase failed before it flipped the release, or was cut after it |
 
 ## Limits
 

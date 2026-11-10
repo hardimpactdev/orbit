@@ -169,6 +169,10 @@ A clone of a container default runs its own T3 server. Its create flow registers
 - While Conn is off, a clone is refused with `operation.kind_unavailable`: nothing would record its server.
 - A create admitted before Conn went off still records its server.
 
+### Agent tool hosts
+
+A Node whose own T3 server registered here, at the Node's WireGuard address and naming no Instance, is a host of the daily [agent tool update](/reference/gateway-recovery#agent-tool-updates). Conn names these Nodes through the plug-in point `AgentToolsContribution`; while Conn is off it names none.
+
 ## Pairing and revocation
 
 A device asks the Gateway for a pairing link to one registered T3 server. The native Swamp pairing step sends `POST <url>/api/auth/pairing-token` with its admin session, a unique label, such as `phone via Orbit k3j9x0qa`, and T3's administrative scopes (see below). T3 gives the session paired from that link the same client label. The Gateway records the pairing: the Node, the server, the T3 link id, the label, and the link's expiry.

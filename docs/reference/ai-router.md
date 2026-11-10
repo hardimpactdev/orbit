@@ -324,6 +324,32 @@ The refused Nodes have reasons. The router's Node holds the real key. The guard 
 
 A container then uses `http://<address>:8319` as its model origin: `ANTHROPIC_BASE_URL` for Claude Code, and `base_url = "http://<address>:8319/v1"` for Codex, each with the task key.
 
+## Upgrade the router
+
+The daily [agent tool update](/reference/gateway-recovery#agent-tool-updates) keeps the router at the latest [CLIProxyAPI release](https://github.com/router-for-me/CLIProxyAPI/releases) ([ADR 0255](/decisions/0255-keep-agent-clis-and-the-model-router-current)). An old router stamps an old `claude-cli/<version>` User-Agent, and new Claude models then fail with "Claude Code 2.1.x does not support this model".
+
+The run updates the router while the extension is on and set up. The router is the one systemd Process on the router's Node whose command runs `<folder>/current/cli-proxy-api` with `-config <file>`. Without exactly one such Process, a run leaves the router alone.
+
+| Path | Content |
+| --- | --- |
+| `<folder>/releases/<version>/` | One unpacked release |
+| `<folder>/current` | A relative link to `releases/<version>`, which the Process runs |
+| The `-config` file | The router's configuration; the check reads its first client key and its port |
+
+Each run takes these steps in order:
+
+| Step | What happens |
+| --- | --- |
+| Stage | When the latest upstream release is newer than `current`, download `CLIProxyAPI_<version>_<os>_<arch>.tar.gz`, check it against `checksums.txt`, unpack it into `releases/<version>`, check its `--help` version and flip `current` in one rename |
+| Restart | Restart the Process through the Process restart workflow, with the restart intent the Gateway admitted |
+| Check | Send one request for one token of `ORBIT_FLEET_AGENT_TOOLS_ROUTER_MODEL` to `/v1/messages` on loopback, with the client key; three tries, 5 seconds apart. 200 passes, and so does 429: the provider only refused the quota |
+| Keep | After a pass, keep the current release and the two newest others, and remove older release folders. The router is reported `updated` |
+| Roll back | After a failed restart or check, flip `current` back to the release before and restart the Process again. The router is reported `rolled_back`, and the run fails |
+
+A router whose configuration has no client key or no port is never flipped. An up-to-date router changes nothing and is reported `current`.
+
+A restart drops the model calls in flight. A Pi turn retries them as a [transient provider error](/reference/tasks#execution-ownership).
+
 ## Teardown
 
 Tear down the collector when collection should stop for the whole fleet.

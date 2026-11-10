@@ -30,7 +30,7 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0210](/decisions/0210-give-each-extension-its-own-code-boundary) | Give each extension its own code boundary | In progress |
 | [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) | Turn ProxyCli into the AI router extension | In progress; changes the [task VM model proxy origin](/reference/compute-drivers#limit-fleet-traffic-on-the-hub); its step 4 adds amendments A1 and A3 to [0210](/decisions/0210-give-each-extension-its-own-code-boundary) |
 | [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) | Run CI runners through a ci-runner role | In progress; the host role is built, Gateway-owned runner records and registration remain pending |
-| [0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) | Pin the AI router version and flag upgrades | In progress; builds on [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) and follows its build steps |
+| [0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) | Pin the AI router version and flag upgrades | Superseded on 2026-11-10 by [0255](/decisions/0255-keep-agent-clis-and-the-model-router-current) before it was built |
 | [0215](/decisions/0215-start-development-processes-from-project-definitions) | Start development Processes from Project definitions | In progress |
 | [0218](/decisions/0218-take-long-commands-off-the-request-path) | Take long commands off the request path | In progress; replaces the deployment history with operations and lowers the request limit; changes the history reads of [automatic deployments](/reference/deployments#automatic-deployments) and amendment A3 of [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) |
 | [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) | Answer Cluster names from a DNS server on the Router | In progress; replaced by [0248](/decisions/0248-render-private-dns-as-desired-state) |
@@ -50,6 +50,7 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0251](/decisions/0251-reach-the-wireguard-hub-over-the-recorded-lan) | Reach the WireGuard hub over the recorded LAN | In progress; decided on 2026-11-09 |
 | [0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder) | Reach the model router from containers through a Node forwarder | In progress; decided on 2026-11-09; per-container attribution open |
 | [0253](/decisions/0253-patch-nodes-and-reboot-them-drained) | Patch Nodes and reboot them drained, one at a time | In progress; decided on 2026-11-09; implements requirement 1 of 0250 |
+| [0255](/decisions/0255-keep-agent-clis-and-the-model-router-current) | Keep the agent CLIs and the model router current | In progress; decided on 2026-11-10; replaces the operator-only router upgrade of 0214 |
 
 ## Retired decisions
 
