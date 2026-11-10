@@ -63,7 +63,9 @@
         cmd: |
           set -euo pipefail
           before=$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)
-          wg syncconf orbit <(printf '[Interface]\nPrivateKey = '; cat /etc/wireguard/orbit.key; cat /etc/wireguard/orbit.peers)
+          # The key line ends once, with or without a final newline in the key file. `wg` prints a value it refuses, which
+          # may be the key: `cut` drops it.
+          wg syncconf orbit <(printf '[Interface]\nPrivateKey = %s\n' "$(cat /etc/wireguard/orbit.key)"; cat /etc/wireguard/orbit.peers) 2> >(cut -d'`' -f1 >&2)
           [ "$before" = "$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)" ] || echo changed
       register: peer_sync
       changed_when: peer_sync.stdout is search('changed')

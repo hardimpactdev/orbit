@@ -3,8 +3,9 @@
 # tunnel, so the move must not depend on the SSH session: Ansible's async job keeps running when the session drops, and later
 # polls reconnect through whichever tunnel the job left. The job installs the staged files, ends the old session, waits for a
 # handshake at or after the move and, without one, puts the previous files back and sets the live configuration it saved.
-# Then it exits 3. Either way it records the outcome in `orbit.move-result`, which the converge reads after it reaches the
-# Node again, so a lost connection still reports node.hub_switch_no_handshake. Previous files that an aborted move left are
+# Then it exits 3. When `wg` does not load the new files, it goes back the same way at once, without the wait. Either way it
+# records the outcome in `orbit.move-result`, which the converge reads after it reaches the Node again, so a lost connection
+# still reports node.hub_switch_no_handshake or node.hub_switch_load_failed. Previous files that an aborted move left are
 # kept, and the converge decides the next move from them.
 # While it moves, the Node takes WireGuard packets only from the new endpoint's address. The hub still sends to the Node's
 # old address until it hears from the new one, and may start a handshake there; the Node then roams back, and both ends stay
@@ -45,11 +46,24 @@
       for f in orbit.conf orbit.peers; do mv "$d/$f.next" "$d/$f"; done
       load() {
         wg set orbit peer "$key" remove || true
-        # A file node:add wrote holds its own [Interface] section; only the peers are loaded.
-        wg syncconf orbit <(printf '[Interface]\nPrivateKey = '; cat "$d/orbit.key"; awk '/^\[/ { skip = ($0 == "[Interface]") } !skip' "$d/orbit.peers")
+        # A file node:add wrote holds its own [Interface] section; only the peers are loaded. The key line ends once, with or
+        # without a final newline in the key file. `wg` prints a value it refuses, which may be the key: `cut` drops it.
+        wg syncconf orbit <(
+          printf '[Interface]\nPrivateKey = %s\n' "$(cat "$d/orbit.key")"
+          awk '/^\[/ { skip = ($0 == "[Interface]") } !skip' "$d/orbit.peers"
+        ) 2> >(cut -d'`' -f1 >&2)
+      }
+      restore() {
+        # A file without a previous copy goes too, so the next converge sees no endpoint and decides a move again.
+        for f in orbit.conf orbit.peers; do
+          if [ -f "$d/$f.previous" ]; then mv "$d/$f.previous" "$d/$f"; else rm -f "$d/$f"; fi
+        done
+        if [ "$cut_off" = yes ]; then load; else wg set orbit peer "$key" remove || true; wg setconf orbit "$d/orbit.live.previous"; fi
+        rm -f "$d/orbit.live.previous"
       }
       moved=$(date +%s)
-      load
+      # Without a loaded configuration the hub peer is gone and no handshake can come: go back at once.
+      if ! load; then restore; echo load_failed > "$d/orbit.move-result"; exit 3; fi
       for _ in $(seq 1 30); do
         seen=$(wg show orbit latest-handshakes | awk -v k="$key" '$1 == k { print $2 }')
         # A handshake the hub started to an old address would also be new; only one through the new endpoint counts. A
@@ -62,12 +76,7 @@
         ping -c 1 -W 1 {{ hub_move.probe_ip | quote }} > /dev/null 2>&1 || true
         sleep {{ hub_move.interval | default(2) }}
       done
-      # A file without a previous copy goes too, so the next converge sees no endpoint and decides a move again.
-      for f in orbit.conf orbit.peers; do
-        if [ -f "$d/$f.previous" ]; then mv "$d/$f.previous" "$d/$f"; else rm -f "$d/$f"; fi
-      done
-      if [ "$cut_off" = yes ]; then load; else wg set orbit peer "$key" remove || true; wg setconf orbit "$d/orbit.live.previous"; fi
-      rm -f "$d/orbit.live.previous"
+      restore
       echo restored > "$d/orbit.move-result"
       exit 3
   async: 180
@@ -91,6 +100,11 @@
   ansible.builtin.assert:
     that: hub_move_outcome.stdout | trim != 'unpinned'
     fail_msg: node.hub_switch_unpinned
+    quiet: true
+- name: Require the new hub configuration to load
+  ansible.builtin.assert:
+    that: hub_move_outcome.stdout | trim != 'load_failed'
+    fail_msg: node.hub_switch_load_failed
     quiet: true
 - name: Require a handshake through the new hub endpoint
   ansible.builtin.assert:
