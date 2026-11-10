@@ -100,6 +100,16 @@ if (family === "init") {
   if (state.containers[name]) fail("Instance already exists");
   const devices: string[] = [];
   for (let device = take("--device"); device !== null; device = take("--device")) devices.push(device);
+  // Incus copy merges overrides into LOCAL snapshot devices, not expanded profile devices.
+  const local: Record<string, Record<string, string>> = {};
+  for (const device of [...state.containers[source].devices, ...devices]) {
+    const comma = device.indexOf(",");
+    const equal = device.indexOf("=", comma);
+    const name = device.slice(0, comma);
+    local[name] ??= {};
+    local[name][device.slice(comma + 1, equal)] = device.slice(equal + 1);
+  }
+  if (local.root && !local.root.type) fail('Failed creating instance record: Invalid device type ""');
   new Deno.Command("cp", { args: ["-R", rootfs(source), rootfs(name)] }).outputSync();
   for (const path of ["home/agent/.codex", "home/agent/.config/orbit", "etc/orbit"]) {
     Deno.mkdirSync(`${rootfs(name)}/${path}`, { recursive: true });

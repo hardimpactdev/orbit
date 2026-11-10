@@ -80,6 +80,7 @@ describe('the first default Instance of a Project on a build-list Node', functio
         $container = containerIntentOf($operation);
         expect($container)->toMatchArray([
             'project' => 'orbit-instances', 'name' => 'instance-'.$operation->target_id, 'image' => 'orbit-instance', 'address' => '10.253.0.2',
+            'root_disk_pool' => 'orbit-instances', 'root_disk_size' => '40GiB',
             'network' => 'orbitinst0', 'acl' => 'instance-'.$operation->target_id,
             'acl_rules' => ['description' => 'Orbit Instance '.$operation->target_id, 'egress' => [],
                 'ingress' => [['action' => 'allow', 'source' => '10.253.0.1/32', 'protocol' => 'tcp', 'destination_port' => '8080', 'state' => 'enabled']]],

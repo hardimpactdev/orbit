@@ -7,7 +7,8 @@
     incus_project: [incus, --project, "{{ container.project }}"]
     resource_args: >-
       {{ (['--config'] | product(container.config.items() | map('join', '=')) | list | flatten)
-         + ['--device', 'root,size=' ~ container.root_disk_size] }}
+         + ['--device', 'root,type=disk', '--device', 'root,path=/',
+            '--device', 'root,pool=' ~ container.root_disk_pool, '--device', 'root,size=' ~ container.root_disk_size] }}
     as_orbit: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/orbit', container.name,
           '--', 'runuser', '-u', 'orbit', '--'] }}
