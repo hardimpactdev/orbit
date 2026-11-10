@@ -66,6 +66,19 @@ Deno.test("an isolated Tool failure retains both receipts without failing the ph
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
+Deno.test("a tools phase that stops before it judges a Tool fails the converge with no Tool receipt", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        // The phase failed at its helper check: Ansible reports the failure and the playbook never wrote tools-result.json.
+        await reports(folder, "tools");
+        await Deno.remove(`${folder}/tools-result.json`);
+        const result = await convergeResult(folder);
+        assertEquals(result.tools, []);
+        assertEquals([result.failed_phase, result.error_code], ["tools", "operation.native_failed"]);
+        assertEquals(result.phases.slice(4).map((phase) => phase.status), ["failed", "skipped", "skipped"]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
 Deno.test("private input is mode-protected, literal and limited to target plus recorded hub", async () => {
     const folder = await Deno.makeTempDir();
     try {

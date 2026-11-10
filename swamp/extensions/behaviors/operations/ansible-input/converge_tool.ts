@@ -48,6 +48,11 @@ export function toolState(mode: string, value: unknown): Record<string, unknown>
 }
 
 if (import.meta.main) {
+    // The phase asks this once, before it judges a Tool. Reaching this line proves that the runtime loaded the policy and its imports.
+    if (Deno.args[0] === "check") {
+        console.log(JSON.stringify({ ready: true }));
+        Deno.exit(0);
+    }
     try {
         const input = await new Response(Deno.stdin.readable).json();
         console.log(JSON.stringify(toolState(Deno.args[0], input)));

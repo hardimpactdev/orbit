@@ -376,15 +376,17 @@ The native Swamp workflow runs these phases in order. Input preparation writes p
 | --- | --- |
 | `input` | Prepare this attempt's recorded roles, Tools, network and release pins, plus vault key references. Require the CLI pin before machine work. |
 | `agent` | Reconcile the pinned agent, versioned CLI, selection link, Orbit-owned configuration and units, the [kernel policy](#kernel-policy) and the [update policy](#update-policy). Restart services only for managed changes. |
-| `software` | Read the selected pins from `recipe.json`, install them and hold the selected packages at those pins. |
+| `software` | Read the selected pins from `recipe.json`, install them and hold the selected packages at those pins. On the Swamp Node, install the recipe's pinned Deno, which runs the Tool helper. |
 | `roles` | Repair the selected roles' configuration without changing an Instance or assignment. |
-| `tools` | Apply recorded Tools within scope, recording each Tool's own result and continuing after an individual Tool failure. |
+| `tools` | Run the Tool helper once to prove that it works. Then apply recorded Tools within scope, recording each Tool's own result and continuing after an individual Tool failure. |
 | `network` | Apply the recorded hub before the Node and wait for the handshake. A target hub is applied once; without peers it needs no handshake. |
 | `check` | Read back selected software, units, role configuration and recorded tunnel state. |
 
 No recorded network in scope means no network mutation. DNS routing domains stay literal, including a domain such as `~orbit` that also names a local account. Every new attempt starts at input and runs all seven phases again, even when recorded intent matches. Matching tasks report zero target changes and the attempt must complete within 120 seconds; hub changes are excluded from that target count. A repeat is not a digest-based admission skip. Reusing an idempotency key follows the [keyed-start contract](/reference/operations#retry-a-start-with-a-key), rather than starting a second attempt.
 
 A failed phase stops later phases and fails the Operation with its failed step and error code. Completed and partial machine changes remain; there is no rollback. Fix the cause and start a new attempt from input. An individual Tool failure is different: it marks only that Tool failed, lets other Tools continue, and does not alone fail an otherwise successful parent. Temporary private run files are removed after work stops on success or failure. Incomplete cleanup is exposed without replacing the original failure, and interruption proves no cleanup.
+
+The Tool helper is the TypeScript policy that judges each Tool. It runs on the Swamp Node, with the Deno at `/usr/local/bin/deno`; on its first run for a worker, Deno downloads the helper's two pinned npm imports. A helper that cannot run is not a Tool failure: the `tools` phase fails before it judges a Tool, and no Tool is marked failed. Converge the Swamp Node to install its Deno, then converge the Node again.
 
 Agent and CLI replacements share the existing Node-local update lock with self-update. Only each final atomic rename holds it, not the whole phase. [One update at a time](/reference/self-update#one-update-at-a-time) owns the staging, timeout and failure rules. Converge checks the existing agent secret against the admitted verifier without rotating it or changing the Gateway's hash.
 

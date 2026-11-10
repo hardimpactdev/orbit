@@ -109,6 +109,7 @@ const cases = [
     { name: "app-dev selects its two PHP versions and JavaScript pins", roles: ["app-dev"], tools: [], checks: ["php_versions | sort == ['8.4', '8.5']", "'php-common' in tool_by_name", "'php8.4-fpm' in tool_by_name", "'php8.5-fpm' in tool_by_name", "'vp' in tool_by_name", "'chrome-headless-shell' not in tool_by_name"] },
     { name: "app-prod selects the recorded browser artifact", roles: ["app-prod"], tools: [], checks: ["php_versions == ['8.5']", "'php8.4-fpm' not in tool_by_name", "tool_by_name['chrome-headless-shell'].sha256 == recipe.tools['chrome-headless-shell'].artifacts.amd64.sha256", "'chrome-headless-shell' not in (deb_tools | map(attribute='name') | list)"] },
     { name: "a roleless recorded Composer Tool selects its manager and Git", roles: [], tools: [{ manager: "composer" }], checks: ["php_versions == []", "'composer' in tool_by_name", "'git' in tool_by_name", "'unzip' in tool_by_name", "'vp' not in tool_by_name", "'composer' in (ubuntu_tools | map(attribute='name') | list)"] },
+    { name: "the Swamp Node selects the pinned Deno of the Tool helper and unzip for its archive", roles: ["swamp"], tools: [], checks: ["tool_by_name['deno'].sha256 == recipe.tools.deno.artifacts.amd64.sha256", "'unzip' in (ubuntu_tools | map(attribute='name') | list)", "'vp' not in tool_by_name"] },
     { name: "a roleless recorded VP Tool selects the locked JavaScript manager", roles: [], tools: [{ manager: "vp" }], checks: ["php_versions == []", "'vp' in tool_by_name", "'node' in tool_by_name", "'pnpm' in tool_by_name", "'bun' in tool_by_name", "'vp-cli' in tool_by_name", "'composer' not in tool_by_name"] },
 ];
 for (const test of cases) {
@@ -313,5 +314,85 @@ Deno.test("the update policy creates the missing folders and writes each file wi
         await localPlay({ update_policy: { files } }, [mkdir, copy]);
         const timers = tasks.find((task) => task.name === "Set the daily update timers")!["ansible.builtin.systemd_service"] as Record<string, unknown>;
         assertEquals([timers.enabled, timers.state], ["{{ update_policy.daily }}", "{{ 'started' if update_policy.daily else 'stopped' }}"]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+// The Tool helper is TypeScript that the tools phase runs on the Swamp Node. Production prepares the input inside the compiled Swamp binary:
+// there `Deno.execPath()` names Swamp, which runs no script. This stand-in refuses `run` as that binary does.
+const toolHelper = fileURLToPath(new URL("../extensions/behaviors/operations/ansible-input/converge_tool.ts", import.meta.url));
+async function compiledSwamp(folder: string) {
+    const path = `${folder}/swamp`;
+    await Deno.writeTextFile(path, "#!/bin/sh\necho \"error: unknown command '$1'\" >&2\nexit 2\n");
+    await Deno.chmod(path, 0o755);
+    return path;
+}
+async function toolsPhase(folder: string, runtime: string) {
+    const plays = parse(await Deno.readTextFile(new URL("../ansible/operation-node-converge.yml", import.meta.url))) as Array<{ tasks: Array<Record<string, unknown>> }>;
+    const tasks = structuredClone(plays[1].tasks.filter((task) => (task.tags as string[]).includes("tools")));
+    for (const task of tasks) {
+        const include = task["ansible.builtin.include_tasks"] as { file: string } | undefined;
+        if (include) include.file = taskPath("node-converge-tool");
+    }
+    // A protected package is refused by the helper's own policy, before any machine read: one Tool failure with a working helper.
+    const tool = { id: 3, manager: "apt", package: "tree", version_constraint: "^2.2", protected: ["tree"], repository: null };
+    await Deno.writeTextFile(`${folder}/play.json`, JSON.stringify([{
+        hosts: "localhost", connection: "local", gather_facts: false, tasks,
+        vars: { intent: { node_id: 7, user: "orbit", tools: [tool] }, converge_deno: runtime, converge_tool_helper: toolHelper, orbit_run: folder },
+    }]));
+    const result = await new Deno.Command("ansible-playbook", {
+        args: ["-i", "localhost,", `${folder}/play.json`], stdout: "piped", stderr: "piped",
+        env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default" },
+    }).output();
+    const recorded = await Deno.readTextFile(`${folder}/tools-result.json`).then(JSON.parse, () => null);
+    return { code: result.code, output: new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr), recorded };
+}
+
+Deno.test("the Tool helper runs with the pinned Deno of the Swamp Node, not with the binary that prepares the input", async () => {
+    const folder = await Deno.makeTempDir();
+    const execPath = Deno.execPath;
+    try {
+        const swamp = await compiledSwamp(folder);
+        const ssh = { identity_file: "/unused", target: { host: "localhost", port: 22, user: "unused", host_keys: ["ssh-ed25519 fixture"] } };
+        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, roles: [] }));
+        await Deno.writeTextFile(`${folder}/plans.json`, "{}");
+        Deno.execPath = () => swamp;
+        const { convergeInput } = await import("../extensions/behaviors/operations/ansible-input/converge_input.ts");
+        await convergeInput(folder, "/unused", toolHelper);
+        const vars = parse(await Deno.readTextFile(`${folder}/vars.yml`)) as { converge_deno: string; converge_tool_helper: string };
+        const install = parse(await Deno.readTextFile(taskPath("task-vm-deno"))) as Array<{ block?: Array<Record<string, unknown>> }>;
+        const launcher = install.flatMap((task) => task.block ?? []).find((task) => task.name === "Publish Deno")!["ansible.builtin.file"] as { dest: string };
+        assertEquals(vars.converge_deno, launcher.dest);
+        assertEquals(vars.converge_tool_helper, toolHelper);
+        // The software phase installs that launcher on the Swamp Node, and the end check reads it back.
+        for (const name of ["node-converge-software", "node-converge-software-check"]) {
+            const tasks = parse(await Deno.readTextFile(taskPath(name))) as Array<Record<string, unknown>>;
+            assertEquals(tasks.filter((task) => task.when === "'deno' in tool_by_name").length, 1, name);
+        }
+    } finally {
+        Deno.execPath = execPath;
+        await Deno.remove(folder, { recursive: true });
+    }
+});
+
+// The compiled Swamp binary is what main named as the runtime; a missing launcher is a Swamp Node whose software phase has not run yet.
+for (const runtime of ["the compiled Swamp binary", "a missing Deno launcher"]) {
+    Deno.test(`a Tool helper that cannot run with ${runtime} fails the tools phase and marks no Tool failed`, async () => {
+        const folder = await Deno.makeTempDir();
+        try {
+            const path = runtime === "the compiled Swamp binary" ? await compiledSwamp(folder) : `${folder}/deno`;
+            const phase = await toolsPhase(folder, path);
+            assertEquals(phase.code, 2, phase.output);
+            assertMatch(phase.output, /TASK \[Require a working Tool helper\][^]*The Tool helper does not run with \S+ on the Swamp Node, so no Tool was judged/);
+            assertEquals(phase.recorded, null);
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    });
+}
+
+Deno.test("with a working Tool helper, a refused Tool is marked failed alone and the tools phase succeeds", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const phase = await toolsPhase(folder, Deno.execPath());
+        assertEquals(phase.code, 0, phase.output);
+        assertEquals(phase.recorded, [{ id: 3, status: "failed", installed_version: null }]);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
