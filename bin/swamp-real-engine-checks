@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""Run fast Ansible contract checks after the shape gate's tool/collection setup.
+
+Wire this into the shape lane after its collection setup, or run it locally after
+bin/swamp-shape-gate has installed the pinned tools. It executes no host tasks.
+"""
+import argparse
+import os
+import runpy
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+TESTS = ('ansible_instance_module_args_test.py', 'ansible_command_output_test.py')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--tools', type=Path, help='Same pinned tool directory as bin/swamp-shape-gate')
+    args = parser.parse_args()
+    gate = runpy.run_path(str(ROOT / 'bin/swamp-shape-gate'))
+    tools = args.tools or gate['default_tools']()
+    collections = gate['collections_path'](tools)
+    if not collections.is_dir():
+        parser.error('Pinned collections are missing. Run bin/swamp-shape-gate to install them first.')
+    python = gate['tool_path'](tools) / 'python3'
+    env = {**os.environ, 'ANSIBLE_COLLECTIONS_PATH': str(collections), 'ANSIBLE_FORKS': '1'}
+
+    def run(test):
+        started = time.monotonic()
+        result = subprocess.run([str(python), '-I', str(ROOT / 'swamp/tests' / test)],
+                                env=env, capture_output=True, text=True, check=False)
+        return test, result, time.monotonic() - started
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(run, TESTS))
+    for test, result, elapsed in results:
+        print(f'{test}: {"PASS" if result.returncode == 0 else "FAIL"} ({elapsed:.2f}s)')
+        print(result.stdout + result.stderr, end='')
+    return int(any(result.returncode for _, result, _ in results))
+
+
+if __name__ == '__main__':
+    sys.exit(main())

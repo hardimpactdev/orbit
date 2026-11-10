@@ -72,6 +72,26 @@
     - name: Start the independent Tool observations
       ansible.builtin.set_fact: { tool_results: [] }
       tags: [tools]
+    # A helper that cannot run is no Tool failure. It fails the phase here, before the rescue of a Tool can record one.
+    - name: Run the Tool helper once before judging any Tool
+      when: intent.tools | length > 0
+      ansible.builtin.command:
+        argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", check]
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      failed_when: false
+      register: tool_helper
+      tags: [tools]
+    - name: Require a working Tool helper
+      when: intent.tools | length > 0
+      ansible.builtin.assert:
+        that: tool_helper.rc | default(1) == 0 and (tool_helper.stdout | default('') | trim) == '{"ready":true}'
+        fail_msg: >-
+          The Tool helper does not run with {{ converge_deno }} on the Swamp Node, so no Tool was judged.
+          Converge the Swamp Node: its software phase installs the pinned Deno.
+        quiet: true
+      tags: [tools]
     - name: Reconcile each independent Tool
       ansible.builtin.include_tasks:
         file: tasks/node-converge-tool.yml

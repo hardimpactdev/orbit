@@ -50,3 +50,10 @@ it('lets a system shutdown kill serve and each worker at once, while a normal st
         ->and($units['serve'])->toContain("TimeoutStopSec=360\n".$guard)->not->toContain('KillMode')
         ->and($units['renewal_service'])->not->toContain('ExecStop');
 });
+
+it('gives serve and each worker their own temp directory, so a root run can not replace their Swamp start cache', function (): void {
+    $units = SwampRoleUnits::for('orbit', 209);
+
+    expect($units['worker'])->toContain("StateDirectory=orbit-swamp-worker/%i orbit-swamp-worker/%i/tmp\n", ' TMPDIR=/var/lib/orbit-swamp-worker/%i/tmp ')
+        ->and($units['serve'])->toContain("StateDirectory=orbit-swamp-serve orbit-swamp-serve/tmp\n", ' TMPDIR=/var/lib/orbit-swamp-serve/tmp ');
+});

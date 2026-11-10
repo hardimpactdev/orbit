@@ -1,0 +1,13 @@
+table inet orbit_fixture {
+	chain forward {
+		ip daddr 10.44.0.3 tcp dport 8318 counter packets 13 bytes 780 drop
+	}
+
+	chain output {
+		ip daddr 10.44.0.3 tcp dport 8318 meta skuid != 999 counter packets 13 bytes 780 reject with tcp reset
+	}
+
+	chain input {
+		ip daddr 10.253.0.1 tcp dport 8319 iifname != "orbitinst0" counter packets 13 bytes 780 reject with tcp reset
+	}
+}

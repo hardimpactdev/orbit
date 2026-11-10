@@ -27,3 +27,14 @@
       ansible.builtin.assert:
         that: recipe.tools['chrome-headless-shell'].version in browser_check.stdout
         quiet: true
+- name: Check the Tool helper's Deno without writes
+  when: "'deno' in tool_by_name"
+  block:
+    - name: Read the selected Deno version
+      ansible.builtin.command: { argv: [/usr/local/bin/deno, --version] }
+      changed_when: false
+      register: deno_check
+    - name: Require the selected Deno pin
+      ansible.builtin.assert:
+        that: ('deno ' ~ recipe.tools.deno.version) in deno_check.stdout
+        quiet: true
