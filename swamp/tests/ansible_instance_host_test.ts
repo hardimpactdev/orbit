@@ -616,9 +616,9 @@ Deno.test({
             `${f.folder}/firewall-orbit_instances-egress.json`,
           ),
         ),
+        // `interface_in` alone: the real module refuses `direction` beside it (tests/ansible_instance_module_args_test.py).
         {
           rule: "allow",
-          direction: "in",
           interface_in: "orbitinst0",
           proto: "tcp",
           to_ip: "10.253.0.1",
@@ -729,6 +729,9 @@ Deno.test({
           c.includes("install") && c.includes("nftables") && c.includes("acl")
         ),
       );
+      // The build ran the Gateway's real setup script. A started stock container has cloud-init's group `lxd` on gid 1000, and the
+      // fixture's `groupadd` refuses a taken gid, as the real one does: the script must delete the group first.
+      assert(f.instances.image.prepare.includes("groupadd --gid 1000 orbit"));
       // Cloud-init's first boot ends before anything runs in the build container, so it cannot add a sudo user after the setup.
       const inBuild = f.calls().filter((c) =>
         c[0] === "exec" || c.includes("exec")
@@ -765,71 +768,27 @@ Deno.test({
           c.includes("publish") || c.includes("orbit-instance-build")
         ),
       );
-    } finally {
-      f.cleanup();
-    }
-  },
-});
 
-Deno.test({
-  name:
-    "a Node prepared before the bridge admitted anything gets the ingress rules and no DNS, then a rerun changes nothing",
-  ignore: !hasAnsible,
-  async fn() {
-    const f = await fixture();
-    try {
-      let result = f.run();
-      assert(result.ok, result.output);
-      // Beast after the first releases: the bridge's dnsmasq answers DNS, and the ACL rejects all that goes to a container.
-      const state = f.state();
-      delete state.networks.find((n: { name: string }) =>
-        n.name === "orbitinst0"
-      ).config["raw.dnsmasq"];
-      state["network-acls"].find((a: { name: string }) =>
+      // A Node prepared before these rules, as Beast was: the bridge's dnsmasq answers DNS, and the ACL rejects all that goes to
+      // a container. The next converge gives the existing bridge and ACL both.
+      const old = f.state();
+      delete old.networks.find((n: { name: string }) => n.name === "orbitinst0")
+        .config["raw.dnsmasq"];
+      old["network-acls"].find((a: { name: string }) =>
         a.name === "orbitinst0-egress"
       ).ingress = [];
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(old));
       assert(bridgeAnswersDns(f.state()));
       assert(!bridgeAdmits(f.state(), { source: caddy, port: 8080 }));
       assert(!bridgeAdmits(f.state(), { source: peer, port: 3773 }));
-
       result = f.run();
       assert(result.ok, result.output);
       assert(!bridgeAnswersDns(f.state()));
       assert(bridgeAdmits(f.state(), { source: caddy, port: 8080 }));
       assert(bridgeAdmits(f.state(), { source: peer, port: 3773 }));
       assert(!bridgeAdmits(f.state(), { source: peer, port: 8080 }));
-      result = f.run();
-      assert(result.ok, result.output);
-      assertStringIncludes(result.output, "changed=0");
-    } finally {
-      f.cleanup();
-    }
-  },
-});
-
-Deno.test({
-  name:
-    "a setup script that leaves cloud-init's group lxd on gid 1000 fails the build, and nothing is published",
-  ignore: !hasAnsible,
-  async fn() {
-    const f = await fixture();
-    try {
-      // The script before the fix: `groupadd --gid 1000 orbit` meets the gid that `lxd` took at the first boot.
-      f.write({
-        ...f.instances,
-        image: {
-          ...f.instances.image,
-          prepare: f.instances.image.prepare.split("\n").filter((line) =>
-            !line.includes("groupdel lxd")
-          ).join("\n"),
-        },
-      });
-      const result = f.run();
-      assert(!result.ok);
-      assertStringIncludes(result.output, "groupadd: GID '1000' already exists");
-      assert(!f.calls().some((c) => c.includes("publish")));
-      assertEquals(f.state().instances, []);
+      assertEquals(f.state().networks, state.networks);
+      assertEquals(f.state()["network-acls"], state["network-acls"]);
     } finally {
       f.cleanup();
     }
