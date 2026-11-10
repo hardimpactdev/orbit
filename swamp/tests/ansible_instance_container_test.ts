@@ -46,6 +46,8 @@ const git = (cwd: string, ...args: string[]) => {
 
 function fixture() {
   const folder = Deno.makeTempDirSync();
+  // Other worktrees run this fixture on the same host; run-scoped files on the Node must be unique too.
+  const runId = crypto.randomUUID();
   Deno.mkdirSync(`${folder}/bin`);
   Deno.mkdirSync(`${folder}/tasks`);
   Deno.mkdirSync(`${folder}/home`);
@@ -127,7 +129,7 @@ function fixture() {
           ANSIBLE_HOME: `${folder}/ansible`,
           ANSIBLE_LOCAL_TEMP: `${folder}/tmp`,
           ORBIT_RUN: `${folder}/run`,
-          ORBIT_RUN_ID: "run-1",
+          ORBIT_RUN_ID: runId,
           ORBIT_GIT_CREDENTIAL: "",
           ORBIT_ENVIRONMENT: "APP_KEY=base64:secret\n",
           ORBIT_MODEL_ENVIRONMENT: "ORBIT_MODEL_KEY=placeholder\n",
@@ -233,7 +235,8 @@ Deno.test({
       f.workspace("checkout", "--", "index.php");
 
       // An older commit does not fast-forward the branch.
-      assert(f.run("fetch").ok);
+      const refetch = f.run("fetch");
+      assert(refetch.ok, refetch.output);
       const diverged = f.run("checkout");
       assert(!diverged.ok);
       assertEquals(f.result(), { error_code: "deployment.branch_diverged" });
@@ -466,7 +469,8 @@ Deno.test({
       f.container.processes = [worker, paused];
       f.write();
       for (const phase of ["container", "workspace", "processes", "seed"]) {
-        assert(f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments }).ok);
+        const result = f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments });
+        assert(result.ok, `${phase}: ${result.output}`);
       }
       Deno.writeTextFileSync(`${f.source}/index.php`, "<?php echo 2;\n");
       git(f.source, "commit", "--quiet", "-am", "second");
