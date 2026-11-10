@@ -110,9 +110,9 @@ Run the tests that cover your change with stock Pest: `vendor/bin/pest --compact
 
 Follow the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges) for PR checks.
 
-CI runs builds and static checks on pull requests, main pushes, task handoff pushes and manual dispatches. It also runs the full default Gateway Pest suite when its inputs change; [CI](/reference/implementation-loop#ci) owns its setup and selection rules. Other PHP suites remain local checks.
+CI runs builds and static checks on pull requests, main pushes, task handoff pushes and manual dispatches. It also runs the full Gateway and CLI Pest suites when their inputs change; [CI](/reference/implementation-loop#ci) owns its setup and selection rules. Other PHP suites remain local checks.
 
-The [CI reference](/reference/implementation-loop#ci) lists the rules. Orbit's task gate, `bin/review-check`, runs no tests. CI runs selected builds, static checks and Gateway Pest on the handoff commit. The [feature delivery reference](/reference/implementation-loop#the-candidate-gate) lists the gate's steps.
+The [CI reference](/reference/implementation-loop#ci) lists the rules. Orbit's task gate, `bin/review-check`, runs no tests. CI runs selected builds, static checks and Gateway and CLI Pest suites on the handoff commit. The [feature delivery reference](/reference/implementation-loop#the-candidate-gate) lists the gate's steps.
 
 The `test` script in each PHP project, and root `bin/test`, pass `--colors=never` to Pest. `bin/pest-plain` strips any ANSI control sequences that remain. The output has no ANSI escape codes and still ends with the `Tests:` summary. The scripts do not pass `--no-progress`, because parallel Pest then omits that summary. Keep the flag on the scripts.
 
@@ -132,7 +132,7 @@ Keep real subprocess coverage for remote programs that manage Git state or proce
 
 Keep a real-clock case where enforcing the timeout is the behavior under test. Start a readiness-timeout fixture with its normal startup budget, then set its short deadline after `Process::start()` returns; process launch must not expire before the readiness helper runs. Scheduler tests advance the framework clock instead of sleeping.
 
-In an Orbit task, the implementer runs only the tests that cover the change in each changed Composer project. The Gateway runs the Project check at handoff, and CI runs selected builds, static checks and Gateway Pest on the handoff commit. Outside an Orbit task, run these commands in each changed project, such as `apps/cli`:
+In an Orbit task, the implementer runs only the tests that cover the change in each changed Composer project. The Gateway runs the Project check at handoff, and CI runs selected builds, static checks and Gateway and CLI Pest suites on the handoff commit. Outside an Orbit task, run these commands in each changed project, such as `apps/cli`:
 
 ```bash
 composer test

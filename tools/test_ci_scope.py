@@ -122,6 +122,24 @@ class ScopeActionTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(values['selected'], 'true')
 
+    def test_cli_pest_scope_follows_its_cross_project_inputs_and_skips_unrelated_docs(self):
+        previous = self.imported
+        for path, selected in (('docs/reference/tasks.md', 'false'),
+                               ('docs/cli/instance/create.mdx', 'true'),
+                               ('docs/reference/cli-command-vocabulary.md', 'true'),
+                               ('packages/php-sdk/fixtures/instance.json', 'true'),
+                               ('apps/cli/tests/Fixtures/Console/command-consent.php', 'true'),
+                               ('apps/gateway/routes/api/instances.php', 'true')):
+            with self.subTest(path=path):
+                fixture = self.root / path
+                fixture.parent.mkdir(parents=True, exist_ok=True)
+                fixture.write_text('fixture input\n')
+                self.commit('Change ' + path)
+                result, values = self.scope(previous, job='cli-tests')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(values['selected'], selected)
+                previous = self.git('rev-parse', 'HEAD')
+
     def test_bad_comparison_fails_and_zero_event_base_uses_parent(self):
         result, _ = self.scope('f' * 40)
         self.assertNotEqual(result.returncode, 0)

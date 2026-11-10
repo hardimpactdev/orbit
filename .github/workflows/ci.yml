@@ -265,6 +265,45 @@ jobs:
         working-directory: apps/cli
         run: composer analyse
 
+  cli-tests:
+    name: CLI Pest suite
+    needs: changes
+    if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['cli-tests']) != 'false' }}
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/php
+        with:
+          coverage: none
+      - name: Give PHP and child processes 1 GiB
+        run: |
+          mkdir -p "$RUNNER_TEMP/cli-tests-php"
+          echo 'memory_limit=1G' > "$RUNNER_TEMP/cli-tests-php/memory.ini"
+          echo "PHP_INI_SCAN_DIR=${PHP_INI_SCAN_DIR:-}:$RUNNER_TEMP/cli-tests-php" >> "$GITHUB_ENV"
+      - name: Cache CLI test dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/cli/vendor
+          key: cli-tests-dev-${{ runner.os }}-8.5-${{ hashFiles('apps/cli/composer.json', 'apps/cli/composer.lock', 'packages/php-sdk/composer.json', 'packages/php-sdk/composer.lock') }}
+      - name: Install CLI dev dependencies
+        run: composer install --working-dir=apps/cli --no-interaction --prefer-dist --no-scripts
+      - name: Run the complete CLI Pest suite
+        working-directory: apps/cli
+        run: |
+          php -r 'if (ini_get("memory_limit") !== "1G") { exit(1); }'
+          vendor/bin/pest --compact --colors=never --log-junit="$RUNNER_TEMP/cli-tests.xml"
+      - name: Publish CLI Pest results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cli-tests-junit
+          path: ${{ runner.temp }}/cli-tests.xml
+          if-no-files-found: error
+          retention-days: 7
+
   sdk-static:
     name: PHP SDK static analysis
     runs-on: ubuntu-26.04
@@ -661,14 +700,14 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [php, gateway-static, gateway-tests, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, pi, agent, proof, gateway-release, changes]
+    needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, e2e-static, docs, api-reference, web, pi, agent, proof, gateway-release, changes]
     runs-on: ubuntu-26.04
     permissions:
       contents: read
       statuses: read
       actions: read
     steps:
-      - name: Require builds, static checks and Gateway tests
+      - name: Require builds, static checks and Gateway and CLI tests
         env:
           NEEDS: ${{ toJSON(needs) }}
           PROOF_REQUIRED: ${{ github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' }}

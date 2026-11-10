@@ -51,6 +51,26 @@ class BuildPlanTest(unittest.TestCase):
                 with self.subTest(path=path, main=main):
                     self.assertTrue(plan.select([path], main)['jobs']['gateway-tests'])
 
+    def test_cli_pest_follows_sources_docs_recorded_fixtures_and_release_helpers(self):
+        for path in ('apps/cli/app/Commands/Instances/CreateInstanceCommand.php', 'apps/cli/composer.lock',
+                     'apps/cli/tests/Feature/CommandSurfaceTest.php', 'apps/cli/tests/Fixtures/Console/command-consent.php',
+                     'packages/php-sdk/src/Requests/Instances/CreateInstanceRequest.php',
+                     'packages/php-sdk/fixtures/instances/instance-create/default.json',
+                     'docs/cli/instance/create.mdx', 'docs/reference/cli-command-vocabulary.md',
+                     'apps/gateway/routes/api/instances.php', 'apps/agent/scripts/source-commit',
+                     'bin/orbit-build-cli-binary', 'bin/orbit-version', 'bin/orbit-cli-release-version',
+                     'bin/orbit-cli-release-assets', '.github/actions/php/action.yml'):
+            for main in (False, True):
+                with self.subTest(path=path, main=main):
+                    self.assertTrue(plan.select([path], main)['jobs']['cli-tests'])
+
+    def test_cli_pest_skips_unrelated_gateway_docs_web_and_swamp_inputs(self):
+        for path in ('apps/gateway/app/Thing.php', 'apps/gateway/tests/Feature/ThingTest.php',
+                     'docs/reference/tasks.md', 'docs/cli/instance/create.mmd', 'apps/docs/composer.lock',
+                     'apps/web/src/main.ts', 'swamp/workflows/workflow-example.yaml'):
+            with self.subTest(path=path):
+                self.assertFalse(plan.select([path])['jobs']['cli-tests'])
+
     def test_gateway_pest_skips_unrelated_docs_web_and_swamp_tools(self):
         for path in ('docs/reference/tasks.md', 'docs/cli/firewall/allow.mdx', 'apps/docs/composer.lock',
                      'apps/web/src/main.ts', 'apps/web/bun.lock', 'swamp/docs/swamp-shape.md',
@@ -59,7 +79,7 @@ class BuildPlanTest(unittest.TestCase):
                 self.assertFalse(plan.select([path])['jobs']['gateway-tests'])
 
     def test_sdk_changes_build_both_consumers(self):
-        self.assertEqual({'php', 'gateway-tests', 'cli', 'cli-static', 'sdk-static', 'api-reference', 'web'}, self.selected(['packages/php-sdk/src/Request.php']))
+        self.assertEqual({'php', 'gateway-tests', 'cli', 'cli-static', 'cli-tests', 'sdk-static', 'api-reference', 'web'}, self.selected(['packages/php-sdk/src/Request.php']))
 
     def test_a_composer_manifest_or_lock_selects_the_static_analysis_of_its_project(self):
         # Dependabot bumped laravel/boost in apps/cli/composer.lock and nothing analysed the CLI against it.
