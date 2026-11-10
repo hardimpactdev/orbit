@@ -47,7 +47,35 @@ Retirement removes the checkout from its old live path by renaming the whole dir
 
 Find the root and its retention time with `orbit instance:show INSTANCE --json`: the fields are `retained_git_path` and `retained_git_at`, also returned by `GET /api/v1/instances/{instance}`. `retained.json` inside that root records the same path and time. Both API fields are null until retirement prepares that root. The timestamp is when the root was prepared. A failed retirement can leave an empty or partly filled root; its path is recorded before any checkout moves.
 
-Orbit has no purge command yet. To recover commits, use `git --git-dir=RETAINED_CHILD/.git show REF` on the Instance's Node. Before manually removing the retained root, inspect every repository and its worktrees, save the data you need elsewhere, and repair any worktree that still depends on it. Only then run `rm -rf -- RETAINED_ROOT` on that Node, replacing `RETAINED_ROOT` with the exact recorded path. Retirement never performs that purge or clears the recorded path and time after a manual purge.
+### Recovery
+
+To inspect retained commits, use `git --git-dir=RETAINED_CHILD/.git show REF` on the Instance's Node. Repairing a linked worktree's pointers to the retained repository can make it usable again, but it still depends on that repository. Keep the retained root while any worktree depends on it.
+
+### Manual purge
+
+Orbit has no purge command yet. Before purging the retained root:
+
+- Save all needed data outside it, including refs, stashes, submodule repositories and nested repositories.
+- Make every surviving linked worktree independent, or move its shared repository outside the retained root and repair its worktrees against that new location. Repairing pointers back into retention does not meet this requirement.
+- Stop anyone from creating or changing worktrees until inspection and purge finish.
+
+Inspect the retained repositories' `worktrees/` entries, including those under `.git/modules` and nested repositories. On the Node, set `retained_root` to the exact recorded path. This read-only check prints each registration file followed by the path of its worktree's `.git` file:
+
+```sh
+retained_root='/exact/path/from/retained_git_path'
+find "$retained_root" -type f -path '*/worktrees/*/gitdir' -print -exec cat {} \;
+```
+
+For every listed target whose worktree survives, check the repository it now uses:
+
+```sh
+git -C /path/to/surviving-worktree rev-parse --path-format=absolute --git-common-dir
+realpath -- /common/git/directory/reported/above
+```
+
+Every resolved common Git directory must exist outside the retained root. A failed command, a path still inside retention, or an unaccounted-for missing target leaves the inspection incomplete: keep the retained root. Account for moved or removed worktrees explicitly; a broken old pointer does not prove independence. Repeat this inspection for every registration printed above.
+
+Only after all data is saved and no surviving worktree uses a retained Git directory, run `rm -rf -- RETAINED_ROOT` on that Node, replacing `RETAINED_ROOT` with the exact recorded path. This is an operator-performed purge; retirement neither performs it nor clears the recorded path and time afterward.
 
 ## Before you start
 
