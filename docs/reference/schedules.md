@@ -44,6 +44,8 @@ The Gateway prunes failed queue jobs, batch metadata, and Activity older than 30
 
 ## Execution
 
+Schedules read the Node's stored [`accounts` fact](/reference/node-agent#facts) to resolve their runtime account while its agent is online. A missing or invalid account returns `schedule.target_unavailable`. If the fact is absent or the agent is not online, the existing `account.lookup` command resolves the account.
+
 Create, enable, disable and destroy touch no Node. The Gateway changes the Schedule's workflow or trigger on serve, waits for serve to confirm, and answers at once: HTTP 202 with an Operation that has already succeeded (R1). When serve does not confirm, the request fails with `swamp.schedule_publish_unavailable` (503) and records no Operation; repeat the same request. A manual run starts `task-command-run` and returns its running Operation with HTTP 202. An Idempotency-Key replays the original Operation.
 
 An [Instance transfer](/reference/instance-transfer) moves the Instance's Schedules. It removes their triggers when its run starts. When the run ends, the Gateway rewrites each published workflow for the recorded Node and sets the trigger again if `desired_timer_state` is `enabled`.

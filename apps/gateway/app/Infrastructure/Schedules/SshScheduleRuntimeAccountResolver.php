@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Schedules;
 
+use App\Domain\NodeFacts\NodeAgentLiveness;
+use App\Domain\NodeFacts\NodeAgentState;
+use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Schedules\ScheduleRuntimeAccount;
@@ -11,12 +14,14 @@ use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
+use App\Models\NodeFact;
 use Throwable;
 
 final readonly class SshScheduleRuntimeAccountResolver implements ScheduleRuntimeAccountResolver
 {
     public function __construct(
         private AgentCommandRunner $agents,
+        private NodeAgentLiveness $liveness,
     ) {}
 
     public function resolve(Node $node, string $user): ScheduleRuntimeAccount
@@ -27,12 +32,19 @@ final readonly class SshScheduleRuntimeAccountResolver implements ScheduleRuntim
             $this->unreachable();
         }
 
-        try {
-            $account = $this->agents->run($node, 'account.lookup', ['user' => $user]);
-        } catch (AgentCommandRefused) {
-            $this->unavailable();
-        } catch (Throwable) {
-            $this->unreachable();
+        $fact = NodeFact::query()->where('node_id', $node->id)->where('kind', NodeFactKind::Accounts)
+            ->where('subject', '')->first();
+
+        if ($fact !== null && $this->liveness->for($node)?->state === NodeAgentState::Online) {
+            $account = $this->observedAccount($fact, $user);
+        } else {
+            try {
+                $account = $this->agents->run($node, 'account.lookup', ['user' => $user]);
+            } catch (AgentCommandRefused) {
+                $this->unavailable();
+            } catch (Throwable) {
+                $this->unreachable();
+            }
         }
 
         $name = $account['user'] ?? null;
@@ -50,6 +62,19 @@ final readonly class SshScheduleRuntimeAccountResolver implements ScheduleRuntim
         }
 
         return new ScheduleRuntimeAccount($user, $group, $account['home'], $account['shell']);
+    }
+
+    /** @return array<string, mixed> */
+    private function observedAccount(NodeFact $fact, string $user): array
+    {
+        $accounts = $fact->data['accounts'] ?? null;
+        foreach (is_array($accounts) ? $accounts : [] as $account) {
+            if (is_array($account) && ($account['user'] ?? null) === $user) {
+                return $account;
+            }
+        }
+
+        $this->unavailable();
     }
 
     private function unreachable(): never
