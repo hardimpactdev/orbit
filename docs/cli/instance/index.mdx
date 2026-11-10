@@ -26,7 +26,7 @@ Every command accepts `--json`. Machine output never supplies consent. Human lis
 
 Placement commands create, adopt, inspect, and remove an Instance on one Node.
 
-`instance:create`, `instance:clone`, `instance:transfer`, and `instance:destroy` return an Operation. `instance:rename` records the branch at once from the Node agent's report and returns the Instance. `instance:register` returns the Instance at once when the checkout's `.env` is absent or private, and otherwise an Operation for the run that protects `.env`. The Gateway validates and records intent, then Swamp executes it. The CLI follows the Operation and prints its final receipt in JSON mode. `--idempotency-key=KEY` retries the same admission without creating another Operation. Ctrl+C stops following; it leaves the Operation running. Use `operation:show` to read it again.
+`instance:create`, `instance:clone`, `instance:transfer`, and `instance:destroy` return an Operation. `instance:rename` records the branch at once from the Node agent's report and returns the Instance. `instance:register` returns the Instance at once when the checkout's `.env` is absent or private, and otherwise an Operation for the run that protects `.env`. The Gateway validates and records intent, then queues the native start. The API returns the Operation before that start runs. Swamp executes the work. The CLI follows the Operation and prints its final receipt in JSON mode. `--idempotency-key=KEY` retries the same admission without creating another Operation. Ctrl+C stops following; it leaves the Operation running. Use `operation:show` to read it again.
 
 | Command | Result |
 | --- | --- |

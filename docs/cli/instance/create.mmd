@@ -53,12 +53,13 @@ sequenceDiagram
   %%> - a timed-out write keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes
   %%> - task provision and cancel, instance:register and the Cluster Router writes hold the Nodes for their Route-publish step only, through the `route-hold` call
   %%> - a task that waits starts from the Node's live files; a site block that matches none of its captured states still stops it with `owned_revision_conflict`
-  GW->>SW: Start run, full intent<br/>operation-instance-create
+  Note over GW: Commit admission, push copies<br/>queue start · answer 202
+  GW-->>CLI: 202 Accepted<br/>task ID
+  GW->>SW: Queued job starts run, full intent<br/>operation-instance-create
   %%> Why the vault:
   %%> - the token and `.env` reach the run only through the vault; no step calls the Gateway back
   %%> Budget:
   %%> - 60 s, plus the Project's setup step timeouts, plus 30 s for the Processes, plus 240 s for the Route (180 s to publish it, 60 s to take it back if the create fails) and 180 s for a database copy; fixed at admission
-  GW-->>CLI: 202 Accepted<br/>task ID
   %%> What you get:
   %%> - the task ID, at once
   %%> Next:

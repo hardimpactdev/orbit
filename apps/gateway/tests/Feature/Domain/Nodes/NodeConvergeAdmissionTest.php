@@ -18,6 +18,7 @@ use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Fleet\StaticCliRelease;
 use App\Infrastructure\Swamp\SwampConnection;
+use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -77,6 +78,8 @@ it('captures base from recorded state, redacts its verifier and dispatches copie
     $response = $this->postJson($this->url, ['base' => true])->assertAccepted();
     $operation = Operation::query()->sole();
     $capture = $operation->input['_converge'];
+    expect(array_column($this->frames, 'type'))->toBe(['vault.put']);
+    app()->call([new StartAdmittedSwampRun($operation->id), 'handle']);
     expect($capture['intent']['selected_roles'])->toBe([])
         ->and($capture['intent']['roles'])->toBe([])->and($capture['intent']['tools'])->toBe([])->and($capture['intent']['network'])->toBeNull()
         ->and($capture['intent']['agent'])->toMatchArray(['sha256' => str_repeat('b', 64), 'url' => 'https://artifacts.example/agent'])

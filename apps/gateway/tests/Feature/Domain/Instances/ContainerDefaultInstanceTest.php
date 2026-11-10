@@ -106,7 +106,7 @@ describe('the first default Instance of a Project on a build-list Node', functio
         $node = containerDefaultNode();
         $project = containerDefaultProject();
         $first = containerCreate($project, $node);
-        $first->forceFill(['status' => 'failed'])->save();
+        $first->forceFill(['status' => 'failed', 'lock_key' => null])->save();
 
         $repeat = containerCreate($project, $node);
 

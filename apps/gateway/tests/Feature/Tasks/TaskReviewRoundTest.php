@@ -111,10 +111,10 @@ function roundCandidate(Task $group, Task $subtask, string $head = ROUND_HEAD): 
     return $check;
 }
 
-/** Admits a round; the Swamp start is not configured in a test, so the admission is recorded and then refuses at the start. */
+/** Admits a round without running its queued native start. */
 function admitRound(Task $group, string $head = ROUND_HEAD): Operation
 {
-    expect(fn () => app(TaskReviewRoundIntent::class)->start($group, $head, 'test', null))->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('swamp.start_unavailable'));
+    expect(app(TaskReviewRoundIntent::class)->start($group, $head, 'test', null)->status)->toBe(OperationStatus::Queued);
 
     return Operation::query()->where('kind', OperationKinds::TasksReviewRound)->latest('id')->firstOrFail();
 }
@@ -144,8 +144,8 @@ it('admits one round with the review, fix and push, resuming only a parked VM', 
         ->and(json_encode($input))->not->toContain(str_repeat('p', 64))
         ->and($input['review'])->not->toHaveKey('execution_secrets')
         ->and([$round->head_sha, $round->round, $round->operation_id, $round->check_id])->toBe([ROUND_HEAD, 1, $operation->id, $input['check']['check_id']])
-        // A test has no Swamp, so the start is refused, and the refusal ends the round and closes its check row.
-        ->and([$round->verdict, TaskCheck::query()->findOrFail($round->check_id)->status])->toBe([TaskReviewRoundVerdict::Failed, TaskCheckStatus::Cancelled])
+        // The queued start has not run; its round and check remain pending.
+        ->and([$round->verdict, TaskCheck::query()->findOrFail($round->check_id)->status])->toBe([null, TaskCheckStatus::Running])
         ->and(AgentThread::query()->where('role', 'reviewer')->count())->toBe(1);
 })->with([TaskVmState::Ready, TaskVmState::Parked]);
 
@@ -355,12 +355,7 @@ it('replays the admission of the same key and records one round', function (): v
     [$group, $subtask] = roundWorld();
     roundCandidate($group, $subtask);
     $admit = fn (): Operation => app(OperationIdempotency::class)->under(OperationKinds::TasksReviewRound, 'pr-gate:review:'.$group->id.':'.ROUND_HEAD, 'fingerprint', fn (): Operation => app(TaskReviewRoundIntent::class)->start($group, ROUND_HEAD, 'test', null));
-    $first = null;
-    try {
-        $admit();
-    } catch (ResourceOperationException) {
-        $first = Operation::query()->where('kind', OperationKinds::TasksReviewRound)->sole();
-    }
+    $first = $admit();
 
     expect($admit()->id)->toBe($first->id)
         ->and(Operation::query()->where('kind', OperationKinds::TasksReviewRound)->count())->toBe(1)

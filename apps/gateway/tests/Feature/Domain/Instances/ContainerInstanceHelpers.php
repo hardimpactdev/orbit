@@ -38,20 +38,11 @@ function containerDefaultProject(ProjectType $type = ProjectType::NodePackage, ?
         'default_branch' => 'main', 'root' => $type === ProjectType::LaravelApp ? 'public' : '.', 'php_version' => $php, 'is_laravel' => false, 'source_facts_captured_at' => now()]);
 }
 
-/** The admitted Operation; the test has no Swamp to start its run, so the start fails after admission recorded everything. */
+/** The admitted Operation; its native start stays queued. */
 function containerCreate(Project $project, Node $node, string $name = 'default', ?string $databaseServer = null): Operation
 {
-    $before = Operation::query()->max('id') ?? 0;
-    try {
-        app(StartDevelopmentInstanceCreateAction::class)->execute(
-            new CreateInstanceData($project->id, $node->id, $name, null, null, null, $databaseServer), null, null);
-    } catch (ResourceOperationException $exception) {
-        if ($exception->errorCode !== 'swamp.start_unavailable') {
-            throw $exception;
-        }
-    }
-
-    return Operation::query()->where('id', '>', $before)->where('kind', 'instance.create')->latest('id')->firstOrFail();
+    return app(StartDevelopmentInstanceCreateAction::class)->execute(
+        new CreateInstanceData($project->id, $node->id, $name, null, null, null, $databaseServer), null, null);
 }
 
 /** @return array<string, mixed>|null */

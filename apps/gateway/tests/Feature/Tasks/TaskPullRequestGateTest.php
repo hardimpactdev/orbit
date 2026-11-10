@@ -137,7 +137,7 @@ it('tries the ready step for a checked draft with a green merge check', function
     $group = gateWorld(gatePull(true), green: true);
     gateChecked($group);
 
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready', 'result' => 'skipped', 'code' => 'swamp.start_unavailable']);
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready', 'result' => 'admitted', 'code' => null]);
 });
 
 it('admits no merge step while the check has not passed or the reviewer has not approved', function (): void {
@@ -203,7 +203,7 @@ it('tries the merge step once the round on the exact head passed', function (): 
     $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
     gateRound($group, 1, TaskReviewRoundVerdict::Pass);
 
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'merge', 'result' => 'skipped', 'code' => 'swamp.start_unavailable']);
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'merge', 'result' => 'admitted', 'code' => null]);
 });
 
 it('refuses the automatic merge when no round passed the head', function (): void {
@@ -221,7 +221,7 @@ it('falls back to manual mode for findings that no push followed, as after round
     gateRound($group, 2, TaskReviewRoundVerdict::Findings, str_repeat('2', 40), str_repeat('3', 40));
     gateRound($group, 3, TaskReviewRoundVerdict::Findings);
 
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready-manual', 'code' => 'swamp.start_unavailable'])
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready-manual', 'result' => 'admitted', 'code' => null])
         ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Manual);
 });
 

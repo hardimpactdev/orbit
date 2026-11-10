@@ -95,9 +95,9 @@ function threadDefault(Node $node, string $slug, bool $seeded = true): Instance
 function threadCreate(Node $caller, Project $project, string $name, array $headers = []): Operation
 {
     $response = threadCall($caller, 'POST', "projects/{$project->id}/instances", ['name' => $name], $headers)
-        ->assertStatus(503)->assertJsonPath('error.code', 'swamp.start_unavailable');
+        ->assertAccepted()->assertJsonPath('data.status', 'queued');
 
-    return Operation::query()->findOrFail($response->json('error.details.operation_id'));
+    return Operation::query()->findOrFail($response->json('data.id'));
 }
 
 describe('the Project list', function (): void {
@@ -202,9 +202,10 @@ describe("a thread's clone", function (): void {
 
         threadCall($laptop, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login-k3j9'])
             ->assertStatus(409)->assertJsonPath('error.code', 'instance.name_taken');
-        $again = threadCreate($this->phone, $default->project, 'fix-login-k3j9');
+        threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login-k3j9'])
+            ->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
 
-        expect($again->target_id)->toBe($first->target_id);
+        expect(Operation::query()->where('kind', 'instance.create')->where('target_id', $first->target_id)->count())->toBe(1);
     });
 });
 

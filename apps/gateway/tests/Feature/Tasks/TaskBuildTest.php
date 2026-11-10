@@ -116,8 +116,8 @@ it('never acts on a group that has more than its spec subtask, no prep run, or a
 it('appends the build subtask, moves the group to running and records the whole intent of one run', function (): void {
     [$group, $vm] = buildWorld(vmState: TaskVmState::Parked);
 
-    // Swamp is not there: the admission is recorded, and the start is refused after it.
-    expect(fn () => app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null))->toThrow(ResourceOperationException::class);
+    // Admission records the intent and queues its native start.
+    expect(app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null)->status)->toBe(OperationStatus::Queued);
 
     $operation = Operation::query()->where('kind', OperationKinds::TasksBuild)->sole();
     $subtask = Task::query()->where('parent_id', $group->id)->where('position', 2)->sole();
@@ -146,7 +146,7 @@ it('keeps a Project-check review deliverable when the Project has no check comma
     [$group] = buildWorld();
     $group->project->update(['task_check' => null]);
 
-    expect(fn () => app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null))->toThrow(ResourceOperationException::class);
+    expect(app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null)->status)->toBe(OperationStatus::Queued);
 
     $subtask = Task::query()->where('parent_id', $group->id)->where('position', 2)->sole();
 
@@ -158,7 +158,7 @@ it('keeps a Project-check review deliverable when the Project has no check comma
 it('builds a group with a ready slot VM without capturing a resume', function (TaskReviewMode $mode): void {
     [$group, $vm] = buildWorld($mode);
 
-    expect(fn () => app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null))->toThrow(ResourceOperationException::class);
+    expect(app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null)->status)->toBe(OperationStatus::Queued);
 
     $operation = Operation::query()->where('kind', OperationKinds::TasksBuild)->sole();
 
@@ -198,7 +198,7 @@ it('clears the settled time of the group when the build starts', function (): vo
     [$group] = buildWorld();
     $group->update(['settled_at' => now()->subHour()]);
 
-    expect(fn () => app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null))->toThrow(ResourceOperationException::class);
+    expect(app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null)->status)->toBe(OperationStatus::Queued);
 
     expect($group->fresh()->settled_at)->toBeNull();
 });

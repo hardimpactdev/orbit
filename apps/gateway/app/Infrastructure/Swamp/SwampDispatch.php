@@ -7,17 +7,21 @@ namespace App\Infrastructure\Swamp;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Operation;
 use Closure;
 use Illuminate\Container\Attributes\Scoped;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Swamp network work that an admission needs runs after its transaction commits, never under the SQLite write lock.
- * Execution copies push first. Admitted runs start only when every copy is stored; a failed copy fails them unstarted.
- * Outside a transaction the work runs at once. A rolled-back transaction discards its work.
+ * Execution copies push first. Admitted starts are queued only when every copy is stored; a failed copy fails them unstarted.
+ * Outside a transaction copies push and starts queue at once. A rolled-back transaction discards its work.
  *
- * One dispatch shares one WebSocket for its copies and starts, because serve rate-limits connections per client and
+ * One dispatch shares one WebSocket for its copies, because serve rate-limits connections per client and
  * matches each reply to its request by `id`. A request that fails drops the shared connection; the next one opens a
  * new one.
  */
@@ -32,7 +36,7 @@ final class SwampDispatch
 
     private int $next = 0;
 
-    /** Whether a dispatch is running, so its copies and starts share the connection owner. */
+    /** Whether a dispatch is running, so its copies share the connection owner. */
     private bool $sharing = false;
 
     /** @param Closure(): void $push */
@@ -98,7 +102,13 @@ final class SwampDispatch
                     : new ResourceOperationException($error->errorCode, $error->getMessage(), $error->status, details: ['operation_id' => $first->id]);
             }
             foreach ($starts as $operation) {
-                app(StartSwampRun::class)->start($operation);
+                try {
+                    Bus::dispatch(new StartAdmittedSwampRun($operation->id));
+                } catch (Throwable $exception) {
+                    Log::warning('Swamp start could not be queued', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+                    app(StartSwampRun::class)->refuse($operation, new ResourceOperationException(
+                        'swamp.start_enqueue_failed', 'The native workflow start could not be queued.', 503));
+                }
             }
         } finally {
             $this->sharing = false;
