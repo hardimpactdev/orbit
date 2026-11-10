@@ -384,9 +384,11 @@ The disk, agent and failure checks follow.
 
 ### PR 6: destroy a container Instance
 
+The first slice removes clones with `--force`, including their Route, Conn records, execution copies, container storage, ACL and T3 port. Guarded removal, default destruction and the refusal while clones exist follow separately. The first slice runs no Project teardown steps.
+
 The spec commit adds [container/destroy.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/destroy.mmd) to the destroy page and cases.
 
-Tests: Pest for the refusals, `instance.default_has_clones`, the record removal and the port release. Live on Beast:
+The follow-up adds Pest for guarded refusals and `instance.default_has_clones`. Its live proof on Beast:
 
 1. Destroy refuses during a running turn, and with `--force` removes the Instance.
 2. The paired Mac loses the server at once.
