@@ -68,6 +68,9 @@ if (family === "query") {
     const [key, value] = pair.split("=");
     row.config[key] = value;
   }
+} else if (family === "project" && action === "unset") {
+  const row = state.projects.find((r: { name: string }) => r.name === name);
+  for (const key of args.slice(3)) delete row.config[key];
 } else if (family === "network" && action === "acl") {
   if (name === "create") {
     state["network-acls"].push({ name: args[3], config: {} });
@@ -149,6 +152,36 @@ if (family === "query") {
 } else if (family === "start" || family === "stop") {
   const named = args.at(-1)!;
   if (!instance(named)) fail("Instance not found");
+  // As Incus checks a host-path disk of the profile at start: a restricted project's path list admits it, and refuses `shift`.
+  const config = state.projects.find((r: { name: string }) =>
+    r.name === project
+  )?.config ?? {};
+  const paths = config["restricted.devices.disk.paths"];
+  for (
+    const device of Object.values(state.profiles[project]?.devices ?? {}) as {
+      type: string;
+      source?: string;
+      shift?: string;
+    }[]
+  ) {
+    if (
+      family === "start" && device.type === "disk" &&
+      device.source?.startsWith("/") && config.restricted === "true" && paths
+    ) {
+      if (
+        !paths.split(",").some((p: string) =>
+          `${device.source}/`.startsWith(`${p}/`)
+        )
+      ) {
+        fail(`Disk source path "${device.source}" not allowed by project`);
+      }
+      if (device.shift === "true") {
+        fail(
+          'The "shift" property cannot be used with a restricted source path',
+        );
+      }
+    }
+  }
   instance(named).status = family === "start" ? "Running" : "Stopped";
 } else if (family === "delete") {
   const named = args.at(-1)!;

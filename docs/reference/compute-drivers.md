@@ -1098,7 +1098,7 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 | Subordinate IDs | 101,000,000 per place and the base | 65,536 for each of 201 containers, plus the task container need on a host that has both |
 | ACL egress | The VM bridge's rules | Only the model forwarder and the egress proxy, ports 8319 and 3128 of the bridge address |
 | Profile | Root disk and `eth0` | Also the folders `/opt/orbit-runtime` and `/opt/orbit-agent`, read-only and idmapped, and the proxy settings as `environment.*` keys |
-| Restrictions | Nesting, interception, low-level keys | Isolated ID maps, host disks only at the two folders, proxy devices |
+| Restrictions | Nesting, interception, low-level keys | Isolated ID maps, host disks with no path list (Incus refuses `shift` under one), proxy devices |
 | Input rules | `orbit:task-containers-*`: DHCP and DNS | `orbit:instances-*`: DHCP and the egress proxy, no DNS |
 | Clone probe | Always | On a ZFS pool only; a directory pool makes full copies |
 | Error code | `task_vm.setup_failed` | `instance.host_unavailable` |
@@ -1108,7 +1108,7 @@ The branch then:
 1. refuses a bridge range that another interface of the Node holds;
 1. requires the pool, and on a ZFS pool applies the ARC cap that the system part sized, in `/etc/modprobe.d/orbit-instances-zfs.conf`;
 1. installs each shared folder (`tasks/instance-folder.yml`);
-1. prepares the bridge, project and profile;
+1. prepares the bridge, project and profile, and unsets a `restricted.devices.disk.paths` that a host still has;
 1. runs the [egress proxy](/reference/development-containers#egress-and-dns) and its nftables table (`tasks/instance-egress.yml`);
 1. builds the image (`tasks/instance-image.yml`).
 
