@@ -150,3 +150,105 @@ Deno.test("Docker creation is one detached run with exact public argv and an env
     assertEquals(result.container_argv.includes("--env-file"), true);
     assertEquals(result.container_argv.includes("/work dir"), true);
 });
+
+Deno.test("Valkey replacement passes the admitted health probe ACL command and volume to Docker", async () => {
+    const name = "orbit-process-17-valkey";
+    const command = ["valkey-server", "--aclfile", "/data/users.acl"];
+    const healthcheck = [
+        "--health-cmd",
+        "valkey-cli PING",
+        "--health-interval",
+        "2s",
+        "--health-timeout",
+        "5s",
+        "--health-retries",
+        "3",
+        "--health-start-period",
+        "300s",
+    ];
+    const result = await lifecycleAssets(LifecycleArgs.parse({
+        control: { ...control, runtime: "docker", name },
+        installation: {
+            process_id: 17,
+            runtime: "docker",
+            name,
+            desired: "running",
+            on_demand: false,
+            spec: "a".repeat(64),
+            retired: null,
+            has_environment: false,
+            definition: {
+                image: "valkey/valkey:8.2",
+                command,
+                restart: "unless-stopped",
+                working_directory: "/data",
+                ports: ["10.44.0.1:6379:6379"],
+                mounts: [{
+                    source: "orbit-valkey-data",
+                    target: "/data",
+                    read_only: false,
+                }],
+                healthcheck_arguments: healthcheck,
+            },
+        },
+    }));
+    const argv = result.container_argv;
+    const probe = argv.indexOf("--health-cmd");
+    assertEquals(argv.slice(probe, probe + healthcheck.length), healthcheck);
+    assertEquals(argv.slice(-4), ["valkey/valkey:8.2", ...command]);
+    const mount = argv.indexOf("--mount");
+    assertEquals(
+        argv[mount + 1],
+        "type=volume,source=orbit-valkey-data,target=/data",
+    );
+});
+
+Deno.test("MySQL replacement keeps the mysqladmin health probe in Docker argv", async () => {
+    const name = "orbit-process-17-mysql";
+    const healthcheck = [
+        "--health-cmd",
+        "mysqladmin --protocol=TCP --host=127.0.0.1 ping --silent",
+        "--health-interval",
+        "2s",
+        "--health-timeout",
+        "5s",
+        "--health-retries",
+        "3",
+        "--health-start-period",
+        "300s",
+    ];
+    const result = await lifecycleAssets(LifecycleArgs.parse({
+        control: { ...control, runtime: "docker", name },
+        installation: {
+            process_id: 17,
+            runtime: "docker",
+            name,
+            desired: "running",
+            on_demand: false,
+            spec: "a".repeat(64),
+            retired: null,
+            has_environment: false,
+            definition: {
+                image: "mysql:8.4.6",
+                command: ["mysqld", "--max-connections=200"],
+                restart: "unless-stopped",
+                working_directory: null,
+                ports: ["10.44.0.1:3306:3306"],
+                mounts: [{
+                    source: "orbit-mysql-data",
+                    target: "/var/lib/mysql",
+                    read_only: false,
+                }],
+                healthcheck_arguments: healthcheck,
+            },
+        },
+    }));
+    const argv = result.container_argv;
+    const probe = argv.indexOf("--health-cmd");
+    assertEquals(argv.slice(probe, probe + healthcheck.length), healthcheck);
+    assertEquals(argv.slice(-3), [
+        "mysql:8.4.6",
+        "mysqld",
+        "--max-connections=200",
+    ]);
+});

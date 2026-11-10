@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseServers;
 
+use App\Data\Processes\UpdateProcessData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Shared\ResourceOperationException;
@@ -30,7 +31,7 @@ final readonly class DatabaseServerProcessOwnership implements ProcessRemovalGua
         }
     }
 
-    public function assertUpdatable(#[SensitiveParameter] Process $process): void
+    public function assertUpdatable(#[SensitiveParameter] Process $process, #[SensitiveParameter] UpdateProcessData $update): void
     {
         $server = DatabaseServer::query()
             ->where('process_id', $process->id)
@@ -38,6 +39,12 @@ final readonly class DatabaseServerProcessOwnership implements ProcessRemovalGua
             ->first();
 
         if ($server instanceof DatabaseServer) {
+            if ($update->providedFields === ['image']
+                && is_string($update->specification->image)
+                && preg_match('/\Avalkey\/valkey:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\z/D', $update->specification->image) === 1) {
+                return;
+            }
+
             throw new ResourceOperationException(
                 errorCode: 'process.required_by_database_server',
                 message: "Process [{$process->name}] runs Valkey Database server [{$server->slug}], so its command keeps the server's ACL file.",

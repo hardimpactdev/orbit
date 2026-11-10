@@ -171,6 +171,9 @@ export async function lifecycleAssets(
         if (definition.working_directory) {
             containerArgv.push("--workdir", definition.working_directory);
         }
+        if (definition.healthcheck_arguments) {
+            containerArgv.push(...definition.healthcheck_arguments);
+        }
         if (install.has_environment) {
             containerArgv.push(
                 "--env-file",
