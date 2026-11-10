@@ -773,3 +773,48 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name: "the agent phase trusts only its workspace and preserves other Git settings on reruns",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    const rootfs = `${f.folder}/containers/instance-7`;
+    try {
+      const created = f.run("container");
+      assert(created.ok, created.output);
+      Object.assign(f.container, {
+        clone: { files: [], links: [],
+          model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" } },
+      });
+      f.write();
+      const config = `${rootfs}/home/agent/.gitconfig`;
+      const gitConfig = (...args: string[]) => git(rootfs, "config", "--file", config, ...args);
+      const first = f.run("agent");
+      assert(first.ok, first.output);
+      assertEquals(gitConfig("--get-all", "safe.directory"), "/srv/workspace");
+
+      gitConfig("user.name", "Feature Agent");
+      gitConfig("user.email", "feature@example.test");
+      const again = f.run("agent");
+      assert(again.ok, again.output);
+      assertEquals(again.changed, 0, again.output);
+      assertEquals(gitConfig("user.name"), "Feature Agent");
+      assertEquals(gitConfig("user.email"), "feature@example.test");
+
+      // Repair even a broader trust list without replacing the agent's other settings.
+      gitConfig("--add", "safe.directory", "*");
+      gitConfig("--add", "safe.directory", "/another/workspace");
+      const repaired = f.run("agent");
+      assert(repaired.ok, repaired.output);
+      assertEquals(gitConfig("--get-all", "safe.directory"), "/srv/workspace");
+      assertEquals(gitConfig("user.name"), "Feature Agent");
+      assertEquals(gitConfig("user.email"), "feature@example.test");
+      const stable = f.run("agent");
+      assert(stable.ok, stable.output);
+      assertEquals(stable.changed, 0, stable.output);
+    } finally {
+      f.cleanup();
+    }
+  },
+});

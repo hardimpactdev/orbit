@@ -82,6 +82,9 @@ if (family === "init") {
   state.containers[name] = { project, image: args[1], status: "Stopped", devices, config: take("--config"), snapshots: [], uuid: uuid(name) };
   Deno.mkdirSync(`${rootfs(name)}/srv/workspace`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/etc/systemd/system`, { recursive: true });
+  for (const home of ["agent/.codex", "agent/.config/orbit", "orbit"]) {
+    Deno.mkdirSync(`${rootfs(name)}/home/${home}`, { recursive: true });
+  }
   Deno.mkdirSync(`${rootfs(name)}/tmp`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/usr/local/bin`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/etc/systemd/system/multi-user.target.wants`, { recursive: true });
@@ -157,6 +160,7 @@ if (family === "init") {
   const name = args[1];
   if (state.containers[name]?.status !== "Running") fail("Instance is not running");
   let command = args.slice(args.indexOf("--") + 1);
+  const user = command[0] === "runuser" ? command[command.indexOf("-u") + 1] : "root";
   if (command[0] === "runuser") command = command.slice(command.indexOf("--") + 1);
   if (command[0] === "systemctl") {
     state.systemctl ??= [];
@@ -223,9 +227,9 @@ if (family === "init") {
     Deno.exit(0);
   }
   const done = new Deno.Command(command[0], {
-    args: command.slice(1).map((value) => inside(name, value)),
+    args: command.slice(1).map((value) => command[0] === "git" && command[1] === "config" ? value : inside(name, value)),
     cwd: cwd === null ? undefined : inside(name, cwd),
-    env: { GIT_CONFIG_NOSYSTEM: "1", HOME: `${folder}/home` },
+    env: { GIT_CONFIG_NOSYSTEM: "1", HOME: user === "root" ? `${folder}/home` : `${rootfs(name)}/home/${user}` },
   }).outputSync();
   Deno.stdout.writeSync(done.stdout);
   Deno.stderr.writeSync(done.stderr);

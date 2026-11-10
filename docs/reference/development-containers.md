@@ -93,7 +93,7 @@ Every development container has the same layout. The image and the create set it
 | `work` | gid 2760, members `agent` and `orbit` |
 | Sudo | None for either user. The image's `sudoers.d` grant is removed |
 | Workspace | `/srv/workspace`, owned `agent:work`. Directories are setgid `work`, mode 2770, with the default ACL `g:work:rwX` and no access for others. `core.sharedRepository=group` |
-| Git | `safe.directory=/srv/workspace` in `/home/orbit/.gitconfig` only |
+| Git | `safe.directory=/srv/workspace` in each user's own Git config; the agent phase preserves its other Git settings |
 | Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped |
 | T3 unit | `User=agent`, `UMask=0007`, `PATH` from the shared folders, `Requires=nftables.service`, `ConditionPathExists=/etc/orbit/instance`. The unit file is mode 0640 |
 | `PATH` | The runtime folder's `bin` first, for units, login shells and `incus exec` sessions, so `composer` is on it |
