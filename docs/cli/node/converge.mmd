@@ -83,6 +83,10 @@ sequenceDiagram
     %%> What it does:
     %%> - repairs selected role configuration without changing an Instance or role assignment
     SW->>N: Apply recorded Tools<br/>Ansible phase: tools
+    %%> What it does:
+    %%> - runs the Tool helper once on the Swamp Node, before it judges a Tool
+    %%> On a helper that cannot run:
+    %%> - fail the phase and mark no Tool failed
     %%> On a Tool failure:
     %%> - continue with the other Tools and mark only that Tool failed
     alt recorded network in scope
