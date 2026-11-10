@@ -62,6 +62,7 @@
     argv: >-
       {{ as_root + ['journalctl', '--unit', process_unit, '--lines', (intent.read.lines | int | string), '--reverse',
           '--output', 'short-iso', '--utc', '--no-pager', '--quiet'] }}
+    strip_empty_ends: false
   register: process_journal
   changed_when: false
   no_log: true

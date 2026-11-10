@@ -535,8 +535,15 @@ Deno.test({
       const logs = f.run("process", { ORBIT_PROCESS_ACTION: "logs" });
       assert(logs.ok, logs.output);
       // Newest first, as the Node agent reads a journal; the lines stay out of the run's output.
-      assertEquals(f.result(), { state: "active", output: "2026-11-10T08:00:01+00:00 worker[7]: second\n2026-11-10T08:00:00+00:00 worker[7]: first" });
+      assertEquals(f.result(), { state: "active", output: "2026-11-10T08:00:01+00:00 worker[7]: second\n2026-11-10T08:00:00+00:00 worker[7]: first\n" });
       assert(!logs.output.includes("worker[7]"), logs.output);
+
+      state.journal[worker.name] = ["2026-11-10T08:00:00+00:00 worker[7]: only"];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const single = f.run("process", { ORBIT_PROCESS_ACTION: "logs" });
+      assert(single.ok, single.output);
+      assertEquals(f.result(), { state: "active", output: "2026-11-10T08:00:00+00:00 worker[7]: only\n" });
+      assert(!single.output.includes("worker[7]"), single.output);
 
       // A unit that does not come up fails the start with the shared code.
       const failing = f.state();

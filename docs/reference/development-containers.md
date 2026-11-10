@@ -354,6 +354,8 @@ A deployment first records the Project's new definitions and changes the records
 
 `process:start`, `process:stop` and `process:restart` run `operation-process-container` as a child of their own workflow: Ansible on the Node changes the unit through `incus exec` and checks its state. `process:logs` runs the same workflow and waits for it; the journal lines go only to the vault, and the Gateway reads and redacts them. A Process list answers from the state of the last read: neither Prometheus nor the Node agent sees a container's units, so a Process without a state from the last 30 seconds shows `unknown` while the operation `process.inspect` reads it ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/process/inspect.mmd)). A change to a Process of a stopped container fails; the container's next deployment starts it.
 
+One-shot log reads keep each complete journal line in time order and drop a final line cut by the byte limit.
+
 `process:create`, `process:update` and `process:destroy` refuse a container Instance's Process with `operation.kind_unavailable`: the Project's definitions and a deployment change them.
 
 A container default without `--database-server` uses the database its Project names in the workspace, such as SQLite. With `--database-server`, the database family creates its database on that server, and the container reaches it by its own [database rules](#network). Dependency installs in the deploy steps reach the internet through the [egress proxy](#egress-and-dns).
