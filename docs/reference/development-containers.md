@@ -57,7 +57,7 @@ The converge sets up the network side next:
 
 - **Profile.** The default profile sets the [proxy settings](#egress-and-dns) as `environment.*` keys, so every `incus exec` that keeps its environment has them.
 - **Bridge.** `orbitinst0` has NAT and no IPv6. DHCP leaves the last address free for the image build.
-- **Egress ACL.** Each NIC rejects egress by default. Its common ACL allows the model forwarder at 8319 and the egress proxy at 3128 on the bridge address. Its Instance ACL allows each attached target's IPv4 address and TCP port. The bridge passes egress to that NIC policy. The profile installs the common ACL and reject defaults before the bridge changes; a check refuses any unguarded NIC. The role repeats that check at the end.
+- **Egress ACL.** Each NIC rejects egress by default. Its common ACL admits the two proxies; its Instance ACL admits attached targets. The bridge passes egress to that [NIC policy](#network).
 - **Input rules.** The Node admits DHCP from the bridge under `orbit:instances-dhcp`, and the egress proxy under `orbit:instances-egress`. It admits no DNS from the bridge.
 
 The converge then installs what the containers run:
@@ -66,7 +66,9 @@ The converge then installs what the containers run:
 - **Image.** The converge builds the [container image](#inside-a-container) once per definition and names it with the stable alias `orbit-instance`.
 - **Folders.** It installs both [shared folders](#shared-folders).
 
-The converge creates no Instance. Existing hosts need one Instance-host converge per `app-dev` Node. Running containers keep working, with no restart: their existing NIC target rules become effective when the bridge stops rejecting them. The shared ACL has no runtime mutations.
+The profile installs the common ACL and reject defaults before the bridge changes. A check refuses any unguarded NIC, including a stopped container. The role repeats that read-only check at the end.
+
+The converge creates no Instance. Each existing `app-dev` Node needs one converge of its Instance host role. Running containers keep working, with no restart: their existing NIC target rules become effective when the bridge stops rejecting them. The shared ACL has no runtime mutations.
 
 A task VM host on the build list, such as Beast, gets the container branch beside its task side. The two sides share nothing they change: the Instance side has its own project `orbit-instances`, bridge `orbitinst0`, pool `orbit-instances` and `orbit:instances-*` input rules, and touches no task VM, task container or CI place. The task side keeps the ZFS ARC: on a task VM host the Instance side writes no cap. Only a task VM's own Node gets no branch.
 
@@ -487,9 +489,11 @@ The end of the move and its failure:
 | Removal | The checkout, and its worktree entry in the default's repository |
 | Last worktree | The default's old checkout is a retirement candidate. Any other registered worktree blocks retirement, including a path in the same batch |
 | Failed removal | The container stays the Instance. The run fails with `instance.migrate_retire_failed` (or `instance.migrate_retirement_blocked` for a new blocker), and the checkout is left to remove by hand |
-| Failure | The Route's restore side runs when the run had started to move it. Then the container, its ACL, its firewall rules and its mirror go. Host Process states and the awake marker are restored only when quiesce began |
+| Failure | Restore puts back a moved Route, then removes the container, its ACL, firewall rules and mirror |
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
 | After a failed restore | The site stays the checkout's, and a deployment refuses with `instance.lifecycle_busy` until the move has run again |
+
+Restore changes host Process states and the awake marker only when quiesce began. A target probe failure leaves both untouched.
 
 The database is not cloned. An Instance's database name, owner and connection come from its Project and its name. So a second database for the same Instance has no name to take, and a clone would end with a drop of the old one. Leaving it in place cannot lose data. A clone of a moved default still copies the default's database with the template copy of [Clone the database](#clone-the-database): the default's connection record is the one it had.
 
