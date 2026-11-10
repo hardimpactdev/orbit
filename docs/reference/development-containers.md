@@ -447,7 +447,7 @@ What is built:
 - Conn lists the Projects whose ready container default runs on a Node the device reaches.
 - Conn creates the clone through the Conn layer, on the default's Node.
 - Conn keeps each thread start on the device until its first message is sent. A reload resumes it.
-- Conn pairs once, with an async pairing that it follows to the end.
+- Conn pairs once: it follows the pairing's Operation to the end.
 - Conn shows a server whose container is stopped as asleep. It does not wake it yet: the wake is PR 13 of the [build plan](/solutions/development-container-runtime).
 - The desktop app starts these threads. The phone does not yet.
 

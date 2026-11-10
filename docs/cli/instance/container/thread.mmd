@@ -44,7 +44,7 @@ sequenceDiagram
   %%> - each server of an Instance names its `instance_id` and the container's `power_state`; Conn shows a `stopped` server as asleep and wakes it on open with container/wake.mmd
   CONN->>GW: Pair with the server<br/>conn pairing create
   %%> What it does:
-  %%> - the pairing of docs/cli/conn/pairing-create.mmd with `async: true`: Conn follows its task with conn:operation:show and reads the link once with conn:pairing:show
+  %%> - the pairing of docs/cli/conn/pairing-create.mmd: Conn follows its task with conn:operation:show and reads the link once with conn:pairing:show
   %%> - Conn pairs once: the device's own server sync joins this pairing instead of starting a second one
   GW->>SW: Start run, full intent<br/>operation-conn-pairing-create
   SW->>T3: Mint a pairing link<br/>POST api/auth/pairing-token

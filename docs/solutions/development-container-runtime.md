@@ -529,7 +529,8 @@ The code changed these points of this plan:
 - **Conn layer endpoints.** Conn's desktop app reaches only the Conn layer. So the Project list is `conn:project:list`, and the create is `conn:instance:create`.
 - **Create.** `conn:instance:create` admits the same `instance.create` on the default's Node. Conn Operation show follows it.
 - **Server record.** A server of an Instance names its `instance_id` and `power_state` in the server list, so Conn finds the clone's server and shows it asleep.
-- **Pairing.** Conn pairs with `async: true` and follows the Operation, so a pairing that takes longer than the desktop's 15 s request timeout is not started again.
+- **Pairing.** Conn follows the pairing's Operation and reads the link once with `conn:pairing:show`.
+- **One pairing.** The device's server sync leaves a clone's server alone during its thread start.
 - **Wake.** Conn shows a stopped server as asleep but does not wake it. PR 13 adds the wake, and Conn calls it then.
 - **Phone.** Only the desktop app starts these threads.
 
