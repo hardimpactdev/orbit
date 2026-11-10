@@ -102,7 +102,7 @@
 # The project lets containers mount host folders read-only and idmapped, and publish T3 with a proxy device. Every container gets
 # an isolated ID map. The bridge reaches nothing by default: each Instance's own paths come with its create flow. Incus refuses
 # `shift` on a disk whose source falls under `restricted.devices.disk.paths`, so the project sets no path list: the profile is
-# the one place that names the two folders.
+# the one place that names the two folders, and the create flow's device list is the only guard on host paths.
 # Containers get no DNS: the egress proxy resolves every name.
 - name: Prepare the Instance bridge, project and profile
   ansible.builtin.include_tasks: task-container-host-prepare.yml

@@ -776,25 +776,15 @@ Deno.test({
   async fn() {
     const f = await fixture();
     try {
-      // The first release set the list, and Incus refused every start in the project.
-      const state = f.state();
-      state.projects.push({
-        name: "orbit-instances",
-        config: {
-          "features.images": "true",
-          "features.profiles": "true",
-          "features.networks": "false",
-          "restricted.devices.disk.paths":
-            `${f.folder}/opt/orbit-runtime,${f.folder}/opt/orbit-agent`,
-        },
-      });
-      state.profiles["orbit-instances"] = {
-        config: {},
-        description: "",
-        devices: {},
-      };
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      // Beast after the first release: every restriction, the idmapped folders, and the path list that refused every start.
       let result = f.run();
+      assert(result.ok, result.output);
+      const state = f.state();
+      state.projects.find((p: { name: string }) => p.name === "orbit-instances")
+        .config["restricted.devices.disk.paths"] =
+          `${f.folder}/opt/orbit-runtime,${f.folder}/opt/orbit-agent`;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      result = f.run();
       assert(result.ok, result.output);
       const project = f.state().projects.find((p: { name: string }) =>
         p.name === "orbit-instances"
