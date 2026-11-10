@@ -49,11 +49,12 @@ Deno.test("native CLI installation keeps the actual previous selection and remov
         { step: "cli_profile", condition: { type: "succeeded" } },
         { step: "cli_link", condition: { type: "succeeded" } },
     ]);
-    assertEquals(prune.guard, "${{ !steps.cli_plan.outputs.install }}");
+    assertEquals(prune.guard, "${{ !steps.cli_plan.outputs.prune }}");
     assertEquals(prune.task.inputs?.argv, '${{ ["timeout", "130"] + steps.cli_plan.outputs.prune_argv }}');
     await fixture(async (folder) => {
         const plan = cliPlan({ release, observed: "Orbit 0.10.0", self_update: true, previous_path: `${root}/orbit-0.10.0\n` });
         assertEquals(plan.install, true);
+        assertEquals(plan.prune, true);
         const argv = plan.prune_argv.map((arg) => arg.replaceAll(root, folder).replace(lock, `${folder}/update.lock`));
         await Deno.remove(`${folder}/orbit`);
         await Deno.symlink("orbit-0.40.0", `${folder}/orbit`);
@@ -66,6 +67,26 @@ Deno.test("native CLI installation keeps the actual previous selection and remov
         assertEquals(decoder.decode(repeated.stdout), "");
         await preserved(folder);
     });
+});
+
+Deno.test("native cleanup requires a changed selection and a known previous path", () => {
+    // A tolerated failure of the self-update help probe can require reinstalling
+    // the same release. It must not erase the rollback kept by the last switch.
+    const repeated = cliPlan({ release, observed: "Orbit 0.40.0", self_update: false, previous_path: `${root}/orbit-0.40.0\n` });
+    assertEquals(repeated.install, true);
+    assertEquals(repeated.prune, false);
+    const unknown = cliPlan({ release, observed: "Orbit 0.10.0", self_update: true, previous_path: null });
+    assertEquals(unknown.install, true);
+    assertEquals(unknown.prune, false);
+    // readlink -m succeeds for an absent first selection, without hiding a
+    // transport failure as a successful observation of an empty directory.
+    const first = cliPlan({ release, observed: null, self_update: false, previous_path: `${root}/orbit\n` });
+    assertEquals(first.prune, true);
+    const unchanged = cliPlan({ release, observed: "Orbit 0.40.0", self_update: true, previous_path: `${root}/orbit-0.40.0\n` });
+    assertEquals(unchanged.install, false);
+    assertEquals(unchanged.prune, false);
+    assertEquals(steps.find((step) => step.name === "cli_previous")!.task.inputs?.argv, ["readlink", "-m", `${root}/orbit`]);
+    assertMatch(String(steps.find((step) => step.name === "cli_plan")!.task.inputs?.previous_path), /steps\.cli_previous\.status == "succeeded"/);
 });
 
 Deno.test("Ansible CLI installation prunes after publication and leaves the rollback on a repeat", async () => {

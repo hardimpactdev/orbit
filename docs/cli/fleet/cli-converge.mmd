@@ -42,7 +42,7 @@ sequenceDiagram
     %%> - a file that does not report a valid Orbit version is replaced by the admitted release
     %%> - writes root's profile, 0600, with `@swamp/cfgmgmt/file`
     %%> - after a successful installation, removes older versioned CLI files, keeping the selected binary and the link target recorded before installation; cleanup holds the self-update lock and preserves the live target
-    %%> - an unchanged selection or failed installation does not prune
+    %%> - an unchanged selection, failed installation or failed read of the previous path does not prune
     Note over SW: Record the CLI outcome<br/>record
     %%> What it does:
     %%> - the `record` step on Node 209 records `converged` or `unchanged` with the CLI version, or `cli.install_failed`

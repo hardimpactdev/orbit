@@ -351,7 +351,7 @@ This is the layout `orbit self-update` keeps, so either one can update what the 
 
 To install, `@swamp/cfgmgmt/fetch` downloads the binary to `/usr/local/bin/orbit-<version>` with its SHA-256 from the desired state. The child runs that file with `--version` and requires the release version. Only then does `@swamp/cfgmgmt/link` switch `/usr/local/bin/orbit` to it. A failed download, checksum or version check leaves the link as it was. Then `@swamp/cfgmgmt/file` writes root's profile, `root:root` mode `0600`.
 
-After a successful installation, Orbit keeps the selected versioned binary and the versioned binary selected before installation. It removes other regular files named `orbit-0.N.0` from `/usr/local/bin`. The same rule applies to `node:converge`. A failed installation or unchanged selection does not prune, so a repeat keeps the rollback binary. Cleanup holds the self-update lock and preserves the live link target. It leaves directories, links and other programs alone.
+After a successful installation, Orbit keeps the selected versioned binary and the versioned binary selected before installation. It removes other regular files named `orbit-0.N.0` from `/usr/local/bin`. The same rule applies to `node:converge`. A failed installation, unchanged selection or failed read of the previous path does not prune, so a repeat keeps the rollback binary. Cleanup holds the self-update lock and preserves the live link target. It leaves directories, links and other programs alone.
 
 | Code | Meaning |
 | --- | --- |

@@ -76,7 +76,7 @@ jobs:
         hosts: name:target
         sudo: true
         timeoutSec: 15
-        argv: [readlink, -e, /usr/local/bin/orbit]
+        argv: [readlink, -m, /usr/local/bin/orbit]
     allowFailure: true
   - name: cli_plan
     labels:
@@ -91,7 +91,7 @@ jobs:
         observed: '${{ has(steps.cli_version.outputs) && has(steps.cli_version.outputs.stdout) ? steps.cli_version.outputs.stdout :
           null }}'
         self_update: ${{ steps.cli_self_update.status == "succeeded" }}
-        previous_path: '${{ has(steps.cli_previous.outputs) && has(steps.cli_previous.outputs.stdout) ? steps.cli_previous.outputs.stdout : null }}'
+        previous_path: '${{ steps.cli_previous.status == "succeeded" && has(steps.cli_previous.outputs) && has(steps.cli_previous.outputs.stdout) ? steps.cli_previous.outputs.stdout : null }}'
     dependsOn:
     - step: cli_version
       condition:
@@ -265,7 +265,7 @@ jobs:
     - step: cli_link
       condition:
         type: succeeded
-    guard: ${{ !steps.cli_plan.outputs.install }}
+    guard: ${{ !steps.cli_plan.outputs.prune }}
     writes: true
   - name: result
     labels:
