@@ -190,8 +190,9 @@ it('records a running container but no seed when a deployment fails after the co
 it('records the seed commit and a running container after a deployment passes, and leaves the checkout seed alone', function (): void {
     $instance = deployDefault(container: true);
     $commit = str_repeat('c', 40);
+    $instance->update(['auto_deploy_state' => ['result' => 'started', 'head' => $commit, 'commit' => $commit]]);
     $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
-        'status' => OperationStatus::Running, 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)], 'state' => ['swamp_run_id' => 'run-1']]);
+        'status' => OperationStatus::Running, 'triggered_by' => 'swamp:auto-deploy', 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)], 'state' => ['swamp_run_id' => 'run-1']]);
 
     app(InstanceDeployProjection::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [
         'steps' => ['Read the container result' => ['stdout' => json_encode(['commit' => $commit], JSON_THROW_ON_ERROR)]], 'summary' => ['failed_steps' => []]]]);
@@ -200,5 +201,6 @@ it('records the seed commit and a running container after a deployment passes, a
     expect($runtime->seed_commit)->toBe($commit)
         ->and($runtime->power_state)->toBe(InstanceRuntimePowerState::Running)
         ->and($instance->refresh()->seed_commit)->toBeNull()
+        ->and($instance->auto_deploy_state['result'])->toBe('up_to_date')
         ->and($instance->deployments()->latest('id')->firstOrFail()->commit)->toBe($commit);
 });

@@ -327,6 +327,14 @@ final class Instance extends Model
             && str_starts_with($this->checkout_path, "{$this->production_home}/releases/");
     }
 
+    /** Container snapshots own their seed; checkout Instances record it on the Instance. */
+    public function developmentSeedCommit(): ?string
+    {
+        $this->loadMissing('runtime');
+
+        return $this->runtime instanceof InstanceRuntime ? $this->runtime->seed_commit : $this->seed_commit;
+    }
+
     public function placedOnAppProd(): bool
     {
         return $this->placementEnvironment() === 'production';

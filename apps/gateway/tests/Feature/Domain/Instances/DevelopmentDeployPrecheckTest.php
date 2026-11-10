@@ -2,19 +2,25 @@
 
 declare(strict_types=1);
 
+use App\Data\Instances\InstanceData;
 use App\Domain\Instances\Deployment\AutomaticDeployFireProjection;
 use App\Domain\Instances\Deployment\DevelopmentDeployPrecheck;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\NativeRouteUpdateProjection;
 use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Jobs\Instances\CheckDevelopmentDeployments;
 use App\Models\Activity;
 use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
+use App\Models\Route;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Symfony\Component\Yaml\Yaml;
@@ -45,7 +51,7 @@ final class DevelopmentTickSocket implements WebSocketClient
 
     public function receive(float $timeoutSeconds): array
     {
-        $message = $this->frames[array_key_last($this->frames)];
+        $message = array_last($this->frames);
 
         return [['id' => $message['id'], 'type' => 'event', 'event' => ['kind' => 'started',
             'workflowName' => 'automatic-development-deploy', 'runId' => '11111111-1111-4111-8111-111111111111']]];
@@ -149,4 +155,48 @@ it('projects an on-demand development fire once through the shared terminal read
     expect(Activity::query()->where('description', 'auto_deploy.started')->count())->toBe(1);
     $definitions = app(DirectOperation::class)->scheduledResultDefinitions();
     expect($definitions[AutomaticDeployFireProjection::DevelopmentWorkflow]['projection'])->toBe(AutomaticDeployFireProjection::class);
+});
+
+it('uses the container snapshot seed for discovery and the policy API, including an empty seed', function (): void {
+    $instance = developmentTickDefault();
+    $instance->node->forceFill(['instance_bridge' => '10.253.0.0/24'])->save();
+    $runtime = InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $instance->node_id,
+        'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2',
+        'runtime_version' => 'r', 'agent_version' => 'a', 'power_state' => 'stopped', 'seed_commit' => str_repeat('b', 40)]);
+    $heads = Mockery::mock(RemoteBranchHeads::class);
+    $heads->shouldReceive('head')->twice()->andReturn(str_repeat('b', 40));
+    app()->instance(RemoteBranchHeads::class, $heads);
+    $socket = new DevelopmentTickSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/test-ca', 'swamp.run_token' => 'test-token']);
+
+    app(DevelopmentDeployPrecheck::class)->check();
+
+    expect($socket->frames)->toBe([])
+        ->and(InstanceData::fromModel($instance->fresh())->seedCommit)->toBe(str_repeat('b', 40));
+    $runtime->update(['seed_commit' => null]);
+    app(DevelopmentDeployPrecheck::class)->check();
+    expect($socket->frames)->toHaveCount(1)
+        ->and(InstanceData::fromModel($instance->fresh())->seedCommit)->toBeNull();
+});
+
+it('settles a matching default publication through the Route owner without a development policy run', function (): void {
+    $instance = developmentTickDefault();
+    $instance->update(['development_projection_pending' => true]);
+    $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+        'domain' => 'tool.orbit', 'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => 'active']);
+    $operation = new Operation(['status' => OperationStatus::Succeeded,
+        'input' => ['route_update' => ['route_id' => $route->id, 'result_route_id' => $route->id, 'selected' => [], 'effectful' => false]]]);
+    $heads = Mockery::mock(RemoteBranchHeads::class);
+    $heads->shouldReceive('head')->once()->andReturn(str_repeat('a', 40));
+    app()->instance(RemoteBranchHeads::class, $heads);
+    $socket = new DevelopmentTickSocket;
+    app()->instance(WebSocketClient::class, $socket);
+
+    app(NativeRouteUpdateProjection::class)->settle($operation);
+    app(DevelopmentDeployPrecheck::class)->check();
+
+    expect($instance->fresh()->development_projection_pending)->toBeFalse()->and($socket->frames)->toBe([]);
 });

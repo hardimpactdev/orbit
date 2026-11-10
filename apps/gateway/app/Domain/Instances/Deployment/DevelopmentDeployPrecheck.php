@@ -18,14 +18,14 @@ final readonly class DevelopmentDeployPrecheck
     {
         $changed = [];
         $heads = [];
-        $defaults = Instance::query()->where('name', 'default')->with(['project', 'node.roles'])->orderBy('id')->get();
+        $defaults = Instance::query()->where('name', 'default')->with(['project', 'node.roles', 'runtime'])->orderBy('id')->get();
         foreach ($defaults as $instance) {
             if (! $instance->placedOnAppDev() || AutomaticDeployPolicyWriter::Swamp->eligibilityRefusal($instance) !== null) {
                 continue;
             }
             try {
                 $head = $heads[$instance->project_id] ??= $this->heads->head($instance->project, (string) $instance->project->default_branch);
-                if ($head !== $instance->seed_commit) {
+                if ($head !== $instance->developmentSeedCommit()) {
                     $changed[] = $instance->id;
                 }
             } catch (Throwable $exception) {

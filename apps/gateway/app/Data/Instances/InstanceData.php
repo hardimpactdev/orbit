@@ -60,7 +60,7 @@ final class InstanceData extends Data
 
     public static function fromModel(Instance $instance): self
     {
-        $instance->loadMissing(['project', 'node', 'routes.targets', 'deploySteps']);
+        $instance->loadMissing(['project', 'node', 'routes.targets', 'deploySteps', 'runtime']);
         $route = $instance->authoritativeRoute() ?? $instance->routes->first();
         $removal = InstanceRemoval::query()
             ->with('members')
@@ -80,7 +80,7 @@ final class InstanceData extends Data
             vitePort: $instance->vite_port,
             ssrPort: $instance->ssr_port,
             seedPath: $instance->seed_path,
-            seedCommit: $instance->seed_commit,
+            seedCommit: $instance->developmentSeedCommit(),
             name: $instance->name,
             sourceLayout: $instance->source_layout,
             checkoutPath: $instance->checkout_path,
