@@ -1,5 +1,6 @@
 ---
 # Merge `record_update` into this Node's record of the fleet.reboot pass, a file in the pass's run folder on the Swamp Node.
+# `-i localhost,` makes localhost an inventory host, so a delegated task needs the local connection or it SSHes to the Swamp Node.
 - name: Write the Node record
   ansible.builtin.copy:
     dest: "{{ record_path }}"
@@ -7,3 +8,6 @@
     mode: "0600"
   delegate_to: localhost
   become: false
+  vars:
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
