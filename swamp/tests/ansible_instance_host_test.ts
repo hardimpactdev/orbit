@@ -433,8 +433,6 @@ Deno.test({
         "restricted.networks.access": "orbitinst0",
         "restricted.containers.privilege": "isolated",
         "restricted.devices.disk": "allow",
-        "restricted.devices.disk.paths":
-          `${f.folder}/opt/orbit-runtime,${f.folder}/opt/orbit-agent`,
         "restricted.devices.proxy": "allow",
         "restricted.snapshots": "allow",
         "limits.virtual-machines": "0",
@@ -765,6 +763,52 @@ Deno.test({
         Deno.readTextFileSync(`${f.folder}/egress/orbit-instance-egress.conf`),
         "http_port 10.253.0.1:3128\n",
       );
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "a project that lists disk paths loses the list, so a container with the idmapped folders starts",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture();
+    try {
+      // The first release set the list, and Incus refused every start in the project.
+      const state = f.state();
+      state.projects.push({
+        name: "orbit-instances",
+        config: {
+          "features.images": "true",
+          "features.profiles": "true",
+          "features.networks": "false",
+          "restricted.devices.disk.paths":
+            `${f.folder}/opt/orbit-runtime,${f.folder}/opt/orbit-agent`,
+        },
+      });
+      state.profiles["orbit-instances"] = {
+        config: {},
+        description: "",
+        devices: {},
+      };
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      let result = f.run();
+      assert(result.ok, result.output);
+      const project = f.state().projects.find((p: { name: string }) =>
+        p.name === "orbit-instances"
+      );
+      assertEquals(project.config["restricted.devices.disk.paths"], undefined);
+      assertEquals(project.config["restricted.devices.disk"], "allow");
+      assert(
+        f.calls().some((c) =>
+          c.includes("start") && c.includes("orbit-clone-probe-copy")
+        ),
+      );
+      result = f.run();
+      assert(result.ok, result.output);
+      assertStringIncludes(result.output, "changed=0");
     } finally {
       f.cleanup();
     }

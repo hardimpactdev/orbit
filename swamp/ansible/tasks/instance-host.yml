@@ -99,8 +99,10 @@
   vars:
     folder: "{{ instances.folders[folder_name] }}"
 
-# The project lets containers mount only the two folders, read-only and idmapped, and publish T3 with a proxy device. Every
-# container gets an isolated ID map. The bridge reaches nothing by default: each Instance's own paths come with its create flow.
+# The project lets containers mount host folders read-only and idmapped, and publish T3 with a proxy device. Every container gets
+# an isolated ID map. The bridge reaches nothing by default: each Instance's own paths come with its create flow. Incus refuses
+# `shift` on a disk whose source falls under `restricted.devices.disk.paths`, so the project sets no path list: the profile is
+# the one place that names the two folders.
 # Containers get no DNS: the egress proxy resolves every name.
 - name: Prepare the Instance bridge, project and profile
   ansible.builtin.include_tasks: task-container-host-prepare.yml
@@ -148,10 +150,10 @@
       restricted.networks.access: "{{ instances.network }}"
       restricted.containers.privilege: isolated
       restricted.devices.disk: allow
-      restricted.devices.disk.paths: "{{ instances.folders.runtime.path }},{{ instances.folders.agent.path }}"
       restricted.devices.proxy: allow
       restricted.snapshots: allow
       limits.virtual-machines: '0'
+    container_restrictions_unset: [restricted.devices.disk.paths]
 
 - name: Run the egress proxy
   ansible.builtin.include_tasks: instance-egress.yml

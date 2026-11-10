@@ -168,7 +168,7 @@ The host side reuses the container host tasks of the task containers (#3279):
 - Incus from the recipe, the SCTP check, the sysctl floors, the subordinate IDs and the ARC cap.
 - The project, bridge, ACL, profile, stock image, input rules and clone probe.
 - The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge refuses a Node without it.
-- The project mounts only the two folders, read-only and idmapped, and allows proxy devices for T3.
+- The profile mounts the two folders, read-only and idmapped. The project allows host disks and proxy devices for T3.
 - Every container gets an isolated ID map. The bridge `orbitinst0` reaches only the model forwarder and, since step 2c, the egress proxy.
 
 The image and the folders:
@@ -201,7 +201,7 @@ The isolation and update checks follow.
 No fixture can prove these claims; only real Incus on the first test Node can.
 
 10. As `orbit` in a test container, `ps -u agent` lists nothing: `hidepid=invisible` holds after a container restart.
-11. The restricted project accepts the two folder disks, read-only and shifted, under `restricted.devices.disk.paths`.
+11. The restricted project accepts the two folder disks, read-only and shifted. It sets no `restricted.devices.disk.paths`: Incus refuses `shift` on any disk under that list.
 12. The build container reaches the internet through the egress proxy. A test container on the bridge reaches only the forwarder and the proxy.
 13. As `orbit`, `10.253.x.1:8319` and T3's port 3773 answer with a reset; as `agent`, both answer.
 14. The published image has no `ubuntu` user and no sudo grant.
@@ -673,6 +673,7 @@ The spike used `STARTER-4xCPU-8GB` with a separate 20 GB block device for the po
 | A directory pool copied the outer container in 55 s, btrfs moved it in 171 s | The host pool must be ZFS |
 | Nested restores took 3–4 s | The 45-second limit holds |
 | `incus` reads non-terminal standard input as YAML | Ansible tasks and Swamp scripts close standard input |
+| Incus refuses `shift` on a disk under `restricted.devices.disk.paths`, at each start | The Instance project sets no path list, and the converge unsets one. The first Beast converge failed at the clone probe's start |
 
 An idle outer container with two nested containers and Docker used about 0.5 GB, and 2.5 GB of disk. The real fleet is heavier, so one nested-fleet Instance gets `STARTER-4xCPU-16GB` with a 50 GB pool disk until the parity gate measures one.
 
