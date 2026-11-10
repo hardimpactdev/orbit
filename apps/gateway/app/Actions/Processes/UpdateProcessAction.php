@@ -54,7 +54,7 @@ final readonly class UpdateProcessAction
 
     private function record(Process $fresh, UpdateProcessData $update): Process
     {
-        $this->databaseServers->assertUpdatable($fresh);
+        $this->databaseServers->assertUpdatable($fresh, $update);
         if (isset($fresh->runtime_config['preset'])) {
             throw new ResourceOperationException('process.option_invalid', 'Preset Processes cannot be updated.', 422);
         }

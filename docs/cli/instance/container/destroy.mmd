@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#destroy): `instance:destroy` of a container Instance. The kind and its step names follow docs/cli/instance/destroy.mmd; the intent carries `runtime: container`.
+  %% Container clone cleanup, ADR 0250 PR 6. Default destruction and guarded clone removal follow separately.
   %% status: draft
   %% command: instance:destroy
   %% kind: instance.destroy
@@ -8,71 +8,62 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane N icon=server pill=target tone=amber
-  %% lane C icon=server pill=target tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
   participant N as app-dev Node<br/>reached over ssh
-  participant C as Container<br/>via incus exec
-  CLI->>GW: instance:destroy<br/>INSTANCE
-  %%> Command:
-  %%> - `orbit instance:destroy INSTANCE`
-  %%> - syntax: `<instance> [--force]`
-  Note over GW: Validate, mark removing<br/>no new pairings
+  CLI->>GW: instance:destroy<br/>INSTANCE --yes --force
+  %% path: main
   %%> Requirements:
-  %%> - the calling Node has node access to the Instance's Node; no other change runs on the Instance
-  %%> - a default Instance has no clones, else `instance.default_has_clones`
-  %%> Result:
-  %%> - the Instance is `removing`; the Conn layer refuses new pairings with its T3 server
-  %%> - a repository read token for the work check is minted, and the Gateway's session for this T3 server goes to the vault; the intent names both vault keys
-  %%> - a task is recorded with the full intent
-  GW->>SW: Start run, full intent<br/>operation-instance-destroy
-  GW-->>CLI: 202 Accepted<br/>task ID
-  opt the container is stopped
-    SW->>N: Start the container<br/>incus start
-    %%> Why:
-    %%> - the checks below read the workspace and T3; the Route is not published again
-  end
-  SW->>C: Check work and turns<br/>Ansible · tags check
-  %%> What it does:
-  %%> - fetches origin on the Node with the read token; the token never enters the container
-  %%> - reads the branch heads and uncommitted files in the workspace as `agent`, and compares the heads with origin on the Node
-  %%> - asks T3's MCP endpoint, with the Gateway's session, for threads with a running or queued turn; a default Instance has no T3, so this part is skipped
-  %%> Refuses:
-  %%> - unpushed work, as today; a running turn with `instance.turn_running`
-  %%> - `--force` skips both checks
-  SW->>N: Revoke the pairings<br/>child conn-pairing-revoke
-  %%> What it does:
-  %%> - revokes every client session and unused link that Orbit paired on this T3 server
-  SW->>N: Withdraw the Route<br/>child route-withdraw
-  SW->>C: Stop Processes, teardown<br/>Ansible · tags teardown
-  %%> What it does:
-  %%> - stops the Processes, then runs the Project's teardown steps as `orbit`
-  SW->>N: Delete the container<br/>incus delete --force
-  %%> What it does:
-  %%> - deletes the container with its T3 state and thread history, its proxy device and its firewall rules; an archive of the history comes later
-  %%> - the default Instance it was cloned from stays
-  opt database on a Database server
-    SW->>N: Drop owner and database<br/>child database-destroy
-  end
-  alt all steps pass
-    SW-->>GW: Run succeeded<br/>terminal event
-    Note over GW: Remove Instance records<br/>T3 server removed
+  %%> - Node access to the Instance's Node and no other lifecycle Operation holds the Instance
+  %%> - this slice supports a container clone only; a container default remains unavailable
+  %%> - `--force` is required until guarded removal is built; no work or turn check runs
+  alt container default
+    %% path: default-unavailable
+    GW--xCLI: Refused<br/>operation.kind_unavailable
+  else clone without --force
+    %% path: force-required
+    GW--xCLI: Refused<br/>force required
+    %%> Code:
+    %%> - `instance.container_destroy_force_required`
+  else forced clone
+    %% path: admitted
+    Note over GW: Capture removal intent<br/>mark removing
     %%> Result:
-    %%> - the Instance, its runtime and its Route are removed; the T3 server's record is marked removed and its stored session deleted
-    %%> - the port returns to `t3_ports`
-  else a check refuses
-    SW--xGW: Run failed<br/>instance.turn_running
-    Note over GW: Back to active
-    %%> Result:
-    %%> - nothing was removed; the Instance is active again and pairing opens again
-  else a later step fails
-    SW--xGW: Run failed<br/>failed step, error_code
-    Note over GW: Keep removing
-    %%> Retry:
-    %%> - run the same command again; it skips what is already gone
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show TASK
-    GW-->>CLI: status + result
+    %%> - capture the clone's container identity, Route, Processes and owned databases
+    %%> - keep its runtime row, address and T3 port reserved until terminal success
+    %%> - Conn refuses new pairings while the Instance is removing
+    GW->>SW: Start run, full intent<br/>operation-instance-destroy
+    GW-->>CLI: 202 Accepted<br/>Operation ID
+    opt clone has a Route
+      %% path: routed
+      SW->>N: Withdraw the Route<br/>child route-withdraw
+    end
+    opt clone owns server databases
+      %% path: server-database
+      SW->>N: Drop owned databases<br/>child database-destroy
+    end
+    SW->>N: Delete the container<br/>Ansible · tags remove
+    %%> What it does:
+    %%> - stops and deletes the clone, its Processes, T3 history, snapshots, storage volume and proxy device
+    %%> - deleting T3 retires every session and unused pairing link; no T3 call or new vault key is needed
+    %%> - removes its `instance-<id>` ACL from Incus project `default`, its owned UFW rules and its Node repository mirror
+    %%> - checks that the container and storage volume are absent; already absent resources are removed
+    %%> - the default and sibling clones stay
+    alt all steps pass
+      %% path: succeeded
+      SW-->>GW: Run succeeded<br/>terminal event
+      Note over GW: Remove owned records<br/>free T3 port
+      %%> Result:
+      %%> - remove Instance execution copies and Conn's copies, environment and pairings, even while Conn is disabled
+      %%> - delete the Route, Processes, owned database records, runtime row and Instance
+      %%> - deleting the runtime row frees the published T3 port and bridge address
+    else a step fails
+      %% path: removal-failed
+      SW--xGW: Run failed<br/>failed step, error_code
+      Note over GW: Keep removing<br/>retry saved intent
+      %%> Retry:
+      %%> - a fresh forced destroy reuses the removal identity and accepts resources already gone
+      %%> - after withdrawal the Route stays down; records and the reserved port stay until success
+    end
   end

@@ -1,0 +1,13 @@
+# Live lane obligations, after independent review PASS. The runner has no container Instance fixture.
+command: instance:destroy
+chart: instance/container/destroy
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+cases: []
+uncovered:
+  "path:main": "Need a container clone fixture with an owned database, Processes, a Route and a paired T3 client. Force destroy one clone; verify its Route, Processes, database, container, ZFS volume/snapshots, default-project ACL, firewall rules, mirror, Conn records and execution copies are absent. The client loses access; the default and sibling remain healthy; another clone can reuse its T3 port."
+  "path:removal-failed": "Inject failure after withdrawal and after container deletion. A fresh forced destroy must reuse the saved removal identity, accept absent resources and finish without touching the default or sibling. Also destroy a stopped clone."
+  "path:force-required": "Without --force, refuse a clone with instance.container_destroy_force_required, no Operation and unchanged resources."
+  "path:default-unavailable": "Container default destruction remains unavailable with and without force; no Operation or live effects. Default removal and the refusal while clones exist are follow-up work."
+  "path:succeeded": "Replay the completed destroy's original idempotency key after record deletion; recover the same Operation. Verify that the freed port is allocated to a new clone."

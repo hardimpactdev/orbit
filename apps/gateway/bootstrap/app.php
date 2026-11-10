@@ -24,6 +24,7 @@ use App\Infrastructure\Swamp\SwampScheduledResults;
 use App\Jobs\Fleet\AdmitFleetReboot;
 use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Jobs\Fleet\CheckFleetRebootConfirmation;
+use App\Jobs\Instances\CheckDevelopmentDeployments;
 use App\Jobs\Operations\PollSwampScheduledResults;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\TaskVms\RefreshTaskVmImages;
@@ -78,6 +79,9 @@ $app = Application::configure(basePath: dirname(__DIR__))
             ->when(static fn (): bool => GatewayQueueRedis::configured());
         // Reverb reports close WebSocket registry tasks; this fails the ones whose processes stopped reporting.
         GatewaySchedule::job($schedule, new CloseWebSocketOperations)->everyMinute()
+            ->when(static fn (): bool => GatewayQueueRedis::configured());
+        // Quiet development defaults start no Swamp run. Production keeps its independent persisted pause.
+        GatewaySchedule::job($schedule, new CheckDevelopmentDeployments)->everyMinute()
             ->when(static fn (): bool => GatewayQueueRedis::configured());
         // Runs that finished in Swamp are read once a minute and projected; Swamp's commit feed needs a v3 datastore.
         GatewaySchedule::job($schedule, new PollSwampScheduledResults)->everyMinute()
