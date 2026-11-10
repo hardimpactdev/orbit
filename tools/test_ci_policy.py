@@ -7,6 +7,17 @@ SOURCE = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
 
 
 class RequiredGateTest(unittest.TestCase):
+    def test_main_push_dispatches_cli_release_after_required_checks_without_a_variable_gate(self):
+        caller = (ROOT / '.github/workflows/ci.yml').read_text()
+        block = caller.split('  cli-release:\n', 1)[1]
+        condition = next(line.strip() for line in block.splitlines() if line.startswith('    if:'))
+        self.assertEqual(condition, "if: github.event_name == 'push' && github.ref == 'refs/heads/main'")
+        self.assertIn('    needs: required\n', block)
+        # The implicit success() gate prevents dispatch after a failed or skipped Required checks job.
+        self.assertNotIn('always()', condition)
+        self.assertIn('      actions: write\n', block)
+        self.assertIn('gh workflow run orbit-cli-release.yml --repo "$GITHUB_REPOSITORY" --ref main -f commit="$GITHUB_SHA"', block)
+
     def test_agent_lock_changes_reuse_cache_only_with_the_same_toolchain_and_platform(self):
         import re
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
