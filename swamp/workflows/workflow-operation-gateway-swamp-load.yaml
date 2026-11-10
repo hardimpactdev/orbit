@@ -13,6 +13,7 @@ inputs:
       type: object
       properties:
         sha: {type: string, pattern: '^[a-f0-9]{40}$'}
+        force: {type: boolean}
         grants:
           type: object
           properties:
@@ -21,7 +22,7 @@ inputs:
           required: [grants/orbit-gateway.yaml, grants/orbit-serve.yaml]
           additionalProperties: false
         ssh: {type: object}
-      required: [sha, grants, ssh]
+      required: [sha, force, grants, ssh]
       additionalProperties: false
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -29,7 +30,8 @@ inputs:
 jobs:
   - name: load
     steps:
-      # The release build owns release order: forward only unless forced, and a rollback is forced. The checkout follows the release.
+      # Forward only unless the release is forced, as a rollback is: the same rule as the release build, checked here too because a
+      # release resumed at Load or a direct start does not pass the build again.
       - name: checkout
         labels: {role: swamp}
         writes: true
@@ -39,12 +41,16 @@ jobs:
           behaviorName: '${{ "gateway-swamp-checkout" }}'
           methodName: execute
           inputs:
-            env: {RELEASE_SHA: '${{ inputs.intent.sha }}'}
+            env: {RELEASE_SHA: '${{ inputs.intent.sha }}', FORCE: '${{ string(inputs.intent.force) }}'}
             run: |
               set -eu
               cd /home/orbit/apps/orbit-monorepo-staging/checkout
               previous=$(git rev-parse HEAD)
               timeout 120 git fetch --quiet origin "$RELEASE_SHA"
+              if [ "$FORCE" != true ] && ! git merge-base --is-ancestor "$previous" "$RELEASE_SHA"; then
+                echo "gateway.release_downgrade: $RELEASE_SHA does not descend from the serve checkout $previous" >&2
+                exit 1
+              fi
               git checkout --quiet --detach "$RELEASE_SHA"
               test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
               printf '%s\n' "$previous"

@@ -31,8 +31,8 @@ sequenceDiagram
   %%> - when serve is restarting, the start waits up to 10 minutes instead of pausing the release
   SW->>N: checkout<br/>git checkout --detach a1b2c3d
   %%> Requirements:
-  %%> - none of its own: the release build allows only a forward commit unless the release is forced, as a rollback is
-  %%> - a rollback moves the checkout back to the retained commit
+  %%> - the new commit descends from the current one, unless the release is forced, as a rollback is
+  %%> - a forced rollback moves the checkout back to the retained commit
   %%> On the Node:
   %%> - fetches the commit into the serve checkout
   %%> - moves the checkout to it

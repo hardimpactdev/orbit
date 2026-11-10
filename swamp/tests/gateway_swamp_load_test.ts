@@ -131,7 +131,8 @@ async function git(folder: string, ...args: string[]) {
     return new TextDecoder().decode(done.stdout).trim();
 }
 
-Deno.test("a rollback release moves the serve checkout back to an ancestor commit", async () => {
+/** Runs the checkout script from a clone at the newer of two commits, toward `target`. */
+async function runCheckout(target: "older" | "newer" | "back", force: boolean) {
     const folder = await Deno.makeTempDir();
     const origin = `${folder}/origin`;
     await Deno.mkdir(origin);
@@ -141,20 +142,76 @@ Deno.test("a rollback release moves the serve checkout back to an ancestor commi
     await git(origin, "commit", "--quiet", "--allow-empty", "-m", "newer");
     const newer = await git(origin, "rev-parse", "HEAD");
     await git(folder, "clone", "--quiet", origin, "checkout");
-    const target = `${folder}/checkout`;
+    const checkoutPath = `${folder}/checkout`;
+    if (target === "newer") {
+        await git(checkoutPath, "checkout", "--quiet", "--detach", older);
+    }
+    const sha = target === "newer" ? newer : older;
+    const before = await git(checkoutPath, "rev-parse", "HEAD");
     const run = checkout.task.inputs.run.replace(
         "/home/orbit/apps/orbit-monorepo-staging/checkout",
-        target,
+        checkoutPath,
     );
     const done = await new Deno.Command("sh", {
         args: ["-c", run],
-        env: { RELEASE_SHA: older, PATH: Deno.env.get("PATH")! },
+        env: {
+            RELEASE_SHA: sha,
+            FORCE: String(force),
+            PATH: Deno.env.get("PATH")!,
+        },
         stdout: "piped",
         stderr: "piped",
     }).output();
-    const head = await git(target, "rev-parse", "HEAD");
+    const head = await git(checkoutPath, "rev-parse", "HEAD");
     await Deno.remove(folder, { recursive: true });
-    assertEquals(done.code, 0, new TextDecoder().decode(done.stderr));
-    assertEquals(new TextDecoder().decode(done.stdout).trim(), newer);
-    assertEquals(head, older);
+    return {
+        code: done.code,
+        stdout: new TextDecoder().decode(done.stdout).trim(),
+        stderr: new TextDecoder().decode(done.stderr).trim(),
+        before,
+        head,
+        sha,
+    };
+}
+
+Deno.test("a forced rollback release moves the serve checkout back to an ancestor commit", async () => {
+    const run = await runCheckout("back", true);
+    assertEquals(run.code, 0, run.stderr);
+    assertEquals(run.stdout, run.before);
+    assertEquals(run.head, run.sha);
+});
+
+Deno.test("an unforced load refuses an ancestor commit and leaves the checkout alone", async () => {
+    const run = await runCheckout("back", false);
+    assertEquals(run.code, 1);
+    assertEquals(run.stderr.startsWith("gateway.release_downgrade: "), true);
+    assertEquals(run.head, run.before);
+});
+
+Deno.test("an unforced load moves the serve checkout forward", async () => {
+    const run = await runCheckout("newer", false);
+    assertEquals(run.code, 0, run.stderr);
+    assertEquals(run.head, run.sha);
+});
+
+Deno.test("the release passes its force flag to the load", async () => {
+    const release = parse(
+        await Deno.readTextFile(
+            new URL(
+                "../workflows/workflow-operation-gateway-release.yaml",
+                import.meta.url,
+            ),
+        ),
+    ) as {
+        jobs: {
+            steps: {
+                name: string;
+                task: { inputs?: { intent?: Record<string, unknown> } };
+            }[];
+        }[];
+    };
+    const load = release.jobs.flatMap((job) => job.steps).find((step) =>
+        step.name === "Load Swamp on Node 209"
+    )!;
+    assertEquals(load.task.inputs?.intent?.force, "${{ inputs.intent.force }}");
 });
