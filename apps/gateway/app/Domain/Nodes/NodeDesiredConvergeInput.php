@@ -6,10 +6,10 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
-use App\Infrastructure\AppDev\PrivateDnsPublication;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolPackageProtection;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AppDev\PrivateDnsPublication;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;

@@ -78,6 +78,7 @@ it('captures base from recorded state, redacts its verifier and dispatches copie
     $operation = Operation::query()->sole();
     $capture = $operation->input['_converge'];
     expect($capture['intent']['selected_roles'])->toBe([])
+        ->and($capture['intent']['dns'])->toBeNull()
         ->and($capture['intent']['roles'])->toBe([])->and($capture['intent']['tools'])->toBe([])->and($capture['intent']['network'])->toBeNull()
         ->and($capture['intent']['agent'])->toMatchArray(['sha256' => str_repeat('b', 64), 'url' => 'https://artifacts.example/agent'])
         ->and($capture['intent']['kernel'])->toBe(['files' => [['path' => '/etc/modprobe.d/orbit-no-sctp.conf', 'content' => "install sctp /bin/false\n"]],
@@ -205,3 +206,20 @@ it('allocates a build-list app-dev Node\'s Instance bridge in the admission, bef
     'every role' => [[], '10.253.0.0/24'],
     'the base only' => [['base' => true], null],
 ]);
+
+it('captures a complete private DNS publication only when the VPN role is in converge scope', function (bool $base): void {
+    $this->node->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+    Node::withoutEvents(fn () => $this->node->forceFill(['wireguard_public_key' => base64_encode(str_repeat('v', 32))])->save());
+
+    $this->postJson($this->url, $base ? ['base' => true] : ['roles' => ['vpn']])->assertAccepted();
+
+    $dns = Operation::query()->sole()->input['_converge']['intent']['dns'];
+    if ($base) {
+        expect($dns)->toBeNull();
+    } else {
+        expect($dns)->toHaveKeys(['node_id', 'connection', 'host_keys', 'dns'])
+            ->and($dns['node_id'])->toBe($this->node->id)
+            ->and($dns['dns'])->toHaveKeys(['revision', 'listen', 'tlds', 'records'])
+            ->and(json_encode($dns))->not->toContain('catalog');
+    }
+})->with(['base only' => [true], 'VPN role' => [false]]);

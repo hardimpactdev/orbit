@@ -12,8 +12,8 @@ const Publication = z.object({
     node_id: z.number(),
     connection: z.object({ nodeUser: z.string() }).passthrough(),
     host_keys: z.array(z.string()),
-    before: z.object({ php: z.unknown(), dns: z.unknown() }),
-    after: z.object({ php: z.unknown(), dns: z.unknown() }),
+    before: z.object({ php: z.unknown() }),
+    after: z.object({ php: z.unknown() }),
 }).passthrough();
 
 /** Compose only public resource descriptions from Ansible's captured machine reads. */

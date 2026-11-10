@@ -2,7 +2,6 @@ import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import { roleAddPlans } from "./role_add_plans.ts";
 import { toolSetupPlan } from "../node-bootstrap/tool_setup_plan.ts";
 import { composePhp } from "../routes/publication-command/assets.ts";
-import { mergeDns } from "../routes/mutation-command/dns.ts";
 
 const account = {
     orbit: ["x", "1000", "1000", "", "/home/orbit", "/bin/bash"],
@@ -15,13 +14,7 @@ const connection = {
     become: true,
 };
 const dns = (address: string) => ({
-    records: `# Managed by Orbit.\nhost-record=moving.test,${address}\n`,
-    catalog: JSON.stringify({
-        records: { "moving.test": address },
-        suffixes: {},
-        overrides: {},
-        requesters: {},
-    }),
+    revision: "100", listen: [address], tlds: [], records: [],
 });
 const pool = (id: number, count: number) =>
     `[orbit-instance-${id}]\nchdir = /__ORBIT_NODE_HOME__/app-${id}\npm.max_children = ${count}\n`;
@@ -39,21 +32,18 @@ const publication = {
 const encoded = (text: string) =>
     btoa(String.fromCharCode(...new TextEncoder().encode(text)));
 
-Deno.test("role-add composes observed PHP and DNS with the existing merge policy, preserving unrelated state", async () => {
+Deno.test("role-add composes observed PHP while leaving desired-state DNS to its publisher", async () => {
     const folder = await Deno.makeTempDir();
     try {
         const currentPhp = (pool(1, 5) + pool(2, 8)).replaceAll(
             "/__ORBIT_NODE_HOME__",
             "/home/orbit",
         );
-        const currentDns = dns("10.0.0.1");
         await Deno.writeTextFile(
             folder + "/publication-n9.json",
             JSON.stringify({
                 account,
                 pools: { "8.4": encoded(currentPhp) },
-                records: encoded(currentDns.records),
-                catalog: encoded(currentDns.catalog),
             }),
         );
         const result = await roleAddPlans(
@@ -78,11 +68,6 @@ Deno.test("role-add composes observed PHP and DNS with the existing merge policy
                             home: "/home/orbit",
                         }),
                     }),
-                    dns: mergeDns(
-                        publication.before.dns,
-                        publication.after.dns,
-                        currentDns,
-                    ),
                 },
             },
         });
@@ -123,7 +108,7 @@ Deno.test("role-add accepts null publication duties and empty decoded PHP maps w
                     folder,
                     "publication",
                 ),
-                { publications: { n9: { php: { files: [] }, dns: null } } },
+                { publications: { n9: { php: { files: [] } } } },
             );
         }
         assertEquals(
