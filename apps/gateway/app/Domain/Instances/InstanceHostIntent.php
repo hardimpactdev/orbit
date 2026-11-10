@@ -17,8 +17,10 @@ use App\Models\TaskVm;
 /**
  * The container branch of the `app-dev` role converge (docs/reference/development-containers.md#nodes): the Incus project on the
  * Node's pool, the Instance bridge, the image and the two shared folders. Only a Node on the build list gets it, and never a task
- * Node: a task VM keeps its checkout workspace. The admission that writes allocates the Node's bridge first (`prepare`), and the
- * Node keeps it; the intent only reads it. Null for every other Node, whose converge does what it did before.
+ * VM's own Node: a task VM keeps its checkout workspace. A task VM host does get it, beside its task side: the two sides keep their
+ * own Incus projects, bridges, pools and firewall rules, and the task side keeps the ZFS ARC. The admission that writes allocates
+ * the Node's bridge first (`prepare`), and the Node keeps it; the intent only reads it. Null for every other Node, whose converge
+ * does what it did before.
  */
 final readonly class InstanceHostIntent
 {
@@ -88,7 +90,8 @@ final readonly class InstanceHostIntent
             throw new ResourceOperationException('instance.host_unavailable', 'The Node has no Instance bridge yet: the admission of a role add or converge allocates it.', 409);
         }
         // Instance containers and the task containers of the same host take their isolated ID maps from root's one range.
-        $taskContainers = app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->task_vms?->containers;
+        $taskHost = app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->task_vms;
+        $taskContainers = $taskHost?->containers;
         $taskIds = $taskContainers instanceof NodeTaskVmContainersData ? ($taskContainers->task_places + $taskContainers->ci_places + 1) * self::TaskPlaceIds : 0;
         $subnet = Ipv4Subnet::from($cidr);
         [$gateway, $last] = $subnet->usableRange();
@@ -104,14 +107,20 @@ final readonly class InstanceHostIntent
             // The bridge ACL lets containers reach only the model forwarder (docs/reference/ai-router.md#container-model-forwarder).
             'forwarder_port' => self::ModelForwarderPort,
             'ids' => (self::Containers + 1) * self::IdMapSize + $taskIds,
+            // A task VM host sizes the ARC for its task side, or keeps the Node's own (task-vm-host-prepare.yml): the Instance side
+            // never changes it there.
+            'arc' => $taskHost === null,
             'incus' => $incus,
             'image' => InstanceImage::for($gateway),
             'folders' => InstanceFolderPlan::for($folders),
             // `incus exec` sessions get the runtime folder's environment from the profile; the image gives it to units and login shells.
-            'profile_config' => array_combine(
-                array_map(static fn (string $name): string => "environment.{$name}", array_keys(InstanceImage::RuntimeEnvironment)),
-                InstanceImage::RuntimeEnvironment,
-            ),
+            'profile_config' => [
+                'environment.PATH' => InstanceImage::Path,
+                ...array_combine(
+                    array_map(static fn (string $name): string => "environment.{$name}", array_keys(InstanceImage::RuntimeEnvironment)),
+                    InstanceImage::RuntimeEnvironment,
+                ),
+            ],
         ];
     }
 

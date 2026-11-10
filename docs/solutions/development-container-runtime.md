@@ -90,17 +90,19 @@ These come from other work and must land first.
 
 ## Build PRs
 
-The PRs land in this order, and PR 3b before PR 4. PR 4b can run beside PR 5. The task track, PRs 7 to 12, is the critical path. PR 13 and PR 14 can run beside it after PR 6.
+Changed by Nick, 2026-11-10: development in containers comes first. The dev path is PRs 4b, 5, 6, 14 and 15, then 16. PR 4b can run beside PR 5. The task track, PRs 7 to 12, and PR 13 come after it. PR 17 still needs PR 12 and PR 16.
+
+Beast and Shark take the dev path beside their task VMs. A task VM host on the build list gets the Instance side with its own Incus project, bridge, pool and input rules. The task side keeps its own, and its ZFS ARC: the Instance side never changes the ARC there. The Instance side refuses a bridge range that another interface of the Node holds, such as an operator's CI bridge.
 
 | PR | Part | State |
 | --- | --- | --- |
 | 1 | The specification | Merged, and replanned by this page |
 | 2 | Runtime records and the build list | Merged, [#3291](https://github.com/hardimpactdev/orbit/pull/3291) |
 | 3 | Node preparation and the shared folders | Merged, [#3292](https://github.com/hardimpactdev/orbit/pull/3292) |
-| 3b | The static PHP build | Open, [#3294](https://github.com/hardimpactdev/orbit/pull/3294) |
-| 4 | The first default Instance and its deployments | Open, [#3299](https://github.com/hardimpactdev/orbit/pull/3299) |
+| 3b | The static PHP build | Merged, [#3294](https://github.com/hardimpactdev/orbit/pull/3294) |
+| 4 | The first default Instance and its deployments | Merged, [#3299](https://github.com/hardimpactdev/orbit/pull/3299) |
 | 4b | The Project's development Processes in a container | |
-| 5 | Create an Instance as a clone, with T3 and its sessions | |
+| 5 | Create an Instance as a clone, with T3 and its sessions | Open, [#3301](https://github.com/hardimpactdev/orbit/pull/3301) |
 | 6 | Destroy a container Instance | |
 | 7 | Run a task in a clone: start, check, publish, end | |
 | 8 | The `t3` task driver: Swamp drives T3 | |

@@ -144,7 +144,20 @@ final readonly class InstanceContainer
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.$this->path($project),
                 ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys(InstanceImage::RuntimeEnvironment), InstanceImage::RuntimeEnvironment)],
             'units' => $this->units($instance, $runtime, $application),
+            // `php` on every PATH in the container is the Project's static build, so `composer` runs for `agent` and `orbit` alike.
+            'php' => $this->php($project),
         ];
+    }
+
+    /** The Project's `php` in the runtime folder, through `current`, or null when the Project has no PHP version the folder holds. */
+    private function php(Project $project): ?string
+    {
+        $version = $project->php_version;
+        if (! is_string($version) || ($this->folders()->php[$version]->artifact ?? null) === null) {
+            return null;
+        }
+
+        return InstanceHostIntent::RuntimeFolder.'/current/php/'.$version.'/bin/php';
     }
 
     /**

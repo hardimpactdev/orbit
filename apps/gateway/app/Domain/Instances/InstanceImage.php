@@ -24,6 +24,12 @@ final readonly class InstanceImage
     public const array RuntimeEnvironment = ['VP_HOME' => InstanceHostIntent::RuntimeFolder.'/current/vite-plus-home', 'VP_NO_UPDATE_CHECK' => '1'];
 
     /**
+     * The `PATH` of units, login shells and `incus exec` sessions: the runtime folder's programs, such as `composer`, before the
+     * system's. The container phase links the Project's `php` into `/usr/local/bin` (InstanceContainer::intent), so it is on it too.
+     */
+    public const string Path = InstanceHostIntent::RuntimeFolder.'/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+
+    /**
      * @return array{alias: string, packages: list<string>, prepare: string,
      *     files: list<array{path: string, content: string, uid: int, gid: int, mode: string}>, finish: list<list<string>>}
      */
@@ -60,8 +66,10 @@ final readonly class InstanceImage
 
     private static function assignments(): string
     {
+        $environment = ['PATH' => self::Path, ...self::RuntimeEnvironment];
+
         return implode(' ', array_map(static fn (string $name, string $value): string => "{$name}={$value}",
-            array_keys(self::RuntimeEnvironment), self::RuntimeEnvironment));
+            array_keys($environment), $environment));
     }
 
     private static function prepare(): string

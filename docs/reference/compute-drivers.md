@@ -1086,7 +1086,7 @@ Every refusal fails the phase with `task_vm.setup_failed`. Ansible runs its modu
 
 ### Prepare an Instance container host
 
-An `app-dev` Node on the [build list](/reference/development-containers#the-build-list) that is not a task VM gets a container branch in its role converge: `tasks/instance-host.yml`, from `tasks/node-role-runtime.yml`. The Gateway's `InstanceHostIntent` sends the branch's intent as the role runtime's `instances` key, only for such a Node; every other Node gets the same intent as before. The admission of a role add or converge allocates the Node's Instance bridge before it captures the intent; the capture only reads it. [Instance containers](/reference/development-containers#prepare-a-node) describes the result.
+An `app-dev` Node on the [build list](/reference/development-containers#the-build-list) that is not a task VM gets a container branch, a task VM host too in its role converge: `tasks/instance-host.yml`, from `tasks/node-role-runtime.yml`. The Gateway's `InstanceHostIntent` sends the branch's intent as the role runtime's `instances` key, only for such a Node; every other Node gets the same intent as before. The admission of a role add or converge allocates the Node's Instance bridge before it captures the intent; the capture only reads it. [Instance containers](/reference/development-containers#prepare-a-node) describes the result.
 
 The branch shares the two task files of a [container host](#prepare-a-container-host). `container_host` names what differs:
 
@@ -1105,10 +1105,13 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 
 The branch then:
 
+1. refuses a bridge range that another interface of the Node holds;
 1. requires the pool, and on a ZFS pool applies the ARC cap that the system part sized, in `/etc/modprobe.d/orbit-instances-zfs.conf`;
-2. installs each shared folder (`tasks/instance-folder.yml`);
-3. prepares the bridge, project and profile;
-4. builds the image (`tasks/instance-image.yml`).
+1. installs each shared folder (`tasks/instance-folder.yml`);
+1. prepares the bridge, project and profile;
+1. builds the image (`tasks/instance-image.yml`).
+
+A task VM host keeps the ARC cap of its [task side](#prepare-an-incus-host), or none. The intent's `arc` is false there, so the branch writes no cap.
 
 A folder version is built under a staging name and renamed last, so a version that exists is whole. The agent folder refuses a Node whose own group holds gid 2750.
 

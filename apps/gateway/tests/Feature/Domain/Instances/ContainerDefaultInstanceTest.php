@@ -146,6 +146,8 @@ describe('the first default Instance of a Project on a build-list Node', functio
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin',
                 'VP_HOME=/opt/orbit-runtime/current/vite-plus-home', 'VP_NO_UPDATE_CHECK=1'],
             'steps' => [['name' => 'install', 'phase' => 'before_activation', 'required' => true, 'timeout_seconds' => 300, 'command_digest' => hash('sha256', 'bun install')]],
+            // A Project without a PHP version links no `php`.
+            'php' => null,
         ])->and($operation->input['run_budget_seconds'])->toBe(2100);
     });
 
@@ -243,6 +245,22 @@ it('renders FrankenPHP as an orbit unit on the bridge address, with the Project\
         ->toContain('Environment=PATH=/opt/orbit-runtime/current/php/8.5/bin:/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin')
         ->toContain('ExecStart=/opt/orbit-runtime/current/php/8.5/bin/frankenphp php-server --listen 10.253.0.2:8080 --root /srv/workspace/public')
         ->and(str_contains($units[0]['content'], '/etc/orbit/instance'))->toBeFalse();
+});
+
+it('links the Project\'s php for every PATH in the container, and no version the runtime folder does not hold', function (): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/x', 'root' => 'public']);
+    $runtime = InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => 'orbit-instances',
+        'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2', 'runtime_version' => 'r', 'agent_version' => 'a',
+        'power_state' => InstanceRuntimePowerState::Stopped]);
+    $node->forceFill(['instance_bridge' => '10.253.0.0/24'])->save();
+
+    expect(app(InstanceContainer::class)->intent($instance, $runtime)['php'])->toBe('/opt/orbit-runtime/current/php/8.5/bin/php');
+
+    $project->forceFill(['php_version' => '7.4'])->save();
+
+    expect(app(InstanceContainer::class)->intent($instance->refresh(), $runtime)['php'])->toBeNull();
 });
 
 it('serves a container Instance\'s Route by proxying to FrankenPHP at its bridge address, with no PHP pool on the Node', function (): void {

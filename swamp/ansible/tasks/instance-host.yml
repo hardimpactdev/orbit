@@ -17,6 +17,34 @@
     fail_msg: "instance.host_unavailable: the Node needs the Incus storage pool {{ instances.pool }}, of driver zfs or dir"
     quiet: true
 
+# The Gateway gives each Node a unique /24 of 10.253.0.0/16, but it does not see the bridges an operator made, such as a CI bridge.
+# A range that another interface of the Node holds already refuses before any change.
+- name: Read the Node's IPv4 addresses
+  ansible.builtin.command: { argv: [ip, -4, -o, addr, show] }
+  register: instance_node_addresses
+  changed_when: false
+
+- name: Refuse an Instance bridge range that another interface holds
+  ansible.builtin.assert:
+    that: instance_overlaps | length == 0
+    fail_msg: "instance.host_unavailable: the Instance bridge range {{ instances.cidr }} overlaps {{ instance_overlaps | join(', ') }}"
+    quiet: true
+  vars:
+    instance_overlaps: >-
+      {%- set ns = namespace(out=[]) -%}
+      {%- set c = instances.cidr.split('/') -%}{%- set o = c[0].split('.') | map('int') | list -%}
+      {%- set first = ((o[0] * 256 + o[1]) * 256 + o[2]) * 256 + o[3] -%}{%- set last = first + 2 ** (32 - (c[1] | int)) - 1 -%}
+      {%- for line in instance_node_addresses.stdout_lines -%}
+        {%- set f = line.split() -%}
+        {%- if f | length > 3 and f[2] == 'inet' and f[1] != instances.network -%}
+          {%- set a = f[3].split('/') -%}{%- set q = a[0].split('.') | map('int') | list -%}
+          {%- set size = 2 ** (32 - (a[1] | int)) -%}{%- set ip = ((q[0] * 256 + q[1]) * 256 + q[2]) * 256 + q[3] -%}
+          {%- set start = ip - ip % size -%}
+          {%- if start <= last and first <= start + size - 1 -%}{%- set ns.out = ns.out + [f[1] ~ ' ' ~ f[3]] -%}{%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ ns.out }}
+
 - name: Prepare the kernel and Incus for Instance containers
   ansible.builtin.include_tasks: task-container-host-system.yml
   vars:
@@ -41,9 +69,10 @@
       kernel.keys.maxbytes: 2000000
       vm.max_map_count: 262144
 
-# The cap the system part sized from memory, never above the cap the Node already runs.
+# The cap the system part sized from memory, never above the cap the Node already runs. A task VM host keeps the ARC its task side
+# sets (`instances.arc` is false there), so the Instance side never changes a cap that the host's task VMs run with.
 - name: Keep the ZFS ARC within the Node's budget
-  when: (instance_pool_read.stdout | from_json).driver == 'zfs'
+  when: (instance_pool_read.stdout | from_json).driver == 'zfs' and instances.arc | default(true) | bool
   block:
     - name: Keep the ARC cap after reboot
       ansible.builtin.copy:

@@ -185,7 +185,20 @@ async function artifacts(folder: string, version: string) {
   };
 }
 
-async function fixture({ pool = "zfs" }: { pool?: string | null } = {}) {
+/** `ip -4 -o addr show` of a Node with a CI bridge in the next /24 and the Instance bridge itself. */
+const nodeAddresses = [
+  "1: lo    inet 127.0.0.1/8 scope host lo\\       valid_lft forever preferred_lft forever",
+  "3: enp10s0    inet 192.168.6.20/24 brd 192.168.6.255 scope global enp10s0\\       valid_lft forever preferred_lft forever",
+  "6: orbitci0    inet 10.253.1.1/24 scope global orbitci0\\       valid_lft forever preferred_lft forever",
+  "7: orbitinst0    inet 10.253.0.1/24 scope global orbitinst0\\       valid_lft forever preferred_lft forever",
+];
+
+async function fixture(
+  { pool = "zfs", addresses = nodeAddresses }: {
+    pool?: string | null;
+    addresses?: string[];
+  } = {},
+) {
   const folder = Deno.makeTempDirSync();
   for (
     const dir of [
@@ -201,6 +214,7 @@ async function fixture({ pool = "zfs" }: { pool?: string | null } = {}) {
     Deno.mkdirSync(`${folder}/${dir}`);
   }
   Deno.writeTextFileSync(`${folder}/arc`, "0\n");
+  Deno.writeTextFileSync(`${folder}/ip-addr`, addresses.join("\n") + "\n");
   Deno.writeTextFileSync(
     `${folder}/meminfo`,
     `MemTotal:       ${32 * GiB / 1024} kB\n`,
@@ -229,6 +243,7 @@ async function fixture({ pool = "zfs" }: { pool?: string | null } = {}) {
       new URL("fixtures/task-vm-host-incus.ts", import.meta.url).pathname
     }' "$@"`,
     zfs: 'printf "%s\\n" 307200',
+    ip: `cat '${folder}/ip-addr'`,
     "dpkg-query": 'printf "%s" "ii 1:7.0.1-ubuntu26.04"',
     modprobe: 'printf "install /bin/false \\n"',
     sysctl: 'printf "16384\\n128\\n65536\\n200\\n20000\\n1048576\\n"',
@@ -956,6 +971,57 @@ mkdir -p "$2/node_modules/vite-plus" && cp "$2/package-lock.json" "$2/node_modul
         Deno.readLinkSync(`${f.folder}/opt/orbit-runtime/current`),
         "777777777777",
       );
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "a task VM host keeps the ZFS ARC its task side sets: the Instance side writes no cap",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture();
+    try {
+      f.write({ ...f.instances, arc: false });
+      const result = f.run();
+      assert(result.ok, result.output);
+      assertEquals(Deno.readTextFileSync(`${f.folder}/arc`).trim(), "0");
+      assert(!f.has("arc.conf"));
+      // The rest of the Instance side is there.
+      assert(
+        f.state().networks.some((n: { name: string }) =>
+          n.name === "orbitinst0"
+        ),
+      );
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "an Instance bridge range that another interface of the Node holds refuses before any change",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture({
+      addresses: [
+        ...nodeAddresses.slice(0, 2),
+        "6: orbitci0    inet 10.253.0.1/24 scope global orbitci0\\       valid_lft forever preferred_lft forever",
+      ],
+    });
+    try {
+      const result = f.run();
+      assert(!result.ok);
+      assertStringIncludes(
+        result.output,
+        "instance.host_unavailable: the Instance bridge range 10.253.0.0/24 overlaps orbitci0 10.253.0.1/24",
+      );
+      assertEquals(f.state().projects, []);
+      assertEquals(f.state().networks, []);
+      assertEquals(Deno.readTextFileSync(`${f.folder}/arc`).trim(), "0");
     } finally {
       f.cleanup();
     }

@@ -26,7 +26,7 @@ const save = () => Deno.writeTextFileSync(file, JSON.stringify(state));
 const rootfs = (name: string) => `${folder}/containers/${name}`;
 /** A container path inside its folder; other arguments stay as they are. */
 const inside = (name: string, value: string) =>
-  /^\/(srv|tmp|etc|home)\//.test(value) ? rootfs(name) + value : value;
+  /^\/(srv|tmp|etc|home|usr\/local)\//.test(value) ? rootfs(name) + value : value;
 
 if (args[0] === "query") {
   const [route, query = ""] = args.at(-1)!.slice(5).split("?");
@@ -67,6 +67,7 @@ if (family === "init") {
   Deno.mkdirSync(`${rootfs(name)}/srv/workspace`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/etc/systemd/system`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/tmp`, { recursive: true });
+  Deno.mkdirSync(`${rootfs(name)}/usr/local/bin`, { recursive: true });
 } else if (family === "start" || family === "stop") {
   const name = args.at(-1)!;
   if (!state.containers[name]) fail("Instance not found");
