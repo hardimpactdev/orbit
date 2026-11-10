@@ -22,7 +22,8 @@ final class WaitForGatewayReleaseIdleCommand extends Command
         try {
             $idle->execute();
         } catch (GatewayReleaseException $exception) {
-            $this->error($exception->errorCode.': '.$exception->getMessage());
+            // Swamp's SSH step builds its failure from stderr only, so the typed code must go there.
+            $this->output->getErrorStyle()->writeln($exception->errorCode.': '.$exception->getMessage());
 
             return self::FAILURE;
         }

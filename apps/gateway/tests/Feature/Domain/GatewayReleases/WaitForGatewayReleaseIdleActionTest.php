@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Console\Commands\WaitForGatewayReleaseIdleCommand;
 use App\Models\Operation;
 use Carbon\CarbonInterval;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Sleep;
+use Symfony\Component\Console\Tester\CommandTester;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -71,4 +73,19 @@ it('reports the remaining blocker IDs from the final poll', function (): void {
         ->assertFailed();
 
     Sleep::assertSleptTimes(120);
+});
+
+it('writes the busy refusal to stderr, where the release SSH step reads its failure', function (): void {
+    $this->freezeTime();
+    Sleep::fake(syncWithCarbon: true);
+    $blocker = releaseBlocker('instance.create');
+    $command = app(WaitForGatewayReleaseIdleCommand::class);
+    $command->setLaravel(app());
+    $tester = new CommandTester($command);
+
+    $tester->execute([], ['capture_stderr_separately' => true]);
+
+    expect($tester->getStatusCode())->toBe(1)
+        ->and($tester->getErrorOutput())->toContain('gateway.release_busy: Active Operations after 600 seconds: '.$blocker->id)
+        ->and($tester->getDisplay())->not->toContain('gateway.release_busy');
 });
