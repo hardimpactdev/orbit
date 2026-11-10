@@ -8,7 +8,6 @@ use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Schedules\ScheduleRuntimeAccount;
-use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\Schedules\SshScheduleRuntimeAccountResolver;
@@ -83,30 +82,34 @@ describe('Schedule runtime account resolution', function (): void {
         'empty inventory' => [[]],
     ]);
 
-    it('looks up the account when only another Node has an accounts fact', function (): void {
+    it('refuses an unobserved account when only another Node has an accounts fact', function (): void {
         $node = schedule_account_node();
         schedule_account_view($node);
         schedule_account_fact(schedule_account_node('other', '10.44.0.6'), [schedule_account_entry(['home' => '/wrong'])]);
         $agents = Mockery::mock(AgentCommandRunner::class);
-        $agents->shouldReceive('run')->once()->with($node, 'account.lookup', ['user' => 'app'])
-            ->andReturn(schedule_account_entry());
+        $agents->shouldNotReceive('run');
         app()->instance(AgentCommandRunner::class, $agents);
 
-        expect(app(SshScheduleRuntimeAccountResolver::class)->resolve($node, 'app'))
-            ->toEqual(new ScheduleRuntimeAccount('app', 'app-group', '/home/app', '/bin/bash'));
+        expect(fn () => app(SshScheduleRuntimeAccountResolver::class)->resolve($node, 'app'))
+            ->toThrow(function (ScheduleOperationException $exception): void {
+                expect($exception->error)->toBe(ScheduleErrorCode::TargetUnavailable);
+                expect($exception->step)->toBe('resolve-account');
+            });
     });
 
-    it('looks up the account when the stored fact is not current by agent liveness', function (int $eventAge, int $subscriberAge): void {
+    it('refuses an account from a fact that is not current by agent liveness', function (int $eventAge, int $subscriberAge): void {
         $node = schedule_account_node();
         schedule_account_view($node, $eventAge, $subscriberAge);
-        schedule_account_fact($node, []);
+        schedule_account_fact($node, [schedule_account_entry()]);
         $agents = Mockery::mock(AgentCommandRunner::class);
-        $agents->shouldReceive('run')->once()->with($node, 'account.lookup', ['user' => 'app'])
-            ->andReturn(schedule_account_entry());
+        $agents->shouldNotReceive('run');
         app()->instance(AgentCommandRunner::class, $agents);
 
-        expect(app(SshScheduleRuntimeAccountResolver::class)->resolve($node, 'app'))
-            ->toEqual(new ScheduleRuntimeAccount('app', 'app-group', '/home/app', '/bin/bash'));
+        expect(fn () => app(SshScheduleRuntimeAccountResolver::class)->resolve($node, 'app'))
+            ->toThrow(function (ScheduleOperationException $exception): void {
+                expect($exception->error)->toBe(ScheduleErrorCode::TargetUnavailable);
+                expect($exception->step)->toBe('resolve-account');
+            });
     })->with(['offline agent' => [16, 0], 'stopped subscriber' => [0, 31]]);
 
     it('refuses an invalid stored account without an agent call', function (array $overrides): void {
@@ -133,19 +136,20 @@ describe('Schedule runtime account resolution', function (): void {
         'missing shell' => [['shell' => null]],
     ]);
 
-    it('keeps the lookup error codes and step', function (Throwable $failure, ScheduleErrorCode $error): void {
+    it('refuses a Node with no WireGuard address without an agent call', function (?string $host): void {
         $node = schedule_account_node();
+        $node->wireguard_ip = $host;
         $agents = Mockery::mock(AgentCommandRunner::class);
-        $agents->shouldReceive('run')->once()->with($node, 'account.lookup', ['user' => 'app'])->andThrow($failure);
+        $agents->shouldNotReceive('run');
         app()->instance(AgentCommandRunner::class, $agents);
 
         expect(fn () => app(SshScheduleRuntimeAccountResolver::class)->resolve($node, 'app'))
-            ->toThrow(function (ScheduleOperationException $exception) use ($error): void {
-                expect($exception->error)->toBe($error);
+            ->toThrow(function (ScheduleOperationException $exception): void {
+                expect($exception->error)->toBe(ScheduleErrorCode::NodeUnreachable);
                 expect($exception->step)->toBe('resolve-account');
             });
     })->with([
-        'refused lookup' => [new AgentCommandRefused('account.lookup', 'account.not_found', 'No account.'), ScheduleErrorCode::TargetUnavailable],
-        'unreachable agent' => [new RuntimeException('Connection failed.'), ScheduleErrorCode::NodeUnreachable],
+        'missing address' => [null],
+        'empty address' => [''],
     ]);
 });

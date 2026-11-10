@@ -11,16 +11,12 @@ use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Schedules\ScheduleRuntimeAccount;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
-use App\Infrastructure\AgentCommands\AgentCommandRefused;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
 use App\Models\NodeFact;
-use Throwable;
 
 final readonly class SshScheduleRuntimeAccountResolver implements ScheduleRuntimeAccountResolver
 {
     public function __construct(
-        private AgentCommandRunner $agents,
         private NodeAgentLiveness $liveness,
     ) {}
 
@@ -35,18 +31,11 @@ final readonly class SshScheduleRuntimeAccountResolver implements ScheduleRuntim
         $fact = NodeFact::query()->where('node_id', $node->id)->where('kind', NodeFactKind::Accounts)
             ->where('subject', '')->first();
 
-        if ($fact !== null && $this->liveness->for($node)?->state === NodeAgentState::Online) {
-            $account = $this->observedAccount($fact, $user);
-        } else {
-            try {
-                $account = $this->agents->run($node, 'account.lookup', ['user' => $user]);
-            } catch (AgentCommandRefused) {
-                $this->unavailable();
-            } catch (Throwable) {
-                $this->unreachable();
-            }
+        if ($fact === null || $this->liveness->for($node)?->state !== NodeAgentState::Online) {
+            $this->unavailable();
         }
 
+        $account = $this->observedAccount($fact, $user);
         $name = $account['user'] ?? null;
         $group = $account['group'] ?? null;
 

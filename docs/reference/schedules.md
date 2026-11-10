@@ -44,7 +44,7 @@ The Gateway prunes failed queue jobs, batch metadata, and Activity older than 30
 
 ## Execution
 
-Schedules read the Node's stored [`accounts` fact](/reference/node-agent#facts) to resolve their runtime account while its agent is online. A missing or invalid account returns `schedule.target_unavailable`. If the fact is absent or the agent is not online, the existing `account.lookup` command resolves the account.
+Retained Schedule log reads and Node-timer account resolution read the Node's stored [`accounts` fact](/reference/node-agent#facts) while its agent is online. An absent or non-current fact, an unlisted user, or an invalid account entry returns `schedule.target_unavailable`. Account resolution contacts no Node.
 
 Create, enable, disable and destroy touch no Node. The Gateway changes the Schedule's workflow or trigger on serve, waits for serve to confirm, and answers at once: HTTP 202 with an Operation that has already succeeded (R1). When serve does not confirm, the request fails with `swamp.schedule_publish_unavailable` (503) and records no Operation; repeat the same request. A manual run starts `task-command-run` and returns its running Operation with HTTP 202. An Idempotency-Key replays the original Operation.
 
@@ -177,7 +177,7 @@ Schedule operations return these codes in the Orbit error envelope. The CLI chec
 | `schedule.target_in_use` | The change would move or remove the target of an existing Schedule. |
 | `schedule.artifact_conflict` | A file at a Node timer's owned path is not the Schedule's own file. |
 | `schedule.install_failed`, `schedule.rollback_failed`, `schedule.run_failed`, `schedule.activation_failed`, `schedule.remove_failed` | The operation did not finish. |
-| `schedule.node_unreachable` | SSH to the host Node failed. |
+| `schedule.node_unreachable` | The host Node has no WireGuard address, or SSH to it failed. |
 
 ## Inspect Schedule drift
 

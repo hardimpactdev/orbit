@@ -84,7 +84,7 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 
 `accounts` lists the accounts of `/etc/passwd` in uid order, at most 512, each with the name of its primary group from `/etc/group`. The agent leaves out an entry that has no group, a name that is not a plain account name, or a home or shell that is not an absolute path without control characters. It reads two files and starts no program. Agents before 0.12.0 send no `accounts` fact.
 
-Schedules resolve their runtime account from this fact while the Node agent is online, using the Gateway's [agent liveness](#gateway-view). A missing or invalid account is refused without contacting the Node. When the fact is absent or the agent is not online, Schedules use `account.lookup`. Processes and the Node's managed user still use `account.lookup`.
+Retained Schedule log reads and Node-timer account resolution use this fact while the Node agent is online, using the Gateway's [agent liveness](#gateway-view). An absent or non-current fact, an unlisted user, or an invalid account entry returns `schedule.target_unavailable` without contacting the Node. Processes and the Node's managed user still use `account.lookup`.
 
 `units` lists each `orbit-process-*` unit, each Process container, and each role service and Process unit from the [watch list](#watch-list). `docker` is `available` or `absent`. A systemd unit also has its `load` and `sub` state; one that is not installed reads `not-found`. `awake` lists the watched awake markers that exist. Agents before 0.10.0 send neither `load`, `sub` nor `awake`.
 
