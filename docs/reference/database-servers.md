@@ -123,7 +123,13 @@ A retry with the same `--idempotency-key` returns the recorded Operation, includ
 
 Write endpoints return HTTP 202 with an Operation. List and show return `id`, `slug`, `driver`, `node_id`, `process_id`, `tag`, `port`, `status`, and `databases_count`. Show also returns `databases`, `failed_step` and `error_code`. Passwords never appear in either response.
 
-The server's Process is an ordinary Docker Node Process: read its logs, stop it, start it, or restart it with the [`process`](/cli/process) commands. `process:destroy` refuses it with `process.required_by_database_server`; remove the server instead. `process:update` accepts only an image-only update to `valkey/valkey:<tag>` for a `redis` server. For example, `orbit process:update 41 --image=valkey/valkey:8.1.3` changes the image while keeping the command, including `--aclfile`, volumes and every other specification field. An update with any other field, without `image`, or with another image repository returns `process.required_by_database_server` (409). MySQL Process updates keep the ordinary partial-update contract.
+The server's Process is an ordinary Docker Node Process: read its logs, stop it, start it, or restart it with the [`process`](/cli/process) commands. `process:destroy` refuses it with `process.required_by_database_server`; remove the server instead. MySQL Process updates keep the ordinary partial-update contract.
+
+### Update a Valkey server's image
+
+`process:update` accepts only an image-only update to `valkey/valkey:<tag>` for a `redis` server. For example, `orbit process:update 41 --image=valkey/valkey:8.1.3` changes the image while keeping the command, including `--aclfile`, volumes and every other specification field. Creation, replacement and repair use the same Docker health-check settings, so a later repair can wait for the replacement container to become healthy. Tags contain 1 through 128 letters, digits, underscores, periods or hyphens, and start with a letter, digit or underscore.
+
+Request validation runs before the server ownership check. Invalid input returns HTTP 422, including a supplied `user`, `start`, an empty `command`, or an image containing whitespace. After validation, an update with any other field, without `image`, or with another image repository returns `process.required_by_database_server` (409). Both refusals leave the Process unchanged.
 
 ## Close an adopted server
 
@@ -360,7 +366,7 @@ The server commands return these codes.
 | `database.in_use` | 409 | A session, replication object, prepared transaction, or user dependency blocks the planned database removal. Nothing is dropped. |
 | `database.name_conflict` | 409 | The name is taken on the server, a recorded test member has a foreign owner, or its managed role is missing. |
 | `database.slug_conflict` | 409 | The connection slug exists and the request is not an identical PostgreSQL pool retry. |
-| `process.required_by_database_server` | 409 | `process:destroy` names a server's Process, or a Valkey Process update is not image-only with `valkey/valkey:<tag>`. |
+| `process.required_by_database_server` | 409 | `process:destroy` names a server's Process, or a validated Valkey Process update violates the [image-update rule](#update-a-valkey-servers-image). |
 | `database.server_command_failed` | 502 | An admin command on the server failed. The message holds no SQL output, rule, or password. |
 
 
