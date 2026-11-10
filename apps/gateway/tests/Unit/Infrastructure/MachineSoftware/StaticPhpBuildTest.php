@@ -20,7 +20,10 @@ it('pins the static build of PHP 8.5 with the Node extensions less those a stati
     expect($build->phpVersion)->toStartWith('8.5.')
         ->and($build->extensions)->toBe(array_values(array_diff($recipe->php('8.5')->extensions, ['ffi', 'pcov'])))
         ->and($build->extensions)->toContain('pdo_pgsql', 'redis', 'intl', 'zend opcache', 'opentelemetry')
-        ->and($build->url)->toContain("/static-php-{$build->phpVersion}-".substr($build->build, 0, 12).'/');
+        ->and($build->url)->toContain("/static-php-{$build->phpVersion}-".substr($build->build, 0, 12).'/')
+        // Main published the build, so the recipe pins its archive and the runtime folder holds it.
+        ->and($build->artifact?->location)->toBe($build->url)
+        ->and($build->artifact?->digest)->toMatch('/\A[0-9a-f]{64}\z/');
 });
 
 it('reads a published build as an artifact pin, and one that is not published yet as none', function (): void {

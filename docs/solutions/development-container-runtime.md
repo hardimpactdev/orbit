@@ -220,7 +220,7 @@ Open as [#3294](https://github.com/hardimpactdev/orbit/pull/3294). This PR adds 
 - `bin/static-php-build` builds `php` and `frankenphp` together and checks both against the extension list.
 - The `Static PHP build` workflow builds and proves each new definition. On main it publishes the archive as a release.
 - A second reviewed commit records the release's SHA-256. From then on the runtime folder holds the build as `php/<php-version>/bin`, and its install checks both binaries with the Ansible module `orbit_static_php`.
-- The same pin PR names PHP and Composer in the environment notes. Until then the notes name Node, npm, Bun, Vite+ and rg.
+- The same pin PR names PHP and Composer in the environment notes.
 
 The same PR adds Vite+ to the runtime folder:
 
