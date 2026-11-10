@@ -32,7 +32,7 @@ def main():
     def run(test):
         started = time.monotonic()
         result = subprocess.run([str(python), '-I', str(ROOT / 'swamp/tests' / test)],
-                                env=env, capture_output=True, text=True)
+                                env=env, capture_output=True, text=True, check=False)
         return test, result, time.monotonic() - started
 
     with ThreadPoolExecutor(max_workers=2) as pool:

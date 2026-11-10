@@ -1,5 +1,4 @@
 """Exercise production command-output parsers with the pinned Ansible/Jinja engine."""
-import re
 import unittest
 from pathlib import Path
 
@@ -7,10 +6,37 @@ import yaml
 from ansible.parsing.dataloader import DataLoader
 from ansible.plugins.loader import init_plugin_loader
 from ansible.template import Templar, trust_as_template
+from jinja2 import Environment, nodes
 
 ROOT = Path(__file__).resolve().parents[1] / 'ansible'
 FIXTURES = Path(__file__).parent / 'fixtures/command-output'
-REGEX = re.compile(r'\bregex_(?:search|findall|replace)\b')
+JINJA = Environment(extensions=['jinja2.ext.do', 'jinja2.ext.loopcontrols'])
+REGEX_FILTERS = {'regex_search', 'regex_findall', 'regex_replace'}
+REGEX_TESTS = {'search', 'match', 'regex'}
+
+
+def has_regex(value, field):
+    """Read Jinja's syntax tree; native tests and selector filters are regex parsers too."""
+    conditional = field.split('[', 1)[0] in {'when', 'changed_when', 'failed_when', 'until'}
+    conditional |= field.startswith(('ansible.builtin.assert.that', 'assert.that'))
+    if '{{' not in value and '{%' not in value:
+        if not conditional:
+            return False
+        value = '{{ ' + value + ' }}'
+    for node in JINJA.parse(value).find_all((nodes.Filter, nodes.Test)):
+        name = node.name.rsplit('.', 1)[-1]
+        if isinstance(node, nodes.Test) and name in REGEX_TESTS:
+            return True
+        if isinstance(node, nodes.Filter):
+            if name in REGEX_FILTERS:
+                return True
+            index = 1 if name in {'selectattr', 'rejectattr'} else 0
+            if name in {'map', 'select', 'reject', 'selectattr', 'rejectattr'} and len(node.args) > index:
+                argument = node.args[index]
+                if (isinstance(argument, nodes.Const) and isinstance(argument.value, str)
+                        and argument.value.rsplit('.', 1)[-1] in REGEX_TESTS | REGEX_FILTERS):
+                    return True
+    return False
 
 
 def expressions(value, task='', field='', variables=None):
@@ -25,7 +51,7 @@ def expressions(value, task='', field='', variables=None):
     elif isinstance(value, list):
         for index, child in enumerate(value):
             yield from expressions(child, task, f'{field}[{index}]', variables)
-    elif isinstance(value, str) and REGEX.search(value):
+    elif isinstance(value, str) and has_regex(value, field):
         yield (task, field), (value, variables)
 
 
@@ -62,13 +88,32 @@ class CommandOutputTest(unittest.TestCase):
                     raise AssertionError(f'Ambiguous expression selector: {key}')
                 cls.inventory[key] = expression
 
-    def test_every_regex_is_exercised_or_classified_as_input_only(self):
-        covered = {tuple(row[key] for key in ('file', 'task', 'field')) for row in self.table['cases']}
-        excluded = {tuple(row[key] for key in ('file', 'task', 'field')) for row in self.table['input_only']}
+    def assert_coverage(self, inventory, table):
+        covered = {tuple(row[key] for key in ('file', 'task', 'field')) for row in table['cases']}
+        excluded = {tuple(row[key] for key in ('file', 'task', 'field')) for row in table['non_command_output']}
         self.assertEqual(covered & excluded, set())
-        self.assertEqual(set(self.inventory), covered | excluded,
-                         'Add real output cases for new parsers; classify only expressions that never parse output.')
-        self.assertTrue(all(row.get('reason') for row in self.table['input_only']))
+        self.assertEqual(set(inventory), covered | excluded,
+                         'Add real output cases for new parsers; classify only expressions that never parse command output.')
+        self.assertTrue(all(row.get('reason') for row in table['non_command_output']))
+
+    def test_every_regex_is_exercised_or_classified_without_command_output(self):
+        self.assert_coverage(self.inventory, self.table)
+
+    def test_unclassified_native_regex_tests_fail_coverage(self):
+        for expression in [
+            "result.stdout is search('ready')", "result.stdout is not match('error')",
+            "result.stdout is ansible.builtin.regex('ready')",
+            "result.stdout_lines | select('search', 'ready') | list",
+            "result.stdout_lines | reject('ansible.builtin.match', 'error') | list",
+            "result.rows | selectattr('stdout', 'search', 'ready') | list",
+            "result.rows | rejectattr('stdout', 'match', 'error') | list",
+            "result.stdout_lines | map('regex_replace', '^', '/') | list",
+        ]:
+            with self.subTest(expression=expression):
+                found = dict(expressions([{'name': 'New parser', 'when': expression}]))
+                self.assertIn(('New parser', 'when'), found)
+                with self.assertRaises(AssertionError):
+                    self.assert_coverage(found, {'cases': [], 'non_command_output': []})
 
     def test_recorded_output_through_production_expressions(self):
         for row in self.table['cases']:
