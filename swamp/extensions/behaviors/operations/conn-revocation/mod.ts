@@ -130,10 +130,11 @@ export async function readReplies(
         }
     }
     const unmatched = family === "session" &&
-        pairings.some((pairing) =>
-            pairing.delivered &&
-            !pairing.indices.some((index) => revokedIndices.includes(index))
-        );
+        ((pairings.length > 0 && revoked === 0) ||
+            pairings.some((pairing) =>
+                pairing.delivered &&
+                !pairing.indices.some((index) => revokedIndices.includes(index))
+            ));
     if (unmatched) valid = false;
     return {
         valid,
@@ -147,7 +148,7 @@ export async function readReplies(
 }
 export const behavior = {
     type: "@nckrtl/conn-revocation-plan",
-    version: "2026.11.10.2",
+    version: "2026.11.10.3",
     resources: {
         private: {
             schema: z.object({ directory: Directory, reader: z.string() }),
@@ -207,6 +208,9 @@ export const behavior = {
                             args.intent.labels,
                         )
                         : selected.ids;
+                    if (args.intent.labels.length === 0 && ids.length === 0) {
+                        throw new Error("conn.revocation_unmatched");
+                    }
                     const value = {
                         sessions: ids.map((sessionId, index) => ({
                             index,
