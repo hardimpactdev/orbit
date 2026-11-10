@@ -1,6 +1,6 @@
 # Orbit Monorepo
 
-Orbit contains ten projects. Five are separate Composer projects: CLI, Gateway, Docs, PHP SDK, and the Incus E2E harness. The web app, Pi server, Node agent, and desktop app use Bun or Cargo; [Bun and Rust projects](docs/reference/bun-and-rust-projects.md) shows how to run and check them. Read the nearest nested `AGENTS.md` before changing a project. Maintained documentation lives under root `docs/`; `apps/docs` contains its tooling.
+Orbit contains eleven projects. Five are separate Composer projects: CLI, Gateway, Docs, PHP SDK, and the Incus E2E harness. The web app, Pi server, Node agent, and desktop app use Bun or Cargo, and the egress proxy uses Go; [Bun and Rust projects](docs/reference/bun-and-rust-projects.md) shows how to run and check them. Read the nearest nested `AGENTS.md` before changing a project. Maintained documentation lives under root `docs/`; `apps/docs` contains its tooling.
 
 Every command goes through the six stages of the [command development pipeline](docs/reference/command-development-pipeline.mdx): prep, proof environment, proof, PR and CI, automatic release, per-host refresh. The page and the stage charts in `docs/reference/pipeline/` are the one source of truth for the flow. A chart beats any other text. Skills link to them and say only what you must do at your own step.
 
@@ -51,7 +51,7 @@ For documentation work, use [writing-documentation](.agents/skills/writing-docum
 
 ## Checks and resources
 
-In an Orbit task, run the tests that cover the change in each changed project: stock Pest with a file path or `--filter` in a Composer project, or the test command that [Bun and Rust projects](docs/reference/bun-and-rust-projects.md) names. Do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff. Outside a task, run `composer test` and `composer check` in each changed project. Confirm that the tests covering the feature ran. Check a framework or library API you are not sure of against the installed version: `search_docs` for the Laravel ecosystem, otherwise the package source under `vendor/` or `node_modules/`. CI checks the five Composer projects, the web app, the Pi server, and the Rust agent; root `composer check` also runs checks across projects locally.
+In an Orbit task, run the tests that cover the change in each changed project: stock Pest with a file path or `--filter` in a Composer project, or the test command that [Bun and Rust projects](docs/reference/bun-and-rust-projects.md) names. Do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff. Outside a task, run `composer test` and `composer check` in each changed project. Confirm that the tests covering the feature ran. Check a framework or library API you are not sure of against the installed version: `search_docs` for the Laravel ecosystem, otherwise the package source under `vendor/` or `node_modules/`. CI checks the five Composer projects, the web app, the Pi server, the Rust agent, and the Go egress proxy; root `composer check` also runs checks across projects locally.
 
 For dependency updates and advisories, follow [Dependencies](docs/contributor-guide.md#dependencies). Run `composer audit:dependencies` from the root.
 

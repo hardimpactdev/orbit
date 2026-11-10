@@ -9,6 +9,7 @@ covers:
   - swamp/ansible/{instance-container.yml,tasks/instance-container-phase.yml}
   - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/notes/**}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress}.yml
+  - apps/egress/**
 ---
 
 # Instance containers
@@ -244,6 +245,45 @@ Orbit sets the proxy for everything that runs in a container. Tools read the upp
 A container takes no DNS server from DHCP (`/etc/netplan/90-orbit-no-dns.yaml`), and its resolver has no fallback (`/etc/systemd/resolved.conf.d/90-orbit-no-dns.conf`). So a name lookup in a container fails at once.
 
 So Composer, npm, Bun, Vite+, Git over HTTPS, curl, apt, Guzzle and Node's `fetch` use the proxy without further settings. A tool that ignores the variables fails at its name lookup, such as PHP's `file_get_contents` on a URL or a headless browser. An Instance's own HTTP services, such as a private Reverb host, are not in `NO_PROXY` yet. UDP, so also QUIC, and other protocols get no route out. Git over SSH does not work. The container holds no GitHub credentials, so [Git in and out](#git-in-and-out) still goes through the Node.
+
+### Secret bindings
+
+**Not built.** [ADR 0254](/decisions/0254-inject-external-secrets-at-the-node-egress-proxy) decided it; the [plan](/solutions/development-container-runtime#secret-placeholders) builds it. `orbit-egress`, Orbit's own proxy in Go, replaces Squid on the same address and port, behind the same table, as user `orbit-egress`.
+
+A secret binding marks one stored environment key of an Instance. The key's stored value stays the only value.
+
+| Field | Rule |
+| --- | --- |
+| `key` | A key with a stored value. Not `APP_KEY`. |
+| `hosts` | One to eight names, exact or `*.` plus a name; letters, digits, `-`, `_` and `.`. Port 443 only. |
+| `headers` | One to four header names, `Authorization` when none is given. |
+| `placeholder` | `orbit_secret_` and 32 random lower-case letters and digits, after an optional prefix of up to 16 characters. Made once by the Gateway. |
+
+Delivery:
+
+- **Container.** Every write of `.env` (`env:sync`, create, clone, deploy) writes the placeholder for a bound key.
+- **Node.** The same run writes `/etc/orbit/egress/containers/<container>.json`, `0640` `root:orbit-egress`. It holds the container's address and its bindings with their values.
+- **Proxy.** It loads the file into memory each time the file changes.
+- **Clone.** A clone keeps its default's bindings and placeholders.
+
+Each container also gets its own CA under `/var/lib/orbit-egress/ca/<container>/`. The converge makes it with `orbit-egress ca` as user `orbit-egress`, which refuses to run as root, and the key stays there. The container trusts the certificate through its system store, and `NODE_EXTRA_CA_CERTS` names it. Each container's NIC sets `security.ipv4_filtering` and `security.mac_filtering`, so its bridge address names it.
+
+How the proxy treats a request:
+
+| Request | Result |
+| --- | --- |
+| A name in a private domain, `.orbit` among them | `403`, before any lookup |
+| A name of one label, with other characters or with an empty label | `400` |
+| A name with a private, special, IPv6 or Node address among its answers | `403` |
+| `CONNECT` to a host with no binding of this container | A tunnel, untouched. A TLS ClientHello must name the host in its SNI, or the tunnel closes. A placeholder inside reaches the host as a meaningless string. |
+| `CONNECT` to a bound host on port 443 | Read with a leaf certificate from the container's CA, over `http/1.1` only. The upstream connection verifies the server against the system roots. |
+| In a read tunnel, a request whose `Host` is not the `CONNECT` host | `421` |
+| A plain HTTP request with any placeholder of the container | `421` |
+| In a read tunnel, a request with a placeholder of a key that has no binding for its host | `421` |
+| In a read tunnel, `TRACE` | `405` |
+| A request with a placeholder of a key bound to its host | The value replaces the placeholder in the bound headers, also inside `Basic` credentials |
+
+The proxy writes one JSON line per request to the journal: `container`, `client`, `method`, `host`, `port`, `decision` (`tunnel`, `intercept`, `forward` or `refuse`), `status`, `reason` and `injected`, the injected keys' names. It never writes a value.
 
 ## Lifecycle
 

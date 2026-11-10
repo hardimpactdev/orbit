@@ -1,17 +1,18 @@
 ---
 title: "Bun and Rust projects"
-description: "How to install, run, and check the web app, the Pi server, the Node agent, and the desktop app, the Orbit projects that are not Composer projects."
+description: "How to install, run, and check the web app, the Pi server, the Node agent, the egress proxy, and the desktop app, the Orbit projects that are not Composer projects."
 ---
 
 # Bun and Rust projects
 
-Five of Orbit's ten projects are not Composer projects. This page shows how to install, run, and check each one. The [contributor guide](/contributor-guide) covers the five PHP projects and the process that every change follows.
+Six of Orbit's eleven projects are not Composer projects. This page shows how to install, run, and check each one. The [contributor guide](/contributor-guide) covers the five PHP projects and the process that every change follows.
 
 | Project | Path | Tooling | Purpose |
 | --- | --- | --- | --- |
 | Web app | `apps/web` | Bun, Vite+ | The live fleet view that the Gateway serves |
 | Pi server | `apps/pi-server` | Bun, Vite+ | Runs Pi agent sessions on a Node for task agents |
 | Node agent | `apps/agent` | Cargo | Reports Node presence, Process state, and logs to the Gateway |
+| Egress proxy | `apps/egress` | Go | Forwards Instance containers' traffic and injects their secrets ([ADR 0254](/decisions/0254-inject-external-secrets-at-the-node-egress-proxy)) |
 | Desktop app | `apps/desktop` | Bun, Cargo, Tauri 2 | A native window around the web app |
 | Swamp | `swamp` | Deno, pinned Swamp runtime | Executes Orbit operations |
 
@@ -119,6 +120,19 @@ bun apps/agent/scripts/node-agent-viewer.ts --gateway=https://gateway.orbit --re
 ```
 
 Run it from a WireGuard peer of the fleet. The [Node agent](/reference/node-agent) page describes what the agent observes, how the Gateway installs it, and how a tag releases it.
+
+## Egress proxy
+
+`apps/egress` is `orbit-egress`, written in Go on the standard library only. It has no dependencies, so it needs no install step. From `apps/egress`:
+
+```bash
+gofmt -l .
+go vet ./...
+go test -race -count=1 ./...
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o orbit-egress-linux-x86_64 ./cmd/orbit-egress
+```
+
+CI and the release use Go 1.27.3. Go builds are reproducible, so this command gives the release's bytes on any host with that Go. CI runs these when its sources change. On `main`, `.github/workflows/egress-release.yml` publishes a release named after the Git tree of `apps/egress`, with `SHA256SUMS`, when that tree has none. A reviewed commit pins its SHA-256 for Nodes.
 
 ## Desktop app
 

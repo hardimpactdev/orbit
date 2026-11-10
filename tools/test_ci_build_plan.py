@@ -141,6 +141,13 @@ class BuildPlanTest(unittest.TestCase):
                      'apps/agent/AGENTS.md'):
             self.assertFalse(self.selected([path]) & {'pi', 'agent'}, path)
 
+    def test_egress_sources_select_the_go_check(self):
+        for path in ('apps/egress/go.mod', 'apps/egress/internal/proxy/proxy.go', 'apps/egress/cmd/orbit-egress/main.go'):
+            with self.subTest(path=path):
+                self.assertEqual({'egress'}, self.selected([path]))
+        self.assertNotIn('egress', self.selected(['apps/egress/README.md']))
+        self.assertNotIn('egress', self.selected(['apps/agent/src/main.rs']))
+
     def test_each_frozen_pin_file_runs_the_published_binary_contract_check(self):
         for name in ('frozen-manifest.json', 'frozen-commands.json', 'frozen-commands-source.json'):
             for main in (False, True):

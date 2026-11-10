@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 
-JOBS = ('php', 'gateway-static', 'cli', 'cli-static', 'sdk-static', 'e2e-static', 'docs', 'api-reference', 'web', 'pi', 'agent', 'swamp', 'proof')
+JOBS = ('php', 'gateway-static', 'cli', 'cli-static', 'sdk-static', 'e2e-static', 'docs', 'api-reference', 'web', 'pi', 'agent', 'egress', 'swamp', 'proof')
 ROOT = Path(__file__).resolve().parent.parent
 # Gateway files that the Swamp gate and its Deno tests read: the grant renderer, the workflow definition that a Deno test parses, and the
 # frozen agent contract, whose check scans the Gateway and Swamp sources (the PHP job runs the same check for PHP files only).
@@ -119,7 +119,7 @@ def proof_cases(paths, selection, read, files):
 
 
 # Known source roots are explicit even for the desktop app, whose checks remain paused.
-APPS = {'agent', 'cli', 'desktop', 'docs', 'e2e', 'gateway', 'pi-server', 'web'}
+APPS = {'agent', 'cli', 'desktop', 'docs', 'e2e', 'egress', 'gateway', 'pi-server', 'web'}
 SOURCE_ROOTS = {'docs', '.github', 'bin', 'tools', '.agents', '.codex', '.githooks', 'scripts', 'swamp'}
 ROOT_INPUTS = {'.editorconfig', '.gitattributes', '.gitignore', '.node-version', 'composer.json', 'composer.lock', 'vet.json', 'LICENSE'}
 PROSE = ('.md', '.mdx', '.mmd')
@@ -257,6 +257,8 @@ def select(paths, main=False, selection=None):
                 jobs['api-reference'] = True
         if path.startswith('apps/pi-server/') and not path.endswith(('.md', '.mdx')):
             jobs['pi'] = True
+        if path.startswith('apps/egress/') and not path.endswith(('.md', '.mdx')):
+            jobs['egress'] = True
         if (path.startswith('apps/agent/') or re.match(r'apps/gateway/extensions/[^/]+/agent/', path)) and not path.endswith(('.md', '.mdx')):
             agent = jobs['agent'] = True
     jobs['swamp'] = any(swamp_checks.values())
