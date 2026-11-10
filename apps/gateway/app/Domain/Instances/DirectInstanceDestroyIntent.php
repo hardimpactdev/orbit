@@ -52,6 +52,7 @@ final readonly class DirectInstanceDestroyIntent
      */
     private function recordIntent(array $input): array
     {
+        app(ContainerInstanceDestroy::class)->assertAvailable(Instance::query()->findOrFail(ValidatedData::integer($input['instance_id'])), $input['force'] === true);
         $members = InstanceLifecycleInput::members($input);
         if (Operation::query()->whereIn('kind', ['instance.destroy'])
             ->where('target_type', 'instance')->whereIn('target_id', array_column($members, 'instance_id'))
@@ -134,7 +135,9 @@ final readonly class DirectInstanceDestroyIntent
                 throw new ResourceOperationException('instance.removal_conflict', 'The recorded Route inventory changed.', 409);
             }
             foreach (Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)->orderBy('id')->get() as $process) {
-                $control = $this->processes->inputFor($process, 'destroy');
+                $control = ($input['container_destroy'] ?? null) === null
+                    ? $this->processes->inputFor($process, 'destroy')
+                    : ['process_id' => $process->id, 'runtime' => 'container', 'name' => $process->name];
                 $nativeProcesses[] = Arr::only($control, ['process_id', 'runtime', 'name', 'on_demand', 'directory', 'vite']);
                 $runtime['processes'][] = Arr::only($control, ['process_id', 'runtime', 'name', 'vite']);
             }

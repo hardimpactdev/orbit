@@ -9,7 +9,7 @@ use App\Models\Instance;
 use Illuminate\Container\Attributes\Tag;
 
 /**
- * The tagged contributions to a container Instance's create flow. A clone runs T3, and only the Conn layer records a T3 server, so a
+ * The tagged contributions to a container Instance's create and destroy flows. A clone runs T3, and only the Conn layer records a T3 server, so a
  * clone needs at least one contribution: without one it refuses with `operation.kind_unavailable`.
  */
 final readonly class InstanceLifecycleContributions
@@ -26,6 +26,13 @@ final readonly class InstanceLifecycleContributions
         }
         if (! $present) {
             throw new ResourceOperationException('operation.kind_unavailable', 'A clone needs the Conn layer to record its T3 server.', 503);
+        }
+    }
+
+    public function projectDestroy(Instance $instance): void
+    {
+        foreach ($this->contributions as $contribution) {
+            $contribution->projectDestroy($instance);
         }
     }
 

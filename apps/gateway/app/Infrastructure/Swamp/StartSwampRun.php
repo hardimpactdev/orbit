@@ -75,6 +75,14 @@ final readonly class StartSwampRun
         }
     }
 
+    /** Submit an on-demand policy run. Policy owns durable admission keys; a later tick can observe again safely.
+     * @param  array<string, mixed>  $inputs
+     */
+    public function submit(string $workflow, array $inputs): string
+    {
+        return $this->request($this->endpoint(), ['workflowIdOrName' => $workflow, 'inputs' => $inputs])['run_id'];
+    }
+
     /** The lifecycle transition also prevents a second caller from submitting this intent. */
     private function begin(Operation $operation): bool
     {

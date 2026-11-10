@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use App\Domain\DatabaseServers\DatabaseServerCommands;
 use App\Domain\Processes\ProcessTarget;
+use App\Models\DatabaseServer;
 use App\Models\Process;
 use InvalidArgumentException;
 use SensitiveParameter;
@@ -31,7 +33,8 @@ final readonly class DockerProcessRenderer
      *     working_directory: string|null,
      *     ports: list<string>,
      *     mounts: list<array{source: string, target: string, read_only: bool}>,
-     *     environment: array<string, string>|object
+     *     environment: array<string, string>|object,
+     *     healthcheck_arguments?: list<string>
      * }
      */
     public function containerInput(
@@ -63,6 +66,7 @@ final readonly class DockerProcessRenderer
             'mounts' => $this->volumes($runtimeConfig['volumes'] ?? []),
             // An empty map stays a JSON object.
             'environment' => $environment === [] ? (object) [] : $environment,
+            ...$this->serverOptions($process),
         ];
     }
 
@@ -73,7 +77,18 @@ final readonly class DockerProcessRenderer
             'working_directory' => $process->working_directory,
             'restart_policy' => $process->restart_policy,
             'node_id' => $target->node->id,
+            ...$this->serverOptions($process),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    }
+
+    /** @return array{healthcheck_arguments?: list<string>} */
+    private function serverOptions(#[SensitiveParameter] Process $process): array
+    {
+        $server = DatabaseServer::query()->where('process_id', $process->id)->first(['driver']);
+
+        return $server instanceof DatabaseServer
+            ? ['healthcheck_arguments' => DatabaseServerCommands::healthcheckArguments($server->driver)]
+            : [];
     }
 
     /** @return array<string, mixed> */
