@@ -65,7 +65,7 @@ final class ConnPairingsController extends Controller
         $caller = $this->assertServer($request, $environment);
 
         return response()->json([
-            'data' => OperationData::fromModel($action->execute($request->node(), $environment, $caller))->toArray(),
+            'data' => OperationData::fromModel($action->execute($request->node(), $environment, $caller, $request->has('pairing_id') ? $request->integer('pairing_id') : null))->toArray(),
             'meta' => $this->meta($request),
         ], 202);
     }

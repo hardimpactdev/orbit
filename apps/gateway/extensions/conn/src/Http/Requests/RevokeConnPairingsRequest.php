@@ -16,6 +16,7 @@ final class RevokeConnPairingsRequest extends FormRequest
     {
         return [
             'node_id' => ['sometimes', 'integer', Rule::exists('nodes', 'id')],
+            'pairing_id' => ['sometimes', 'integer', 'min:1'],
         ];
     }
 
