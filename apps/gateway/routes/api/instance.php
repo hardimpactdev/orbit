@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\InstanceLogStreamsController;
 use App\Http\Controllers\Api\InstanceQueueController;
 use App\Http\Controllers\Api\InstanceReleasesController;
 use App\Http\Controllers\Api\InstanceRollbacksController;
+use App\Http\Controllers\Api\InstanceSecretBindingsController;
 use App\Http\Controllers\Api\InstancesController;
 use App\Http\Controllers\Api\InstanceSetupController;
 use App\Http\Controllers\Api\InstanceTransfersController;
@@ -163,4 +164,11 @@ Route::middleware([
     )
         ->where('websocket_app', '[a-z0-9]+(?:-[a-z0-9]+)*')
         ->name('instance:websocket:remove');
+    Route::get('instances/{instance}/secret-bindings', [InstanceSecretBindingsController::class, 'index'])->name('instance:secret:list');
+    Route::put('instances/{instance}/secret-bindings/{key}', [InstanceSecretBindingsController::class, 'store'])
+        ->where('key', '[A-Za-z_][A-Za-z0-9_]{0,254}')
+        ->name('instance:secret:bind');
+    Route::delete('instances/{instance}/secret-bindings/{key}', [InstanceSecretBindingsController::class, 'destroy'])
+        ->where('key', '[A-Za-z_][A-Za-z0-9_]{0,254}')
+        ->name('instance:secret:unbind');
 });

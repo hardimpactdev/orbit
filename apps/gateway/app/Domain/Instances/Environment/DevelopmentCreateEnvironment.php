@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Environment;
 
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
+use App\Domain\Instances\InstanceSecretBindings;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Models\DatabaseConnection;
 use App\Models\Instance;
@@ -60,7 +61,8 @@ final readonly class DevelopmentCreateEnvironment
     {
         $instance->loadMissing(['node', 'project']);
 
-        return $this->renderer->render($this->context($instance), $this->store->values($instance));
+        // A bound key's placeholder replaces its value (docs/reference/development-containers.md#secret-bindings).
+        return $this->renderer->render($this->context($instance), app(InstanceSecretBindings::class)->environment($instance, $this->store->values($instance)));
     }
 
     private function context(Instance $instance): InstanceEnvironmentContext
