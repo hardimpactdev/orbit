@@ -6,14 +6,15 @@
     set -eu
     flock --wait 120 /run/lock/orbit-self-update.lock sh -eu -c '
       remove="$1"
-      if [ -L /usr/local/bin/orbit ] && readlink /usr/local/bin/orbit | grep -Eq "^(/usr/local/bin/)?orbit-0[.][0-9]+[.]0$"; then
+      managed="orbit-0[.][1-9][0-9]{0,9}[.]0"
+      if [ -L /usr/local/bin/orbit ] && readlink /usr/local/bin/orbit | grep -Eq "^(/usr/local/bin/)?$managed$"; then
         printf "%s\n" /usr/local/bin/orbit
         if [ "$remove" = true ]; then rm -- /usr/local/bin/orbit; fi
       fi
       if [ "$remove" = true ]; then
-        find /usr/local/bin -maxdepth 1 -regextype posix-extended -type f -regex ".*/orbit-0[.][0-9]+[.]0" -print -delete
+        find /usr/local/bin -maxdepth 1 -regextype posix-extended -type f -regex ".*/$managed" -print -delete
       else
-        find /usr/local/bin -maxdepth 1 -regextype posix-extended -type f -regex ".*/orbit-0[.][0-9]+[.]0" -print
+        find /usr/local/bin -maxdepth 1 -regextype posix-extended -type f -regex ".*/$managed" -print
       fi
       if [ -f /root/.orbit/config.json ] || [ -L /root/.orbit/config.json ]; then
         printf "%s\n" /root/.orbit/config.json

@@ -11,7 +11,7 @@ Deno.test("converge retires only managed CLI files, is idempotent and detects th
         const root = `${folder}/root/.orbit`;
         await Deno.mkdir(bin);
         await Deno.mkdir(root, { recursive: true });
-        for (const name of ["orbit-0.1.0", "orbit-0.2.0", "orbit-agent", "orbit.bak.1", "orbit-0.bad.0"]) {
+        for (const name of ["orbit-0.1.0", "orbit-0.2.0", "orbit-agent", "orbit.bak.1", "orbit-0.bad.0", "orbit-0.0.0", "orbit-0.01.0", "orbit-0.12345678901.0"]) {
             await Deno.writeTextFile(`${bin}/${name}`, name);
         }
         await Deno.mkdir(`${bin}/orbit-0.3.0`);
@@ -42,7 +42,7 @@ Deno.test("converge retires only managed CLI files, is idempotent and detects th
         const first = await play(cli);
         assertEquals(first.code, 0, first.output);
         assertMatch(first.output, /changed=1\s/);
-        assertEquals([...Deno.readDirSync(bin)].map((file) => file.name).sort(), ["custom-cli", "orbit-0.3.0", "orbit-0.4.0", "orbit-0.bad.0", "orbit-agent", "orbit.bak.1"]);
+        assertEquals([...Deno.readDirSync(bin)].map((file) => file.name).sort(), ["custom-cli", "orbit-0.0.0", "orbit-0.01.0", "orbit-0.12345678901.0", "orbit-0.3.0", "orbit-0.4.0", "orbit-0.bad.0", "orbit-agent", "orbit.bak.1"]);
         assertEquals([...Deno.readDirSync(root)].map((file) => file.name), ["other.json"]);
         const second = await play(cli);
         assertEquals(second.code, 0, second.output);
