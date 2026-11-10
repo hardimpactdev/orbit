@@ -79,15 +79,20 @@ final readonly class UpdateClusterAction
 
         try {
             if ($selectionChanging) {
-                $this->dnsSelection()->expand(
-                    clusterOverrides: [$clusterId => [
-                        'tld' => $proposedTld,
-                        'state' => $proposedState,
-                    ]],
-                    clusterIds: [$clusterId],
-                );
+                $this->dnsSelection()->expand([$clusterId => [
+                    'tld' => $proposedTld,
+                    'state' => $proposedState,
+                ]]);
             }
         } catch (Throwable $exception) {
+            // The hold is stored before the render, so a failed expand can leave it up for an hour. Prune releases it first, then
+            // publishes the stored state; a failure of that publication must not hide the error that got us here.
+            try {
+                $this->dnsSelection()->prune([$clusterId]);
+            } catch (Throwable $pruned) {
+                report($pruned);
+            }
+
             if ($stateChanging) {
                 $this->lanIngress()->prune(clusterIds: [$clusterId]);
             }
@@ -139,7 +144,7 @@ final readonly class UpdateClusterAction
             });
         } catch (Throwable $exception) {
             if ($selectionChanging) {
-                $this->dnsSelection()->prune(clusterIds: [$clusterId]);
+                $this->dnsSelection()->prune([$clusterId]);
             }
 
             if ($stateChanging) {
@@ -150,7 +155,7 @@ final readonly class UpdateClusterAction
         }
 
         if ($selectionChanging) {
-            $this->dnsSelection()->prune(clusterIds: [$clusterId]);
+            $this->dnsSelection()->prune([$clusterId]);
         }
 
         if ($stateChanging) {

@@ -27,7 +27,7 @@ final class NodeBootstrapPackageCatalog
     {
         return match ($role) {
             RoleName::Gateway => ['ca-certificates', 'caddy', 'logrotate'],
-            // dig checks the listener after each publication of private DNS.
+            // dig checks the answers of dnsmasq after each publication of private DNS.
             RoleName::Vpn => ['bind9-dnsutils', 'dnsmasq', 'openssl'],
             RoleName::Router => ['caddy', 'openssl'],
             RoleName::Ingress => ['caddy'],

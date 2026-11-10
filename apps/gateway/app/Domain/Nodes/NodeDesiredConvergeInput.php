@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\Fleet\CliConvergePlan;
+use App\Domain\Routes\PrivateDnsPublicationNodes;
+use App\Infrastructure\AppDev\PrivateDnsPublication;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolPackageProtection;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -74,6 +76,8 @@ final readonly class NodeDesiredConvergeInput
             'agent' => [...$agent, 'sha256' => $delivery->pin($node), 'url' => $delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null],
             'cli' => app(CliConvergePlan::class)->nodeInput($node), 'kernel' => NodeKernelPolicy::intent(), 'updates' => NodeUpdatePolicy::for($node), 'recipe' => $recipe->json,
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']->forArchitecture('amd64')),
-            'tools' => $tools, 'network' => $network], 'execution_secrets' => $copies];
+            'tools' => $tools, 'network' => $network,
+            'dns' => in_array('vpn', $roles, true) && PrivateDnsPublicationNodes::query()->whereKey($node->id)->exists()
+                ? app(PrivateDnsPublication::class)->entry($node) : null], 'execution_secrets' => $copies];
     }
 }

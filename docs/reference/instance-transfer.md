@@ -46,6 +46,8 @@ At root terminal, the Gateway changes the Instance placement, relocates Process 
 
 Workload access, PHP, environment URLs, Caddy and DNS use the prospective placements captured during admission. Route environment material uses named vault execution copies. No step reads intent or reports progress through a Gateway callback. Certificate signing remains the scoped Gateway primitive.
 
+Route publication uses the shared [private DNS publication](/reference/private-dns): VPN DNS answers with WireGuard addresses, and eligible LAN members use their Cluster Router's LAN projection. The shared publication owns the 31-second DNS grace; transfer consumes its barrier before retiring serving resources and adds no separate DNS wait.
+
 After destination publication, Swamp removes unused source certificate and LAN artifacts, then deletes the recorded source checkout. Linked worktree removal prunes only its entry and preserves the common repository and sibling worktrees. The Gateway then retires only the replaced primary Route and records completion. Other web-root Route IDs remain unchanged.
 
 ## Failure and cancellation

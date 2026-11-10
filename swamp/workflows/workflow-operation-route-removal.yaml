@@ -51,7 +51,7 @@ jobs:
         hosts: name:target
         argv: ['/usr/bin/true']
         timeoutSec: 20
-    # Only outside the TLD: records, catalog, then dnsmasq; the name stops resolving first (route-create-dns).
+    # Only outside the TLD: the whole private DNS without the name, written by the dns-publish phase; the name stops resolving first.
   - name: 'Remove private DNS'
     labels: {role: swamp}
     dependsOn:
@@ -61,29 +61,27 @@ jobs:
     forEach: {item: vpn, in: '${{ inputs.intent.dns }}'}
     task:
       type: workflow
-      workflowIdOrName: route-create-dns
+      workflowIdOrName: dns-publish
       inputs:
-        intent: '${{ inputs.intent }}'
+        operation_id: '${{ inputs.operation_id }}'
         node_id: '${{ self.vpn.node_id }}'
-    # Resolvers that honor the TTL stop asking for the name before its site leaves (route-dns-grace).
-  - name: 'Wait the DNS grace'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'Check each Node answers', condition: {type: always}}
-    - {step: 'Remove private DNS', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed" && !k.startsWith("Check each Node answers")) }}'
-    forEach: {item: wait, in: '${{ inputs.intent.grace }}'}
-    task:
-      type: workflow
-      workflowIdOrName: route-dns-grace
-      inputs: {}
-    # Each Node's whole Caddyfile without the Route, then the Route's certificate scopes (route-target-retire).
+        kind: '${{ inputs.kind }}'
+        intent:
+          node_id: '${{ self.vpn.node_id }}'
+          connection:
+            nodeHost: '${{ inputs.intent.nodes[string(self.vpn.node_id)].host }}'
+            nodeUser: '${{ inputs.intent.nodes[string(self.vpn.node_id)].user }}'
+            nodePort: '${{ inputs.intent.nodes[string(self.vpn.node_id)].port }}'
+            nodeIdentityFile: '${{ inputs.intent.nodes[string(self.vpn.node_id)].identity_file }}'
+            become: true
+          host_keys: '${{ inputs.intent.nodes[string(self.vpn.node_id)].host_keys }}'
+          dns: '${{ self.vpn.dns }}'
+        execution_secrets: {}
   - name: 'Withdraw site, remove cert'
     labels: {role: swamp}
     dependsOn:
     - {step: 'Check each Node answers', condition: {type: always}}
     - {step: 'Remove private DNS', condition: {type: always}}
-    - {step: 'Wait the DNS grace', condition: {type: always}}
     guard: '${{ steps.exists(k, steps[k].status == "failed" && !k.startsWith("Check each Node answers")) || (string(self.node.node_id) in inputs.intent.answer_index && steps["Check each Node answers-" + string(inputs.intent.answer_index[string(self.node.node_id)])].status != "succeeded") }}'
     writes: true
     forEach: {item: node, in: '${{ inputs.intent.retire_nodes.map(n, {"node_id": n}) }}'}
@@ -104,7 +102,6 @@ jobs:
     dependsOn:
     - {step: 'Check each Node answers', condition: {type: always}}
     - {step: 'Remove private DNS', condition: {type: always}}
-    - {step: 'Wait the DNS grace', condition: {type: always}}
     - {step: 'Withdraw site, remove cert', condition: {type: always}}
     guard: '${{ steps.exists(k, steps[k].status == "failed" && !k.startsWith("Check each Node answers")) || (string(self.node.node_id) in inputs.intent.answer_index && steps["Check each Node answers-" + string(inputs.intent.answer_index[string(self.node.node_id)])].status != "succeeded") }}'
     writes: true
@@ -123,7 +120,6 @@ jobs:
     dependsOn:
     - {step: 'Check each Node answers', condition: {type: always}}
     - {step: 'Remove private DNS', condition: {type: always}}
-    - {step: 'Wait the DNS grace', condition: {type: always}}
     - {step: 'Withdraw site, remove cert', condition: {type: always}}
     - {step: 'Converge PHP-FPM pools', condition: {type: always}}
     guard: '${{ steps.exists(k, steps[k].status == "failed" && !k.startsWith("Check each Node answers")) || (string(self.node.node_id) in inputs.intent.answer_index && steps["Check each Node answers-" + string(inputs.intent.answer_index[string(self.node.node_id)])].status != "succeeded") }}'
@@ -141,7 +137,6 @@ jobs:
     dependsOn:
     - {step: 'Check each Node answers', condition: {type: always}}
     - {step: 'Remove private DNS', condition: {type: always}}
-    - {step: 'Wait the DNS grace', condition: {type: always}}
     - {step: 'Withdraw site, remove cert', condition: {type: always}}
     - {step: 'Converge PHP-FPM pools', condition: {type: always}}
     - {step: 'Remove unused LAN rules', condition: {type: always}}

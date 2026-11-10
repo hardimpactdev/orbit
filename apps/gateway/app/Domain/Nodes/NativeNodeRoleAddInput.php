@@ -19,7 +19,6 @@ use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
 use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
-use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
@@ -77,12 +76,6 @@ final readonly class NativeNodeRoleAddInput
                 $directories[] = ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
             }
         }
-        if ($role === RoleName::Vpn) {
-            $build = PhpBuildInstaller::input(new RecipeLoader()->load(), [NodePrivateDnsListenerFootprint::PhpVersion], false,
-                extras: 'keep', fpm: 'none', opentelemetry: false);
-            $phpPackages = $this->phpPackages($build);
-            $directories[] = ['path' => '/var/cache/orbit/role-php', 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
-        }
         if ($role === RoleName::AppDev) {
             $storage = app(ConfiguredStoragePathValidator::class)->validateEffective(
                 NodeSettingsData::from($node->settings ?? []), $node, new ManagedUserAccount($node->user, $node->user, $home));
@@ -108,7 +101,8 @@ final readonly class NativeNodeRoleAddInput
         $previous = array_column($before, null, 'node_id');
         $publications = array_map(static fn (array $publication): array => [
             'node_id' => $publication['node_id'], 'connection' => $publication['connection'], 'host_keys' => $publication['host_keys'],
-            'before' => ['php' => $previous[ValidatedData::integer($publication['node_id'])]['php'] ?? null, 'dns' => $previous[ValidatedData::integer($publication['node_id'])]['dns'] ?? null],
+            'before' => ['php' => $previous[ValidatedData::integer($publication['node_id'])]['php'] ?? null],
+            // The complete private DNS the run writes; the run holds no earlier DNS to return to.
             'after' => ['caddy' => $publication['caddy'], 'php' => $publication['php'], 'dns' => $publication['dns']],
         ], $publications);
 

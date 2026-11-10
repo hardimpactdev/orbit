@@ -21,7 +21,7 @@ Human output lists Node, Family, Status, Checked, Resource and Finding. JSON ret
 
 ## How Doctor reads the Node
 
-Doctor compares the Gateway's records with three facts: `host` (platform, architecture and filesystem space), `units` (role services, Process units and containers, and awake markers) and `ufw` (whether UFW is enabled, and its rules). The agent's liveness gives the agent check. There is no Swamp run, SSH read or repair action.
+Doctor compares the Gateway's records with three facts: `host` (platform, architecture and filesystem space), `units` (role services, Process units and containers, and awake markers) and `ufw` (whether UFW is enabled, and its rules). The agent's liveness gives the agent check. Cluster DNS capability comes from the shared member phase receipt; the agent watches the read-only DNS health unit and its timer. Doctor reports an unsupported delegate or a failed Cluster lookup without changing selection. Missing observations remain unverifiable. There is no Swamp run, SSH read or repair action.
 
 A check whose fact has not arrived yet, or cannot be read, gives one unverifiable `<family>.inspection_failed` finding for the family and Node: "not observed yet". Other checks continue. A Node without an observing agent, such as a Mac, gets its lifecycle checks only. A parked task VM gets an informational finding and no other check.
 

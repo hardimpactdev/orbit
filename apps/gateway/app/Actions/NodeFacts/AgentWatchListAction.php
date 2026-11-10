@@ -14,6 +14,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\Tools\NodeToolScopes;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
+use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Models\Project;
 
@@ -36,7 +37,20 @@ final readonly class AgentWatchListAction
                 $services[$service.'.service'] = true;
             }
         }
+        if ($node->platform === 'linux') {
+            foreach ($node->roles()->where('role', RoleName::Router)->whereNotNull('cluster_id')->get() as $router) {
+                if ($node->lan_ip !== null) {
+                    $services["orbit-cluster-dns-{$router->cluster_id}.service"] = true;
+                }
+            }
+            if (app(PeerDnsPolicy::class)->manages($node) && app(PeerDnsPolicy::class)->selection($node)['delegate'] !== null) {
+                $services['orbit-cluster-dns-check.service'] = true;
+                $services['orbit-cluster-dns-check.timer'] = true;
+                $services['systemd-resolved.service'] = true;
+            }
+        }
         $markers = [];
+
         foreach ($this->processes->execute($node)['processes'] as $process) {
             // A named unit is read even when systemd unloaded it, so Doctor tells a stopped Process from a missing one.
             if ($process['runtime'] === 'systemd') {

@@ -241,7 +241,7 @@ destroy-before | destroy-after)
         run=$(new_run route_node)
         started=$(now)
         if [ "$step" = destroy-before ]; then
-            printf '{"node":{"host":"%s","user":"orbit","port":22,"identity_file":"/dev/null","host_keys":["%s"],"account":"orbit"},"serves_routes":true,"reads_dns":false}' \
+            printf '{"node":{"host":"%s","user":"orbit","port":22,"identity_file":"/dev/null","host_keys":["%s"],"account":"orbit"},"serves_routes":true}' \
                 "$ip" "$(hostkey)" >"$run/intent.json"
             play "$run" route-withdraw.yml read || true
             c=$(now)

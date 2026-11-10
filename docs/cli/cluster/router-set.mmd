@@ -25,7 +25,7 @@ sequenceDiagram
   %%> Input:
   %%> - the Cluster and the active member that becomes the Router
   %%> What it does:
-  %%> - makes the candidate the Cluster Router: members on the LAN reach Cluster Routes through it over HTTPS (Cluster DNS on the Router is not built yet)
+  %%> - makes the candidate the Cluster Router: members on the LAN reach Cluster Routes through its HTTPS and dedicated DNS services
   %%> - replaces the current Router, if any, without a gap
   Note over GW: Validate, record candidate<br/>Cluster lock
   %%> Requirements:
@@ -55,7 +55,7 @@ sequenceDiagram
     %%> How:
     %%> - over SSH with `@swamp/ssh` and `@swamp/cfgmgmt` behaviors
     %%> What it does:
-    %%> - the `router` role setup: the managed account, the required packages and the pinned Caddy package
+    %%> - the `router` role setup: the managed account, required packages, pinned Caddy and the isolated Cluster dnsmasq unit; no selection yet
     %%> - an existing, matching install is left as it is
     SW->>N: Request the certificates<br/>@swamp/ssh exec · openssl req
     %%> What it does:
@@ -92,11 +92,13 @@ sequenceDiagram
     %%> - checks from the candidate that every Cluster Route's workload answers with a valid certificate
     %%> Why:
     %%> - the candidate only becomes the Router when it can serve every Route
-    Note over SW: Select the Router in DNS<br/>VPN Node over @swamp/ssh
+    SW->>M: Select the Router in DNS<br/>child dns-publish
+    %%> DNS answers:
+    %%> - the vpn Node answers WireGuard addresses; the Cluster Router resolver answers its LAN members with LAN addresses through a DNS delegate
     %%> What it does:
-    %%> - private DNS answers members' Cluster names with the candidate's LAN address, then waits the 31-second DNS grace
+    %%> - the shared publication checks the candidate LAN resolver and VPN projection, then persists and checks every eligible member's new policy before the 31-second DNS grace
     %%> How:
-    %%> - over SSH to the VPN Node, with the `swamp` role's key
+    %%> - one Ansible phase per DNS target, then the shared member phase; old Router cleanup is blocked if any member fails or remains offline
     opt a Router is replaced
       SW->>GW: Hold the Nodes to retire<br/>operation:direct:route-hold
       %%> What it does:
@@ -108,7 +110,7 @@ sequenceDiagram
       %%> When:
       %%> - only when the run replaces a Router, after the DNS grace
       %%> What it does:
-      %%> - removes the Router sites and certificates from the old Router and reloads its Caddy
+      %%> - the shared DNS child has retired the old resolver after member confirmation and grace; removes Router sites and certificates and reloads Caddy
       %%> - removes the LAN rules that only the old Router needed; it never removes WireGuard baseline rules
       %%> If it fails:
       %%> - the candidate stays the Router; the old assignment stays recorded as unfinished, and a rerun finishes it
@@ -131,7 +133,9 @@ sequenceDiagram
       %%> - a setup, certificate, firewall or Caddy step fails, a workload probe fails, or the DNS selection fails
       SW->>M: Restore the before state<br/>Caddy · LAN rules · DNS
       %%> What it does:
-      %%> - puts back the captured Caddy, firewall and DNS state, so the old Router keeps serving
+      %%> - before any DNS target successfully selects the candidate, restores only the owned candidate changes; any successful VPN or Router publication or member selection is the cutover, even if another parallel publication fails
+      %%> - after any such success, retains both Routers, sites and DNS access until forward recovery or a fresh-revision rollback moves every consumer back and completes the shared grace
+      %%> - an interrupted DNS publication may already have selected consumers; retain the candidate whenever publication started and its outcome is uncertain
       SW--xGW: Run failed<br/>error_code, failed step
       %%> The Gateway reads:
       %%> - which step failed, its error code, and whether the restore passed

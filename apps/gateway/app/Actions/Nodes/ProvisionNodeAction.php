@@ -8,7 +8,7 @@ use App\Actions\Routes\ConvergeRouteAction;
 use App\Data\Nodes\NodeData;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\AppDevTldConverger;
-use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
@@ -50,6 +50,7 @@ use App\Models\Operation;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 final readonly class ProvisionNodeAction
@@ -71,9 +72,9 @@ final readonly class ProvisionNodeAction
         private ?RouteMutationReconciler $routes = null,
         private ?ConvergeRouteAction $convergeRoute = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
-        private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?VpnConfigurationRepository $vpnConfiguration = null,
+        private ?PrivateDnsManager $dns = null,
     ) {}
 
     public function start(ProvisionNodeData $data, ?string $requestId = null): Operation
@@ -405,13 +406,6 @@ final readonly class ProvisionNodeAction
         $clock->step('router-lan-ingress');
 
         try {
-            $this->expandDnsSelection($node, $lanClusterIds);
-        } catch (Throwable $exception) {
-            $this->failDnsSelection($node, $exception, $priorActiveState, $lanClusterIds);
-        }
-        $clock->step('dns-selection');
-
-        try {
             DB::transaction(function () use ($node, $managedUser): void {
                 $node->update([
                     'user' => $managedUser,
@@ -432,8 +426,8 @@ final readonly class ProvisionNodeAction
             throw $exception;
         }
 
-        $this->dnsSelection()->prune(clusterIds: $lanClusterIds);
         $this->lanIngress()->prune(clusterIds: $lanClusterIds);
+        $this->publishRouterAddress($node);
         $clock->step('activate');
 
         if ($data->settingsProvided) {
@@ -493,7 +487,7 @@ final readonly class ProvisionNodeAction
     private function convergeRoles(Node $node, ProvisionNodeData $data): void
     {
         $converge = function () use ($node, $data): void {
-            // VPN owns the private DNS listener runtime used by the publishing roles.
+            // VPN converges first: its dnsmasq answers the private names that the publishing roles register.
             $roles = $data->roles;
             if (in_array(RoleName::Vpn, $roles, true)) {
                 $roles = [RoleName::Vpn, ...array_filter($roles, static fn (RoleName $role): bool => $role !== RoleName::Vpn)];
@@ -714,11 +708,6 @@ final readonly class ProvisionNodeAction
         return $this->lanIngress ?? app(RouterLanIngressReconciler::class);
     }
 
-    private function dnsSelection(): ClusterRouterDnsSelectionReconciler
-    {
-        return $this->dnsSelection ?? app(ClusterRouterDnsSelectionReconciler::class);
-    }
-
     /** @param list<int> $clusterIds */
     private function expandRouterLanIngress(Node $node, array $clusterIds): void
     {
@@ -738,23 +727,24 @@ final readonly class ProvisionNodeAction
         );
     }
 
-    /** @param list<int> $clusterIds */
-    private function expandDnsSelection(Node $node, array $clusterIds): void
+    /**
+     * A Router is no role of this call: only `cluster:router:set` assigns one, and it publishes the DNS itself. A Node that is
+     * already an active Router can be provisioned again with another WireGuard address, though, and its Cluster's TLD answers
+     * with that address. The roles that provisioning converges publish their own DNS before they turn active; the Router does not.
+     */
+    private function publishRouterAddress(Node $node): void
     {
-        $this->dnsSelection()->expand(
-            nodeOverrides: [
-                $node->id => [
-                    'status' => LifecycleStatus::Active,
-                    'cluster_id' => $node->cluster_id,
-                    'lan_ip' => is_string($node->lan_ip) ? $node->lan_ip : null,
-                    'wireguard_ip' => is_string($node->wireguard_ip) ? $node->wireguard_ip : null,
-                    'wireguard_public_key' => is_string($node->wireguard_public_key)
-                        ? $node->wireguard_public_key
-                        : null,
-                ],
-            ],
-            clusterIds: $clusterIds,
-        );
+        if ($node->roles()->where('role', RoleName::Router)->where('status', LifecycleStatus::Active)->exists()) {
+            // The Node is active already and its agent and settings follow, so a refused publication must not stop them: the next
+            // publication writes the whole state again.
+            try {
+                ($this->dns ?? app(PrivateDnsManager::class))->converge();
+            } catch (Throwable $exception) {
+                Log::warning('Private DNS was not republished after provisioning a Router; the next publication repairs it.', [
+                    'node_id' => $node->id, 'exception_type' => $exception::class,
+                ]);
+            }
+        }
     }
 
     private function syncRouterLanIngress(Node $node): void
@@ -776,21 +766,11 @@ final readonly class ProvisionNodeAction
             $this->lanIngress()->expand(clusterIds: $clusterIds);
         } catch (Throwable) {
         }
-
-        try {
-            $this->dnsSelection()->expand(clusterIds: $clusterIds);
-        } catch (Throwable) {
-        }
     }
 
     /** @param list<int> $clusterIds */
     private function bestEffortPruneNetwork(array $clusterIds): void
     {
-        try {
-            $this->dnsSelection()->prune(clusterIds: $clusterIds);
-        } catch (Throwable) {
-        }
-
         try {
             $this->lanIngress()->prune(clusterIds: $clusterIds);
         } catch (Throwable) {
@@ -817,32 +797,6 @@ final readonly class ProvisionNodeAction
             message: "Could not reconcile Router LAN ingress for node [{$node->name}].",
             previous: $exception,
             result: $exception instanceof FirewallOperationException ? $exception->result : null,
-        );
-        $this->handleFailure($node, $failure, $priorActiveState);
-
-        throw $failure;
-    }
-
-    /**
-     * @param  list<int>  $clusterIds
-     * @param  ?array<string, mixed>  $priorActiveState
-     */
-    private function failDnsSelection(
-        Node $node,
-        Throwable $exception,
-        ?array $priorActiveState,
-        array $clusterIds,
-    ): never {
-        $this->bestEffortPruneNetwork($clusterIds);
-
-        $failure = new NodeProvisioningException(
-            step: 'private-dns',
-            errorCode: $exception instanceof RuntimeConvergenceException
-                ? $exception->errorCode
-                : 'app-dev.dns_config_failed',
-            message: "Could not reconcile Cluster Router DNS selection for node [{$node->name}].",
-            previous: $exception,
-            result: $exception instanceof RuntimeConvergenceException ? $exception->result : null,
         );
         $this->handleFailure($node, $failure, $priorActiveState);
 

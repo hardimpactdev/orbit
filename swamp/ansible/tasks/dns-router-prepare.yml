@@ -1,0 +1,68 @@
+---
+- name: Install the resolver binary without the stock service
+  ansible.builtin.apt:
+    name: [dnsmasq-base, bind9-dnsutils]
+    state: present
+    update_cache: false
+- name: Make the dedicated configuration directory
+  ansible.builtin.file:
+    path: "{{ dns_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+- name: Inspect the owners of the LAN DNS sockets
+  ansible.builtin.command:
+    argv: [ss, -H, -tulpn, src, "{{ item }}:{{ dns_port }}"]
+  loop: "{{ dns.listen }}"
+  register: dns_router_sockets
+  changed_when: false
+- name: Inspect the dedicated resolver process
+  ansible.builtin.command:
+    argv: [systemctl, show, --property=MainPID, --value, "{{ dns_service }}"]
+  register: dns_router_pid
+  changed_when: false
+  failed_when: false
+- name: Refuse a foreign listener before preparing the unit
+  ansible.builtin.assert:
+    that: >-
+      dns_router_sockets.results | map(attribute='stdout_lines') | flatten | length == 0 or
+      (dns_router_pid.stdout | trim | int > 0 and
+      dns_router_sockets.results | map(attribute='stdout_lines') | flatten
+      | reject('search', 'pid=' ~ (dns_router_pid.stdout | trim) ~ ',') | list | length == 0)
+    fail_msg: dns.bind_conflict
+    quiet: true
+- name: Inspect the existing dedicated resolver ownership
+  ansible.builtin.slurp:
+    src: "{{ dns_unit_dir }}/{{ dns_service }}"
+  register: dns_router_unit
+  failed_when: dns_router_unit is failed and 'file not found' not in (dns_router_unit.msg | default('') | lower)
+- name: Refuse a foreign dedicated unit
+  ansible.builtin.assert:
+    that: dns_router_unit.content is not defined or (dns_router_unit.content | b64decode).startswith('# Managed by Orbit. Dedicated Cluster resolver;')
+    fail_msg: dns.unit_ownership_conflict
+    quiet: true
+- name: Keep the isolated Cluster resolver unit
+  ansible.builtin.copy:
+    content: |
+      # Managed by Orbit. Dedicated Cluster resolver; no stock or Incus configuration.
+      [Unit]
+      Description=Orbit Cluster {{ dns.cluster_id }} DNS
+      After=network-online.target
+      Wants=network-online.target
+      [Service]
+      Type=simple
+      ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file={{ dns_conf_file }} --pid-file=
+      ExecReload=/bin/kill -HUP $MAINPID
+      Restart=on-failure
+      NoNewPrivileges=true
+      ProtectSystem=strict
+      ProtectHome=true
+      PrivateTmp=true
+      [Install]
+      WantedBy=multi-user.target
+    dest: "{{ dns_unit_dir }}/{{ dns_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload dedicated resolver units

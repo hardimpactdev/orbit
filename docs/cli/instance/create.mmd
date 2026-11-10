@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Decided by the orchestrator, for Nick's review (2026-11-06): a withdrawal clears the Router answers of the Route from the private DNS catalog in the same step, not only its records.
+  %% Decided: ADR 0248 (2026-11-07): a withdrawal publishes the whole private DNS once, through the shared `dns-publish` child, after the Node's own files.
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Gateway holds each Route-serving Node from admission to the terminal state; a second Route write on it waits (docs/reference/routes.md#coordinate-publication).
   %% Target design: ADR 0244 task + full intent as inputs, token minted at admission (vault.get), Gateway renders .env from the Project env template, run budget per swamp-operation-time-budgets.
   %% Tightened: flow-tighten, rules 1-28 (rule 22: Ansible phases, 0600 credential file for the private fetch).
@@ -132,8 +132,7 @@ sequenceDiagram
     %%> - a command exits non-zero, a Process or the site does not come up, or the budget ends
     SW->>N: Withdraw the Route<br/>child route-withdraw
     %%> What it does:
-    %%> - takes back what the run published, as the reverse of the publication that the Gateway captured at admission: the Caddy site, the PHP pool, the private DNS records and the certificate folders
-    %%> - the catalog's Router answers (`overrides`, a list per requesting Node) name a Route only while the captured fleet has a site for it, as the host records do, so the name of the withdrawn Route leaves with its records in this same step and no stale answer stays
+    %%> - takes back what the run published, as the reverse of the publication that the Gateway captured at admission: the Caddy site, the PHP pool and the certificate folders, then the private DNS as one newer revision of the state before the publication (`dns-publish`)
     %%> - it runs before the run reports the failure, and the failure it reports is the one that was read before it
     %%> When:
     %%> - the setup, a Process or the Route fails, or any step fails after the Route's key was made; a failure before that leaves nothing to take back

@@ -41,8 +41,6 @@ The Gateway still sends these programs from `apps/gateway/resources` to Nodes, o
 - The remote runner files `remote/bootstrap.py` and `remote/lib/program.py`.
 - The CI cache import `tasks/ci-caches.sh`.
 
-`remote/route/publish-dns.py` and `remote/database/valkey.py` have no catalog entry and no caller. Delete them.
-
 PHP tests cover the retained bootstrap and result protocol. They start each excluded Tasks program in an isolated process through `PythonPrograms`. Tasks monitors share `tasks/unit-state.py` through `TaskUnitProgram`, which replaces `# ORBIT_TASK_UNIT_STATE` before transport.
 
 ## Why it works this way

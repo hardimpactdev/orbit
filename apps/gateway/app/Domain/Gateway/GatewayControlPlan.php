@@ -9,7 +9,6 @@ use App\Domain\Nodes\NodeWireGuardHubInput;
 use App\Domain\Nodes\SwampNode;
 use App\Domain\Nodes\SwampRoleUnits;
 use App\Domain\WireGuard\VpnSettings;
-use App\Infrastructure\AppDev\VpnDnsmasqBackendListen;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\GatewayReleases\SwampGrantRenderer;
@@ -36,8 +35,6 @@ final readonly class GatewayControlPlan
             'node_id' => $node->id,
             // Where the Gateway reaches `swamp.orbit`: the published Route listens on the WireGuard address, not on loopback.
             'address' => $node->wireguard_ip,
-            // The backend of the private DNS the Gateway serves as the hub: dnsmasq on loopback, beside systemd-resolved, as node.add writes it.
-            'dns_backend' => VpnDnsmasqBackendListen::apply("# Managed by Orbit: private DNS backend.\n"),
             // The rules the machine starts its firewall with: the recovery SSH and the trust of the network members, from the catalog every Node
             // uses, and the port the hub listens on, which only an operator rule opens. The first role converge retires the recovery rule.
             'firewall' => ['hub_port' => app(VpnSettings::class)->port(),

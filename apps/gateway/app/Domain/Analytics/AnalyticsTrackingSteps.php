@@ -9,6 +9,7 @@ use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Routes\NativeRouteCreatePlan;
 use App\Domain\Routes\NativeRouteTargetPlan;
 use App\Domain\Routes\RouteRenderContext;
+use App\Infrastructure\AppDev\PrivateDnsPublication;
 use App\Models\Node;
 use App\Support\ValidatedData;
 
@@ -20,7 +21,7 @@ final readonly class AnalyticsTrackingSteps
 {
     /**
      * @param  list<array{node_id:int,content:string}>  $caddy  Each Node's whole lasting Caddyfile.
-     * @param  list<array{node_id:int,before:mixed,after:mixed}>  $dns  Each VPN Node's records before and after.
+     * @param  list<array{node_id:int,before:mixed,after:mixed}>  $dns  Each VPN Node's complete private DNS before and after. A changed one plans `{node_id, dns}`.
      * @param  list<array{node_id:int,leaf:array<string,mixed>}>  $cleanup  The scopes no tracking site names any more.
      * @param  list<array<string,mixed>>  $leaves  The admitted tracking leaves.
      * @param  list<array{node_id:int,address:string,domain:string}>  $probes
@@ -31,9 +32,10 @@ final readonly class AnalyticsTrackingSteps
         $rows = array_map(NativeRouteCreatePlan::leaf(...), $leaves);
         $records = [];
         foreach ($dns as $row) {
-            if (is_array($row['after']) && $row['after'] != $row['before']) {
-                $after = ValidatedData::object($row['after']);
-                $records[] = ['node_id' => $row['node_id'], 'records' => $after['records'], 'catalog' => $after['catalog']];
+            $after = is_array($row['after']) ? ValidatedData::object($row['after']) : null;
+            $before = is_array($row['before']) ? ValidatedData::object($row['before']) : null;
+            if ($after !== null && ! PrivateDnsPublication::same($after, $before)) {
+                $records[] = ['node_id' => $row['node_id'], 'dns' => $after];
             }
         }
         $ids = array_values(array_unique([...array_column($caddy, 'node_id'), ...array_column($cleanup, 'node_id'), ...array_column($records, 'node_id'), ...array_column($rows, 'node_id')]));

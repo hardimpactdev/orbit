@@ -28,12 +28,11 @@ final readonly class NativeRouteUpdateProjection implements DirectOperationProje
         'Probe the site over TLS' => 'route.probe_failed',
         'Open or close the edge' => 'route.ingress_firewall_failed',
         'Move private DNS' => 'private_dns.publication_failed',
-        'Wait the DNS grace' => 'route.dns_grace_failed',
         'Withdraw the old site' => 'route.withdraw_failed',
     ];
 
     /** From here the new name serves, so a failure recovers forward. */
-    private const array AfterCutover = ['Wait the DNS grace', 'Withdraw the old site'];
+    private const array AfterCutover = ['Withdraw the old site'];
 
     public function native(Operation $operation): bool
     {

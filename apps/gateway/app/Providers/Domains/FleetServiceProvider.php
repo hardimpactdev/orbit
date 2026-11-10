@@ -23,7 +23,6 @@ use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\NetworkFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
-use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Fleet\GitHubCliReleaseCatalog;
@@ -78,7 +77,6 @@ final class FleetServiceProvider extends ServiceProvider
             CaddyPackageFootprintArtifact::class,
             CaddyFootprintArtifact::class,
             NetworkFootprintArtifact::class,
-            PrivateDnsFootprintArtifact::class,
             RouteResidueFootprintArtifact::class,
             PhpRuntimeFootprintArtifact::class,
             TmpfilesFootprintArtifact::class,

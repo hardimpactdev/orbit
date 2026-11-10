@@ -15,7 +15,7 @@ use Illuminate\Support\Sleep;
  */
 final readonly class PrivateDnsAnswerExpiry
 {
-    /** The TTL of every answer the Orbit private DNS listener returns. */
+    /** The TTL of every answer Orbit private DNS returns (`local-ttl` of the vpn Node dnsmasq). */
     public const int TtlSeconds = 30;
 
     /**

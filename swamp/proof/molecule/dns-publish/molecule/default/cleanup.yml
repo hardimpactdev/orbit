@@ -1,0 +1,18 @@
+---
+# The resolver drop-in is the proof's, not the machine's: take it away and let the resolver go back to what it had. Molecule runs this also
+# after a failed prepare, converge or verify. The lock holder and the drop-in of a killed cutover (kill.yml) are taken away there already.
+- name: Take the proof's resolver drop-in away
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Remove the drop-in and the slow-down of the old listener socket
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: [/etc/systemd/resolved.conf.d/30-orbit-local-dns.conf, /etc/systemd/system/orbit-private-dns.socket.d]
+    - name: Let systemd and the resolver read their configuration again
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+        daemon_reload: true

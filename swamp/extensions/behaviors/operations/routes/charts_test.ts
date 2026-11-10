@@ -7,7 +7,6 @@ for (
         ["operation-route-removal", [
             "Check each Node answers",
             "Remove private DNS",
-            "Wait the DNS grace",
             "Withdraw site, remove cert",
             "Converge PHP-FPM pools",
             "Remove unused LAN rules",
@@ -31,7 +30,6 @@ for (
             "Probe the site over TLS",
             "Open or close the edge",
             "Move private DNS",
-            "Wait the DNS grace",
             "Withdraw the old site",
         ]],
         ["operation-cluster-router", [
@@ -50,6 +48,7 @@ for (
             "Restore the before state",
         ]],
         ["operation-cluster-router-unset", [
+            "Withdraw the Router from DNS",
             "Hold the Route Nodes",
             "Withdraw the Router sites",
             "Release the Route Nodes",

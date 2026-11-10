@@ -426,6 +426,8 @@ If a command failed before any state or machine change, restore the previous sou
 
 For an archive-based restore, stop all Gateway writers and use a root console. Move the failed `ORBIT_HOME` aside rather than extracting over it, restore the archive's original ownership and permissions, restore the matching source commit, and reinstall its locked CLI and Gateway dependencies. Restore any external database and service configuration from the same recovery point. Clear stale Laravel configuration, then start services and repeat status, Node, Doctor, DNS, and HTTPS checks before reopening access.
 
+Private DNS revisions fence stale state on VPN Nodes, Cluster Routers and members. After restoring the Gateway, publish a fresh revision from its current intent. Keep retained DNS transitions until every affected member confirms selection; an offline member blocks withdrawal. See [DNS failure and recovery](/reference/private-dns#repair-one-peer).
+
 Do not migrate the restored database forward while attempting to run the older code. If the effective encryption key, CA private key, database, or required machine state is missing, stop: an apparently healthy process cannot prove recovery. This procedure does not roll back changes already made to other Nodes or restore application data; recover those from their own backups and review their consistency with the Gateway.
 
 ## Release alerts

@@ -24,11 +24,9 @@ def intent():
         'platform': 'linux', 'managed_user': 'orbit', 'address': '10.44.0.9',
         'bootstrap': {'host': '198.51.100.7', 'port': 2222, 'user': 'ubuntu', 'fingerprint': 'SHA256:x'},
         'identity': {'identity_file': '/swamp/identity', 'public_key': 'ssh-ed25519 control'},
-        'known_hosts_path': '/home/orbit/.ssh/known_hosts', 'packages': ['ufw'],
+        'known_hosts_path': '/home/orbit/.ssh/known_hosts', 'packages': ['ufw'], 'label': '{{ kept }}',
         'network': {'hubs': [{'ssh': HUB, 'sync_path': '/s', 'private_key_file': '/k', 'public_key': 'hubkey', 'port': 51820}],
                     'hub_files': [{'ssh': HUB, 'path': '/etc/wireguard/orbit.peers', 'content': ''}, {'ssh': {'target': {'host': '203.0.113.1'}}, 'path': '/other', 'content': 'x'}]},
-        'private_dns': [{'node_id': 9, 'ssh': {'identity_file': '/swamp/identity', 'target': {
-            'host': '198.51.100.7', 'port': 2222, 'user': 'orbit', 'host_keys': ['@ORBIT_ENROLLMENT_SSH_HOST_KEY@']}}, 'backend': '{{ kept }}'}],
         'roles': [{'kind': 'node.role_add'}], 'cli': {'plan': 1}, 'dns': [{'publication': 1}],
     }
 
@@ -54,8 +52,7 @@ class NodeAddTest(unittest.TestCase):
             self.assertEqual((hosts['node-control']['ansible_host'], hosts['node-control']['ansible_port'], hosts['node-control']['ansible_user']), ('198.51.100.7', 2222, 'ubuntu'))
             self.assertEqual((hosts['node-managed']['ansible_host'], hosts['node-managed']['ansible_user']), ('10.44.0.9', 'orbit'))
             self.assertEqual(hosts['hub0']['hub_index'], 0)
-            self.assertEqual(hosts['dns0']['dns_index'], 0)
-            # The hub keeps its own pin; the Node and its DNS host take the observed key, never the Gateway placeholder.
+            # The hub keeps its own pin; the Node takes the observed key, never the Gateway placeholder.
             self.assertEqual((folder / 'known_hosts').read_text().splitlines(), sorted([
                 f'10.44.0.9 {SSH_KEY}', f'[198.51.100.7]:2222 {SSH_KEY}', '192.0.2.1 ssh-ed25519 hub']))
             self.assertFalse((folder / 'secret-agent_secret').exists())
@@ -72,7 +69,7 @@ class NodeAddTest(unittest.TestCase):
         plays = yaml.safe_load((ANSIBLE / 'operation-node-add.yml').read_text())
         self.assertEqual([(play['hosts'], play['tags']) for play in plays], [
             ('controller', ['baseline']), ('bootstrap', ['baseline']), ('node', ['tunnel']), ('hubs', ['hub']),
-            ('node', ['agent']), ('dns', ['dns']), ('managed_linux', ['check'])])
+            ('node', ['agent']), ('managed_linux', ['check'])])
 
     def test_the_machine_phase_validates_the_sudo_rule_before_it_replaces_the_old_one(self):
         play = yaml.safe_load((ANSIBLE / 'operation-node-add.yml').read_text())[1]
@@ -103,7 +100,6 @@ class NodeAddTest(unittest.TestCase):
             folder = Path(directory)
             data = intent()
             data['network'].update(is_hub=True, hubs=[], hub_files=[])
-            data['private_dns'] = []
             (folder / 'intent.json').write_text(json.dumps(data))
             (folder / 'secret-agent_secret').write_text('observer secret')
             with mock.patch.dict(os.environ, {'ORBIT_HOST_KEY': SSH_KEY, 'ORBIT_BOOTSTRAP_AUTHORIZED_KEYS': '/root/.ssh/authorized_keys'}):

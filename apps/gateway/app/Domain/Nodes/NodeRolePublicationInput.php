@@ -128,7 +128,7 @@ final readonly class NodeRolePublicationInput
             }
         }
         if (in_array($node->id, $plan['dns_node_ids'], true)) {
-            $input['private_dns_publication'] = $this->publication->dns($node);
+            $input['private_dns_publication'] = $this->publication->dns();
         }
 
         return $input;

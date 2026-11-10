@@ -1,0 +1,39 @@
+# The private DNS phase (swamp/ansible/dns-publish.yml) against a real dnsmasq. Molecule with the delegated driver (`default` with
+# managed: false): it creates and destroys nothing. The Node is the machine that runs it: a disposable Ubuntu 26.04 machine with
+# passwordless sudo, such as a task VM (stage 2 of the command development pipeline). It installs dnsmasq, adds the address 10.99.99.1
+# to `lo`, builds the old listener setup, takes over from it, and changes the machine for good, so run it on a fresh VM only.
+#   cd swamp/proof/molecule/dns-publish && molecule test
+# The phase reaches the Node over SSH in production; here its host is the machine itself (ansible_connection: local), so everything
+# else (flock, systemd, dnsmasq, dig, files, rights) is what a vpn Node runs.
+driver:
+  name: default
+  options:
+    managed: false
+
+platforms:
+  - name: localhost
+
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      stdout_callback: ansible.builtin.default
+      callbacks_enabled: ansible.posix.profile_tasks
+      gathering: explicit
+      interpreter_python: auto_silent
+  inventory:
+    hosts:
+      all:
+        hosts:
+          localhost:
+            ansible_connection: local
+        vars:
+          # The VPN DNS address of the proof: a dummy address on `lo`, so no WireGuard is needed.
+          dns_address: 10.99.99.1
+
+scenario:
+  test_sequence:
+    - prepare
+    - converge
+    - verify
+    - cleanup

@@ -63,8 +63,7 @@ final readonly class NodeRemovalInput
         }
         $dns = [];
         foreach (PrivateDnsPublicationNodes::query()->get() as $member) {
-            $dns[] = ['node_id' => $member->id, ...app(NativeCaddyPublicationInput::class)->connectionForNode($member),
-                'before' => app(NativeRoutePublicationInput::class)->dns($member)];
+            $dns[] = ['node_id' => $member->id, ...app(NativeCaddyPublicationInput::class)->connectionForNode($member)];
         }
         $routerBefore = [];
         foreach (Node::query()->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Router)->where('status', LifecycleStatus::Active))->get() as $router) {
@@ -73,8 +72,7 @@ final readonly class NodeRemovalInput
         // Desired membership is recorded in this admission transaction; no runtime callback is needed.
         app(NodeRemovalRecords::class)->begin($snapshot);
         foreach ($dns as &$publication) {
-            $publication['after'] = app(NativeRoutePublicationInput::class)->dns(Node::query()->findOrFail($publication['node_id']));
-            $publication['alternatives'] = [];
+            $publication['dns'] = app(NativeRoutePublicationInput::class)->dns();
         }
         unset($publication);
         $peers = [];

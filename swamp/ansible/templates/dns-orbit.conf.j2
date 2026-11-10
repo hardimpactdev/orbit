@@ -1,0 +1,33 @@
+{#-
+  orbit.conf: the one file the stock dnsmasq reads from /etc/dnsmasq.d (read at start only).
+  Pure: it reads `dns` (listen, tlds), `dns_local_resolver`, `dns_upstream` (IPv4 resolvers of the Node's uplink), `dns_hosts_path` and `dns_servers_path`.
+  It holds no revision, so a publication that changes only records leaves it as it was and dnsmasq reloads instead of restarting.
+-#}
+# Managed by Orbit (dns-publish). Do not edit: the next publication rewrites this file.
+{% for address in dns.listen %}
+listen-address={{ address }}
+{% endfor %}
+{# The Node's own resolver: systemd-resolved on the vpn Node sends every name here. #}
+{% if dns_local_resolver is not none %}
+listen-address={{ dns_local_resolver }}
+{% endif %}
+bind-dynamic
+no-resolv
+no-hosts
+local-ttl=30
+# A single-label name and a reverse lookup of a private address are answered here, never forwarded upstream.
+domain-needed
+bogus-priv
+# Nothing under .orbit leaves the Node: a name that is no exact record is NXDOMAIN.
+{% for zone in dns_local_zones %}
+local=/{{ zone }}/
+{% endfor %}
+{% for server in dns_upstream %}
+server={{ server }}
+{% endfor %}
+{% for tld in dns.tlds | sort(attribute='name') %}
+address=/.{{ tld.name }}/{{ tld.address }}
+local=/{{ tld.name }}/
+{% endfor %}
+addn-hosts={{ dns_hosts_path }}
+servers-file={{ dns_servers_path }}

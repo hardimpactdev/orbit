@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Infrastructure\AppDev\PrivateDnsPublication;
 use App\Support\ValidatedData;
 use stdClass;
 
@@ -46,6 +47,9 @@ final readonly class NativeRoutePublicationArtifacts
      */
     public function intern(array &$artifacts, string $kind, array $artifact, array &$indexes): int
     {
+        if ($kind === 'dns') {
+            $artifact['content_digest'] = PrivateDnsPublication::contentDigest($artifact);
+        }
         if (! isset($indexes[$kind])) {
             $indexes[$kind] = [];
             foreach ($artifacts[$kind] as $index => $existing) {
@@ -86,20 +90,14 @@ final readonly class NativeRoutePublicationArtifacts
      */
     public function scope(array $states): array
     {
-        $caddy = $php = $records = $catalogs = [];
+        $caddy = $php = [];
         foreach ($states as $name => $state) {
             $caddy[$name] = $this->caddyGroups(ValidatedData::object($state['caddy']));
             $php[$name] = $this->phpGroups(ValidatedData::object($state['php']));
-            $dns = $state['dns'] === null ? null : ValidatedData::object($state['dns']);
-            $records[$name] = $dns === null ? [] : $this->records(ValidatedData::string($dns['records']));
-            $catalogs[] = $dns === null ? new stdClass : json_decode(ValidatedData::string($dns['catalog']), false, 512, JSON_THROW_ON_ERROR);
         }
         $caddyKeys = $this->changedKeys(array_values($caddy));
         $phpKeys = $this->changedKeys(array_values($php));
-        $dnsKeys = $this->changedKeys(array_values($records));
-        $missing = new stdClass;
-        $catalogs = $this->scopeValues($catalogs, $missing);
-        foreach (array_keys($states) as $index => $name) {
+        foreach (array_keys($states) as $name) {
             $state = &$states[$name];
             $input = ValidatedData::object($state['caddy']);
             $state['caddy'] = $this->caddySubset($input, $caddyKeys);
@@ -113,12 +111,6 @@ final readonly class NativeRoutePublicationArtifacts
                 }
             }
             $state['php'] = [...$input, 'configurations' => (object) $configurations];
-            if ($state['dns'] !== null) {
-                $dns = ValidatedData::object($state['dns']);
-                $lines = array_intersect_key($records[$name], array_fill_keys($dnsKeys, true));
-                $catalog = json_encode($catalogs[$index] === $missing ? new stdClass : $catalogs[$index], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
-                $state['dns'] = [...$dns, 'records' => "# Managed by Orbit.\n".implode("\n", $lines)."\n", 'catalog' => $catalog, 'digest' => hash('sha256', $catalog)];
-            }
             unset($state['certificate_scopes']);
         }
         unset($state);
@@ -213,19 +205,6 @@ final readonly class NativeRoutePublicationArtifacts
         return ['prefix' => $prefix, 'groups' => $groups];
     }
 
-    /** @return array<string,string> */
-    private function records(string $text): array
-    {
-        $records = [];
-        foreach (explode("\n", $text) as $line) {
-            if (preg_match('/^(host-record)=([^,]+),.+$|^(address|local)=\/([^\/]+)\//', $line, $match) === 1) {
-                $records[($match[1] !== '' ? $match[1].':'.$match[2] : $match[3].':'.$match[4])] = $line;
-            }
-        }
-
-        return $records;
-    }
-
     /** @param list<array<string,mixed>> $maps
      * @return list<string>
      */
@@ -238,31 +217,5 @@ final readonly class NativeRoutePublicationArtifacts
 
             return count(array_unique($values, SORT_REGULAR)) > 1;
         }));
-    }
-
-    /** @param list<mixed> $values
-     * @return list<mixed>
-     */
-    private function scopeValues(array $values, stdClass $missing): array
-    {
-        $encoded = array_map(static fn (mixed $value): ?string => $value === $missing ? null : json_encode($value, JSON_THROW_ON_ERROR), $values);
-        if (count(array_unique($encoded, SORT_REGULAR)) === 1) {
-            return array_fill(0, count($values), $missing);
-        }
-        if (! array_all($values, static fn (mixed $value): bool => $value === $missing || $value instanceof stdClass || $value === [])) {
-            return $values;
-        }
-        $objects = array_map(static fn (mixed $value): array => $value instanceof stdClass && $value !== $missing ? get_object_vars($value) : [], $values);
-        $result = array_map(static fn (): stdClass => new stdClass, $values);
-        foreach (array_unique(array_merge(...array_map(array_keys(...), $objects))) as $key) {
-            $children = $this->scopeValues(array_map(static fn (array $value): mixed => array_key_exists($key, $value) ? $value[$key] : $missing, $objects), $missing);
-            foreach ($children as $index => $child) {
-                if ($child !== $missing) {
-                    $result[$index]->{$key} = $child;
-                }
-            }
-        }
-
-        return $result;
     }
 }

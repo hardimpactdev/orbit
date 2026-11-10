@@ -105,6 +105,13 @@ sequenceDiagram
       %%> Result:
       %%> - the phase has no recorded configuration or handshake to apply
     end
+    opt VPN role in scope
+      %% path: publish-private-dns
+      SW->>SW: Publish private DNS<br/>child dns-publish
+      %%> What it does:
+      %%> - publishes the complete admitted private DNS state through the shared child after network convergence
+      %%> - a failed publication fails the check phase; base-only convergence does not publish DNS
+    end
     SW->>N: Check the Node<br/>Ansible phase: check
     %%> What it does:
     %%> - checks the selected software, units and role configuration, plus the recorded tunnel; on a target hub, every recorded peer on its interface, with no handshake wait

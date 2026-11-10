@@ -17,6 +17,16 @@ jobs:
 - name: router
   labels: {role: swamp}
   steps:
+  - name: Withdraw the Router from DNS
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: cluster-router-select
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        kind: '${{ inputs.kind }}'
+        intent: '${{ inputs.intent }}'
   - name: Hold the Route Nodes
     labels: {role: swamp}
     queueTimeout: 30
@@ -32,9 +42,10 @@ jobs:
         env:
           ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-hold" }}
           ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
-    dependsOn: []
+    dependsOn: [{step: Withdraw the Router from DNS, condition: {type: succeeded}}]
     # Each Router Node's whole Caddyfile without the Router sites, then its certificates (route-target-retire).
   - name: 'Withdraw the Router sites'
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
     labels: {role: swamp}
     dependsOn:
     - {step: Hold the Route Nodes, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}

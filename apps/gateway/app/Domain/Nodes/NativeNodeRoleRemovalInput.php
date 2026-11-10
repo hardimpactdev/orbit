@@ -195,7 +195,7 @@ final readonly class NativeNodeRoleRemovalInput
             }
             $publications[] = ['node_id' => $after['node_id'], 'control_node_id' => SwampNode::id(),
                 'host_keys' => $after['host_keys'], 'connection' => $after['connection'],
-                'before' => array_intersect_key($prior, array_flip(['caddy', 'php', 'dns'])),
+                'before' => array_intersect_key($prior, array_flip(['caddy', 'php'])),
                 'after' => array_intersect_key($after, array_flip(['caddy', 'php', 'dns']))];
         }
 

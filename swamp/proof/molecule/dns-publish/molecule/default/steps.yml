@@ -1,0 +1,260 @@
+---
+# The steps of converge.yml, as data. A step is one publication and what must be true after it.
+#   revision, tlds, records     the render (dns.* of the intent); the listen address is {{ dns_address }}
+#   succeeds, result            the exit code of the phase and the result.json it wrote (the Gateway's terminal result)
+#   changed                     the number of changes the phase reports for the Node (only where it is exact)
+#   pid                         `same` after a reload or a skip, `new` after a restart
+#   files_kept                  after a failure, orbit.conf, orbit.hosts, orbit.servers and orbit.revision are as they were
+#   stop_dnsmasq                dnsmasq is stopped before the step (it crashed); the files are not touched
+#   listener                    `running` or `stopped`: the old listener's socket after the step
+#   loaded                      `present` or `absent`: orbit.conf.loaded, the copy dnsmasq last started with
+#   legacy_present              files of the old listener setup that must be back in place after the step
+#   leak                        a stray config makes dnsmasq answer an AAAA for gateway.orbit during the step
+#   queries                     what dnsmasq answers afterwards: status, the addresses it must give (data) or must not (not_data), nodata;
+#                               a query may name `server`, default the VPN address (the Node's own resolver is 127.0.0.55)
+tld_test: &tld_test {name: test, address: 10.99.99.7}
+tld_prod: &tld_prod {name: prod, address: 10.99.99.8}
+tld_dev: &tld_dev {name: dev, address: 10.99.99.14}
+rec_gateway: &rec_gateway {name: gateway.orbit, address: 10.99.99.2, pair: true}
+rec_x: &rec_x {name: x.test, address: 10.99.99.9, pair: false}
+rec_app: &rec_app {name: app.example.com, address: 10.99.99.3, pair: true}
+rec_x2: &rec_x2 {name: x2.test, address: 10.99.99.10, pair: false}
+rec_new: &rec_new {name: new.example.org, address: 10.99.99.11, pair: true}
+
+# The questions of ADR 0248, for the state after step 1.
+answers_base: &answers_base
+  - {name: gateway.orbit, type: A, data: [10.99.99.2]}
+  - {name: gateway.orbit, type: AAAA, nodata: true}
+  # Below an exact .orbit name nothing is forwarded: the child is NXDOMAIN at once (local=/orbit/, no forward rule).
+  - {name: x.gateway.orbit, type: A, status: NXDOMAIN}
+  - {name: x.test, type: A, data: [10.99.99.9]}
+  - {name: x.test, type: AAAA, nodata: true}
+  - {name: foo.test, type: A, data: [10.99.99.7]}
+  - {name: foo.test, type: AAAA, nodata: true}
+  - {name: app.example.com, type: A, data: [10.99.99.3]}
+  - {name: app.example.com, type: AAAA, nodata: true}
+  - {name: www.app.example.com, type: A, not_data: [10.99.99.3], any_status: true}
+  # The Node's own resolver (systemd-resolved sends every name of the vpn Node to 127.0.0.55): the same dnsmasq answers there after the cutover.
+  - {name: gateway.orbit, type: A, data: [10.99.99.2], server: 127.0.0.55}
+  - {name: x.test, type: A, data: [10.99.99.9], server: 127.0.0.55}
+  - {name: app.example.com, type: AAAA, nodata: true, server: 127.0.0.55}
+  # local=/orbit/ and domain-needed: an unknown name under .orbit and a single-label name never leave the Node.
+  - {name: unknown.orbit, type: A, status: NXDOMAIN}
+  - {name: unknown.orbit, type: A, status: NXDOMAIN, server: 127.0.0.55}
+  - {name: onelabel, type: A, status: NXDOMAIN}
+
+# The files of the candidate, which a recovery removes, and the files of the old listener setup, which it puts back.
+candidate_files: &candidate_files
+  - /etc/dnsmasq.d/orbit.conf
+  - /var/lib/orbit/dnsmasq/orbit.hosts
+  - /var/lib/orbit/dnsmasq/orbit.servers
+legacy_files: &legacy_files
+  - /etc/dnsmasq.d/orbit-vpn.conf
+  - /etc/dnsmasq.d/orbit-records.conf
+  - /etc/dnsmasq.d/ubuntu-fan
+  - /etc/systemd/system/orbit-private-dns.socket
+  - /etc/systemd/system/orbit-private-dns.service
+  - /var/lib/orbit/private-dns/catalog.json
+
+# What the restored old setup answers: the old listener on the VPN address over UDP and TCP (the fake one of prepare.yml answers
+# gateway.orbit), and the backend on the Node's own address (its host-record gives the VPN address).
+old_listener_answers: &old_listener_answers
+  - {name: gateway.orbit, type: A, data: [10.99.99.2]}
+  - {name: gateway.orbit, type: A, data: [10.99.99.2], tcp: true}
+  - {name: gateway.orbit, type: A, data: [10.99.99.1], server: 127.0.0.55}
+
+steps:
+  # The old listener holds the address; the phase stops it, restarts dnsmasq onto the address, and retires the old setup.
+  # The first cutover fails its check: the phase puts the old listener setup back from its snapshot (the binds-interfaces snippet and the
+  # unit states included), checks that the old listener and the backend answer, and leaves no `orbit.conf.loaded`, because the dnsmasq that
+  # runs is not the one of the new orbit.conf. The snapshot and the marker go with a recovery that succeeded.
+  - name: a failed first cutover puts the old listener back
+    revision: "1762540000000001"
+    tlds: [*tld_test]
+    records: [*rec_gateway, *rec_x, *rec_app]
+    leak: true
+    succeeds: false
+    result: {error_code: dns.check_failed, recovered: true}
+    listener: running
+    loaded: absent
+    snapshot: absent
+    marker: absent
+    gone: *candidate_files
+    legacy_present: *legacy_files
+    queries: *old_listener_answers
+
+  # The controller dies in the middle of the first cutover and dnsmasq cannot start (a blocker holds a second listen address that the file
+  # names). Nobody runs the rescue of the play: the detached cutover script restores the old listener itself and says so in cutover.state.
+  # The snapshot and the marker stay for the next publication, and so does the lock holder of the dead play (kill.yml asserts that).
+  - name: a killed controller and a dnsmasq that cannot start leave the old listener answering
+    revision: "1762540000000001"
+    tlds: [*tld_test]
+    records: [*rec_gateway, *rec_x, *rec_app]
+    listen_extra: ["10.99.99.77"]
+    kill_in_cutover: true
+    succeeds: false
+    result: {}
+    cutover_state: "recovered dnsmasq_"
+    listener: running
+    loaded: absent
+    snapshot: present
+    marker: present
+    gone: *candidate_files
+    legacy_present: *legacy_files
+    queries: *old_listener_answers
+
+  # The next publication fails its check too. It waits for the dead holder to expire (a dead holder does not release; the proof scales the
+  # lock to 60 s), reuses the snapshot of the killed run, and so restores the ORIGINAL old listener setup (files and unit states), not the
+  # candidate that the killed run had installed.
+  - name: a failed retry of the killed cutover restores the original old listener setup
+    revision: "1762540000000001"
+    tlds: [*tld_test]
+    records: [*rec_gateway, *rec_x, *rec_app]
+    lock_scaled: true
+    leak: true
+    succeeds: false
+    result: {error_code: dns.check_failed, recovered: true}
+    listener: running
+    loaded: absent
+    snapshot: absent
+    marker: absent
+    gone: *candidate_files
+    legacy_present: *legacy_files
+    queries: *old_listener_answers
+
+  # The retry, with the same revision (no run recorded one), is the whole cutover: it restarts dnsmasq and stops the listener. A dig loop
+  # runs during the step and prints the handover gap (the bound is 3000 ms).
+  - name: the retry of the first cutover restarts dnsmasq and stops the listener
+    revision: "1762540000000001"
+    tlds: [*tld_test]
+    records: [*rec_gateway, *rec_x, *rec_app]
+    measure_gap: true
+    result: {revision: "1762540000000001", dnsmasq: restarted}
+    pid: new
+    listener: stopped
+    loaded: present
+    snapshot: absent
+    marker: absent
+    queries: *answers_base
+
+  - name: the same revision again is superseded
+    revision: "1762540000000001"
+    tlds: [*tld_test]
+    records: [*rec_gateway, *rec_x, *rec_app]
+    result: {revision: "1762540000000001", dnsmasq: unchanged, skipped: dns.revision_superseded}
+    changed: 0
+    pid: same
+    queries: *answers_base
+
+  - name: an older differing revision cannot authorize downstream retirement
+    succeeds: false
+    revision: "1762540000000000"
+    tlds: [*tld_test]
+    records: [*rec_gateway]
+    result: {revision: "1762540000000001", dnsmasq: unchanged, skipped: dns.revision_superseded, error_code: dns.resolver_selection_incomplete}
+    changed: 0
+    pid: same
+    queries: *answers_base
+
+  # Only the revision file changes.
+  - name: a newer revision with the same data changes nothing but the revision
+    revision: "1762540000000002"
+    tlds: [*tld_test]
+    records: [*rec_gateway, *rec_x, *rec_app]
+    result: {revision: "1762540000000002", dnsmasq: unchanged}
+    changed: 1
+    pid: same
+    queries: *answers_base
+
+  # hosts and servers change, orbit.conf does not: SIGHUP, so the process stays. After the step the proof models a run that was killed
+  # between the install and the SIGHUP: the new files are in place, dnsmasq knows the old ones, the revision is the old one, and the marker
+  # is there.
+  - name: new records reload dnsmasq without a restart
+    revision: "1762540000000003"
+    tlds: [*tld_test]
+    records: [*rec_gateway, *rec_x, *rec_app, *rec_x2, *rec_new]
+    result: {revision: "1762540000000003", dnsmasq: reloaded}
+    pid: same
+    interrupt_after: true
+    interrupt_probe: {name: x2.test, address: 10.99.99.10}
+    queries:
+      - {name: x2.test, type: A, data: [10.99.99.10]}
+      - {name: x2.test, type: AAAA, nodata: true}
+      - {name: new.example.org, type: A, data: [10.99.99.11]}
+      - {name: new.example.org, type: AAAA, nodata: true}
+      - {name: child.new.example.org, type: A, not_data: [10.99.99.11], any_status: true}
+      - {name: gateway.orbit, type: A, data: [10.99.99.2]}
+
+  # The retry of the record publication: the files already match, yet the marker says that a reload is owed, so dnsmasq reloads and answers.
+  - name: the retry of an interrupted record publication reloads although the files match
+    revision: "1762540000000003"
+    tlds: [*tld_test]
+    records: [*rec_gateway, *rec_x, *rec_app, *rec_x2, *rec_new]
+    result: {revision: "1762540000000003", dnsmasq: reloaded}
+    pid: same
+    marker: absent
+    snapshot: absent
+    queries:
+      - {name: x2.test, type: A, data: [10.99.99.10]}
+      - {name: new.example.org, type: A, data: [10.99.99.11]}
+      - {name: new.example.org, type: AAAA, nodata: true}
+
+  # A TLD is read at start only: the process is replaced.
+  - name: a new TLD restarts dnsmasq
+    revision: "1762540000000004"
+    tlds: [*tld_test, *tld_prod]
+    records: [*rec_gateway, *rec_x, *rec_app, *rec_x2, *rec_new]
+    result: {revision: "1762540000000004", dnsmasq: restarted}
+    pid: new
+    queries:
+      - {name: foo.prod, type: A, data: [10.99.99.8]}
+      - {name: foo.prod, type: AAAA, nodata: true}
+      - {name: foo.test, type: A, data: [10.99.99.7]}
+
+  - name: invalid data is refused and installs nothing
+    revision: "1762540000000005"
+    tlds: [*tld_test, *tld_prod]
+    records: [*rec_gateway, {name: BAD.test, address: 10.99.99.12, pair: false}]
+    succeeds: false
+    result: {error_code: dns.config_invalid}
+    files_kept: true
+    pid: same
+    queries:
+      - {name: gateway.orbit, type: A, data: [10.99.99.2]}
+
+  # The stray config answers an AAAA for gateway.orbit once dnsmasq restarts onto the new TLD: the check fails, the phase puts back the last good files.
+  - name: a wrong answer fails the check and puts the last good files back
+    revision: "1762540000000006"
+    tlds: [*tld_test, *tld_prod, *tld_dev]
+    records: [*rec_gateway, *rec_x, *rec_app, *rec_x2, *rec_new]
+    leak: true
+    succeeds: false
+    result: {error_code: dns.check_failed, recovered: true}
+    files_kept: true
+    snapshot: absent
+    marker: absent
+
+  # The stray config is gone. The restore restarted dnsmasq on the last good orbit.conf, so the new one differs from what runs: restart.
+  - name: the next newer revision repairs the Node
+    revision: "1762540000000007"
+    tlds: [*tld_test, *tld_prod, *tld_dev]
+    records: [*rec_gateway, *rec_x, *rec_app, *rec_x2, *rec_new]
+    result: {revision: "1762540000000007", dnsmasq: restarted}
+    pid: new
+    queries:
+      - {name: foo.dev, type: A, data: [10.99.99.14]}
+      - {name: gateway.orbit, type: A, data: [10.99.99.2]}
+      - {name: gateway.orbit, type: AAAA, nodata: true}
+
+  # dnsmasq crashed; the files and the data are the same, only the revision is newer. Nothing drifts, yet dnsmasq must start again.
+  - name: a stopped dnsmasq is restarted although no file changed
+    revision: "1762540000000008"
+    tlds: [*tld_test, *tld_prod, *tld_dev]
+    records: [*rec_gateway, *rec_x, *rec_app, *rec_x2, *rec_new]
+    stop_dnsmasq: true
+    result: {revision: "1762540000000008", dnsmasq: restarted}
+    pid: new
+    queries:
+      - {name: foo.dev, type: A, data: [10.99.99.14]}
+      - {name: gateway.orbit, type: A, data: [10.99.99.2]}
+      - {name: gateway.orbit, type: AAAA, nodata: true}

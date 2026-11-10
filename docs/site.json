@@ -439,7 +439,7 @@
     },
     {
       "source": "/decisions/0062-select-cluster-router-dns-addresses-from-lan-intent",
-      "destination": "/reference/private-dns#cluster-router-addresses"
+      "destination": "/reference/private-dns#answers"
     },
     {
       "source": "/decisions/0063-prefer-active-cluster-tlds-for-generated-routes",
@@ -495,7 +495,7 @@
     },
     {
       "source": "/decisions/0149-install-the-private-dns-listener-from-the-gateway",
-      "destination": "/reference/private-dns#release-and-sockets"
+      "destination": "/reference/private-dns#the-vpn-node-dns"
     },
     {
       "source": "/decisions/0156-route-the-private-domain-on-the-gateway-machine-to-vpn-dns",

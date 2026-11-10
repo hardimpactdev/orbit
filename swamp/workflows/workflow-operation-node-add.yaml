@@ -89,7 +89,7 @@ jobs:
     task: {type: behavior, behaviorType: '@nckrtl/node-enrollment-plan', behaviorName: '${{ "node-add-resources-"+string(inputs.node_id) }}', methodName: bind, inputs: {platform: '${{
           inputs.intent.platform }}', expected_architecture: '${{ inputs.intent.expected_architecture }}', observation: '${{ steps["Read the platform"].outputs }}', host_key: '${{ steps["Read
           the host key"].outputs }}', roles: '${{ inputs.intent.roles }}', cli: '${{ inputs.intent.cli }}', bootstrap_user: '${{ inputs.intent.bootstrap.user }}', bootstrap_account: '${{
-          inputs.intent.platform == "linux" ? steps["Read the bootstrap account-0"].outputs : null }}', dns: '${{ inputs.intent.dns }}', private_dns: '${{ inputs.intent.private_dns }}'}}
+          inputs.intent.platform == "linux" ? steps["Read the bootstrap account-0"].outputs : null }}', dns: '${{ inputs.intent.dns }}'}}
   dependsOn:
   - {job: bootstrap_account, condition: {type: succeeded}}
 - name: intent
@@ -271,49 +271,30 @@ jobs:
     concurrency: 1
   dependsOn:
   - {job: cli, condition: {type: completed}}
-- name: dns_backend
-  labels: {role: swamp}
-  steps:
-  - name: Configure DNS backend
-    labels: {role: swamp}
-    writes: true
-    guard: ${{ inputs.intent.platform != "linux" || inputs.intent.private_dns.size() == 0 }}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-node-add-dns-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags dns "$ORBIT_ANSIBLE/operation-node-add.yml"
-        env: *ansible
-  dependsOn:
-  - {job: roles, condition: {type: succeeded}}
-- name: dns_listener
-  labels: {role: swamp}
-  dependsOn:
-  - {job: dns_backend, condition: {type: succeeded}}
-  steps:
-  - name: Install DNS listener
-    labels: {role: swamp}
-    writes: true
-    forEach:
-      item: dns
-      in: ${{ steps["Bind the Node identity"].outputs.private_dns }}
-    task: {type: workflow, workflowIdOrName: node-private-dns, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.dns.node_id }}', kind: '${{ inputs.kind }}', intent: '${{
-          self.dns }}'}}
 - name: dns_publish
   labels: {role: swamp}
   steps:
   - name: Publish private DNS
     labels: {role: swamp}
-    task: {type: workflow, workflowIdOrName: route-dns-publish, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{
-          self.publication }}', execution_secrets: {}}}
+    task:
+      type: workflow
+      workflowIdOrName: dns-publish
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ self.publication.node_id }}'
+        kind: '${{ inputs.kind }}'
+        intent:
+          node_id: '${{ self.publication.node_id }}'
+          connection: '${{ self.publication.connection }}'
+          host_keys: '${{ self.publication.host_keys }}'
+          dns: '${{ self.publication.dns }}'
+        execution_secrets: {}
     writes: true
     forEach:
       item: publication
       in: ${{ steps["Bind the Node identity"].outputs.dns }}
   dependsOn:
-  - {job: dns_listener, condition: {type: succeeded}}
+  - {job: roles, condition: {type: succeeded}}
 - name: mac
   labels: {role: swamp}
   steps:
@@ -372,8 +353,6 @@ jobs:
   - {job: managed, condition: *settled}
   - {job: cli, condition: *settled}
   - {job: roles, condition: *settled}
-  - {job: dns_backend, condition: *settled}
-  - {job: dns_listener, condition: *settled}
   - {job: dns_publish, condition: *settled}
   - {job: mac, condition: *settled}
   - {job: state, condition: *settled}

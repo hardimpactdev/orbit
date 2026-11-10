@@ -1,0 +1,95 @@
+---
+# The controller dies in the middle of the first cutover while dnsmasq cannot start. The play is killed (SIGKILL, as the timeout of its Swamp
+# step or a worker crash does) while the old listener socket is being stopped, which a drop-in slows down by 6 seconds. The play's intent
+# lists a second listen address, 10.99.99.77, that a blocker (another dnsmasq) holds: `dnsmasq --test` accepts the file, and the start
+# of dnsmasq fails. Nobody is left to run the rescue of the play. What the proof asserts, without touching the lock holder that the dead
+# play left behind:
+#   - the detached cutover script restores the old listener by itself and writes `recovered ...` to cutover.state, within 120 s;
+#   - the lock holder of the dead play is still there (a dead holder does not release; it expires after dns_lock_hold, scaled to 60 s here),
+#     and the next step, which publishes again, waits for that real expiry and succeeds.
+- name: Hold the second listen address with a blocker, and slow down the stop of the old listener socket
+  become: true
+  block:
+    - name: Make the folder of the drop-in
+      ansible.builtin.file:
+        path: /etc/systemd/system/orbit-private-dns.socket.d
+        state: directory
+        mode: "0755"
+    - name: Write the drop-in
+      ansible.builtin.copy:
+        content: "[Socket]\nExecStopPre=/bin/sh -c 'touch /run/orbit-proof-stopping; sleep 6'\n"
+        dest: /etc/systemd/system/orbit-private-dns.socket.d/zz-proof.conf
+        mode: "0644"
+    - name: Read the drop-in
+      ansible.builtin.systemd:
+        daemon_reload: true
+    - name: Start the blocker
+      ansible.builtin.command:
+        argv: [systemd-run, --unit=orbit-proof-blocker, --collect, /usr/sbin/dnsmasq, --keep-in-foreground, --conf-file=/var/lib/orbit/proof-legacy/blocker.conf, --conf-dir=, --pid-file=]
+      changed_when: true
+    - name: Wait until the blocker holds the address
+      ansible.builtin.command:
+        argv: [ss, -H, -ulpn, src, "10.99.99.77:53"]
+      register: blocker_holds
+      until: blocker_holds.stdout != ''
+      retries: 20
+      delay: 1
+      changed_when: false
+# A marker of an earlier run would end the wait below at once, before the lock holder of this run exists.
+- name: Clear the marker of an earlier run
+  become: true
+  ansible.builtin.file:
+    path: /run/orbit-proof-stopping
+    state: absent
+- name: Start the phase detached
+  ansible.builtin.command:
+    argv: [timeout, "200", ansible-playbook, -i, "{{ folder.path }}/inventory.yml", --tags, publish, -e, "{{ scaled_lock }}", "{{ ansible_dir }}/dns-publish.yml"]
+    chdir: "{{ ansible_dir }}"
+  environment:
+    ORBIT_RUN: "{{ folder.path }}"
+    ANSIBLE_NOCOLOR: "1"
+  async: 250
+  poll: 0
+  changed_when: false
+  register: killed_phase
+- name: Wait until the old listener is being stopped
+  ansible.builtin.wait_for:
+    path: /run/orbit-proof-stopping
+    timeout: 120
+- name: Kill the playbook
+  become: true
+  ansible.builtin.command:
+    argv: [pkill, -KILL, -f, "ansible-playbook -i {{ folder.path }}/inventory.yml"]
+  register: killed
+  failed_when: killed.rc not in [0, 1]
+  changed_when: killed.rc == 0
+- name: The lock holder of the dead play is still there
+  become: true
+  ansible.builtin.find:
+    paths: /run
+    patterns: ["orbit-dnsmasq-lock.*.pid"]
+  register: dead_holder
+  failed_when: dead_holder.files | length != 1
+- name: Wait until the detached cutover has restored the old listener by itself
+  become: true
+  ansible.builtin.command:
+    argv: [cat, /var/lib/orbit/dnsmasq/cutover.state]
+  register: cutover_outcome
+  until: cutover_outcome.stdout is match('^(recovered|failed) ')
+  retries: 60
+  delay: 2
+  changed_when: false
+  failed_when: false
+- name: The cutover recovered
+  ansible.builtin.assert:
+    that: cutover_outcome.stdout is match('^recovered ')
+    fail_msg: "cutover.state is [{{ cutover_outcome.stdout }}]"
+    quiet: true
+- name: Stop the blocker and take the drop-in away
+  become: true
+  ansible.builtin.shell: |
+    systemctl stop orbit-proof-blocker
+    rm -rf /etc/systemd/system/orbit-private-dns.socket.d /run/orbit-proof-stopping
+    systemctl daemon-reload
+    exit 0
+  changed_when: true

@@ -57,6 +57,8 @@ The API returns HTTP 202 with an Operation. The CLI follows that Operation. The 
 
 Then the workflow publishes exporters, certificates, the Grafana firewall allow, Gateway Caddy and private DNS. Each action has its own native step. Official cfgmgmt owns package, file, image, container removal, systemd and firewall effects; pinned official SSH handles individual commands and the password stdin.
 
+DNS uses the shared [desired-state publication](/reference/private-dns), which renders the complete VPN and Cluster projections. Metrics publishes no separate DNS fragment. `metrics.orbit` remains a reserved WireGuard name, forwarded to VPN DNS by Cluster resolvers.
+
 A failed native step retains its history and the desired role assignment. Resume the failed native run through the normal Operation recovery path. The workflow does not hide retries, rollback journals or recovery loops. Publication failure keeps the runtime for recovery. The Gateway projects success only after the complete native workflow succeeds; failure records the shared native error code on the assignment.
 
 The role workflow recreates its two containers from one canonical public Docker specification. The retained Nodes runtime imports that same specification, including its ownership labels, configuration hash, host networking, mount paths and health checks. Node convergence can therefore inspect or reconcile the runtime without treating it as foreign. Exporter preference changes restart only Prometheus. A password reset uses Grafana's API and replaces no container.

@@ -1,75 +1,78 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS and R1-R4, agent-observer-swamp-acts, single-swamp-node. docs/reference/private-dns.md#resolver-selection.
-  %% Tightened: flow-tighten 2026-11-02, rules 6, 20, 22 (the live policy's match guards the set; the end check resolves names).
-  %% Ported 2026-11-03: the tunnel runs as wg-quick, so the PostUp hook and marker persist the policy, not a networkd drop-in.
+  %% Target design: ADR 0248 Cluster router resolver amendment; one shared member policy for peer reconcile, converge and Cluster lifecycle.
+  %% Tightened: flow-tighten rules 6, 22, 27, 28: persistence, live apply and check form one Ansible phase.
   %% status: draft
-  %% command: none · routing domains change
+  %% command: none · managed DNS policy changes
   %% kind: fleet.peer_dns
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane N icon=server pill=target tone=amber
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
+  participant SW as Swamp<br/>workflow execution
   participant N as Target Node<br/>reached over ssh
-  Note over GW: Domains changed<br/>task #5163 · peer Node 12
-  %%> When:
-  %%> - Node 12's policy differs from the one its last successful run applied, for example a Node with a new TLD joins or the `vpn` role moves
-  %%> - the Gateway plan names one changed peer at a time; Swamp's minute maintenance admits it once per policy
-  %%> Not included:
-  %%> - no hourly re-run; host drift with an unchanged policy waits for doctor and a reconcile
-  %%> - a full re-apply of Node 12's footprint is `node.converge`, which runs this workflow as a child
+  Note over GW: Render changed policy<br/>Cluster and VPN scopes
   %%> Requirements:
-  %%> - Node 12 is an active managed Linux peer with roles; the `vpn` Node and the Gateway stay out
+  %%> - an active, managed Linux Node with an active Cluster membership, LAN address and systemd-resolved delegate support selects its Cluster's ready LAN Router, including the Router itself
+  %%> - all other managed peers keep the VPN split policy; a conflicting explicit DNS override refuses before mutation
+  %%> - a roleless member needs managed SSH enrollment, not a workload role; unmanaged devices are reported without claiming convergence
   %%> Result:
-  %%> - task #5163 recorded with the domains, the DNS server and the private name to resolve
+  %%> - a complete per-Node projection, revision and digest, including delegate capability and the public resolver invariant
   GW->>SW: Start run, full intent<br/>operation-fleet-peer-dns
-  %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
-  %%> - the routing domains, such as `~orbit`, the DNS server's WireGuard address and the wg-quick hook line
-  %%> - the private name to resolve, `gateway.orbit`
-  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
-  SW->>N: Keep the DNS hook<br/>@swamp/cfgmgmt/line
-  %%> How:
-  %%> - Swamp reaches Node 12 over SSH from 209
+  %%> - Cluster delegate with one LAN server, owned suffixes, remaining VPN domains, probes and pinned SSH connection; no global resolver replacement
+  %%> - the same projection is passed to this phase by the shared DNS publication during a Cluster transition
+  Note over SW: Write the intent
   %%> What it does:
-  %%> - keeps the Gateway-rendered `PostUp = resolvectl …` line in `orbit.conf`, so the policy returns when the tunnel starts
-  %%> - leaves every other line as it is; changes nothing when the line matches
-  SW->>N: Write the DNS marker<br/>@swamp/cfgmgmt/file · 0600
+  %%> - ships the playbook and private run file; a matching policy still gets its end check
+  SW->>N: Apply member DNS policy<br/>Ansible phase
   %%> What it does:
-  %%> - records the link, server and domains in `/etc/wireguard/orbit.dns-link`; changes nothing when it matches
-  SW->>N: Set the DNS policy<br/>@swamp/cfgmgmt/exec · notIf match
-  %%> What it does:
-  %%> - one command sets the server and routing domains on `orbit` with `default-route no`; only Orbit names go to VPN DNS
-  %%> When it matches:
-  %%> - the `notIf` guard reads the live `orbit` link; when it already holds the policy, the command does not run
-  SW->>N: Check resolution<br/>resolvectl query
-  %%> What it does:
-  %%> - resolves `gateway.orbit`, which must answer through `orbit`, and `example.com`, which must not
-  %%> Why:
-  %%> - the policy only counts as applied when Node 12 resolves both
-  alt both names resolve
-    N-->>SW: private + public ok
-    %%> Returns:
-    %%> - the check passed
-    SW-->>GW: Run succeeded<br/>terminal event
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record the DNS policy<br/>Node 12 · task succeeded
+  %%> - checks systemd-resolved delegate support and the LAN route; the vpn Node answers WireGuard addresses and the Router resolver answers its LAN members with LAN addresses
+  %%> - snapshots owned policy, persists and activates VPN coverage for old and new private domains, reloads the replacement delegate, then persists and applies the final VPN scope; brief private overlap prevents a public-DNS gap
+  %%> - checks both scopes and publishes its member receipt only after persistence and snapshot cleanup succeed; a rolled-back selection cannot pass a retirement barrier
+  %%> - leaves LAN-link DNS, addresses, routes, DHCP, resolv.conf and global resolved settings alone; reloads resolved only when the delegate file or live scope differs
+  %%> Runtime failure:
+  %%> - the delegate has no VPN server; Cluster DNS or LAN failure makes its Cluster lookups fail until repair, and Doctor reports it
+  alt delegate support missing
+    %% path: delegate-unsupported
+    Note over N: Kept VPN DNS<br/>dns.cluster_delegate_unsupported
     %%> Result:
-    %%> - task #5163 succeeds and records the applied server and domains
-    %%> - the plan names the next changed peer
-  else setting or checking fails
-    N--xSW: exit ≠ 0 or no answer
-    %%> When:
-    %%> - a write or `resolvectl` refuses, SSH fails, or a name does not resolve where it should
-    SW--xGW: Run failed<br/>error_code, failed step
-    %%> The Gateway reads:
-    %%> - which step failed and its error code
-    Note over GW: Mark the peer failed<br/>stop · rerun after a fix
+    %%> - systemd below 258 or missing delegate support removes any owned delegate; checks and records the complete VPN split policy as a successful degraded outcome
+    %%> - Cluster lookups receive WireGuard answers and Doctor reports node.cluster_dns_delegate_unsupported; no second mechanism
+  else delegate supported
+    %% path: delegate-supported
+    Note over N: Cluster delegate selected<br/>one LAN server · systemd 258+
     %%> Result:
-    %%> - task #5163 fails; the plan keeps naming Node 12, so later peers wait
+    %%> - only Cluster domains use the delegate; LAN-link public DNS and remaining VPN domains keep their own scopes
+  end
+  alt effective policy matches
+    %% path: succeeded
+    N-->>SW: Policy checked<br/>revision · digest · scope
+    %%> What it proves:
+    %%> - on a supported member Cluster A uses LAN and AAAA is NODATA; unsupported members get WireGuard answers; other private and public names retain their selected resolvers
+    %%> - on withdrawal the Cluster suffix uses VPN before the delegate is removed; no duplicate best-match domain remains
+    %%> - an unchanged policy records a successful skip without a resolver reload
+  else apply or check fails
+    %% path: failed
+    Note over N: Restore owned policy
+    %%> What it does:
+    %%> - restores captured persistent and live settings within the peer lock; leaves later revisions untouched
+    %%> - failed recovery keeps its snapshot and reports dns.rollback_failed; the caller cannot retire the old Router
+    N--xSW: Policy failed<br/>target · error_code
     %%> Retry:
-    %%> - safe: `orbit:peer-dns-reconcile` admits a new task, and matching steps change nothing
+    %%> - retain the failed target and repeat after repair; no workload or public DNS configuration is deleted
+  end
+  Note over SW: Remove the run folder
+  %%> How:
+  %%> - native completed dependencies wait for the phase, then remove disposable files on either outcome
+  alt phase passed
+    %% path: recorded
+    SW-->>GW: Run succeeded<br/>terminal result
+    %%> Result:
+    %%> - records the applied policy; lifecycle callers can release their member cleanup barrier
+  else phase failed
+    %% path: refused
+    SW--xGW: Run failed<br/>failed step · error_code
+    %%> Result:
+    %%> - records drift and retains the unfinished transition; no separate member queue owns a Cluster handover
   end

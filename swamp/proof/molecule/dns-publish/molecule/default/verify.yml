@@ -1,0 +1,235 @@
+---
+# The state of the Node after the last step: the old listener is gone, dnsmasq holds the address next to systemd-resolved, the files are
+# readable by the dnsmasq account, the last good set and the retired files are where the phase keeps them, and nothing of the lock stays.
+- name: The Node after the publications
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read the address owners
+      ansible.builtin.command:
+        argv: [ss, -H, -tulpn, src, "{{ dns_address }}:53"]
+      register: owners
+      changed_when: false
+    - name: dnsmasq owns the address on UDP and TCP port 53
+      ansible.builtin.assert:
+        that:
+          - owners.stdout_lines | select('search', 'dnsmasq') | select('match', '^udp') | list | length == 1
+          - owners.stdout_lines | select('search', 'dnsmasq') | select('match', '^tcp') | list | length == 1
+        fail_msg: "{{ owners.stdout }}"
+        quiet: true
+    - name: Read the owners of the Node's own resolver address
+      ansible.builtin.command:
+        argv: [ss, -H, -tulpn, src, "127.0.0.55:53"]
+      register: local_owners
+      changed_when: false
+    - name: dnsmasq owns 127.0.0.55 on UDP and TCP port 53, where systemd-resolved sends the vpn Node's own queries
+      ansible.builtin.assert:
+        that:
+          - local_owners.stdout_lines | select('search', 'dnsmasq') | select('match', '^udp') | list | length == 1
+          - local_owners.stdout_lines | select('search', 'dnsmasq') | select('match', '^tcp') | list | length == 1
+        fail_msg: "{{ local_owners.stdout }}"
+        quiet: true
+    - name: Read whether systemd-resolved runs
+      ansible.builtin.command:
+        argv: [systemctl, is-active, --quiet, systemd-resolved]
+      register: resolved
+      changed_when: false
+      failed_when: false
+    - name: Read the loopback stub of systemd-resolved
+      ansible.builtin.command:
+        argv: [ss, -H, -tulpn, src, "127.0.0.53:53"]
+      register: stub
+      changed_when: false
+    - name: The stub keeps its address (bind-dynamic leaves it alone)
+      ansible.builtin.assert:
+        that: "'systemd-resolve' in stub.stdout"
+        fail_msg: "{{ stub.stdout }}"
+        quiet: true
+      when: resolved.rc == 0
+
+    - name: Read the files of the new set
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/dnsmasq.d/orbit.conf
+        - /var/lib/orbit/dnsmasq/orbit.hosts
+        - /var/lib/orbit/dnsmasq/orbit.servers
+        - /var/lib/orbit/dnsmasq/orbit.revision
+        - /var/lib/orbit/dnsmasq/orbit.conf.loaded
+        - /var/lib/orbit/dnsmasq/previous/orbit.conf
+      register: set_files
+    - name: The files belong to root and everyone can read them
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.pw_name == 'root'
+          - item.stat.mode == '0644'
+        fail_msg: "{{ item.item }} {{ item.stat | to_json }}"
+        quiet: true
+      loop: "{{ set_files.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+    - name: The dnsmasq account reads the records after dnsmasq dropped its rights (the reload reads them as that account)
+      ansible.builtin.command:
+        argv: [cat, /var/lib/orbit/dnsmasq/orbit.hosts, /var/lib/orbit/dnsmasq/orbit.servers]
+      become_user: dnsmasq
+      changed_when: false
+
+    - name: Only orbit.conf is left in the conf dir
+      ansible.builtin.find:
+        paths: /etc/dnsmasq.d
+        patterns: ["*"]
+        hidden: true
+      register: conf_dir
+    - name: The old dnsmasq files are gone
+      ansible.builtin.assert:
+        that: conf_dir.files | map(attribute='path') | map('basename') | difference(['README']) | sort == ['orbit.conf']
+        fail_msg: "{{ conf_dir.files | map(attribute='path') | list }}"
+        quiet: true
+
+    - name: Read the retired files and the last good set
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /var/lib/orbit/dnsmasq/previous/legacy/orbit-vpn.conf
+        - /var/lib/orbit/dnsmasq/previous/legacy/orbit-records.conf
+        - /var/lib/orbit/dnsmasq/previous/legacy/catalog.json
+        - /var/lib/orbit/dnsmasq/previous/legacy/orbit-private-dns.socket
+        - /var/lib/orbit/dnsmasq/previous/legacy/orbit-private-dns.service
+        - /var/lib/orbit/dnsmasq/disabled/ubuntu-fan
+      register: retired
+    - name: The old setup is saved where the phase keeps it
+      ansible.builtin.assert:
+        that: item.stat.exists
+        fail_msg: "{{ item.item }} is missing"
+        quiet: true
+      loop: "{{ retired.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+    - name: Read what remains of the old listener
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/systemd/system/orbit-private-dns.socket
+        - /etc/systemd/system/orbit-private-dns.service
+        - /var/lib/orbit/private-dns
+        - /etc/dnsmasq.d/ubuntu-fan
+      register: remains
+    - name: Nothing of the old listener remains
+      ansible.builtin.assert:
+        that: not item.stat.exists
+        fail_msg: "{{ item.item }} still exists"
+        quiet: true
+      loop: "{{ remains.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+    - name: The old listener is not running
+      ansible.builtin.systemd:
+        name: orbit-private-dns.socket
+      register: old_socket
+      failed_when: false
+    - name: The old socket is gone from systemd
+      ansible.builtin.assert:
+        that: old_socket.status.ActiveState | default('inactive') != 'active'
+        quiet: true
+
+    - name: dnsmasq starts at boot
+      ansible.builtin.systemd:
+        name: dnsmasq
+        enabled: true
+      register: enabled
+    - name: Enabling it again changed nothing
+      ansible.builtin.assert:
+        that: not enabled.changed
+        quiet: true
+
+    - name: Look for a lock holder or a pid file left behind
+      ansible.builtin.find:
+        paths: /run
+        patterns: ["orbit-dnsmasq-lock.*.pid"]
+      register: pid_files
+    - name: Read the processes of the lock
+      ansible.builtin.command:
+        argv: [pgrep, -f, "flock --exclusive --timeout [0-9]+ /run/lock/orbit-dnsmasq.lock"]
+      register: holders
+      changed_when: false
+      failed_when: holders.rc not in [0, 1]
+    - name: Nothing of the lock stays
+      ansible.builtin.assert:
+        that:
+          - pid_files.files | length == 0
+          - holders.rc == 1
+        fail_msg: "{{ pid_files.files | map(attribute='path') | list }} {{ holders.stdout }}"
+        quiet: true
+
+    # Ubuntu 26.04 ships no AppArmor profile for dnsmasq (the profile belongs to the apparmor-profiles package, in complain mode). Fail the
+    # proof if one is enforced here, because it allows /etc/dnsmasq.d/* and not /var/lib/orbit/dnsmasq/*.
+    - name: Look for an enforced dnsmasq AppArmor profile
+      ansible.builtin.command:
+        argv: [grep, -c, "dnsmasq (enforce)", /sys/kernel/security/apparmor/profiles]
+      register: apparmor
+      changed_when: false
+      failed_when: apparmor.rc not in [1, 2]
+
+    # The last publication committed: nothing of an unfinished one stays, and the last good set is the installed set.
+    - name: Read the snapshot, the reload marker and the last good set
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        checksum_algorithm: sha256
+      loop:
+        - /var/lib/orbit/dnsmasq/snapshot
+        - /var/lib/orbit/dnsmasq/reload.pending
+        - /etc/dnsmasq.d/orbit.conf
+        - /var/lib/orbit/dnsmasq/previous/orbit.conf
+        - /var/lib/orbit/dnsmasq/orbit.hosts
+        - /var/lib/orbit/dnsmasq/previous/orbit.hosts
+        - /var/lib/orbit/dnsmasq/orbit.servers
+        - /var/lib/orbit/dnsmasq/previous/orbit.servers
+      register: committed
+    - name: A commit leaves no snapshot and no marker, and the last good set equals the installed one
+      ansible.builtin.assert:
+        that:
+          - not committed.results[0].stat.exists
+          - not committed.results[1].stat.exists
+          - committed.results[2].stat.checksum == committed.results[3].stat.checksum
+          - committed.results[4].stat.checksum == committed.results[5].stat.checksum
+          - committed.results[6].stat.checksum == committed.results[7].stat.checksum
+        quiet: true
+
+    # The vpn Node resolves through its own dnsmasq: the drop-in of prepare.yml sends every name to 127.0.0.55.
+    - name: Flush the caches of the Node's resolver
+      ansible.builtin.command:
+        argv: [resolvectl, flush-caches]
+      changed_when: false
+    - name: Ask the Node's normal resolver for a private name and for a public name
+      ansible.builtin.command:
+        argv: [getent, ahostsv4, "{{ item }}"]
+      register: resolver_answers
+      loop: [gateway.orbit, x.test, example.com]
+      changed_when: false
+      failed_when: false
+    - name: The Node resolves through dnsmasq
+      ansible.builtin.assert:
+        that:
+          - "'10.99.99.2' in resolver_answers.results[0].stdout"
+          - "'10.99.99.9' in resolver_answers.results[1].stdout"
+          - resolver_answers.results[0].rc == 0
+          - resolver_answers.results[1].rc == 0
+          # The public name needs the internet; a Node without it (DNS_PROOF_OFFLINE=1, the scratch container) cannot resolve it.
+          - resolver_answers.results[2].rc == 0 or (lookup('ansible.builtin.env', 'DNS_PROOF_OFFLINE') | length > 0)
+        fail_msg: "{{ resolver_answers.results | map(attribute='stdout') | list }}"
+        quiet: true
+    - name: Ask the Node's normal resolver for the AAAA of an exact name
+      ansible.builtin.command:
+        argv: [resolvectl, query, --type=AAAA, gateway.orbit]
+      register: resolver_aaaa
+      changed_when: false
+      failed_when: false
+    - name: An exact name has no AAAA answer through the resolver either
+      ansible.builtin.assert:
+        that:
+          - resolver_aaaa.rc != 0
+          - "'does not have any RR' in resolver_aaaa.stderr"
+        fail_msg: "{{ resolver_aaaa.stdout }} {{ resolver_aaaa.stderr }}"
+        quiet: true

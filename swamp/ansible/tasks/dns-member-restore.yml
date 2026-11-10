@@ -1,0 +1,69 @@
+---
+# Persist complete VPN coverage before recovery; narrow it only after the captured delegate is active.
+- name: Render complete VPN policy for recovery
+  ansible.builtin.set_fact:
+    member_recovery: "{{ lookup('ansible.builtin.template', 'dns-member-policy.j2') | from_json }}"
+  vars:
+    policy: "{{ dns_member_policy | combine({'delegate': none}) }}"
+    member_version: 258
+- name: Keep the complete private VPN reboot policy during recovery
+  ansible.builtin.lineinfile:
+    path: /etc/wireguard/orbit.conf
+    regexp: '^PostUp\s*=\s*resolvectl dns %i '
+    line: "{{ member_recovery.hook }}"
+    insertafter: '^\[Interface\]'
+  no_log: true
+- name: Keep the full private DNS marker during recovery
+  ansible.builtin.copy:
+    content: "{{ member_recovery.marker }}"
+    dest: /etc/wireguard/orbit.dns-link
+    mode: "0600"
+- name: Keep private VPN coverage during member recovery
+  ansible.builtin.command:
+    argv: "{{ ['resolvectl', 'dns', 'orbit', member_effective.server] }}"
+  changed_when: true
+- name: Activate full private coverage during member recovery
+  ansible.builtin.command:
+    argv: "{{ ['resolvectl', 'domain', 'orbit'] + (dns_member_policy.all_domains | map('regex_replace', '^', '~') | list) }}"
+  changed_when: true
+- name: Restore the original owned peer files
+  ansible.builtin.copy:
+    src: "/var/lib/orbit/peer-dns/snapshot/{{ item | basename }}"
+    dest: "{{ item }}"
+    remote_src: true
+    mode: preserve
+  loop: "{{ member_snapshot.present | reject('in', ['/etc/wireguard/orbit.conf', '/etc/wireguard/orbit.dns-link']) | list }}"
+  no_log: true
+- name: Remove only files absent in the original member snapshot
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ member_snapshot.absent }}"
+- name: Reload the recovered member scopes
+  ansible.builtin.systemd:
+    name: systemd-resolved
+    state: reloaded
+- name: Restore persistent VPN policy only after the old delegate is active
+  ansible.builtin.copy:
+    src: "/var/lib/orbit/peer-dns/snapshot/{{ item | basename }}"
+    dest: "{{ item }}"
+    remote_src: true
+    mode: preserve
+  loop: "{{ member_snapshot.present | select('in', ['/etc/wireguard/orbit.conf', '/etc/wireguard/orbit.dns-link']) | list }}"
+  no_log: true
+- name: Restore the captured VPN DNS server
+  ansible.builtin.command:
+    argv: "{{ ['resolvectl', 'dns', 'orbit'] + member_snapshot.server.split() }}"
+  changed_when: true
+- name: Restore the captured VPN domains
+  ansible.builtin.command:
+    argv: "{{ ['resolvectl', 'domain', 'orbit'] + member_snapshot.domains }}"
+  changed_when: true
+- name: Restore the captured VPN default-route flag
+  ansible.builtin.command:
+    argv: [resolvectl, default-route, orbit, "{{ member_snapshot.default_route }}"]
+  changed_when: true
+- name: Flush recovered member caches
+  ansible.builtin.command:
+    argv: [resolvectl, flush-caches]
+  changed_when: false

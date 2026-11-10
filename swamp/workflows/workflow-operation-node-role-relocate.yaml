@@ -244,8 +244,8 @@ jobs:
     forEach: {item: publication, in: '${{ inputs.intent.publications.filter(p, p.after.dns != null) }}'}
     task:
       type: workflow
-      workflowIdOrName: route-dns-publish
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {node_id: '${{ self.publication.node_id }}', connection: '${{ self.publication.connection }}', host_keys: '${{ self.publication.host_keys }}', before: '${{ self.publication.before.dns }}', after: '${{ self.publication.after.dns }}', alternatives: []}, execution_secrets: {}}
+      workflowIdOrName: dns-publish
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.publication.node_id }}', kind: '${{ inputs.kind }}', intent: {node_id: '${{ self.publication.node_id }}', connection: '${{ self.publication.connection }}', host_keys: '${{ self.publication.host_keys }}', dns: '${{ self.publication.after.dns }}'}, execution_secrets: {}}
 - name: check
   dependsOn: [{job: dns, condition: {type: succeeded}}]
   steps:
@@ -260,19 +260,8 @@ jobs:
       methodName: exec
       globalArgs: *target_ssh
       inputs: {hosts: 'name:target', argv: '${{ ["timeout","70","curl","--silent","--retry","30","--retry-connrefused","--retry-delay","2","--output","/dev/null","--write-out","%{http_code}","http://127.0.0.1:" + string(self.ws.port) + "/"] }}'}
-- name: grace
-  dependsOn: [{job: check, condition: {type: succeeded}}]
-  steps:
-    # Resolvers that honor the TTL stop answering with the source before it withdraws (route-dns-grace).
-  - name: 'Let DNS answers expire'
-    labels: {role: swamp}
-    forEach: {item: wait, in: '${{ inputs.intent.grace }}'}
-    task:
-      type: workflow
-      workflowIdOrName: route-dns-grace
-      inputs: {}
 - name: source
-  dependsOn: [{job: grace, condition: {type: succeeded}}]
+  dependsOn: [{job: check, condition: {type: succeeded}}]
   steps:
     # The node:role:remove workflow with the intent it builds for the source; its own end check proves the removal.
   - name: 'Remove from the source'

@@ -27,14 +27,14 @@ final readonly class PeerDnsTargetsAction
             ->get()->mapWithKeys(function (Operation $operation): array {
                 $intent = ValidatedData::object($operation->input['intent'] ?? []);
 
-                return [$operation->target_id => self::digest($intent['server'] ?? null, $intent['public_key'] ?? null, $intent['domains'] ?? null)];
+                return [$operation->target_id => self::digest($intent['server'] ?? null, $intent['public_key'] ?? null, $intent['domains'] ?? null, $intent['selection'] ?? null)];
             });
 
         $targets = Node::query()->with('roles')->orderBy('id')->get()
             ->filter(fn (Node $node): bool => $this->policy->manages($node))
             ->map(fn (Node $node): array => [
                 'node_id' => $node->id,
-                'configuration_digest' => self::digest($this->policy->server($node), $node->wireguard_public_key, $this->policy->domains($node)),
+                'configuration_digest' => self::digest($this->policy->server($node), $node->wireguard_public_key, $this->policy->domains($node), $this->policy->selection($node)),
             ])
             ->reject(fn (array $target): bool => ($applied[$target['node_id']] ?? null) === $target['configuration_digest'])
             ->all();
@@ -43,8 +43,12 @@ final readonly class PeerDnsTargetsAction
     }
 
     /** The admitted policy: DNS server, the peer key it belongs to, and routing domains. */
-    public static function digest(mixed $server, mixed $publicKey, mixed $domains): string
+    public static function digest(mixed $server, mixed $publicKey, mixed $domains, mixed $selection = null): string
     {
-        return hash('sha256', json_encode([$server, $publicKey, $domains], JSON_THROW_ON_ERROR));
+        if (is_array($selection)) {
+            unset($selection['revision']);
+        }
+
+        return hash('sha256', json_encode([$server, $publicKey, $domains, $selection], JSON_THROW_ON_ERROR));
     }
 }

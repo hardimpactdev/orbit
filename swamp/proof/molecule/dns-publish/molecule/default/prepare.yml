@@ -1,0 +1,118 @@
+---
+# The Node before the first publication: dnsmasq and dig installed, the VPN address on `lo`, and the old listener setup running as the
+# live vpn Node runs it today: a listener that holds the address on port 53 and answers a catalog name, dnsmasq on 127.0.0.55 with
+# orbit-vpn.conf and orbit-records.conf, a stock snippet with bind-interfaces, the catalog and release of the listener, and the resolver
+# drop-in that sends every name of the Node to 127.0.0.55.
+# The listener is a second dnsmasq (orbit-private-dns.service, /var/lib/orbit/proof-legacy/listener.conf) on the VPN address, next to a
+# dummy socket unit. The proof cannot model what the real listener does: it is a PHP process that systemd hands the sockets of
+# orbit-private-dns.socket to, and it answers per caller from its catalog. A recovery that starts the socket and the service again, and
+# an answer on UDP and TCP, are what it can prove.
+- name: The Node before the cutover
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Install dnsmasq and dig
+      ansible.builtin.apt:
+        name: [dnsmasq, bind9-dnsutils, procps]
+        state: present
+        update_cache: false
+        update_cache_retries: 5
+    - name: Prepare the independent public uplink
+      ansible.builtin.import_tasks: ../../public-resolver.yml
+    - name: Stop the stock dnsmasq
+      ansible.builtin.systemd:
+        name: dnsmasq
+        state: stopped
+    - name: Read the addresses of lo
+      ansible.builtin.command:
+        argv: [ip, -4, -o, addr, show, dev, lo]
+      register: lo_addresses
+      changed_when: false
+    - name: Add the VPN address to lo
+      ansible.builtin.command:
+        argv: [ip, addr, add, "{{ dns_address }}/32", dev, lo]
+      when: dns_address ~ '/32' not in lo_addresses.stdout
+      changed_when: true
+
+    - name: Add the address that a blocker holds in the controller-death scenario
+      ansible.builtin.command:
+        argv: [ip, addr, add, "10.99.99.77/32", dev, lo]
+      when: "'10.99.99.77/32' not in lo_addresses.stdout"
+      changed_when: true
+
+    - name: Reset the disposable resolver state before modeling the first cutover
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: [/var/lib/orbit/dnsmasq, /etc/dnsmasq.d/orbit.conf]
+    - name: Make the folders of the old listener
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: [/var/lib/orbit/private-dns/releases/proof, /var/lib/orbit/dnsmasq/disabled, /var/lib/orbit/proof-legacy]
+    - name: Write the old listener's files
+      ansible.builtin.copy:
+        content: "{{ item.content }}"
+        dest: "{{ item.dest }}"
+        mode: "0644"
+      loop:
+        - {dest: /var/lib/orbit/private-dns/catalog.json, content: "{}\n"}
+        - {dest: /var/lib/orbit/private-dns/releases/proof/serve.php, content: "<?php\n"}
+        - {dest: /etc/dnsmasq.d/orbit-vpn.conf, content: "# Managed by Orbit.\nlisten-address=127.0.0.55\nbind-interfaces\nno-resolv\nserver=1.1.1.1\n"}
+        - {dest: /etc/dnsmasq.d/orbit-records.conf, content: "# Managed by Orbit.\nhost-record=gateway.orbit,{{ dns_address }}\n"}
+        - {dest: /etc/dnsmasq.d/ubuntu-fan, content: "# The stock snippet of ubuntu-fan.\nbind-interfaces\n"}
+        - dest: /var/lib/orbit/proof-legacy/blocker.conf
+          content: "listen-address=10.99.99.77\nbind-interfaces\nno-resolv\nno-hosts\n"
+        - dest: /var/lib/orbit/proof-legacy/listener.conf
+          content: "listen-address={{ dns_address }}\nbind-interfaces\nno-resolv\nno-hosts\nhost-record=gateway.orbit,10.99.99.2\naddress=/.test/10.99.99.9\n"
+        - dest: /etc/systemd/system/orbit-private-dns.socket
+          content: "[Socket]\nListenStream=127.0.0.99:5399\n[Install]\nWantedBy=sockets.target\n"
+        - dest: /etc/systemd/system/orbit-private-dns.service
+          content: "[Unit]\nAfter=orbit-private-dns.socket\n[Service]\nExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file=/var/lib/orbit/proof-legacy/listener.conf --conf-dir= --pid-file=\n"
+      loop_control:
+        label: "{{ item.dest }}"
+    - name: Stop any previous disposable legacy listener before recreating its socket
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        daemon_reload: true
+      loop: [orbit-private-dns.service, orbit-private-dns.socket]
+    - name: Start the old listener and its backend
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: restarted
+        enabled: true
+        daemon_reload: true
+      loop: [orbit-private-dns.socket, orbit-private-dns.service, dnsmasq]
+
+    - name: The old listener holds the address
+      ansible.builtin.command:
+        argv: [ss, -H, -tulpn, src, "{{ dns_address }}:53"]
+      register: legacy_owner
+      changed_when: false
+      failed_when: legacy_owner.stdout_lines | select('search', 'dnsmasq') | list | length < 2
+    - name: The old listener answers a name of its catalog
+      ansible.builtin.command:
+        argv: [dig, "@{{ dns_address }}", +short, +tries=1, +time=3, gateway.orbit, A]
+      register: legacy_answer
+      changed_when: false
+      failed_when: legacy_answer.stdout != '10.99.99.2'
+
+    # The vpn Node resolves through its own dnsmasq: systemd-resolved sends every name to 127.0.0.55. The proof puts the same drop-in on the
+    # machine, and verify.yml takes it away again.
+    - name: Make the folder of the resolver drop-in
+      ansible.builtin.file:
+        path: /etc/systemd/resolved.conf.d
+        state: directory
+        mode: "0755"
+    - name: Write the resolver drop-in of the vpn Node
+      ansible.builtin.copy:
+        content: "[Resolve]\nDNS=127.0.0.55\nDomains=~.\n"
+        dest: /etc/systemd/resolved.conf.d/30-orbit-local-dns.conf
+        mode: "0644"
+    - name: Apply the resolver drop-in
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted

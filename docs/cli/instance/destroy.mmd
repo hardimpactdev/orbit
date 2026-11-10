@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Decided by the orchestrator, for Nick's review (2026-11-06): a withdrawal clears the Router answers of the Route from the private DNS catalog in the same step, not only its records.
+  %% Decided: ADR 0248 (2026-11-07): a withdrawal publishes the whole private DNS once, through the shared `dns-publish` child, after the Node's own files.
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Gateway holds each Route-serving Node from admission to the terminal state; a second Route write on it waits (docs/reference/routes.md#coordinate-publication).
   %% Target design: ADR 0244 task, R1-R4, single-swamp-node (@swamp/ssh from 209), DECISIONS 1 (token minted at admission, vault.get), Schedules native (Nick 2026-11-02). docs/reference/instance-removal.md.
   %% Tightened: flow-tighten 2026-11-02, rules 3, 8, 14, 17, 22 (Route first, DNS only outside the TLD, cfgmgmt absent applies, no script read, source capture, report or assert step).
@@ -117,10 +117,9 @@ sequenceDiagram
   SW->>N: Withdraw the Route<br/>Ansible read, compose, apply
   %%> What it does:
   %%> - removes the Caddy site of Instance 42, its PHP pool and its certificate, then reloads Caddy; no restart
-  %%> - per Node, in parallel: one Ansible read of the pools, the Caddyfile and the private DNS files, one composition of the captured states against them, one Ansible apply
-  %%> - the apply writes the pools, tests and reloads PHP-FPM, writes the Caddyfile, validates and reloads Caddy, writes the DNS records and restarts the backend, then removes the certificate folders
-  %%> - for a Route domain outside the Cluster or Node TLD it also removes the private DNS records on Node 1 (private DNS answers the whole TLD, so a domain inside it has none), in this step and not in a step of its own
-  %%> - the catalog's Router answers (`overrides`, a list per requesting Node) name a Route only while the captured fleet has a site for it, as the host records do, so the name of the withdrawn Route leaves with its records in this same step and no stale answer stays
+  %%> - per Node, in parallel: one Ansible read of the pools and the Caddyfile, one composition of the captured states against them, one Ansible apply
+  %%> - the apply writes the pools, tests and reloads PHP-FPM, writes the Caddyfile, validates and reloads Caddy, then removes the certificate folders
+  %%> - for a Route domain outside the Cluster or Node TLD it then publishes the whole private DNS without the name on Node 1 with the `dns-publish` child (private DNS answers the whole TLD, so a domain inside it has none)
   %%> If it does not hold:
   %%> - every later step is skipped and the task fails with `route.withdrawal_failed`; the Instance and its source stay
   %%> How:
@@ -131,7 +130,7 @@ sequenceDiagram
   %%> - unpublish before removing, so no request reaches a half-removed Instance
   %%> - accepted: a failed teardown leaves Instance 42 without its site until a rerun completes the removal
   %%> No DNS grace:
-  %%> - the name is removed, not moved, so no client has a new target to switch to; the Route is withdrawn right after its DNS records go
+  %%> - the name is removed, not moved, so no client has a new target to switch to; the Route is withdrawn before its DNS name goes
   %%> Keeps:
   %%> - every other site, pool and certificate on Node 12
   end

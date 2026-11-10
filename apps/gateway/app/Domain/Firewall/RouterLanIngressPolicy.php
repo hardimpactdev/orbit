@@ -19,8 +19,6 @@ final readonly class RouterLanIngressPolicy
 
     public const array Families = [
         self::CommentPrefix => ['protocol' => 'tcp', 'port' => '443'],
-        'orbit:router-lan-dns-udp' => ['protocol' => 'udp', 'port' => '53'],
-        'orbit:router-lan-dns-tcp' => ['protocol' => 'tcp', 'port' => '53'],
     ];
 
     /**

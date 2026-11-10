@@ -68,7 +68,7 @@ final readonly class NativeRouteRemovalSteps
         sort($answer);
 
         return ['offline' => $offline, 'nodes' => $plan['nodes'], 'answer_nodes' => $answer, 'answer_index' => $answer === [] ? (object) [] : array_flip(array_map(strval(...), $answer)),
-            'dns' => $dns, 'grace' => $dns === [] ? [] : [['seconds' => 31]],
+            'dns' => $dns,
             'retire' => $withdraw, 'cleanup' => $cleanup, 'lan_absent' => [], 'retire_nodes' => $withdrawNodes,
             'pools' => $pools, 'lan_remove' => $lan, 'ingress_close' => $ingress, 'firewall_nodes' => $firewallNodes, 'check_nodes' => $checkNodes];
     }

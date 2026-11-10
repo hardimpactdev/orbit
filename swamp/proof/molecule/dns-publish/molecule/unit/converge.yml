@@ -1,0 +1,904 @@
+---
+# Cases of the private DNS templates (swamp/ansible/templates/dns-*.j2). Each case is data: fixed input, the exact text or JSON that must come out.
+#   render:   dns + upstream resolvers -> orbit.conf, orbit.hosts, orbit.servers
+#   validate: dns -> dns.config_invalid or none (names, addresses, revision, pair)
+#   uplink:   resolver files of the Node -> the upstream resolvers (and whether the DHCP lease must be read next)
+#   queries:  dns -> the dig questions
+#   snapshot: what the Node held -> the manifest of the snapshot (files, unit states, holders)
+#   dnsmasq:  the rendered files run in a real dnsmasq on a high port (skipped where dnsmasq or dig is missing)
+#   verify:   dns + the answers of dig (blocks, rendered like dig prints them by dig.j2) -> the errors of the end check
+# The expected texts are written here by hand, never produced by the template, so a change of the template shows as a failed case.
+- name: Render, validate, probe and check the private DNS against fixed data
+  hosts: localhost
+  gather_facts: false
+  # The patterns the phase and its templates share (grammar of names, addresses and file lines).
+  vars_files:
+    - "{{ playbook_dir }}/../../../../../ansible/vars/dns.yml"
+  vars:
+    templates: "{{ playbook_dir }}/../../../../../ansible/templates"
+    header: "# Managed by Orbit (dns-publish). Do not edit: the next publication rewrites this file.\n"
+    local_resolver: "listen-address=127.0.0.55\n"
+    middle: "bind-dynamic\nno-resolv\nno-hosts\nlocal-ttl=30\n# A single-label name and a reverse lookup of a private address are answered here, never forwarded upstream.\ndomain-needed\nbogus-priv\n# Nothing under .orbit leaves the Node: a name that is no exact record is NXDOMAIN.\nlocal=/orbit/\n"
+    tail: "addn-hosts=/var/lib/orbit/dnsmasq/orbit.hosts\nservers-file=/var/lib/orbit/dnsmasq/orbit.servers\n"
+    # The valid parts that every case starts from: one revision and one listen address.
+    revision: &revision "1762540000000123"
+    listen: &listen [10.44.0.1]
+    empty: &empty {revision: *revision, listen: *listen, tlds: [], records: []}
+
+    # Lines that no valid render holds. Each must be refused by the grammar.
+    bad_lines:
+      hosts: ["10.44.0.2 Gateway.orbit", "10.44.0.2 a.test extra", "10.44.0.2", "10.44.0.2  a.test", "999.0.0.1 a.test", "10.44.0.2 a.test\n", "dhcp-range=10.0.0.2,10.0.0.9"]
+      servers: ["server=/a.test", "server=/a.test/10.0.0.1", "server=/*.a.test/10.0.0.1", "server=10.0.0.1", "server=/a.test/\n", "address=/a.test/10.0.0.1"]
+      conf: ["dhcp-range=10.0.0.2,10.0.0.9", "interface=eth0", "server=/a.test/10.0.0.1", "address=/test/10.44.0.7", "address=/.test/10.44.0.7 x", "conf-file=/etc/shadow", "addn-hosts=/tmp/a b", "listen-address=fd00::1", "log-facility=/etc/x", "no-resolv\n"]
+
+    render_cases:
+      # The reserved names: exact names outside any TLD. Each has the hosts line and the NODATA/forward pair.
+      - name: reserved names
+        dns:
+          revision: *revision
+          listen: *listen
+          tlds: []
+          records:
+            - {name: reverb.orbit, address: 10.44.0.4, pair: true}
+            - {name: gateway.orbit, address: 10.44.0.2, pair: true}
+            - {name: metrics.orbit, address: 10.44.0.2, pair: true}
+        upstream: [192.0.2.53]
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\n{{ tail }}"
+        hosts: "{{ header }}10.44.0.2 gateway.orbit\n10.44.0.2 metrics.orbit\n10.44.0.4 reverb.orbit\n"
+        # The names below .orbit are in a local zone: no pair, or the forward rule of their children would send them upstream.
+        servers: "{{ header }}"
+      # A reserved name and a Route on its own domain: only the Route gets the pair.
+      - name: a local zone name beside a public name
+        dns:
+          revision: *revision
+          listen: *listen
+          tlds: []
+          records:
+            - {name: gateway.orbit, address: 10.44.0.2, pair: true}
+            - {name: app.example.com, address: 10.44.0.3, pair: true}
+            - {name: collector.ai-router.orbit, address: 10.44.0.5, pair: true}
+        upstream: [192.0.2.53]
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\n{{ tail }}"
+        hosts: "{{ header }}10.44.0.3 app.example.com\n10.44.0.5 collector.ai-router.orbit\n10.44.0.2 gateway.orbit\n"
+        servers: "{{ header }}server=/app.example.com/\nserver=/*.app.example.com/#\n"
+      # A TLD answers every name under it with one wildcard line and is local: other types give NODATA.
+      - name: TLD only
+        dns:
+          revision: *revision
+          listen: *listen
+          records: []
+          tlds: [{name: test, address: 10.44.0.7}]
+        upstream: [192.0.2.53, 192.0.2.54]
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\nserver=192.0.2.54\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
+        hosts: "{{ header }}"
+        servers: "{{ header }}"
+      # A custom proxy name inside the TLD whose answer differs from the wildcard: the hosts line only, no pair.
+      - name: TLD and a custom proxy name inside it
+        dns:
+          revision: *revision
+          listen: *listen
+          tlds: [{name: test, address: 10.44.0.7}]
+          records:
+            - {name: x.test, address: 10.44.0.9, pair: false}
+        upstream: [192.0.2.53]
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
+        hosts: "{{ header }}10.44.0.9 x.test\n"
+        servers: "{{ header }}"
+      # An exact Route outside any TLD: its own name only; names below it keep the public resolvers.
+      - name: exact Route outside a TLD
+        dns:
+          revision: *revision
+          listen: *listen
+          tlds: [{name: test, address: 10.44.0.7}]
+          records:
+            - {name: app.example.com, address: 10.44.0.3, pair: true}
+        upstream: [192.0.2.53]
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
+        hosts: "{{ header }}10.44.0.3 app.example.com\n"
+        servers: "{{ header }}server=/app.example.com/\nserver=/*.app.example.com/#\n"
+      # Several TLDs and several listen addresses: sorted by name, one block each, in the order given for the listen addresses.
+      - name: several TLDs and listen addresses
+        dns:
+          revision: *revision
+          listen: [10.44.0.1, 10.45.0.1]
+          tlds:
+            - {name: test, address: 10.44.0.7}
+            - {name: prod, address: 10.44.0.8}
+            - {name: dev.local, address: 10.44.0.9}
+          records:
+            - {name: gateway.orbit, address: 10.44.0.2, pair: true}
+            - {name: x.test, address: 10.44.0.9, pair: false}
+            - {name: a.prod, address: 10.44.0.8, pair: false}
+        upstream: [192.0.2.53]
+        conf: "{{ header }}listen-address=10.44.0.1\nlisten-address=10.45.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\naddress=/.dev.local/10.44.0.9\nlocal=/dev.local/\naddress=/.prod/10.44.0.8\nlocal=/prod/\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
+        hosts: "{{ header }}10.44.0.8 a.prod\n10.44.0.2 gateway.orbit\n10.44.0.9 x.test\n"
+        servers: "{{ header }}"
+      # Nothing to answer: still a valid file set, so a Node whose last name went is repaired like any other.
+      - name: empty records and no TLD
+        dns: *empty
+        upstream: [1.1.1.1, 8.8.8.8]
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ local_resolver }}{{ middle }}server=1.1.1.1\nserver=8.8.8.8\n{{ tail }}"
+        hosts: "{{ header }}"
+        servers: "{{ header }}"
+      # The same render in another order is the same text: the compare of a rerun finds no change.
+      - name: record order does not matter
+        dns:
+          revision: *revision
+          listen: *listen
+          tlds: []
+          records:
+            - {name: b.example.com, address: 10.44.0.6, pair: true}
+            - {name: a.example.com, address: 10.44.0.5, pair: true}
+            - {name: a.example.com, address: 10.44.0.4, pair: true}
+        upstream: [192.0.2.53]
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\n{{ tail }}"
+        hosts: "{{ header }}10.44.0.4 a.example.com\n10.44.0.5 a.example.com\n10.44.0.6 b.example.com\n"
+        servers: "{{ header }}server=/a.example.com/\nserver=/*.a.example.com/#\nserver=/b.example.com/\nserver=/*.b.example.com/#\n"
+
+    # The refusals. Every case is the valid data with one thing wrong; `error` is what the phase fails with.
+    validate_cases:
+      - {name: valid, error: null, dns: {revision: *revision, listen: *listen, tlds: [{name: test, address: 10.44.0.7}], records: [{name: gateway.orbit, address: 10.44.0.2, pair: true}, {name: x.test, address: 10.44.0.9, pair: false}]}}
+      - {name: valid with nothing to answer, error: null, dns: *empty}
+      - {name: a name with a capital, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: Gateway.orbit, address: 10.44.0.2, pair: true}]}}
+      - {name: a name with an underscore, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: my_app.test, address: 10.44.0.2, pair: false}]}}
+      - {name: a name with a trailing newline, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: "a.test\n", address: 10.44.0.2, pair: false}]}}
+      - {name: a name that would add a config line, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: "a.test\nserver=203.0.113.9", address: 10.44.0.2, pair: false}]}}
+      - {name: a name with a space, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test extra, address: 10.44.0.2, pair: false}]}}
+      - {name: a name with an empty label, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a..test, address: 10.44.0.2, pair: false}]}}
+      - {name: a name with a trailing dot, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test., address: 10.44.0.2, pair: false}]}}
+      - {name: a wildcard name, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: "*.test", address: 10.44.0.2, pair: false}]}}
+      - {name: a label with a leading hyphen, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: -a.test, address: 10.44.0.2, pair: false}]}}
+      - {name: a label of 64 characters, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: "{{ 'a' * 64 }}.test", address: 10.44.0.2, pair: false}]}}
+      - {name: a name of 255 characters, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: "{{ ('a' * 63 ~ '.') * 3 ~ 'a' * 61 ~ '.test' }}", address: 10.44.0.2, pair: false}]}}
+      - {name: a name that is a number, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: 5, address: 10.44.0.2, pair: false}]}}
+      - {name: a record without a name, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{address: 10.44.0.2, pair: false}]}}
+      - {name: an address out of range, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: 999.1.1.1, pair: false}]}}
+      - {name: an address with three parts, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: 10.44.0, pair: false}]}}
+      - {name: an address with a leading zero, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: 010.44.0.1, pair: false}]}}
+      - {name: an address with a trailing newline, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: "10.44.0.1\n", pair: false}]}}
+      - {name: an IPv6 address, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: "fd00::1", pair: false}]}}
+      - {name: an address with a prefix length, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: 10.44.0.1/24, pair: false}]}}
+      - {name: an address with more text, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: 10.44.0.1 extra, pair: false}]}}
+      - {name: a record without an address, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, pair: false}]}}
+      - {name: a pair that is not a boolean, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: 10.44.0.1, pair: "true"}]}}
+      - {name: a record without a pair, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: 10.44.0.1}]}}
+      - {name: a TLD with a bad name, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, records: [], tlds: [{name: TEST, address: 10.44.0.7}]}}
+      - {name: a TLD with a bad address, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, records: [], tlds: [{name: test, address: 10.44.0.700}]}}
+      - {name: a TLD that is not a mapping, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, records: [], tlds: [test]}}
+      - {name: a listen address that is not IPv4, error: dns.config_invalid, dns: {revision: *revision, tlds: [], records: [], listen: ["fd00::1"]}}
+      - {name: no listen address, error: dns.config_invalid, dns: {revision: *revision, tlds: [], records: [], listen: []}}
+      - {name: a listen address that is a string, error: dns.config_invalid, dns: {revision: *revision, tlds: [], records: [], listen: 10.44.0.1}}
+      - {name: a revision of zero, error: dns.config_invalid, dns: {listen: *listen, tlds: [], records: [], revision: "0"}}
+      - {name: a revision that is not digits, error: dns.config_invalid, dns: {listen: *listen, tlds: [], records: [], revision: abc}}
+      - {name: a revision with a newline, error: dns.config_invalid, dns: {listen: *listen, tlds: [], records: [], revision: "17\n"}}
+      - {name: records that are a string, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: none}}
+
+    # The resolver files of the Node. A stub (127.0.0.53, 127.0.0.54) never counts; neither does anything of the `orbit` interface.
+    route_head: "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"
+    uplink_cases:
+      - name: resolved lists two servers, a stub and an IPv6 address
+        resolved: "# This is /run/systemd/resolve/resolv.conf\nnameserver 127.0.0.53\nnameserver 192.0.2.53\nnameserver 2001:db8::53\nnameserver 192.0.2.54\nnameserver 192.0.2.53\nsearch internal\n"
+        route: "{{ route_head }}eth0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\n"
+        lease: null
+        expect: {servers: [192.0.2.53, 192.0.2.54], source: resolved, interface: eth0, pending: false}
+      - name: only a stub, so the lease of the default-route interface is next
+        resolved: "nameserver 127.0.0.53\noptions edns0 trust-ad\n"
+        route: "{{ route_head }}eth0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\neth0\t0000000A\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0\n"
+        lease: null
+        expect: {servers: [], source: lease, interface: eth0, pending: true}
+      - name: a lease with a stub, an IPv6 address and a repeat
+        resolved: "nameserver 127.0.0.53\n"
+        route: "{{ route_head }}eth0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\n"
+        lease: "# This is private data. Do not parse.\nADDRESS=10.0.0.5\nDNS=192.0.2.10 2001:db8::10 127.0.0.1 192.0.2.11 192.0.2.10\nDOMAINS=internal\n"
+        expect: {servers: [192.0.2.10, 192.0.2.11], source: lease, interface: eth0, pending: false}
+      - name: a lease without a usable server falls back
+        resolved: "nameserver 127.0.0.53\n"
+        route: "{{ route_head }}eth0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\n"
+        lease: "ADDRESS=10.0.0.5\nDNS=127.0.0.1 0.0.0.0\n"
+        expect: {servers: [1.1.1.1, 8.8.8.8], source: fallback, interface: eth0, pending: false}
+      - name: no lease file falls back
+        resolved: "nameserver 127.0.0.53\n"
+        route: "{{ route_head }}eth0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\n"
+        lease: ""
+        expect: {servers: [1.1.1.1, 8.8.8.8], source: fallback, interface: eth0, pending: false}
+      - name: the lowest metric wins and orbit and lo never do
+        resolved: ""
+        route: "{{ route_head }}orbit\t00000000\t0100000A\t0003\t0\t0\t0\t00000000\t0\t0\t0\nlo\t00000000\t00000000\t0003\t0\t0\t1\t00000000\t0\t0\t0\neth0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\neth1\t00000000\t0200000A\t0003\t0\t0\t50\t00000000\t0\t0\t0\n"
+        lease: "DNS=192.0.2.77\n"
+        expect: {servers: [192.0.2.77], source: lease, interface: eth1, pending: false}
+      - name: no uplink at all falls back
+        resolved: ""
+        route: "{{ route_head }}orbit\t00000000\t0100000A\t0003\t0\t0\t0\t00000000\t0\t0\t0\n"
+        lease: null
+        expect: {servers: [1.1.1.1, 8.8.8.8], source: fallback, interface: null, pending: false}
+      - name: a route file that is empty and no resolved file
+        resolved: ""
+        route: ""
+        lease: null
+        expect: {servers: [1.1.1.1, 8.8.8.8], source: fallback, interface: null, pending: false}
+
+    # The questions: A for every record and one name per TLD, AAAA for a pair, and a child of every pair.
+    query_cases:
+      - name: records, a TLD and a pair
+        dns:
+          revision: *revision
+          listen: *listen
+          tlds: [{name: test, address: 10.44.0.7}, {name: prod, address: 10.44.0.8}]
+          records:
+            - {name: gateway.orbit, address: 10.44.0.2, pair: true}
+            - {name: x.test, address: 10.44.0.9, pair: false}
+        records: [gateway.orbit, A, gateway.orbit, AAAA, orbit-check.gateway.orbit, A, x.test, A, orbit-check.test, A, orbit-check.prod, A]
+        children: []
+      - name: a pair outside the local zones has a forwarded child
+        dns:
+          revision: *revision
+          listen: *listen
+          tlds: []
+          records:
+            - {name: app.example.com, address: 10.44.0.3, pair: true}
+            - {name: gateway.orbit, address: 10.44.0.2, pair: true}
+        records: [app.example.com, A, app.example.com, AAAA, gateway.orbit, A, gateway.orbit, AAAA, orbit-check.gateway.orbit, A]
+        children: [orbit-check.app.example.com, A]
+      - name: nothing to ask
+        dns: *empty
+        records: []
+        children: []
+
+    # The verdict on what dig printed. A block is one question: its status, its type and its answers.
+    verify_dns: &verify_dns
+      revision: *revision
+      listen: *listen
+      tlds: [{name: test, address: 10.44.0.7}]
+      records:
+        - {name: gateway.orbit, address: 10.44.0.2, pair: true}
+        - {name: x.test, address: 10.44.0.9, pair: false}
+    good_blocks: &good_blocks
+      - {name: gateway.orbit, type: A, status: NOERROR, answers: [10.44.0.2]}
+      - {name: gateway.orbit, type: AAAA, status: NOERROR, answers: []}
+      - {name: x.test, type: A, status: NOERROR, answers: [10.44.0.9]}
+      - {name: orbit-check.test, type: A, status: NOERROR, answers: [10.44.0.7]}
+      - {name: orbit-check.gateway.orbit, type: A, status: NXDOMAIN, answers: []}
+    verify_pair_dns: &verify_pair_dns
+      revision: *revision
+      listen: *listen
+      tlds: []
+      records:
+        - {name: app.example.com, address: 10.44.0.3, pair: true}
+    good_pair_blocks:
+      - {name: app.example.com, type: A, status: NOERROR, answers: [10.44.0.3]}
+      - {name: app.example.com, type: AAAA, status: NOERROR, answers: []}
+    verify_cases:
+      - {name: every answer is as rendered, dns: *verify_dns, blocks: *good_blocks, errors: []}
+      - name: a child inside a local zone that nobody answered is an error
+        dns: *verify_dns
+        blocks: "{{ good_blocks[:4] }}"
+        errors: ["orbit-check.gateway.orbit A: a child of a name in a local zone should be NXDOMAIN, got no answer"]
+      - name: a child inside a local zone that went upstream and got an address is an error
+        dns: *verify_dns
+        blocks: "{{ good_blocks[:4] + [{'name': 'orbit-check.gateway.orbit', 'type': 'A', 'status': 'NOERROR', 'answers': ['198.51.100.7']}] }}"
+        errors: ["orbit-check.gateway.orbit A: a child of a name in a local zone should be NXDOMAIN, got NOERROR 198.51.100.7"]
+      - name: a child that the upstream never answered is no answer
+        dns: *verify_pair_dns
+        blocks: "{{ good_pair_blocks }}"
+        errors: []
+      - name: a child answered by the upstream with another address
+        dns: *verify_pair_dns
+        blocks: "{{ good_pair_blocks + [{'name': 'orbit-check.app.example.com', 'type': 'A', 'status': 'NOERROR', 'answers': ['198.51.100.7']}] }}"
+        errors: []
+      - name: a child answered with the address of its parent is an error
+        dns: *verify_pair_dns
+        blocks: "{{ good_pair_blocks + [{'name': 'orbit-check.app.example.com', 'type': 'A', 'status': 'NOERROR', 'answers': ['10.44.0.3']}] }}"
+        errors: ["orbit-check.app.example.com A: a child of the name was answered with 10.44.0.3"]
+      - name: the AAAA of a pair leaks an address
+        dns: *verify_dns
+        blocks: "{{ [good_blocks[0], {'name': 'gateway.orbit', 'type': 'AAAA', 'status': 'NOERROR', 'answers': ['2001:db8::2']}] + good_blocks[2:] }}"
+        errors: ["gateway.orbit AAAA: expected NOERROR without an answer, got NOERROR 2001:db8::2"]
+      - name: the AAAA of a pair is refused
+        dns: *verify_dns
+        blocks: "{{ [good_blocks[0], {'name': 'gateway.orbit', 'type': 'AAAA', 'status': 'REFUSED', 'answers': []}] + good_blocks[2:] }}"
+        errors: ["gateway.orbit AAAA: expected NOERROR without an answer, got REFUSED"]
+      - name: the A of a record is another address
+        dns: *verify_dns
+        blocks: "{{ good_blocks[:2] + [{'name': 'x.test', 'type': 'A', 'status': 'NOERROR', 'answers': ['10.44.0.7']}] + good_blocks[3:] }}"
+        errors: ["x.test A: expected 10.44.0.9, got NOERROR 10.44.0.7"]
+      - name: the A of a record is NXDOMAIN
+        dns: *verify_dns
+        blocks: "{{ [{'name': 'gateway.orbit', 'type': 'A', 'status': 'NXDOMAIN', 'answers': []}] + good_blocks[1:] }}"
+        errors: ["gateway.orbit A: expected 10.44.0.2, got NXDOMAIN"]
+      - name: the name of a TLD does not answer
+        dns: *verify_dns
+        blocks: "{{ good_blocks[:3] + good_blocks[4:] }}"
+        errors: ["orbit-check.test A: expected 10.44.0.7, got no answer"]
+      - name: dnsmasq is down, so nothing answered
+        dns: *verify_dns
+        blocks: []
+        errors:
+          - "gateway.orbit A: expected 10.44.0.2, got no answer"
+          - "gateway.orbit AAAA: expected NOERROR without an answer, got no answer"
+          - "orbit-check.gateway.orbit A: a child of a name in a local zone should be NXDOMAIN, got no answer"
+          - "x.test A: expected 10.44.0.9, got no answer"
+          - "orbit-check.test A: expected 10.44.0.7, got no answer"
+      - name: a name of another case does not count
+        dns: *verify_dns
+        blocks: "{{ [{'name': 'Gateway.Orbit', 'type': 'A', 'status': 'NOERROR', 'answers': ['10.44.0.2']}] + good_blocks[1:] }}"
+        errors: []
+
+    # Real dig output (BIND 9.10.6 against dnsmasq 2.92), copied as it came, for the one parser that reads it.
+    real_dig: |
+      ;; Got answer:
+      ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 19159
+      ;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+      ;; OPT PSEUDOSECTION:
+      ; EDNS: version: 0, flags:; udp: 1232
+      ;; QUESTION SECTION:
+      ;gateway.orbit.			IN	A
+
+      ;; ANSWER SECTION:
+      gateway.orbit.		30	IN	A	10.44.0.2
+
+      ;; Got answer:
+      ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 41401
+      ;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1
+
+      ;; OPT PSEUDOSECTION:
+      ; EDNS: version: 0, flags:; udp: 1232
+      ;; QUESTION SECTION:
+      ;gateway.orbit.			IN	AAAA
+
+      ;; Got answer:
+      ;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 5645
+      ;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1
+
+      ;; OPT PSEUDOSECTION:
+      ; EDNS: version: 0, flags:; udp: 1232
+      ;; QUESTION SECTION:
+      ;orbit-check.gateway.orbit.	IN	A
+
+      ;; Got answer:
+      ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 27991
+      ;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+      ;; OPT PSEUDOSECTION:
+      ; EDNS: version: 0, flags:; udp: 1232
+      ;; QUESTION SECTION:
+      ;x.test.				IN	A
+
+      ;; ANSWER SECTION:
+      x.test.			30	IN	A	10.44.0.9
+
+      ;; Got answer:
+      ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 3333
+      ;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+      ;; OPT PSEUDOSECTION:
+      ; EDNS: version: 0, flags:; udp: 1232
+      ;; QUESTION SECTION:
+      ;orbit-check.test.		IN	A
+
+      ;; ANSWER SECTION:
+      orbit-check.test.	30	IN	A	10.44.0.7
+
+    # The last answer line of the record questions has no newline (Ansible strips it from the stdout), and dig prints the first line of
+    # the child questions right after it: the timeout of a child that the upstream never answered.
+    real_dig_timeout: |-
+      {{ real_dig | trim }};; communications error to 10.44.0.1#53: timed out
+
+    # The manifest of the snapshot: the first cutover from the old listener (legacy files, a snippet, two units, a catalog) and a later publication.
+    snapshot_cases:
+      - name: the first cutover from the old listener
+        revision: "1762540000000001"
+        new: [/etc/dnsmasq.d/orbit.conf, /var/lib/orbit/dnsmasq/orbit.hosts, /var/lib/orbit/dnsmasq/orbit.servers]
+        copies:
+          - {item: /etc/dnsmasq.d/orbit-vpn.conf, checksum: aaa}
+          - {item: /etc/dnsmasq.d/ubuntu-fan, checksum: bbb}
+          - {item: /etc/systemd/system/orbit-private-dns.socket, checksum: ccc}
+        absent: [/etc/dnsmasq.d/orbit.conf, /var/lib/orbit/dnsmasq/orbit.hosts, /var/lib/orbit/dnsmasq/orbit.servers]
+        binders: [/etc/dnsmasq.d/ubuntu-fan]
+        dnsmasq: {ActiveState: active, UnitFileState: enabled}
+        listeners:
+          - {item: orbit-private-dns.socket, status: {ActiveState: active, UnitFileState: enabled}}
+          - {item: orbit-private-dns.service, status: {ActiveState: inactive, UnitFileState: static}}
+        holders: [{item: 10.44.0.1, stdout_lines: ["udp UNCONN 0 0 10.44.0.1:53 0.0.0.0:* users:((\"systemd\",pid=1,fd=40))"]}]
+        expect:
+          revision: "1762540000000001"
+          files:
+            - {path: /etc/dnsmasq.d/orbit-vpn.conf, saved: "%etc%dnsmasq.d%orbit-vpn.conf", sha256: aaa, present: true, legacy: true, binder: false}
+            - {path: /etc/dnsmasq.d/ubuntu-fan, saved: "%etc%dnsmasq.d%ubuntu-fan", sha256: bbb, present: true, legacy: true, binder: true}
+            - {path: /etc/systemd/system/orbit-private-dns.socket, saved: "%etc%systemd%system%orbit-private-dns.socket", sha256: ccc, present: true, legacy: true, binder: false}
+            - {path: /etc/dnsmasq.d/orbit.conf, saved: null, sha256: null, present: false, legacy: false, binder: false}
+            - {path: /var/lib/orbit/dnsmasq/orbit.hosts, saved: null, sha256: null, present: false, legacy: false, binder: false}
+            - {path: /var/lib/orbit/dnsmasq/orbit.servers, saved: null, sha256: null, present: false, legacy: false, binder: false}
+          units:
+            - {name: dnsmasq, active: true, enabled: true}
+            - {name: orbit-private-dns.socket, active: true, enabled: true}
+            - {name: orbit-private-dns.service, active: false, enabled: false}
+          holders:
+            - {address: 10.44.0.1, owners: ["udp UNCONN 0 0 10.44.0.1:53 0.0.0.0:* users:((\"systemd\",pid=1,fd=40))"]}
+      - name: a later publication holds the new set only
+        revision: "1762540000000009"
+        new: [/etc/dnsmasq.d/orbit.conf, /var/lib/orbit/dnsmasq/orbit.hosts, /var/lib/orbit/dnsmasq/orbit.servers]
+        copies:
+          - {item: /etc/dnsmasq.d/orbit.conf, checksum: ddd}
+          - {item: /var/lib/orbit/dnsmasq/orbit.hosts, checksum: eee}
+          - {item: /var/lib/orbit/dnsmasq/orbit.servers, checksum: fff}
+        absent: []
+        binders: []
+        dnsmasq: {ActiveState: failed, UnitFileState: disabled}
+        listeners: []
+        holders: []
+        expect:
+          revision: "1762540000000009"
+          files:
+            - {path: /etc/dnsmasq.d/orbit.conf, saved: "%etc%dnsmasq.d%orbit.conf", sha256: ddd, present: true, legacy: false, binder: false}
+            - {path: /var/lib/orbit/dnsmasq/orbit.hosts, saved: "%var%lib%orbit%dnsmasq%orbit.hosts", sha256: eee, present: true, legacy: false, binder: false}
+            - {path: /var/lib/orbit/dnsmasq/orbit.servers, saved: "%var%lib%orbit%dnsmasq%orbit.servers", sha256: fff, present: true, legacy: false, binder: false}
+          units:
+            - {name: dnsmasq, active: false, enabled: false}
+          holders: []
+
+    # The scripts of the cutover and the recovery, run with stand-ins (scripts.yml).
+    script_units: &script_units [orbit-private-dns.socket, orbit-private-dns.service]
+    script_stop: &script_stop "stop -- orbit-private-dns.socket orbit-private-dns.service"
+    script_held: &script_held "show --property=MainPID --value dnsmasq"
+    script_recovery: &script_recovery
+      - daemon-reload
+      - enable dnsmasq
+      - restart dnsmasq
+      - enable -- orbit-private-dns.socket
+      - start -- orbit-private-dns.socket
+      - start -- orbit-private-dns.service
+    script_cases:
+      - id: ok
+        name: dnsmasq starts and holds every address
+        units: *script_units
+        expect:
+          rc: 0
+          state: ok
+          candidate: candidate
+          legacy: gone
+          systemctl: [*script_stop, restart dnsmasq, *script_held, *script_held]
+      - id: no-listener
+        name: no old listener unit runs, so none is stopped
+        units: []
+        expect:
+          rc: 0
+          state: ok
+          candidate: candidate
+          legacy: gone
+          systemctl: [restart dnsmasq, *script_held, *script_held]
+      - id: restart-fails
+        name: dnsmasq does not start, and the script restores the old listener by itself
+        units: *script_units
+        fail_restart: true
+        expect:
+          rc: 1
+          state: recovered dnsmasq_start_failed
+          candidate: gone
+          legacy: legacy
+          systemctl: "{{ [script_stop, 'restart dnsmasq'] + script_recovery }}"
+      - id: not-listening
+        name: dnsmasq starts but another process holds the address
+        units: *script_units
+        held_pid: "999"
+        expect:
+          rc: 1
+          state: recovered dnsmasq_not_listening
+          candidate: gone
+          legacy: legacy
+          systemctl: "{{ [script_stop, 'restart dnsmasq', script_held] + script_recovery }}"
+      - id: blocker-refuses
+        name: a further listen address answers REFUSED from a foreign dnsmasq, and the old setup is still recovered
+        units: *script_units
+        listen: ["10.99.99.1", "10.99.99.77"]
+        fail_restart: true
+        expect:
+          rc: 1
+          state: recovered dnsmasq_start_failed
+          candidate: gone
+          legacy: legacy
+          systemctl: "{{ [script_stop, 'restart dnsmasq'] + script_recovery }}"
+      - id: restore-fails
+        name: the restored resolvers do not answer, and the state says failed
+        units: *script_units
+        fail_restart: true
+        dig_fails: true
+        expect:
+          rc: 1
+          state: failed dnsmasq_start_failed
+          candidate: gone
+          legacy: legacy
+          systemctl: "{{ [script_stop, 'restart dnsmasq'] + script_recovery }}"
+
+  tasks:
+    - name: Render the files
+      ansible.builtin.set_fact:
+        rendered: >-
+          {{ rendered | default({}) | combine({c.name: {
+          'conf': lookup('ansible.builtin.template', templates ~ '/dns-orbit.conf.j2'),
+          'hosts': lookup('ansible.builtin.template', templates ~ '/dns-orbit.hosts.j2'),
+          'servers': lookup('ansible.builtin.template', templates ~ '/dns-orbit.servers.j2')}}) }}
+      vars:
+        dns: "{{ c.dns }}"
+        dns_upstream: "{{ c.upstream }}"
+        dns_hosts_path: /var/lib/orbit/dnsmasq/orbit.hosts
+        dns_servers_path: /var/lib/orbit/dnsmasq/orbit.servers
+      loop: "{{ render_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The files are the expected text
+      ansible.builtin.assert:
+        that:
+          - rendered[c.name].conf == c.conf
+          - rendered[c.name].hosts == c.hosts
+          - rendered[c.name].servers == c.servers
+        fail_msg: "{{ c.name }}: got {{ rendered[c.name] | to_json }}, expected {{ {'conf': c.conf, 'hosts': c.hosts, 'servers': c.servers} | to_json }}"
+        quiet: true
+      loop: "{{ render_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    # The grammar the phase holds every line to before it installs: a valid render never breaks it, a stray line does.
+    - name: Every rendered line is a line of the grammar
+      ansible.builtin.assert:
+        that:
+          - rendered[c.name].conf.splitlines() | reject('match', dns_line_conf) | list == []
+          - rendered[c.name].hosts.splitlines() | reject('match', dns_line_hosts) | list == []
+          - rendered[c.name].servers.splitlines() | reject('match', dns_line_servers) | list == []
+        fail_msg: "{{ c.name }}: a line of {{ rendered[c.name] | to_json }} is outside the grammar"
+        quiet: true
+      loop: "{{ render_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The grammar refuses a stray line
+      ansible.builtin.assert:
+        that:
+          - bad_lines.hosts | reject('match', dns_line_hosts) | list == bad_lines.hosts
+          - bad_lines.servers | reject('match', dns_line_servers) | list == bad_lines.servers
+          - bad_lines.conf | reject('match', dns_line_conf) | list == bad_lines.conf
+        fail_msg: "a line that must be refused matched the grammar"
+        quiet: true
+
+    - name: Validate the data
+      ansible.builtin.set_fact:
+        validated: "{{ validated | default({}) | combine({c.name: lookup('ansible.builtin.template', templates ~ '/dns-validate.j2') | from_json}) }}"
+      vars:
+        dns: "{{ c.dns }}"
+      loop: "{{ validate_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The data is accepted or refused with its code
+      ansible.builtin.assert:
+        that:
+          - validated[c.name].error == c.error
+        fail_msg: "{{ c.name }}: got {{ validated[c.name] | to_json }}, expected {{ c.error | to_json }}"
+        quiet: true
+      loop: "{{ validate_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+
+    - name: Read the resolvers of the uplink
+      ansible.builtin.set_fact:
+        uplinks: "{{ uplinks | default({}) | combine({c.name: lookup('ansible.builtin.template', templates ~ '/dns-uplink.j2') | from_json}) }}"
+      vars:
+        uplink_resolved: "{{ c.resolved }}"
+        uplink_route: "{{ c.route }}"
+        uplink_lease: "{{ c.lease }}"
+      loop: "{{ uplink_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The resolvers are the expected ones
+      ansible.builtin.assert:
+        that:
+          - uplinks[c.name] == c.expect
+        fail_msg: "{{ c.name }}: got {{ uplinks[c.name] | to_json }}, expected {{ c.expect | to_json }}"
+        quiet: true
+      loop: "{{ uplink_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+
+    - name: Ask the questions
+      ansible.builtin.set_fact:
+        questions: "{{ questions | default({}) | combine({c.name: lookup('ansible.builtin.template', templates ~ '/dns-check.j2') | from_json}) }}"
+      vars:
+        dns: "{{ c.dns }}"
+        dns_mode: queries
+      loop: "{{ query_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The questions are the expected ones
+      ansible.builtin.assert:
+        that:
+          - questions[c.name].records == c.records
+          - questions[c.name].children == c.children
+        fail_msg: "{{ c.name }}: got {{ questions[c.name] | to_json }}, expected {{ {'records': c.records, 'children': c.children} | to_json }}"
+        quiet: true
+      loop: "{{ query_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+
+    # dig prints each block as it prints any answer; dig.j2 is that format, so a case lists blocks, not text.
+    - name: Print the answers like dig
+      ansible.builtin.set_fact:
+        dig_texts: "{{ dig_texts | default({}) | combine({item.0.name: (dig_texts[item.0.name] | default('')) ~ lookup('ansible.builtin.template', playbook_dir ~ '/dig.j2')}) }}"
+      vars:
+        c_name: "{{ item.1.name }}"
+        c_type: "{{ item.1.type }}"
+        c_status: "{{ item.1.status }}"
+        c_answers: "{{ item.1.answers }}"
+      loop: "{{ verify_cases | subelements('blocks', skip_missing=true) }}"
+      loop_control: {label: "{{ item.0.name }}: {{ item.1.name }} {{ item.1.type }}"}
+    - name: Check the answers
+      ansible.builtin.set_fact:
+        verdicts: "{{ verdicts | default({}) | combine({c.name: lookup('ansible.builtin.template', templates ~ '/dns-check.j2') | from_json}) }}"
+      vars:
+        dns: "{{ c.dns }}"
+        dns_mode: verify
+        dig_text: "{{ dig_texts[c.name] | default('') }}"
+      loop: "{{ verify_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The verdict is the expected one
+      ansible.builtin.assert:
+        that:
+          - verdicts[c.name].errors == c.errors
+        fail_msg: "{{ c.name }}: got {{ verdicts[c.name] | to_json }}, expected {{ c.errors | to_json }}"
+        quiet: true
+      loop: "{{ verify_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+
+    - name: Check the answers of real dig output
+      ansible.builtin.set_fact:
+        real_verdict: "{{ lookup('ansible.builtin.template', templates ~ '/dns-check.j2') | from_json }}"
+      vars:
+        dns: "{{ verify_dns }}"
+        dns_mode: verify
+        dig_text: "{{ real_dig }}"
+    - name: Real dig output is read as dig prints it
+      ansible.builtin.assert:
+        that:
+          - real_verdict.errors == []
+        fail_msg: "real dig output: got {{ real_verdict | to_json }}, expected no error"
+        quiet: true
+
+    - name: Check the answers when the last answer line is followed by a timeout message
+      ansible.builtin.set_fact:
+        timeout_verdict: "{{ lookup('ansible.builtin.template', templates ~ '/dns-check.j2') | from_json }}"
+      vars:
+        dns: "{{ verify_dns }}"
+        dns_mode: verify
+        dig_text: "{{ real_dig_timeout }}"
+    - name: The timeout message does not hide the answer before it
+      ansible.builtin.assert:
+        that:
+          - real_dig_timeout is search('10[.]44[.]0[.]7;; communications error')
+          - timeout_verdict.errors == []
+        fail_msg: "timeout after the last answer: got {{ timeout_verdict | to_json }}, expected no error"
+        quiet: true
+
+    # The rendered files in a real dnsmasq: the lines that dnsmasq 2.92 reads must answer as ADR 0248 says. The listen address is the loopback
+    # address and the port a high one, and bind-dynamic (Linux only) becomes bind-interfaces; nothing else of the render changes.
+    - name: Find dnsmasq and dig
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: [/opt/homebrew/sbin/dnsmasq, /usr/sbin/dnsmasq, /usr/local/sbin/dnsmasq]
+      register: dnsmasq_binaries
+    - name: Find dig
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: [/usr/bin/dig, /opt/homebrew/bin/dig, /usr/local/bin/dig]
+      register: dig_binaries
+    - name: Run the rendered files in dnsmasq
+      when: (dnsmasq_binaries.results | selectattr('stat.exists') | list | length) > 0 and (dig_binaries.results | selectattr('stat.exists') | list | length) > 0
+      vars:
+        dnsmasq_bin: "{{ (dnsmasq_binaries.results | selectattr('stat.exists') | first).item }}"
+        dig_bin: "{{ (dig_binaries.results | selectattr('stat.exists') | first).item }}"
+        live_port: 15353
+        live_dns:
+          revision: *revision
+          listen: [127.0.0.1]
+          tlds: [{name: test, address: 10.44.0.7}]
+          records:
+            - {name: gateway.orbit, address: 10.44.0.2, pair: true}
+            - {name: vpn.orbit, address: 10.44.0.1, pair: true}
+            - {name: app.example.com, address: 10.44.0.3, pair: true}
+            - {name: collector.ai-router.orbit, address: 10.44.0.5, pair: true}
+        # name, type, the status dnsmasq gives, the answers it gives. An upstream that is dead (127.0.0.1#59999) turns a forwarded query into a timeout.
+        live_cases:
+          - {name: gateway.orbit, type: A, status: NOERROR, data: [10.44.0.2]}
+          - {name: vpn.orbit, type: A, status: NOERROR, data: [10.44.0.1]}
+          - {name: gateway.orbit, type: AAAA, status: NOERROR, data: []}
+          - {name: vpn.orbit, type: AAAA, status: NOERROR, data: []}
+          - {name: app.example.com, type: AAAA, status: NOERROR, data: []}
+          - {name: x.test, type: A, status: NOERROR, data: [10.44.0.7]}
+          - {name: x.test, type: AAAA, status: NOERROR, data: []}
+          # An unknown name under .orbit never leaves the Node.
+          - {name: unknown.orbit, type: A, status: NXDOMAIN, data: []}
+          # A single-label name is refused locally (domain-needed).
+          - {name: onelabel, type: A, status: NXDOMAIN, data: []}
+          # A reverse lookup of a private address that no record owns is answered locally (bogus-priv).
+          - {name: 99.0.44.10.in-addr.arpa, type: PTR, status: NXDOMAIN, data: []}
+          # A descendant of an exact .orbit name never goes upstream either: NXDOMAIN at once, not a timeout, with a dead upstream.
+          - {name: child.gateway.orbit, type: A, status: NXDOMAIN, data: [], within_ms: 1000}
+          - {name: deep.child.gateway.orbit, type: A, status: NXDOMAIN, data: [], within_ms: 1000}
+          - {name: x.collector.ai-router.orbit, type: A, status: NXDOMAIN, data: [], within_ms: 1000}
+          - {name: collector.ai-router.orbit, type: A, status: NOERROR, data: [10.44.0.5]}
+          - {name: collector.ai-router.orbit, type: AAAA, status: NOERROR, data: []}
+          # A child of a Route outside the local zones, and a public name, are forwarded: the dead upstream gives no answer.
+          - {name: child.app.example.com, type: A, status: none, data: []}
+          - {name: example.org, type: A, status: none, data: []}
+      block:
+        - name: Make a folder for dnsmasq
+          ansible.builtin.tempfile:
+            state: directory
+            prefix: orbit-dnsmasq-unit-
+          register: live
+        # dnsmasq reads the hosts and servers files after it drops to its own account, so the folder must be traversable like /var/lib/orbit.
+        - name: Let the account of dnsmasq read the folder
+          ansible.builtin.file:
+            path: "{{ live.path }}"
+            state: directory
+            mode: "0755"
+        - name: Write the rendered files
+          ansible.builtin.copy:
+            content: "{{ item.content }}"
+            dest: "{{ live.path }}/{{ item.name }}"
+            mode: "0644"
+          vars:
+            dns: "{{ live_dns }}"
+            dns_upstream: ["127.0.0.1#59999"]
+            dns_hosts_path: "{{ live.path }}/orbit.hosts"
+            dns_servers_path: "{{ live.path }}/orbit.servers"
+            live_conf: "{{ lookup('ansible.builtin.template', templates ~ '/dns-orbit.conf.j2') }}"
+          loop:
+            - name: orbit.conf
+              content: "{{ live_conf | regex_replace('(?m)^listen-address=127[.]0[.]0[.]55$', '') | regex_replace('(?m)^bind-dynamic$', 'bind-interfaces') }}"
+            - name: orbit.hosts
+              content: "{{ lookup('ansible.builtin.template', templates ~ '/dns-orbit.hosts.j2') }}"
+            - name: orbit.servers
+              content: "{{ lookup('ansible.builtin.template', templates ~ '/dns-orbit.servers.j2') }}"
+          loop_control: {label: "{{ item.name }}"}
+        - name: Move dnsmasq to the high port
+          ansible.builtin.lineinfile:
+            path: "{{ live.path }}/orbit.conf"
+            line: "{{ item }}"
+          loop: ["port={{ live_port }}", "pid-file={{ live.path }}/pid"]
+        - name: The file is the one dnsmasq accepts
+          ansible.builtin.command:
+            argv: ["{{ dnsmasq_bin }}", --test, "--conf-file={{ live.path }}/orbit.conf"]
+          changed_when: false
+        - name: Start dnsmasq
+          ansible.builtin.command:
+            argv: ["{{ dnsmasq_bin }}", "--conf-file={{ live.path }}/orbit.conf", "--conf-dir="]
+          changed_when: true
+        - name: Ask dnsmasq
+          ansible.builtin.command:
+            argv: ["{{ dig_bin }}", "@127.0.0.1", -p, "{{ live_port }}", +noall, +comments, +answer, +stats, +tries=1, +time=2, "{{ item.name }}", "{{ item.type }}"]
+          register: live_answers
+          changed_when: false
+          failed_when: false
+          loop: "{{ live_cases }}"
+          loop_control: {label: "{{ item.name }} {{ item.type }}"}
+        - name: dnsmasq answers as the render says
+          vars:
+            got_status: "{{ item.stdout | regex_findall('status: ([A-Z]+)') | first | default('none') }}"
+            got_data: "{{ item.stdout | regex_findall('(?m)^\\S+\\s+[0-9]+\\s+IN\\s+(?:A|AAAA|PTR)\\s+(\\S+)') }}"
+            got_ms: "{{ (item.stdout | regex_findall('Query time: ([0-9]+) msec') | first | default('999999')) | int }}"
+          ansible.builtin.assert:
+            that:
+              - got_status == item.item.status
+              - got_data == item.item.data
+              - got_ms | int <= (item.item.within_ms | default(999999))
+            fail_msg: "{{ item.item.name }} {{ item.item.type }}: {{ item.stdout }}"
+            quiet: true
+          loop: "{{ live_answers.results }}"
+          loop_control: {label: "{{ item.item.name }} {{ item.item.type }}"}
+      always:
+        - name: Stop dnsmasq
+          ansible.builtin.shell: 'test -f "{{ live.path }}/pid" && kill "$(cat "{{ live.path }}/pid")"; rm -rf "{{ live.path }}"'
+          changed_when: false
+          failed_when: false
+          when: live.path is defined
+
+    - name: Describe the snapshots
+      ansible.builtin.set_fact:
+        snapshots: "{{ snapshots | default({}) | combine({c.name: lookup('ansible.builtin.template', templates ~ '/dns-snapshot.j2') | from_json}) }}"
+      vars:
+        snap_revision: "{{ c.revision }}"
+        snap_new: "{{ c.new }}"
+        snap_copies: "{{ c.copies }}"
+        snap_absent: "{{ c.absent }}"
+        snap_binders: "{{ c.binders }}"
+        snap_dnsmasq: "{{ c.dnsmasq }}"
+        snap_listeners: "{{ c.listeners }}"
+        snap_holders: "{{ c.holders }}"
+      loop: "{{ snapshot_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The manifests are the expected ones
+      ansible.builtin.assert:
+        that:
+          - snapshots[c.name] == c.expect
+        fail_msg: "{{ c.name }}: got {{ snapshots[c.name] | to_json }}, expected {{ c.expect | to_json }}"
+        quiet: true
+      loop: "{{ snapshot_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+
+    - name: Run the cutover and recovery scripts with stand-ins
+      ansible.builtin.include_tasks: scripts.yml
+
+- name: Prove Cluster member policy capability and private scope partition
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - "{{ playbook_dir }}/../../../../../ansible/vars/dns.yml"
+  vars:
+    templates: "{{ playbook_dir }}/../../../../../ansible/templates"
+    policy:
+      server: 10.44.0.1
+      domains: [orbit, foreign.test]
+      all_domains: [orbit, test]
+      delegate: {cluster_id: 1, router_id: 7, server: 192.168.6.20, domains: [test]}
+  tasks:
+    - name: Render supported member policy
+      ansible.builtin.set_fact:
+        capable: "{{ lookup('ansible.builtin.template', templates ~ '/dns-member-policy.j2') | from_json }}"
+      vars:
+        member_version: 258
+    - name: Render unsupported member policy
+      ansible.builtin.set_fact:
+        unsupported: "{{ lookup('ansible.builtin.template', templates ~ '/dns-member-policy.j2') | from_json }}"
+      vars:
+        member_version: 257
+    - name: Check scope and capability outcomes
+      ansible.builtin.assert:
+        that:
+          - capable.error is none
+          - capable.delegate.server == '192.168.6.20'
+          - capable.domains == ['orbit', 'foreign.test']
+          - "'DNS=192.168.6.20\n' in capable.delegate_content"
+          - "'DNS=10.44.0.1' not in capable.delegate_content"
+          - "'Domains=~test\nDefaultRoute=no\n' in capable.delegate_content"
+          - unsupported.error is none
+          - unsupported.delegate is none
+          - unsupported.domains == ['orbit', 'test']
+          - unsupported.degraded == 'dns.cluster_delegate_unsupported'
+          - "unsupported.delegate_content == ''"
+    - name: Aggregate a partial publication without losing successful selections
+      ansible.builtin.set_fact:
+        partial: "{{ lookup('ansible.builtin.template', templates ~ '/dns-result.j2') | from_json }}"
+      vars:
+        result_groups: {dns_node: [node, router], dns_member: [member]}
+        result_hosts:
+          node:
+            dns_result: {revision: '2', digest: current, desired_digest: current, selected_at: 100, dnsmasq: reloaded}
+          router:
+            dns_failure: {code: dns.bind_conflict}
+          member: {}
+    - name: Require retention after partial resolver publication
+      ansible.builtin.assert:
+        that:
+          - partial.error_code == 'dns.bind_conflict'
+          - partial.resolvers[0].digest == 'current'
+          - partial.resolvers[0].selected_at == 100
+          - partial.members[0].effective is not defined
+    - name: Aggregate prepared receipts after failed persistence or rollback
+      ansible.builtin.set_fact:
+        rejected_member: "{{ lookup('ansible.builtin.template', templates ~ '/dns-result.j2') | from_json }}"
+      vars:
+        result_groups: {dns_member: [member]}
+        result_hosts:
+          member:
+            dns_member_committed: "{{ item }}"
+            dns_member_failure: dns.member_selection_failed
+            dns_member_receipt: {revision: '3', effective: {delegate: null}, selected_at: 200}
+      loop: [false, true]
+      register: rejected_members
+    - name: A prepared or failed receipt never confirms movement
+      ansible.builtin.assert:
+        that:
+          - item.ansible_facts.rejected_member.error_code == 'dns.member_selection_failed'
+          - item.ansible_facts.rejected_member.members[0].effective is not defined
+      loop: "{{ rejected_members.results }}"
+    - name: Aggregate a successfully persisted member
+      ansible.builtin.set_fact:
+        committed_member: "{{ lookup('ansible.builtin.template', templates ~ '/dns-result.j2') | from_json }}"
+      vars:
+        result_groups: {dns_member: [member]}
+        result_hosts:
+          member:
+            dns_member_committed: true
+            dns_member_receipt: {revision: '3', effective: {delegate: null}, selected_at: 200}
+    - name: Only a committed receipt without a member failure confirms movement
+      ansible.builtin.assert:
+        that:
+          - committed_member.error_code is not defined
+          - committed_member.members[0].effective.delegate is none

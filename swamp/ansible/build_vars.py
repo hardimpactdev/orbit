@@ -69,7 +69,7 @@ def build_node_add(folder):
              'node-managed': {'ansible_host': intent['address'], 'ansible_user': intent['managed_user'], 'ansible_port': 22,
                          'ansible_ssh_private_key_file': control}}
     groups = {'controller': ['swamp'], 'managed_linux': ['node-managed'], 'bootstrap': [], 'node': [],
-              'hubs': [], 'dns': []}
+              'hubs': []}
 
     def remote(name, group, ssh, key, **extra):
         target = ssh.get('target', ssh)
@@ -85,10 +85,6 @@ def build_node_add(folder):
     remote('node-control', 'node', {**bootstrap, 'host_keys': [observed['host_key']]}, control)
     for index, hub in enumerate(network['hubs']):
         remote(f'hub{index}', 'hubs', hub['ssh'], hub['ssh']['identity_file'], hub_index=index)
-    for index, dns in enumerate(intent['private_dns']):
-        # The DNS host is the Node being enrolled; the Gateway holds a placeholder for its host key until the run observes it.
-        remote(f'dns{index}', 'dns', {'target': {**dns['ssh']['target'], 'host_keys': [observed['host_key']]}},
-               dns['ssh']['identity_file'], dns_index=index)
     secrets = {}
     for path in folder.glob('secret-*'):
         secrets[path.name.removeprefix('secret-')] = path.read_text()

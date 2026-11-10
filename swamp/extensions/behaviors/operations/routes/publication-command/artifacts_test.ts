@@ -4,7 +4,6 @@ import {
     assertThrows,
 } from "jsr:@std/assert@1.0.19";
 import { composeCaddy, composePhp } from "./assets.ts";
-import { mergeDns } from "../mutation-command/dns.ts";
 
 const header = "# Managed by Orbit: Node Caddy build\n{ admin off }\n";
 const block = (name: string, target: string) =>
@@ -50,19 +49,12 @@ async function snapshot(
             account_user: "orbit",
             configurations: { "8.4": pool(1, phase.length) + pool(2, 5) },
         },
+        // The complete private DNS: a publication keeps it whole, since one write replaces the whole state.
         dns: {
-            records:
-                `host-record=moving.test,${phase}\nhost-record=survivor.test,unchanged\n`,
-            catalog: JSON.stringify({
-                records: { "moving.test": phase, "survivor.test": "unchanged" },
-                overrides: {
-                    "node:9": {
-                        "moving.test": phase,
-                        "survivor.test": "unchanged",
-                    },
-                },
-                requesters: { "10.44.0.9": 9 },
-            }),
+            revision: String(phase.length),
+            listen: ["10.44.0.1"],
+            tlds: [{ name: "test", address: "10.44.0.7" }],
+            records: [{ name: "moving.example.com", address: "10.44.0.9", pair: true }],
         },
     };
 }
@@ -138,15 +130,6 @@ Deno.test("Gateway sparse artifacts equal full canonical composition through eve
         ) + "\n" + block("added", "new");
         current.php.configurations["8.4"] = pool(1, from.length) + pool(2, 77) +
             pool(3, 6);
-        current.dns.records = current.dns.records.replace(
-            "survivor.test,unchanged",
-            "survivor.test,revised",
-        ) + "host-record=added.test,new\n";
-        const catalog = JSON.parse(current.dns.catalog);
-        catalog.records["survivor.test"] = "revised";
-        catalog.records["added.test"] = "new";
-        catalog.requesters["10.44.0.10"] = 10;
-        current.dns.catalog = JSON.stringify(catalog);
         const caddy = (values: typeof states) =>
             composeCaddy({
                 ...placement,
@@ -171,27 +154,11 @@ Deno.test("Gateway sparse artifacts equal full canonical composition through eve
                 account,
             });
         assertEquals(php(sparse), php(states));
-        const dns = (values: typeof states) =>
-            mergeDns(
-                values[from].dns,
-                values[to].dns,
-                current.dns,
-                phases.map((phase) => values[phase].dns),
-            );
-        assertEquals(dns(sparse), dns(states));
+        // DNS stays complete; content_digest is publication metadata used by the workflow.
+        const { content_digest, ...dns } = sparse[to].dns;
+        assertEquals(content_digest.length, 64);
+        assertEquals(dns, states[to].dns);
     }
-    const conflict = await snapshot("foreign");
-    assertThrows(
-        () =>
-            mergeDns(
-                sparse.before.dns,
-                sparse.after.dns,
-                conflict.dns,
-                phases.map((phase) => sparse[phase].dns),
-            ),
-        Error,
-        "owned_revision_conflict",
-    );
     assertThrows(
         () =>
             composePhp({

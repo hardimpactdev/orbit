@@ -1,7 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { toolSetupPlan } from "../node-bootstrap/tool_setup_plan.ts";
 import { composePhp } from "../routes/publication-command/assets.ts";
-import { mergeDns } from "../routes/mutation-command/dns.ts";
 
 const account = z.record(z.string(), z.array(z.string()));
 const decode = (text: string) =>
@@ -9,14 +8,12 @@ const decode = (text: string) =>
         Uint8Array.from(atob(text), (c) => c.charCodeAt(0)),
     );
 const read = async (path: string) => JSON.parse(await Deno.readTextFile(path));
-const State = z.object({ records: z.string(), catalog: z.string() })
-    .passthrough();
 const Publication = z.object({
     node_id: z.number(),
     connection: z.object({ nodeUser: z.string() }).passthrough(),
     host_keys: z.array(z.string()),
-    before: z.object({ php: z.unknown(), dns: State.nullable() }),
-    after: z.object({ php: z.unknown(), dns: State.nullable() }),
+    before: z.object({ php: z.unknown(), dns: z.unknown() }),
+    after: z.object({ php: z.unknown(), dns: z.unknown() }),
 }).passthrough();
 
 /** Compose only public resource descriptions from Ansible's captured machine reads. */
@@ -51,8 +48,6 @@ export async function roleAddPlans(
         const observed = z.object({
             account,
             pools: z.record(z.string(), z.string()),
-            records: z.string(),
-            catalog: z.string(),
         }).parse(
             await read(
                 folder + "/publication-n" + publication.node_id + ".json",
@@ -82,15 +77,7 @@ export async function roleAddPlans(
                     home: observed.account[user][4],
                 }),
             });
-        const dns = publication.after.dns === null ? null : mergeDns(
-            State.parse(publication.before.dns),
-            publication.after.dns,
-            {
-                records: decode(observed.records),
-                catalog: decode(observed.catalog),
-            },
-        );
-        publications["n" + publication.node_id] = { php, dns };
+        publications["n" + publication.node_id] = { php };
     }
     return { publications };
 }

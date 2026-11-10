@@ -36,10 +36,9 @@ sequenceDiagram
   %%> Why:
   %%> - the probe checks the hostname and the Orbit CA; an application HTTP error does not fail it, and a failed probe stops the cutover
   opt DNS answer changes
-    SW->>V: Move private DNS<br/>records + catalog, then reload
-    SW->>SW: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
-    %%> Why once for all Routes:
-    %%> - all names move in one step and the grace is paid once; it counts from the stored time of the last move, so a rerun does not skip it
+    SW->>V: Move private DNS<br/>child dns-publish
+    %%> Retirement barrier:
+    %%> - shared dns-publish owns the single 31-second grace and its durable retry deadline; this child adds no wait
   end
   SW->>N: Withdraw old placement<br/>@swamp/cfgmgmt/file absent
   %%> What it does:

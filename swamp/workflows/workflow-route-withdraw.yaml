@@ -2,7 +2,7 @@ id: 7d3c1e52-84a1-4f6b-9b0e-2c5a6f1d9e47
 name: route-withdraw
 queueTimeout: 30
 labels: {role: swamp}
-description: "instance.destroy: withdraw a Route from every Node it touches, one Ansible read, one composition and one Ansible apply per Node, and prove every contribution."
+description: "instance.destroy: withdraw a Route from every Node it touches, one Ansible read, one composition and one Ansible apply per Node, then publish the private DNS, and prove every contribution."
 inputs:
   type: object
   properties:
@@ -76,12 +76,12 @@ jobs:
           host_keys: ${{ inputs.intent.route_mutations[inputs.side].publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}
         execution_secrets: {}
     allowFailure: true
-    # Each Node that serves the Route, answers its DNS or holds a withdrawn certificate scope, in parallel: its pools, Caddyfile,
-    # private DNS records and certificate folders, each written once. The captured states run in order against what the Node holds.
+    # Each Node that serves the Route or holds a withdrawn certificate scope, in parallel: its pools, Caddyfile and certificate
+    # folders, each written once. The captured states run in order against what the Node holds.
   - name: withdraw_node
     forEach:
       item: part
-      in: ${{ inputs.intent.route_mutations[inputs.side].publications.filter(p,p.serves_routes || p.prepared.dns != null || inputs.intent.route_mutations[inputs.side].cleanup.exists(leaf,leaf.node_id == p.node_id)) }}
+      in: ${{ inputs.intent.route_mutations[inputs.side].publications.filter(p,p.serves_routes || inputs.intent.route_mutations[inputs.side].cleanup.exists(leaf,leaf.node_id == p.node_id)) }}
     guard: ${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}
     dependsOn:
     - {step: withdraw_lan, condition: {type: always}}
@@ -103,8 +103,32 @@ jobs:
             serves_routes: ${{ self.part.serves_routes }}
           php: '${{ self.part.serves_routes ? {"before": inputs.intent.route_mutations.artifacts.php[inputs.side == "restore" ? self.part.after.php : self.part.before.php], "after": inputs.intent.route_mutations.artifacts.php[inputs.side == "restore" ? self.part.before.php : self.part.after.php]} : {} }}'
           caddy: '${{ self.part.serves_routes ? {"before": inputs.intent.route_mutations.artifacts.caddy[inputs.side == "restore" ? self.part.after.caddy : self.part.before.caddy], "prepared": inputs.intent.route_mutations.artifacts.caddy[inputs.side == "restore" ? self.part.withdrawn.caddy : self.part.prepared.caddy], "withdrawn": inputs.intent.route_mutations.artifacts.caddy[inputs.side == "restore" ? self.part.prepared.caddy : self.part.withdrawn.caddy], "after": inputs.intent.route_mutations.artifacts.caddy[inputs.side == "restore" ? self.part.before.caddy : self.part.after.caddy]} : {} }}'
-          dns: '${{ self.part.prepared.dns != null ? {"before": inputs.intent.route_mutations.artifacts.dns[inputs.side == "restore" ? (self.part.after.dns != null ? self.part.after.dns : self.part.prepared.dns) : self.part.before.dns], "prepared": inputs.intent.route_mutations.artifacts.dns[inputs.side == "restore" ? (self.part.withdrawn.dns != null ? self.part.withdrawn.dns : self.part.prepared.dns) : self.part.prepared.dns], "withdrawn": inputs.intent.route_mutations.artifacts.dns[inputs.side == "restore" ? self.part.prepared.dns : (self.part.withdrawn.dns != null ? self.part.withdrawn.dns : self.part.prepared.dns)], "after": inputs.intent.route_mutations.artifacts.dns[inputs.side == "restore" ? self.part.before.dns : (self.part.after.dns != null ? self.part.after.dns : self.part.prepared.dns)]} : {} }}'
           cleanup: '${{ inputs.intent.route_mutations[inputs.side].cleanup.filter(leaf,leaf.node_id == self.part.node_id).map(leaf,{"scope": leaf.scope, "user": leaf.user}) }}'
+        execution_secrets: {}
+    allowFailure: true
+    # The final private DNS, published whole by the shared child after the Node's own files. A destroy ends in its after state
+    # (the prepared one when it has none); a restore ends in the state before the publication.
+  - name: withdraw_dns
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations[inputs.side].publications.filter(p,p.prepared.dns != null) }}
+    guard: ${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: withdraw_lan, condition: {type: always}}
+    - {step: withdraw_ingress, condition: {type: always}}
+    - {step: withdraw_node, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: dns-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ self.part.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.part.node_id }}
+          connection: ${{ self.part.connection }}
+          host_keys: ${{ self.part.host_keys }}
+          dns: '${{ inputs.intent.route_mutations.artifacts.dns[inputs.side == "restore" ? self.part.before.dns : (self.part.after.dns != null ? self.part.after.dns : self.part.prepared.dns)] }}'
         execution_secrets: {}
     allowFailure: true
   - name: withdraw_retire_lan
@@ -116,6 +140,7 @@ jobs:
     - {step: withdraw_lan, condition: {type: always}}
     - {step: withdraw_ingress, condition: {type: always}}
     - {step: withdraw_node, condition: {type: always}}
+    - {step: withdraw_dns, condition: {type: always}}
     task:
       type: workflow
       workflowIdOrName: route-lan-apply
@@ -139,6 +164,7 @@ jobs:
     - {step: withdraw_lan, condition: {type: always}}
     - {step: withdraw_ingress, condition: {type: always}}
     - {step: withdraw_node, condition: {type: always}}
+    - {step: withdraw_dns, condition: {type: always}}
     - {step: withdraw_retire_lan, condition: {type: always}}
     task:
       type: workflow
@@ -164,6 +190,7 @@ jobs:
     - {step: withdraw_lan, condition: {type: always}}
     - {step: withdraw_ingress, condition: {type: always}}
     - {step: withdraw_node, condition: {type: always}}
+    - {step: withdraw_dns, condition: {type: always}}
     - {step: withdraw_retire_lan, condition: {type: always}}
     - {step: withdraw_retire_ingress, condition: {type: always}}
     task:
@@ -177,7 +204,8 @@ jobs:
         required:
           withdraw_lan: ${{ size(inputs.intent.route_mutations[inputs.side].lan) }}
           withdraw_ingress: ${{ size(inputs.intent.route_mutations[inputs.side].ingress) }}
-          withdraw_node: ${{ size(inputs.intent.route_mutations[inputs.side].publications.filter(p,p.serves_routes || p.prepared.dns != null || inputs.intent.route_mutations[inputs.side].cleanup.exists(leaf,leaf.node_id == p.node_id))) }}
+          withdraw_node: ${{ size(inputs.intent.route_mutations[inputs.side].publications.filter(p,p.serves_routes || inputs.intent.route_mutations[inputs.side].cleanup.exists(leaf,leaf.node_id == p.node_id))) }}
+          withdraw_dns: ${{ size(inputs.intent.route_mutations[inputs.side].publications.filter(p,p.prepared.dns != null)) }}
           withdraw_retire_lan: ${{ size(inputs.intent.route_mutations[inputs.side].retire_lan) }}
           withdraw_retire_ingress: ${{ size(inputs.intent.route_mutations[inputs.side].retire_ingress) }}
           withdraw_unsupported: '${{ ("prepare_certificates" in inputs.intent.route_mutations[inputs.side] ? size(inputs.intent.route_mutations[inputs.side].prepare_certificates) : 0) + size(inputs.intent.route_mutations[inputs.side].certificates) + size(inputs.intent.route_mutations[inputs.side].url_writes) }}'
@@ -188,6 +216,7 @@ jobs:
     - {step: withdraw_lan, condition: {type: always}}
     - {step: withdraw_ingress, condition: {type: always}}
     - {step: withdraw_node, condition: {type: always}}
+    - {step: withdraw_dns, condition: {type: always}}
     - {step: withdraw_retire_lan, condition: {type: always}}
     - {step: withdraw_retire_ingress, condition: {type: always}}
     - {step: forward, condition: {type: always}}

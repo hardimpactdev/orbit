@@ -187,51 +187,6 @@ function persistDns(
 const live = (setting: string) =>
     '"$(resolvectl ' + setting + ' orbit | cut -d: -f2- | xargs)"';
 /** Private names resolve on `orbit` and public names elsewhere; prints nothing, fails with one stderr line. */
-const RESOLVE = [
-    'p=$(resolvectl query --cache=no "$1") || { echo "dns.private_unresolved: $1" >&2; exit 3; }',
-    'case "$p" in *"-- link: orbit"*) ;; *) echo "dns.private_not_on_orbit: $1" >&2; exit 3;; esac',
-    'q=$(resolvectl query --cache=no "$2") || { echo "dns.public_unresolved: $2" >&2; exit 4; }',
-    'case "$q" in *"-- link: orbit"*) echo "dns.public_on_orbit: $2" >&2; exit 4;; esac',
-].join("\n");
-/** fleet.peer_dns: persist, set the live policy unless it already matches, then resolve both names. */
-function peerDnsActions(s: ReturnType<typeof steps>) {
-    const server = "inputs.intent.server", domains = "inputs.intent.domains";
-    persistDns(s, server, domains);
-    const wanted = domains + '.map(d,"~"+d).join(" ")';
-    // The match is the guard: notIf skips the command when the live policy already equals the admitted one.
-    s.cfg(
-        "Set the DNS policy",
-        "exec",
-        s.peerName("network-dns-policy"),
-        "inputs.intent.ssh",
-        {
-            // Each routing domain is quoted: unquoted, the shell expands `~orbit` to the orbit user's home directory.
-            command: expr(
-                '"resolvectl dns orbit " + ' + server +
-                    ' + " && resolvectl domain orbit " + ' + domains +
-                    '.map(d,"\'~"+d+"\'").join(" ") + " && resolvectl default-route orbit no"',
-            ),
-            notIf: expr(
-                JSON.stringify("test " + live("dns") + " = ") + " + " + server +
-                    " + " +
-                    JSON.stringify(" && test " + live("domain") + " = '") +
-                    " + " + wanted +
-                    " + " +
-                    JSON.stringify(
-                        "' && test " + live("default-route") + " = no",
-                    ),
-            ),
-        },
-    );
-    // The Gateway names the private probe; example.com is reserved and always public (RFC 2606).
-    s.read(
-        "Check resolution",
-        expr(
-            '["timeout","20","sh","-c",' + JSON.stringify(RESOLVE) +
-                ',"sh",inputs.intent.probe,"example.com"]',
-        ),
-    );
-}
 /** Peer network child: read, decide, then persist and set only when the policy changed. */
 function dnsActions(s: ReturnType<typeof steps>) {
     const server = "inputs.intent.peer.dns_server",
@@ -267,7 +222,48 @@ function dnsActions(s: ReturnType<typeof steps>) {
     );
     s.read("Read the DNS policy again", ["sh", "-c", INSPECT]);
 }
+/** The member Ansible phase is shared with Cluster publication, convergence and repair. */
+function memberWorkflow() {
+    const env = {
+        ORBIT_RUN: expr('"/tmp/orbit-peer-dns-" + run.id'),
+    };
+    const shell = (name: string, run: string, extra: Record<string, string> = {}, writes = false) => ({
+        name, labels: { role: "swamp" }, ...(writes ? { writes: true } : {}),
+        task: { type: "behavior", behaviorType: "command/shell",
+            behaviorName: expr('"peer-dns-' + name.toLowerCase().replaceAll(" ", "-") + '-" + string(inputs.node_id)'),
+            methodName: "execute", inputs: { run, env: { ...env, ...extra } } },
+    });
+    const after = (step: string, type = "succeeded") => [{ step, condition: { type } }];
+    const phase = "Apply member DNS policy";
+    return {
+        id: "f05d2ee0-5aa7-4271-9924-fda8b65a786d",
+        name: "operation-fleet-peer-dns",
+        description: "One shared Ansible member phase selects the Cluster delegate and remaining VPN scope.",
+        vaults: [], queueTimeout: 60,
+        labels: { role: "swamp" },
+        inputs: { type: "object", properties: {
+            operation_id: { type: "integer", minimum: 1 }, node_id: { type: "integer", minimum: 1 },
+            kind: { type: "string" }, intent: { type: "object" },
+            execution_secrets: { type: "object", additionalProperties: false },
+        }, required: ["operation_id", "node_id", "kind", "intent", "execution_secrets"], additionalProperties: false },
+        jobs: [{ name: "dns", labels: { role: "swamp" }, steps: [
+            { name: "Write the intent", labels: { role: "swamp" }, writes: true,
+                task: { type: "behavior", behaviorType: "@nckrtl/ansible-input", behaviorName: "ansible-input", methodName: "write",
+                    inputs: { intent: expr("inputs.intent"), path: expr('"/tmp/orbit-peer-dns-" + run.id + "/intent.json"') } } },
+            { ...shell(phase, 'timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags member "$ORBIT_ANSIBLE/peer-dns.yml"', {
+                ORBIT_ANSIBLE: expr('steps["Write the intent"].outputs.assets'),
+                ANSIBLE_CONFIG: expr('steps["Write the intent"].outputs.assets + "/ansible.cfg"'),
+                ANSIBLE_SSH_ARGS: expr('"-o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-peer-dns-" + run.id + "/known_hosts"'),
+            }, true), dependsOn: after("Write the intent") },
+            { ...shell("Check resolution", 'timeout 10 cat "$ORBIT_RUN/result.json"'), dependsOn: after(phase, "always") },
+            { ...shell("Remove the run folder", 'timeout 30 rm -rf -- "$ORBIT_RUN"', {}, true),
+                dependsOn: after("Check resolution", "always") },
+        ] }],
+    };
+}
+
 export function workflow(network: boolean) {
+    if (!network) return memberWorkflow();
     const s = steps();
     if (network) {
         const peer = "inputs.intent.ssh", hub = "inputs.intent.hub.ssh";
@@ -372,8 +368,17 @@ export function workflow(network: boolean) {
             retained: expr("inputs.intent.peer.retain"),
             require_uplink: expr("inputs.intent.peer.operator_dns == null"),
         });
-    } else {
-        peerDnsActions(s);
+    }
+    if (network) {
+        s.list.push({
+            name: "Apply member DNS policy", labels: { role: "swamp" }, writes: true,
+            dependsOn: [{ step: "Check the network", condition: done }],
+            guard: expr("inputs.intent.peer.operator_dns != null"),
+            task: { type: "workflow", workflowIdOrName: "operation-fleet-peer-dns", inputs: {
+                operation_id: expr("inputs.operation_id"), node_id: expr("inputs.node_id"), kind: "fleet.peer_dns",
+                intent: { ssh: expr("inputs.intent.ssh"), selection: expr("inputs.intent.peer.selection") }, execution_secrets: {},
+            } },
+        });
     }
     return {
         id: network

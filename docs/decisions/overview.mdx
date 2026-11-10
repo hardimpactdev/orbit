@@ -116,7 +116,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0059 | Make the Builder own the candidate quality gate (superseded) | [Feature delivery: The candidate gate](/reference/implementation-loop#the-candidate-gate) |
 | 0060 | Record the latest Schedule run status | [Schedules: Latest run](/reference/schedules#latest-run) |
 | 0061 | Use VPN DNS by default on managed peers | [Private DNS: Resolver selection](/reference/private-dns#resolver-selection) |
-| 0062 | Select Cluster Router DNS addresses from LAN intent | [Private DNS: Cluster Router addresses](/reference/private-dns#cluster-router-addresses) |
+| 0062 | Select Cluster Router DNS addresses from LAN intent | [Private DNS: Answers](/reference/private-dns#answers) |
 | 0063 | Prefer active Cluster TLDs for generated Routes | [Routes: Select a domain and scope](/reference/routes#select-a-domain-and-scope) |
 | 0064 | Name application endpoints as domains | [Routes: Why it works this way](/reference/routes#domains-and-hostnames) |
 | 0065 | Replace Routes when domains change | [Routes: Change an explicit domain](/reference/routes#change-an-explicit-domain) |
@@ -204,7 +204,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0146 | Retire the Herdr integration | [extension (Herdr is removed)](/cli/extension) |
 | 0147 | Retire orbit top | [Web app: One live fleet view](/reference/web-app#one-live-fleet-view) |
 | 0148 | Keep a Gateway view of Node agent state | [Node agent: Gateway view](/reference/node-agent#gateway-view) |
-| 0149 | Install the private DNS listener from the Gateway | [Private DNS: Release and sockets](/reference/private-dns#release-and-sockets) |
+| 0149 | Install the private DNS listener from the Gateway | [Private DNS: The vpn Node DNS](/reference/private-dns#the-vpn-node-dns); the listener is replaced by [0248](/decisions/0248-render-private-dns-as-desired-state) |
 | 0150 | Keep extension commands local and confirm the proxycli fleet stop | [extension: Why it works this way](/cli/extension#why-it-works-this-way) |
 | 0151 | Push task and Process usage changes over realtime | [Realtime events: Tasks](/reference/events#tasks) |
 | 0152 | Sample successful read activity | [activity: What the Gateway records](/cli/activity#what-the-gateway-records) |

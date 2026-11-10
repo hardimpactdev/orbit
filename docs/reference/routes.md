@@ -35,7 +35,7 @@ An Instance removal withdraws its Route with the `route-withdraw` workflow, not 
 
 A pending domain replacement and an unchanged request change no Node, so their Operation has already succeeded and no run starts. Instance rename records its own Operation and composes the Route update.
 
-A failure before the cutover leaves the old Route serving: a domain replacement is marked `failed`, and its new site serves no name. A failure in `Wait the DNS grace` or `Withdraw the old site` comes after the cutover, so the replacement becomes `active` and the old Route stays `retiring` with its `failed_step`. Each step has its own error code:
+A failure before the cutover leaves the old Route serving: a domain replacement is marked `failed`, and its new site serves no name. A failure in `Withdraw the old site` comes after the cutover, so the replacement becomes `active` and the old Route stays `retiring` with its `failed_step`. Each step has its own error code:
 
 | Error code | Step |
 | --- | --- |
@@ -46,7 +46,6 @@ A failure before the cutover leaves the old Route serving: a domain replacement 
 | `route.probe_failed` | `Probe the site over TLS` |
 | `route.ingress_firewall_failed` | `Open or close the edge` |
 | `private_dns.publication_failed` | `Move private DNS` |
-| `route.dns_grace_failed` | `Wait the DNS grace` |
 | `route.withdraw_failed` | `Withdraw the old site` |
 | `route.update_failed` | A failure outside these steps |
 
@@ -61,7 +60,6 @@ With `--offline`, the run first tries each Node once. A Node that does not answe
 | Error code | Step |
 | --- | --- |
 | `private_dns.publication_failed` | `Remove private DNS` |
-| `route.dns_grace_failed` | `Wait the DNS grace` |
 | `route.withdraw_failed` | `Withdraw site, remove cert` |
 | `route.pool_converge_failed` | `Converge PHP-FPM pools` |
 | `route.lan_firewall_failed` | `Remove unused LAN rules` |
@@ -72,7 +70,7 @@ Every composing workflow that forwards an environment execution copy declares `o
 
 Withdrawal captures remaining application URL writes at admission. Public write inputs and pinned target connections stay in the run intent; environment material uses names-only `orbit-control-inputs` execution-copy descriptors. The existing `route-environment-write` child resolves the whole vault value through official SSH stdin from Node 209. Removal declares no private-material callback. Offline selection skips writes for retained Nodes.
 
-Private DNS publication runs as `route-dns-publish` inside its owning native parent. Neither direct workflow uses the scheduled result read, claims, leases or Gateway execution locks. Follow the Swamp run before retrying an uncertain admission. The remaining Route lifecycle kinds refuse admission until their native conversion is available.
+Private DNS publication runs as the shared `dns-publish` child inside its owning native parent. Neither direct workflow uses the scheduled result read, claims, leases or Gateway execution locks. Follow the Swamp run before retrying an uncertain admission. The remaining Route lifecycle kinds refuse admission until their native conversion is available.
 
 A Route has one of three kinds. The kind never changes.
 
@@ -367,7 +365,7 @@ The first [Node Caddy build](/reference/caddy-configuration#replaced-configurati
 
 ## Set up private traffic
 
-Route publication, withdrawal, and rollback send private DNS children only to active Nodes with an active `vpn` role. A separate Gateway is a DNS client, so its `gateway` role does not make it a publication target. When both roles share a Node, that Node receives one child. The Node footprint stages the listener release and units; the publication child validates and writes its catalog before activating an installed but inactive socket. A missing socket remains a refusal.
+Route publication, withdrawal, and rollback send private DNS children only to active Nodes with an active `vpn` role. A separate Gateway is a DNS client, so its `gateway` role does not make it a publication target. When both roles share a Node, that Node receives one child. Each child carries the complete rendered state and the `dns-publish` phase writes it, as [Private DNS](/reference/private-dns#the-vpn-node-dns) describes.
 
 The Gateway prepares the runtime, certificates, Caddy sites, and firewall rules of a new Route before it publishes private DNS. It publishes DNS last and then marks the Route and Instance active. It does not wait for the application to answer successfully.
 
@@ -401,7 +399,7 @@ When the preparation fails, the walk restores the saved ACLs, and the deny on th
 
 ### Cluster scope
 
-Private DNS points the Route domain and the Cluster TLD at the Router. [Private DNS](/reference/private-dns#cluster-router-addresses) describes which Router address each requester gets. A Route change names a Route in those answers only while the fleet it captures has a site for it. So a withdrawn Route, or a failed create that is undone, loses its answer in the same Operation.
+Private DNS points the Route domain and the Cluster TLD at the Router. [Private DNS](/reference/private-dns#answers) describes which Router address a name resolves to. A Route change names a Route in those answers only while the fleet it captures has a site for it. So a withdrawn Route, or a failed create that is undone, loses its answer in the same Operation.
 
 A Router unset whose Router left no site, certificate or LAN rule on any Node ends at admission with no run. [Native Cluster Router](/reference/native-cluster-router#unset-a-router) has the steps.
 
@@ -469,7 +467,7 @@ Vite adds its base to the HMR path, so set `hmr.path` to `hmr`. The `vp-dev` pre
 
 Every active WireGuard member may reach every other active member on its WireGuard address, over every protocol and port. Each Node keeps the firewall rule `orbit:wireguard-members` for this. An access grant never limits ordinary private traffic. It authorizes only Orbit commands and Gateway API calls. `metrics.orbit` is the exception: it checks Gateway authority, as [Metrics](/reference/metrics#grafana-access) describes.
 
-On its LAN address, a Router admits HTTPS on TCP port 443 and DNS on UDP and TCP port 53 from eligible members of its active Cluster. Each source is an active registered Node with LAN and WireGuard IPv4 addresses and a WireGuard public key, excluding the Router itself. The [Router LAN firewall contract](/cli/firewall#router-lan-member-rules) owns exact destination scope, transition ordering, Doctor checks, and rollout. An overlapping operator or unmanaged allow must be narrowed before member-only DNS isolation can be claimed. Adding firewall rules does not install Cluster DNS, switch member resolvers, or change Route answers.
+On its LAN address, a Router admits HTTPS on TCP port 443 from eligible members of its active Cluster. Each source is an active registered Node with LAN and WireGuard IPv4 addresses and a WireGuard public key, excluding the Router itself. The [Router LAN firewall contract](/cli/firewall#router-lan-member-rules) owns exact destination scope, transition ordering, Doctor checks, and rollout. The same owner admits UDP and TCP port 53 to the Router LAN resolver through `orbit:router-lan-dns-udp/tcp` rules. The vpn Node answers WireGuard addresses; the Cluster Router resolver answers its LAN members with LAN addresses ([Private DNS](/reference/private-dns)).
 
 Public traffic enters only through Ingress, on HTTP and HTTPS. The firewall never makes a Router or workload Node a direct public endpoint. A standalone production Route is private and terminates Orbit CA TLS on its workload Node.
 
@@ -622,9 +620,9 @@ A restore before the Router Caddy step clears the columns, builds, and removes t
 
 #### Withdrawal grace period
 
-Private DNS answers carry a 30-second TTL. After a transition moves a name, it waits 31 seconds, the TTL plus one second, before it stops serving the old target. One Cluster change waits once for all the Routes it moves. It does not hold the projection owner while it waits, so other commands run. It then reads each Route again before it withdraws the old placement.
+Private DNS answers carry a 30-second TTL. The shared DNS publication waits 31 seconds, the TTL plus one second, from the last successful DNS selection before authorizing retirement. It owns this barrier once for all affected Routes and members. Route reconciliation and Router transitions add no second wait. It does not hold the projection owner while it waits, so other commands run. It then reads each Route again before it withdraws the old placement.
 
-The wait counts from the last DNS move of that Route, which the Route stores. When another change moves the same Route during the wait, that change waits its own full period.
+The shared publication persists the last successful selection time. A retry waits only the remaining time if selection is unchanged. When another change moves the same Route during the wait, that change waits its own full period.
 
 An Instance removal (`instance:destroy`) waits no grace: it removes the name for good, and a client that still holds a cached answer reaches the Node for up to 30 seconds after the site is gone, the same as after the wait. `route:destroy` keeps the wait until its own flow is measured.
 
@@ -807,7 +805,7 @@ A `node.add` parent may update a generated Route domain with exactly `{route_id,
 
 A child `route.destroy` request uses `{route_id, offline: false}`. The shared child admission boundary calls `AdmitRouteOperationAction::destroy` when the parent requests the child. This runs the Route guards and captures its intent before the child becomes runnable. An AI takeover requests destruction after its collector health proof.
 
-Private DNS publication inside Node and Route parents uses the captured records and requester catalog through the shared `route-dns-publish` child. Node convergence installs the serving listener before publication. Its parent owns terminal failure and task state; publication starts no separate Operation.
+Private DNS publication inside Node and Route parents uses the state rendered at admission through the shared `dns-publish` child. Its parent owns terminal failure and task state; publication starts no separate Operation.
 
 Each parent prepares exact `{stage, key}` child entries. Child-phase and residue result lists allow at most 4,096 entries and use the shared kit's string and whole-result limits. Opening a phase makes only those children eligible. A commit checks each child's stamped parent, admission snapshot and successful result through the shared child proof. Final proof checks the required phases and children again. The parent completion must match that recorded result.
 
@@ -831,7 +829,9 @@ Admission records each configured Node user from the database without looking up
 
 The shared `node-caddy-package` workflow installs the pinned Caddy package; official cfgmgmt `fetch` checks its SHA-256 pin. Placed steps install the role prerequisites, reconcile Router and workload firewall rules, publish certificates and Caddy, select the Router, publish private DNS and retire the old baseline after DNS expiry. Swamp runs the system commands directly. The Gateway records the result only from the terminal run; it creates no child Operations and checks no execution receipts.
 
-It commits the new Router before publishing private DNS from that stored selection. A DNS failure after this commit recovers forward. A failed restoration before commit keeps the candidate serving until DNS restoration and the cache wait are proven. The old Router keeps serving until Swamp waits for the DNS grace period and the Gateway confirms it elapsed. Assignment rows are deleted only after their removal children succeed. A fully withdrawn candidate repeats preparation before it serves again.
+It commits the new Router before publishing private DNS from that stored selection. Any successful VPN or Router DNS publication or member selection is the cutover, even if another parallel target fails. After that point retain both Routers until forward recovery or a fresh-revision rollback moves every consumer back.
+
+A failed restoration before commit keeps the candidate serving until DNS restoration and the cache wait are proven. The old Router keeps serving until the shared DNS publication completes its single durable grace barrier. Assignment rows are deleted only after their removal children succeed. A fully withdrawn candidate repeats preparation before it serves again.
 
 An initial production web-root activation that fails withdraws DNS and Caddy before its pool and certificate cleanup. Removal also updates the URL of the next Route serving that application directory. A late Metrics failure stays on its Operation and leaves the completed Route state intact.
 

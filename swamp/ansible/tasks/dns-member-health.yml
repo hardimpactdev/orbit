@@ -1,0 +1,68 @@
+---
+# Observation only. A failed probe never changes the DNS selection.
+- name: Keep the Cluster DNS observation unit
+  ansible.builtin.copy:
+    content: |
+      # Managed by Orbit. Read-only Cluster DNS observation.
+      [Unit]
+      Description=Observe Orbit Cluster DNS
+      After=systemd-resolved.service
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/bin/timeout 20 /usr/bin/resolvectl query --cache=no --stale-data=no --type=A {{ member_cluster_probe_name }}
+      TimeoutStartSec=25
+    dest: /etc/systemd/system/orbit-cluster-dns-check.service
+    mode: "0644"
+  register: member_health_unit
+  when: member_effective.delegate is not none
+- name: Keep the Cluster DNS observation timer
+  ansible.builtin.copy:
+    content: |
+      # Managed by Orbit.
+      [Unit]
+      Description=Observe Orbit Cluster DNS every minute
+      [Timer]
+      OnBootSec=30
+      OnUnitInactiveSec=60
+      Unit=orbit-cluster-dns-check.service
+      [Install]
+      WantedBy=timers.target
+    dest: /etc/systemd/system/orbit-cluster-dns-check.timer
+    mode: "0644"
+  register: member_health_timer
+  when: member_effective.delegate is not none
+- name: Load the observation units
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: member_effective.delegate is not none and (member_health_unit.changed or member_health_timer.changed)
+- name: Enable Cluster DNS observation
+  ansible.builtin.systemd:
+    name: orbit-cluster-dns-check.timer
+    enabled: true
+    state: started
+  when: member_effective.delegate is not none
+- name: Inspect the observation timer before withdrawal
+  ansible.builtin.stat:
+    path: /etc/systemd/system/orbit-cluster-dns-check.timer
+  register: member_health_present
+  when: member_effective.delegate is none
+- name: Stop the withdrawn DNS observation timer
+  ansible.builtin.systemd:
+    name: orbit-cluster-dns-check.timer
+    enabled: false
+    state: stopped
+  when: member_effective.delegate is none and member_health_present.stat.exists
+- name: Stop the withdrawn DNS observation service
+  ansible.builtin.systemd:
+    name: orbit-cluster-dns-check.service
+    state: stopped
+  when: member_effective.delegate is none and member_health_present.stat.exists
+- name: Remove the withdrawn observation units
+  ansible.builtin.file:
+    path: "/etc/systemd/system/orbit-cluster-dns-check.{{ item }}"
+    state: absent
+  loop: [service, timer]
+  notify: Reload member observation units
+  when: member_effective.delegate is none
+- name: Forget withdrawn DNS observation units
+  ansible.builtin.meta: flush_handlers

@@ -12,7 +12,6 @@ import {
     composeWithdrawal as compose,
     parseRead,
 } from "./assets.ts";
-import { mergeDns } from "../mutation-command/dns.ts";
 
 const header = "# Managed by Orbit: Node Caddy build\n{ admin off }\n";
 const block = (name: string, target: string) =>
@@ -72,16 +71,12 @@ function read(
         account: string;
         pools: Record<string, string>;
         caddy: string;
-        records: string;
-        catalog: string;
     }> = {},
 ) {
     const value = {
         account: "",
         pools: {},
         caddy: "",
-        records: "",
-        catalog: "",
         ...fields,
     };
     const encoded = {
@@ -90,25 +85,9 @@ function read(
             Object.entries(value.pools).map(([k, v]) => [k, b64(v)]),
         ),
         caddy: b64(value.caddy),
-        records: b64(value.records),
-        catalog: b64(value.catalog),
     };
     return JSON.stringify(encoded);
 }
-const dnsState = async (names: string[]) => {
-    const records = "# Managed by Orbit.\n" +
-        names.map((name) => `host-record=${name},10.44.0.7\n`).join("");
-    const catalog = JSON.stringify({
-        records: Object.fromEntries(names.map((name) => [name, "10.44.0.7"])),
-    }) + "\n";
-    return {
-        node_id: 1,
-        records,
-        catalog,
-        digest: await sha(records + catalog),
-    };
-};
-
 Deno.test("the read line decodes accounts, pools by version, and files", () => {
     const parsed = parseRead(
         read({
@@ -148,7 +127,6 @@ Deno.test("a destroy withdrawal equals the Route deltas it replaces, and keeps u
         read: read({ account, pools: { [poolPath]: livePool }, caddy: live }),
         php,
         caddy: { before, prepared: after, withdrawn: after, after },
-        dns: {},
         cleanup: [{ scope: "route-418-router", user: "orbit" }],
     });
     const expectedCaddy = await composeCaddy({
@@ -177,7 +155,6 @@ Deno.test("a destroy withdrawal equals the Route deltas it replaces, and keeps u
     assertEquals(plan.pools, expectedPools);
     assertEquals(plan.pools[0].content.includes("orbit-instance-3"), true);
     assertEquals(plan.pools[0].content.includes("orbit-instance-1]"), false);
-    assertEquals(plan.dns, null);
     assertEquals(plan.cleanup.length, 1);
 });
 
@@ -195,7 +172,6 @@ Deno.test("a pool file that empties is removed", async () => {
             after: empty,
         },
         caddy: {},
-        dns: {},
         cleanup: [],
     });
     assertEquals(plan.pools.map((p) => [p.path, p.ensure]), [[
@@ -215,7 +191,6 @@ Deno.test("a live revision that matches no captured state is refused", async () 
                 read: read({ caddy: config(block("gone", "edited")) }),
                 php: {},
                 caddy: { before, prepared: after, withdrawn: after, after },
-                dns: {},
                 cleanup: [],
             }),
         Error,
@@ -238,7 +213,6 @@ Deno.test("a live revision that matches no captured state is refused", async () 
                     after: { account_user: "orbit", configurations: [] },
                 },
                 caddy: {},
-                dns: {},
                 cleanup: [],
             }),
         Error,
@@ -257,36 +231,10 @@ Deno.test("a Caddyfile that is missing while the captured state served routes is
                 read: read({ caddy: "" }),
                 php: {},
                 caddy: { before, prepared: after, withdrawn: after, after },
-                dns: {},
                 cleanup: [],
             }),
         Error,
         "caddy.current_config_missing",
-    );
-});
-
-Deno.test("DNS records leave once and the catalog keeps unrelated names", async () => {
-    const before = await dnsState(["gone.test", "kept.test"]);
-    const after = await dnsState(["kept.test"]);
-    const live = await dnsState(["gone.test", "kept.test", "added.test"]);
-    const plan = await composeWithdrawal({
-        ...placement,
-        plan_path: planPath,
-        read: read({ records: live.records, catalog: live.catalog }),
-        php: {},
-        caddy: {},
-        dns: { before, prepared: after, withdrawn: after, after },
-        cleanup: [],
-    });
-    assertEquals(
-        plan.dns,
-        mergeDns(before, after, live, [before, after, after, after]),
-    );
-    assertEquals(plan.dns?.records.includes("added.test"), true);
-    assertEquals(plan.dns?.records.includes("gone.test"), false);
-    assertEquals(
-        JSON.parse(plan.dns!.catalog).records["kept.test"],
-        "10.44.0.7",
     );
 });
 
@@ -305,7 +253,6 @@ Deno.test("four distinct Caddy states apply in order against the live file", asy
         read: read({ caddy: live }),
         php: {},
         caddy: { before: a, prepared: b, withdrawn: c, after: d },
-        dns: {},
         cleanup: [],
     });
     const chain = [a, b, c, d];
@@ -328,35 +275,9 @@ Deno.test("four distinct Caddy states apply in order against the live file", asy
     assertEquals(content.includes("one.test"), false);
 });
 
-Deno.test("four distinct DNS states apply in order, and a step that changes only the records is not skipped", async () => {
-    const a = await dnsState(["x.test"]);
-    const b = await dnsState(["x.test", "y.test"]);
-    const c = { ...(await dnsState(["y.test"])), catalog: b.catalog };
-    const d = await dnsState(["y.test", "z.test"]);
-    const live = await dnsState(["x.test", "extra.test"]);
-    const plan = await composeWithdrawal({
-        ...placement,
-        plan_path: planPath,
-        read: read({ records: live.records, catalog: live.catalog }),
-        php: {},
-        caddy: {},
-        dns: { before: a, prepared: b, withdrawn: c, after: d },
-        cleanup: [],
-    });
-    const chain = [a, b, c, d];
-    let current: { records: string; catalog: string } = live;
-    for (let i = 0; i < 3; i++) {
-        current = mergeDns(chain[i], chain[i + 1], current, chain);
-    }
-    assertEquals(plan.dns, current);
-    assertEquals(plan.dns?.records.includes("extra.test"), true);
-    assertEquals(plan.dns?.records.includes("x.test"), false);
-});
-
 Deno.test("the plan records what was read, so the phase can refuse a file that changed since", async () => {
     const before = await section(config(block("gone", "a")), true);
     const after = await section(config(), false);
-    const dns = await dnsState(["gone.test"]);
     const plan = await composeWithdrawal({
         ...placement,
         plan_path: planPath,
@@ -364,8 +285,6 @@ Deno.test("the plan records what was read, so the phase can refuse a file that c
             account,
             pools: { [poolPath]: resolved(pool(1, 5)) },
             caddy: before.content,
-            records: dns.records,
-            catalog: dns.catalog,
         }),
         php: {
             before: {
@@ -375,16 +294,13 @@ Deno.test("the plan records what was read, so the phase can refuse a file that c
             after: { account_user: "orbit", configurations: [] },
         },
         caddy: { before, prepared: after, withdrawn: after, after },
-        dns: { before: dns, prepared: dns, withdrawn: dns, after: dns },
         cleanup: [],
     });
     assertEquals(
         Object.keys(plan.expect).sort(),
         [
             "/etc/caddy/Caddyfile",
-            "/etc/dnsmasq.d/orbit-records.conf",
             poolPath,
-            "/var/lib/orbit/private-dns/catalog.json",
         ].sort(),
     );
     assertEquals(
@@ -411,7 +327,6 @@ Deno.test("the withdraw method reads read.json, writes plan.json and records a s
             read_path: `${folder}/read.json`,
             php: {},
             caddy: { before, prepared: after, withdrawn: after, after },
-            dns: {},
             cleanup: [{ scope: "route-1-router", user: "orbit" }],
         }, {
             writeResource: (spec: string, name: string, value: unknown) => {
@@ -428,7 +343,6 @@ Deno.test("the withdraw method reads read.json, writes plan.json and records a s
         assertEquals(written, [["withdrawal", "withdrawal", {
             pools: [],
             caddy: after.version,
-            dns: false,
             cleanup: 1,
         }]]);
     } finally {
@@ -444,6 +358,7 @@ Deno.test("the withdrawal workflows require every contribution, and destroy call
                 dependsOn?: { step: string }[];
                 task: {
                     methodName?: string;
+                    workflowIdOrName?: string;
                     inputs?: { required?: Record<string, string> };
                 };
             }[];
@@ -457,6 +372,15 @@ Deno.test("the withdrawal workflows require every contribution, and destroy call
         job.steps
     );
     const names = steps.map((step) => step.name);
+    // Private DNS is published whole by the shared child, after the Node's own files.
+    const dnsStep = steps.find((step) => step.name === "withdraw_dns")!;
+    assertEquals(dnsStep.task.workflowIdOrName, "dns-publish");
+    assertEquals(
+        dnsStep.dependsOn?.map((dependency) => dependency.step).includes(
+            "withdraw_node",
+        ),
+        true,
+    );
     const required = Object.keys(
         steps.find((step) => step.name === "forward")!.task.inputs!.required!,
     );
@@ -495,15 +419,13 @@ Deno.test("the withdrawal workflows require every contribution, and destroy call
     );
 });
 
-Deno.test("a failed create takes back its publication: the reverse states remove the site, the pool and the DNS name, and keep what else is live", async () => {
+Deno.test("a failed create takes back its publication: the reverse states remove the site and the pool, and keep what else is live", async () => {
     // A create publishes before -> after; its withdrawal applies after -> before.
     const without = await section(config(block("kept", "a")), true);
     const published = await section(
         config(block("kept", "a"), block("made", "a")),
         true,
     );
-    const dnsWithout = await dnsState(["kept.test"]);
-    const dnsPublished = await dnsState(["kept.test", "made.test"]);
     const phpPublished = {
         account_user: "orbit",
         configurations: { "8.4": pool(1, 5) + pool(2, 5) },
@@ -512,15 +434,13 @@ Deno.test("a failed create takes back its publication: the reverse states remove
         account_user: "orbit",
         configurations: { "8.4": pool(1, 5) },
     };
-    const input = (live: string, pools: string, dns: typeof dnsPublished) => ({
+    const input = (live: string, pools: string) => ({
         ...placement,
         plan_path: planPath,
         read: read({
             account,
             pools: { [poolPath]: resolved(pools) },
             caddy: live,
-            records: dns.records,
-            catalog: dns.catalog,
         }),
         php: { before: phpPublished, after: phpWithout },
         caddy: {
@@ -529,12 +449,6 @@ Deno.test("a failed create takes back its publication: the reverse states remove
             withdrawn: published,
             after: without,
         },
-        dns: {
-            before: dnsPublished,
-            prepared: dnsPublished,
-            withdrawn: dnsPublished,
-            after: dnsWithout,
-        },
         cleanup: [{ scope: "route-7-router", user: "orbit" }],
     });
     const extra = block("elsewhere", "z");
@@ -542,7 +456,6 @@ Deno.test("a failed create takes back its publication: the reverse states remove
         input(
             config(block("kept", "a"), block("made", "a"), extra),
             pool(1, 5) + pool(2, 5),
-            dnsPublished,
         ),
     );
     assertEquals(plan.caddy?.content.includes("made.test"), false);
@@ -550,20 +463,16 @@ Deno.test("a failed create takes back its publication: the reverse states remove
     assertEquals(plan.caddy?.content.includes("elsewhere.test"), true);
     assertEquals(plan.pools[0].content.includes("orbit-instance-2]"), false);
     assertEquals(plan.pools[0].content.includes("orbit-instance-1]"), true);
-    assertEquals(plan.dns?.records.includes("made.test"), false);
-    assertEquals(plan.dns?.records.includes("kept.test"), true);
     assertEquals(plan.cleanup, [{ scope: "route-7-router", user: "orbit" }]);
     // A create that failed before it published anything: the same withdrawal finds nothing to remove and does not fail.
     const nothing = await composeWithdrawal(
         input(
             config(block("kept", "a"), extra),
             pool(1, 5),
-            dnsWithout,
         ),
     );
     assertEquals(nothing.caddy?.content.includes("made.test"), false);
     assertEquals(nothing.caddy?.content.includes("elsewhere.test"), true);
-    assertEquals(nothing.dns?.records.includes("made.test"), false);
 });
 
 Deno.test("the create workflow withdraws the Route of a failed create before it reports the failure", async () => {

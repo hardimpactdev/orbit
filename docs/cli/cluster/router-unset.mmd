@@ -37,7 +37,7 @@ sequenceDiagram
   %%> - the Router's `router` assignment is recorded as retiring
   %%> - a task is recorded with the full intent
   %%> Decides:
-  %%> - whether any Node holds Router state: a Router site, a Router certificate, or a LAN rule only the Router needed
+  %%> - whether any Node holds Router state: a Router site, certificate, Cluster DNS unit, selected LAN member policy, or LAN rule only the Router needed
   alt no Node holds Router state
     Note over GW: Clear the Router<br/>R1: no run
     %%> Result:
@@ -56,6 +56,13 @@ sequenceDiagram
   %%> - the task ID, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
+  SW->>M: Withdraw Cluster DNS<br/>child dns-publish
+    %%> DNS answers:
+    %%> - the vpn Node answers WireGuard addresses; the Cluster Router resolver answers its LAN members with LAN addresses through a DNS delegate
+  %%> What it does:
+  %%> - checks the VPN projection, restores every selected member to VPN split policy, waits DNS grace, then removes only the owned Cluster resolver
+  %%> On failure:
+  %%> - keeps the assignment, old resolver and required LAN access; no site or firewall cleanup runs until every member confirms
   SW->>GW: Hold the Route Nodes<br/>operation:direct:route-hold
   %%> What it does:
   %%> - asks the Gateway for the hold of each Node that serves the Route's site, for the seconds of this step only, not the whole operation
@@ -65,8 +72,8 @@ sequenceDiagram
   SW->>N: Withdraw the Router sites<br/>@swamp/cfgmgmt/file · reload
   %%> How:
   %%> - over SSH with `@swamp/ssh` and `@swamp/cfgmgmt/file`; `caddy validate`, then a reload
-  %%> No DNS change:
-  %%> - an inactive Cluster, or one without a TLD and Routes, gets no Router answers from private DNS
+  %%> Why after DNS withdrawal:
+  %%> - an inactive Cluster can still have retained member selection from a failed transition; absence of current Routes does not prove cleanup
   %%> What it does:
   %%> - removes the Router sites and their certificates, validates the rest, and reloads Caddy; no restart
   %%> - Caddy and the packages stay, as for every role removal that keeps shared packages

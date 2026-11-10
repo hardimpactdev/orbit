@@ -1,0 +1,38 @@
+---
+# The phase, publication by publication, on the real Node. Each step (steps.yml, as data) writes an intent, runs the phase exactly as the
+# Swamp worker runs it (`ansible-playbook --tags publish dns-publish.yml` with ORBIT_RUN), and asserts what the step expects: the exit
+# code, result.json, the changes the phase reported, the dnsmasq process (kept by a reload, replaced by a restart), the files, and the
+# answers of dnsmasq for the rows of ADR 0248: A, AAAA with NODATA, a child forwarded, the TLD wildcard.
+- name: Publish the private DNS in steps and check what the Node answers
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - steps.yml
+  vars:
+    # The playbook under test is the one of this checkout.
+    ansible_dir: "{{ playbook_dir }}/../../../../../ansible"
+    conf_file: /etc/dnsmasq.d/orbit.conf
+    state_dir: /var/lib/orbit/dnsmasq
+    files: ["{{ conf_file }}", "{{ state_dir }}/orbit.hosts", "{{ state_dir }}/orbit.servers", "{{ state_dir }}/orbit.revision"]
+    # Only used to pin a key in known_hosts: the host of the phase is this machine, over a local connection.
+    # Real times of the lock (swamp/ansible/vars/dns.yml) are minutes; the proof scales them so that a dead holder really expires: the holder
+    # lives 60 s, and the next publication waits up to 90 s for it.
+    scaled_lock: '{"dns_lock_hold": 60, "dns_lock_wait": 90, "dns_lock_job_timeout": 200}'
+    placeholder_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderPlaceholderPlaceholderPlaceholderAA"
+  tasks:
+    - name: Make the run folder of the phase
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: orbit-dns-proof-
+      register: folder
+    - name: Write the inventory of the phase
+      ansible.builtin.copy:
+        content: "{{ {'all': {'hosts': {'node': {'ansible_connection': 'local'}}, 'children': {'dns_node': {'hosts': {'node': {}}}}}} | to_json }}"
+        dest: "{{ folder.path }}/inventory.yml"
+        mode: "0600"
+    - name: Run the steps
+      ansible.builtin.include_tasks: step.yml
+      loop: "{{ steps }}"
+      loop_control:
+        loop_var: step
+        label: "{{ step.name }}"

@@ -8,6 +8,7 @@ use App\Actions\Doctor\Intent\RuntimeDoctorIntent;
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
+use App\Domain\Clusters\ClusterDnsEvidence;
 use App\Domain\Firewall\FirewallInspectionInput;
 use App\Domain\Firewall\LiveFirewallSnapshot;
 use App\Domain\Fleet\FleetReboot;
@@ -19,6 +20,7 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
+use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Models\NodeFact;
 use App\Models\TaskVm;
@@ -94,6 +96,7 @@ final readonly class FactDoctor
                 'rebooted within '.FleetRebootAlerts::OverdueDays.' days', 'due since '.$due->toIso8601String());
         }
         $check->observed($node->id, 'node.reboot_due');
+        $this->clusterDns($check);
         if ($check->agent === null) {
             return $check->report();
         }
@@ -134,6 +137,51 @@ final readonly class FactDoctor
         });
 
         return $check->report();
+    }
+
+    private function clusterDns(DoctorFamilyInspection $check): void
+    {
+        $node = $check->node;
+        $policy = app(PeerDnsPolicy::class);
+        $codes = ['node.cluster_dns_delegate_unsupported', 'node.cluster_dns_policy_mismatch', 'node.cluster_dns_unreachable'];
+        if (! $policy->manages($node) || $policy->selection($node)['delegate'] === null) {
+            $evidence = data_get($node->settings, ClusterDnsEvidence::Key.'.effective');
+            if (is_array($evidence) && array_key_exists('delegate', $evidence)) {
+                if ($evidence['delegate'] !== null) {
+                    $check->issue($codes[1], $node->id, $node->name, 'Cluster DNS withdrawal has not been confirmed. Complete the retained transition.');
+                }
+                $check->observed($node->id, ...$codes);
+            }
+
+            return;
+        }
+        $check->read($node->id, $codes, function () use ($check, $node, $policy, $codes): void {
+            $evidence = $node->settings[ClusterDnsEvidence::Key] ?? null;
+            if (! is_array($evidence) || ! is_array($evidence['effective'] ?? null)) {
+                throw new UnexpectedValueException('DNS capability has not been observed');
+            }
+            $effective = $evidence['effective'];
+            if (($effective['supported'] ?? null) === false) {
+                $check->issue($codes[0], $node->id, $node->name, 'The member lacks systemd DNS delegate support and uses WireGuard answers.', 'systemd 258 or newer', 'delegate unsupported');
+                $check->observed($node->id, $codes[0]);
+
+                return;
+            }
+            $desired = $policy->selection($node);
+            if (($effective['delegate'] ?? null) !== $desired['delegate'] || ($effective['domains'] ?? null) !== $desired['domains'] || ($effective['server'] ?? null) !== $desired['server']) {
+                $check->issue($codes[1], $node->id, $node->name, 'The last applied Cluster DNS policy differs from intent. Run peer DNS repair.');
+            }
+            $check->observed($node->id, $codes[0], $codes[1]);
+            // Current unit observations detect outages; a successful phase receipt cannot prove current health.
+            foreach (['systemd-resolved.service', 'orbit-cluster-dns-check.timer', 'orbit-cluster-dns-check.service'] as $name) {
+                $unit = $check->unit('systemd', $name) ?? throw new UnexpectedValueException('DNS observation unit');
+                $healthy = $name === 'orbit-cluster-dns-check.service' ? in_array($unit['state'], ['active', 'inactive'], true) : $unit['state'] === 'active';
+                if (! $healthy) {
+                    $check->issue($codes[2], $node->id, $node->name, 'The Cluster DNS observation failed or its resolver is down. Repair the LAN path or Router; selection is retained.', 'healthy', $name.': '.$unit['state']);
+                }
+            }
+            $check->observed($node->id, $codes[2]);
+        });
     }
 
     private function roleFamily(DoctorFamilyInspection $check): DoctorFamilyReportData

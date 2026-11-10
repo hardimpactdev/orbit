@@ -2,7 +2,7 @@
 title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
-  - swamp/{ansible/**,extensions/behaviors/operations/ansible-input/**,manifest.yaml,extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local}.ts,node-enrollment-plan/**,node-removal-command/**},workflows/workflow-{operation-node-add,operation-node-remove,operation-node-role-relocate,node-role-remove,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue,node-cli-install,fleet-release-node}.yaml}
+  - swamp/{ansible/**,extensions/behaviors/operations/ansible-input/**,manifest.yaml,extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local}.ts,node-enrollment-plan/**,node-removal-command/**},workflows/workflow-{operation-node-add,operation-node-remove,operation-node-role-relocate,node-role-remove,node-caddy-package,node-caddy-sites,node-php-runtime,node-route-residue,node-cli-install,fleet-release-node}.yaml}
   - apps/gateway/app/{Domain/Nodes/{NodeNetworkReservation,NodeRemovalInput,NativeNodeRoleRemovalInput,NativeNodeRoleRelocateInput,NodeRoleRelocateInput,NodeRoleRelocateProjection,NativeNodeEnrollmentInput,NativeNodeEnrollmentProjection,NodeEnrollmentPolicy,NodeRemovalResources,NodeRemovalProjection,NodeRoleRemovalProjection,direct-operations}.php,Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,AssignRoleAction,AdmitNodeRoleOperationAction,AdmitNodeEnrollmentOperationAction}.php}}
   - apps/gateway/app/Infrastructure/{WireGuard/NativeGatewayPeerProjectionManager.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/{Console/Commands/{ProvisionNodeCommand,BootstrapPlanCommand,BootstrapControlPlanCommand,RoleAddCommand,NodeAddCommand,NodeConvergeCommand},Domain/Gateway/{GatewayBootstrapPlan,GatewayControlPlan}}.php
@@ -79,7 +79,7 @@ Admission records a provisioning Node and freezes its public resource plan. Boot
 | Observer | Ansible phase `agent`: fetch the pinned binary, write its public configuration and mode-0600 secret, and start its systemd unit. |
 | Access | A native step logs in as the managed user and, on Linux, runs a command with passwordless sudo. |
 | Roles | Run the frozen native role workflows in assignment order; publish the CLI as best effort. Exporters require explicit enablement. |
-| DNS | Ansible phase `dns` writes the dnsmasq backend of a new VPN hub; native child workflows install its listener and publish private DNS. |
+| DNS | The shared `dns-publish` child publishes VPN and Router projections and selects eligible LAN members. The member phase keeps public DNS independent. |
 | End check | Ansible phase `check` reads the agent, its binary and secret, and the tunnel handshake. The native `Check the Node` assertion determines completion. |
 
 Each role in the intent names its execution copies as a record: `{}` for a role without any.
@@ -378,7 +378,7 @@ The native Swamp workflow runs these phases in order. Input preparation writes p
 | `roles` | Repair the selected roles' configuration without changing an Instance or assignment. |
 | `tools` | Apply recorded Tools within scope, recording each Tool's own result and continuing after an individual Tool failure. |
 | `network` | Apply the recorded hub before the Node and wait for the handshake. A target hub is applied once; without peers it needs no handshake. |
-| `check` | Read back selected software, units, role configuration and recorded tunnel state. |
+| `check` | Publish the complete private DNS through the shared `dns-publish` child when the VPN role is in scope, then read back selected software, units, role configuration and recorded tunnel state. |
 
 No recorded network in scope means no network mutation. DNS routing domains stay literal, including a domain such as `~orbit` that also names a local account. Every new attempt starts at input and runs all seven phases again, even when recorded intent matches. Matching tasks report zero target changes and the attempt must complete within 120 seconds; hub changes are excluded from that target count. A repeat is not a digest-based admission skip. Reusing an idempotency key follows the [keyed-start contract](/reference/operations#retry-a-start-with-a-key), rather than starting a second attempt.
 
@@ -896,7 +896,7 @@ Every target step is one official `@swamp/ssh exec` argument list with the targe
 - Reverb's `.env` comes from the vault copy on stdin. `ln -sfnT` then points the install path at the release.
 - `gateway` writes the private DNS route drop-in and applies the route to the live link. A failed `Route the private domain` step reports `follow_up`: `orbit node:role:add <target> gateway --converge`.
 
-Then the run publishes. The `node-role-certificate-publish` child signs each certificate. The Caddy sites and private DNS of every publishing Node but the source follow. A `websocket` move waits the private DNS grace. Then `node-role-remove` removes the role from the source, and its own end check proves the removal.
+Then the run publishes. The `node-role-certificate-publish` child signs each certificate. The Caddy sites and private DNS of every publishing Node but the source follow. The shared DNS publication completes its durable grace before source withdrawal. Then `node-role-remove` removes the role from the source, and its own end check proves the removal.
 
 One native assert, `Confirm the move`, ends the run. The Gateway records the result from it:
 
@@ -929,7 +929,7 @@ The role's Ansible end check determines completion. The Gateway marks the same a
 
 Firewall convergence compares each owned rule's shape and position. It removes a changed isolation pair by descending rule index, including duplicate rows with the same owned comment, then inserts the specific allow before its deny and broad peer trust. Unrelated rules stay in place.
 
-A readiness phase waits up to 60 seconds for a newly started Analytics Process before publication. The Gateway DNS oneshot runs only when its unit or live resolver policy changed, under the unit’s existing conditions. PHP and DNS delta publications retain their shared native three-way composition, which preserves unrelated changes admitted by other commands; Ansible has no built-in equivalent. Ansible runs only on the Swamp Node; targets need SSH and Python.
+A readiness phase waits up to 60 seconds for a newly started Analytics Process before publication. The Gateway DNS oneshot runs only when its unit or live resolver policy changed, under the unit’s existing conditions. PHP delta publications retain their shared native three-way composition, which preserves unrelated changes admitted by other commands; Ansible has no built-in equivalent. Private DNS has none: each publication writes the whole state ([ADR 0248](/decisions/0248-render-private-dns-as-desired-state)). Ansible runs only on the Swamp Node; targets need SSH and Python.
 
 The `swamp` role installs a pinned Ansible environment under `/opt/orbit/ansible`. The `@nckrtl/ansible-input` behavior delivers the playbooks and writes the whole intent to a private run folder. The input builder writes inventory, variables and pinned `known_hosts` there. The readiness of a nested fleet uses the same input, as the kind `task_vm.nested_ready`.
 

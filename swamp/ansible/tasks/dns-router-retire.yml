@@ -1,0 +1,97 @@
+---
+# Same host lock and revision fence as publication. No consumer may remain on this resolver.
+- name: Name the retired resolver and lock holder
+  ansible.builtin.set_fact:
+    retired_service: "orbit-cluster-dns-{{ dns_retirement.cluster_id }}.service"
+    retired_unit: "/etc/systemd/system/orbit-cluster-dns-{{ dns_retirement.cluster_id }}.service"
+    retired_holder: "/run/orbit-retire-dns-{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_lowercase', 'digits'], length=12) }}.pid"
+- name: Hold the resolver lock through retirement
+  ansible.builtin.command:
+    argv:
+      - flock
+      - --exclusive
+      - --timeout
+      - "150"
+      - "/run/lock/orbit-cluster-dns-{{ dns_retirement.cluster_id }}.lock"
+      - sh
+      - -c
+      - 'echo $$ > "$1" && exec sleep 420'
+      - sh
+      - "{{ retired_holder }}"
+  async: 600
+  poll: 0
+  register: retired_lock
+  changed_when: false
+- name: Withdraw only the admitted old resolver
+  block:
+    - name: Wait until the retirement lock is held
+      ansible.builtin.wait_for:
+        path: "{{ retired_holder }}"
+        timeout: 155
+    - name: Read the resolver revision before retirement
+      ansible.builtin.slurp:
+        src: "/var/lib/orbit/cluster-dns/{{ dns_retirement.cluster_id }}/orbit.revision"
+      register: retired_revision
+      failed_when: retired_revision is failed and 'file not found' not in (retired_revision.msg | default('') | lower)
+    - name: Refuse retirement after a newer selection
+      ansible.builtin.assert:
+        that: (retired_revision.content | default('') | b64decode | trim | int) <= (dns_retirement.revision | int)
+        fail_msg: dns.retirement_superseded
+        quiet: true
+    - name: Inspect the owned retired unit
+      ansible.builtin.stat:
+        path: "{{ retired_unit }}"
+      register: retired_unit_stat
+    - name: Read the retired dedicated unit ownership
+      ansible.builtin.slurp:
+        src: "{{ retired_unit }}"
+      register: retired_unit_content
+      when: retired_unit_stat.stat.exists
+    - name: Refuse retirement of a foreign unit
+      ansible.builtin.assert:
+        that: (retired_unit_content.content | b64decode).startswith('# Managed by Orbit. Dedicated Cluster resolver;')
+        fail_msg: dns.unit_ownership_conflict
+        quiet: true
+      when: retired_unit_stat.stat.exists
+    - name: Stop and disable the retired dedicated resolver
+      ansible.builtin.systemd:
+        name: "{{ retired_service }}"
+        enabled: false
+        state: stopped
+      when: retired_unit_stat.stat.exists
+    - name: Remove the owned retired unit
+      ansible.builtin.file:
+        path: "{{ retired_unit }}"
+        state: absent
+      notify: Reload retired resolver units
+    - name: Forget the retired unit
+      ansible.builtin.meta: flush_handlers
+    - name: Fence older publications after resolver retirement
+      ansible.builtin.file:
+        path: "/var/lib/orbit/cluster-dns/{{ dns_retirement.cluster_id }}"
+        state: directory
+        mode: "0700"
+    - name: Keep the completed resolver retirement revision
+      ansible.builtin.copy:
+        content: "{{ dns_retirement.revision }}\n"
+        dest: "/var/lib/orbit/cluster-dns/{{ dns_retirement.cluster_id }}/orbit.revision"
+        mode: "0644"
+    - name: Keep the completed retirement receipt
+      ansible.builtin.set_fact:
+        dns_retired_ok: true
+  always:
+    - name: Release the retirement lock
+      ansible.builtin.command:
+        argv: [pkill, -F, "{{ retired_holder }}"]
+      changed_when: false
+      failed_when: false
+    - name: Remove the retirement lock pid file
+      ansible.builtin.file:
+        path: "{{ retired_holder }}"
+        state: absent
+      changed_when: false
+    - name: Remove the retirement lock job
+      ansible.builtin.async_status:
+        jid: "{{ retired_lock.ansible_job_id }}"
+        mode: cleanup
+      changed_when: false

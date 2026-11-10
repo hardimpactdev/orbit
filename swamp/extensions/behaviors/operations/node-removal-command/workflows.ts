@@ -112,6 +112,7 @@ function child(
     items: string,
     intent: unknown,
     kind = ex("inputs.kind"),
+    nodeId = ex("inputs.node_id"),
 ): Fields {
     return {
         name,
@@ -122,7 +123,7 @@ function child(
             workflowIdOrName: workflow,
             inputs: {
                 operation_id: ex("inputs.operation_id"),
-                node_id: ex("inputs.node_id"),
+                node_id: nodeId,
                 kind,
                 intent,
                 execution_secrets: {},
@@ -282,16 +283,17 @@ export function roleRemovalWorkflow(): ReturnType<typeof workflow> {
         )],
         [child(
             "Withdraw the role DNS",
-            "route-dns-publish",
+            "dns-publish",
             pubs + ".filter(p,p.after.dns != null)",
             {
                 node_id: ex("self.publication.node_id"),
                 connection: ex("self.publication.connection"),
                 host_keys: ex("self.publication.host_keys"),
-                before: ex("self.publication.before.dns"),
-                after: ex("self.publication.after.dns"),
-                alternatives: [],
+                dns: ex("self.publication.after.dns"),
             },
+            ex("inputs.kind"),
+            // The behavior names of the child follow the VPN Node it publishes to.
+            ex("self.publication.node_id"),
         )],
         ...resources(items),
         // The role certificate current path may be a directory or a symlink. Neither cfgmgmt file nor directory covers both.
@@ -455,16 +457,16 @@ export function nodeRemovalWorkflow(): ReturnType<typeof workflow> {
             ),
             child(
                 "Withdraw Node DNS",
-                "route-dns-publish",
+                "dns-publish",
                 "inputs.intent.dns",
                 {
                     node_id: ex("self.publication.node_id"),
                     connection: ex("self.publication.connection"),
                     host_keys: ex("self.publication.host_keys"),
-                    before: ex("self.publication.before"),
-                    after: ex("self.publication.after"),
-                    alternatives: [],
+                    dns: ex("self.publication.dns"),
                 },
+                ex("inputs.kind"),
+                ex("self.publication.node_id"),
             ),
         ],
         [

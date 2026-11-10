@@ -1,0 +1,46 @@
+{#-
+  The admitted private DNS data against the strict grammar of what lands in the dnsmasq files.
+  Pure: it reads `dns` (revision, listen, tlds, records) and the patterns of vars/dns.yml, and prints one JSON object,
+  `{"error": "dns.config_invalid" or null, "detail": "..."}`.
+  Names are lowercase DNS labels joined by dots (at most 253 characters). Addresses are dotted IPv4 without leading zeros. `pair` is a boolean.
+-#}
+{%- set name_pattern = '^' ~ dns_pattern_name ~ '\\Z' -%}
+{%- set address_pattern = '^' ~ dns_pattern_ipv4 ~ '\\Z' -%}
+{%- macro name_ok(value) -%}{{ 'true' if (value is string and value | length <= 253 and value is match(name_pattern)) else 'false' }}{%- endmacro -%}
+{%- macro address_ok(value) -%}{{ 'true' if (value is string and value is match(address_pattern)) else 'false' }}{%- endmacro -%}
+{%- set ns = namespace(errors=[]) -%}
+{%- if not ((dns.revision | string) is match('^[1-9][0-9]{0,19}\\Z')) -%}
+{%- set ns.errors = ns.errors + ['revision ' ~ (dns.revision | string | truncate(24)) ~ ' is not a positive integer'] -%}
+{%- endif -%}
+{%- if dns.listen is not sequence or dns.listen is string or dns.listen | length == 0 -%}
+{%- set ns.errors = ns.errors + ['listen is not a list with at least one address'] -%}
+{%- else -%}
+{%- for address in dns.listen if address_ok(address) == 'false' -%}
+{%- set ns.errors = ns.errors + ['listen address ' ~ (address | string | truncate(40)) ~ ' is not an IPv4 address'] -%}
+{%- endfor -%}
+{%- endif -%}
+{%- if dns.tlds is not sequence or dns.tlds is string -%}
+{%- set ns.errors = ns.errors + ['tlds is not a list'] -%}
+{%- else -%}
+{%- for tld in dns.tlds -%}
+{%- if tld is not mapping or name_ok(tld.name | default(none)) == 'false' -%}
+{%- set ns.errors = ns.errors + ['tld ' ~ loop.index ~ ' has no valid name'] -%}
+{%- elif address_ok(tld.address | default(none)) == 'false' -%}
+{%- set ns.errors = ns.errors + ['tld ' ~ tld.name ~ ' has no valid IPv4 address'] -%}
+{%- endif -%}
+{%- endfor -%}
+{%- endif -%}
+{%- if dns.records is not sequence or dns.records is string -%}
+{%- set ns.errors = ns.errors + ['records is not a list'] -%}
+{%- else -%}
+{%- for record in dns.records -%}
+{%- if record is not mapping or name_ok(record.name | default(none)) == 'false' -%}
+{%- set ns.errors = ns.errors + ['record ' ~ loop.index ~ ' has no valid name'] -%}
+{%- elif address_ok(record.address | default(none)) == 'false' -%}
+{%- set ns.errors = ns.errors + ['record ' ~ record.name ~ ' has no valid IPv4 address'] -%}
+{%- elif record.pair | default(none) is not boolean -%}
+{%- set ns.errors = ns.errors + ['record ' ~ record.name ~ ' has no boolean pair'] -%}
+{%- endif -%}
+{%- endfor -%}
+{%- endif -%}
+{{ {'error': ('dns.config_invalid' if ns.errors | length > 0 else none), 'detail': ns.errors | join('; ')} | to_json }}

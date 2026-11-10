@@ -1539,36 +1539,6 @@ export function analyzeYaml(
         }
         return [...names, ...Object.values(v).flatMap(descriptorVaults)];
     };
-    // The binding guide approves one visible Route private-DNS TTL grace.
-    // This is an exact source contract, never a file/rule grandfather cap.
-    const routeDnsGrace = (path: string[]) => {
-        if (
-            file !== "workflows/workflow-route-dns-grace.yaml" ||
-            path.join(".") !== "jobs.0.steps.0.task.inputs.run" ||
-            !Array.isArray(data.jobs) || data.jobs.length !== 1
-        ) return false;
-        const job = object(data.jobs[0]);
-        if (
-            job.name !== "grace" || !Array.isArray(job.steps) ||
-            job.steps.length !== 1
-        ) return false;
-        const step = object(job.steps[0]);
-        const labels = object(step.labels), task = object(step.task);
-        const inputs = object(task.inputs);
-        return step.name === "wait-private-dns-ttl" &&
-            (step.target !== undefined || step.labels !== undefined) &&
-            worker209(path) &&
-            (step.labels === undefined ||
-                Object.keys(labels).join() === "role" &&
-                    labels.role === "swamp") &&
-            Object.keys(task).sort().join() ===
-                "behaviorName,behaviorType,inputs,methodName,type" &&
-            task.type === "behavior" && task.behaviorType === "command/shell" &&
-            task.behaviorName === "route-dns-grace" &&
-            task.methodName === "execute" &&
-            Object.keys(inputs).join() === "run" &&
-            inputs.run === "/usr/bin/sleep 31";
-    };
     const officialSshTask = (path: string[]) => {
         if (
             !file.startsWith("workflows/") || path[0] !== "jobs" ||
@@ -1812,11 +1782,9 @@ export function analyzeYaml(
                         block[2].replace(/[^\n]/g, " ") +
                         shellControls.slice(start + block[2].length);
                 }
-                const controlsFound = routeDnsGrace(path)
-                    ? []
-                    : shellControls.match(
-                        /\b(?:sleep|flock|lockfile)\b|while\s+(?:true|:)|for\s+\w*(?:attempt|retry)\w*/g,
-                    ) ?? [];
+                const controlsFound = shellControls.match(
+                    /\b(?:sleep|flock|lockfile)\b|while\s+(?:true|:)|for\s+\w*(?:attempt|retry)\w*/g,
+                ) ?? [];
                 for (const _ of controlsFound) {
                     add("custom-control");
                     result.loops++;

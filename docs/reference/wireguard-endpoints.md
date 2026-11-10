@@ -156,7 +156,7 @@ One Swamp run on 209 reaches both Nodes over official SSH, with no script on eit
 
 The typed terminal result records the public key only after these steps succeed. The key and Operation result commit together in one short database transaction. When a step fails, the run stops; there is no rollback, and a rerun writes the same files again. There are no effect-time Gateway reads, callbacks, or child Operations.
 
-`fleet.peer_dns` also runs on 209 with the stored WireGuard host pin. `@swamp/cfgmgmt/line` keeps the Gateway-rendered hook line in `orbit.conf` and leaves the rest of the file as it is, and `@swamp/cfgmgmt/file` writes the marker `/etc/wireguard/orbit.dns-link`. `@swamp/cfgmgmt/exec` sets DNS, domains and default-route; its `notIf` guard skips the command when the live `orbit` link already holds them. The end check resolves the Gateway's private name through `orbit` and `example.com` outside it. It never calls an agent action or restarts the tunnel.
+`fleet.peer_dns` uses the [shared member phase](/reference/private-dns#repair-one-peer) with the stored WireGuard host pin. It keeps the hook and marker, selects a Cluster DNS delegate where supported, and leaves other private domains on `orbit`. It compares live scopes and changes only drift. Its end check proves Cluster, private VPN and public resolution. It never calls an agent action or restarts the tunnel.
 
 ## Recover an invalid stored endpoint
 

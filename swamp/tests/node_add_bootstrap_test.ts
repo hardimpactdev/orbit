@@ -138,7 +138,6 @@ Deno.test("every Ansible phase is a bounded playbook run with pinned host keys a
             "Set up the tunnel",
             "Add the peer",
             "Install the Node agent",
-            "Configure DNS backend",
             "Check the Node state",
         ],
     );

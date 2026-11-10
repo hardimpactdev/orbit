@@ -44,6 +44,8 @@ In disposable proof fleets, each batch installs the tested checkout's frozen pin
 
 ## What it observes
 
+The Gateway's watch list also names the dedicated Cluster DNS units, resolved and the read-only Cluster DNS health service and timer. The existing unit facts let Doctor report resolver outages. The agent changes no DNS policy; [member repair](/reference/private-dns#repair-one-peer) applies the shared policy.
+
 The agent watches two sources and reports each Orbit Process unit or container by its full name, such as `orbit-process-42-web`.
 
 | Source | What it watches | Reported `runtime_state` |
@@ -51,7 +53,7 @@ The agent watches two sources and reports each Orbit Process unit or container b
 | systemd over D-Bus | Units named `orbit-process-*.service` | The unit's `ActiveState`, such as `active`, `inactive`, or `failed`. A missing unit reads as `inactive`. |
 | The Docker socket `/run/docker.sock` | Containers named `orbit-process-*` | The container state, such as `running`, `exited`, or `restarting`. A missing container reads as `exited`. |
 
-The values use the same words as the `runtime_state` field of the Process API. The agent does not know which Process owns a name. The Gateway matches the name to a Process, so a candidate container such as `orbit-process-42-web-candidate` never matches. The Process presence report carries no CPU or memory metrics; the agent sends them as facts.
+The values use the same words as the `runtime_state` field of the Process API. The agent does not know which Process owns a name. The Gateway matches the name to a Process, so a candidate container such as `orbit-process-42-web-candidate` never matches. The Process presence report carries no CPU or memory metrics; the agent sends them as facts. Named service units use separate facts.
 
 Without Docker, the agent watches systemd only and reports Docker as `absent`. It checks for the socket every 10 seconds and sends a new snapshot when it appears. When the Docker event stream ends, the agent reconnects and sends a new snapshot. It merges changes to one unit that arrive within 250 milliseconds and sends only the latest state. It sends a heartbeat every 5 seconds and a complete snapshot at least every 60 seconds.
 
@@ -421,7 +423,7 @@ Only binary staging may change a Node outside a named command. First admission u
 
 The Gateway owns validation, authorization, records, operations, placement, and error mapping. Rust commands own Node execution and its tests. [Extensions](/reference/extensions#add-a-plug-in-point) own their Rust command modules, startup hooks, and compiled services; one agent binary dispatches them. There is no dynamic loader or second command runner.
 
-Tasks workspace scripts retain their [existing runner](/reference/remote-programs). The private DNS listener and its publication scripts remain for the separate [DNS migration](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router). Python outside the Gateway is outside this port. The Gateway's own Artisan entry point and OPcache adapter are control-plane code. Static configuration, templates, and certificates remain data.
+Tasks workspace scripts retain their [existing runner](/reference/remote-programs). Python outside the Gateway is outside this port. The Gateway's own Artisan entry point and OPcache adapter are control-plane code. Static configuration, templates, and certificates remain data.
 
 Operations own recovery. Mutations accept an `effect_key` as `op-<operation id>.<step key>`. Executor transports always supply it after contract authorization. After acquiring command target and resource locks, the shared command layer writes a private intent on the target before the effect and a durable receipt before returning. A repeated key with the same command, input and Operation nonce returns the saved result. A different command or input is refused with `agent.effect_conflict`. An interrupted intent has unknown outcome and is never executed again under that key.
 

@@ -1,0 +1,67 @@
+---
+- name: Pin the member and address it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh.target }}"
+    address_identity: "{{ intent.ssh.identity_file }}"
+    address_group: dns_member
+  tasks:
+    - name: Address the member
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Apply the member DNS selection
+  hosts: dns_member
+  become: true
+  gather_facts: false
+  tags: [member]
+  vars_files:
+    - vars/dns.yml
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    dns_member_policy: "{{ intent.selection }}"
+  tasks:
+    - name: Converge and report the effective member policy
+      block:
+        - name: Apply the shared member policy
+          ansible.builtin.import_tasks: tasks/dns-member.yml
+        - name: Keep the public member receipt
+          ansible.builtin.copy:
+            content: "{{ dns_member_receipt | to_json }}"
+            dest: "{{ run }}/result.json"
+            mode: "0600"
+          changed_when: false
+          delegate_to: localhost
+          become: false
+          vars: &local
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      rescue:
+        - name: Keep the member failure
+          ansible.builtin.copy:
+            content: "{{ {'error_code': ansible_failed_result.msg
+              if ansible_failed_result.msg | default('') is match('^dns[.][a-z_]+$') else 'dns.member_selection_failed'}
+              | to_json }}"
+            dest: "{{ run }}/result.json"
+            mode: "0600"
+          changed_when: false
+          delegate_to: localhost
+          become: false
+          vars: *local
+        - name: Fail the member phase
+          ansible.builtin.fail:
+            msg: dns.member_selection_failed
+  handlers:
+    - name: Reload member observation units
+      ansible.builtin.systemd:
+        daemon_reload: true
+    - name: Reload member resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: reloaded

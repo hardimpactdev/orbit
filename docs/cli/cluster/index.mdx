@@ -13,7 +13,9 @@ covers:
 
 A Cluster is an optional group of Nodes with one name, at most one development TLD, and one Router. A Node outside a Cluster is standalone. Active membership gives a Node's Project Routes and [analytics tracking hosts](/reference/analytics#publish-a-tracking-host) Cluster scope, so private traffic reaches them through the Router instead of the workload Node directly. [Custom proxy Routes](/reference/routes#custom-proxy-routes) stay on their Node.
 
-The [Routes reference](/reference/routes) owns domain generation, routing scope, and Router transition ownership. [Private DNS](/reference/private-dns#cluster-router-addresses) owns which Router address a requester receives.
+The [Routes reference](/reference/routes) owns domain generation, routing scope, and Router transition ownership. [Private DNS](/reference/private-dns#answers) owns which Router address a name resolves to.
+
+VPN DNS answers WireGuard addresses. A Cluster Router resolver answers its eligible LAN members with LAN addresses. Joining selects the Cluster delegate; leaving first restores and verifies complete VPN DNS. An offline or failed withdrawal retains the transition and blocks Node removal. See [member selection and repair](/reference/private-dns#repair-one-peer).
 
 ## Commands
 
@@ -47,7 +49,7 @@ A Node keeps its own TLD while it belongs to a Cluster, and membership never cha
 | --- | --- |
 | Node TLDs are unique among Nodes. | `node.tld_taken` |
 | Cluster TLDs are unique among Clusters. | A validation error on `tld` |
-| No Cluster or Node TLD may equal, be an ancestor of, or be a descendant of either private zone: `orbit` or the configured VPN domain. Comparisons ignore case and the VPN domain’s optional root dot, and use DNS label boundaries. Existing Gateways require an operator check, as [Private DNS](/reference/private-dns#cluster-router-addresses) explains. | A validation error on `tld` |
+| No Cluster or Node TLD may equal, be an ancestor of, or be a descendant of either private zone: `orbit` or the configured VPN domain. Comparisons ignore case and the VPN domain’s optional root dot, and use DNS label boundaries. Existing Gateways require an operator check, as [Private DNS](/reference/private-dns#answers) explains. | A validation error on `tld` |
 | A Node outside an active Cluster cannot own that Cluster's TLD. Activating a Cluster with a TLD, or giving an active Cluster a TLD, checks this. | `cluster.tld_conflict` |
 | A Node cannot take the TLD of an active Cluster that it is not a member of. | `node.tld_conflict` |
 | A member that shares the active Cluster TLD cannot leave while that TLD is active. | `cluster.tld_conflict` |

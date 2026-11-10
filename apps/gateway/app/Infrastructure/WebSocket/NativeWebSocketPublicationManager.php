@@ -52,7 +52,7 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         $this->build($node, fn () => $this->builds->build($node));
         // Private DNS names this Node only once its build serves the site; during a move it keeps the old Node.
         $this->dnsTarget->markServing($node->id);
-        $this->dns->converge($node);
+        $this->dns->converge();
     }
 
     /**

@@ -31,3 +31,11 @@ it('lets serve run the longest proof shard, whose budget the table does not hold
     // A proof shard captures its budget at admission, so the serve cap does not see it.
     expect(OperationBudgetTable::longestFixedSeconds())->toBeGreaterThanOrEqual(ProofBatchPlan::MaxShardSeconds);
 });
+
+it('budgets a private DNS publication for five to ten minutes, above the phase timeout of its workflow', function (): void {
+    $workflow = file_get_contents(dirname(base_path(), 2).'/swamp/workflows/workflow-dns-publish.yaml');
+    preg_match('/run: timeout (\d+) \/opt\/orbit\/ansible\/venv\/bin\/ansible-playbook/', (string) $workflow, $phase);
+
+    expect(OperationBudgetTable::SecondsByKind['dns.publish'])->toBeGreaterThanOrEqual(300)->toBeLessThanOrEqual(600)
+        ->and(OperationBudgetTable::SecondsByKind['dns.publish'])->toBeGreaterThan((int) $phase[1]);
+});

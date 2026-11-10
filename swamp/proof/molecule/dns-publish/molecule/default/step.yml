@@ -1,0 +1,311 @@
+---
+# One step of converge.yml.
+- name: "Before: the files and the dnsmasq process"
+  become: true
+  block:
+    - name: Read the files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        checksum_algorithm: sha256
+      loop: "{{ files }}"
+      register: before_files
+    - name: Read the process
+      ansible.builtin.command:
+        argv: [systemctl, show, --property=MainPID, --value, dnsmasq]
+      register: before_pid
+      changed_when: false
+    # A step that models an interrupted record publication keeps the hosts, servers and revision it starts from.
+    - name: Keep the files the step starts from
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ folder.path }}/old-{{ item | basename }}"
+        remote_src: true
+        mode: preserve
+      loop: ["{{ state_dir }}/orbit.hosts", "{{ state_dir }}/orbit.servers", "{{ state_dir }}/orbit.revision"]
+      when: step.interrupt_after | default(false)
+
+- name: "Run the phase: {{ step.name }}"
+  block:
+    - name: Add the stray config that makes dnsmasq answer wrongly
+      ansible.builtin.copy:
+        content: "# Proof only: an AAAA answer for a name that must have none.\nhost-record=gateway.orbit,{{ dns_address }},fd00::2\n"
+        dest: /etc/dnsmasq.d/zz-proof-leak.conf
+        mode: "0644"
+      become: true
+      when: step.leak | default(false)
+    - name: Stop dnsmasq, as a crash does
+      ansible.builtin.systemd:
+        name: dnsmasq
+        state: stopped
+      become: true
+      when: step.stop_dnsmasq | default(false)
+    - name: Write the intent
+      ansible.builtin.copy:
+        content: >-
+          {{ {'node': {'host': '127.0.0.1', 'user': 'orbit', 'port': 22, 'identity_file': '/nonexistent', 'host_keys': [placeholder_key]},
+          'dns': {'revision': step.revision, 'listen': [dns_address] + (step.listen_extra | default([])), 'tlds': step.tlds, 'records': step.records}} | to_json }}
+        dest: "{{ folder.path }}/intent.json"
+        mode: "0600"
+    - name: Clear the result of the step before
+      ansible.builtin.file:
+        path: "{{ folder.path }}/result.json"
+        state: absent
+    # The handover gap: a dig loop (every 50 ms, 1 s timeout) asks the VPN address for a name of the old listener and of the new dnsmasq while
+    # the step runs. A line is a millisecond timestamp and whether the question was answered; the gap is the longest time between two answered
+    # questions around a run of unanswered ones.
+    - name: Start the loop that measures the handover gap
+      ansible.builtin.shell: |
+        while [ ! -e "{{ folder.path }}/gap.stop" ]; do
+          t=$(date +%s%3N)
+          if timeout 3 dig @{{ dns_address }} -p 53 +short +tries=1 +time=1 gateway.orbit A | grep -q .; then echo "$t ok"; else echo "$t fail"; fi
+          sleep 0.05
+        done > "{{ folder.path }}/gap.log"
+      async: 600
+      poll: 0
+      register: gap_job
+      changed_when: false
+      when: step.measure_gap | default(false)
+    - name: Run the phase
+      ansible.builtin.command:
+        argv: >-
+          {{ ['timeout', '300', 'ansible-playbook', '-i', folder.path ~ '/inventory.yml', '--tags', 'publish']
+          + (['-e', scaled_lock] if step.lock_scaled | default(false) else []) + [ansible_dir ~ '/dns-publish.yml'] }}
+        chdir: "{{ ansible_dir }}"
+      environment:
+        ORBIT_RUN: "{{ folder.path }}"
+        ANSIBLE_NOCOLOR: "1"
+        ANSIBLE_CALLBACKS_ENABLED: ansible.posix.profile_tasks
+      register: phase
+      failed_when: false
+      changed_when: false
+      when: not (step.kill_in_cutover | default(false))
+    - name: Kill the phase in the middle of the cutover
+      ansible.builtin.include_tasks: kill.yml
+      when: step.kill_in_cutover | default(false)
+    - name: Stop the loop that measures the handover gap
+      ansible.builtin.file:
+        path: "{{ folder.path }}/gap.stop"
+        state: touch
+        mode: "0644"
+      when: step.measure_gap | default(false)
+    - name: Read the result
+      ansible.builtin.slurp:
+        src: "{{ folder.path }}/result.json"
+      register: result_file
+      failed_when: false
+    - name: Wait for the loop to end
+      ansible.builtin.async_status:
+        jid: "{{ gap_job.ansible_job_id }}"
+      register: gap_done
+      until: gap_done.finished
+      retries: 30
+      delay: 1
+      when: step.measure_gap | default(false)
+    - name: Compute the gap
+      ansible.builtin.shell: |
+        awk '{ t = $1; if ($2 == "ok") { if (failing) { if (t - lastok > max) max = t - lastok; failing = 0 } lastok = t } else if (lastok != "") failing = 1 }
+        END { if (failing) max = 99999999; print max + 0 }' "{{ folder.path }}/gap.log"
+      register: gap
+      changed_when: false
+      when: step.measure_gap | default(false)
+    - name: Say how long the handover took
+      ansible.builtin.debug:
+        msg: "{{ step.name }}: the handover gap of the cutover was {{ gap.stdout }} ms ({{ (lookup('ansible.builtin.file', folder.path ~ '/gap.log') | split('\n') | length) }} questions)"
+      when: step.measure_gap | default(false)
+    - name: The gap stays under the bound
+      ansible.builtin.assert:
+        that: (gap.stdout | int) <= 3000
+        fail_msg: "{{ step.name }}: the handover gap was {{ gap.stdout }} ms, the bound is 3000 ms"
+        quiet: true
+      when: step.measure_gap | default(false)
+  always:
+    - name: Remove the stray config
+      ansible.builtin.file:
+        path: /etc/dnsmasq.d/zz-proof-leak.conf
+        state: absent
+      become: true
+      when: step.leak | default(false)
+      # The next publication of the proof must not see it; the dnsmasq that already started with it is restarted by the next step.
+
+- name: "Assert the phase: {{ step.name }}"
+  vars:
+    result: "{{ (result_file.content | default('e30=') | b64decode | from_json) }}"
+    changed_hosts: "{{ phase.stdout | regex_findall('(?m)^node\\s+:\\s+ok=[0-9]+\\s+changed=([0-9]+)') }}"
+  block:
+    - name: The exit code is as expected
+      ansible.builtin.assert:
+        that: ((phase.rc | default(137)) == 0) == (step.succeeds | default(true))
+        fail_msg: "{{ step.name }}: the phase exited {{ phase.rc | default('killed') }}. {{ phase.stdout_lines[-30:] | default([]) | join('\n') }} {{ phase.stderr | default('') }}"
+        quiet: true
+    - name: The result is what the Gateway would read
+      ansible.builtin.assert:
+        that: result | combine(step.result) == result
+        fail_msg: "{{ step.name }}: result.json is {{ result | to_json }}, expected {{ step.result | to_json }}"
+        quiet: true
+    - name: The phase reports the number of changes the step expects
+      ansible.builtin.assert:
+        that: (changed_hosts | first | int) == step.changed
+        fail_msg: "{{ step.name }}: the phase changed {{ changed_hosts | first | default('?') }} tasks, expected {{ step.changed }}"
+        quiet: true
+      when: step.changed is defined
+
+- name: "After: the files and the dnsmasq process of {{ step.name }}"
+  become: true
+  block:
+    - name: Read the files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        checksum_algorithm: sha256
+      loop: "{{ files }}"
+      register: after_files
+    - name: Read the process
+      ansible.builtin.command:
+        argv: [systemctl, show, --property=MainPID, --value, dnsmasq]
+      register: after_pid
+      changed_when: false
+    - name: A refusal and a failed check leave every file as it was
+      ansible.builtin.assert:
+        that: (after_files.results | map(attribute='stat') | map(attribute='checksum', default='none') | list) == (before_files.results | map(attribute='stat') | map(attribute='checksum', default='none') | list)
+        fail_msg: "{{ step.name }}: a file changed although the phase failed"
+        quiet: true
+      when: not (step.succeeds | default(true)) and step.files_kept | default(false)
+    - name: A reload keeps the dnsmasq process, a restart replaces it
+      ansible.builtin.assert:
+        that: (after_pid.stdout == before_pid.stdout) == (step.pid == 'same')
+        fail_msg: "{{ step.name }}: dnsmasq pid {{ before_pid.stdout }} -> {{ after_pid.stdout }}, expected it to be {{ step.pid }}"
+        quiet: true
+      when: step.pid is defined
+
+- name: "The old listener, the loaded copy, the snapshot and the marker: {{ step.name }}"
+  become: true
+  block:
+    - name: Read the socket of the old listener
+      ansible.builtin.command:
+        argv: [systemctl, is-active, orbit-private-dns.socket]
+      register: listener_state
+      changed_when: false
+      failed_when: false
+      when: step.listener is defined
+    - name: The old listener is where the step expects it
+      ansible.builtin.assert:
+        that: listener_state.stdout == ('active' if step.listener == 'running' else 'inactive')
+        fail_msg: "{{ step.name }}: the old listener socket is {{ listener_state.stdout }}, expected {{ step.listener }}"
+        quiet: true
+      when: step.listener is defined
+    - name: Read orbit.conf.loaded
+      ansible.builtin.stat:
+        path: "{{ state_dir }}/orbit.conf.loaded"
+      register: loaded_copy
+      when: step.loaded is defined
+    - name: The loaded copy is where the step expects it
+      ansible.builtin.assert:
+        that: loaded_copy.stat.exists == (step.loaded == 'present')
+        fail_msg: "{{ step.name }}: orbit.conf.loaded exists={{ loaded_copy.stat.exists }}, expected {{ step.loaded }}"
+        quiet: true
+      when: step.loaded is defined
+    - name: Read the outcome of the detached cutover
+      ansible.builtin.command:
+        argv: [cat, "{{ state_dir }}/cutover.state"]
+      register: cutover_state
+      changed_when: false
+      when: step.cutover_state is defined
+    - name: The detached cutover ended as the step expects
+      ansible.builtin.assert:
+        that: cutover_state.stdout is match('^' ~ step.cutover_state)
+        fail_msg: "{{ step.name }}: cutover.state is [{{ cutover_state.stdout }}], expected [{{ step.cutover_state }}]"
+        quiet: true
+      when: step.cutover_state is defined
+    - name: Read the snapshot
+      ansible.builtin.stat:
+        path: "{{ state_dir }}/snapshot/manifest.json"
+      register: snapshot_file
+      when: step.snapshot is defined
+    - name: The snapshot is where the step expects it
+      ansible.builtin.assert:
+        that: snapshot_file.stat.exists == (step.snapshot == 'present')
+        fail_msg: "{{ step.name }}: the snapshot exists={{ snapshot_file.stat.exists }}, expected {{ step.snapshot }}"
+        quiet: true
+      when: step.snapshot is defined
+    - name: Read the reload marker
+      ansible.builtin.stat:
+        path: "{{ state_dir }}/reload.pending"
+      register: marker_file
+      when: step.marker is defined
+    - name: The reload marker is where the step expects it
+      ansible.builtin.assert:
+        that: marker_file.stat.exists == (step.marker == 'present')
+        fail_msg: "{{ step.name }}: the reload marker exists={{ marker_file.stat.exists }}, expected {{ step.marker }}"
+        quiet: true
+      when: step.marker is defined
+    - name: Read the files that the step expects to be gone
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ step.gone | default([]) }}"
+      register: gone_files
+    - name: The files of the candidate are gone
+      ansible.builtin.assert:
+        that: gone_files.results | map(attribute='stat') | map(attribute='exists') | list | unique in [[], [false]]
+        fail_msg: "{{ step.name }}: still there: {{ gone_files.results | selectattr('stat.exists') | map(attribute='item') | list }}"
+        quiet: true
+    - name: Read the files of the old listener setup
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ step.legacy_present | default([]) }}"
+      register: legacy_files
+    - name: The files of the old listener setup are back
+      ansible.builtin.assert:
+        that: legacy_files.results | map(attribute='stat') | map(attribute='exists') | list | unique in [[], [true]]
+        fail_msg: "{{ step.name }}: a file of the old listener setup is missing: {{ legacy_files.results | rejectattr('stat.exists') | map(attribute='item') | list }}"
+        quiet: true
+
+- name: "Ask dnsmasq on {{ dns_address }}: {{ step.name }}"
+  ansible.builtin.include_tasks: probe.yml
+  loop: "{{ step.queries | default([]) }}"
+  loop_control:
+    loop_var: query
+    label: "{{ query.name }} {{ query.type }}"
+
+- name: "Model the state that an interrupted record publication leaves: {{ step.name }}"
+  become: true
+  when: step.interrupt_after | default(false)
+  block:
+    - name: Keep the files the step wrote
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ folder.path }}/new-{{ item | basename }}"
+        remote_src: true
+        mode: preserve
+      loop: ["{{ state_dir }}/orbit.hosts", "{{ state_dir }}/orbit.servers"]
+    - name: Put the files from before back, and let dnsmasq read them
+      ansible.builtin.copy:
+        src: "{{ folder.path }}/old-{{ item }}"
+        dest: "{{ state_dir }}/{{ item }}"
+        remote_src: true
+        mode: preserve
+      loop: [orbit.hosts, orbit.servers]
+    - name: Reload dnsmasq on the files from before
+      ansible.builtin.systemd:
+        name: dnsmasq
+        state: reloaded
+    - name: Put the files of the step back, as the install left them
+      ansible.builtin.copy:
+        src: "{{ folder.path }}/new-{{ item }}"
+        dest: "{{ state_dir }}/{{ item }}"
+        remote_src: true
+        mode: preserve
+      loop: [orbit.hosts, orbit.servers]
+    - name: Put the revision from before back, and the marker that the install wrote
+      ansible.builtin.copy:
+        src: "{{ folder.path }}/old-orbit.revision"
+        dest: "{{ state_dir }}/orbit.revision"
+        remote_src: true
+        mode: preserve
+    - name: Write the reload marker
+      ansible.builtin.copy:
+        content: "{{ step.revision }}\n"
+        dest: "{{ state_dir }}/reload.pending"
+        mode: "0644"
+    - name: Ask dnsmasq for a record of the step, which it has not read
+      ansible.builtin.include_tasks: probe.yml
+      vars:
+        query: {name: "{{ step.interrupt_probe.name }}", type: A, not_data: ["{{ step.interrupt_probe.address }}"], any_status: true}

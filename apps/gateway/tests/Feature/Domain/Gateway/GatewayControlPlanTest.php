@@ -29,7 +29,7 @@ it('renders the serve and worker units for the checkout of the machine, with the
         ->and($plan['address'])->toBe($node->wireguard_ip)
         ->and($plan['firewall']['hub_port'])->toBe('51820')
         ->and(array_column($plan['firewall']['rules'], 0))->each->toBe('ufw')
-        ->and($plan['dns_backend'])->toContain("listen-address=127.0.0.55\n", "bind-interfaces\n")
+        ->and($plan)->not->toHaveKey('dns_backend')->not->toHaveKey('dns')
         ->and($plan['runtime_tmpfiles'])->toBe(['path' => '/etc/tmpfiles.d/orbit-gateway.conf',
             'content' => "# Managed by Orbit. The Gateway's runtime folder, for the Documents cleanup state.\nd /run/orbit 0755 orbit orbit -\n"])
         ->and($plan['user'])->toBe('orbit')

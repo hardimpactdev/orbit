@@ -21,6 +21,7 @@ use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Jobs\AppDev\PublishPrivateDns;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
@@ -100,8 +101,8 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $ended = false;
-        $projected = DB::transaction(function () use ($operation, $data, &$ended): Operation {
+        $ended = $failed = false;
+        $projected = DB::transaction(function () use ($operation, $data, &$ended, &$failed): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
             $transfer = InstanceTransfer::query()->lockForUpdate()->findOrFail(ValidatedData::string($operation->input['transfer_id']));
@@ -119,6 +120,7 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
             $snapshot = ValidatedData::object($operation->input['route_transfer']);
             if (! $operation->status->terminal() && $status->terminal()) {
                 $ended = true;
+                $failed = $status !== OperationStatus::Succeeded;
                 if ($result['cutover'] && $transfer->cutover_at === null) {
                     app(InstanceTransferProcesses::class)->cutover($instance, $transfer, ValidatedData::object($operation->input['process_installations']));
                     $instance->update(['node_id' => $transfer->destination_node_id, 'name' => $transfer->destination_name,
@@ -155,6 +157,10 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
         // again after a failed move, and their triggers come back.
         if ($ended) {
             app(NativeSchedules::class)->republishForInstance($operation->target_id);
+        }
+        // The run restored the DNS it changed with an older revision than a publication admitted meanwhile may hold.
+        if ($failed) {
+            PublishPrivateDns::dispatch()->afterCommit();
         }
 
         return $projected;

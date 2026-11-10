@@ -57,13 +57,6 @@
       register: caddy
       when: intent.serves_routes
       failed_when: caddy is failed and 'file not found' not in (caddy.msg | default('') | lower)
-    # A missing file fails the phase: the Node must hold what the captured states describe.
-    - name: Read the private DNS files
-      ansible.builtin.slurp:
-        src: "{{ item }}"
-      register: dns
-      loop: [/etc/dnsmasq.d/orbit-records.conf, /var/lib/orbit/private-dns/catalog.json]
-      when: intent.reads_dns
     - name: Collect the pool files
       ansible.builtin.set_fact:
         pool_files: "{{ pool_files | default({}) | combine({item.item: item.content}) }}"
@@ -75,9 +68,7 @@
       ansible.builtin.copy:
         content: >-
           {{ {'account': account.stdout | default(''), 'pools': pool_files | default({}),
-          'caddy': caddy.content | default(''),
-          'records': (dns.results | default([{}]))[0].content | default(''),
-          'catalog': (dns.results | default([{}, {}]))[1].content | default('')} | to_json }}
+          'caddy': caddy.content | default('')} | to_json }}
         dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/read.json"
         mode: "0600"
       delegate_to: localhost
@@ -159,40 +150,6 @@
               ansible.builtin.command:
                 argv: [timeout, "60", systemctl, reload, caddy]
               changed_when: true
-        - name: Publish the private DNS records
-          when: plan.dns is not none
-          block:
-            - name: Create the catalog folder
-              ansible.builtin.file:
-                path: /var/lib/orbit/private-dns
-                state: directory
-                mode: "0755"
-            - name: Write the records
-              ansible.builtin.copy:
-                content: "{{ plan.dns.records }}"
-                dest: /etc/dnsmasq.d/orbit-records.conf
-                owner: root
-                group: root
-                mode: "0644"
-            - name: Write the catalog
-              ansible.builtin.copy:
-                content: "{{ plan.dns.catalog }}"
-                dest: /var/lib/orbit/private-dns/catalog.json
-                owner: root
-                group: root
-                mode: "0644"
-            - name: Test the DNS configuration
-              ansible.builtin.command:
-                argv: [timeout, "30", dnsmasq, --test]
-              changed_when: false
-            - name: Restart the DNS backend
-              ansible.builtin.command:
-                argv: [timeout, "60", systemctl, restart, dnsmasq]
-              changed_when: true
-            - name: Enable the DNS listener
-              ansible.builtin.command:
-                argv: [timeout, "30", systemctl, enable, --now, orbit-private-dns.socket]
-              changed_when: false
         # The scopes no site names any more: the Caddy folder, and the account copy under the account's home.
         - name: Read the accounts of the withdrawn scopes
           ansible.builtin.command:

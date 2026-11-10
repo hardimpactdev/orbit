@@ -21,7 +21,6 @@ use App\Console\Commands\ReconcilePeerDnsCommand;
 use App\Console\Commands\RenderNodeRecipeCommand;
 use App\Console\Commands\RoleAddCommand;
 use App\Console\Commands\RuntimeHibernatorCommand;
-use App\Console\Commands\ServePrivateDnsCommand;
 use App\Domain\Gateway\GatewayCacheStore;
 use App\Infrastructure\Broadcasting\ReverbBroadcaster;
 use App\Models\Instance;
@@ -52,7 +51,6 @@ final class ApplicationServiceProvider extends ServiceProvider
             RoleAddCommand::class,
             RenderNodeRecipeCommand::class,
             RuntimeHibernatorCommand::class,
-            ServePrivateDnsCommand::class,
         ]);
         $cache = config('cache');
         if (! is_array($cache)) {

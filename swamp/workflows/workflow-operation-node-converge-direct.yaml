@@ -353,8 +353,23 @@ jobs:
         condition:
           type: succeeded
     steps:
+      - name: Publish private DNS
+        labels: {role: swamp}
+        writes: true
+        guard: '${{ inputs.intent.dns == null }}'
+        task:
+          type: workflow
+          workflowIdOrName: dns-publish
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent: '${{ inputs.intent.dns }}'
+            execution_secrets: {}
       -
         name: 'Check the Node'
+        dependsOn:
+          - {step: Publish private DNS, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
         labels:
           role: swamp
         writes: true

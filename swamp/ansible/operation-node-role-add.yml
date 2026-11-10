@@ -280,13 +280,6 @@
   tasks:
     - name: Apply composed PHP pools
       ansible.builtin.import_tasks: tasks/role-publication-php.yml
-- name: Publish role DNS
-  hosts: publication_nodes
-  tags: [dns]
-  become: true
-  tasks:
-    - name: Apply composed private DNS
-      ansible.builtin.import_tasks: tasks/role-publication-dns.yml
 - name: Remove Analytics initialization containers
   hosts: role_node
   tags: [cleanup]

@@ -571,14 +571,20 @@ jobs:
   - name: Publish private DNS
     labels: {role: swamp}
     writes: true
+    forEach: {item: publication, in: '${{ inputs.intent.publications.filter(p,p.after.dns != null) }}'}
     task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "ansible-role-phase_56-" + string(inputs.node_id) }}
-      methodName: execute
+      type: workflow
+      workflowIdOrName: dns-publish
       inputs:
-        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" -e "run_folder=$ORBIT_RUN" --tags dns "$ORBIT_ANSIBLE/operation-node-role-add.yml"
-        env: *id001
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ self.publication.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.publication.node_id }}
+          connection: ${{ self.publication.connection }}
+          host_keys: ${{ self.publication.host_keys }}
+          dns: ${{ self.publication.after.dns }}
+        execution_secrets: {}
 - name: exporters
   labels: {role: swamp}
   steps:

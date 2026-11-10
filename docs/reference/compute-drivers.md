@@ -147,7 +147,7 @@ The cloud-init of a template builder declares the `orbit` account with UID 1000 
 
 ### PHP build
 
-The recipe is the single source of truth for Orbit's PHP build. Every machine that runs Orbit's PHP installs this build and checks it: development and production Nodes, the Gateway, the VPN private DNS listener, task VMs, and [CI](/reference/implementation-loop#one-php-build-in-ci). A PHP build is the exact Sury package versions and the modules available to CLI and PHP-FPM.
+The recipe is the single source of truth for Orbit's PHP build. Every machine that runs Orbit's PHP installs this build and checks it: development and production Nodes, the Gateway, task VMs, and [CI](/reference/implementation-loop#one-php-build-in-ci). A PHP build is the exact Sury package versions and the modules available to CLI and PHP-FPM.
 
 PHP supports amd64 only, like every recipe tool. The artifact mirror takes only the PHP artifacts declared in the recipe.
 
@@ -161,7 +161,7 @@ PHP supports amd64 only, like every recipe tool. The artifact mirror takes only 
 | `php.pcov` | The profiles whose PHP CLI loads PCOV: `app-dev`, `base`, and `ci-runner` |
 | `php.opentelemetry` | The profiles that install OpenTelemetry and load it in PHP-FPM only: `app-dev` only |
 
-The `vpn` profile names `php:8.5` because `orbit-private-dns.service` runs that CLI runtime. Its recipe identity changes with this membership, as with every profile change. VPN-only Nodes keep the shared PHP-FPM service disabled and inactive, including after package updates; an existing mask stays in place. A Node with a Gateway or application role instead validates and refreshes its active FPM masters.
+VPN-only Nodes keep the shared PHP-FPM service disabled and inactive, including after package updates; an existing mask stays in place. A Node with a Gateway or application role instead validates and refreshes its active FPM masters.
 
 After the PHP installer reports `applied` on an active VPN Node, recipe and VPN role convergence publish private DNS through the existing publication path. Publication self-tests the installed release and replaces a stale listener behind its active socket, then verifies socket ownership and the loaded catalog. A failed self-test leaves the running listener untouched and fails convergence clearly.
 

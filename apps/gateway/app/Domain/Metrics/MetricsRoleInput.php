@@ -7,9 +7,9 @@ namespace App\Domain\Metrics;
 use App\Domain\Nodes\NodeRoleCertificateInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\NativeCaddyPublicationInput;
-use App\Domain\Routes\NativeRoutePublicationInput;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Routes\RouteRenderContext;
+use App\Infrastructure\AppDev\PrivateDnsPublication;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -18,10 +18,8 @@ use App\Support\ValidatedData;
 /** Full public specifications for the official native role workflow. */
 final readonly class MetricsRoleInput
 {
-    /** @param array<int,array<string,mixed>> $beforeDns
-     * @return array<string,mixed>
-     */
-    public function capture(NodeRole $assignment, bool $enabled, bool $purge, array $beforeDns): array
+    /** @return array<string,mixed> */
+    public function capture(NodeRole $assignment, bool $enabled, bool $purge): array
     {
         $node = $assignment->node;
         $gateway = app(MetricsGatewayResolver::class)->resolve();
@@ -42,10 +40,10 @@ final readonly class MetricsRoleInput
 
             return [app(NativeCaddyPublicationInput::class)->forNode($gateway), $fleet];
         });
+        // The role row is stored before this render, so the complete private DNS already holds or drops metrics.orbit.
         $dns = [];
         foreach (PrivateDnsPublicationNodes::query()->get() as $dnsNode) {
-            $dns[] = ['node_id' => $dnsNode->id, ...app(NativeCaddyPublicationInput::class)->connectionForNode($dnsNode),
-                'before' => $beforeDns[$dnsNode->id], 'after' => app(NativeRoutePublicationInput::class)->dns($dnsNode), 'alternatives' => []];
+            $dns[] = app(PrivateDnsPublication::class)->entry($dnsNode);
         }
         $dirs = array_values(array_unique(array_map(dirname(...), array_keys($files))));
         usort($dirs, static fn (string $a, string $b): int => substr_count($a, '/') <=> substr_count($b, '/'));

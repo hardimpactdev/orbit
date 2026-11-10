@@ -7,17 +7,20 @@ namespace App\Models;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Concerns\ValidatesPrivateDnsNamespace;
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @property int $id
  * @property string $name
  * @property string|null $tld
  * @property ClusterState $state
+ * @property array<string, mixed>|null $dns_pending Per source: `{at: timestamp, values: {tld?, state?, router_node_id?}}`.
  * @property-read Collection<int, Node> $nodes
  * @property-read NodeRole|null $routerAssignment
  * @property-read NodeRole|null $ingressAssignment
@@ -25,6 +28,12 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 final class Cluster extends Model
 {
     use ValidatesPrivateDnsNamespace;
+
+    /** The hold of a TLD or state change (`cluster:update`). */
+    public const string DnsHoldChange = 'change';
+
+    /** The hold of a Router selection while its render reads the rows. */
+    public const string DnsHoldRouter = 'router';
 
     /** @var array<string, mixed> */
     #[\Override]
@@ -79,9 +88,82 @@ final class Cluster extends Model
         return $this->hasMany(Route::class);
     }
 
-    /** @return array<string, class-string> */
+    /** @return array<string, class-string|string> */
     protected function casts(): array
     {
-        return ['state' => ClusterState::class];
+        return ['state' => ClusterState::class, 'dns_pending' => 'array'];
+    }
+
+    /**
+     * The TLD, state or Router that changes in flight publish before they commit, merged across their holds. A hold that nothing
+     * cleared (a crash) expires after an hour, so a stale value never answers for long. A newer hold wins a key that two holds name.
+     *
+     * @return array{tld?: ?string, state?: string, router_node_id?: ?int}
+     */
+    public function pendingDns(): array
+    {
+        $holds = array_filter($this->dns_pending ?? [],
+            static fn (mixed $hold): bool => is_array($hold) && is_int($hold['at'] ?? null) && is_array($hold['values'] ?? null)
+                && $hold['at'] >= now()->subHour()->getTimestamp());
+        uasort($holds, static fn (array $a, array $b): int => $a['at'] <=> $b['at']);
+        $pending = [];
+
+        foreach ($holds as $hold) {
+            $values = $hold['values'];
+
+            if (array_key_exists('tld', $values)) {
+                $pending['tld'] = is_string($values['tld']) ? $values['tld'] : null;
+            }
+
+            if (is_string($values['state'] ?? null)) {
+                $pending['state'] = $values['state'];
+            }
+
+            if (array_key_exists('router_node_id', $values)) {
+                $pending['router_node_id'] = is_int($values['router_node_id']) ? $values['router_node_id'] : null;
+            }
+        }
+
+        return $pending;
+    }
+
+    /**
+     * Holds the keys one source of change publishes. Each source has its own hold: a TLD or state change (`DnsHoldChange`) and
+     * a Router selection (`DnsHoldRouter`) never overwrite or release each other.
+     *
+     * @param  array{tld?: ?string, state?: ClusterState|string, router_node_id?: ?int}  $pending
+     */
+    public function holdDns(string $source, array $pending): void
+    {
+        if (($pending['state'] ?? null) instanceof ClusterState) {
+            $pending['state'] = $pending['state']->value;
+        }
+
+        $this->changeDnsHolds(static function (array $holds) use ($source, $pending): array {
+            $holds[$source] = ['at' => now()->getTimestamp(), 'values' => $pending];
+
+            return $holds;
+        });
+    }
+
+    /** Releases the hold of one source and leaves the holds of the others. */
+    public function releaseDns(string $source): void
+    {
+        $this->changeDnsHolds(static function (array $holds) use ($source): array {
+            unset($holds[$source]);
+
+            return $holds;
+        });
+    }
+
+    /** @param Closure(array<string, mixed>): array<string, mixed> $change */
+    private function changeDnsHolds(Closure $change): void
+    {
+        DB::transaction(function () use ($change): void {
+            $locked = self::query()->lockForUpdate()->findOrFail($this->id);
+            $holds = $change(is_array($locked->dns_pending) ? $locked->dns_pending : []);
+            $locked->forceFill(['dns_pending' => $holds === [] ? null : $holds])->save();
+            $this->setRawAttributes($locked->getAttributes(), true);
+        });
     }
 }

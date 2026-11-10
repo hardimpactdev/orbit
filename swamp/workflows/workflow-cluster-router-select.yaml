@@ -6,14 +6,16 @@ queueTimeout: 30
 inputs:
   type: object
   properties:
+    operation_id: {type: integer, minimum: 1}
+    kind: {type: string}
     intent: {type: object}
-  required: [intent]
+  required: [operation_id, kind, intent]
   additionalProperties: false
 jobs:
 - name: select
   labels: {role: swamp}
   steps:
-    # Each VPN Node: records, catalog, then dnsmasq (route-create-dns).
+    # Each VPN Node: the whole private DNS with the new Router, written by the dns-publish phase.
   - name: 'records'
     labels: {role: swamp}
     dependsOn: []
@@ -21,18 +23,19 @@ jobs:
     forEach: {item: vpn, in: '${{ inputs.intent.dns }}'}
     task:
       type: workflow
-      workflowIdOrName: route-create-dns
+      workflowIdOrName: dns-publish
       inputs:
-        intent: '${{ inputs.intent }}'
+        operation_id: '${{ inputs.operation_id }}'
         node_id: '${{ self.vpn.node_id }}'
-    # Resolvers that honor the TTL stop asking the old Router (route-dns-grace).
-  - name: 'grace'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'records', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    forEach: {item: wait, in: '${{ inputs.intent.grace }}'}
-    task:
-      type: workflow
-      workflowIdOrName: route-dns-grace
-      inputs: {}
+        kind: '${{ inputs.kind }}'
+        intent:
+          node_id: '${{ self.vpn.node_id }}'
+          connection:
+            nodeHost: '${{ inputs.intent.nodes[string(self.vpn.node_id)].host }}'
+            nodeUser: '${{ inputs.intent.nodes[string(self.vpn.node_id)].user }}'
+            nodePort: '${{ inputs.intent.nodes[string(self.vpn.node_id)].port }}'
+            nodeIdentityFile: '${{ inputs.intent.nodes[string(self.vpn.node_id)].identity_file }}'
+            become: true
+          host_keys: '${{ inputs.intent.nodes[string(self.vpn.node_id)].host_keys }}'
+          dns: '${{ self.vpn.dns }}'
+        execution_secrets: {}
