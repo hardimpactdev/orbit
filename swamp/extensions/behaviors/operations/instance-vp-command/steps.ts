@@ -109,7 +109,7 @@ export function vpWorkspaceSteps(name: string, intent: string): Fields[] {
             links: e('steps["' + name + '-links"].outputs.links'),
             workspaces: e(
                 'steps.filter(k, k.startsWith("' + name +
-                    '-read-workspace-")).map(k, steps[k].outputs.stdout)',
+                    '-read-workspace-")).map(k, {"step": k, "stdout": steps[k].outputs.stdout})',
             ),
         },
         "@nckrtl/instance-vp-requirements",
