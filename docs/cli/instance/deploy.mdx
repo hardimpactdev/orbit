@@ -48,6 +48,8 @@ A failure while fetching the release, synchronizing the environment, or running 
 
 Deployment, rollback, deploy-step changes, environment changes and removal share one owner for each Instance. A second production deploy while one is queued or running is refused with `operation.target_busy`. A development `default` in a checkout takes no such hold; one in a container holds its Instance, so a second deployment is refused with `operation.target_busy`. A rollback cancels a deploy that no run has started; see [`instance:rollback`](/cli/instance/rollback).
 
+A container default refreshes its [Project source facts at the deployed commit](/reference/deployments#container-source-facts) before admission. That reference defines capture failures and the runtime inherited by new clones.
+
 ## How it works
 
 <div className="flow-at" data-chart="instance/deploy"></div>

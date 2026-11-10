@@ -41,6 +41,8 @@ Nothing to do. The release ([stage 5](../../../docs/reference/pipeline/5-automat
 
 ## Lessons
 
+When a deployment captures source metadata, test an older pinned commit after the branch advances. A branch-head fake alone cannot prove that the selected runtime and the checked-out commit agree.
+
 Task parents that can use a ready VM capture resume only for a parked VM. Keep `task_vm_id` separate from the optional resume intent, and let the next workflow step follow either a succeeded or skipped resume.
 
 For a command namespace change, audit model route bindings and operation fingerprints. A selector may span rows hidden by a global scope; public names must not change stored operation or retry identity.

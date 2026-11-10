@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Actions\Projects\CaptureProjectSourceFactsAction;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
@@ -14,6 +15,8 @@ use App\Domain\Instances\Deployment\InstanceRuntimeDefinitions;
 use App\Domain\Instances\Deployment\ProductionDeployInput;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
+use App\Domain\Instances\InstanceContainer;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -55,7 +58,21 @@ final readonly class StartInstanceDeployAction
             $development = $instance->placedOnAppDev();
             $members = $development ? null : app(InstanceRuntimeDefinitions::class)->capture($instance);
             if ($instance->runtime()->exists()) {
-                // A container default installs the Project's changed and new development definitions with each deployment.
+                if (($existing = app(OperationIdempotency::class)->replay(OperationKinds::InstanceDeploy)) !== null) {
+                    return $existing;
+                }
+                $this->intent->assertDevelopment($instance);
+                $facts = app(CaptureProjectSourceFactsAction::class);
+                $project = $instance->project;
+                $read = $facts->read($project->repository_url, $project->source_access, (string) $project->default_branch,
+                    $project->root, $project->type, $commit);
+                if ($read['facts']['source_profile_error'] !== null) {
+                    throw new ResourceOperationException($read['facts']['source_profile_error'], 'The deployed source metadata is invalid or unsupported for a development Instance.', 422);
+                }
+                $facts->record($project, $read);
+                app(InstanceContainer::class)->assertPhp($project);
+                $commit = $read['head'];
+                // Render the runtime definitions only after capturing the deployed commit's facts.
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->refreshForContainer($instance);
             }
             $deployment = $this->intent->snapshot($instance);

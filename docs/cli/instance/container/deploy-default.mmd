@@ -18,6 +18,10 @@ sequenceDiagram
   SW->>GW: Admit the deployment<br/>instance:deploy-automatic
   %%> What it does:
   %%> - the Gateway admits `instance.deploy` for that exact commit, with the Instance lock and a repository read token in the vault
+  Note over GW: Capture Project source facts<br/>at the admitted commit
+  %%> What it does:
+  %%> - uses the same capture as project:update before freezing the container intent; see /reference/deployments#container-source-facts
+  %%> - refuses admission when capture or source classification fails
   GW->>SW: Start run, full intent<br/>instance-deploy-direct
   opt the default Instance is asleep
     SW->>N: Start the container<br/>incus start
