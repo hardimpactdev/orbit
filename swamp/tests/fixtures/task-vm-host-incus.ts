@@ -95,6 +95,12 @@ if (family === "query") {
         environment: { server_version: state.server_version ?? "7.0.1" },
       }),
     );
+  } else if (resource === "instances" && !item) {
+    console.log(JSON.stringify(state.instances.map((row: { project: string; devices?: Record<string, Record<string, string>> }) => {
+      const devices = structuredClone(state.profiles[row.project]?.devices ?? {});
+      for (const [name, device] of Object.entries(row.devices ?? {})) devices[name] = { ...devices[name], ...device };
+      return { ...row, expanded_devices: devices };
+    })));
   } else if (resource === "profiles") {
     const owner = new URLSearchParams(query).get("project") ?? "default";
     console.log(JSON.stringify(state.profiles[owner]));

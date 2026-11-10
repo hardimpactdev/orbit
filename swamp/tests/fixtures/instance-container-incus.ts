@@ -56,8 +56,14 @@ if (args[0] === "query") {
         JSON.stringify(container.snapshots.map((name: string) => ({ name }))),
       );
     } else {
+      const eth0: Record<string, string> = {};
+      for (const device of container.devices ?? []) {
+        if (!device.startsWith("eth0,")) continue;
+        const equal = device.indexOf("=", 5);
+        eth0[device.slice(5, equal)] = device.slice(equal + 1);
+      }
       console.log(JSON.stringify({ name: parts[1], status: container.status, query, devices: container.added ?? {},
-        config: { "volatile.uuid": container.uuid } }));
+        expanded_devices: { eth0 }, config: { "volatile.uuid": container.uuid } }));
     }
   } else fail(`Unexpected query ${route}`);
   Deno.exit(0);

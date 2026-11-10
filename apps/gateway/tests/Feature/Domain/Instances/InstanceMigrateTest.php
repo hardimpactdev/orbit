@@ -596,7 +596,7 @@ describe('the end of a move', function (): void {
         $default = migrateCheckout(containerDefaultProject(), $node);
         $operation = migrateStart($default);
 
-        migrateEnd($operation, 'failed', ['ready' => false, 'moved' => false, 'restored' => true, 'failed_step' => 'files', 'error_code' => 'instance.database_unreachable']);
+        migrateEnd($operation, 'failed', ['ready' => false, 'moved' => false, 'restored' => true, 'failed_step' => 'container', 'error_code' => 'instance.database_unreachable']);
 
         expect(InstanceRuntime::query()->where('instance_id', $default->id)->exists())->toBeFalse()
             ->and($default->refresh()->only(['checkout_path', 'status']))->toBe(['checkout_path' => '/home/orbit/apps/tool/default', 'status' => InstanceState::Active])

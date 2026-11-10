@@ -18,6 +18,7 @@ use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -27,6 +28,7 @@ use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\ProjectDevelopmentDeployStep;
 use App\Support\ValidatedData;
+use Dotenv\Dotenv;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -104,7 +106,7 @@ describe('a clone of the container default', function (): void {
         $default->project->update(['name' => $name]);
         $container = containerIntentOf(containerCreate($default->project->fresh(), $node, 'named'));
         $metadata = $container['clone']['files'][0]['content'];
-        $values = \Dotenv\Dotenv::parse($metadata);
+        $values = Dotenv::parse($metadata);
         expect($container['clone']['t3']['title'])->toBe($name)
             ->and($values['ORBIT_PROJECT_ID'])->toBe((string) $default->project_id)
             ->and($values['ORBIT_PROJECT_NAME'])->toBe(str_replace(["\r", "\n"], ' ', $name))
@@ -424,3 +426,32 @@ function vaultReadingSocket(array $secrets): object
 
     return $socket;
 }
+
+it('captures every attached server target once, including remote Redis, in the container intent', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    $remote = containerDefaultNode('services', '10.44.0.3', listed: false);
+    $sql = databaseServerOn($node, 'mysql-target', DatabaseDriver::Mysql, 3306);
+    $redis = databaseServerOn($remote, 'redis-target', DatabaseDriver::Redis, 6379);
+    foreach ([['DB', $sql], ['REDIS', $redis], ['SQL_ALIAS', $sql]] as [$prefix, $server]) {
+        $connection = DatabaseConnection::query()->forceCreate(['slug' => strtolower($prefix), 'driver' => $server->driver,
+            'node_id' => $server->node_id, 'database_server_id' => $server->id, 'host' => $server->node->wireguard_ip,
+            'port' => $server->port, 'database' => 'tool', 'username' => 'tool']);
+        DatabaseConnectionTarget::query()->create(['instance_id' => $default->id, 'prefix' => $prefix,
+            'database_connection_id' => $connection->id, 'network' => 'wireguard']);
+    }
+    $sqlite = DatabaseConnection::query()->forceCreate(['slug' => 'workspace', 'driver' => DatabaseDriver::Sqlite,
+        'node_id' => $node->id, 'path' => '/srv/workspace/database/database.sqlite']);
+    DatabaseConnectionTarget::query()->create(['instance_id' => $default->id, 'prefix' => 'LOCAL',
+        'database_connection_id' => $sqlite->id, 'network' => 'wireguard']);
+
+    $intent = app(InstanceContainer::class)->intent($default, $default->runtime()->firstOrFail());
+
+    expect($intent['acl_rules']['egress'])->toBe([
+        ['action' => 'allow', 'destination' => '10.44.0.7/32', 'protocol' => 'tcp', 'destination_port' => '3306', 'state' => 'enabled'],
+        ['action' => 'allow', 'destination' => '10.44.0.3/32', 'protocol' => 'tcp', 'destination_port' => '6379', 'state' => 'enabled'],
+    ])->and($intent['firewall'])->toHaveCount(2)
+        ->and($intent['firewall'][0])->toMatchArray(['interface_in' => 'orbitinst0', 'from_ip' => '10.253.0.2', 'to_ip' => '10.44.0.7', 'to_port' => '3306'])
+        ->and($intent['firewall'][1])->toMatchArray(['route' => 'yes', 'interface_in' => 'orbitinst0', 'interface_out' => 'orbit',
+            'from_ip' => '10.253.0.2', 'to_ip' => '10.44.0.3', 'to_port' => '6379', 'proto' => 'tcp']);
+});

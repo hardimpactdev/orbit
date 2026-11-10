@@ -377,6 +377,9 @@ Deno.test({
                     name: "eth0",
                     network: "orbitinst0",
                     "security.port_isolation": "true",
+                    "security.acls": "orbitinst0-egress",
+                    "security.acls.default.egress.action": "reject",
+                    "security.acls.default.ingress.action": "reject",
                 },
                 "orbit-runtime": {
                     type: "disk",
@@ -404,14 +407,14 @@ Deno.test({
                 "raw.dnsmasq": "port=0",
                 "security.acls": "orbitinst0-egress",
                 "security.acls.default.ingress.action": "reject",
-                "security.acls.default.egress.action": "reject",
+                "security.acls.default.egress.action": "allow",
             });
             // No DNS: the bridge's dnsmasq serves DHCP only, whatever the Node's input rules admit.
             assert(!bridgeAnswersDns(state));
             const acls = Object.fromEntries(
                 state["network-acls"].map((a: { name: string }) => [a.name, a]),
             );
-            // The bridge reaches only the model forwarder and the egress proxy on its own address. The build container has no ACL and no
+            // The common NIC ACL reaches only the model forwarder and the egress proxy. The profile protects a build container with no own ACL and no
             // route of its own: it goes out through the proxy, as every container does.
             assertEquals(acls["orbitinst0-egress"].egress, [{
                 action: "allow",
@@ -710,5 +713,47 @@ Deno.test({
         } finally {
             f.cleanup();
         }
+    },
+});
+
+Deno.test({
+    name: "NIC gates precede bridge egress delegation, include stopped image builders, and fail closed on regression",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture({ pool: "dir" });
+        try {
+            let result = await f.run();
+            assert(result.ok, result.output);
+            const calls = f.calls();
+            const profile = calls.findIndex((call) => call.includes("profile") && call.includes("edit"));
+            const audit = calls.findIndex((call) => call.includes("/1.0/instances?all-projects=true&recursion=1"));
+            const delegate = calls.findIndex((call) => call.includes("security.acls.default.egress.action=allow"));
+            assert(profile >= 0 && profile < audit && audit < delegate);
+            assertEquals(calls.filter((call) => call.includes("/1.0/instances?all-projects=true&recursion=1")).length, 2);
+            // No own ACL: even the image builder inherits only the common proxy paths, with reject defaults.
+            const state = f.state();
+            const nic = state.profiles["orbit-instances"].devices.eth0;
+            assertEquals([nic["security.acls"], nic["security.acls.default.egress.action"]], ["orbitinst0-egress", "reject"]);
+            assertEquals(state["network-acls"].find((acl: {name: string}) => acl.name === nic["security.acls"]).egress.map((rule: {destination_port: string}) => rule.destination_port), ["8319", "3128"]);
+            for (const status of ["Running", "Stopped"]) {
+                const broken = f.state();
+                broken.instances.push({name: status === "Running" ? "profile-only-instance" : "orbit-instance-build", project: "orbit-instances", status,
+                    devices: {eth0: {type: "nic", network: "orbitinst0", "security.acls": ""}}});
+                broken.networks.find((network: {name: string}) => network.name === "orbitinst0").config["security.acls.default.egress.action"] = "reject";
+                Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(broken));
+                const before = f.calls().length;
+                result = await f.run();
+                assert(!result.ok, result.output);
+                assertStringIncludes(result.output, `${status === "Running" ? "profile-only-instance" : "orbit-instance-build"}/eth0 needs an effective ACL`);
+                assertEquals(f.state().networks.find((network: {name: string}) => network.name === "orbitinst0").config["security.acls.default.egress.action"], "reject");
+                assert(!f.calls().slice(before).some((call) => call.includes("security.acls.default.egress.action=allow")));
+                // Removing the unsafe local override restores the profile gate without an Instance ACL.
+                const fixed = f.state();
+                delete fixed.instances.at(-1).devices.eth0["security.acls"];
+                Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(fixed));
+                result = await f.run();
+                assert(result.ok, result.output);
+            }
+        } finally { f.cleanup(); }
     },
 });

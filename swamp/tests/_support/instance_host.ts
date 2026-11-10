@@ -102,6 +102,8 @@ function writeTasks(folder: string) {
     for (
         const name of [
             "instance-host.yml",
+            "instance-network-check.yml",
+            "instance-network-nic-check.yml",
             "instance-egress.yml",
             "instance-folder.yml",
             "instance-vite-plus-home.yml",

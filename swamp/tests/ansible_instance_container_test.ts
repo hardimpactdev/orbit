@@ -348,7 +348,7 @@ Deno.test({
       }
       const state = f.state();
       assertEquals(state.containers["instance-8"].source, `instance-7/seed-${seed}`);
-      assertEquals(state.containers["instance-8"].devices, ["eth0,ipv4.address=10.253.0.3", "eth0,security.acls=orbitinst0-egress,instance-8", "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB"]);
+      assertEquals(state.containers["instance-8"].devices, ["eth0,ipv4.address=10.253.0.3", "eth0,security.acls=orbitinst0-egress,instance-8", "eth0,security.acls.default.egress.action=reject", "eth0,security.acls.default.ingress.action=reject", "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB"]);
       assertEquals(state.containers["instance-8"].added, {
         t3: { type: "proxy", settings: ["listen=tcp:10.44.0.7:3800", "connect=tcp:10.253.0.3:3773", "nat=true"] },
       });
@@ -919,3 +919,29 @@ Deno.test({
     }
   },
 });
+
+for (const damage of ["missing ACL", "permissive default"]) {
+  Deno.test({
+    name: `start refuses a NIC with ${damage} before starting the container`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        const made = f.run("container");
+        assert(made.ok, made.output);
+        assert(f.run("stop").ok);
+        const state = f.state();
+        const key = damage === "missing ACL" ? "security.acls" : "security.acls.default.egress.action";
+        const value = damage === "missing ACL" ? "" : "allow";
+        state.containers["instance-7"].devices = state.containers["instance-7"].devices
+          .filter((device: string) => !device.startsWith(`eth0,${key}=`));
+        state.containers["instance-7"].devices.push(`eth0,${key}=${value}`);
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+        const result = f.run("start");
+        assert(!result.ok, result.output);
+        assertEquals(f.result(), { error_code: "instance.container_network_unsafe" });
+        assertEquals(f.state().containers["instance-7"].status, "Stopped");
+      } finally { f.cleanup(); }
+    },
+  });
+}

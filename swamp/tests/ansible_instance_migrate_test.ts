@@ -191,8 +191,8 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     migrate,
     rootfs,
     write,
-    run(phase: string) {
-      const playbook = ["quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
+    run(phase: string, rawContainer = false) {
+      const playbook = !rawContainer && ["container", "quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
       const done = new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
           "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/${playbook}`],
@@ -214,7 +214,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     },
     /** The phases of a move up to the copied files. */
     build() {
-      for (const phase of ["quiesce", "container", "workspace", "files"]) {
+      for (const phase of ["container", "quiesce", "workspace", "files"]) {
         const result = this.run(phase);
         assert(result.ok, `${phase}: ${result.output}`);
       }
@@ -311,7 +311,7 @@ Deno.test({
     try {
       f.migrate.retire.push({ path: f.main, mirror: `${f.folder}/mirror/7.git`, common_of: f.checkout });
       f.write();
-      const quiesce = f.run("quiesce");
+      const quiesce = f.run("container");
       assert(!quiesce.ok, quiesce.output);
       assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
       assert(f.result().error_message.includes(f.main));
@@ -411,9 +411,9 @@ Deno.test({
     try {
       git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
       git(f.checkout, "checkout", "--quiet", "-b", "elsewhere");
-      const quiesce = f.run("quiesce");
+      const quiesce = f.run("container");
       assert(!quiesce.ok);
-      assertEquals(f.result(), { error_code: "instance.migrate_branch_changed" });
+      assertEquals(f.result(), { error_code: "instance.migrate_branch_changed", preflight_refused: true });
       // The Route still serves, and no container was made.
       assert(exists(f.migrate.awake.path));
       assertEquals(f.state().containers ?? {}, {});
@@ -433,10 +433,16 @@ Deno.test({
       // Nothing listens on this port.
       f.migrate.databases.push({ host: "127.0.0.1", port: 1 });
       f.write();
-      for (const phase of ["quiesce", "container", "workspace"]) assert(f.run(phase).ok);
-      const files = f.run("files");
+      const processes = migrationProcesses(f);
+      const processBefore = processes();
+      const markerBefore = Deno.statSync(f.migrate.awake.path).mtime?.getTime();
+      const files = f.run("container");
       assert(!files.ok);
       assertEquals(f.result(), { error_code: "instance.database_unreachable" });
+      assert(exists(f.migrate.awake.path));
+      assertEquals(processes(), processBefore);
+      assert(!exists(`${f.folder}/run/quiesced`));
+      assert(!exists(`${f.rootfs}/srv/workspace/.git`));
       assertEquals([...Deno.readDirSync(`${f.rootfs}/srv`)].map((entry) => entry.name), ["workspace"]);
       assertEquals([...Deno.readDirSync(`${f.folder}/mirror`)].map((entry) => entry.name), ["7.git"]);
       const restore = f.run("restore");
@@ -447,6 +453,8 @@ Deno.test({
       assert(exists(f.migrate.awake.path));
       assertEquals(git(f.checkout, "status", "--porcelain"), status);
       assertEquals(f.result(), { error_code: "instance.database_unreachable" });
+      assertEquals(processes(), processBefore);
+      assertEquals(Deno.statSync(f.migrate.awake.path).mtime?.getTime(), markerBefore);
     } finally {
       f.cleanup();
     }
@@ -500,10 +508,10 @@ Deno.test({
       Deno.writeTextFileSync(`${f.checkout}/untracked.txt`, "not ignored\n");
       const before = git(f.checkout, "status", "--porcelain=v1", "--untracked-files=all");
       // Retained resources from a previous failure must survive both preflight and its restore path.
-      assert(f.run("container").ok);
+      assert(f.run("container", true).ok);
       const state = f.state();
       const rules = f.ufw();
-      const quiesce = f.run("quiesce");
+      const quiesce = f.run("container");
       assert(!quiesce.ok, quiesce.output);
       const receipt = f.result();
       assertEquals(receipt.error_code, "instance.migrate_retirement_blocked");
@@ -536,7 +544,7 @@ Deno.test({
         Deno.writeTextFileSync(`${f.checkout}/file-${String(i).padStart(2, "0")}.txt`, "new\n");
         git(f.checkout, "worktree", "add", "--quiet", "--detach", `${f.apps}/worktree-${String(i).padStart(2, "0")}`);
       }
-      const quiesce = f.run("quiesce");
+      const quiesce = f.run("container");
       assert(!quiesce.ok, quiesce.output);
       const message = f.result().error_message;
       assert(message.includes("Other worktrees (22 total; first 20)"));
@@ -612,10 +620,13 @@ Deno.test({
     const f = fixture();
     try {
       const host = migrationProcesses(f);
+      const prepared = f.run("container");
+      assert(prepared.ok, prepared.output);
+      assertEquals(host()[f.migrate.processes[0].name], { state: "started", enabled: true });
       const stopped = f.run("quiesce");
       assert(stopped.ok, stopped.output);
       assertEquals(host()[f.migrate.processes[0].name], { state: "stopped", enabled: false });
-      for (const phase of ["container", "workspace", "files"]) {
+      for (const phase of ["workspace", "files"]) {
         const result = f.run(phase);
         assert(result.ok, result.output);
       }

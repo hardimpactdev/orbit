@@ -100,7 +100,7 @@
     folder: "{{ instances.folders[folder_name] }}"
 
 # The project lets containers mount host folders read-only and idmapped, and publish T3 with a proxy device. Every container gets
-# an isolated ID map. The bridge reaches nothing by default: each Instance's own paths come with its create flow. Incus refuses
+# an isolated ID map and a default-reject NIC policy; each Instance's target paths come with its create flow. Incus refuses
 # `shift` on a disk whose source falls under `restricted.devices.disk.paths`, so the project sets no path list: the profile is
 # the one place that names the two folders, and the create flow's device list is the only guard on host paths.
 # Containers get no DNS: the egress proxy resolves every name.
@@ -110,7 +110,7 @@
     container_host: *instance_host
     container_acl_name: "{{ instances.network }}-egress"
     container_dns: false
-    # Incus applies a bridge ACL to traffic to the Node too: the ways out are the model forwarder, which the image's nftables admits
+    # This common ACL also lives on each NIC: the ways out are the model forwarder, which the image's nftables admits
     # only for `agent`, and the egress proxy, both on the bridge's own address.
     container_acl_rules:
       description: Orbit Instance boundary
@@ -137,15 +137,23 @@
       raw.dnsmasq: port=0
       security.acls: "{{ instances.network }}-egress"
       security.acls.default.ingress.action: reject
-      security.acls.default.egress.action: reject
+      # Egress is switched to allow below, only after the profile and every effective NIC policy pass their check.
     container_network_args: >-
-      {{ container_network_config | dict2items | map(attribute='key') | zip(container_network_config.values()) | map('join', '=') | list }}
+      {{ (container_network_config | dict2items | map(attribute='key') | zip(container_network_config.values()) | map('join', '=') | list)
+         + ['security.acls.default.egress.action=reject'] }}
     # Every process in a container gets the runtime folder's environment and the egress proxy: `incus exec` sessions, units and login
     # shells alike.
     container_profile_config: "{{ instances.profile_config }}"
     container_devices:
       root: { type: disk, path: /, pool: "{{ instances.pool }}" }
-      eth0: { type: nic, name: eth0, network: "{{ instances.network }}", security.port_isolation: 'true' }
+      eth0:
+        type: nic
+        name: eth0
+        network: "{{ instances.network }}"
+        security.port_isolation: 'true'
+        security.acls: "{{ instances.network }}-egress"
+        security.acls.default.egress.action: reject
+        security.acls.default.ingress.action: reject
       orbit-runtime:
         { type: disk, source: "{{ instances.folders.runtime.path }}", path: "{{ instances.folders.runtime.path }}", readonly: 'true', shift: 'true' }
       orbit-agent:
@@ -159,6 +167,17 @@
       restricted.snapshots: allow
       limits.virtual-machines: '0'
     container_restrictions_unset: [restricted.devices.disk.paths]
+
+# The profile above also protects the image builder and a NIC without an Instance ACL. Inspect running AND stopped containers
+# in every project before removing the bridge's independent egress reject. A failed check leaves the old bridge policy intact.
+- name: Check every Instance bridge NIC before passing egress
+  ansible.builtin.include_tasks: instance-network-check.yml
+
+- name: Pass bridge egress to the default-reject NIC policies
+  when: (instance_network_check.stdout | from_json).config.get('security.acls.default.egress.action') != 'allow'
+  ansible.builtin.command:
+    argv: [incus, network, set, "{{ instances.network }}", --project, default, security.acls.default.egress.action=allow]
+  changed_when: true
 
 - name: Run the egress proxy
   ansible.builtin.include_tasks: instance-egress.yml
@@ -227,3 +246,15 @@
 
 - name: Build the Instance image
   ansible.builtin.include_tasks: instance-image.yml
+
+# Read-only end check: a later regression on any NIC fails convergence instead of silently opening an Instance.
+- name: Check every Instance bridge NIC at the end of the role
+  ansible.builtin.include_tasks: instance-network-check.yml
+
+- name: Require bridge egress delegation and unchanged ingress isolation
+  ansible.builtin.assert:
+    that:
+      - (instance_network_check.stdout | from_json).config['security.acls.default.egress.action'] == 'allow'
+      - (instance_network_check.stdout | from_json).config['security.acls.default.ingress.action'] == 'reject'
+    fail_msg: instance.host_unavailable
+    quiet: true

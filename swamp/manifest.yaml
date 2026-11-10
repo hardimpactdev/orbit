@@ -117,6 +117,8 @@ additionalFiles:
   - ansible/tasks/instance-vite-plus-home.yml
   - ansible/tasks/instance-egress.yml
   - ansible/tasks/instance-host.yml
+  - ansible/tasks/instance-network-check.yml
+  - ansible/tasks/instance-network-nic-check.yml
   - ansible/tasks/instance-image.yml
   - ansible/tasks/task-container-host-prepare.yml
   - ansible/task-vm-start.yml

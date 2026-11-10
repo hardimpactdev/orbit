@@ -25,7 +25,7 @@
 
 # The move copies the files that differ from the commit of the recorded branch, so the checkout must be on it.
 - name: Check the checkout's branch
-  when: phase == 'quiesce'
+  when: phase in ['container', 'quiesce']
   block:
     - name: Read the checkout's branch
       ansible.builtin.command: { argv: "{{ checkout_git + ['symbolic-ref', '--quiet', '--short', 'HEAD'] }}" }
@@ -40,17 +40,71 @@
 
 # Check every planned retirement before any Node change, and again before any checkout in the batch goes.
 - name: Check all planned retirements
-  when: phase in ['quiesce', 'retire']
+  when: phase in ['container', 'quiesce', 'retire']
   ansible.builtin.include_tasks:
     file: instance-migrate-retirement-check.yml
     apply: { tags: [always] }
   loop: "{{ migrate.retire }}"
   loop_control: { loop_var: retired, label: "{{ retired.path }}" }
 
+# Nothing on the Node changed before this point. Restore preserves prior resources when these read-only checks refused.
+- name: Record that the container preflight passed
+  when: phase == 'container'
+  ansible.builtin.set_fact:
+    migrate_preflight_passed: true
+
+# A container that an earlier failed move left is not the Instance's: this move starts with a new one. After a failure the new
+# container goes with what the move added on the Node, so the checkout Instance is as it was.
+- name: Remove the move's container
+  when: phase in ['container', 'restore']
+  ansible.builtin.include_tasks:
+    file: instance-migrate-discard.yml
+    apply: { tags: [always] }
+
+# Build and start with the same NIC rules and firewall paths as create. The checkout still serves throughout this phase.
+- name: Prepare the move's container
+  when: phase == 'container'
+  ansible.builtin.include_tasks:
+    file: instance-container-phase.yml
+    apply: { tags: [always] }
+
+# The database stays where it is. The container reaches its server through its own ACL rule and the Node's firewall rule, which
+# the container phase added; the move proves every attached target before quiesce.
+- name: Check the way to each database server
+  when: phase == 'container'
+  block:
+    - name: Reach the server's port from the container
+      ansible.builtin.command:
+        argv: "{{ as_orbit + ['timeout', '5', 'bash', '-c', 'exec 3<>\"/dev/tcp/$1/$2\"', 'bash', item.host, item.port | string] }}"
+      loop: "{{ migrate.databases }}"
+      loop_control: { label: "{{ item.host }}:{{ item.port }}" }
+      register: migrate_reach
+      changed_when: false
+      failed_when: false
+    - name: Refuse a database server out of reach
+      ansible.builtin.assert:
+        that: migrate_reach.results | default([]) | rejectattr('rc', 'equalto', 0) | list | length == 0
+        fail_msg: instance.database_unreachable
+        quiet: true
+
+# Run-local recovery checkpoint, written before the first host writer can stop. A failed probe never writes it.
+- name: Record that quiesce began
+  when: phase == 'quiesce'
+  ansible.builtin.copy:
+    content: "true"
+    dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/quiesced"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  vars:
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
 # The same Process ids are about to run in the container. Disable host boot links before copying, so a Node reboot cannot start
 # a second writer. A failed move restores desired state only after its container is gone. A recorded but uninstalled unit skips.
 - name: Read the old Process unit files
-  when: phase in ['quiesce', 'restore']
+  when: phase == 'quiesce' or (phase == 'restore' and migrate_quiesced | bool)
   ansible.builtin.stat: { path: "{{ item.path }}" }
   loop: "{{ migrate.processes }}"
   loop_control: { label: "{{ item.name }}" }
@@ -62,16 +116,8 @@
   loop: "{{ source_process_files.results | default([]) }}"
   loop_control: { label: "{{ item.item.name }}" }
 
-# A container that an earlier failed move left is not the Instance's: this move starts with a new one. After a failure the new
-# container goes with what the move added on the Node, so the checkout Instance is as it was.
-- name: Remove the move's container
-  when: phase in ['quiesce', 'restore']
-  ansible.builtin.include_tasks:
-    file: instance-migrate-discard.yml
-    apply: { tags: [always] }
-
 - name: Restore the old Process units after removing the failed container
-  when: phase == 'restore' and item.stat.exists
+  when: phase == 'restore' and migrate_quiesced | bool and item.stat.exists
   ansible.builtin.systemd_service:
     name: "{{ item.item.name }}"
     state: "{{ 'started' if item.item.desired == 'running' else 'stopped' }}"
@@ -170,25 +216,6 @@
       {{ as_root + ['sh', '-c', 'test ! -f "$3" || { sed "s#$1#$2#g" "$3" > "$3.orbit" && cat "$3.orbit" > "$3"; rm -f -- "$3.orbit"; }',
           'sh', migrate.checkout, container.workspace, container.environment_file] }}
   changed_when: true
-
-# The database stays where it is. The container reaches its server through its own ACL rule and the Node's firewall rule, which
-# the container phase added; the move proves the path before the Route moves.
-- name: Check the way to each database server
-  when: phase == 'files'
-  block:
-    - name: Reach the server's port from the container
-      ansible.builtin.command:
-        argv: "{{ as_orbit + ['timeout', '5', 'bash', '-c', 'exec 3<>\"/dev/tcp/$1/$2\"', 'bash', item.host, item.port | string] }}"
-      loop: "{{ migrate.databases }}"
-      loop_control: { label: "{{ item.host }}:{{ item.port }}" }
-      register: migrate_reach
-      changed_when: false
-      failed_when: false
-    - name: Refuse a database server out of reach
-      ansible.builtin.assert:
-        that: migrate_reach.results | default([]) | rejectattr('rc', 'equalto', 0) | list | length == 0
-        fail_msg: instance.database_unreachable
-        quiet: true
 
 - name: Read the workspace's commit
   when: phase == 'files'

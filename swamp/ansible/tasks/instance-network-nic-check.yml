@@ -1,0 +1,11 @@
+---
+- name: Refuse an Instance bridge NIC without a default-reject ACL
+  when: network_device.value.get('network', '') == instances.network or network_device.value.get('parent', '') == instances.network
+  ansible.builtin.assert:
+    that:
+      - network_device.value.get('security.acls', '') | trim | length > 0
+      - network_device.value.get('security.acls.default.egress.action', '') == 'reject'
+    fail_msg: "instance.host_unavailable: {{ network_container.name }}/{{ network_device.key }} needs an effective ACL with default egress reject"
+    quiet: true
+  loop: "{{ network_container.expanded_devices | dict2items }}"
+  loop_control: { loop_var: network_device, label: "{{ network_container.name }}/{{ network_device.key }}" }
