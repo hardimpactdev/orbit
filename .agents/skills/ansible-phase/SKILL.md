@@ -141,3 +141,5 @@ Instance container network ACLs live in Incus project `default`, even when the c
 A Process move disables the source units before copying. Render container units from a copy of their records and save the new paths only after cutover. A failed move removes the new container before restoring source units, so two runtimes never run the same writer.
 
 A retirement preflight is an early warning, not a deletion barrier. Retain the whole old checkout with a same-filesystem rename so tag-only commits, expired stash reflogs, nested repositories and worktrees added after the final listing keep their Git metadata. Never infer that recursive deletion is safe from a path match or a worktree listing.
+
+A migration overlay archive omits unchanged tracked symlinks: they arrive in the branch bundle. Plan links from the checkout before downtime and apply absolute-link rewrites after both sources reach the workspace. Never inspect dependency contents or change source links.

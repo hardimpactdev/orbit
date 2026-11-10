@@ -456,6 +456,12 @@ The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/c
 
 A failed move leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) has the steps.
 
+#### Migration symlinks
+
+Orbit checks all checkout symlinks before downtime and again when copying files, without following directory links or inspecting `.git`, `vendor` or `node_modules` contents at any depth. A link must have both its named target and its resolved destination inside the checkout. Broken links, including cycles, and external targets refuse with `instance.migrate_symlink_unsupported`. The error lists every offending checkout path, its original target and the reason. Orbit does not choose a different data source or run project setup to repair a link.
+
+In the container workspace, an absolute link into the checkout becomes a relative link to the corresponding resolved destination. For example, `public/storage -> /fast/apps/example/default/storage/app/public` becomes `public/storage -> ../storage/app/public`. A relative link within the checkout keeps its exact target. This applies to tracked, untracked and ignored links, including local-package links; restricting it to `public/storage` would leave other checkout paths pointing at the host. Dependency contents are copied unchanged. The source links are never rewritten.
+
 #### What is built for the move
 
 The move is built for the Nodes of the [build list](#the-build-list).

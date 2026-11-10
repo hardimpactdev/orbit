@@ -70,6 +70,7 @@ additionalFiles:
   - ansible/route-create-site.yml
   - ansible/route-withdraw.yml
   - ansible/instance-migrate.yml
+  - ansible/instance_migrate_links.py
   - ansible/tasks/instance-migrate-phase.yml
   - ansible/tasks/instance-migrate-discard.yml
   - ansible/tasks/instance-migrate-retire.yml

@@ -34,6 +34,7 @@ In a terminal, the CLI asks to confirm that the Instance goes down during the mo
 | Branch | The checkout's current branch. Orbit fetches it from the checkout on the Node; a retained checkout can carry commits that were never pushed |
 | Files | Every file that differs from the commit, every untracked file and every ignored file, such as `vendor`, `node_modules`, `storage` and `.env` |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace` |
+| Symlinks | Absolute links into the checkout become relative workspace links. Relative links within the checkout stay as they are. See the [symlink rule](/reference/development-containers#migration-symlinks) |
 | Database on a Database server | It stays where it is. The container gets its own way to the port of each server the Instance uses, and the move checks it from inside |
 | SQLite file in the checkout | It moves with the files. Orbit drops its database connection record: the file is part of the workspace |
 | Route | The same domain and certificate. It points at FrankenPHP in the container, and the checkout's PHP-FPM pool goes |
@@ -87,6 +88,7 @@ Only after all data is saved and no surviving worktree uses a retained Git direc
 - **Deployments.** Wait for an unfinished deployment before starting the move.
 - **Processes.** Ordinary systemd Processes keep their ids and desired states. The `vp-dev` preset also moves; Docker Processes and other presets cannot move. Finish pending Process operations, removals and previous runtime cleanup first.
 - **Routes.** The Instance has no Route beside its own.
+- **Symlinks.** Outside `.git`, `vendor` and `node_modules` contents, links must resolve within the checkout. Orbit refuses broken links and external targets before downtime with `instance.migrate_symlink_unsupported`, naming every path and target. Resolve the intended data source before retrying; Orbit does not run project setup to repair links.
 - **Retirement.** Every checkout scheduled for retirement is clean and has no other worktree registered on its Git directory. Orbit checks before downtime and again before moving the checkout to retention. `instance.migrate_retirement_blocked` names the checkout, other worktree paths and changed files, with total counts and the first 20 entries of each list. Ignored files do not block. Every local branch and a detached HEAD must have no commits unreachable from all remote-tracking refs, and the repository must have no stashes. `instance.migrate_unpushed_commits` names every affected branch (or detached HEAD) and its commit count; `instance.migrate_stashes_present` names the stash count. Orbit reads the local remote-tracking refs without fetching. Orbit never stashes, pushes, prunes or removes blockers for you.
 
 The `vp-dev` preset keeps its id, preset identity, assigned Vite port and running or stopped intent. It runs as `orbit` with the shared runtime’s `current/bin/vp`, binds `0.0.0.0`, and keeps `/__orbit/vite` on the same Route. Its checkout working directory, environment file and absolute environment paths must stay inside the checkout; Orbit maps them to `/srv/workspace`. Private environment values use the same protected delivery as other Processes.
@@ -140,6 +142,7 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `instance.database_clone_unsupported` | The Instance's database server has no IPv4 address and port that a container can reach. |
 | `instance.host_unavailable` | The Node has no Instance bridge, the bridge is full, no T3 port is free, or the runtime folder lacks the Project's PHP build. |
 | `instance.migrate_branch_changed` | The checkout is not on the branch that Orbit records. Check out that branch, or record the new one with [`instance:rename`](/cli/instance/rename). |
+| `instance.migrate_symlink_unsupported` | A checkout link is broken or points outside the checkout. The error names every path, target and reason. The preflight refusal leaves the checkout serving. |
 | `instance.migrate_retirement_blocked` | A checkout scheduled for retirement has other worktrees or uncommitted changes. The error names up to 20 paths per list and each total count. Before downtime the checkout keeps serving; at the final check the container keeps serving and the checkout stays. |
 | `instance.migrate_unpushed_commits` | A planned retirement has local branches or a detached HEAD with commits unreachable from every local remote-tracking ref. The error names each branch or detached HEAD and its commit count. The source stays untouched. |
 | `instance.migrate_stashes_present` | A planned retirement has stashes. The error names the count and leaves the source untouched. |

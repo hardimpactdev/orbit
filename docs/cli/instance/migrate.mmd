@@ -38,6 +38,7 @@ sequenceDiagram
   GW-->>CLI: 202 Accepted<br/>task ID
   SW->>N: Check and stop<br/>Ansible · tags quiesce
   %%> What it does:
+  %%> - checks checkout symlinks outside `.git`, `vendor` and `node_modules` contents before downtime; broken links or targets outside the checkout refuse with `instance.migrate_symlink_unsupported`, naming every path and target
   %%> - before any Node change, checks every planned retirement: no other worktree on its Git directory and no tracked or non-ignored untracked changes, else `instance.migrate_retirement_blocked`; the error names the checkout, blocking paths and total counts (first 20 per list)
   %%> - refuses local branches or a detached HEAD with commits unreachable from every remote-tracking ref (`instance.migrate_unpushed_commits`, naming each branch or detached HEAD and its count), and stashes (`instance.migrate_stashes_present`, naming the count); reads local refs only and changes nothing to resolve a blocker
   %%> - checks that the checkout is on the recorded branch, else `instance.migrate_branch_changed`
@@ -56,6 +57,7 @@ sequenceDiagram
   %%> What it does:
   %%> - copies every file that differs from the commit, every untracked file and every ignored file, `.env` among them
   %%> - removes the tracked files that the checkout deleted, and rewrites the checkout's path in `.env` to `/srv/workspace`
+  %%> - repeats the symlink check and rewrites absolute in-checkout links to relative workspace links, including unchanged tracked links; relative links and dependency contents stay as they are, and source links never change
   %%> - checks that the container reaches its database server, else `instance.database_unreachable`
   %%> - a non-default Instance gets the proxy device that publishes its T3 port
   SW->>C: Start the container<br/>Processes · T3 · seed

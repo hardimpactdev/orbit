@@ -47,6 +47,32 @@
         fail_msg: instance.migrate_branch_changed
         quiet: true
 
+# One read-only rule checks every link before downtime and supplies the file phase's rewrite plan. The Gateway has no Node
+# filesystem inventory. Dependency contents and .git are never scanned, and directory links are never followed.
+- name: Plan portable checkout links
+  when: phase in ['quiesce', 'files']
+  block:
+    - name: Read checkout symlinks
+      ansible.builtin.command:
+        argv: [python3, "-", "{{ migrate.checkout }}"]
+        expand_argument_vars: false
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py') }}"
+      register: migrate_links_read
+      changed_when: false
+    - name: Keep the symlink plan
+      ansible.builtin.set_fact:
+        migrate_links: "{{ migrate_links_read.stdout | from_json }}"
+    - name: Explain unsupported symlinks
+      when: migrate_links.refused | length > 0
+      ansible.builtin.set_fact:
+        migrate_refusal_code: instance.migrate_symlink_unsupported
+        migrate_refusal_message: "Cannot migrate checkout {{ migrate.checkout | to_json }}. Unsupported symlinks: {{ migrate_links.refused | to_json }}."
+    - name: Refuse broken or external checkout links
+      ansible.builtin.assert:
+        that: migrate_links.refused | length == 0
+        fail_msg: instance.migrate_symlink_unsupported
+        quiet: true
+
 # The same Process ids are about to run in the container. Disable host boot links before copying, so a Node reboot cannot start
 # a second writer. A failed move restores desired state only after its container is gone. A recorded but uninstalled unit skips.
 - name: Read the old Process unit files
@@ -148,6 +174,14 @@
     - name: Remove the files the checkout deleted
       ansible.builtin.command:
         argv: "{{ as_orbit + ['sh', '-c', 'xargs -0 rm -f -- < \"$1\"', 'sh', container_archive ~ '.deleted'] }}"
+      changed_when: true
+    # Include unchanged tracked links too: they came through the branch bundle, not the overlay archive.
+    - name: Make absolute checkout links relative in the workspace
+      ansible.builtin.command:
+        argv: "{{ as_orbit + ['ln', '-sfnT', '--', item.target, container.workspace ~ '/' ~ item.path] }}"
+        expand_argument_vars: false
+      loop: "{{ migrate_links.rewrites }}"
+      loop_control: { label: "{{ item.path }}" }
       changed_when: true
     # Both users edit every file: the group `work` reads and writes, others get nothing.
     - name: Give the group the copied files

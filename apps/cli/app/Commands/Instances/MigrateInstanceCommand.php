@@ -40,7 +40,7 @@ HELP;
     protected function writeOperationResult(OperationResponse $operation): void
     {
         $message = $operation->result['error_message'] ?? null;
-        if (in_array($operation->errorCode, ['instance.migrate_retirement_blocked', 'instance.migrate_unpushed_commits', 'instance.migrate_stashes_present'], true) && is_string($message)) {
+        if (in_array($operation->errorCode, ['instance.migrate_retirement_blocked', 'instance.migrate_unpushed_commits', 'instance.migrate_stashes_present', 'instance.migrate_symlink_unsupported'], true) && is_string($message)) {
             $this->writeHumanMessage($message);
         }
     }

@@ -76,6 +76,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-migrate-incus.ts", import.meta.url).pathname}' "$@"\n`,
   );
   Deno.chmodSync(`${folder}/bin/incus`, 0o755);
+  Deno.copyFileSync(new URL("instance_migrate_links.py", root), `${folder}/instance_migrate_links.py`);
   for (const name of ["instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml"]) {
     const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => transform(structuredClone(task)));
     Deno.writeTextFileSync(`${folder}/tasks/${name}`, stringify(tasks));
@@ -235,6 +236,87 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
       Deno.removeSync(apps, { recursive: true });
     },
   };
+}
+
+Deno.test({
+  name: "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.migrate.retire = [];
+      f.write();
+      Deno.mkdirSync(`${f.checkout}/public`);
+      Deno.mkdirSync(`${f.checkout}/storage/app/public`, { recursive: true });
+      Deno.writeTextFileSync(`${f.checkout}/storage/app/public/file.txt`, "kept storage\n");
+      const absolute = `${f.checkout}/storage/app/public`;
+      Deno.symlinkSync(absolute, `${f.checkout}/public/storage`);
+      Deno.writeTextFileSync(`${f.checkout}/.gitignore`, "vendor/\nnode_modules/\nstorage/\nignored-link\n.env\ndatabase/*.sqlite\n");
+      git(f.checkout, "add", ".gitignore", "public/storage");
+      git(f.checkout, "commit", "--quiet", "-m", "tracked absolute storage link");
+      Deno.symlinkSync(absolute, `${f.checkout}/local package`);
+      Deno.symlinkSync(absolute, `${f.checkout}/ignored-link`);
+      Deno.symlinkSync("../storage/./app/public", `${f.checkout}/public/relative`);
+      for (const tree of ["vendor", "node_modules", "apps/web/vendor", "apps/web/node_modules"]) {
+        Deno.mkdirSync(`${f.checkout}/${tree}`, { recursive: true });
+        Deno.symlinkSync(absolute, `${f.checkout}/${tree}/absolute`);
+        Deno.symlinkSync("missing-dependency", `${f.checkout}/${tree}/broken`);
+      }
+
+      f.build();
+
+      const workspace = `${f.rootfs}/srv/workspace`;
+      for (const [path, target] of [["public/storage", "../storage/app/public"], ["local package", "storage/app/public"], ["ignored-link", "storage/app/public"],
+        ["public/relative", "../storage/./app/public"]]) {
+        assertEquals(Deno.readLinkSync(`${workspace}/${path}`), target);
+        assertEquals(Deno.readLinkSync(`${f.checkout}/${path}`), path === "public/relative" ? target : absolute);
+        assertEquals(Deno.readTextFileSync(`${workspace}/${path}/file.txt`), "kept storage\n");
+      }
+      for (const tree of ["vendor", "node_modules", "apps/web/vendor", "apps/web/node_modules"]) {
+        assertEquals(Deno.readLinkSync(`${workspace}/${tree}/absolute`), absolute);
+        assertEquals(Deno.readLinkSync(`${workspace}/${tree}/broken`), "missing-dependency");
+      }
+      assertEquals(f.workspace("status", "--short", "--", "public/storage"), "M public/storage");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+for (const reason of ["outside checkout", "broken"]) {
+  Deno.test({
+    name: `${reason} symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        f.migrate.retire = [];
+        f.write();
+        Deno.mkdirSync(`${f.checkout}/public`);
+        const target = reason === "broken" ? `${f.apps}/missing/storage` : f.apps;
+        for (const path of ["public/storage", "local package"]) Deno.symlinkSync(target, `${f.checkout}/${path}`);
+        const before = Deno.readTextFileSync(`${f.folder}/state.json`);
+
+        const result = f.run("quiesce");
+
+        assert(!result.ok, result.output);
+        assertEquals(f.result().error_code, "instance.migrate_symlink_unsupported");
+        assertEquals(f.result().preflight_refused, true);
+        for (const path of ["public/storage", "local package"]) {
+          assert(f.result().error_message.includes(path), f.result().error_message);
+          assertEquals(Deno.readLinkSync(`${f.checkout}/${path}`), target);
+        }
+        assert(f.result().error_message.includes(target), f.result().error_message);
+        assert(f.result().error_message.includes(reason), f.result().error_message);
+        assert(f.run("restore").ok);
+        assert(exists(f.migrate.awake.path));
+        assertEquals(Deno.readTextFileSync(`${f.folder}/state.json`), before);
+        assert(!exists(`${f.folder}/calls`), "No container command may run after a preflight refusal.");
+      } finally {
+        f.cleanup();
+      }
+    },
+  });
 }
 
 Deno.test({
