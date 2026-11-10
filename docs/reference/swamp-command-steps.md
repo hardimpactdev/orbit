@@ -35,6 +35,8 @@ inputs:
     ORBIT_BOOTSTRAP_IDENTITY: '${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key) }}'
 ```
 
+Choose the key from the intent, never by testing `execution_secrets`: Swamp refuses an expression that calls `vault.get` with a container comparison, such as `"name" in inputs.execution_secrets` (`secret_operation_unsupported`). Swamp evaluates a skipped step's inputs too, so a reference to an absent key falls back to a key every run has.
+
 Swamp resolves the value. The script uses stdin or a protected config file when handing it to a tool. It must not expand a secret into `run:`, argv or shell tracing. Environment delivery does not isolate the value from the worker user: `/proc` can expose the environment.
 
 Official e459 accepts this server protocol even though its remote CLI refuses stdin. The request is `{type: "vault.put", id, payload: {vaultName, key, value, force: true}}`; no refresh hook is supplied. The primitive still requires approved vault authority; it adds no permission. Official e459 authorizes `write` on `vault:<name>` with the key in request context. That action also admits delete and annotate; a `methods: [put]` restriction does not narrow it because the handler supplies no method name. A put-only request does not authorize a broader write grant.
