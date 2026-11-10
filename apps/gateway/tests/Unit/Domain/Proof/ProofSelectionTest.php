@@ -225,13 +225,15 @@ it('keeps the Node detail proof and shared list coverage for an owning path chan
         proofChanges([$path]), false, ProofSelection::casesFiles($files));
 
     expect($selected->files())->toBe([
+        ...($family ? ['swamp/proof/node/converge.cases.yaml'] : []),
         ...($list ? ['swamp/proof/node/list.cases.yaml'] : []),
-        ...($family ? ['swamp/proof/node/role-add.cases.yaml', 'swamp/proof/node/role-list.cases.yaml'] : []),
+        ...($family ? ['swamp/proof/node/metrics.cases.yaml', 'swamp/proof/node/role-add.cases.yaml', 'swamp/proof/node/role-list.cases.yaml'] : []),
         'swamp/proof/node/show.cases.yaml',
+        ...($family ? ['swamp/proof/node/update.cases.yaml'] : []),
     ])->and(array_column($selected->uncovered, 'reason'))->toBe($family ? array_map(
         static fn (string $command): string => 'no cases file for '.$command,
-        ['node:access:add', 'node:access:remove', 'node:add', 'node:converge', 'node:metrics', 'node:remove',
-            'node:role:relocate', 'node:role:remove', 'node:update', 'node:wireguard-key'],
+        ['node:access:add', 'node:access:remove', 'node:add', 'node:remove',
+            'node:role:relocate', 'node:role:remove', 'node:wireguard-key'],
     ) : [])
         ->and($selected->everythingBecause)->toBeNull()
         ->and($selected->nothingToProve())->toBeFalse();

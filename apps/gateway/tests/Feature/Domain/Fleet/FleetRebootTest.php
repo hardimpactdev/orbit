@@ -15,6 +15,7 @@ use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Nodes\NodeWireGuardHubInput;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofVerifyIntent;
 use App\Domain\Releases\ReleaseAlert;
 use App\Domain\Releases\ReleaseAlertNotifier;
@@ -28,6 +29,7 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Jobs\Fleet\CheckFleetRebootConfirmation;
+use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Node;
 use App\Models\NodeFact;
 use App\Models\Operation;
@@ -36,6 +38,7 @@ use App\Models\TaskVm;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
@@ -124,6 +127,7 @@ it('requires the agent everywhere, the Gateway scheduler and Horizon, and the hu
 });
 
 it('only reads a task host with open task work, without holding its work, and admits the others with the window', function (): void {
+    Queue::fake([StartAdmittedSwampRun::class]);
     $group = Task::query()->create(['project_id' => null, 'title' => 'g', 'brief' => 'b', 'status' => 'running']);
     $vm = TaskVm::query()->create(['host_node_id' => $this->beast->id, 'group_id' => $group->id, 'name' => 'beast-tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.152',
         'provider' => 'incus', 'capacity_pool' => 'task']);
@@ -145,6 +149,7 @@ it('only reads a task host with open task work, without holding its work, and ad
     $operation = app(AdmitFleetRebootAction::class)->execute(window: true);
 
     expect($operation->kind)->toBe('fleet.reboot')
+        ->and($operation->status)->toBe(OperationStatus::Queued)
         ->and($operation->input['intent']['window'])->toBe(['timezone' => 'Europe/Amsterdam', 'start' => '03:00', 'end' => '06:00', 'enforced' => true])
         ->and($operation->input['intent']['drain_seconds'])->toBe(900)
         ->and($operation->input['intent']['ci_repositories'])->toBe(FleetReboot::ciRepositories())
@@ -153,7 +158,13 @@ it('only reads a task host with open task work, without holding its work, and ad
         ->and($operation->input['intent']['nodes'][(string) $this->prod->id]['defer'])->toBeNull()
         ->and($operation->input['task_hosts'])->toBe([])
         ->and($vm->refresh()->state)->toBe(TaskVmState::Ready)
-        ->and($frames[0]['payload']['workflowIdOrName'])->toBe('operation-fleet-reboot')
+        ->and($frames)->toBe([]);
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $operation->id);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+
+    app()->call([new StartAdmittedSwampRun($operation->id), 'handle']);
+
+    expect($frames[0]['payload']['workflowIdOrName'])->toBe('operation-fleet-reboot')
         ->and($frames[0]['payload']['inputs']['intent'])->toBe($operation->input['intent']);
 });
 
