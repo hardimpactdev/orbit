@@ -6,6 +6,7 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
 use App\Domain\InstanceMigration\InstanceMigration;
+use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\ClusterRouterTransition;
@@ -56,6 +57,8 @@ final readonly class DevelopmentSiteRepository
     /** Resource paths for preparing an admitted workload, before its site is published. */
     public function workloadSite(Instance $instance, Route $route): DevelopmentSite
     {
+        app(ContainerProcesses::class)->loadForSites(collect([$instance]), refresh: true);
+
         return $this->instanceSite($instance, $route);
     }
 
@@ -78,6 +81,8 @@ final readonly class DevelopmentSiteRepository
      */
     public function projectSites(Route $route): array
     {
+        app(ContainerProcesses::class)->loadForSites($route->targets->map(static fn (RouteTarget $target): Instance => $target->instance), refresh: true);
+
         return array_values($this->withWebSockets($this->withoutDuplicateSecondarySites(
             collect($this->projectSitesWithRouters($route, $this->routerTransitions->secondRouters())),
         ))->all());
@@ -88,6 +93,8 @@ final readonly class DevelopmentSiteRepository
      */
     public function routeSites(Route $route): array
     {
+        app(ContainerProcesses::class)->loadForSites($route->targets->map(static fn (RouteTarget $target): Instance => $target->instance), refresh: true);
+
         return array_values($this->withWebSockets($this->withoutDuplicateSecondarySites(
             collect($this->routeSitesWithRouters($route, $this->routerTransitions->secondRouters())),
         ))->all());
@@ -229,11 +236,14 @@ final readonly class DevelopmentSiteRepository
         });
 
         $routes = $routeQuery->orderBy('id')->get();
+        app(ContainerProcesses::class)->loadForSites($routes->flatMap(static fn (Route $route): Collection => $route->targets->map(static fn (RouteTarget $target): Instance => $target->instance)));
         foreach ($routes as $route) {
             $sites->push(...$this->routeSitesWithRouters($route, $secondRouters));
         }
 
-        foreach (new RoutePreparedWorkloads()->sites($node?->id) as $prepared) {
+        $preparedWorkloads = new RoutePreparedWorkloads()->sites($node?->id);
+        app(ContainerProcesses::class)->loadForSites(collect($preparedWorkloads)->map(static fn (array $prepared): Instance => $prepared['instance']));
+        foreach ($preparedWorkloads as $prepared) {
             $site = $this->instanceSite($prepared['instance'], $prepared['route'], domainChange: true);
             $sites = $sites->reject(static fn (DevelopmentSite $current): bool => $current->addressKey() === $site->addressKey());
             $sites->push($site);
@@ -271,6 +281,7 @@ final readonly class DevelopmentSiteRepository
      */
     private function projectRouteSites(Route $route, ?Node $router, bool $stagesWorkload, bool $stagesRouter): array
     {
+        app(ContainerProcesses::class)->loadForSites($route->targets->map(static fn (RouteTarget $target): Instance => $target->instance));
         $sites = [];
         $targets = $route
             ->targets
@@ -533,6 +544,9 @@ final readonly class DevelopmentSiteRepository
         $given = $instance->relationLoaded('runtime');
         $runtime = $given ? $instance->runtime : $instance->runtime()->first();
         if ($runtime instanceof InstanceRuntime && ($given || ! InstanceMigration::pending($instance))) {
+            app(ContainerProcesses::class)->loadForSites(collect([$instance]));
+            $vitePort = app(ContainerProcesses::class)->vitePort($instance, $instance->processes);
+
             return new DevelopmentSite(
                 nodeId: $instance->node_id,
                 nodeAddress: app(RouteRenderContext::class)->wireguardIp($instance->node) ?? '',
@@ -545,6 +559,7 @@ final readonly class DevelopmentSiteRepository
                 certificateScope: $domainChange ? "app-instance-{$instance->id}-hostname-change" : null,
                 localHttpUpstream: $runtime->bridge_address.':'.InstanceContainer::WebPort,
                 devUpstream: app(InstanceContainer::class)->servesDevPorts($instance, $runtime, $route) ? $runtime->bridge_address : null,
+                viteUpstream: $vitePort === null ? null : $runtime->bridge_address.':'.$vitePort,
             );
         }
         // A development default in the old release layout serves through `current` until its next deployment converts it.

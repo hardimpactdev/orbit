@@ -6,6 +6,9 @@
 # untracked files refuse before downtime; ignored files pass; linked and detached worktrees refuse and name their paths.
 # Process fixtures stop and disable host units before copying, install private Process environments in the container,
 # retire host files after cutover and restore recorded desired states only after removing a failed container.
+# Preset fixture coverage: running/stopped vp-dev uses the same Process phases; rollback restores the host only after
+# container removal. Pest covers preset identity/path/port projection, pre-downtime refusals, scoped ingress, deployment
+# re-rendering and post-move controls. Live vp execution, HTTP/HMR and container networking remain unproved here.
 # Unpushed local branches and detached HEADs refuse with every name and commit count; stashes refuse with their count.
 # Tag-only commits, an expired stash reflog, submodules/nested repositories and a worktree added after the final listing
 # retain their Git data after retirement. Retirement atomically moves the whole checkout and never deletes metadata.
@@ -18,6 +21,10 @@ sources: [gateway]
 baseline: [operations]
 
 uncovered:
+  "code:process.container_preset_unsupported": "Pest covers unknown presets, versions and options before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
+  "code:process.container_command_unsupported": "Pest covers custom commands beside the preset, including the bypass regression before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
+  "code:process.container_path_unsupported": "Pest covers external cwd, environment files and absolute environment values, including traversal before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
+  "code:process.container_port_conflict": "Pest covers missing/reserved ports, duplicate presets and recorded Process port conflicts before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
   "code:instance.migrate_retirement_blocked": "The proof fleet lacks the Instance pool/image. Ansible fixtures cover dirty tracked and non-ignored untracked files, linked/detached and same-batch worktrees, bounded named errors, and blockers added after preflight. Live proof uses owned clean fixtures and separate blocker fixtures when the pool is available."
 
   "code:instance.migrate_unpushed_commits": "Ansible fixtures cover every local branch and a detached HEAD, counts against all local remote-tracking refs, and source preservation. Live proof needs the Instance pool/image."
