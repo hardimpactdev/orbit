@@ -13,6 +13,7 @@ use Orbit\Sdk\Requests\Vault\DestroyVaultRequest;
 use Orbit\Sdk\Requests\Vault\SetupVaultRequest;
 use Orbit\Sdk\Requests\Vault\ShowVaultStatusRequest;
 use Orbit\Sdk\Requests\Vault\SyncVaultRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -52,7 +53,7 @@ afterEach(function (): void {
 
 describe('vault:setup', function (): void {
     it('sends the secrets from files without their final newline and never prints them', function (): void {
-        $mock = MockClient::global([SetupVaultRequest::class => vault_cli_status_response()]);
+        $mock = vault_cli_operation_mock(SetupVaultRequest::class, 'vault.setup');
 
         [$exit, $output] = vault_cli_display('vault:setup', [
             ...vault_cli_setup_options($this),
@@ -60,26 +61,35 @@ describe('vault:setup', function (): void {
         ]);
 
         expect($exit)->toBe(0)
-            ->and(json_decode($output, true))->toBe([...vault_cli_status_payload(), 'request_id' => vault_cli_request_id()])
+            ->and(json_decode($output, true))->toBe(vault_cli_operation_json('vault.setup'))
             ->and($output)->not->toContain('vault-client-secret-sentinel', 'vault-master-password-sentinel')
-            ->and($mock->getLastPendingRequest()->body()->all())->toBe([
+            ->and($mock->getRecordedResponses()[0]->getPendingRequest()->body()->all())->toBe([
                 'url' => 'https://vault.orbit',
                 'client_id' => 'user.3f0c',
                 'client_secret' => 'vault-client-secret-sentinel',
                 'master_password' => '  vault-master-password-sentinel ',
                 'organization' => 'Orbit',
                 'collection' => 'Databases',
-            ]);
+            ])
+            ->and($mock->getRecordedResponses())->toHaveCount(3);
     });
 
-    it('renders the status for a human', function (): void {
-        MockClient::global([SetupVaultRequest::class => vault_cli_status_response()]);
+    it('renders the setup Operation and configured status for a human', function (): void {
+        vault_cli_operation_mock(SetupVaultRequest::class, 'vault.setup');
 
         [$exit, $output] = vault_cli_display('vault:setup', vault_cli_setup_options($this));
 
         expect($exit)->toBe(0)
+            ->and($output)->toContain('Integration succeeded.', 'Operation: 12', vault_cli_request_id())
+            ->and($output)->not->toContain('vault-client-secret-sentinel', 'vault-master-password-sentinel');
+
+        MockClient::destroyGlobal();
+        MockClient::global([ShowVaultStatusRequest::class => vault_cli_status_response()]);
+        [$exit, $output] = vault_cli_display('vault:status');
+
+        expect($exit)->toBe(0)
             ->and($output)->toContain(
-                'Vaultwarden publishing is set up.',
+                'Vault status.',
                 'https://vault.orbit',
                 'gateway@orbit.test',
                 'Orbit (org-1)',
@@ -191,14 +201,17 @@ describe('vault:setup', function (): void {
 });
 
 describe('vault:status and vault:sync', function (): void {
-    it('returns the status as json', function (string $command, string $request): void {
-        $mock = MockClient::global([$request => vault_cli_status_response()]);
+    it('returns the status or sync Operation as json', function (string $command, string $request): void {
+        $mock = $command === 'vault:sync'
+            ? vault_cli_operation_mock($request, 'vault.sync')
+            : MockClient::global([$request => vault_cli_status_response()]);
 
         [$exit, $output] = vault_cli_display($command, ['--json' => true]);
 
         expect($exit)->toBe(0)
-            ->and(json_decode($output, true))->toBe([...vault_cli_status_payload(), 'request_id' => vault_cli_request_id()])
-            ->and($mock->getLastPendingRequest()?->getRequest())->toBeInstanceOf($request);
+            ->and(json_decode($output, true))->toBe($command === 'vault:sync' ? vault_cli_operation_json('vault.sync') : [...vault_cli_status_payload(), 'request_id' => vault_cli_request_id()])
+            ->and($mock->getRecordedResponses()[0]->getPendingRequest()->getRequest())->toBeInstanceOf($request)
+            ->and($mock->getRecordedResponses())->toHaveCount($command === 'vault:sync' ? 3 : 1);
     })->with([
         'status' => ['vault:status', ShowVaultStatusRequest::class],
         'sync' => ['vault:sync', SyncVaultRequest::class],
@@ -215,15 +228,22 @@ describe('vault:status and vault:sync', function (): void {
     });
 
     it('renders the last error and fails the sync', function (): void {
-        MockClient::global([SyncVaultRequest::class => vault_cli_status_response([
-            ...vault_cli_status_payload(),
-            'last_error' => ['code' => 'vault.unreachable', 'message' => 'Vaultwarden did not answer.'],
-        ])]);
+        vault_cli_operation_mock(SyncVaultRequest::class, 'vault.sync', failed: true);
 
         [$exit, $output] = vault_cli_display('vault:sync');
 
         expect($exit)->toBe(1)
-            ->and($output)->toContain('vault.unreachable: Vaultwarden did not answer.');
+            ->and($output)->toContain('Integration failed.', 'vault.unreachable', 'Operation: 12', vault_cli_request_id());
+
+        MockClient::destroyGlobal();
+        MockClient::global([ShowVaultStatusRequest::class => vault_cli_status_response([
+            ...vault_cli_status_payload(),
+            'last_error' => ['code' => 'vault.unreachable', 'message' => 'Vaultwarden did not answer.'],
+        ])]);
+        [$statusExit, $statusOutput] = vault_cli_display('vault:status');
+
+        expect($statusExit)->toBe(0)
+            ->and($statusOutput)->toContain('vault.unreachable: Vaultwarden did not answer.');
     });
 
     it('preserves vault.not_configured from sync', function (): void {
@@ -452,4 +472,31 @@ function vault_cli_destroy_payload(): array
 function vault_cli_destroy_response(): MockResponse
 {
     return MockResponse::make(['data' => vault_cli_destroy_payload(), 'meta' => ['request_id' => vault_cli_request_id()]], 202);
+}
+
+/** @return array<string, mixed> */
+function vault_cli_operation_payload(string $kind, bool $failed = false): array
+{
+    return ['id' => 12, 'kind' => $kind, 'target_type' => 'vault', 'target_id' => 7,
+        'input' => [], 'status' => $failed ? 'failed' : 'succeeded', 'sequence' => 3,
+        'error_code' => $failed ? 'vault.unreachable' : null,
+        'result' => $failed ? null : ['outcome' => 'succeeded', 'data' => ['backend' => $kind === 'vault.setup' ? 'configured' : 'synced']]];
+}
+
+/** @param class-string $request */
+function vault_cli_operation_mock(string $request, string $kind, bool $failed = false): MockClient
+{
+    $body = ['data' => vault_cli_operation_payload($kind, $failed), 'meta' => ['request_id' => vault_cli_request_id()]];
+
+    return MockClient::global([
+        $request => MockResponse::make($body, 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make($body),
+    ]);
+}
+
+/** @return array<string, mixed> */
+function vault_cli_operation_json(string $kind): array
+{
+    return json_decode(json_encode(OperationResponse::fromGatewayData(vault_cli_operation_payload($kind), vault_cli_request_id())->toArray(), JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
 }

@@ -18,9 +18,9 @@ use Saloon\Http\Faking\MockClient;
 use Symfony\Component\Process\Process;
 use Tests\Support\CommandFixture;
 
-function node_firewall_reply(string $class, array $data): array
+function node_firewall_reply(string $class, array $data, int $status = 200): array
 {
-    return ['class' => $class, 'body' => ['data' => $data,
+    return ['class' => $class, 'status' => $status, 'body' => ['data' => $data,
         'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']]];
 }
 
@@ -38,7 +38,9 @@ function node_firewall_consent_case(string $family, bool $purge = false): array
             'mutation' => RemoveNodeRequest::class,
             'mutation_body' => ['force' => true, 'offline' => false],
             'replies' => [node_firewall_reply(ShowNodeRequest::class, $node),
-                node_firewall_reply(RemoveNodeRequest::class, [...$node, 'removed' => true])],
+                node_firewall_reply(RemoveNodeRequest::class, [...$operation, 'kind' => 'node.remove', 'target_type' => 'node', 'input' => [], 'result' => ['removed' => true, 'name' => 'worker']], 202),
+                ['class' => ShowRealtimeRequest::class, 'status' => 503, 'body' => []],
+                node_firewall_reply(ShowOperationRequest::class, [...$operation, 'kind' => 'node.remove', 'target_type' => 'node', 'input' => [], 'result' => ['removed' => true, 'name' => 'worker']])],
         ],
         'access' => [
             'arguments' => ['node:access:remove', '7', '8'],
@@ -66,8 +68,9 @@ function node_firewall_consent_case(string $family, bool $purge = false): array
                     'details' => ['field' => 'force', 'reason' => 'destructive_consent_required',
                         'dependents' => ['1 development instance record', '1 workspace record']],
                 ]]],
-                node_firewall_reply(RemoveNodeRoleRequest::class, ['node_id' => 7, 'node_name' => 'worker',
-                    'role' => 'app-dev', 'assignment' => null, 'removed' => true]),
+                node_firewall_reply(RemoveNodeRoleRequest::class, [...$operation, 'kind' => 'node.role_remove', 'target_type' => 'node', 'input' => [], 'result' => ['node_id' => 7, 'assignment_id' => 2, 'role' => 'app-dev', 'role_removed' => true, 'offline' => false]], 202),
+                ['class' => ShowRealtimeRequest::class, 'status' => 503, 'body' => []],
+                node_firewall_reply(ShowOperationRequest::class, [...$operation, 'kind' => 'node.role_remove', 'target_type' => 'node', 'input' => [], 'result' => ['node_id' => 7, 'assignment_id' => 2, 'role' => 'app-dev', 'role_removed' => true, 'offline' => false]]),
             ],
         ],
         'firewall' => [
@@ -138,7 +141,7 @@ describe('Node and firewall native consent', function (): void {
             ->and($result['keys_remaining'])->toBe(0)
             ->and($result['restored'])->toBeTrue()
             ->and($result['output'])->not->toContain("\e[")
-            ->and($result['requests'])->toHaveCount($case['reads'] + ($accepted ? 1 : 0) + ($accepted && $family === 'firewall' ? 1 : 0));
+            ->and($result['requests'])->toHaveCount($case['reads'] + ($accepted ? 1 : 0) + ($accepted && $family !== 'access' ? 1 : 0));
 
         if ($family === 'role') {
             expect($result['requests'][0]['body'])->toBe(['force' => false, 'purge_data' => false, 'offline' => false]);
@@ -201,25 +204,20 @@ it('rejects a transport response that does not establish the requested removal',
     }
     $last = array_find_key($case['replies'], static fn (array $reply): bool => $reply['class'] === $case['mutation']);
     $data = &$case['replies'][$last]['body']['data'];
-    if ($family === 'firewall') {
-        unset($data['kind']);
-    } else {
-        $data['removed'] = false;
-        if ($family === 'role') {
-            $data['assignment'] = ['id' => 2, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null];
-        }
-    }
+    unset($data['kind']);
     $result = run_node_firewall_fixture($case, [], pty: false);
     expect($result['status'])->toBe(1)->and($result['stderr'])->toBe('')
-        ->and($result['output'])->not->toContain('Removed Node.', 'Removed Node role.', 'Firewall rule removal succeeded.');
+        ->and($result['output'])->not->toContain('Node removal succeeded.', 'Node role removal succeeded.', 'Firewall rule removal succeeded.')
+        ->and($result['requests'])->toHaveCount($family === 'node' ? 2 : 1);
     if ($json) {
         $payload = json_decode($result['output'], true, flags: JSON_THROW_ON_ERROR);
         expect($payload['error']['code'])->toBe('gateway.invalid_response')
             ->and($payload['error']['request_id'])->toBe('0198e15c-bf97-7c23-8f1f-61b8fe67a844');
-    } elseif ($family === 'firewall') {
-        expect($result['output'])->toContain('Gateway response is invalid.');
     } else {
-        expect($result['output'])->toContain('Operation failed.', 'does not confirm');
+        expect($result['output'])->toContain('Gateway response is invalid.');
+        if ($family !== 'firewall') {
+            expect($result['output'])->toContain('Operation failed.');
+        }
     }
 })->with(['node', 'role', 'firewall'])->with([false, true]);
 
@@ -247,13 +245,15 @@ it('keeps offline and purge independent of interactive consent and the read-only
         $case['replies'][0]['body']['error']['details']['dependents'] = [];
     }
     $result = run_node_firewall_fixture($case, $accepted ? ['y', "\r"] : ["\r"]);
-    expect($result['status'])->toBe($accepted ? 0 : 1)->and($result['requests'])->toHaveCount($case['reads'] + ($accepted ? 1 : 0));
+    expect($result['status'])->toBe($accepted ? 0 : 1)->and($result['requests'])->toHaveCount($case['reads'] + ($accepted ? 2 : 0));
     if ($family === 'role') {
         expect($result['output'])->not->toContain('Dependent resources:');
         expect($result['requests'][0]['body'])->toBe(['force' => false, 'purge_data' => false, 'offline' => false]);
     }
     if ($accepted) {
-        expect($result['requests'][array_key_last($result['requests'])]['body'])->toBe($case['mutation_body']);
+        $mutation = array_find(array_reverse($result['requests']), static fn (array $request): bool => $request['class'] === $case['mutation']);
+        expect($mutation['body'])->toBe($case['mutation_body'])
+            ->and($result['output'])->toContain($family === 'node' ? 'Node removal succeeded.' : 'Node role removal succeeded.');
     }
 })->with([
     ['node', true, false], ['role', false, false], ['role', false, true], ['role', true, true],
