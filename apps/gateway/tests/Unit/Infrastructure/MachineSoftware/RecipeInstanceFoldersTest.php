@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\InstanceFolderPlan;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 
 /** The shipped recipe with `$change` applied to its decoded document. */
@@ -17,7 +18,7 @@ it('reads the two shared folders, a tool part with the tool\'s own pin', functio
     $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
     $node = $recipe->tools['node'];
 
-    expect(array_keys($recipe->instances->runtime))->toBe(['node', 'bun', 'composer', 'ripgrep', 'vite-plus'])
+    expect(array_keys($recipe->instances->runtime))->toBe(['node', 'bun', 'deno', 'composer', 'ripgrep', 'vite-plus'])
         ->and($recipe->instances->runtime['vite-plus']->artifact)->toBe($recipe->tools['vp-cli']->artifacts['amd64'])
         ->and($recipe->instances->runtime['vite-plus']->version)->toBe($recipe->tools['vp']->version)
         ->and($recipe->instances->runtime['vite-plus']->bin)->toBe(['vp' => 'vp'])
@@ -29,6 +30,27 @@ it('reads the two shared folders, a tool part with the tool\'s own pin', functio
         ->and($recipe->instances->runtime['node']->version)->toBe($node->version)
         ->and($recipe->instances->agent['claude-code']->artifact->algorithm)->toBe('sha512')
         ->and($recipe->instances->agent['codex']->bin)->toBe(['codex' => 'package/vendor/x86_64-unknown-linux-musl/bin/codex']);
+});
+
+it('publishes Deno from the Node pin in the shared runtime and changes only that folder version', function (): void {
+    $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
+    $withoutDeno = new RecipeLoader()->decode(recipeWithInstances(static function (array &$recipe): void {
+        unset($recipe['instances']['runtime']['deno']);
+    }));
+
+    $plan = InstanceFolderPlan::for($recipe->instances);
+    $before = InstanceFolderPlan::for($withoutDeno->instances);
+    $parts = array_column($plan['runtime']['parts'], null, 'name');
+    $deno = $recipe->tools['deno'];
+
+    expect($parts)->toHaveKey('deno');
+    expect($parts['deno'])->toBe([
+        'name' => 'deno', 'version' => $deno->version, 'url' => $deno->artifacts['amd64']->location,
+        'archive' => 'zip', 'sha256' => $deno->artifacts['amd64']->digest, 'bin' => ['deno' => 'deno'],
+    ]);
+    expect($plan['runtime']['version'])->not->toBe($before['runtime']['version'])
+        ->and($plan['agent'])->toBe($before['agent'])
+        ->and($recipe->identity)->toBe($withoutDeno->identity);
 });
 
 it('keeps the shared folders out of the software identity, so a new T3 rebuilds no task image', function (): void {
