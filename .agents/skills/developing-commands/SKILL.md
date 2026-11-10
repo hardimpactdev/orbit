@@ -63,7 +63,7 @@ Before changing a CI cache, separate hits from misses in job logs. A Cargo lock 
 Nested command proof must cross the same CLI, typed SDK and Gateway validation boundaries as ordinary commands. Reuse CI's cases-file lookup so `node:role:add` resolves to `node/role-add.cases.yaml`. Run the approved human-only refusal cases too: JSON coverage alone does not prove that operators can see the stable error code. Pass that code through the shared renderer's code argument, not through its bounded validation fields. Map the command's implementation in the shared proof selection list when its cases become runnable.
 
 
-Ansible fixture deadlines need pinned-Ansible and orphan regressions: test an exited leader and a child forked during TERM. Own descendants from launch with a Linux subreaper, signal through pidfds, and bound output collection. Size both the playbook guard and the shared serial-command budget from slow-runner measurements; include a stall in the last playbook and the rest of the gate in the arithmetic.
+Ansible fixture deadlines need pinned-Ansible and orphan regressions: test an exited leader and a child forked during TERM. Own descendants from launch with a Linux subreaper, signal through pidfds, and bound output collection. Deno test files have separate isolates: establish a shared command deadline in the parent environment and test exhaustion across two files. Size both the playbook guard and the shared serial-command budget from slow-runner measurements; include a stall in the last playbook and the rest of the gate in the arithmetic.
 
 ## Report
 

@@ -108,6 +108,17 @@ class ShapeGateToolsTest(unittest.TestCase):
         self.assertEqual(steps[2:4], instance, 'long fixtures start before the other independent tests')
         self.assertTrue(all('--parallel' not in step.argv for step in instance), 'files inside a group run serially')
 
+    def test_each_instance_command_receives_one_deadline_at_launch(self):
+        steps = self.gate.plan('HEAD', self.system, self.system, self.system / 'collections')
+        commands = [step for step in steps if tuple(step.argv[3:]) in self.gate.INSTANCE_HOST_TEST_GROUPS]
+        self.assertEqual(len(commands), 2)
+        for step in commands:
+            with mock.patch.object(self.gate.time, 'time', return_value=1_000_000.125), \
+                    mock.patch.object(self.gate.subprocess, 'run') as run:
+                run.return_value.returncode = 0
+                self.gate.run_step(step, {'ORBIT_INSTANCE_HOST_DEADLINE_MS': 'expired'}, False)
+                self.assertEqual(run.call_args.kwargs['env']['ORBIT_INSTANCE_HOST_DEADLINE_MS'], '1000720125')
+
     def test_a_completed_command_is_reported_while_its_neighbor_is_still_running(self):
         blocked, release, reported = Event(), Event(), Event()
         steps = [self.gate.Step('shape', name, ['unused'], parallel=True) for name in ('slow', 'fast')]

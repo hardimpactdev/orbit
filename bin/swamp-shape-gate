@@ -49,7 +49,7 @@ ANSIBLE_TESTS = ('tests/ansible_artifact_test.py', 'tests/ansible_inputs_test.py
                  'tests/ansible_task_vm_fleet_wait_test.py', 'tests/ansible_task_vm_host_egress_test.py',
                  'tests/ansible_hub_prune_test.py', 'tests/ansible_task_vm_idle_save_test.py', 'tests/ansible_task_vm_checkout_test.py',
                  'tests/ansible_wireguard_hub_lan_test.py', 'tests/ansible_hub_converge_peers_test.py', 'tests/ansible_static_php_test.py',
-                 'tests/ansible_instance_module_args_test.py')
+                 'tests/ansible_instance_module_args_test.py', 'tests/ansible_command_output_test.py')
 DENO_UNIT_TESTS = (
     ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/check-swamp-shape_test.ts'),
     ('--allow-read', '--allow-run', 'bin/lint-behavior-names_test.ts'),
@@ -69,7 +69,8 @@ DENO_TESTS_ELSEWHERE = ('tests/metrics_exporter_firewall_test.ts', 'tests/native
 
 
 # Two balanced serial commands keep Instance-host Ansible contention within half the four-worker budget.
-# ci-shark-3 measured 323.7s and 494.2s. Each command shares a 720s fixture budget.
+# ci-shark-3 measured 328.1s and 503.7s; older Sabre cases regroup to 468s and 569s.
+# Each command shares a 720s fixture budget across all Deno file isolates.
 INSTANCE_HOST_TEST_GROUPS = (
     ('tests/ansible_instance_host_updates_test.ts',),
     ('tests/ansible_instance_host_test.ts', 'tests/ansible_instance_host_image_test.ts', 'tests/ansible_instance_host_runtime_test.ts'),
@@ -202,6 +203,8 @@ def run_step(step, environment, strict):
         env = {**environment, **step.env, 'TMPDIR': scratch, 'TEMP': scratch, 'TMP': scratch}
         if step.parallel:
             env.update(DENO_JOBS='1', ANSIBLE_FORKS='1', PYTHON_CPU_COUNT='1', RAYON_NUM_THREADS='1')
+        if step.argv[:2] == ['deno', 'test'] and tuple(step.argv[3:]) in INSTANCE_HOST_TEST_GROUPS:
+            env['ORBIT_INSTANCE_HOST_DEADLINE_MS'] = str(int(time.time() * 1000) + 720_000)
         try:
             code = subprocess.run(step.argv, cwd=SWAMP, env=env, stdout=output, stderr=subprocess.STDOUT).returncode
         except FileNotFoundError as error:

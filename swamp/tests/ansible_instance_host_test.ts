@@ -92,7 +92,8 @@ Deno.test("a late playbook gets only the shared command budget left, then no new
             String.raw`
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1";
 let clock = 0;
-Object.defineProperty(performance, "now", { value: () => clock });
+Date.now = () => clock;
+Deno.env.delete("ORBIT_INSTANCE_HOST_DEADLINE_MS");
 const { fixture } = await import(${
                 JSON.stringify(
                     new URL("./_support/instance_host.ts", import.meta.url)
@@ -104,9 +105,9 @@ try {
     Deno.writeTextFileSync(f.folder + "/bin/ansible-playbook", '#!/bin/sh\necho started >> "$HOST_FIXTURE/starts"\nexec sleep 60\n');
     Deno.chmodSync(f.folder + "/bin/ansible-playbook", 0o755);
     clock = 719_900;
-    const started = Date.now();
+    const started = performance.now();
     await assertRejects(() => f.run(), Error, "timed out after 0.1s");
-    assert(Date.now() - started < 4500, "late playbook received a fresh allowance");
+    assert(performance.now() - started < 4500, "late playbook received a fresh allowance");
     clock = 720_001;
     await assertRejects(() => f.run(), Error, "exhausted its 720s budget");
     assertEquals(Deno.readTextFileSync(f.folder + "/starts"), "started\n");
@@ -119,6 +120,72 @@ try {
             args: ["run", "-A", script],
         }).outputSync();
         assert(result.success, new TextDecoder().decode(result.stderr));
+    } finally {
+        Deno.removeSync(directory, { recursive: true });
+    }
+});
+
+Deno.test("the shared command budget stays exhausted across Deno test file isolates", () => {
+    const directory = Deno.makeTempDirSync();
+    try {
+        const clockFile = `${directory}/clock`;
+        Deno.writeTextFileSync(clockFile, "0");
+        const files = ["first_test.ts", "second_test.ts"].map((name, index) => {
+            const file = `${directory}/${name}`;
+            Deno.writeTextFileSync(
+                file,
+                `
+import { assert, assertRejects } from "jsr:@std/assert@1";
+let clock = Number(Deno.readTextFileSync(${JSON.stringify(clockFile)}));
+Date.now = () => 1_000_000_000_000 + clock;
+Object.defineProperty(performance, "now", { value: () => clock });
+const { fixture } = await import(${
+                    JSON.stringify(
+                        new URL("./_support/instance_host.ts", import.meta.url)
+                            .href,
+                    )
+                });
+Deno.test("${
+                    index === 0
+                        ? "spend the command budget"
+                        : "refuse a launch in the next isolate"
+                }", async () => {
+    const f = await fixture();
+    try {
+        Deno.writeTextFileSync(f.folder + "/bin/ansible-playbook", '#!/bin/sh\\necho started > "$HOST_FIXTURE/started"\\n');
+        Deno.chmodSync(f.folder + "/bin/ansible-playbook", 0o755);
+        ${
+                    index === 0
+                        ? `
+        assert((await f.run()).ok);
+        Deno.removeSync(f.folder + "/started");
+        clock = 720_001;
+        Deno.writeTextFileSync(${JSON.stringify(clockFile)}, String(clock));
+        `
+                        : ""
+                }
+        await assertRejects(() => f.run(), Error, "exhausted its 720s budget");
+        assert(!f.has("started"), "a playbook launched after the shared budget expired");
+    } finally {
+        f.cleanup();
+    }
+});
+`,
+            );
+            return file;
+        });
+        const result = new Deno.Command(Deno.execPath(), {
+            args: ["test", "-A", ...files],
+            env: {
+                DENO_JOBS: "1",
+                ORBIT_INSTANCE_HOST_DEADLINE_MS: "1000000720000",
+            },
+        }).outputSync();
+        const decoder = new TextDecoder();
+        assert(
+            result.success,
+            decoder.decode(result.stdout) + decoder.decode(result.stderr),
+        );
     } finally {
         Deno.removeSync(directory, { recursive: true });
     }
