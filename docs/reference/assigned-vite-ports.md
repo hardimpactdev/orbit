@@ -58,7 +58,7 @@ Only the Node can reach the assigned Vite port in the container. Caddy sends `/_
 
 ## Start, restart, and wake
 
-Every start of the preset runs one preparation step:
+Every start of the preset on a checkout Instance runs one preparation step. These preparation, port reassignment and readiness rules apply to checkout Instances; migrated presets use container systemd controls:
 
 1. If the preset's Vite already answers on the port, start returns without restarting it.
 2. This also applies to automatic starts during wake, transfer restore, and activation. Orbit does not suspend traffic or re-project Caddy for a healthy endpoint.
@@ -72,7 +72,7 @@ When a port is taken between the check and the bind, Orbit retries with a new po
 
 ## Application setup
 
-The workload Caddy proxies `https://<domain>/__orbit/vite/` to the port and keeps the `/__orbit/vite/` prefix. Every Process of a development Instance with a Route gets these variables. Instances without a Route get none:
+The workload Caddy proxies `https://<domain>/__orbit/vite/` to the port and keeps the `/__orbit/vite/` prefix. Every Process of a development Instance with a Route gets these variables. Without a Route, only a migrated preset receives `ORBIT_DEV_SERVER_PORT`; origin, host and path remain absent:
 
 | Variable | Value |
 | --- | --- |

@@ -15,6 +15,7 @@ use App\Models\Instance;
 use App\Models\Process;
 use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection as SupportCollection;
 
 /**
  * The Processes of an Instance container (docs/reference/development-containers.md#processes): `orbit-*` units in the container, from
@@ -33,9 +34,19 @@ final readonly class ContainerProcesses
      */
     public function units(Instance $instance): array
     {
+        return $this->render($instance, $this->records([$instance->id]));
+    }
+
+    /**
+     * @param  Collection<int, Process>  $records
+     * @return list<array{id:int,name:string,content:string,environment:?string,desired:string}>
+     */
+    private function render(Instance $instance, Collection $records): array
+    {
+        $port = $this->vitePort($instance, $records);
         $units = [];
-        foreach ($this->records($instance) as $process) {
-            $process = $this->placed($process, $instance);
+        foreach ($records as $process) {
+            $process = $this->placed($process, $instance, $port);
             $target = $this->targets->forInspection($process);
             if ($target->container === null || $process->runtime !== ProcessRuntime::Systemd) {
                 throw new ResourceOperationException('process.target_unsupported', "Process [{$process->id}:{$process->name}] must use systemd in an Instance container.", 409);
@@ -54,12 +65,14 @@ final readonly class ContainerProcesses
      */
     public function environments(Instance $instance, mixed $admitted): string
     {
-        if ($admitted !== $this->units($instance)) {
+        $records = $this->records([$instance->id]);
+        if ($admitted !== $this->render($instance, $records)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The container Processes changed after admission.', 403);
         }
+        $port = $this->vitePort($instance, $records);
         $files = [];
-        foreach ($this->records($instance) as $process) {
-            $process = $this->placed($process, $instance);
+        foreach ($records as $process) {
+            $process = $this->placed($process, $instance, $port);
             $target = $this->targets->forInspection($process);
             if ($this->hasEnvironment($process, $target)) {
                 $files[$this->systemd->environmentPath($process, $target)] = $this->systemd->environmentContent($process, $target);
@@ -75,6 +88,7 @@ final readonly class ContainerProcesses
      */
     public function complete(Instance $instance, mixed $admitted, bool $succeeded, ?string $errorCode): void
     {
+        $port = $succeeded ? $this->vitePort($instance) : null;
         foreach (is_array($admitted) ? $admitted : [] as $raw) {
             $unit = ValidatedData::object($raw);
             $process = Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)
@@ -83,7 +97,7 @@ final readonly class ContainerProcesses
                 continue;
             }
             if ($succeeded) {
-                $placed = $this->placed($process, $instance);
+                $placed = $this->placed($process, $instance, $port);
                 $process->forceFill(['working_directory' => $placed->working_directory, 'runtime_config' => $placed->runtime_config,
                     'status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null,
                     'systemd_activation_hash' => hash('sha256', ValidatedData::string($unit['content'])), 'systemd_activation_pending' => false])->save();
@@ -94,14 +108,14 @@ final readonly class ContainerProcesses
     }
 
     /** Render a copy at its container placement; migration saves these paths only after cutover succeeds. */
-    private function placed(Process $process, Instance $instance): Process
+    private function placed(Process $process, Instance $instance, ?int $port): Process
     {
         $placed = clone $process;
         $checkout = rtrim($instance->checkout_path, '/');
         $config = $process->runtime_config;
         if (array_key_exists('preset', $config)) {
-            $this->assertPreset($process, $instance);
-            $config['command'] = VpDevPreset::command($this->vitePort($instance));
+            $this->assertPreset($process, $instance, $port);
+            $config['command'] = VpDevPreset::command($port);
             $config['environment_file'] ??= InstanceContainer::application($instance).'/.env';
         }
         array_walk_recursive($config, static function (mixed &$value) use ($checkout): void {
@@ -117,10 +131,14 @@ final readonly class ContainerProcesses
         return $placed;
     }
 
-    /** The preset's port in this container's network namespace; no host listener or host port allocator is involved. */
-    public function vitePort(Instance $instance): ?int
+    /**
+     * The preset's port in this container's network namespace; no host listener or host port allocator is involved.
+     *
+     * @param  Collection<int, Process>|null  $records
+     */
+    public function vitePort(Instance $instance, ?Collection $records = null): ?int
     {
-        $records = $this->records($instance);
+        $records = ($records ?? $this->records([$instance->id]))->filter(static fn (Process $process): bool => $process->status !== LifecycleStatus::Removing);
         $presets = $records->filter(static fn (Process $process): bool => $process->isVpDev())->values();
         $preset = $presets->first();
         if ($preset === null) {
@@ -156,7 +174,7 @@ final readonly class ContainerProcesses
     }
 
     /** A preset is mapped only after its stored intent matches a supported form; never discard a custom command. */
-    private function assertPreset(Process $process, Instance $instance): void
+    private function assertPreset(Process $process, Instance $instance, ?int $port): void
     {
         $config = $process->runtime_config;
         if (! $process->isVpDev() || (array_key_exists('preset_version', $config) && $config['preset_version'] !== 1)) {
@@ -166,7 +184,6 @@ final readonly class ContainerProcesses
         if ($unknown !== []) {
             $this->refuse($process, 'preset_unsupported', 'its preset has unsupported options: '.implode(', ', $unknown));
         }
-        $port = $this->vitePort($instance);
         $surveyed = ['/usr/bin/env', '-u', 'VITE_DEV_SERVER_CERT', '-u', 'VITE_DEV_SERVER_KEY',
             '/home/'.$instance->node->user.'/.vite-plus/bin/vp', 'dev', '--host=127.0.0.1', '--port='.$port, '--strictPort'];
         if (! in_array($config['command'] ?? null, [VpDevPreset::command(), VpDevPreset::command($port), $surveyed], true)) {
@@ -204,10 +221,12 @@ final readonly class ContainerProcesses
      */
     public function source(Instance $instance): array
     {
+        $records = $this->records([$instance->id]);
+        $port = $this->vitePort($instance, $records);
         $units = [];
-        foreach ($this->records($instance) as $process) {
+        foreach ($records as $process) {
             if (array_key_exists('preset', $process->runtime_config)) {
-                $this->assertPreset($process, $instance);
+                $this->assertPreset($process, $instance, $port);
             }
             $target = $this->targets->forInspection($process);
             $units[] = ['name' => $this->systemd->unitName($process), 'path' => $this->systemd->unitPath($process),
@@ -218,10 +237,26 @@ final readonly class ContainerProcesses
         return $units;
     }
 
-    /** @return Collection<int, Process> */
-    private function records(Instance $instance): Collection
+    /** @param SupportCollection<int, Instance> $instances */
+    public function loadForSites(SupportCollection $instances, bool $refresh = false): void
     {
-        return Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)
+        $missing = $instances->reject(static fn (Instance $instance): bool => ! $refresh && $instance->relationLoaded('processes'));
+        if ($missing->isEmpty()) {
+            return;
+        }
+        $records = $this->records($missing->map(static fn (Instance $instance): int => $instance->id)->all())->groupBy('owner_id');
+        foreach ($missing as $instance) {
+            $instance->setRelation('processes', $records->get($instance->id, new Collection));
+        }
+    }
+
+    /**
+     * @param  array<int, int>  $instanceIds
+     * @return Collection<int, Process>
+     */
+    private function records(array $instanceIds): Collection
+    {
+        return Process::query()->whereIn('owner_type', Instance::morphTypes())->whereIn('owner_id', $instanceIds)
             ->where('status', '!=', LifecycleStatus::Removing)->orderBy('id')->get();
     }
 

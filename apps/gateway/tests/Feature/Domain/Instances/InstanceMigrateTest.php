@@ -14,6 +14,7 @@ use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\InstanceMigration\InstanceMigrationRoute;
+use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
@@ -49,6 +50,7 @@ use App\Models\Project;
 use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
@@ -868,6 +870,29 @@ function migrationVpDev(Instance $instance, string $desired = 'running', bool $s
 }
 
 describe('Processes moving into the container', function (): void {
+    it('reads Process records once per unit, environment or source render', function (string $render): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        migrationVpDev($instance);
+        migrationWorker($instance);
+        $operation = migrateStart($instance);
+        $processes = app(ContainerProcesses::class);
+
+        DB::enableQueryLog();
+        try {
+            $result = match ($render) {
+                'units' => $processes->units($instance),
+                'environments' => $processes->environments($instance, $operation->input['container']['processes']),
+                'source' => $processes->source($instance),
+            };
+            $reads = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'from "processes"'));
+            expect($result)->not->toBeEmpty();
+            expect($reads)->toHaveCount(1);
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+    })->with(['units', 'environments', 'source']);
+
     it('keeps existing Process ids and desired states, rendering their workspace and delivering values only through the vault', function (): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
         $running = migrationWorker($instance);
