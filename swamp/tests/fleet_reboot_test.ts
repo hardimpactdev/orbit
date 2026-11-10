@@ -96,7 +96,7 @@ Deno.test("a Node's play reads the clock and writes its record on the Swamp Node
                 name: "node", groups: ["reboot_node"], ansible_connection: "local", ansible_python_interpreter: "{{ ansible_playbook_python }}" } }] },
             { hosts: "reboot_node", gather_facts: false,
                 vars: { intent: { window: { timezone: "Europe/Amsterdam" } }, target: { node_id: 18, name: "sabre" }, record_path: `${folder}/result-000-18.json` },
-                tasks: [{ ...clock, become: false },
+                tasks: [clock,
                     { name: "Record", "ansible.builtin.include_tasks": `${ansible}tasks/fleet-reboot-record.yml`, vars: { record_update: { node_id: 18, outcome: "not_due" } } }] },
         ]));
         const result = await new Deno.Command("ansible-playbook", {
