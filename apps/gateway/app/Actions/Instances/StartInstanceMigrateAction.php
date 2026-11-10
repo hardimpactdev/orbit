@@ -31,6 +31,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use App\Support\ValidatedData;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -64,10 +65,11 @@ final readonly class StartInstanceMigrateAction
             $this->assertCheckout($instance, $node);
             // Null for the Project's default itself; every other Instance moves after it.
             $default = $instance->name === 'default' ? null : $this->movedDefault($instance);
-            if ($instance->processes()->where('status', LifecycleStatus::Removing)->exists()
+            if ($instance->processes()->where(static fn (Builder $query): Builder => $query
+                ->where('status', LifecycleStatus::Removing)->orWhereNotNull('retired_runtime'))->exists()
                 || Operation::query()->where('target_type', 'process')->whereIn('target_id', $instance->processes()->select('id'))
                     ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
-                throw new ResourceOperationException('instance.lifecycle_busy', 'An Instance Process has an unfinished operation.', 409);
+                throw new ResourceOperationException('instance.lifecycle_busy', 'An Instance Process has an unfinished operation or runtime cleanup.', 409);
             }
             $sourceProcesses = app(ContainerProcesses::class)->source($instance);
             $this->assertPhp($instance->project);

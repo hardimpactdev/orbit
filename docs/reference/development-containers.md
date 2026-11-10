@@ -486,7 +486,7 @@ The end of the move and its failure:
 
 The database is not cloned. An Instance's database name, owner and connection come from its Project and its name. So a second database for the same Instance has no name to take, and a clone would end with a drop of the old one. Leaving it in place cannot lose data. A clone of a moved default still copies the default's database with the template copy of [Clone the database](#clone-the-database): the default's connection record is the one it had.
 
-The move keeps each systemd Process and its desired state. It stops and disables the host units before copying files, installs the same Processes in the container with their private environment files, and removes the host units and environment folders after the Route moves. A failed move removes the container before restoring the host units to their recorded desired states. An unfinished Process operation blocks migration, and Process changes wait until migration settles. Docker Processes still refuse with `process.target_unsupported`, as for a new container.
+The move keeps each ordinary systemd Process and its desired state. It stops and disables the host units before copying files, installs the same Processes in the container with their private environment files, and removes the host units and environment folders after the Route moves. A failed move removes the container before restoring the host units to their recorded desired states. An unfinished Process operation, removal or previous runtime cleanup blocks migration, and Process changes wait until migration settles. Docker Processes and Node-bound presets such as `vp-dev` refuse with `process.target_unsupported`, as for a new container.
 
 ## T3 registration and pairing
 

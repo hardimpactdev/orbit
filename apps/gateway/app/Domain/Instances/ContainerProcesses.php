@@ -36,7 +36,7 @@ final readonly class ContainerProcesses
         foreach ($this->records($instance) as $process) {
             $process = $this->placed($process, $instance);
             $target = $this->targets->forInspection($process);
-            if ($target->container === null || $process->runtime !== ProcessRuntime::Systemd) {
+            if ($target->container === null || $process->runtime !== ProcessRuntime::Systemd || ($process->runtime_config['preset'] ?? null) !== null) {
                 throw new ResourceOperationException('process.target_unsupported', 'A Process in an Instance container must be an ordinary systemd Process.', 409);
             }
             $units[] = ['id' => $process->id, 'name' => $this->systemd->unitName($process), 'content' => $this->systemd->render($process, $target),

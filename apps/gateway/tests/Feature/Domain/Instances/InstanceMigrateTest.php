@@ -871,6 +871,45 @@ describe('Processes moving into the container', function (): void {
             ->and($instance->runtime()->exists())->toBeFalse();
     })->with(['operation' => false, 'removal' => true]);
 
+    it('refuses an unresolved retired runtime after a failed Process runtime switch', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $worker = migrationWorker($instance);
+        $worker->forceFill(['status' => LifecycleStatus::Failed, 'retired_runtime' => 'docker'])->save();
+        Operation::query()->forceCreate(['kind' => 'process.update', 'target_type' => 'process', 'target_id' => $worker->id,
+            'node_id' => $instance->node_id, 'status' => 'failed', 'input' => ['retired_runtime' => 'docker']]);
+
+        expect(containerRefusal(fn () => migrateStart($instance)))->toBe('instance.lifecycle_busy')
+            ->and($instance->runtime()->exists())->toBeFalse()
+            ->and($worker->refresh()->retired_runtime?->value)->toBe('docker')
+            ->and(Operation::query()->count())->toBe(1);
+    });
+
+    it('keeps another Instance runtime cleanup outside its migration admission', function (): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        $instance = migrateCheckout($project, $node);
+        $other = migrateCheckout($project, $node, 'other');
+        $worker = migrationWorker($other);
+        $worker->forceFill(['retired_runtime' => 'docker'])->save();
+
+        $operation = migrateStart($instance);
+
+        expect($operation->status->value)->toBe('queued')
+            ->and($operation->input['container']['processes'])->toBe([])
+            ->and($worker->refresh()->retired_runtime?->value)->toBe('docker');
+    });
+
+    it('refuses existing Node-bound presets before migration, including stopped ones', function (string $desired): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['vite_port' => 5173]);
+        $worker = migrationWorker($instance, 'vite', $desired);
+        $worker->update(['runtime_config' => [...$worker->runtime_config, 'preset' => 'vp-dev']]);
+
+        expect(containerRefusal(fn () => migrateStart($instance)))->toBe('process.target_unsupported')
+            ->and($instance->runtime()->exists())->toBeFalse()
+            ->and(Operation::query()->count())->toBe(0);
+    })->with(['running', 'stopped']);
+
     it('refuses Process changes while migration owns the Instance', function (): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
         $worker = migrationWorker($instance);
