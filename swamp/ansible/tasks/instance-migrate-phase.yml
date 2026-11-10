@@ -174,15 +174,6 @@
   loop: "{{ migrate.retire }}"
   loop_control: { loop_var: retired, label: "{{ retired.path }}" }
 
-# The site serves at once after the move and after a restore: the marker is what the wake would write.
-- name: Let the Route serve again
-  when: phase in ['retire', 'restore']
-  block:
-    - name: Make the marker folder
-      ansible.builtin.file: { path: "{{ migrate.awake.directory }}", state: directory, owner: root, group: caddy, mode: "0755" }
-    - name: Write the awake marker
-      ansible.builtin.copy: { content: "", dest: "{{ migrate.awake.path }}", mode: "0644", force: false }
-
 - name: Report the commit
   when: migrate_commit is defined
   ansible.builtin.debug:

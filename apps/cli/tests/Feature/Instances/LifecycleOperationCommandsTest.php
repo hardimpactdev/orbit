@@ -66,6 +66,7 @@ it('names retirement blockers in human and JSON migration failures', function (b
         'result' => ['instance_id' => 501, 'moved' => false, 'error_message' => $message]];
     MockClient::global([
         MigrateInstanceRequest::class => MockResponse::make(['data' => $final], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
         ShowOperationRequest::class => MockResponse::make(['data' => $final]),
     ]);
 
@@ -76,6 +77,6 @@ it('names retirement blockers in human and JSON migration failures', function (b
     if ($json) {
         expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result']['error_message'])->toBe($message);
     } else {
-        expect($output)->toContain('/fixture', '/detached', 'index.php', 'instance.migrate_retirement_blocked');
+        expect(str_replace(["\n", "\r"], '', $output))->toContain('/fixture', '/detached', 'index.php', 'instance.migrate_retirement_blocked');
     }
 })->with(['human' => false, 'json' => true]);

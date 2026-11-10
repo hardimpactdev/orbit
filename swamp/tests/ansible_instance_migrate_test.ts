@@ -73,7 +73,14 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     Deno.writeTextFileSync(`${folder}/tasks/${name}`, stringify(tasks));
   }
   for (const name of ["instance-container.yml", "instance-migrate.yml", "tasks/address-node.yml"]) {
-    Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
+    const source = Deno.readTextFileSync(new URL(name, root));
+    if (name === "instance-migrate.yml") {
+      const plays = parse(source) as Task[];
+      for (const play of plays) {
+        if (Array.isArray(play.tasks)) play.tasks = (play.tasks as Task[]).map(transform);
+      }
+      Deno.writeTextFileSync(`${folder}/${name}`, stringify(plays));
+    } else Deno.writeTextFileSync(`${folder}/${name}`, source);
   }
   // The default's checkout: one pushed commit, then work the origin never saw.
   const main = `${apps}/default`;
@@ -267,6 +274,9 @@ Deno.test({
       assertEquals(git(f.container.mirror, "show", `${olderStash}^3:note.txt`), "untracked");
       assertEquals(git(f.container.mirror, "show", `${newerStash}^3:new-stash.txt`), "newer stash");
       assertEquals(f.state().containers["instance-7"].status, "Running");
+      const again = f.run("retire");
+      assert(again.ok, again.output);
+      assertMatch(again.output, /changed=0\s/);
     } finally {
       f.cleanup();
     }
@@ -540,6 +550,7 @@ for (const blocker of ["changes", "worktree"] as const) {
         assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
         assert(f.result().error_message.includes(blocker === "changes" ? "late.txt" : path));
         assertEquals(f.result().preflight_refused, false);
+        assert(exists(f.migrate.awake.path), "The container Route must serve after a retirement refusal.");
         assert(exists(f.checkout));
         assert(exists(path));
         assertEquals(f.state(), state);

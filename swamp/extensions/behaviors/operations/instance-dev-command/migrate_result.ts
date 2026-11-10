@@ -79,7 +79,7 @@ export function migrateResult(
     return { ready: failed === undefined, stdout: JSON.stringify(result) };
 }
 
-/** The error code that the last failed phase wrote into the run folder, or null when it wrote none. */
+/** The public refusal that the last failed phase wrote, or null when it wrote none. */
 export async function writtenFailure(folder: string): Promise<WrittenFailure | null> {
     try {
         const value = JSON.parse(await Deno.readTextFile(`${folder}/result.json`));

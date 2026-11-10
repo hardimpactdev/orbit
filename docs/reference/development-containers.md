@@ -478,7 +478,7 @@ The end of the move and its failure:
 | Runtime | A Route that serves the container makes the container the Instance's runtime: the workspace becomes its checkout path |
 | Kept refs | Local branches go under `refs/migrated/heads/`, and every stash entry under `refs/migrated/stashes/<commit>`, in the Instance's mirror before its repository goes |
 | Removal | The checkout, and its worktree entry in the default's repository |
-| Last worktree | Its move removes the default's old checkout. A sibling with a failed, un-restored move still needs that checkout |
+| Last worktree | The default's old checkout is a retirement candidate. Any other registered worktree blocks retirement, including a path in the same batch |
 | Failed removal | The container stays the Instance. The run fails with `instance.migrate_retire_failed` (or `instance.migrate_retirement_blocked` for a new blocker), and the checkout is left to remove by hand |
 | Failure | The Route's restore side runs when the run had started to move it. Then the container, its ACL, its firewall rules and its mirror go |
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |

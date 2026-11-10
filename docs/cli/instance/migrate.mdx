@@ -51,6 +51,8 @@ These do not move: the staging state of the index, stashes, and branches that no
 - **Routes.** The Instance has no Route beside its own.
 - **Retirement.** Every checkout scheduled for deletion is clean and has no other worktree registered on its Git directory. Orbit checks before downtime and again before removal. `instance.migrate_retirement_blocked` names the checkout, other worktree paths and changed files, with total counts and the first 20 entries of each list. Ignored files do not block. Resolve the worktrees and save the changes before retrying; Orbit never stashes or removes them for you.
 
+A default checkout that is retained can copy uncommitted files. A checkout scheduled for deletion must be clean.
+
 Nobody works in the checkout during the move. Orbit shows the wake page on the Route, and starts no deployment and no wake of the Instance until the move has ended.
 
 ## Order
