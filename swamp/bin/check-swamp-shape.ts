@@ -1973,6 +1973,9 @@ export function analyzeYaml(
                     result.unknown = true;
                 }
                 if (task.type === "workflow") {
+                    const constant = typeof task.workflowIdOrName === "string"
+                        ? /^\$\{\{\s*"([\w.-]+)"\s*\}\}$/.exec(task.workflowIdOrName)
+                        : null;
                     // Both destinations are statically known; inspect each child's full graph.
                     const choices = typeof task.workflowIdOrName === "string"
                         ? /^\$\{\{\s*(?:inputs|self)\.[\w.]+\s*(?:==|!=)\s*"[^"\\]*"\s*\?\s*"([\w.-]+)"\s*:\s*"([\w.-]+)"\s*\}\}$/
@@ -1984,6 +1987,8 @@ export function analyzeYaml(
                         !/\$\{\{|\}\}/.test(task.workflowIdOrName)
                     ) {
                         result.workflowRefs.push(task.workflowIdOrName);
+                    } else if (constant) {
+                        result.workflowRefs.push(constant[1]);
                     } else if (choices) {
                         result.workflowRefs.push(choices[1], choices[2]);
                     } else {
