@@ -128,9 +128,10 @@ describe('a clone of the container default', function (): void {
             ->and($clone['source_mirror'])->toBe('/var/lib/orbit/instance-repositories/'.$default->id.'.git')
             ->and($clone['t3'])->toMatchArray(['port' => 3800, 'listen' => '10.44.0.7', 'device' => 't3', 'internal_port' => 3773,
                 'url' => 'http://10.44.0.7:3800', 'label' => 'tool / feature'])
-            ->and(collect($clone['files'])->pluck('path')->all())->toBe(['/etc/orbit/instance', '/home/agent/.codex/config.toml', '/home/agent/.claude.json'])
+            ->and(collect($clone['files'])->pluck('path')->all())->toBe(['/etc/orbit/instance', '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json'])
             ->and($clone['files'][0]['content'])->toBe("# Managed by Orbit.\nORBIT_INSTANCE_ID={$id}\nORBIT_INSTANCE=feature\nORBIT_PROJECT=tool\nORBIT_URL=\n")
             ->and($clone['files'][1]['content'])->toContain('base_url = "http://10.253.0.1:8319/v1"')
+            ->and($clone['files'][3])->toBe(['path' => '/home/agent/.t3/userdata/settings.json', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'content' => "{\"linkedEnvironmentsEnabled\": true}\n"])
             ->and($clone['model_environment'])->toBe(['path' => '/home/agent/.config/orbit/model.env', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600'])
             ->and($clone['links'][0])->toBe(['path' => '/home/agent/.claude/CLAUDE.md', 'target' => '/opt/orbit-agent/current/notes/package.md'])
             // WireGuard peers reach T3, the task VM range first refused.

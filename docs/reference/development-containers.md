@@ -443,6 +443,8 @@ A failed move leaves the checkout Instance serving as before. The [migration cha
 
 ## T3 registration and pairing
 
+Each clone's T3 server sets `linkedEnvironmentsEnabled: true` in `/home/agent/.t3/userdata/settings.json`, so a sub-orchestrator can link to it.
+
 The Instance's create flow registers its T3 server with the [Conn layer](/reference/conn#registration), with the same record and the same checks as a server that registers itself:
 
 In the container, as `agent`:

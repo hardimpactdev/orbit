@@ -262,6 +262,7 @@ final readonly class InstanceContainer
                         .'ORBIT_DEV_PORTS_TAKEN='.implode(',', app(InstanceDevPorts::class)->excluded($node))."\n" : '')],
                 ['path' => '/home/agent/.codex/config.toml', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => $codex],
                 ['path' => '/home/agent/.claude.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => "{\"hasCompletedOnboarding\": true}\n"],
+                ['path' => '/home/agent/.t3/userdata/settings.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => "{\"linkedEnvironmentsEnabled\": true}\n"],
             ],
             // The note of the Project's type, as the agents' own instructions file; it states facts about the container only.
             'links' => [['path' => '/home/agent/.claude/CLAUDE.md', 'target' => $note], ['path' => '/home/agent/.codex/AGENTS.md', 'target' => $note]],

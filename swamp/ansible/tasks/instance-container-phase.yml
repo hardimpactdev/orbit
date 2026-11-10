@@ -557,8 +557,8 @@
     agent_files: >-
       {{ container.clone.files + [container.clone.model_environment | combine({'content': lookup('ansible.builtin.env', 'ORBIT_MODEL_ENVIRONMENT')})] }}
   block:
-    - name: Make the agent's Claude Code folder
-      ansible.builtin.command: { argv: "{{ as_agent + ['mkdir', '-p', '-m', '0700', '/home/agent/.claude'] }}" }
+    - name: Make the agent's configuration folders
+      ansible.builtin.command: { argv: "{{ as_agent + ['mkdir', '-p', '-m', '0700', '/home/agent/.claude', '/home/agent/.t3/userdata'] }}" }
       changed_when: false
     - name: Read the digests of the agent's files
       ansible.builtin.command: { argv: "{{ as_root + ['sha256sum', '--', item.path] }}" }
