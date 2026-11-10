@@ -29,6 +29,7 @@ inputs:
 jobs:
   - name: load
     steps:
+      # The release build owns release order: forward only unless forced, and a rollback is forced. The checkout follows the release.
       - name: checkout
         labels: {role: swamp}
         writes: true
@@ -44,7 +45,6 @@ jobs:
               cd /home/orbit/apps/orbit-monorepo-staging/checkout
               previous=$(git rev-parse HEAD)
               timeout 120 git fetch --quiet origin "$RELEASE_SHA"
-              git merge-base --is-ancestor "$previous" "$RELEASE_SHA"
               git checkout --quiet --detach "$RELEASE_SHA"
               test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
               printf '%s\n' "$previous"
