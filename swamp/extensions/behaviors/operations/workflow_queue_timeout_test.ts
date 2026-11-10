@@ -1,5 +1,35 @@
-import { assert } from "jsr:@std/assert@1.0.19";
+import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
+import { resolveWorkflowTarget } from "../../../bin/gate-test-support.ts";
+
+Deno.test("workflow targets resolve only anchored double-quoted CEL constants", () => {
+    for (
+        const target of [
+            "route-withdraw",
+            '${{ "route-withdraw" }}',
+            '${{"route-withdraw"}}',
+            '${{  "route-withdraw"  }}',
+        ]
+    ) {
+        assertEquals(resolveWorkflowTarget(target), "route-withdraw");
+    }
+    assertEquals(
+        resolveWorkflowTarget('${{ "workflow_1.name" }}'),
+        "workflow_1.name",
+    );
+    for (
+        const target of [
+            "${{ 'route-withdraw' }}",
+            "${{ inputs.workflow }}",
+            '${{ "route-" + inputs.name }}',
+            'prefix${{ "route-withdraw" }}',
+            '${{ "route-withdraw" }}suffix',
+            '${{ "" }}',
+        ]
+    ) {
+        assertEquals(resolveWorkflowTarget(target), target);
+    }
+});
 
 // F8 fixture roots. Follow their children too: each native workflow has its own defaults.
 const roots = [
@@ -58,7 +88,7 @@ Deno.test("Fixture workflows and their children declare queueTimeout", async () 
                 pending.push(
                     ...(choice
                         ? [choice[1], choice[2]]
-                        : [task.workflowIdOrName]),
+                        : [resolveWorkflowTarget(task.workflowIdOrName)]),
                 );
             }
         }
