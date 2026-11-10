@@ -126,13 +126,22 @@ it('keeps ordinary partial updates available for a MySQL server Process', functi
     $process = $server->process;
     $config = $process->runtime_config;
 
-    $this->patchJson('/api/v1/processes/'.$process->id, [
+    $response = $this->patchJson('/api/v1/processes/'.$process->id, [
         'image' => 'mysql:8.4.6', 'command' => ['mysqld', '--max-connections=200'],
     ])->assertAccepted()->assertJsonPath('data.kind', 'process.update');
 
     $config['image'] = 'mysql:8.4.6';
     $config['command'] = ['mysqld', '--max-connections=200'];
     expect($process->refresh()->runtime_config)->toBe($config);
+    $update = Operation::query()->findOrFail($response->json('data.id'));
+    $replacement = app(ProcessLifecycleInput::class)->forOperation($update)['intent']['installation']['definition'];
+
+    expect($replacement['image'])->toBe('mysql:8.4.6')
+        ->and($replacement['command'])->toBe(['mysqld', '--max-connections=200'])
+        ->and($replacement['healthcheck_arguments'])->toBe([
+            '--health-cmd', 'mysqladmin --protocol=TCP --host=127.0.0.1 ping --silent',
+            '--health-interval', '2s', '--health-timeout', '5s', '--health-retries', '3', '--health-start-period', '300s',
+        ]);
 });
 
 it('validates malformed requests before the Valkey ownership guard with HTTP 422', function (array $body, string $field): void {
@@ -196,7 +205,10 @@ it('renders the ACL command mounts and health probe for replacement then complet
     $commands = app(DatabaseServerCommands::class)->render($intent);
 
     expect($intent['created'])->toBeFalse()
+        ->and($intent['container_input']['image'])->toBe('valkey/valkey:8.2')
         ->and($intent['container_input']['healthcheck_arguments'])->toBe($healthcheck);
+    expect(array_slice($commands['start'], -7))->toBe(['valkey/valkey:8.2', ...$replacement['command']]);
+    expect(array_slice($commands['scrub'], -7))->toBe(['valkey/valkey:8.2', ...$replacement['command']]);
     expect(array_slice($commands['start'], array_search('--health-cmd', $commands['start'], true), 10))->toBe($healthcheck);
     expect(array_slice($commands['scrub'], array_search('--health-cmd', $commands['scrub'], true), 10))->toBe($healthcheck);
     expect($commands['wait'])->toBe(['timeout', '60', 'sh', '-c',
@@ -213,6 +225,8 @@ it('renders the ACL command mounts and health probe for replacement then complet
     expect($repair->refresh()->status->value)->toBe('succeeded');
     expect($server->refresh()->status->value)->toBe('active');
     expect($server->process->status->value)->toBe('active');
+    expect($server->process->runtime_config['image'])->toBe('valkey/valkey:8.2');
+    expect($server->tag)->toBe('8.1');
 });
 
 it('keeps ordinary Docker definitions free of Database server health options', function (): void {

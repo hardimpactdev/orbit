@@ -202,3 +202,53 @@ Deno.test("Valkey replacement passes the admitted health probe ACL command and v
         "type=volume,source=orbit-valkey-data,target=/data",
     );
 });
+
+Deno.test("MySQL replacement keeps the mysqladmin health probe in Docker argv", async () => {
+    const name = "orbit-process-17-mysql";
+    const healthcheck = [
+        "--health-cmd",
+        "mysqladmin --protocol=TCP --host=127.0.0.1 ping --silent",
+        "--health-interval",
+        "2s",
+        "--health-timeout",
+        "5s",
+        "--health-retries",
+        "3",
+        "--health-start-period",
+        "300s",
+    ];
+    const result = await lifecycleAssets(LifecycleArgs.parse({
+        control: { ...control, runtime: "docker", name },
+        installation: {
+            process_id: 17,
+            runtime: "docker",
+            name,
+            desired: "running",
+            on_demand: false,
+            spec: "a".repeat(64),
+            retired: null,
+            has_environment: false,
+            definition: {
+                image: "mysql:8.4.6",
+                command: ["mysqld", "--max-connections=200"],
+                restart: "unless-stopped",
+                working_directory: null,
+                ports: ["10.44.0.1:3306:3306"],
+                mounts: [{
+                    source: "orbit-mysql-data",
+                    target: "/var/lib/mysql",
+                    read_only: false,
+                }],
+                healthcheck_arguments: healthcheck,
+            },
+        },
+    }));
+    const argv = result.container_argv;
+    const probe = argv.indexOf("--health-cmd");
+    assertEquals(argv.slice(probe, probe + healthcheck.length), healthcheck);
+    assertEquals(argv.slice(-3), [
+        "mysql:8.4.6",
+        "mysqld",
+        "--max-connections=200",
+    ]);
+});

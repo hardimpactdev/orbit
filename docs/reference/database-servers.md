@@ -125,9 +125,11 @@ Write endpoints return HTTP 202 with an Operation. List and show return `id`, `s
 
 The server's Process is an ordinary Docker Node Process: read its logs, stop it, start it, or restart it with the [`process`](/cli/process) commands. `process:destroy` refuses it with `process.required_by_database_server`; remove the server instead. MySQL Process updates keep the ordinary partial-update contract.
 
+Replacement of any Database server's Process keeps the server's Docker health check. Creation, replacement and repair use the same health-check settings, so a later repair can wait for the replacement container to become healthy. MySQL replacements previously lost this health check; they now retain the `mysqladmin` probe.
+
 ### Update a Valkey server's image
 
-`process:update` accepts only an image-only update to `valkey/valkey:<tag>` for a `redis` server. For example, `orbit process:update 41 --image=valkey/valkey:8.1.3` changes the image while keeping the command, including `--aclfile`, volumes and every other specification field. Creation, replacement and repair use the same Docker health-check settings, so a later repair can wait for the replacement container to become healthy. Tags contain 1 through 128 letters, digits, underscores, periods or hyphens, and start with a letter, digit or underscore.
+`process:update` accepts only an image-only update to `valkey/valkey:<tag>` for a `redis` server. For example, `orbit process:update 41 --image=valkey/valkey:8.1.3` changes the image while keeping the command, including `--aclfile`, volumes and every other specification field. The Process stores the current image. A Valkey repair keeps that image, including when it recreates a missing container. The server's `tag` remains the creation tag; repeat `database:server:create` with the original arguments to repair it. Tags contain 1 through 128 letters, digits, underscores, periods or hyphens, and start with a letter, digit or underscore.
 
 Request normalization trims surrounding whitespace. Validation then runs before the server ownership check. Invalid input returns HTTP 422, including a supplied `user`, `start`, an empty `command`, or an image containing whitespace within the reference. After validation, an update with any other field, without `image`, or with another image repository returns `process.required_by_database_server` (409). Both refusals leave the Process unchanged.
 
