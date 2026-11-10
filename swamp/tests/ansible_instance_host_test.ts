@@ -66,6 +66,74 @@ child.wait()
 
 Deno.test({
     name:
+        "a real Ansible deadline kills a stalled command after its worker detaches",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture();
+        const pidFile = `${f.folder}/stalled.pid`;
+        try {
+            Deno.writeTextFileSync(
+                `${f.folder}/play.yml`,
+                JSON.stringify([{
+                    hosts: "localhost",
+                    gather_facts: false,
+                    tasks: [{
+                        name: "real Ansible child stalls after worker detaches",
+                        "ansible.builtin.command": {
+                            argv: [
+                                "{{ ansible_playbook_python }}",
+                                "-c",
+                                `import os, signal, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+with open(${JSON.stringify(pidFile)}, "w") as output:
+    output.write(str(os.getpid()))
+time.sleep(60)
+`,
+                            ],
+                        },
+                    }],
+                }]),
+            );
+            const error = await assertRejects(
+                () => f.run(5),
+                Error,
+                "Instance host playbook timed out after 5s",
+            );
+            assertStringIncludes(
+                error.message,
+                "TASK [real Ansible child stalls after worker detaches]",
+            );
+            const pid = Number(Deno.readTextFileSync(pidFile).trim());
+            // A killed orphan can wait briefly for PID 1 to reap it.
+            for (let attempt = 0; attempt < 100; attempt++) {
+                try {
+                    Deno.statSync(`/proc/${pid}`);
+                } catch (error) {
+                    if (error instanceof Deno.errors.NotFound) return;
+                    throw error;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            throw new Error(
+                `stalled Ansible command ${pid} survived its deadline`,
+            );
+        } finally {
+            // Keep the failing regression safe on a revision without descendant cleanup.
+            try {
+                Deno.kill(
+                    Number(Deno.readTextFileSync(pidFile).trim()),
+                    "SIGKILL",
+                );
+            } catch (error) {
+                if (!(error instanceof Deno.errors.NotFound)) throw error;
+            }
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name:
         "a build-list Node gets the Instance project, bridge, folders and image, then a rerun changes nothing",
     ignore: !hasAnsible,
     async fn() {

@@ -279,7 +279,9 @@ bin/swamp-shape-gate --only shape   # or --only validate
 
 The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate`, keyed by their pins, and reuses it. `swamp/ansible/shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts` and the frozen agent command check.
 
-Independent commands share up to four workers, with one worker inside each command. The Instance host fixture cases use separate files to share that budget; each fixture playbook has a 120-second limit that kills its process group. A timeout fails the case with the playbook output, including its last task.
+Independent commands share up to four workers, with one worker inside each command. The Instance host fixture files run in two serial groups, started at the front of the independent commands. At most two Instance host playbooks run at once. The groups balance the passing runner times, about eight and nine and a half minutes, while the other workers run the remaining checks. 
+
+Each playbook has a ten-minute hang guard, with margin above the slowest passing runner case (2m49s). On deadline, the helper records its descendant tree from `/proc`, sends TERM to Ansible and gives it one second to clean up its workers. It then kills the remaining descendants, including workers that detached into new sessions and their module commands. A timeout fails the case with the playbook output, including its last task.
 
 The gate prints each command's start and reports its result as soon as it finishes. It runs every step, prints a summary, and exits 1 when any step failed. It retries nothing. The JSON reports go to `--reports DIR`, by default a per-user directory in the temporary directory.
 
