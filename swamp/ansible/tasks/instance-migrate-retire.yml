@@ -52,7 +52,7 @@
     - name: Fetch every stash entry into a durable mirror ref
       ansible.builtin.command:
         argv: "{{ retired_git + ['--git-dir', retired.mirror, 'fetch', '--quiet', '--no-tags', '--', retired.path, item ~ ':refs/migrated/stashes/' ~ item] }}"
-      loop: "{{ retired_stashes.stdout_lines | unique | list }}"
+      loop: "{{ retired_stashes.stdout_lines | default([]) | unique | list }}"
       changed_when: true
 
 - name: Remove the checkout
