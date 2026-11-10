@@ -99,6 +99,8 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `fleet.rollout` has a provisional 600 seconds. Its first successes deferred every Node outside the maintenance window in seconds, so a budget derived from them cut off the first real visit at three minutes. One visit of seven Nodes, four of them converged, took 187 seconds; a whole fleet converging at that pace, times 1.5, rounds up to 600. A 14-day p95 replaces it once windowed visits have history.
 
+`fleet.reboot` has a provisional 10,800 seconds, the length of its window: a pass never starts a Node it cannot drain and reboot before the window closes. A 14-day p95 replaces it once passes have history.
+
 `gateway.release` has a provisional 3,000 seconds. The legacy runner's last 47 verified releases took 117 seconds at p95 and 125 at most. The Horizon drain waits for running jobs up to the longest supervisor timeout plus 30 seconds, 1,730 seconds. Their sum times 1.5 rounds up to 3,000. An expiry [pauses releases](/reference/gateway-recovery#release-as-a-swamp-run). A first success replaces it with a p95.
 
 A `tasks.script` and a `tasks.check` capture their budget at admission in `input.run_budget_seconds`, and the captured number is the Operation's run budget. Every script and every check captures the budget of its kind's history.
@@ -553,7 +555,7 @@ Read input comes only from the projection hook, never automatically from raw int
 | `POST /api/v1/direct-operations/{operation}/primitive` | Optional fixed kind-owned action; run ID only |
 | `GET /api/v1/direct-operations/{operation}/private-material?run_id=UUID` | Only the kind-declared private material from existing owned secret sources |
 | `POST /api/v1/direct-operations/{operation}/secret-output` | Run ID and declared outputs, written by the existing owned secret stores |
-| `POST /api/v1/direct-operations/{operation}/github-token` | Bound run ID and, for a kind with more than one kind of token, the `purpose` (`clone`, `dependencies`, `publish`, `pull_request` or `dependency_merge`); only a declared `github_token_issuer` issues execution copies |
+| `POST /api/v1/direct-operations/{operation}/github-token` | Bound run ID and, for a kind with more than one kind of token, the `purpose` (`clone`, `dependencies`, `publish`, `pull_request`, `dependency_merge` or `ci_rerun`); only a declared `github_token_issuer` issues execution copies |
 | `POST /api/v1/direct-operations/{operation}/certificates/sign` | Bound run ID and CSR selectors; returns admitted public leaf bundles |
 
 GitHub App tokens are a Gateway primitive: the Gateway keeps the App signing key and mints every token. A kind that declares a `github_token_issuer` gets its token when its step asks. Other kinds get theirs before their run starts. The Gateway mints a token for exactly the repository and permission map the kind names (the `dependencies` token covers the installation, with `contents: read`), puts it in the `orbit-control-inputs` vault, and passes only the vault key name in `execution_secrets`. The workflow declares that vault, reads the token with `vault.get`, and revokes it in a cleanup job.

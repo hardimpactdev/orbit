@@ -1,0 +1,304 @@
+---
+# One Node of a fleet.reboot pass (ADR 0253, docs/reference/gateway-recovery.md#fleet-reboot): drain it, reboot it, check it.
+# One tagged part per Swamp phase: `drain`, `reboot` and `check`, and `report`, which joins the records of the whole pass.
+# The Gateway's admitted intent is in the pass's run folder. Each phase reads and extends this Node's record there; once the
+# record has an outcome, later phases change nothing. A phase that fails writes `failed` with its step and error code first.
+- name: Address the Node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [drain, reboot, check]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.nodes[lookup('ansible.builtin.env', 'ORBIT_NODE_ID')] }}"
+    address_identity: "{{ address_target.identity_file }}"
+    address_group: reboot_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Drain the Node
+  hosts: reboot_node
+  become: true
+  gather_facts: false
+  tags: [drain]
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    target: "{{ intent.nodes[lookup('ansible.builtin.env', 'ORBIT_NODE_ID')] }}"
+    record_path: "{{ run }}/result-{{ '%03d' | format(lookup('ansible.builtin.env', 'ORBIT_POSITION') | int) }}-{{ target.node_id }}.json"
+    record: "{{ lookup('ansible.builtin.file', record_path, errors='ignore') | default('{}', true) | from_json }}"
+    phase: drain
+    halted: >-
+      {{ query('ansible.builtin.file', *query('ansible.builtin.fileglob', run ~ '/result-*.json')) | map('from_json')
+      | selectattr('outcome', 'defined') | selectattr('outcome', 'equalto', 'failed') | list | length > 0 }}
+  tasks:
+    - name: Keep a decided Node
+      ansible.builtin.meta: end_host
+      when: record.outcome is defined
+    - name: Drain the Node
+      block:
+        # After a failed Node the pass visits no Node after it: the records of the Nodes before this one are in the run folder.
+        - name: Record a Node after a failed one
+          ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
+          vars:
+            record_update: { node_id: "{{ target.node_id }}", name: "{{ target.name }}", outcome: skipped, reason: halted }
+          when: halted
+        - name: End a Node after a failed one
+          ansible.builtin.meta: end_host
+          when: halted
+        - name: Read the boot state
+          ansible.builtin.import_tasks: tasks/fleet-reboot-read.yml
+        - name: Record a Node that needs no reboot
+          ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
+          vars:
+            record_update:
+              node_id: "{{ target.node_id }}"
+              name: "{{ target.name }}"
+              outcome: not_due
+              kernel_before: "{{ boot.kernel }}"
+          when: not boot.due
+        - name: End a Node that needs no reboot
+          ansible.builtin.meta: end_host
+          when: not boot.due
+        # Every due Node records since when it is due, also one that waits, so Doctor and the overdue alert see it.
+        - name: Record the state before the reboot
+          ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
+          vars:
+            record_update:
+              node_id: "{{ target.node_id }}"
+              name: "{{ target.name }}"
+              kernel_before: "{{ boot.kernel }}"
+              boot_id_before: "{{ boot.boot_id }}"
+              due_since: "{{ boot.due_since }}"
+              failed_before: "{{ boot.failed_units }}"
+        - name: Read the time in the window's zone
+          ansible.builtin.command: { argv: [date, "+%H:%M"] }
+          environment: { TZ: "{{ intent.window.timezone }}" }
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          register: clock
+        # A task host that admission found busy waits for the next night. So does a Node that cannot finish its drain, its guest
+        # stops and its reboot inside the window. An operator's pass is not bound to the window.
+        - name: Decide whether the Node waits
+          ansible.builtin.set_fact:
+            wait_reason: >-
+              {{ target.defer if target.defer is not none
+              else ('window' if intent.window.enforced and (clock.stdout < intent.window.start
+              or (clock.stdout.split(':')[0] | int) * 60 + (clock.stdout.split(':')[1] | int) + (intent.drain_seconds // 60) + 30
+              > (intent.window.end.split(':')[0] | int) * 60 + (intent.window.end.split(':')[1] | int))
+              else '') }}
+        - name: Record a Node that waits
+          ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
+          vars:
+            record_update: { outcome: deferred, reason: "{{ wait_reason }}" }
+          when: wait_reason | length > 0
+        - name: End a Node that waits
+          ansible.builtin.meta: end_host
+          when: wait_reason | length > 0
+        # CI first: a busy runner defers the Node before any task guest stops.
+        - name: Drain the CI runners
+          ansible.builtin.import_tasks: tasks/fleet-reboot-drain-ci.yml
+          when: target.ci_project is not none
+        - name: Drain the task guests
+          ansible.builtin.import_tasks: tasks/fleet-reboot-drain-tasks.yml
+          when: target.task_project is not none
+        - name: Drain the Gateway
+          ansible.builtin.import_tasks: tasks/fleet-reboot-drain-gateway.yml
+          when: target.gateway is not none
+      rescue:
+        - name: Start what the drain stopped
+          ansible.builtin.import_tasks: tasks/fleet-reboot-drain-undo.yml
+        - name: Record the failed phase
+          ansible.builtin.import_tasks: tasks/fleet-reboot-failed.yml
+
+- name: Reboot the Node
+  hosts: reboot_node
+  become: true
+  gather_facts: false
+  tags: [reboot]
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    target: "{{ intent.nodes[lookup('ansible.builtin.env', 'ORBIT_NODE_ID')] }}"
+    record_path: "{{ run }}/result-{{ '%03d' | format(lookup('ansible.builtin.env', 'ORBIT_POSITION') | int) }}-{{ target.node_id }}.json"
+    record: "{{ lookup('ansible.builtin.file', record_path, errors='ignore') | default('{}', true) | from_json }}"
+    phase: reboot
+  tasks:
+    - name: Keep a decided Node
+      ansible.builtin.meta: end_host
+      when: record.outcome is defined
+    - name: Reboot the Node
+      block:
+        # The swamp Node runs this pass. Its own reboot waits in a path unit until the pass run has ended, then drains serve and the
+        # workers and reboots (files/fleet-reboot-planned.sh). The Gateway confirms the new boot from the Node's agent.
+        # A Node not yet converged with the update policy has no /usr/local/lib/orbit.
+        - name: Create the folder of the planned reboot
+          ansible.builtin.file: { path: /usr/local/lib/orbit, state: directory, owner: root, group: root, mode: "0755" }
+          when: target.kind == 'swamp'
+        - name: Install the planned reboot of the swamp Node
+          ansible.builtin.copy: { src: files/fleet-reboot-planned.sh, dest: /usr/local/lib/orbit/planned-reboot, owner: root, group: root, mode: "0755" }
+          when: target.kind == 'swamp'
+        # A path unit of an earlier pass whose cleanup never ran would make systemd-run refuse the name.
+        - name: Clear an earlier planned reboot
+          ansible.builtin.command: { argv: [systemctl, stop, orbit-planned-reboot.path, orbit-planned-reboot.service] }
+          register: earlier
+          changed_when: false
+          failed_when: false
+          when: target.kind == 'swamp'
+        - name: Reset an earlier failed planned reboot
+          ansible.builtin.command: { argv: [systemctl, reset-failed, orbit-planned-reboot.path, orbit-planned-reboot.service] }
+          changed_when: false
+          failed_when: false
+          when: target.kind == 'swamp'
+        - name: Schedule the reboot of the swamp Node after the pass
+          ansible.builtin.command:
+            argv: [systemd-run, --unit=orbit-planned-reboot, --collect, "--path-property=PathExists={{ run }}.reboot",
+                   /usr/local/lib/orbit/planned-reboot, "{{ run }}.reboot", "{{ intent.drain_seconds }}"]
+          changed_when: true
+          when: target.kind == 'swamp'
+        - name: Record the scheduled reboot
+          ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
+          vars:
+            record_update: { outcome: scheduled }
+          when: target.kind == 'swamp'
+        - name: End the swamp Node
+          ansible.builtin.meta: end_host
+          when: target.kind == 'swamp'
+        # The module reboots, waits up to 10 minutes for SSH and checks that the boot time changed.
+        - name: Reboot and wait for the Node
+          ansible.builtin.reboot: { reboot_timeout: 600, msg: "Orbit fleet reboot (ADR 0253)" }
+          register: rebooted
+        - name: Record the reboot time
+          ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
+          vars:
+            record_update: { reboot_seconds: "{{ rebooted.elapsed }}", rebooted_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}" }
+      rescue:
+        - name: Record the failed phase
+          ansible.builtin.import_tasks: tasks/fleet-reboot-failed.yml
+
+- name: Check the Node
+  hosts: reboot_node
+  become: true
+  gather_facts: false
+  tags: [check]
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    target: "{{ intent.nodes[lookup('ansible.builtin.env', 'ORBIT_NODE_ID')] }}"
+    record_path: "{{ run }}/result-{{ '%03d' | format(lookup('ansible.builtin.env', 'ORBIT_POSITION') | int) }}-{{ target.node_id }}.json"
+    record: "{{ lookup('ansible.builtin.file', record_path, errors='ignore') | default('{}', true) | from_json }}"
+    phase: check
+  tasks:
+    - name: Keep a decided Node
+      ansible.builtin.meta: end_host
+      when: record.outcome is defined
+    - name: Check the Node
+      block:
+        - name: Wait for the boot to finish
+          ansible.builtin.command: { argv: [timeout, "300", systemctl, is-system-running, --wait] }
+          register: system
+          changed_when: false
+          failed_when: system.stdout not in ['running', 'degraded']
+        - name: Read the boot state
+          ansible.builtin.import_tasks: tasks/fleet-reboot-read.yml
+        - name: Require a new boot
+          ansible.builtin.assert:
+            that: [boot.boot_id != record.boot_id_before]
+            fail_msg: fleet.reboot_boot_unchanged
+        - name: Require the newest installed kernel
+          ansible.builtin.assert:
+            that: [boot.kernel == boot.newest_kernel]
+            fail_msg: fleet.reboot_old_kernel
+        - name: Require that no reboot is due any more
+          ansible.builtin.assert:
+            that: [not boot.due]
+            fail_msg: fleet.reboot_still_due
+        - name: Require no unit that failed in this boot only
+          ansible.builtin.assert:
+            that: [boot.failed_units | difference(record.failed_before) | length == 0]
+            fail_msg: fleet.reboot_units_failed
+        # The Gateway admits the units: the agent, the Gateway's scheduler and Horizon, the hub's tunnel and source unit.
+        - name: Wait for the Node's own services
+          ansible.builtin.command: { argv: "{{ ['systemctl', 'is-active'] + target.services }}" }
+          register: services
+          changed_when: false
+          until: services.rc == 0
+          retries: 12
+          delay: 5
+        - name: Record the reboot
+          ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
+          vars:
+            record_update: { outcome: rebooted, kernel_after: "{{ boot.kernel }}" }
+      rescue:
+        - name: Record the failed phase
+          ansible.builtin.import_tasks: tasks/fleet-reboot-failed.yml
+
+- name: Re-run the CI jobs the drain cut
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [rerun]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    target: "{{ intent.nodes[lookup('ansible.builtin.env', 'ORBIT_NODE_ID')] }}"
+    record_path: "{{ run }}/result-{{ '%03d' | format(lookup('ansible.builtin.env', 'ORBIT_POSITION') | int) }}-{{ target.node_id }}.json"
+    record: "{{ lookup('ansible.builtin.file', record_path, errors='ignore') | default('{}', true) | from_json }}"
+    github_tokens: "{{ lookup('ansible.builtin.env', 'ORBIT_GITHUB') | default('{}', true) | from_json }}"
+  tasks:
+    # Only a rebooted Node whose drain stopped a runner can have lost a job. A failure here leaves the Node rebooted: it records
+    # the error and never halts the pass. The tokens are revoked at the end in every case.
+    - name: Re-run the lost jobs
+      block:
+        - name: Find and re-run the lost jobs
+          ansible.builtin.import_tasks: tasks/fleet-reboot-rerun.yml
+          vars:
+            stopped: "{{ record.ci_stopped }}"
+          when: record.outcome | default('') == 'rebooted' and (record.ci_stopped | default([]) | length > 0)
+      rescue:
+        - name: Record why the re-run failed
+          ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
+          vars:
+            record_update: { rerun_error: fleet.reboot_rerun_failed }
+      always:
+        - name: Revoke the Actions tokens of the pass
+          ansible.builtin.uri:
+            url: https://api.github.com/installation/token
+            method: DELETE
+            status_code: [204, 401]
+            headers:
+              Authorization: "Bearer {{ item.value }}"
+              Accept: application/vnd.github+json
+              X-GitHub-Api-Version: "2022-11-28"
+          loop: "{{ github_tokens | dict2items }}"
+          loop_control: { label: "{{ item.key }}" }
+          failed_when: false
+          no_log: true
+
+- name: Report the pass
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [report]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+  tasks:
+    - name: Find the Node records
+      ansible.builtin.find: { paths: "{{ run }}", patterns: "result-*.json" }
+      register: records
+    # A record without an outcome belongs to a Node whose phase was cut; it reports failed.
+    - name: Collect the Node records in pass order
+      ansible.builtin.set_fact:
+        report_nodes: >-
+          {{ report_nodes | default([]) + [({'outcome': 'failed', 'error_code': 'fleet.reboot_cut'} if (item | from_json).outcome is not defined else {})
+          | combine(item | from_json)] }}
+      loop: "{{ query('ansible.builtin.file', *(records.files | map(attribute='path') | sort)) }}"
+      loop_control: { label: "{{ (item | from_json).node_id }}" }
+    - name: Write the pass report
+      ansible.builtin.copy: { dest: "{{ run }}/report.json", mode: "0600", content: "{{ {'nodes': report_nodes | default([])} | to_json }}" }

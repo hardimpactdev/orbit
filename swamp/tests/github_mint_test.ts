@@ -10,7 +10,7 @@ type Job = { name: string; steps: Step[]; dependsOn?: { job?: string; condition?
 type Workflow = { name: string; jobs: Job[] };
 
 const directory = new URL("../workflows/", import.meta.url);
-const purposes = ["clone", "dependencies", "publish", "pull_request", "dependency_merge"];
+const purposes = ["clone", "dependencies", "publish", "pull_request", "dependency_merge", "ci_rerun"];
 const minted = /vault\.get\([^)]*(write_token|read_token|github_token|git_authorization|dependency_auth)/;
 
 async function workflows() {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Actions\TaskVms\StartTaskVmImageRefreshAction;
+use App\Domain\Fleet\FleetReboot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use Closure;
@@ -89,13 +90,14 @@ final readonly class TaskVmImageRefreshTrigger
         }
     }
 
-    /** @return list<Node> the active Linux task VM hosts */
+    /** @return list<Node> the active Linux task VM hosts; a host that an open fleet reboot pass drains waits for the next trigger */
     private function hosts(): array
     {
         if (! $this->settings->enabled) {
             return [];
         }
-        $nodes = Node::query()->whereIn('id', array_map(static fn (TaskVmHost $host): int => $host->nodeId, $this->settings->hosts))->where('platform', 'linux')->orderBy('id')->get();
+        $nodes = Node::query()->whereIn('id', array_map(static fn (TaskVmHost $host): int => $host->nodeId, $this->settings->hosts))->where('platform', 'linux')
+            ->whereNotIn('id', FleetReboot::rebootingTaskHosts())->orderBy('id')->get();
 
         return array_values($nodes->all());
     }

@@ -1,0 +1,9 @@
+---
+# One task guest of a task host: stop it cleanly within a minute, then add it to the Node's parked guests.
+- name: Stop the task guest
+  ansible.builtin.command: { argv: [timeout, "75", incus, stop, --project, "{{ target.task_project }}", --timeout, "60", "{{ guest }}"] }
+  changed_when: true
+- name: Record the parked task guest
+  ansible.builtin.include_tasks: fleet-reboot-record.yml
+  vars:
+    record_update: { parked: "{{ (record.parked | default([])) + [guest] }}" }

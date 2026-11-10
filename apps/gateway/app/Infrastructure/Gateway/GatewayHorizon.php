@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Gateway;
 
+use App\Infrastructure\Shared\ShutdownFastStop;
 use App\Models\Node;
 use App\Models\Process;
 
@@ -28,15 +29,13 @@ final readonly class GatewayHorizon
 
     /**
      * The unit settings that make `systemctl stop` wait for running jobs: SIGTERM to the master only, no SIGKILL, and the drain as the stop timeout.
-     * A system shutdown must not wait for the drain, because WireGuard and SSH stop before it ends: while systemd reports `stopping`, the
-     * privileged `ExecStop` kills the whole unit at once, itself included, which `-` accepts, and Laravel releases its jobs again after `retry_after`.
+     * A system shutdown does not wait for the drain ({@see ShutdownFastStop}); Laravel releases the cut jobs again after `retry_after`.
      *
      * @return list<string>
      */
     public static function stopDirectives(): array
     {
-        return ['KillMode=mixed', 'KillSignal=SIGTERM', 'SendSIGKILL=no', 'TimeoutStopSec='.self::drainSeconds(),
-            'ExecStop=-+/bin/sh -c \'[ "$$(/usr/bin/systemctl is-system-running)" != stopping ] || exec /usr/bin/systemctl kill --kill-whom=all --signal=SIGKILL %n\''];
+        return ['KillMode=mixed', 'KillSignal=SIGTERM', 'SendSIGKILL=no', 'TimeoutStopSec='.self::drainSeconds(), ShutdownFastStop::Directive];
     }
 
     public static function runs(Process $process): bool

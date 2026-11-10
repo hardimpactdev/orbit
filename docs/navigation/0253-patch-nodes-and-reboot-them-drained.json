@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 253,
+      "pages": [
+        "decisions/0253-patch-nodes-and-reboot-them-drained"
+      ]
+    }
+  ]
+}

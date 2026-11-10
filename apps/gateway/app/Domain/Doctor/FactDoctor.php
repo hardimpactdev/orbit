@@ -10,6 +10,8 @@ use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
 use App\Domain\Firewall\FirewallInspectionInput;
 use App\Domain\Firewall\LiveFirewallSnapshot;
+use App\Domain\Fleet\FleetReboot;
+use App\Domain\Fleet\FleetRebootAlerts;
 use App\Domain\NodeFacts\NodeAgentLiveness;
 use App\Domain\NodeFacts\NodeAgentState;
 use App\Domain\NodeFacts\NodeFactKind;
@@ -20,6 +22,7 @@ use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Models\Node;
 use App\Models\NodeFact;
 use App\Models\TaskVm;
+use Carbon\CarbonImmutable;
 use UnexpectedValueException;
 
 /**
@@ -84,6 +87,13 @@ final readonly class FactDoctor
             $check->issue('node.lifecycle_not_active', $node->id, $node->name, 'Node lifecycle is not active.', 'active', $node->status->value);
         }
         $check->observed($node->id, 'node.lifecycle_not_active');
+        // The fleet reboot pass records when a Node became due; the Gateway reads it, not the Node (ADR 0253).
+        $due = FleetReboot::dueSince($node->id);
+        if ($due !== null && $due->lessThan(CarbonImmutable::now()->subDays(FleetRebootAlerts::OverdueDays))) {
+            $check->issue('node.reboot_due', $node->id, $node->name, 'The Node has needed a reboot for more than '.FleetRebootAlerts::OverdueDays.' days.',
+                'rebooted within '.FleetRebootAlerts::OverdueDays.' days', 'due since '.$due->toIso8601String());
+        }
+        $check->observed($node->id, 'node.reboot_due');
         if ($check->agent === null) {
             return $check->report();
         }

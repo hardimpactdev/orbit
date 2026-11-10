@@ -13,6 +13,7 @@ Route::middleware([
     RequireNodeAccess::class,
 ])->group(function (): void {
     Route::post('fleet/rollout', [FleetMaintenanceController::class, 'rollout'])->name('fleet:rollout');
+    Route::post('fleet/reboot', [FleetMaintenanceController::class, 'reboot'])->name('fleet:reboot');
     Route::post('fleet/cli/converge', [FleetMaintenanceController::class, 'cli'])->name('fleet:cli:converge');
     Route::post('fleet/nodes/{node}/peer-dns', [FleetPeerDnsController::class, 'store'])->name('fleet:peer-dns:reconcile');
 });

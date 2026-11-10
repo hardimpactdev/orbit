@@ -1,0 +1,9 @@
+---
+# Merge `record_update` into this Node's record of the fleet.reboot pass, a file in the pass's run folder on the Swamp Node.
+- name: Write the Node record
+  ansible.builtin.copy:
+    dest: "{{ record_path }}"
+    content: "{{ (lookup('ansible.builtin.file', record_path, errors='ignore') | default('{}', true) | from_json) | combine(record_update) | to_json }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false

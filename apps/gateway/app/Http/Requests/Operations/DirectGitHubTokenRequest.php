@@ -30,7 +30,7 @@ final class DirectGitHubTokenRequest extends OperationPeerRequest
     /** @return array<string,list<string>> */
     public function rules(): array
     {
-        return ['run_id' => ['required', 'uuid'], 'purpose' => ['sometimes', 'string', 'in:clone,dependencies,publish,pull_request,dependency_merge']];
+        return ['run_id' => ['required', 'uuid'], 'purpose' => ['sometimes', 'string', 'in:clone,dependencies,publish,pull_request,dependency_merge,ci_rerun']];
     }
 
     /** @return list<\Closure(Validator):void> */

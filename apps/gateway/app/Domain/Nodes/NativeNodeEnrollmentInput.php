@@ -93,6 +93,7 @@ final readonly class NativeNodeEnrollmentInput
             $base = app(NodeBootstrapCommandFactory::class)->input($node, $node->user, $spec['roleless_operator'] === true);
             $intent['packages'] = $base['packages'];
             $intent['kernel'] = NodeKernelPolicy::intent();
+            $intent['updates'] = NodeUpdatePolicy::for($node);
             // The package cache of the task VM for a Node of its nested fleet; null for every other Node, which reads the archive directly.
             $intent['apt_proxy'] = TaskVmAptCache::for($node);
             $intent['sudo'] = ['path' => '/etc/sudoers.d/orbit-'.$node->user,

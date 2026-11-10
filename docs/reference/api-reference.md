@@ -19,7 +19,7 @@ The task page reads Swamp history through `GET /api/v1/tasks/{task}/swamp-runs`.
 
 The Node show response adds only `access` to `NodeData`; the Project show response is `ProjectData` alone. A Node's `updating` value has one kind, `gateway_release`.
 
-The `fleet` group holds rollout admission, CLI convergence and peer DNS. It has no rollout status or resume operation; a rollout is a `fleet.rollout` Operation.
+The `fleet` group holds rollout admission, CLI convergence, peer DNS and the fleet reboot. It has no rollout or reboot status or resume operation; a rollout is a `fleet.rollout` Operation and a reboot pass a `fleet.reboot` Operation.
 
 Optional lists keep their declared item schema. The Operation `steps` list references `OperationStep`, which exposes only native step names, jobs, statuses and timestamps. [Operations](/reference/operations#the-record) defines when that field is present.
 

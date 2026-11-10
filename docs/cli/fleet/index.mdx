@@ -1,9 +1,10 @@
 ---
 title: "fleet"
 sidebarTitle: "Overview"
-description: "How the fleet rollout and CLI convergence bring the managed Nodes to the Gateway's release."
+description: "How the fleet rollout and CLI convergence bring the managed Nodes to the Gateway's release, and how the fleet reboot reboots them into their security fixes."
 covers:
-  - swamp/workflows/workflow-operation-fleet-{rollout,cli-converge}.yaml
+  - swamp/workflows/workflow-operation-fleet-{rollout,cli-converge,reboot}.yaml
+  - swamp/workflows/workflow-fleet-reboot-node.yaml
 ---
 
 After each verified Gateway release, Swamp brings the managed workload Nodes to the same release, one Node at a time. The `fleet` family has no CLI commands. Each rollout pass is one `fleet.rollout` Operation: follow it with [`operation:list --kind=fleet.rollout`](/cli/operation/list) and [`operation:show`](/cli/operation/show). [Fleet rollout](/reference/gateway-recovery#fleet-rollout) explains the rollout set, the order, the steps on each Node, and a failed Node.
@@ -17,3 +18,7 @@ The rollout publishes the CLI and the Node agent on each Node in turn. Each Node
 `POST /api/v1/fleet/cli/converge` publishes only the CLI, through the same children. It names why it leaves a Node out as that Node's skip reason.
 
 <div className="flow-at" data-chart="fleet/cli-converge"></div>
+
+The fleet reboot reboots the managed Linux Nodes that need a reboot for their security fixes, one at a time, each night, after it drained their work. Each pass is one `fleet.reboot` Operation. [Fleet reboot](/reference/gateway-recovery#fleet-reboot) explains the order, the drain, the checks and the alerts.
+
+<div className="flow-at" data-chart="fleet/reboot"></div>

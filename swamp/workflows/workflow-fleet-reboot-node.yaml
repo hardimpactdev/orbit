@@ -1,0 +1,106 @@
+id: 8b61ea39-e5d5-4f20-aab9-f9e6b339da9f
+name: fleet-reboot-node
+description: "One Node of a fleet.reboot pass: the drain, reboot and check phases of ansible/operation-fleet-reboot.yml, run from 209."
+vaults: [orbit-control-inputs]
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    run_folder: {type: string}
+    assets: {type: string}
+    node_id: {type: integer, minimum: 1}
+    position: {type: integer, minimum: 0}
+    operation_id: {type: integer, minimum: 1}
+    root_run: {type: string, pattern: '^[a-f0-9-]{36}$'}
+    ci: {type: boolean}
+  required: [run_folder, assets, node_id, position, operation_id, root_run, ci]
+  additionalProperties: false
+jobs:
+- name: node
+  labels: {role: swamp}
+  steps:
+    # Drain: wait for the window and the earlier Nodes, read whether a reboot is due, then stop new work and wait for the work in
+    # flight within the drain budget (900 s) and stop the task guests (75 s each at most); a busy CI host or a closed window defers it.
+  - name: 'drain'
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "fleet-reboot-drain-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 2400 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags drain "$ORBIT_ANSIBLE/operation-fleet-reboot.yml"
+        env: &phase
+          ORBIT_RUN: '${{ inputs.run_folder }}'
+          ORBIT_ANSIBLE: '${{ inputs.assets }}'
+          ORBIT_NODE_ID: '${{ string(inputs.node_id) }}'
+          ORBIT_POSITION: '${{ string(inputs.position) }}'
+          ANSIBLE_CONFIG: '${{ inputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=" + inputs.run_folder + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+    # Reboot: reboot and wait up to 10 minutes for SSH; the swamp Node instead schedules its own reboot after the pass.
+  - name: 'reboot'
+    labels: {role: swamp}
+    dependsOn: [{step: 'drain', condition: {type: succeeded}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "fleet-reboot-reboot-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags reboot "$ORBIT_ANSIBLE/operation-fleet-reboot.yml"
+        env: *phase
+    # Check: a new boot into the newest kernel, nothing due, no unit that failed only in this boot, and the Node's own services.
+  - name: 'check'
+    labels: {role: swamp}
+    dependsOn: [{step: 'reboot', condition: {type: succeeded}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "fleet-reboot-check-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags check "$ORBIT_ANSIBLE/operation-fleet-reboot.yml"
+        env: *phase
+    # Mint: on a CI host, the pass's Actions write tokens, which the Gateway writes to the vault key of this Operation. Neither
+    # this step nor the next fails the Node: the reboot is done, and a job that is not re-run shows in GitHub.
+  - name: 'mint'
+    labels: {role: swamp}
+    dependsOn: [{step: 'check', condition: {type: succeeded}}]
+    guard: '${{ !inputs.ci }}'
+    allowFailure: true
+    queueTimeout: 30
+    task:
+      type: workflow
+      workflowIdOrName: task-github-mint
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        run_id: '${{ inputs.root_run }}'
+        purpose: ci_rerun
+    # Rerun: after the check, re-run once the jobs that a runner accepted just before the drain froze and stopped it.
+  - name: 'rerun'
+    labels: {role: swamp}
+    dependsOn: [{step: 'mint', condition: {type: succeeded}}]
+    guard: '${{ !inputs.ci }}'
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "fleet-reboot-rerun-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 1200 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rerun "$ORBIT_ANSIBLE/operation-fleet-reboot.yml"
+        env:
+          ORBIT_RUN: '${{ inputs.run_folder }}'
+          ORBIT_ANSIBLE: '${{ inputs.assets }}'
+          ORBIT_NODE_ID: '${{ string(inputs.node_id) }}'
+          ORBIT_POSITION: '${{ string(inputs.position) }}'
+          ORBIT_GITHUB: '${{ vault.get("orbit-control-inputs", "fleet-reboot-github-operation-" + string(inputs.operation_id)) }}'
+          ANSIBLE_CONFIG: '${{ inputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
+          ANSIBLE_FORCE_COLOR: '0'

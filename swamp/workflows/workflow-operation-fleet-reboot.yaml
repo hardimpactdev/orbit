@@ -1,0 +1,101 @@
+id: 3551bc1b-ee36-4dc5-bf9b-6c0e1140aad6
+name: operation-fleet-reboot
+description: "fleet.reboot: drain, reboot and check each admitted Node, one at a time in pass order, as Ansible phases from 209; report every Node's outcome."
+vaults: [orbit-control-inputs]
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: fleet.reboot}
+    intent: {type: object}
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: input
+  labels: {role: swamp}
+  steps:
+    # Input: the admitted intent and the shipped playbooks, as the run folder that every Node's phases read and write.
+  - name: 'input'
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: write
+      inputs:
+        intent: '${{ inputs.intent }}'
+        path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+- name: nodes
+  labels: {role: swamp}
+  dependsOn: [{job: input, condition: {type: succeeded}}]
+  steps:
+    # One Node at a time, in pass order. After a failed Node, the next ones only record that the pass stopped.
+  - name: 'node-${{ self._index }}'
+    labels: {role: swamp}
+    forEach: {item: node, in: '${{ inputs.intent.order }}'}
+    concurrency: 1
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: fleet-reboot-node
+      inputs:
+        run_folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
+        assets: '${{ steps.input.outputs.assets }}'
+        node_id: '${{ self.node }}'
+        position: '${{ self._index }}'
+        operation_id: '${{ inputs.operation_id }}'
+        root_run: '${{ run.id }}'
+        ci: '${{ inputs.intent.nodes[string(self.node)].ci_project != null }}'
+- name: pass
+  labels: {role: swamp}
+  dependsOn:
+  - {job: input, condition: {type: succeeded}}
+  - {job: nodes, condition: {type: always}}
+  steps:
+    # The records of all visited Nodes, as one report for the Gateway.
+  - name: 'Collect the results'
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: fleet-reboot-collect
+      methodName: execute
+      inputs:
+        run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags report "$ORBIT_ANSIBLE/operation-fleet-reboot.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
+          ANSIBLE_FORCE_COLOR: '0'
+  - name: 'Report the pass'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Collect the results', condition: {type: always}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: fleet-reboot-report
+      methodName: execute
+      inputs:
+        run: timeout 10 cat "$ORBIT_RUN/report.json"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
+    # Cleanup: the run folder, also after a failure. When the swamp Node scheduled its own reboot, its path unit waits for the
+    # marker, which appears only now, after the report, so the reboot never cuts this run.
+  - name: 'cleanup'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Report the pass', condition: {type: always}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: fleet-reboot-cleanup
+      methodName: execute
+      inputs:
+        run: "timeout 30 rm -rf -- \"$ORBIT_RUN\"\nif timeout 10 systemctl is-active --quiet orbit-planned-reboot.path; then timeout 10 touch -- \"$ORBIT_RUN.reboot\"; fi"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}

@@ -72,6 +72,9 @@
     - name: Apply the kernel policy
       ansible.builtin.import_tasks: tasks/node-kernel-policy.yml
       vars: { kernel_policy: "{{ intent.kernel }}" }
+    - name: Apply the update policy
+      ansible.builtin.import_tasks: tasks/node-update-policy.yml
+      vars: { update_policy: "{{ intent.updates }}" }
     - name: Read the firewall state
       ansible.builtin.command: ufw status
       register: firewall

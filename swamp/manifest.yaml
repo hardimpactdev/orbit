@@ -21,6 +21,20 @@ additionalFiles:
   - ansible/tasks/node-role-runtime.yml
   - ansible/tasks/node-converge-base.yml
   - ansible/tasks/node-kernel-policy.yml
+  - ansible/tasks/node-update-policy.yml
+  - ansible/operation-fleet-reboot.yml
+  - ansible/tasks/fleet-reboot-record.yml
+  - ansible/tasks/fleet-reboot-read.yml
+  - ansible/tasks/fleet-reboot-failed.yml
+  - ansible/tasks/fleet-reboot-drain-tasks.yml
+  - ansible/tasks/fleet-reboot-drain-ci.yml
+  - ansible/tasks/fleet-reboot-drain-gateway.yml
+  - ansible/tasks/fleet-reboot-drain-undo.yml
+  - ansible/tasks/fleet-reboot-park.yml
+  - ansible/tasks/fleet-reboot-ci-start.yml
+  - ansible/tasks/fleet-reboot-rerun.yml
+  - ansible/files/fleet-reboot-planned.sh
+  - ansible/files/fleet-reboot-ci-drain.sh
   - ansible/tasks/node-converge-replace.yml
   - ansible/tasks/node-converge-software.yml
   - ansible/tasks/node-converge-software-plan.yml

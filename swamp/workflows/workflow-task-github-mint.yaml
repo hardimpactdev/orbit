@@ -14,7 +14,7 @@ inputs:
     # What the following step does with the token; the Gateway checks it against the kind of the Operation.
     purpose:
       type: string
-      enum: [clone, dependencies, publish, pull_request, dependency_merge]
+      enum: [clone, dependencies, publish, pull_request, dependency_merge, ci_rerun]
   required: [operation_id, run_id, purpose]
   additionalProperties: false
 jobs:

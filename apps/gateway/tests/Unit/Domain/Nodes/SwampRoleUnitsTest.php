@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\SwampRoleUnits;
 use App\Domain\Operations\OperationBudgetTable;
+use App\Infrastructure\Shared\ShutdownFastStop;
 
 it('caps a run in serve at the longest fixed budget, so the cap is in git and survives a trigger publish', function (): void {
     $serve = SwampRoleUnits::for('orbit', 209)['serve'];
@@ -37,4 +38,15 @@ it('renders one renewal service and one timer for three permanent workers', func
         ->and($units['renewal_timer'])->toContain("OnActiveSec=1min\nOnUnitInactiveSec=5min\n");
 
     expect(NodeRoleRuntimeInput::SwampWorkers)->toBe(['a', 'b', 'c']);
+});
+
+it('lets a system shutdown kill serve and each worker at once, while a normal stop still drains', function (): void {
+    $units = SwampRoleUnits::for('orbit', 209);
+    $guard = "ExecStop=-+/bin/sh -c '[ \"$$(/usr/bin/systemctl is-system-running)\" != stopping ] || exec /usr/bin/systemctl kill --kill-whom=all --signal=SIGKILL %n'\n";
+
+    // The guard comes from the one shared rule, and each unit keeps its own drain and kill settings beside it.
+    expect(ShutdownFastStop::Directive."\n")->toBe($guard)
+        ->and($units['worker'])->toContain("KillMode=mixed\nTimeoutStopSec=4500\n".$guard)
+        ->and($units['serve'])->toContain("TimeoutStopSec=360\n".$guard)->not->toContain('KillMode')
+        ->and($units['renewal_service'])->not->toContain('ExecStop');
 });

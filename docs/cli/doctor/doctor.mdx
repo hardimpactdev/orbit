@@ -29,7 +29,7 @@ A check whose fact has not arrived yet, or cannot be read, gives one unverifiabl
 
 | Family | Checks |
 | --- | --- |
-| `node` | Recorded lifecycle; platform and architecture; root filesystem free space; the agent's liveness: never seen (`node.agent_missing`) or silent (`node.agent_view_stale`). |
+| `node` | Recorded lifecycle; platform and architecture; root filesystem free space; the agent's liveness: never seen (`node.agent_missing`) or silent (`node.agent_view_stale`); a reboot due for more than 3 days (`node.reboot_due`, from the [fleet reboot](/reference/gateway-recovery#fleet-reboot) passes). |
 | `role` | Recorded lifecycle and current state of each service required by an active Linux role. |
 | `process` | Current registered systemd unit or Docker container presence and running/stopped state. A systemd `activating/auto-restart` snapshot is crash-loop evidence. A cumulative restart count alone is not. |
 
@@ -39,7 +39,7 @@ A stopped, non-keep-alive development Process desired running is healthy only wh
 
 The existing family selectors `project`, `instance`, `schedule`, `tool`, `database_connection`, `route` and `database_server` remain accepted by the API, but have zero Doctor checks. A healthy family with `checked: 0` supplies no verdict on its resources. Use the owning native operation and its result for configuration validation.
 
-`checked` counts the checks performed for a family: platform, disk and agent for `node`, one per role service, one per Process, and one for UFW. Lifecycle findings need no fact. Checks without a usable fact remain in the count and give unverifiable findings.
+`checked` counts the checks performed for a family: platform, disk, agent and reboot for `node`, one per role service, one per Process, and one for UFW. Lifecycle findings need no fact. Checks without a usable fact remain in the count and give unverifiable findings.
 
 ## Informational package discoveries
 

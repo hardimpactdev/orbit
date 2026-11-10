@@ -1,0 +1,18 @@
+---
+# The rescue of a fleet.reboot phase: record the Node failed with its step and error code, then fail the phase, so the pass
+# visits no Node after it. An assert's fail_msg is the error code; any other failure gets the phase's own code.
+- name: Record the failed Node
+  ansible.builtin.include_tasks: fleet-reboot-record.yml
+  vars:
+    record_update:
+      node_id: "{{ target.node_id }}"
+      name: "{{ target.name }}"
+      outcome: failed
+      step: "{{ phase }}"
+      error_code: >-
+        {{ ansible_failed_result.msg if (ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z_]+$'))
+        else {'drain': 'fleet.reboot_drain_failed', 'reboot': 'fleet.reboot_lost', 'check': 'fleet.reboot_check_failed'}[phase] }}
+      failed_units: "{{ (boot.failed_units | default([])) | difference(record.failed_before | default([])) }}"
+- name: Fail the phase
+  ansible.builtin.fail:
+    msg: "{{ ansible_failed_result.msg | default('The ' ~ phase ~ ' phase failed') }}"
