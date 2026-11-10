@@ -90,6 +90,8 @@ A projector reads one step's status with `NativeRunResult::stepStatus($result, '
 
 An exact typed step error such as `node.architecture_unsupported` survives as `error_code` in the native step entry. Only a complete dotted code, bounded to 128 characters, qualifies. Exception text and command diagnostics are excluded. A family projector can preserve that code without a reporting step or another history read.
 
+The development auto-deploy precheck uses the shared native start transport for its on-demand policy workflow. It submits only changed default Instance IDs. The registered scheduled-result reader projects that root run's terminal fire receipt, even though Laravel owns its trigger. Quiet development ticks submit nothing and never update the production trigger or pause.
+
 ### Scheduled observations
 
 A family can declare `scheduled_result` with a fixed native workflow name and UUID, a fixed `terminal_result` job/step, and a fixed list key in that output. The original admission workflow can end while the Operation remains running. Its original `swamp_run_id` stays unchanged. The family validates its immutable check and candidate identity and decides whether an explicit pending observation remains running or ends the Operation.
