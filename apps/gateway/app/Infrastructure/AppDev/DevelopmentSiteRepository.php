@@ -6,6 +6,7 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
 use App\Domain\InstanceMigration\InstanceMigration;
+use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\ClusterRouterTransition;
@@ -533,6 +534,8 @@ final readonly class DevelopmentSiteRepository
         $given = $instance->relationLoaded('runtime');
         $runtime = $given ? $instance->runtime : $instance->runtime()->first();
         if ($runtime instanceof InstanceRuntime && ($given || ! InstanceMigration::pending($instance))) {
+            $vitePort = app(ContainerProcesses::class)->vitePort($instance);
+
             return new DevelopmentSite(
                 nodeId: $instance->node_id,
                 nodeAddress: app(RouteRenderContext::class)->wireguardIp($instance->node) ?? '',
@@ -545,6 +548,7 @@ final readonly class DevelopmentSiteRepository
                 certificateScope: $domainChange ? "app-instance-{$instance->id}-hostname-change" : null,
                 localHttpUpstream: $runtime->bridge_address.':'.InstanceContainer::WebPort,
                 devUpstream: app(InstanceContainer::class)->servesDevPorts($instance, $runtime, $route) ? $runtime->bridge_address : null,
+                viteUpstream: $vitePort === null ? null : $runtime->bridge_address.':'.$vitePort,
             );
         }
         // A development default in the old release layout serves through `current` until its next deployment converts it.

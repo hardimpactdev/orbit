@@ -50,6 +50,12 @@ ExecStart=/usr/local/bin/vp dev --host=127.0.0.1 --port=${ORBIT_DEV_SERVER_PORT}
 
 Orbit writes `ORBIT_DEV_SERVER_PORT` to the environment file before each start. Systemd reads it at start, so a new port needs no unit change. The removed certificate variables keep Vite on plain HTTP; Caddy terminates TLS.
 
+## Migrated container presets
+
+[Migration](/cli/instance/migrate) carries a supported `vp-dev` Process into its Instance container. The Process keeps its identity, assigned port and desired state. It uses `/opt/orbit-runtime/current/bin/vp`, binds `0.0.0.0`, and reads its mapped workspace environment file and private Process environment. Its unit carries the assigned port directly; it needs no Node Vite environment file. Start and restart use the same container systemd controls as other Processes and do not reassign a host port.
+
+Only the Node can reach the assigned Vite port in the container. Caddy sends `/__orbit/vite` and its descendants, including HMR, to that bridge address and port. The shared container intent preserves the ingress rule after a deployment. Unknown preset versions, custom commands, external paths and recorded port conflicts refuse before migration downtime.
+
 ## Start, restart, and wake
 
 Every start of the preset runs one preparation step:

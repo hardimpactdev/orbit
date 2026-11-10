@@ -86,3 +86,5 @@ A migrated Instance has no clone source. Test lifecycle consumers against migrat
 Large SQLite fixtures need bounded insert batches. A single insert can exceed the build's bound-parameter limit; formatting its huge QueryException may consume the test deadline and hide the actual error. Keep the production row count and indexes, then measure compilation, preparation and execution before changing a timeout.
 
 Inspect the whole previous-exception chain when a timed test reports a migration error. Laravel can wrap PHPUnit's timer exception in a QueryException, and an action can wrap it again. Account for work before lazy database initialization; use fixed test inputs for RSA prime search while preserving the real signing and database paths.
+
+A Process preset moved into a container needs the shared container ingress and Route projection as well as its unit. Keep its assigned port in the shared intent so deployment rebuilds preserve access, and use container controls after cutover instead of the Node preset preparation.

@@ -159,6 +159,8 @@ A preset configures a development Instance Process. It sets the command, the run
 
 A preset needs a development Instance target. The Gateway refuses a Node target with `validation.failed` on `target_type`, and any other Instance with `process.preset_target_invalid`. An Instance has at most one Process of each preset. Another name for the same preset fails with `process.preset_exists`. The same request again returns the existing Process and keeps its desired state. A Process name alone never selects a preset.
 
+A supported `vp-dev` Process also moves during [Instance migration](/cli/instance/migrate). It keeps its preset identity, assigned port and desired state, uses the shared runtime in the container, and follows the ordinary container Process controls after cutover.
+
 ## Create a Process
 
 Create queues installation of the unit or container. With `start`, it also starts it. An identical create keeps the existing Process and its desired state and returns an Operation. A different specification with the same owner and name returns `process.name_taken` (409) and changes nothing. To change a Process, use [`process:update`](/cli/process/update), which keeps its ID and links. Back up container-layer data before an update that replaces a Docker container.
