@@ -1,0 +1,556 @@
+# Production expressions are selected, never copied. Contexts are sanitized command-format samples.
+contexts:
+  nft-rising:
+    intent:
+      address: 10.253.0.1
+      origin: http://10.253.0.1:8319
+      guard_origin: http://10.44.0.3:8318
+    before:
+      stdout:
+        sample: nft.txt
+    after:
+      stdout:
+        sample: nft-after.txt
+    output_before:
+      stdout:
+        sample: nft.txt
+    output_after:
+      stdout:
+        sample: nft-after.txt
+    input_before:
+      stdout:
+        sample: nft.txt
+    input_after:
+      stdout:
+        sample: nft-after.txt
+  nft-equal:
+    intent:
+      address: 10.253.0.1
+      origin: http://10.253.0.1:8319
+      guard_origin: http://10.44.0.3:8318
+    before:
+      stdout:
+        sample: nft.txt
+    after:
+      stdout:
+        sample: nft.txt
+    output_before:
+      stdout:
+        sample: nft.txt
+    output_after:
+      stdout:
+        sample: nft.txt
+    input_before:
+      stdout:
+        sample: nft.txt
+    input_after:
+      stdout:
+        sample: nft.txt
+  nft-falling:
+    intent:
+      address: 10.253.0.1
+      origin: http://10.253.0.1:8319
+      guard_origin: http://10.44.0.3:8318
+    before:
+      stdout:
+        sample: nft-after.txt
+    after:
+      stdout:
+        sample: nft.txt
+    output_before:
+      stdout:
+        sample: nft-after.txt
+    output_after:
+      stdout:
+        sample: nft.txt
+    input_before:
+      stdout:
+        sample: nft-after.txt
+    input_after:
+      stdout:
+        sample: nft.txt
+  snapshots:
+    base_snapshots:
+      results:
+      - stdout: '[{"name":"current"},{"name":"old"}]'
+      - stdout: '[{"name":"seed/current"},{"name":"seed/old"}]'
+    keep:
+    - current
+  ufw-numbered:
+    firewall_numbered: &id001
+      stdout: '[ 1] 8318/tcp ALLOW IN 10.0.0.9 # orbit:allow-node-9
+
+        [ 2] 8318/tcp ALLOW IN 10.0.0.0/24 # orbit:allow
+
+        [ 3] 8318/tcp DENY IN Anywhere # orbit:deny
+
+        [ 4] Anywhere ALLOW IN 10.0.0.0/24 # orbit:trust
+
+        '
+    rule:
+    - ufw
+    - insert
+    - '1'
+    - deny
+    - orbit:deny
+    firewall_commands: &id002
+    - - ufw
+      - insert
+      - '1'
+      - deny
+      - orbit:deny
+    - - ufw
+      - allow
+      - orbit:allow
+    firewall_index: 0
+    intent: &id003
+      firewall:
+        desired:
+        - - ufw
+          - allow
+          - orbit:trust
+    firewall_retire:
+    - orbit:allow
+    - orbit:deny
+  ufw-removed:
+    firewall_numbered: *id001
+    rule:
+    - ufw
+    - --force
+    - delete
+    - allow
+    - orbit:allow
+    firewall_commands: *id002
+    firewall_index: 0
+    intent: *id003
+    firewall_retire: []
+  ufw-added:
+    local_firewall:
+      stdout_lines:
+      - ufw allow in on docker0 to 10.0.0.1 port 8080 proto tcp comment 'orbit:analytics'
+    rule:
+    - ufw
+    - allow
+    - in
+    - 'on'
+    - docker0
+    - to
+    - 10.0.0.1
+    - port
+    - '8081'
+    - proto
+    - tcp
+    - orbit:analytics
+  hub-endpoint:
+    hub_switch_read:
+      stdout: 'present 10.0.0.1:51820
+
+        '
+    hub_switch_endpoint: 10.0.0.1:51820
+  dns-domains:
+    peer_domains:
+      stdout: 'Link 5 (orbit): ~orbit ~example.test'
+    intent:
+      network:
+        apply:
+          peer:
+            domains:
+            - example.test
+            - orbit
+  gpg-primary:
+    repository_key:
+      rc: 0
+      stdout: 'pub:-:4096:1:89ABCDEF01234567:1700000000:::-:::scSC::::::23::0:
+
+        fpr:::::::::0123456789ABCDEF0123456789ABCDEF01234567:
+
+        uid:-::::1700000000::0000000000000000000000000000000000000000::Fixture <fixture@example.test>::::::::::0:
+
+        '
+    repository_candidate:
+      stdout: 'pub:-:4096:1:89ABCDEF01234567:1700000000:::-:::scSC::::::23::0:
+
+        fpr:::::::::0123456789ABCDEF0123456789ABCDEF01234567:
+
+        uid:-::::1700000000::0000000000000000000000000000000000000000::Fixture <fixture@example.test>::::::::::0:
+
+        '
+    tool:
+      repository:
+        signing_key:
+          fingerprint: 0123456789ABCDEF0123456789ABCDEF01234567
+  ssh-fingerprint:
+    hub_lan:
+      fingerprint: SHA256:AbCdEf0123456789+/abcdefghijklmnoPQRSTUvwx
+    hub_lan_fingerprints:
+      stdout: '256 SHA256:AbCdEf0123456789+/abcdefghijklmnoPQRSTUvwx fixture@example.test (ED25519)
+
+        '
+  ufw-lan:
+    hub_lan_ssh_argv:
+    - - ufw
+      - allow
+      - in
+      - proto
+      - tcp
+      - from
+      - 10.0.0.0/24
+      - to
+      - 10.0.0.1
+      - port
+      - '22'
+      - comment
+      - orbit:vpn-lan-ssh
+    item: ufw allow in proto tcp from 10.0.0.0/24 to 10.0.0.1 port 22 comment orbit:vpn-lan-ssh
+    wanted:
+    - 10.0.0.0/24 10.0.0.1
+  ip-routes:
+    hub_source_live:
+      stdout: "[{\"priority\": 100, \"fwmark\": \"0x1\", \"table\": 100}]\nmarked: 192.0.2.1 via 10.0.0.254 dev eth0 src 10.0.0.1\
+        \ uid 0 \nmain: 192.0.2.1 via 10.0.0.254 dev eth0 src 10.0.0.2 uid 0 \nonlink: 10.0.0.0 dev eth0 src 10.0.0.1 uid\
+        \ 0 \n"
+    hub_source_check:
+      stdout: "[{\"priority\": 100, \"fwmark\": \"0x1\", \"table\": 100}]\nmarked: 192.0.2.1 via 10.0.0.254 dev eth0 src 10.0.0.1\
+        \ uid 0 \nmain: 192.0.2.1 via 10.0.0.254 dev eth0 src 10.0.0.2 uid 0 \nonlink: 10.0.0.0 dev eth0 src 10.0.0.1 uid\
+        \ 0 \n"
+    hub_source:
+      address: 10.0.0.1
+      priorities:
+      - 100
+      rules:
+      - 100:0x1:all:100
+  enrollment-journal:
+    renewal_receipt:
+      MESSAGE: "\e[32mEnrolled as \"fixture-worker-1\"\e[0m"
+  meminfo:
+    container_meminfo:
+      content: TWVtVG90YWw6ICAgICAgIDMyNzY4MDAwIGtCCk1lbUZyZWU6ICAgICAgICAgMTAwMDAwMCBrQgo=
+    container_arc_now:
+      rc: 1
+      stdout: ''
+  ufw-delete:
+    item: ufw allow in on orbit to any port 53 proto udp comment 'orbit:dns'
+  orbit-operation:
+    fleet_gateway_node:
+      stdout: 'Operation #6174 started
+
+        '
+    fleet_gateway_role:
+      stdout: 'Operation #6174 started
+
+        '
+    fleet_websocket_role:
+      stdout: 'Operation #6174 started
+
+        '
+    fleet_app_dev:
+      stdout: 'Operation #6174 started
+
+        '
+    fleet_app_prod:
+      stdout: 'Operation #6174 started
+
+        '
+  incus-running:
+    nested_vms:
+      stdout_lines:
+      - gateway,RUNNING
+      - app-dev,STOPPED
+      - app-prod,RUNNING
+  converge-stamps:
+    converge_read:
+      stdout_lines:
+      - /var/lib/orbit/converge/software:abc123
+      - /var/lib/orbit/converge/tools:def456
+cases:
+- file: ai-router-model-forwarder.yml
+  task: Check that the forwarder's table dropped it
+  field: ansible.builtin.assert.that
+  context: nft-rising
+  expected: true
+- file: ai-router-model-forwarder.yml
+  task: Check that the output rule reset it
+  field: ansible.builtin.assert.that
+  context: nft-rising
+  expected: true
+- file: ai-router-model-forwarder.yml
+  task: Check that the input rule reset it
+  field: ansible.builtin.assert.that
+  context: nft-rising
+  expected: true
+- file: ai-router-model-forwarder.yml
+  task: Check that the forwarder's table dropped it
+  field: ansible.builtin.assert.that
+  context: nft-equal
+  expected: false
+- file: ai-router-model-forwarder.yml
+  task: Check that the output rule reset it
+  field: ansible.builtin.assert.that
+  context: nft-equal
+  expected: false
+- file: ai-router-model-forwarder.yml
+  task: Check that the input rule reset it
+  field: ansible.builtin.assert.that
+  context: nft-equal
+  expected: false
+- file: ai-router-model-forwarder.yml
+  task: Check that the forwarder's table dropped it
+  field: ansible.builtin.assert.that
+  context: nft-falling
+  expected: false
+- file: ai-router-model-forwarder.yml
+  task: Check that the output rule reset it
+  field: ansible.builtin.assert.that
+  context: nft-falling
+  expected: false
+- file: ai-router-model-forwarder.yml
+  task: Check that the input rule reset it
+  field: ansible.builtin.assert.that
+  context: nft-falling
+  expected: false
+- file: task-vm-host.yml
+  task: Remove the other snapshots
+  field: loop
+  context: snapshots
+  expected:
+  - vm:old
+  - seed:old
+- file: tasks/firewall.yml
+  task: Find misplaced service isolation rules
+  field: vars.node_installed
+  context: ufw-numbered
+  expected:
+  - orbit:allow-node-9
+- file: tasks/firewall.yml
+  task: Find misplaced service isolation rules
+  field: vars.node_indices
+  context: ufw-numbered
+  expected:
+  - 1
+- file: tasks/firewall.yml
+  task: Find misplaced service isolation rules
+  field: vars.deny_indices
+  context: ufw-numbered
+  expected:
+  - 3
+- file: tasks/firewall.yml
+  task: Find misplaced service isolation rules
+  field: vars.allow_indices
+  context: ufw-numbered
+  expected:
+  - 2
+- file: tasks/firewall.yml
+  task: Find misplaced service isolation rules
+  field: vars.trust_indices
+  context: ufw-numbered
+  expected:
+  - 4
+- file: tasks/firewall.yml
+  task: Remove only changed or misplaced owned rules
+  field: loop
+  context: ufw-numbered
+  expected:
+  - 3
+  - 2
+- file: tasks/firewall.yml
+  task: Find the Node allows of removed pairs
+  field: ansible.builtin.set_fact.firewall_retire
+  context: ufw-removed
+  expected:
+  - orbit:allow-node-9
+- file: tasks/firewall-port.yml
+  task: Retire the previous Analytics local port
+  field: loop
+  context: ufw-added
+  expected:
+  - '8080'
+- file: tasks/node-converge-hub-switch.yml
+  task: Decide whether the hub endpoint changes
+  field: ansible.builtin.set_fact.hub_switch
+  context: hub-endpoint
+  expected: false
+- file: tasks/node-converge-network.yml
+  task: Select the recorded DNS domains
+  field: when
+  context: dns-domains
+  expected: false
+- file: tasks/node-converge-tool-repository.yml
+  task: Repair a missing or different repository signing key
+  field: when
+  context: gpg-primary
+  expected: false
+- file: tasks/node-converge-tool-repository.yml
+  task: Require exactly the recorded primary key
+  field: ansible.builtin.assert.that
+  context: gpg-primary
+  expected: true
+- file: tasks/node-hub-lan-proof.yml
+  task: Require the hub's recorded host key at its LAN address
+  field: ansible.builtin.assert.that[1]
+  context: ssh-fingerprint
+  expected: true
+- file: tasks/node-hub-source.yml
+  task: Remove a LAN SSH rule of an earlier hub LAN address
+  field: when
+  context: ufw-lan
+  expected: false
+- file: tasks/node-hub-source.yml
+  task: Remove a LAN SSH rule of an earlier hub LAN address
+  field: ansible.builtin.command.argv
+  context: ufw-lan
+  expected:
+  - ufw
+  - delete
+  - allow
+  - in
+  - proto
+  - tcp
+  - from
+  - 10.0.0.0/24
+  - to
+  - 10.0.0.1
+  - port
+  - '22'
+- file: tasks/node-hub-source.yml
+  task: Start the source unit, again after a change or drift
+  field: vars.marked
+  context: ip-routes
+  expected: '192.0.2.1 via 10.0.0.254 dev eth0 src 10.0.0.1 uid 0 '
+- file: tasks/node-hub-source.yml
+  task: Start the source unit, again after a change or drift
+  field: vars.main
+  context: ip-routes
+  expected: '192.0.2.1 via 10.0.0.254 dev eth0 src 10.0.0.2 uid 0 '
+- file: tasks/node-hub-source.yml
+  task: Start the source unit, again after a change or drift
+  field: vars.onlink
+  context: ip-routes
+  expected:
+  - '10.0.0.0 dev eth0 src 10.0.0.1 uid 0 '
+- file: tasks/node-hub-source.yml
+  task: Start the source unit, again after a change or drift
+  field: vars.drift
+  context: ip-routes
+  expected: false
+- file: tasks/node-hub-source.yml
+  task: Require the endpoint address as the source of public WireGuard packets, on-link within the public prefix
+  field: vars.marked
+  context: ip-routes
+  expected: '192.0.2.1 via 10.0.0.254 dev eth0 src 10.0.0.1 uid 0 '
+- file: tasks/node-hub-source.yml
+  task: Require the endpoint address as the source of public WireGuard packets, on-link within the public prefix
+  field: vars.onlink
+  context: ip-routes
+  expected:
+  - '10.0.0.0 dev eth0 src 10.0.0.1 uid 0 '
+- file: tasks/swamp-worker-connections.yml
+  task: Resolve the actual names and connection times from the journal
+  field: vars.renewal_receipt_name
+  context: enrollment-journal
+  expected: fixture-worker-1
+- file: tasks/task-container-host-system.yml
+  task: Size the ZFS ARC cap
+  field: ansible.builtin.set_fact.container_arc_max
+  context: meminfo
+  expected: 4194304000
+- file: tasks/task-host-firewall-remove.yml
+  task: Withdraw owned task host input rules
+  field: ansible.builtin.command.cmd
+  context: ufw-delete
+  expected: ufw --force delete allow in on orbit to any port 53 proto udp comment 'orbit:dns'
+- file: tasks/task-vm-fleet-build.yml
+  task: Wait for the Gateway Node
+  field: vars.wait_operation
+  context: orbit-operation
+  expected: '6174'
+- file: tasks/task-vm-fleet-build.yml
+  task: Wait for the Gateway role
+  field: vars.wait_operation
+  context: orbit-operation
+  expected: '6174'
+- file: tasks/task-vm-fleet-build.yml
+  task: Wait for the websocket role
+  field: vars.wait_operation
+  context: orbit-operation
+  expected: '6174'
+- file: tasks/task-vm-fleet-build.yml
+  task: Wait for app-dev
+  field: vars.wait_operation
+  context: orbit-operation
+  expected: '6174'
+- file: tasks/task-vm-fleet-build.yml
+  task: Wait for app-prod
+  field: vars.wait_operation
+  context: orbit-operation
+  expected: '6174'
+- file: tasks/task-vm-nested-wait.yml
+  task: Wait for the nested fleet
+  field: vars.wait_running
+  context: incus-running
+  expected:
+  - gateway
+  - app-prod
+- file: tasks/task-vm-recipe.yml
+  task: Work out what changed
+  field: ansible.builtin.set_fact.converge_stamps
+  context: converge-stamps
+  expected:
+    software: abc123
+    tools: def456
+input_only:
+- file: route-withdraw.yml
+  task: Remove the certificate folders
+  field: vars.homes
+  reason: Transforms the getent passwd map returned by an Ansible module, not command output.
+- file: route-withdraw.yml
+  task: Remove the certificate folders
+  field: vars.caddy_folders
+  reason: Prefixes admitted certificate scopes.
+- file: task-vm-host.yml
+  task: Task VM egress log
+  field: vars.dnsmasq_logs
+  reason: Builds log paths from bridge names.
+- file: tasks/fleet-reboot-read.yml
+  task: Keep the boot state
+  field: ansible.builtin.set_fact.boot.newest_kernel
+  reason: Transforms paths returned by the find module, not command output.
+- file: tasks/gateway-dns.yml
+  task: Read Gateway resolver policy
+  field: loop
+  reason: Parses the admitted systemd unit, not observed command output.
+- file: tasks/node-converge-hub-prune.yml
+  task: Prune only the peers of Nodes that are gone or being removed
+  field: vars.peer_id
+  reason: Transforms paths returned by the find module.
+- file: tasks/node-converge-hub.yml
+  task: Repair the hub interface address
+  field: vars.tunnel_address
+  reason: Parses the admitted hub configuration.
+- file: tasks/node-converge-network.yml
+  task: Select the recorded DNS domains
+  field: ansible.builtin.command.argv
+  reason: Builds command arguments from admitted DNS domains.
+- file: tasks/node-converge-software-plan.yml
+  task: Resolve selected recipe tools, not recorded digests
+  field: vars.versions
+  reason: Transforms recipe tool names.
+- file: tasks/node-hub-source.yml
+  task: Remove a LAN SSH rule of an earlier hub LAN address
+  field: vars.wanted
+  reason: Transforms admitted firewall arguments; the observed rule is covered separately.
+- file: tasks/role-swamp.yml
+  task: Check Swamp units
+  field: loop
+  reason: Builds service names from admitted worker slots.
+- file: tasks/task-container-host-system.yml
+  task: Install Incus from the recipe
+  field: vars.container_incus_debs
+  reason: Builds cache paths from admitted package pins.
+- file: tasks/task-vm-recipe.yml
+  task: Resolve the tools of the profile
+  field: vars.versions
+  reason: Transforms recipe tool names.
+- file: tasks/task-vm-recipe.yml
+  task: Work out what changed
+  field: vars.files
+  reason: Builds local source paths.

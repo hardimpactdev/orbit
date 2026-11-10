@@ -1,9 +1,10 @@
-"""Check every module call of the Instance container task files against the real module's argument spec.
+"""Check every module call under swamp/ansible against the real module's argument spec.
 
 The fixture tests of these files replace modules that need Linux and root, such as `community.general.ufw`, so the real module
 never checks the arguments there. This test reads each real module's spec at the pinned version and runs Ansible's own argument
 validator over each call: an unknown parameter, a missing one, or a pair the module refuses fails here, not on a Node."""
 import importlib.util
+import re
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -11,15 +12,16 @@ from unittest import mock
 import yaml
 from ansible.module_utils import basic
 from ansible.module_utils.common.arg_spec import ModuleArgumentSpecValidator
+from ansible.parsing.mod_args import ModuleArgsParser
 from ansible.plugins.loader import init_plugin_loader, module_loader
 
 ANSIBLE = Path(__file__).resolve().parents[1] / 'ansible'
-# The Instance host branch also runs the two files it shares with a task container host.
-FILES = sorted({*(ANSIBLE / 'tasks').glob('instance-*.yml'), ANSIBLE / 'tasks/task-container-host-system.yml',
-                ANSIBLE / 'tasks/task-container-host-prepare.yml'})
-# Not modules: the controller runs these, and no argument spec exists for them.
+FILES = sorted({*ANSIBLE.rglob('*.yml'), *ANSIBLE.rglob('*.yaml')})
+# Controller actions have no AnsibleModule spec. Their action plugins still need runtime proof.
 CONTROLLER = {'ansible.builtin.assert', 'ansible.builtin.debug', 'ansible.builtin.fail', 'ansible.builtin.include_tasks',
-              'ansible.builtin.set_fact'}
+              'ansible.builtin.set_fact', 'ansible.builtin.import_tasks', 'ansible.builtin.meta',
+              'ansible.builtin.import_playbook', 'ansible.builtin.reboot', 'ansible.builtin.fetch', 'ansible.builtin.script',
+              'ansible.builtin.wait_for_connection', 'ansible.builtin.include_vars', 'ansible.builtin.include_role', 'ansible.builtin.import_role', 'ansible.builtin.add_host', 'ansible.builtin.group_by'}
 # The shell action runs the command module, with its arguments.
 RUNS_AS = {'ansible.builtin.shell': 'ansible.builtin.command'}
 # A templated value has no value yet. Each stands in for one the spec accepts, so only the parameter names and literal values count.
@@ -42,7 +44,8 @@ def spec_of(name):
         captured.update(options, argument_spec=dict(argument_spec or {}))
         raise Captured
 
-    spec = importlib.util.spec_from_file_location('orbit_args_' + name.replace('.', '_'), path)
+    import_name = 'ansible.modules.' + Path(path).stem if name.startswith('ansible.builtin.') else 'orbit_args_' + name.replace('.', '_')
+    spec = importlib.util.spec_from_file_location(import_name, path)
     module = importlib.util.module_from_spec(spec)
     with mock.patch.object(basic.AnsibleModule, '__init__', capture):
         spec.loader.exec_module(module)
@@ -79,7 +82,10 @@ def errors_of(name, arguments, specs):
     options = {alias: option for key, option in spec['argument_spec'].items() for alias in (key, *option.get('aliases', []))}
     parameters = {key: stand_in(options[key]) if templated(value) and key in options else value for key, value in arguments.items()}
     # `required_if` reads values, which a stand-in does not have.
-    validator = ModuleArgumentSpecValidator(spec['argument_spec'], spec.get('mutually_exclusive'), spec.get('required_together'),
+    # `omit` removes a parameter at runtime. Presence constraints cannot decide these branches statically.
+    optional = {key for key, value in arguments.items() if isinstance(value, str) and re.search(r'\bdefault\(\s*omit\s*\)', value)}
+    exclusive = [group for group in spec.get('mutually_exclusive', []) if not optional.intersection(group)]
+    validator = ModuleArgumentSpecValidator(spec['argument_spec'], exclusive, spec.get('required_together'),
                                             spec.get('required_one_of'), None, spec.get('required_by'))
     return validator.validate(parameters).error_messages
 
@@ -87,14 +93,22 @@ def errors_of(name, arguments, specs):
 def calls(tasks):
     """Each module call of a task list, through its blocks: the task's name, the module and its arguments."""
     for task in tasks:
-        for part in ('block', 'rescue', 'always'):
+        if not isinstance(task, dict):
+            continue
+        for part in ('block', 'rescue', 'always', 'tasks', 'pre_tasks', 'post_tasks', 'handlers'):
             yield from calls(task.get(part) or [])
-        for key, value in task.items():
-            if key.count('.') == 2 and isinstance(value, dict):
-                yield task.get('name', key), key, value
+        # Plays and block containers have no action of their own.
+        if any(part in task for part in ('hosts', 'block', 'import_playbook', 'ansible.builtin.import_playbook')):
+            continue
+        action, arguments, _ = ModuleArgsParser(task).parse(skip_action_validation=True)
+        if '.' not in action and not (ANSIBLE / 'library' / f'{action}.py').is_file():
+            action = 'ansible.builtin.' + action
+        yield task.get('name', action), action, arguments
 
 
-class InstanceModuleArgumentsTest(unittest.TestCase):
+
+class ModuleArgumentsTest(unittest.TestCase):
+    maxDiff = None
     @classmethod
     def setUpClass(cls):
         init_plugin_loader()
@@ -103,12 +117,17 @@ class InstanceModuleArgumentsTest(unittest.TestCase):
     def test_every_module_call_passes_the_real_argument_spec(self):
         specs, checked, failures = {}, set(), []
         for file in FILES:
-            for task, module, arguments in calls(yaml.safe_load(file.read_text())):
+            for task, module, arguments in calls(yaml.safe_load(file.read_text()) or []):
                 if module in CONTROLLER:
                     continue
                 checked.add(module)
-                failures += [f'{file.name}: {task}: {module}: {error}' for error in errors_of(module, arguments, specs)]
+                try:
+                    errors = errors_of(module, arguments, specs)
+                except (AssertionError, AttributeError, ImportError) as error:
+                    errors = [str(error)]
+                failures += [f'{file.relative_to(ANSIBLE)}: {task}: {module}: {error}' for error in errors]
         self.assertEqual(failures, [])
+        print(f'Module arguments: {len(FILES)} YAML files, {len(checked)} module types')
         # The modules that the fixture tests replace are among the checked ones.
         self.assertLessEqual({'community.general.ufw', 'ansible.posix.sysctl', 'ansible.builtin.apt', 'community.general.modprobe',
                               'ansible.builtin.systemd_service'}, checked)
