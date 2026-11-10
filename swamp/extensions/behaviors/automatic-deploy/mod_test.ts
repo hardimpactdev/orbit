@@ -527,3 +527,28 @@ Deno.test("uncontracted server failures cannot be classified as a safe refusal",
         assertEquals(f.gateway.starts, []);
     }
 });
+
+Deno.test("development and production entry points never discover each other's targets", async () => {
+    const { automaticDeploy } = await import("./mod.ts");
+    const requests: string[] = [];
+    const client = new GatewayClient(async (_method, path) => {
+        requests.push(path);
+        return { status: 200, body: { data: [] } };
+    });
+    const resources = new Map<string, Record<string, unknown>>();
+    const context = {
+        globalArgs: { gatewayUrl: "https://gateway.test", caFile: "/tmp/ca" },
+        readResource: (name: string) => Promise.resolve(resources.get(name) ?? null),
+        writeResource: (_spec: string, name: string, value: Record<string, unknown>) => {
+            resources.set(name, value);
+            return Promise.resolve({ name });
+        },
+    };
+    const behavior = automaticDeploy(client);
+    await behavior.methods.development.execute({ instances: [1833] }, context);
+    assertEquals(requests, ["/api/v1/instances"]);
+    requests.length = 0;
+    await behavior.methods.tick.execute({}, context);
+    assertEquals(requests, ["/api/v1/nodes", "/api/v1/instances?auto_deploy=true"]);
+    await assertRejects(async () => await behavior.methods.development.execute({ instances: [] }, context));
+});
