@@ -123,9 +123,15 @@ describe('the first default Instance of a Project on a build-list Node', functio
 
     it('refuses a PHP Project until the runtime folder holds its static PHP build', function (): void {
         $node = containerDefaultNode();
+        $recipe = json_decode((string) file_get_contents(resource_path('machine-software/recipe.json')), false, flags: JSON_THROW_ON_ERROR);
+        $recipe->instances->php->versions->{'8.5'}->sha256 = null;
+        $home = sys_get_temp_dir().'/unpublished-php';
+        mkdir($home.'/release/apps/gateway/resources/machine-software', 0700, true);
+        symlink('release', $home.'/orbit');
+        file_put_contents($home.'/orbit/apps/gateway/resources/machine-software/recipe.json', json_encode($recipe, JSON_THROW_ON_ERROR));
+        config(['orbit.gateway_checkout' => $home.'/orbit/apps/gateway']);
 
-        // The recipe pins only PHP 8.5's build.
-        expect(containerRefusal(fn () => containerCreate(containerDefaultProject(ProjectType::LaravelApp, '8.4'), $node)))->toBe('instance.host_unavailable')
+        expect(containerRefusal(fn () => containerCreate(containerDefaultProject(ProjectType::LaravelApp, '8.5'), $node)))->toBe('instance.host_unavailable')
             ->and(Instance::query()->count())->toBe(0);
     });
 });
