@@ -2,7 +2,8 @@
   "sources": [
     "https://github.com/hardimpactdev/orbit/actions/runs/42861369691/job/129988062104",
     "https://github.com/hardimpactdev/orbit/actions/runs/42868182599/job/130012034224",
-    "https://github.com/hardimpactdev/orbit/actions/runs/42878450222/job/130047950178"
+    "https://github.com/hardimpactdev/orbit/actions/runs/42878450222/job/130047950178",
+    "https://github.com/hardimpactdev/orbit/actions/runs/42882725950/job/130062940483"
   ],
   "note": "Scheduling weights, seconds, rounded to 0.1. Split times are forecasts, not sharded measurements. Successful samples only; latest censored cases use an explicit 1.7x allowance. New files still run with 1s when absent.",
   "units": {
@@ -137,49 +138,49 @@
       "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
     },
     "tests/ansible_instance_container_agent_test.ts": {
-      "shark": 77.8,
+      "shark": 105.0,
       "sabre": 124.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_instance_container_build_test.ts": {
-      "shark": 56.4,
+      "shark": 59.0,
       "sabre": 98.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_instance_container_clone_refusal_test.ts": {
-      "shark": 41.4,
+      "shark": 69.0,
       "sabre": 50.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_instance_container_clone_test.ts": {
-      "shark": 93.4,
+      "shark": 137.0,
       "sabre": 160.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_instance_container_deploy_test.ts": {
-      "shark": 86.4,
+      "shark": 106.0,
       "sabre": 146.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_instance_container_php_test.ts": {
-      "shark": 40.4,
+      "shark": 47.0,
       "sabre": 66.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_instance_container_process_build_test.ts": {
-      "shark": 78.8,
+      "shark": 117.0,
       "sabre": 111.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_instance_container_process_control_test.ts": {
-      "shark": 128.2,
+      "shark": 157.0,
       "sabre": 181.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_instance_container_workspace_test.ts": {
-      "shark": 27.4,
+      "shark": 34.0,
       "sabre": 42.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_instance_egress_test.py": {
       "shark": 8.4,
@@ -194,17 +195,17 @@
     "tests/ansible_instance_host_deadline_test.ts": {
       "shark": 17.1,
       "sabre": 19.2,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_instance_host_image_pool_test.ts": {
-      "shark": 38.3,
+      "shark": 55.0,
       "sabre": 57.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_instance_host_image_refuse_sudo_test.ts": {
-      "shark": 39.8,
+      "shark": 55.0,
       "sabre": 58.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_instance_host_image_replace_test.ts": {
       "shark": 65.8,
@@ -212,9 +213,9 @@
       "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224"
     },
     "tests/ansible_instance_host_resources_test.ts": {
-      "shark": 38.6,
+      "shark": 63.0,
       "sabre": 57.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_instance_host_runtime_deno_test.ts": {
       "shark": 65.0,
@@ -227,9 +228,9 @@
       "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; 1.7x forecast for censored late cases on loaded Sabre"
     },
     "tests/ansible_instance_host_runtime_vite_home_test.ts": {
-      "shark": 148.5,
+      "shark": 252.4,
       "sabre": 376.6,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; 1.7x forecast for censored late cases on loaded Sabre"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; 1.7x forecast for censored late cases on loaded Sabre; 1.7x Shark estimate for censored loaded Vite case"
     },
     "tests/ansible_instance_host_updates_mapped_runtime_test.ts": {
       "shark": 91.8,
@@ -282,24 +283,24 @@
       "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
     },
     "tests/ansible_task_container_host_prepare_arc_test.ts": {
-      "shark": 93.8,
+      "shark": 171.0,
       "sabre": 291.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_task_container_host_prepare_packages_test.ts": {
-      "shark": 49.8,
+      "shark": 81.0,
       "sabre": 149.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_task_container_host_prepare_refusals_test.ts": {
-      "shark": 74.2,
+      "shark": 134.0,
       "sabre": 255.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_task_container_host_prepare_setup_test.ts": {
-      "shark": 87.2,
+      "shark": 135.0,
       "sabre": 266.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/ansible_task_host_firewall_remove_test.ts": {
       "shark": 5.9,
@@ -552,19 +553,19 @@
       "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
     },
     "tests/swamp_worker_renewal_enrollment_test.ts": {
-      "shark": 104.5,
+      "shark": 118.0,
       "sabre": 161.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/swamp_worker_renewal_peers_test.ts": {
-      "shark": 54.2,
+      "shark": 88.0,
       "sabre": 142.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/swamp_worker_renewal_rotation_test.ts": {
-      "shark": 62.9,
+      "shark": 89.0,
       "sabre": 162.0,
-      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s; max with successful loaded Shark case samples, job 130062940483 + 3s"
     },
     "tests/task_review_check_outputs_test.ts": {
       "shark": 0.2,

@@ -64,7 +64,7 @@ DENO_TESTS_ELSEWHERE = ('tests/metrics_exporter_firewall_test.ts', 'tests/native
 
 # Timing data controls scheduling only. Discovery, permissions and fixture metadata live in plan().
 TIMINGS = SWAMP / 'tests/shape-timings.json'
-INSTANCE_HOST_BUDGET_SECONDS = 600
+INSTANCE_HOST_BUDGET_SECONDS = 660
 
 
 def deno_test_files():
