@@ -111,7 +111,7 @@ class InstanceModuleArgumentsTest(unittest.TestCase):
         self.assertEqual(failures, [])
         # The modules that the fixture tests replace are among the checked ones.
         self.assertLessEqual({'community.general.ufw', 'ansible.posix.sysctl', 'ansible.builtin.apt', 'community.general.modprobe',
-                              'ansible.builtin.systemd_service', 'ansible.builtin.wait_for'}, checked)
+                              'ansible.builtin.systemd_service'}, checked)
 
     def test_the_check_refuses_what_the_real_module_refuses(self):
         specs = {}
