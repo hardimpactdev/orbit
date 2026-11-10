@@ -91,7 +91,7 @@ The Gateway, a Node installer, and `orbit self-update` rely on these rules. They
 
 `bin/orbit-cli-release-version --tag C` prints the tag and refuses a shallow clone.
 
-A release appears after `CI` completes and the release workflow builds and publishes it. That is usually a few minutes after `Required checks` turns green. Until then every CLI URL above returns 404. Gateway deployment uses the frozen agent and proceeds independently of CLI publication. A client treats a 404 as "not published yet" and checks again later. It does not install a different version instead. Only the Gateway can name another release: when a commit's release stays missing for 30 minutes, its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit.
+A release appears once `Required checks` is green and the release workflow has built and published it, usually a few minutes later; other CI jobs may still run. Until then every CLI URL above returns 404. Gateway deployment uses the frozen agent and proceeds independently of CLI publication. A client treats a 404 as "not published yet" and checks again later. It does not install a different version instead. Only the Gateway can name another release: when a commit's release stays missing for 30 minutes, its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit.
 
 ### Find the release for a commit
 
