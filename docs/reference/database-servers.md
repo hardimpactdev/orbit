@@ -129,7 +129,7 @@ The server's Process is an ordinary Docker Node Process: read its logs, stop it,
 
 `process:update` accepts only an image-only update to `valkey/valkey:<tag>` for a `redis` server. For example, `orbit process:update 41 --image=valkey/valkey:8.1.3` changes the image while keeping the command, including `--aclfile`, volumes and every other specification field. Creation, replacement and repair use the same Docker health-check settings, so a later repair can wait for the replacement container to become healthy. Tags contain 1 through 128 letters, digits, underscores, periods or hyphens, and start with a letter, digit or underscore.
 
-Request validation runs before the server ownership check. Invalid input returns HTTP 422, including a supplied `user`, `start`, an empty `command`, or an image containing whitespace. After validation, an update with any other field, without `image`, or with another image repository returns `process.required_by_database_server` (409). Both refusals leave the Process unchanged.
+Request normalization trims surrounding whitespace. Validation then runs before the server ownership check. Invalid input returns HTTP 422, including a supplied `user`, `start`, an empty `command`, or an image containing whitespace within the reference. After validation, an update with any other field, without `image`, or with another image repository returns `process.required_by_database_server` (409). Both refusals leave the Process unchanged.
 
 ## Close an adopted server
 

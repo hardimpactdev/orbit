@@ -58,7 +58,7 @@ Orbit adds `reset`, the password, `resetchannels`, `-@all`, and the final `-@adm
 
 ### The Process belongs to the server
 
-`process:update` accepts only an image-only update to `valkey/valkey:<tag>` for the Process of a `redis` server. It keeps the stored command, volumes and every other specification field. The [image-update rule](/reference/database-servers#update-a-valkey-servers-image) defines validation and ownership refusals. `process:destroy` still refuses every server Process. So nobody can drop `--aclfile` from the command or add an environment value such as `VALKEY_EXTRA_FLAGS`. `process:start`, `process:stop`, and `process:restart` stay allowed: they keep the command, and the ACL file stays in the volume.
+`process:update` accepts only an image-only update to `valkey/valkey:<tag>` for the Process of a `redis` server. It keeps the stored command, volumes and every other specification field. See [Database servers](/reference/database-servers#update-a-valkey-servers-image) for validation and refusals. `process:destroy` still refuses every server Process. So nobody can drop `--aclfile` from the command or add an environment value such as `VALKEY_EXTRA_FLAGS`. `process:start`, `process:stop`, and `process:restart` stay allowed: they keep the command, and the ACL file stays in the volume.
 
 ### Doctor checks the server
 
