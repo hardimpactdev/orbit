@@ -117,15 +117,24 @@
         argv: "{{ retired_git + ['-C', retired.path, 'stash', 'list', '--format=%H'] }}"
       register: retirement_stashes
       changed_when: false
+    - name: Read the stash ref even when its reflog has expired
+      ansible.builtin.command:
+        argv: "{{ retired_git + ['-C', retired.path, 'rev-parse', '--verify', '--quiet', 'refs/stash'] }}"
+      register: retirement_stash_ref
+      changed_when: false
+      failed_when: retirement_stash_ref.rc not in [0, 1]
+    - name: Count every stash entry and any surviving stash ref
+      ansible.builtin.set_fact:
+        retirement_stash_count: "{{ [retirement_stashes.stdout_lines | length, 1 if retirement_stash_ref.rc == 0 else 0] | max }}"
     - name: Explain stashes
-      when: retirement_stashes.stdout_lines | length > 0
+      when: retirement_stash_count | int > 0
       ansible.builtin.set_fact:
         migrate_refusal_code: instance.migrate_stashes_present
         migrate_refusal_message: >-
           Cannot retire checkout {{ retired.path | to_json }}.
-          Stashes: {{ retirement_stashes.stdout_lines | length }}.
+          Stashes: {{ retirement_stash_count }}.
     - name: Refuse stashes
       ansible.builtin.assert:
-        that: retirement_stashes.stdout_lines | length == 0
+        that: retirement_stash_count | int == 0
         fail_msg: "{{ migrate_refusal_message | default('instance.migrate_stashes_present') }}"
         quiet: true

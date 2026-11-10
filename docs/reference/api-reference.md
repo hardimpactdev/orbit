@@ -164,3 +164,5 @@ After changing an operation description or response, run `bin/mcp-tools` to refr
 The owned-resource deletion commands are `ai-router:destroy` and `vault:destroy`. Their DELETE endpoints remain `/api/v1/ai-router` and `/api/v1/vault`. The API operation IDs and MCP tools use `ai-router-destroy` and `vault-destroy`.
 
 Automatic Gateway release commands use `gateway:auto-release:{status,enable,disable,resume}` and API operation IDs use `gateway-auto-release-*`. The HTTP paths stay under `/api/v1/gateway/release-automation`.
+
+Instance responses expose nullable `retained_git_path` and `retained_git_at` after [checkout migration](/cli/instance/migrate#retained-git-data). They identify retained Node-side Git data and the time it was retained.

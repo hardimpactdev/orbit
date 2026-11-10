@@ -140,4 +140,4 @@ Instance container network ACLs live in Incus project `default`, even when the c
 
 A Process move disables the source units before copying. Render container units from a copy of their records and save the new paths only after cutover. A failed move removes the new container before restoring source units, so two runtimes never run the same writer.
 
-A repository path match proves which checkout is owned, not whether its Git directory is shared. Reuse the retirement guard immediately before recursive deletion, after branch archiving; test an unmanaged worktree created during that archive step.
+A retirement preflight is an early warning, not a deletion barrier. Retain the whole old checkout with a same-filesystem rename so tag-only commits, expired stash reflogs, nested repositories and worktrees added after the final listing keep their Git metadata. Never infer that recursive deletion is safe from a path match or a worktree listing.

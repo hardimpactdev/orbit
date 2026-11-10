@@ -450,7 +450,7 @@ The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/c
 - **Database.** A database on a Database server stays where it is, and the container gets its own way to it. A SQLite file in the checkout moves with the files.
 - **Start.** FrankenPHP starts as `orbit`. A non-default Instance gets its T3 server, registered as in [Create](#create). A default gets its first seed snapshot.
 - **Route.** Orbit points the Route at FrankenPHP in the container.
-- **Removal.** Orbit removes the checkout. The default's checkout stays until its last worktree has moved.
+- **Retirement.** Orbit moves the whole old checkout to retention and records its path and time. It deletes no Git metadata. The default's checkout stays until its last worktree has moved.
 
 A failed move leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) has the steps.
 
@@ -466,7 +466,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
 | Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the lowest free T3 port. It names no clone source |
 | While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
-| Retirement check | Before downtime and immediately before deletion (after archiving branches), planned retirements need no other worktrees, uncommitted changes, unpushed commits or stashes. `instance.migrate_retirement_blocked` names up to 20 worktrees and files with total counts |
+| Retirement check | Before downtime and before retention, planned retirements need no other worktrees, uncommitted changes, unpushed commits or stashes. `instance.migrate_retirement_blocked` names up to 20 worktrees and files with total counts |
 | Branch | The mirror fetches the recorded branch from the checkout itself. A retained checkout can carry commits that were never pushed; retirement refuses them. The move needs no token |
 | Files | One archive of the paths of `git diff HEAD` and `git ls-files --others`, extracted as `orbit`. Tracked files that the checkout deleted are removed |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace`, and the Gateway rewrites its stored values the same way |
@@ -481,10 +481,10 @@ The end of the move and its failure:
 | Seed | A default takes `seed-<commit>` with its units stopped. Its Project's other Instances can be clones from then on |
 | T3 | A non-default Instance gets the proxy device `t3`, the agent's files and its T3 server. The Conn layer records the server from the run's result |
 | Runtime | A Route that serves the container makes the container the Instance's runtime: the workspace becomes its checkout path |
-| Kept refs | Local branches go under `refs/migrated/heads/` in the Instance's mirror before its repository goes |
-| Removal | The checkout, and its worktree entry in the default's repository |
+| Retained Git | The whole old checkout moves under `<checkout>.orbit-retired-git/<sha256 of original path>`. The Instance records `retained_git_path` and `retained_git_at`; no files or Git metadata are deleted |
+| Old checkout | Leaves its live path. Its files and Git metadata stay in retention; worktree entries are not pruned |
 | Last worktree | The default's old checkout is a retirement candidate. Any other registered worktree blocks retirement, including a path in the same batch |
-| Failed removal | The container stays the Instance. The run fails with `instance.migrate_retire_failed` (or the retirement refusal code for a new blocker), and the checkout is left to remove by hand |
+| Failed removal | The container stays the Instance. The run fails with `instance.migrate_retire_failed` (or the retirement refusal code for a new blocker), and the source or retained checkout stays on the Node |
 | Failure | The Route's restore side runs when the run had started to move it. Then the container, its ACL, its firewall rules and its mirror go |
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
 | After a failed restore | The site stays the checkout's, and a deployment refuses with `instance.lifecycle_busy` until the move has run again |

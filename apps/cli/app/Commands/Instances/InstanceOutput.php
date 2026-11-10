@@ -47,6 +47,11 @@ trait InstanceOutput
             'URL' => $instance->url,
         ];
 
+        if ($instance->retainedGitPath !== null) {
+            $fields['Retained Git'] = $instance->retainedGitPath;
+            $fields['Git retention started'] = $instance->retainedGitAt;
+        }
+
         if ($instance->productionUser !== null) {
             $fields['Production user'] = $instance->productionUser;
             $fields['Production home'] = $instance->productionHome;

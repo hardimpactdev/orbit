@@ -575,8 +575,8 @@ The spec commit adds [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/m
 - The container gets a standalone repository from the Node. The checkout's `.git` is never copied.
 - A non-default Instance before its default refuses with `instance.default_not_migrated`.
 - Every planned retirement refuses other registered worktrees, uncommitted changes, unpushed commits and stashes before downtime. Another path in the same batch still blocks.
-- Unpushed commits are unreachable from all local remote-tracking refs. The error names each local branch or detached HEAD and its commit count.
-- The same retirement check runs immediately before deletion, after archiving branches.
+- Retirement repeats the preflight, then atomically retains the whole old checkout, including all Git metadata and work-tree files.
+- Retirement never recursively deletes or prunes Git data. `retained_git_path` and `retained_git_at` make it discoverable.
 - A failure before cutover leaves the checkout Instance running as before. A retirement failure keeps the container serving and the checkout intact.
 
 [Migrate a checkout Instance](/reference/development-containers#migrate-a-checkout-instance) has what is built. The code changed these points of this plan:
@@ -592,7 +592,7 @@ The spec commit adds [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/m
 
 An Instance with a Route beside its own refuses. The cases file holds the refusals that the proof fleet can run today; the cases that move an Instance wait for a proof Node with the Instance pool, as PR 4 says.
 
-Tests: Pest for the admission, the default-first rule, the PHP version, the databases, the Route publication and the projection. Deno for the receipt. Ansible fixtures cover clean standalone retirement, a retained default's local files, linked and detached worktree refusals, changed-file, unpushed-commit and stash refusals, bounded path errors, final rechecks after archiving branches and restoration. Live:
+Tests: Pest for the admission, the default-first rule, the PHP version, the databases, the Route publication and the projection. Deno for the receipt. Ansible fixtures cover clean standalone retirement, a retained default's local files, linked and detached worktree refusals, changed-file, unpushed-commit and stash refusals, bounded path errors, retained tag-only commits, expired stash reflogs, submodules and late worktrees and restoration. Live:
 
 1. On Beast, owned clean checkout fixtures move, default first, after their worktree links are resolved. Dirty and extra-worktree fixtures refuse and name the blockers.
 2. Both moved Instances answer on their Routes, with the same files and data.

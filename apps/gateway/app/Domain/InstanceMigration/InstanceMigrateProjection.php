@@ -83,6 +83,9 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                 throw new ResourceOperationException('instance.result_invalid', 'The move did not prove its complete terminal result.');
             }
             if (! $operation->status->terminal()) {
+                if ($moved && is_string($result['retained_git_path'] ?? null) && is_string($result['retained_git_at'] ?? null)) {
+                    $instance->update(['retained_git_path' => $result['retained_git_path'], 'retained_git_at' => $result['retained_git_at']]);
+                }
                 $runtime = $instance->runtime()->first();
                 if ($moved && $runtime !== null) {
                     app(ContainerProcesses::class)->complete($instance, ValidatedData::object($operation->input['container'])['processes'] ?? [], true, null);

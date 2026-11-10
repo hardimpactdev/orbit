@@ -6,6 +6,7 @@ use App\Actions\Hibernation\ActivateInstanceRuntimeAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceMigrateAction;
 use App\Actions\Operations\ExpireOperationAction;
+use App\Data\Instances\InstanceData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
@@ -48,6 +49,7 @@ use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 uses(LazilyRefreshDatabase::class);
@@ -663,6 +665,35 @@ describe('the end of a move', function (): void {
             ->and($operation->error_code)->toBe($code)
             ->and($operation->result['error_message'])->toBe('Retirement refused without changing the source.');
     })->with(['instance.migrate_retire_failed', 'instance.migrate_retirement_blocked', 'instance.migrate_unpushed_commits', 'instance.migrate_stashes_present']);
+
+    it('records and exposes retained Git after retirement, including when a later retirement fails', function (bool $failed): void {
+        $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        expect(InstanceData::fromModel($default)->toArray())->toMatchArray(['retained_git_path' => null, 'retained_git_at' => null]);
+        $operation = migrateStart($default);
+        $path = '/home/orbit/apps/tool/default.orbit-retired-git';
+        $at = '2026-11-10T19:00:00+00:00';
+
+        migrateEnd($operation, $failed ? 'failed' : 'succeeded', [
+            'ready' => ! $failed, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40),
+            'retained_git_path' => $path, 'retained_git_at' => $at,
+            ...($failed ? ['failed_step' => 'retire', 'error_code' => 'instance.migrate_retire_failed'] : []),
+        ]);
+
+        expect($default->refresh()->retained_git_path)->toBe($path)
+            ->and($default->retained_git_at?->toIso8601String())->toBe($at)
+            ->and(InstanceData::fromModel($default)->toArray())->toMatchArray(['retained_git_path' => $path, 'retained_git_at' => $at]);
+    })->with(['completed retirement' => false, 'later retirement failed' => true]);
+
+    it('reverses the retained Git columns without touching Node data', function (): void {
+        $migration = require database_path('migrations/2027_02_04_000001_add_retained_git_to_instances.php');
+        $migration->down();
+        expect(Schema::hasColumn('instances', 'retained_git_path'))->toBeFalse()
+            ->and(Schema::hasColumn('instances', 'retained_git_at'))->toBeFalse();
+
+        $migration->up();
+        expect(Schema::hasColumn('instances', 'retained_git_path'))->toBeTrue()
+            ->and(Schema::hasColumn('instances', 'retained_git_at'))->toBeTrue();
+    });
 
     it('refuses a succeeded run that does not prove the move', function (array $result): void {
         $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());

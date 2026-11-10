@@ -20,7 +20,7 @@ sequenceDiagram
   %%> - syntax: `<instance> [--force] [--idempotency-key=KEY] [--json]`
   Note over CLI: Confirm the downtime
   %%> What it asks:
-  %%> - the Instance goes down during the move, and its checkout is deleted after it; `--force` answers yes
+  %%> - the Instance goes down during the move, and its old checkout moves to retention after it; `--force` answers yes
   Note over GW: Validate, reserve runtime<br/>address · T3 port
   %%> Requirements:
   %%> - the Instance is an active checkout Instance on an `app-dev` Node of the build list, else `instance.migrate_unsupported`
@@ -68,11 +68,14 @@ sequenceDiagram
   alt all steps pass
     SW->>N: Remove the checkout<br/>Ansible · tags retire
     %%> What it does:
-    %%> - repeats the same retirement check immediately before deleting any checkout, after archiving branches; a new blocker leaves the container serving and the checkout intact
-    %%> - removes the old host Process units and their environment folders, then removes the checkout and writes the awake marker; a default's checkout stays until its last worktree has moved
-    %%> - before a repository goes, its local branches are kept in the Node's mirror under `refs/migrated/`
+    %%> - removes the old host Process units and their environment folders
+    %%> - repeats the same retirement preflight as an early warning; a new blocker leaves the container serving and the checkout intact
+    %%> - atomically moves each old checkout under `<checkout>.orbit-retired-git/<sha256 of original path>`; the retained root is beside the migrating Instance's checkout
+    %%> - keeps the whole tree, including Git objects, refs, reflogs, `.git/modules` and nested repositories; a late worktree cannot lose its Git metadata to retirement
+    %%> - records `retained_git_path` and `retained_git_at` on the Instance; `instance:show` and the Instance API expose them
+    %%> - writes the awake marker; a default's checkout stays until its last worktree has moved; retirement never deletes or prunes Git metadata
     %%> If it fails:
-    %%> - the container stays the Instance; the run fails with `instance.migrate_retire_failed`, and the checkout is left to remove by hand
+    %%> - the container stays the Instance; the run fails with `instance.migrate_retire_failed`, and the source or retained checkout stays on the Node
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record container runtime
     %%> Result:

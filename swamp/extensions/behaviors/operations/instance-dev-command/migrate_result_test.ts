@@ -99,3 +99,21 @@ for (const [error_code, error_message] of [
         }
     });
 }
+
+Deno.test("retained Git is recorded after success and after a later retirement failure", async () => {
+    const folder = await Deno.makeTempDir();
+    const retained = { retained_git_path: "/checkout.orbit-retired-git", retained_git_at: "2026-11-10T19:00:00+00:00" };
+    try {
+        await Deno.writeTextFile(`${folder}/retained-git.json`, JSON.stringify({ ...retained, changed: true }));
+        assertEquals(await writtenFailure(folder), retained);
+        const success = result(defaultIntent, moved, workspace, null, await writtenFailure(folder));
+        assertEquals([success.retained_git_path, success.retained_git_at], [retained.retained_git_path, retained.retained_git_at]);
+        await Deno.writeTextFile(`${folder}/result.json`, JSON.stringify({ error_code: "instance.migrate_retire_failed" }));
+        const failed = result(defaultIntent, { ...moved, retire: "failed" }, workspace, null, await writtenFailure(folder));
+        assertEquals([failed.error_code, failed.retained_git_path, failed.retained_git_at], ["instance.migrate_retire_failed", retained.retained_git_path, retained.retained_git_at]);
+        const beforeRetirement = result(defaultIntent, { ...moved, retire: "skipped", restore: "succeeded" }, workspace, null, await writtenFailure(folder));
+        assertEquals(beforeRetirement.retained_git_path, undefined);
+    } finally {
+        await Deno.remove(folder, { recursive: true });
+    }
+});

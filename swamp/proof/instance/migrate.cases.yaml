@@ -7,9 +7,10 @@
 # Process fixtures stop and disable host units before copying, install private Process environments in the container,
 # retire host files after cutover and restore recorded desired states only after removing a failed container.
 # Unpushed local branches and detached HEADs refuse with every name and commit count; stashes refuse with their count.
-# A worktree added after branch archiving refuses at the check immediately before deletion, including a common_of repository.
+# Tag-only commits, an expired stash reflog, submodules/nested repositories and a worktree added after the final listing
+# retain their Git data after retirement. Retirement atomically moves the whole checkout and never deletes metadata.
 # Both path lists are bounded to 20 entries with total counts. New changes or worktrees after preflight refuse final retirement,
-# keep every source intact, and leave the container serving. A retained checkout (retire: []) is not deleted or checked.
+# keep every source intact, and leave the container serving. Late additions after the final listing are retained. A retained checkout (retire: []) is not deleted or checked.
 command: instance:migrate
 chart: instance/migrate
 target: app-dev
