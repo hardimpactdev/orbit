@@ -34,7 +34,7 @@ In a terminal, the CLI asks to confirm that the Instance goes down during the mo
 | Branch | The checkout's current branch, with its commits that were never pushed. Orbit fetches it from the checkout on the Node |
 | Files | Every file that differs from the commit, every untracked file and every ignored file, such as `vendor`, `node_modules`, `storage` and `.env` |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace` |
-| Database on a Database server | It stays where it is. The container gets its own way to the port of each server the Instance uses, and the move checks it from inside |
+| Database on a Database server | It stays where it is. The container gets its own way to the port of each server the Instance uses. Orbit checks every target from inside before stopping the checkout |
 | SQLite file in the checkout | It moves with the files. Orbit drops its database connection record: the file is part of the workspace |
 | Route | The same domain and certificate. It points at FrankenPHP in the container, and the checkout's PHP-FPM pool goes |
 | T3 | A non-default Instance gets its T3 server, registered as a [new Instance's](/cli/instance/create) is. The default runs none |
@@ -52,6 +52,8 @@ These do not move: the staging state of the index, stashes, and branches that no
 - **Retirement.** Every checkout scheduled for deletion is clean and has no other worktree registered on its Git directory. Orbit checks before downtime and again before removal. `instance.migrate_retirement_blocked` names the checkout, other worktree paths and changed files, with total counts and the first 20 entries of each list. Ignored files do not block. Resolve the worktrees and save the changes before retrying; Orbit never stashes or removes them for you.
 
 A default checkout that is retained can copy uncommitted files. A checkout scheduled for deletion must be clean.
+
+Orbit prepares the container and probes every attached target before downtime. If a target is unreachable, the checkout keeps serving, its files stay untouched, and its host Processes keep their states.
 
 Nobody works in the checkout during the move. Orbit shows the wake page on the Route, and starts no deployment and no wake of the Instance until the move has ended.
 
