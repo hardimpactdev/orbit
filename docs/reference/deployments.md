@@ -14,7 +14,9 @@ covers:
 
 # Instance releases
 
-Development deployment uses one native Swamp root on 209 and official SSH to the app-dev Node. The Gateway captures public intent and names for private execution copies. Fetch, checkout checks, cleanup, checkout, Vite preparation, each Project command and final inspection are separate native steps. The shared terminal reader records the result and history; development steps do not read intent or report progress to the Gateway.
+An [Instance container's default deployment](/reference/development-containers#processes) runs its Project commands as `orbit`, repairs workspace group permissions before and after those commands, installs its development Processes and takes a new seed. The seed stops and starts every running unit, so each worker runs the new commit.
+
+Checkout development deployment uses one native Swamp root on 209 and official SSH to the app-dev Node. The Gateway captures public intent and names for private execution copies. Fetch, checkout checks, cleanup, checkout, Vite preparation, each Project command and final inspection are separate native steps. The shared terminal reader records the result and history; development steps do not read intent or report progress to the Gateway.
 
 Production deployment uses the same native root on 209 with a release layout and the admitted Project account ([chart](/cli/instance/deploy)). Every Node action is one official `@swamp/ssh` argv or an official `@swamp/cfgmgmt` behavior; no step calls the Gateway, and no polled executor remains. Rollback stays production-only, and development rollback refuses `deployment_config.unavailable` because checkouts have no retained releases.
 

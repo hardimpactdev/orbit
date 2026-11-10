@@ -16,7 +16,8 @@ final readonly class DevelopmentHibernationPolicy
     {
         $instance->loadMissing('node.roles');
 
-        return $this->hasActiveAppDevRole($instance->node);
+        // A container Instance sleeps as a whole container, which a later part of the runtime builds; its units are not the Node's.
+        return $this->hasActiveAppDevRole($instance->node) && ! $instance->runtime()->exists();
     }
 
     public function appliesToProcess(Process $process): bool

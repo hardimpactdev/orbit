@@ -81,6 +81,12 @@ final readonly class InstanceContainer
         }
     }
 
+    /** The application's folder in the workspace: the Project root of a monorepo, else the workspace itself. */
+    public static function application(Instance $instance): string
+    {
+        return ApplicationDirectory::resolve(InstanceHostIntent::Workspace, $instance->root ?? $instance->project->root);
+    }
+
     /** The Node keeps a bare mirror of the Project's repository per Instance: Git runs there, never in the container. */
     public static function mirror(Instance $instance): string
     {
@@ -157,7 +163,7 @@ final readonly class InstanceContainer
         $instance->loadMissing(['project', 'node']);
         $project = $instance->project;
         $workspace = InstanceHostIntent::Workspace;
-        $application = ApplicationDirectory::resolve($workspace, $instance->root ?? $project->root);
+        $application = self::application($instance);
         $gateway = Ipv4Subnet::from(ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')))->usableRange()[0];
         $environment = InstanceImage::environment($gateway);
         $access = $database === null ? null : $this->databaseAccess($instance, $runtime, $database);
@@ -186,12 +192,14 @@ final readonly class InstanceContainer
             'workspace' => $workspace, 'environment_file' => $application.'/.env',
             // The deploy commands' whole environment: `orbit`'s home and the runtime folder, the Project's PHP first, the Vite+ home and
             // the egress proxy (docs/reference/development-containers.md#egress-and-dns).
-            'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.$this->path($project),
+            'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.self::path($project),
                 ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment)],
             'units' => $this->units($instance, $runtime, $application),
             // `php` on every PATH in the container is the Project's static build, so `composer` runs for `agent` and `orbit` alike.
             'php' => $this->php($project),
             'clone' => $clone,
+            // The Project's development Processes; a deployment's new seed restarts the running ones on the new commit.
+            'processes' => app(ContainerProcesses::class)->units($instance),
         ];
     }
 
@@ -253,7 +261,8 @@ final readonly class InstanceContainer
                     .($this->servesDevPorts($instance, $runtime) ? 'ORBIT_DEV_PORTS='.InstanceDevPorts::First.'-'.InstanceDevPorts::Last."\n"
                         .'ORBIT_DEV_PORTS_TAKEN='.implode(',', app(InstanceDevPorts::class)->excluded($node))."\n" : '')],
                 ['path' => '/home/agent/.codex/config.toml', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => $codex],
-                ['path' => '/home/agent/.claude.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => "{\"hasCompletedOnboarding\": true}\n"],
+                ['path' => '/home/agent/.claude.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]],
+                ['path' => '/home/agent/.t3/userdata/settings.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true]],
             ],
             // The note of the Project's type, as the agents' own instructions file; it states facts about the container only.
             'links' => [['path' => '/home/agent/.claude/CLAUDE.md', 'target' => $note], ['path' => '/home/agent/.codex/AGENTS.md', 'target' => $note]],
@@ -329,7 +338,7 @@ final readonly class InstanceContainer
         if (! $project->type->isWebServing() || ! is_string($version)) {
             return [];
         }
-        $path = $this->path($project);
+        $path = self::path($project);
         $php = InstanceHostIntent::RuntimeFolder.'/current/php/'.$version.'/bin';
         $root = InstanceHostIntent::Workspace.'/'.trim($instance->root ?? $project->root ?? 'public', '/');
         $listen = $runtime->bridge_address.':'.self::WebPort;
@@ -359,7 +368,7 @@ final readonly class InstanceContainer
     }
 
     /** The runtime folder's programs, behind the static PHP build of the Project's version. */
-    private function path(Project $project): string
+    public static function path(Project $project): string
     {
         $php = is_string($project->php_version) ? InstanceHostIntent::RuntimeFolder.'/current/php/'.$project->php_version.'/bin:' : '';
 

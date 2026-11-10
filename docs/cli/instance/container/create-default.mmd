@@ -51,7 +51,8 @@ sequenceDiagram
   SW->>C: Start Processes<br/>Ansible · tags processes
   %%> What it does:
   %%> - FrankenPHP starts as the `orbit` unit `orbit-frankenphp.service` on port 8080 of the bridge address
-  %%> - the Project's development Process definitions need their own records and vault path; until then the admission refuses them with `operation.kind_unavailable`
+  %%> - the Project's development Processes start as `orbit-process-<id>-<name>.service` units, as `orbit`; each environment file comes from the vault, root only
+  %%> - a Process whose desired state is stopped is installed, not started
   opt web-serving Project
     SW->>N: Create the Route<br/>child operation-route-create
   end

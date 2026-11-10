@@ -12,6 +12,8 @@ covers:
 
 Use `App\Infrastructure\Swamp\SwampCommandStep` for execution-copy references and terminal projection. Each family opts in with `workflow_inputs => true`; its projector returns the outer `{intent, execution_secrets}` envelope. The shared `DirectOperation::workflowInputs` builder validates names-only descriptors and writes authoritative Operation, kind and Node IDs last. An empty descriptor map serializes as an object. The separate `terminal_result` declaration fixes the result job and step; it does not opt into full inputs. Native `command/shell` owns execution and output capture. The Gateway records the result through the family's existing projector.
 
+A [container Process read](/reference/development-containers#processes) uses `processInspection` to read the fixed `Read Process result` capture from the completed run. The journal bytes stay in the execution vault; the Gateway checks the capture against the read's request id.
+
 Recorded reads such as [`node:metrics`](/cli/node/metrics) do not use command steps. The Gateway reads its saved observation and agent state without creating an Operation, starting a workflow, or asking Swamp to collect a fresh sample.
 
 ## Secret inputs

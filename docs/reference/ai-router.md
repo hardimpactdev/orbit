@@ -307,6 +307,10 @@ Then root on the Node sends a request to the guard. It must fail, and the output
 
 Last, root on the Node sends a request to the forwarder on the bridge address. It must fail, and the input chain's reset counter must rise.
 
+The three counter checks read decimal packet counts from nftables output and compare them as numbers. An unchanged or lower count fails the check.
+
+The check creates and removes a temporary namespace, veth and return route. These probe tasks report no configuration change, so a repeat run with no drift reports zero changes.
+
 A removing run ends by checking that the router's Node answers SSH from the Node while the guard port does not.
 
 | Code | Status | When |

@@ -1,3 +1,9 @@
+import {
+    Inspection,
+    InspectionArgs,
+    Reference,
+    storeInspection,
+} from "./inspection.ts";
 import { z } from "npm:zod@4.4.3";
 import {
     LifecycleArgs,
@@ -8,8 +14,14 @@ import {
 /** Public rendering only. Official behaviors own Node effects and checks. */
 export const behavior = {
     type: "@nckrtl/process-command-assets",
-    version: "2026.11.02.1",
+    version: "2026.11.10.1",
     resources: {
+        inspection: {
+            schema: Inspection,
+            lifetime: "1h",
+            garbageCollection: 10,
+        },
+        reference: { schema: Reference, lifetime: "1h", garbageCollection: 10 },
         lifecycle: {
             schema: LifecycleAssets,
             lifetime: "infinite",
@@ -17,6 +29,11 @@ export const behavior = {
         },
     },
     methods: {
+        inspection: {
+            description: "Keep a container Process read in the vault",
+            arguments: InspectionArgs,
+            execute: storeInspection,
+        },
         lifecycle: {
             description:
                 "Resolve the account home and shape public Docker argv",

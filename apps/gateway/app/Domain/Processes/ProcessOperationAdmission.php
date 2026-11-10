@@ -9,6 +9,7 @@ use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Node;
@@ -28,6 +29,10 @@ final readonly class ProcessOperationAdmission
     {
         return DB::transaction(function () use ($process, $verb, $created, $preserveRecord, $caller, $requestId): Operation {
             $input = $this->inputFor($process, $verb, $created, $preserveRecord, $caller);
+            if (isset($input['container']) && in_array($verb, ['create', 'update', 'destroy'], true)) {
+                // A container Instance takes its Processes from the Project's development definitions, which a deployment installs.
+                throw new ResourceOperationException('operation.kind_unavailable', 'Change the Processes of a container Instance through the Project\'s development definitions and a deployment.', 503);
+            }
             if (in_array($verb, ['create', 'update'], true) && $process->runtime === ProcessRuntime::Systemd) {
                 $input['activation_pending'] = $process->systemd_activation_pending || $process->systemd_activation_hash !== $input['content_hash'];
             }
@@ -75,6 +80,10 @@ final readonly class ProcessOperationAdmission
             'on_demand' => $target->onDemandHostStart, 'created' => $created, 'preserve_record' => $preserveRecord,
             'caller_node_id' => $caller?->id,
             'vite' => $verb !== 'stop' && $systemd && $process->isVpDev() ? ['path' => SystemdProcessRenderer::viteEnvironmentPath($process->owner_id), 'instance_id' => $process->owner_id] : null];
+        if ($target->container !== null) {
+            // The unit lives in the Instance container; Swamp acts on it through `incus exec` on the Node.
+            $input['container'] = $target->container;
+        }
         if (! $systemd && in_array($verb, ['start', 'stop', 'restart'], true)) {
             $input['image'] = $this->docker->containerInput($process, $target)['image'];
         }
