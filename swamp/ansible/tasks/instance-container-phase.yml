@@ -550,12 +550,14 @@
       changed_when: true
 
 # The agent's side of a clone: the placeholder model key, the Claude Code and Codex settings, the note links, and the instance file,
-# whose presence starts T3. Each file is compared by digest, so a rerun changes nothing; the key comes through the vault.
+# whose presence starts T3. Whole files are compared by digest; JSON settings merge only Orbit's keys, preserving runtime state.
+# A rerun changes nothing; the key comes through the vault.
 - name: Prepare the agent
   when: phase == 'agent'
   vars:
     agent_files: >-
-      {{ container.clone.files + [container.clone.model_environment | combine({'content': lookup('ansible.builtin.env', 'ORBIT_MODEL_ENVIRONMENT')})] }}
+      {{ (container.clone.files | selectattr('content', 'defined') | list)
+         + [container.clone.model_environment | combine({'content': lookup('ansible.builtin.env', 'ORBIT_MODEL_ENVIRONMENT')})] }}
   block:
     - name: Make the agent's configuration folders
       ansible.builtin.command: { argv: "{{ as_agent + ['mkdir', '-p', '-m', '0700', '/home/agent/.claude', '/home/agent/.t3/userdata'] }}" }
@@ -576,6 +578,28 @@
         stdin: "{{ item.item.content }}"
         stdin_add_newline: false
       loop: "{{ agent_digests.results }}"
+      loop_control: { label: "{{ item.item.path }}" }
+      no_log: true
+      changed_when: true
+    - name: Read the agent's JSON settings
+      ansible.builtin.command: { argv: "{{ as_root + ['cat', '--', item.path] }}" }
+      loop: "{{ container.clone.files | selectattr('json', 'defined') | list }}"
+      loop_control: { label: "{{ item.path }}" }
+      register: agent_settings
+      changed_when: false
+      failed_when: agent_settings.rc != 0 and 'No such file or directory' not in agent_settings.stderr
+      no_log: true
+    - name: Merge Orbit's changed JSON settings
+      vars:
+        settings: "{{ item.stdout | from_json if item.rc == 0 else {} }}"
+      when: item.rc != 0 or settings != (settings | combine(item.item.json))
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['file', 'push', '--uid', item.item.uid | string, '--gid', item.item.gid | string, '--mode', item.item.mode,
+              '-', container.name ~ item.item.path] }}
+        stdin: "{{ settings | combine(item.item.json) | to_json }}\n"
+        stdin_add_newline: false
+      loop: "{{ agent_settings.results }}"
       loop_control: { label: "{{ item.item.path }}" }
       no_log: true
       changed_when: true
