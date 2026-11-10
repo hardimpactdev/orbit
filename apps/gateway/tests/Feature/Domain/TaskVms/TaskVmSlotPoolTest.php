@@ -1394,9 +1394,6 @@ it('lets task cancellation take precedence over a capacity wait or admitted task
     $holder = $waiting ? app(TaskVmSlotPool::class)->take(slotPoolGroup($project)) : null;
     $group = slotPoolGroup($project);
     $work = app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40));
-    if (! $waiting) {
-        $work->update(['status' => OperationStatus::Running]);
-    }
     expect($work->refresh()->lock_key)->not->toBeNull();
 
     $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);

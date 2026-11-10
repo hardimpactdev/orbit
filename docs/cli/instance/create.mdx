@@ -52,6 +52,8 @@ Every other Instance of the Project is a clone of that `default` ([chart](https:
 
 A failed create leaves the container stopped, with its workspace; the same command resumes it.
 
+The API answers `202` with a queued Operation after recording the create, before work on the Node starts. Clients follow that Operation as usual. While it waits to start, another create for the same name is refused with `operation.target_busy`; a replay with the same Idempotency-Key returns the original Operation.
+
 ## Branch selection
 
 | Creation input | Checkout | Selected branch |

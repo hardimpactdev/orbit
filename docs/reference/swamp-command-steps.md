@@ -22,7 +22,7 @@ Call `executionCopy(string $vault, string $key, string $value): array{vault:stri
 
 Serve rate-limits requests and WebSocket handshakes per client and answers `429` with `Retry-After`. Its source admits at most 50 new WebSocket connections from one IP address in a fixed minute, for every token together, and names the rest of that minute as `Retry-After`; no serve setting changes it. Every Gateway process shares that budget.
 
-The Gateway opens one connection per admission instead of one per request: the copies and run starts that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. A request that fails on it closes that connection, and the next request opens a new one.
+The execution copies that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. After every copy is acknowledged, the Gateway queues the native starts on its existing `operations` queue and answers admission without waiting for them. Each start job opens its own connection. A request that fails closes its connection, and the next request opens a new one.
 
 Every Gateway WebSocket client also tries a refused `429` handshake again after the server's `Retry-After`, or after a doubling backoff from half a second when serve names none. It tries at most four times and only while the caller's connect timeout leaves room, so a copy or start waits up to 15 seconds instead of failing at once. A wait for the rest of serve's minute is longer, so the Gateway keeps its own connection rate low instead.
 

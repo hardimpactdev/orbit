@@ -144,6 +144,9 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         }
         $run = $operation->state['swamp_run_id'] ?? null;
         if (is_string($run)) {
+            if ($operation->cancel_requested_at !== null) {
+                app(NativeRunCancellation::class)->request($operation);
+            }
             $this->project($operation, $run, $selector, $step, $expire);
             $operation->refresh();
         }

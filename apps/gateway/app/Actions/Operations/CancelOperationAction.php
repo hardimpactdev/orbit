@@ -31,7 +31,8 @@ final readonly class CancelOperationAction
                 return;
             }
             if (in_array($operation->status, [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting], true)
-                && ! isset($operation->state['swamp_run_id']) && $operation->attempts === 0) {
+                && ! isset($operation->state['swamp_run_id']) && $operation->attempts === 0
+                && ! ($operation->status === OperationStatus::Running && isset($operation->state['swamp_start']))) {
                 $this->store->change($operation, ['cancel_requested_at' => $operation->cancel_requested_at ?? now(),
                     'status' => OperationStatus::Cancelled, 'finished_at' => now(), 'error_code' => null,
                     'current_step' => null, 'failed_step' => null, 'lock_key' => null]);

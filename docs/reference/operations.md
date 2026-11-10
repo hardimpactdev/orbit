@@ -3,7 +3,7 @@ title: "Operations"
 description: "How the Gateway runs a long operation as a queued record with named steps, how a client follows it, and how the Gateway recovers one that a lost worker interrupted."
 covers:
   - apps/gateway/app/{Domain/Operations/**,Actions/Operations/**,Data/Operations/**,Http/Requests/Operations/**}
-  - apps/gateway/app/{Http/Controllers/Api/OperationsController.php,Models/Operation*.php}
+  - apps/gateway/app/{Http/Controllers/Api/OperationsController.php,Models/Operation*.php,Jobs/Operations/**}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/database/migrations/2026_12_28_000000_add_operation_idempotency_keys.php
   - apps/gateway/database/migrations/*route_publication_holds*.php
@@ -500,7 +500,13 @@ See the [Swamp shape gate](https://github.com/hardimpactdev/orbit/blob/main/swam
 
 New admission stores `state.swamp_start = {key: 'operation:' + id, workflow: admittedDefinition.workflow}` in the same transaction that creates the Operation, before submission after commit. It preserves unrelated state. A replay or admission fence keeps its recorded row unchanged. This public receipt records the admitted start identity; it does not bind a native run or establish a status. Only native evidence can establish `state.swamp_run_id`.
 
-If confirmation is lost after submission, the request returns `swamp.start_uncertain` with the Operation ID. The Operation stays running, keeps its target hold and has no invented native binding. A timeout does not prove that no run exists. The start path neither searches nor resubmits. Replaying the same idempotent request returns the same Operation and starts no additional work.
+After the admission commits and its execution copies are acknowledged, `SwampDispatch` queues one start job per Operation on the existing Gateway `operations` queue. The API answers `202` with the queued Operation without waiting for native start confirmation. This applies to every admission through the shared dispatcher, including Instance creates and Conn pairings. The job contains only the Operation ID; it reads the committed intent and prepares any run-time execution copies when it runs. Clients follow the same Operation through queued, running and terminal states.
+
+The start job makes one attempt. A connection failure or native refusal fails the Operation with `swamp.start_unavailable` or `swamp.start_refused`. A queue submission failure fails it with `swamp.start_enqueue_failed`. A job that fails before submission records `swamp.start_job_failed`. Cancellation or admission expiry before the job runs prevents submission.
+
+The existing reconciler ends an unstarted admission at its 600-second budget with `operation.timed_out`, including a lost job or an unavailable worker.
+
+If confirmation is lost after submission, the Operation records `swamp.start_uncertain`. The Operation stays running, keeps its target hold and has no invented native binding. A timeout does not prove that no run exists. The start path neither searches nor resubmits. A worker failure during submission follows the same uncertain path. Replaying the same idempotent request returns the same Operation and queues no additional work. A repeat without that key still obeys the target hold while the start job waits.
 
 Resolution requires native evidence for the exact workflow, `inputs.operation_id`, `inputs.node_id`, `inputs.kind` and recorded start key. A matching run can supply the missing binding for the existing terminal subscriber. Only authoritative proof that no run started permits a not-started failure and another admission. An unreadable or empty partial response is not that proof. A connection failure before submission or an explicit native refusal still fails the Operation.
 
@@ -508,7 +514,9 @@ On every reconciler pass, an unbound running Operation marked `swamp.start_uncer
 
 ### Execution-copy failures
 
-The Gateway pushes execution secrets through the shared `SwampVaultExecutionCopy` client before starting a run. No network call runs inside a database transaction: an admission transaction only records the intent and the Operation. `SwampDispatch` holds the execution copies and run starts until the transaction commits, then pushes every copy and starts the runs. A rolled-back admission pushes and starts nothing. A failed push returns `swamp.vault_sync_unavailable` and fails each Operation admitted in that transaction before its run starts. Outside a transaction, the push runs at once.
+The Gateway pushes execution secrets through the shared `SwampVaultExecutionCopy` client before queuing a run start. No network call runs inside a database transaction: an admission transaction only records the intent and the Operation. `SwampDispatch` holds the execution copies and run starts until the transaction commits, then pushes every copy and queues the starts. Copies stay in the request because they capture secret values in memory; the queue stores neither those values nor their closures. A rolled-back admission pushes and queues nothing.
+
+A failed push returns `swamp.vault_sync_unavailable` and fails each Operation admitted in that transaction before any start job is queued. Outside a transaction, the push runs at once.
 
 The `Swamp execution copy unavailable` warning records the public vault and key names, native request ID, failure phase, a recognized server refusal code and the HTTP handshake status when available. These fields distinguish connection failures from vault refusals. It records no secret value, token, payload, remote message or original exception message. The client does not retry the write.
 
@@ -528,7 +536,7 @@ After a kind cuts over and removes its previous executor, its `operation-kinds.p
 
 A parent still on the previous executor may admit a direct child through the child's owning admission hook. The child response includes normal Operation, parent and child identity. It omits the old execution context, lease and wait metadata. Replaying that child admission returns the same child without resolving a deleted execution contract.
 
-Cancelling a queued or running Operation with no `swamp_run_id` and zero attempts records `cancelled` immediately and releases its target hold, including an existing cancellation request. A bound run or an Operation with previous attempts only records `cancel_requested_at`; Swamp owns stopping and projecting its terminal result. A terminal Operation stays unchanged. Cancellation does not walk native children.
+Cancelling an unstarted queued Operation with no `swamp_run_id` and zero attempts records `cancelled` immediately and releases its target hold, including an existing cancellation request. Once the native start is running, cancellation only records `cancel_requested_at`, even before the run binding arrives: submission may be in flight. The reconciler forwards that request once the run binds. Swamp owns stopping and projecting its terminal result. A terminal Operation stays unchanged. Cancellation does not walk native children.
 
 A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
 

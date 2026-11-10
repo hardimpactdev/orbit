@@ -77,8 +77,8 @@ function outsideGroup(Project $project, TaskGroupStatus $status): Task
         'watched_pr_number' => 2981, 'watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/2981']);
 }
 
-// The test world has no Swamp to start. The refusal `swamp.start_unavailable` shows that admission passed every gate and tried to start the run.
-const OUTSIDE_STARTED = 'swamp.start_unavailable';
+// An admission that passes every gate returns its queued Operation.
+const OUTSIDE_STARTED = null;
 
 it('refuses a Project that does not take part in review and merge', function (): void {
     expect(outsideRefusal(outsideWorld(reviewAndMerge: false)))->toBe('project.review_and_merge_disabled');
@@ -138,7 +138,7 @@ it('replays the merge that the same key recorded, and refuses the same key with 
     $idempotency = app(OperationIdempotency::class);
     $admit = fn (string $fingerprint) => $idempotency->under(OperationKinds::ProjectPrMerge, 'merge-2981', $fingerprint, fn (): Operation => outsideMerge($project));
 
-    expect(fn () => $admit('request-a'))->toThrow(ResourceOperationException::class);
+    expect($admit('request-a')->status)->toBe(OperationStatus::Queued);
     $recorded = Operation::query()->where('kind', OperationKinds::ProjectPrMerge)->sole();
 
     expect($admit('request-a')->id)->toBe($recorded->id)

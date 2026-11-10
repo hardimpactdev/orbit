@@ -14,6 +14,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
+use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\Operation;
@@ -61,10 +62,11 @@ beforeEach(function (): void {
 
 it('captures normalized allow intent and pinned SSH without contacting the Node at admission', function (): void {
     $response = $this->postJson($this->url, ['port' => '08000:08100', 'source' => '192.0.2.99/24', 'label' => "office 'web'\n"])
-        ->assertAccepted()->assertJsonPath('data.status', 'running');
+        ->assertAccepted()->assertJsonPath('data.status', 'queued');
     $operation = Operation::query()->findOrFail($response->json('data.id'));
     $rule = FirewallRule::query()->sole();
     $intent = app(FirewallIntentProjection::class)->input($operation);
+    app()->call([new StartAdmittedSwampRun($operation->id), 'handle']);
 
     expect($this->starts)->toHaveCount(1)
         ->and($this->starts[0]['payload']['workflowIdOrName'])->toBe('operation-firewall-direct')
@@ -188,7 +190,8 @@ it('replays a keyed allow without a second Operation and refuses changed keyed i
         ->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
 
     expect(FirewallRule::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(1)
-        ->and($this->starts)->toHaveCount(1);
+        ->and($this->starts)->toBe([]);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
 });
 
 it('replays a keyed protected allow as the same succeeded Operation without a native run', function (): void {
@@ -214,10 +217,11 @@ it('skips a source contained by one protected range but admits a wider range or 
     $this->mock(MetricsFirewallExpectationProvider::class)->shouldReceive('for')->andReturn([$target]);
     $response = $this->postJson($this->url, ['port' => $port, 'source' => $source, 'protocol' => 'tcp'])->assertAccepted();
 
-    expect($response->json('data.status'))->toBe($skipped ? 'succeeded' : 'running')
+    expect($response->json('data.status'))->toBe($skipped ? 'succeeded' : 'queued')
         ->and($response->json('data.result.skipped'))->toBe($skipped ? 'firewall.rule_exists' : null)
         ->and(FirewallRule::query()->count())->toBe($skipped ? 0 : 1)
-        ->and($this->starts)->toHaveCount($skipped ? 0 : 1);
+        ->and($this->starts)->toBe([]);
+    Queue::assertPushed(StartAdmittedSwampRun::class, $skipped ? 0 : 1);
 })->with([
     'admitted address' => ['8001', '192.0.2.5', true],
     'admitted subnet' => ['8001:8050', '192.0.2.128/25', true],
@@ -239,6 +243,8 @@ it('records and lists the failed native step for a both-protocol firewall rule',
     $response = $this->postJson($url, ['port' => '47310', 'source' => '10.232.2.11'])->assertAccepted();
     $operation = Operation::query()->findOrFail($response->json('data.id'));
     $rule = FirewallRule::query()->sole();
+    app()->call([new StartAdmittedSwampRun($operation->id), 'handle']);
+    $operation->refresh();
     $run = $operation->state['swamp_run_id'];
     $this->history = [
         'id' => $run, 'workflowName' => 'operation-firewall-direct', 'status' => 'failed',
@@ -294,6 +300,8 @@ it('records and lists the failed native step for a both-protocol firewall rule',
 it('projects the native allow result, retains failed intent, and releases the lock exactly once', function (string $status, ?string $code, array $result): void {
     $this->postJson($this->url, ['port' => '443'])->assertAccepted();
     $operation = Operation::query()->sole();
+    app()->call([new StartAdmittedSwampRun($operation->id), 'handle']);
+    $operation->refresh();
     $data = [
         'run_id' => $operation->state['swamp_run_id'], 'status' => $status, 'error_code' => $code,
         'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
@@ -314,7 +322,8 @@ it('projects the native allow result, retains failed intent, and releases the lo
         ->and($rule->failed_step)->toBe($code === null ? null : 'Check the rules');
     $this->postJson($this->url, ['port' => '443', 'label' => 'retry'])->assertAccepted();
     expect(FirewallRule::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(2)
-        ->and($this->starts)->toHaveCount(2);
+        ->and($this->starts)->toHaveCount(1);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
 })->with([
     'applied' => ['succeeded', null, ['backend' => 'active']],
     'already correct' => ['succeeded', null, ['backend' => 'active', 'skipped' => 'firewall.rule_exists']],

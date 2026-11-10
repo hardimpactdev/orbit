@@ -27,6 +27,7 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
@@ -215,7 +216,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 // no deploy step but adds its database copy and its T3 start.
                 $input['run_budget_seconds'] = 1800 + array_sum(array_column($steps, 'timeout_seconds')) + ($server === null ? 0 : 180);
 
-                return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId);
+                return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
             }
             // F8: 60 s for the create phases, the admitted setup timeouts (the setup phase runs within 540 s),
             // 30 s for the Process phase, 180 s for the Route child (CSR, signing, install, publication and its TLS probe; 117 s measured cold),
@@ -225,7 +226,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 static fn (LifecycleStep $step): int => $step->timeoutSeconds, app(ProjectLifecycleStepStore::class)->ordered($project, LifecyclePhase::Setup)))) + 30
                 + (isset($input['route_create']) ? 240 : 0) + ($database === null && $server === null ? 0 : 180);
 
-            return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId);
+            return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
         });
     }
 
