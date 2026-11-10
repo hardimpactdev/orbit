@@ -57,7 +57,6 @@ function transform(task: Task, folder: string): Task {
       "ansible.builtin.apt",
       "community.general.modprobe",
       "ansible.builtin.systemd_service",
-      "ansible.builtin.wait_for",
     ]
   ) {
     if (module in task) {
@@ -118,7 +117,8 @@ function writeTasks(folder: string) {
     }
     Deno.writeTextFileSync(
       `${folder}/tasks/${name}`,
-      stringify(JSON.parse(text)),
+      // JSON is valid Ansible input and keeps literal "=" arguments out of YAML 1.1's special scalar tags.
+      text,
     );
   }
   Deno.copyFileSync(
@@ -335,7 +335,7 @@ async function fixture(
     }' "$@"`,
     zfs: 'printf "%s\\n" 307200',
     ip: `cat '${folder}/ip-addr'`,
-    "dpkg-query": 'printf "%s" "ii 1:7.0.1-ubuntu26.04"',
+    "dpkg-query": 'printf "%s" "installed"',
     modprobe: 'printf "install /bin/false \\n"',
     sysctl: 'printf "16384\\n128\\n65536\\n200\\n20000\\n1048576\\n"',
     // No Node group holds gid 2750.
@@ -346,6 +346,8 @@ async function fixture(
     // A staged configuration that holds BAD does not parse.
     squid: '! grep -qs BAD "$4"',
     systemctl: 'for unit; do [ "$unit" = is-active ] || echo active; done',
+    // The socket boundary only; real Ansible/socket tests exercise readiness without a TCP connection.
+    ss: 'printf "LISTEN 0 256 10.253.0.1:3128 0.0.0.0:*\\n"',
     // The pinned artifacts come from the fixture folder, by the URL's file name.
     curl:
       `out=; for a; do case "$prev" in --output) out=$a;; esac; prev=$a; done

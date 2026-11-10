@@ -151,11 +151,16 @@
     to_port: "{{ instances.egress.rule.port }}"
     comment: "{{ instances.egress.rule.comment }}"
 
+# A host connection to the bridge address enters over lo, which the table rejects. Observe the exact listener without connecting;
+# the image build still uses the proxy from its container on the bridge.
 - name: Wait for the proxy
-  ansible.builtin.wait_for:
-    host: "{{ instances.egress.origin | urlsplit('hostname') }}"
-    port: "{{ instances.egress.port }}"
-    timeout: 30
+  ansible.builtin.command:
+    argv: [ss, -H, -ltn4, src, "{{ instances.egress.origin | urlsplit('hostname') }}", sport, "=", ":{{ instances.egress.port }}"]
+  register: egress_listener
+  changed_when: false
+  until: egress_listener.stdout | length > 0
+  retries: 30
+  delay: 1
 
 - name: Read the proxy and its table
   ansible.builtin.command: { argv: [systemctl, is-active, "{{ instances.egress.table_unit }}", "{{ instances.egress.unit }}"] }

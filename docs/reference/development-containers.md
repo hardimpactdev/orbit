@@ -255,6 +255,8 @@ What it serves:
 - **Admission.** Only the bridge reaches the port. The bridge ACL and the Node's rule `orbit:instances-egress` admit it there. The proxy's table resets a connection to the port from anywhere else.
 - **Health.** The converge ends by checking that the proxy and its table run. Otherwise it fails with `instance.host_unavailable`.
 
+Readiness inspects the listening socket at the bridge address and port 3128, with 30 retries at a one-second delay, because the proxy's table rejects host TCP probes over `lo`; the image build still uses the proxy from its container on the bridge.
+
 Names and the record:
 
 - **Names.** Containers have no resolver. The proxy resolves each name through the Node's stub resolver, `127.0.0.53`.

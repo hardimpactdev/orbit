@@ -1022,7 +1022,7 @@ The system file sets up the kernel and Incus side of the host.
 - **Subordinate IDs.** Root's range in `/etc/subuid` and `/etc/subgid` must hold `(containers.task_places + containers.ci_places + 1) × 101,000,000` IDs: one isolated range per place and one for the base. A smaller range fails the phase with both numbers and changes nothing.
 - **ZFS ARC.** It sizes the ARC cap, which never rises. See [the ARC cap](#the-arc-cap-of-a-container-host) below.
 
-A host without Incus gets `incus`, `incus-base` and `incus-client` from the recipe's [pinned packages](#incus-lts-packages-and-upgrades). They are the packages of its architecture, checked by SHA-256. A host with Incus must run a server on the recipe's line, such as 7.0. The inner Incus of the base uses the same line. The phase never upgrades a running Incus.
+A host without Incus gets `incus`, `incus-base` and `incus-client` from the recipe's [pinned packages](#incus-lts-packages-and-upgrades). They are the packages of its architecture, checked by SHA-256. The package's `db:Status-Status` must be `installed`; a hold does not cause a reinstall, and config files left after removal do not count as installed. A host with Incus must run a server on the recipe's line, such as 7.0. The inner Incus of the base uses the same line. The phase never upgrades a running Incus.
 
 The `install sctp /bin/false` rule comes from the [kernel policy](/reference/node-provisioning#kernel-policy) that `node:add` and `node:converge` write. This phase only checks it: `modprobe --dry-run` must show the rule, and the module must not be loaded. A loaded module needs a reboot.
 

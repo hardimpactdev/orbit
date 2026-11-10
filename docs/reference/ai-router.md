@@ -3,6 +3,7 @@ title: "AI router"
 description: "The optional Orbit extension that collects CLIProxyAPI quota and its model list into shared Valkey, and publishes provider pools at collector.ai-router.orbit."
 covers:
   - apps/gateway/extensions/ai-router/**
+  - swamp/ansible/ai-router-model-forwarder.yml
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/web/src/extensions/ai-router/**
 ---
@@ -289,6 +290,8 @@ The command admits `ai_router.model_forwarder` on the Node. An applying run has 
 1. It installs the forwarder's user, its table and the forwarder on the Node. The table is in place before the guard admits the Node.
 2. It applies the guard on the router's Node, with the Node's WireGuard address added to its sources. This phase is the guard phase of `ai-router:task-guard`.
 3. It runs the checks below.
+
+With the table loaded, readiness inspects the listening sockets for the bridge address and port 8319. A host TCP probe would enter over `lo` and be rejected.
 
 So a run that fails after phase 1 leaves no Node admitted without its table.
 
