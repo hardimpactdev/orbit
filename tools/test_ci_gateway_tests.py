@@ -37,8 +37,10 @@ class GatewayTestsPolicyTest(unittest.TestCase):
                               f'apps/{project}/composer.lock', 'packages/php-sdk/composer.json'):
                     self.assertIn(value, key)
                 self.assertIn(f'path: apps/{project}/vendor', JOB)
-                self.assertIn(f'cp apps/{project}/.env.example apps/{project}/.env', JOB)
                 self.assertIn(f'composer install --working-dir=apps/{project} --no-interaction --prefer-dist --no-scripts', JOB)
+        self.assertIn('cp apps/gateway/.env.example apps/gateway/.env', JOB)
+        self.assertTrue((ROOT / 'apps/gateway/.env.example').is_file())
+        self.assertNotIn('cp apps/cli/.env.example', JOB)
         self.assertNotIn('--no-dev', JOB)
         self.assertNotIn('php-runtime-', JOB)
         # A cache hit must still regenerate both autoloaders in this checkout.
@@ -50,6 +52,7 @@ class GatewayTestsPolicyTest(unittest.TestCase):
         self.assertIn('>> "$GITHUB_ENV"', JOB)
         self.assertIn('ini_get("memory_limit") !== "1G"', JOB)
         self.assertNotIn('denoland/setup-deno@', JOB)
+        self.assertIn('echo "DENO_DIR=$RUNNER_TEMP/gateway-tests-deno" >> "$GITHUB_ENV"', JOB)
         self.assertIn('path: ${{ env.DENO_DIR }}', JOB)
         warm = 'deno cache --no-lock extensions/behaviors/operations/firewall/firewall_test.ts'
         self.assertLess(JOB.index(warm), JOB.index('vendor/bin/pest '))

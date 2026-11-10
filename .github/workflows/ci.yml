@@ -120,8 +120,6 @@ jobs:
     needs: changes
     if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['gateway-tests']) != 'false' }}
     runs-on: ubuntu-26.04
-    env:
-      DENO_DIR: ${{ runner.temp }}/gateway-tests-deno
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -135,6 +133,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/gateway-tests-php"
           echo 'memory_limit=1G' > "$RUNNER_TEMP/gateway-tests-php/memory.ini"
           echo "PHP_INI_SCAN_DIR=${PHP_INI_SCAN_DIR:-}:$RUNNER_TEMP/gateway-tests-php" >> "$GITHUB_ENV"
+      - name: Set the firewall dependency cache directory
+        run: echo "DENO_DIR=$RUNNER_TEMP/gateway-tests-deno" >> "$GITHUB_ENV"
       - name: Cache Gateway test dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -148,7 +148,6 @@ jobs:
       - name: Install Gateway and CLI dev dependencies
         run: |
           cp apps/gateway/.env.example apps/gateway/.env
-          cp apps/cli/.env.example apps/cli/.env
           composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-scripts
           composer install --working-dir=apps/cli --no-interaction --prefer-dist --no-scripts
       - name: Cache pinned Deno download

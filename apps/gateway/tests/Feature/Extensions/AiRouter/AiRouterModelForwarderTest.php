@@ -255,7 +255,8 @@ it('passes the placeholder through the forwarder unchanged, so the guard alone d
         'bind 10.251.33.1' => 'bind 127.0.0.1', 'http://10.44.0.3:8318' => "http://127.0.0.1:{$guardPort}",
         'http://:'.AiRouterModelForwarder::Port => "http://:{$forwarderPort}",
     ]);
-    $echo = "http://:{$upstream} {\n\tbind 127.0.0.1\n\trespond \"auth={header.Authorization} uri={uri}\"\n}\n";
+    // The echo server needs its own admin listener too; Caddy otherwise binds the shared default :2019.
+    $echo = "{\n\tadmin 127.0.0.1:0\n\tpersist_config off\n}\nhttp://:{$upstream} {\n\tbind 127.0.0.1\n\trespond \"auth={header.Authorization} uri={uri}\"\n}\n";
     $run = static function (string $caddyfile) use ($directory, $forwarder, $echo, $upstream, $guardPort, $forwarderPort) {
         // One Caddy per configuration: the snippets each open with a global options block.
         $files = [];
