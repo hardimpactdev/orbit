@@ -133,6 +133,8 @@ Build jobs, including Swamp validation, shape and unit tests, start in parallel 
 
 The three Swamp subjobs read their own selections. `Required checks` reads their results through the Actions API so it can require validation and Deno tests without waiting for shape when [slow checks are non-blocking](/reference/command-development-pipeline#capacity-ideal-state).
 
+On a push to `main` while slow checks are non-blocking, the `Start the CLI release` job runs after `Required checks` passes and dispatches `Orbit CLI Release` for the commit, so the release does not wait for the rest of the run.
+
 Known documentation, contract-generation and proof tools select only their consumers. The planner fixture job always runs. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
 On agent source, Cargo or test changes, CI runs `cargo check --locked --all-targets` and `scripts/check-crates test --locked`, including composed extension crates, within a 15-minute job budget. On Pi source changes, CI runs its check, tests and build within an eight-minute job budget. Shared CI changes select both jobs too. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.

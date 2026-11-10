@@ -1,0 +1,112 @@
+{
+  "source": {
+    "operation_id": 16210,
+    "workflow_run_id": "1aaf8980-f005-48e2-9de5-42335b013790",
+    "note": "Recorded successful t3-register step. Native sensitive token references redacted; no secret values were read."
+  },
+  "step": {
+    "name": "t3-register",
+    "status": "succeeded",
+    "startedAt": "2026-11-10T16:11:09.448Z",
+    "completedAt": "2026-11-10T16:11:10.905Z",
+    "duration": 1457,
+    "dataArtifacts": [
+      {
+        "dataId": "1abfd580-0213-47fa-80b4-0be7331aa5ef",
+        "name": "gateway-1831",
+        "version": 1,
+        "tags": {
+          "type": "resource",
+          "specName": "session",
+          "modelName": "ic-t3-register",
+          "source": "step-output",
+          "workflow": "operation-instance-create",
+          "workflowId": "c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a",
+          "workflowRunId": "1aaf8980-f005-48e2-9de5-42335b013790",
+          "job": "create",
+          "step": "t3-register",
+          "initiatedBy": "user:orbit-gateway",
+          "orbit_start_key": "operation:16210",
+          "_swamp.kind": "resource",
+          "_swamp.sensitiveFields": "[\"token\"]",
+          "_swamp.sensitiveFieldsVersion": "1"
+        },
+        "attributes": {
+          "token": "[REDACTED native sensitive-field reference]"
+        }
+      },
+      {
+        "dataId": "b934fa0b-1b29-4786-b64f-69d8921460b7",
+        "name": "swamp-1831",
+        "version": 1,
+        "tags": {
+          "type": "resource",
+          "specName": "session",
+          "modelName": "ic-t3-register",
+          "source": "step-output",
+          "workflow": "operation-instance-create",
+          "workflowId": "c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a",
+          "workflowRunId": "1aaf8980-f005-48e2-9de5-42335b013790",
+          "job": "create",
+          "step": "t3-register",
+          "initiatedBy": "user:orbit-gateway",
+          "orbit_start_key": "operation:16210",
+          "_swamp.kind": "resource",
+          "_swamp.sensitiveFields": "[\"token\"]",
+          "_swamp.sensitiveFieldsVersion": "1"
+        },
+        "attributes": {
+          "token": "[REDACTED native sensitive-field reference]"
+        }
+      },
+      {
+        "dataId": "48f38234-3715-4c64-9db4-0197ab1282f5",
+        "name": "terminal",
+        "version": 1,
+        "tags": {
+          "type": "resource",
+          "specName": "terminal",
+          "modelName": "ic-t3-register",
+          "source": "step-output",
+          "workflow": "operation-instance-create",
+          "workflowId": "c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a",
+          "workflowRunId": "1aaf8980-f005-48e2-9de5-42335b013790",
+          "job": "create",
+          "step": "t3-register",
+          "initiatedBy": "user:orbit-gateway",
+          "orbit_start_key": "operation:16210",
+          "_swamp.kind": "resource"
+        },
+        "attributes": {
+          "stdout": "{\"environment_id\":\"f5be7b2e-7003-4719-896b-4d625c5719e4\",\"server_version\":\"0.1.7\",\"expires_at\":\"2026-12-10T16:11:05.290Z\",\"gateway_session\":{\"vault\":\"orbit-control-inputs\",\"key\":\"nckrtl-instance-t3-4dd8d03a-2ac0-4c57-a8a6-8ddf4e3e7db4-register-session-gateway-1831-token\"},\"swamp_session\":{\"vault\":\"orbit-control-inputs\",\"key\":\"nckrtl-instance-t3-4dd8d03a-2ac0-4c57-a8a6-8ddf4e3e7db4-register-session-swamp-1831-token\"}}"
+        }
+      },
+      {
+        "dataId": "579b2ee1-3d35-46a7-bde6-46608e591e2f",
+        "name": "report-swamp-method-summary",
+        "version": 2,
+        "tags": {
+          "type": "report",
+          "reportName": "@swamp/method-summary",
+          "reportScope": "method",
+          "modelName": "ic-t3-register"
+        }
+      },
+      {
+        "dataId": "f9e201fc-ebbc-4e71-9a68-5189ece5d3a3",
+        "name": "report-swamp-method-summary-json",
+        "version": 2,
+        "tags": {
+          "type": "report",
+          "reportName": "@swamp/method-summary",
+          "reportScope": "method",
+          "modelName": "ic-t3-register"
+        }
+      }
+    ],
+    "outputs": {
+      "token": "[REDACTED native sensitive-field reference]",
+      "stdout": "{\"environment_id\":\"f5be7b2e-7003-4719-896b-4d625c5719e4\",\"server_version\":\"0.1.7\",\"expires_at\":\"2026-12-10T16:11:05.290Z\",\"gateway_session\":{\"vault\":\"orbit-control-inputs\",\"key\":\"nckrtl-instance-t3-4dd8d03a-2ac0-4c57-a8a6-8ddf4e3e7db4-register-session-gateway-1831-token\"},\"swamp_session\":{\"vault\":\"orbit-control-inputs\",\"key\":\"nckrtl-instance-t3-4dd8d03a-2ac0-4c57-a8a6-8ddf4e3e7db4-register-session-swamp-1831-token\"}}"
+    }
+  }
+}
