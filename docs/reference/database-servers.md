@@ -123,7 +123,7 @@ A retry with the same `--idempotency-key` returns the recorded Operation, includ
 
 Write endpoints return HTTP 202 with an Operation. List and show return `id`, `slug`, `driver`, `node_id`, `process_id`, `tag`, `port`, `status`, and `databases_count`. Show also returns `databases`, `failed_step` and `error_code`. Passwords never appear in either response.
 
-The server's Process is an ordinary Docker Node Process: read its logs, stop it, start it, or restart it with the [`process`](/cli/process) commands. `process:destroy` refuses it with `process.required_by_database_server`; remove the server instead. `process:update` refuses the Process of a `redis` server with the same code, so the command always keeps `--aclfile`.
+The server's Process is an ordinary Docker Node Process: read its logs, stop it, start it, or restart it with the [`process`](/cli/process) commands. `process:destroy` refuses it with `process.required_by_database_server`; remove the server instead. `process:update` accepts only an image-only update to `valkey/valkey:<tag>` for a `redis` server. For example, `orbit process:update 41 --image=valkey/valkey:8.1.3` changes the image while keeping the command, including `--aclfile`, volumes and every other specification field. An update with any other field, without `image`, or with another image repository returns `process.required_by_database_server` (409). MySQL Process updates keep the ordinary partial-update contract.
 
 ## Close an adopted server
 
@@ -360,7 +360,7 @@ The server commands return these codes.
 | `database.in_use` | 409 | A session, replication object, prepared transaction, or user dependency blocks the planned database removal. Nothing is dropped. |
 | `database.name_conflict` | 409 | The name is taken on the server, a recorded test member has a foreign owner, or its managed role is missing. |
 | `database.slug_conflict` | 409 | The connection slug exists and the request is not an identical PostgreSQL pool retry. |
-| `process.required_by_database_server` | 409 | `process:destroy` names a server's Process, or `process:update` names a Valkey server's Process. |
+| `process.required_by_database_server` | 409 | `process:destroy` names a server's Process, or a Valkey Process update is not image-only with `valkey/valkey:<tag>`. |
 | `database.server_command_failed` | 502 | An admin command on the server failed. The message holds no SQL output, rule, or password. |
 
 
@@ -386,7 +386,7 @@ A connection describes one database that an Instance uses. A server holds the ad
 
 ### Valkey starts only from Orbit's ACL file
 
-With an ACL file, Valkey ignores `requirepass`. A file without a `default` line, or a start without `--aclfile`, gives every client full access without a password. So Orbit writes the file before the first start, always with a `default` line, and refuses `process:update` of the Process. A missing or broken file stops Valkey instead of opening it. New servers require a password. A server adopted open before adoption was removed stays open until the operator [closes it](#close-an-adopted-server).
+With an ACL file, Valkey ignores `requirepass`. A file without a `default` line, or a start without `--aclfile`, gives every client full access without a password. So Orbit writes the file before the first start, always with a `default` line, and limits `process:update` to an image-only change within `valkey/valkey:<tag>`. The stored command and volume mounts stay, so an update cannot drop `--aclfile` or the ACL file mount. A missing or broken file stops Valkey instead of opening it. New servers require a password. A server adopted open before adoption was removed stays open until the operator [closes it](#close-an-adopted-server).
 
 ### One Valkey user is one connection
 
