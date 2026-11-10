@@ -1,0 +1,313 @@
+id: 6f0a1c1e-3f2b-4d57-9a0e-5b0f6c1d7e42
+name: operation-instance-migrate
+description: Move a checkout Instance into a container on its Node (docs/cli/instance/migrate.mmd). Temporary, until the last checkout Instance has moved. The container phases are those of operation-instance-create; the checkout's own phases are in instance-migrate.yml.
+vaults: [orbit-control-inputs]
+queueTimeout: 10
+labels: {role: swamp}
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: instance.migrate}
+    intent: {type: object}
+    # Names only: model_environment, the placeholder model key of an Instance with T3. A default's copy holds no key.
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^instance-migrate-model-[1-9][0-9]*$'}
+        required: [vault, key]
+        additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+  - name: migrate
+    steps:
+      # Input: the admitted intent and the shipped playbooks, as the run folder that every Ansible phase reads.
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ansible-input
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      # Stop the Instance: the checkout is on the recorded branch, a container that an earlier failed move left goes, and the
+      # awake marker goes, so the Route shows the wake page while the checkout moves.
+      - name: quiesce
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "im-quiesce-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags quiesce "$ORBIT_ANSIBLE/instance-migrate.yml"
+            env: &phase
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
+              ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+      # Launch the container: from the image, with its address, its ACL and the way to its database server, started. The Node's
+      # mirror fetches the branch from the checkout itself (`container.repository` is its path), so the step gets no token.
+      - name: container
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: quiesce, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "im-container-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags container "$ORBIT_ANSIBLE/instance-container.yml"
+            env: *phase
+      # Build the workspace: the branch in as a bundle, checked out in a standalone repository in /srv/workspace. The step gets no
+      # .env, so the one this phase writes is empty: the next phase brings the checkout's own.
+      - name: workspace
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: container, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "im-workspace-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags workspace "$ORBIT_ANSIBLE/instance-container.yml"
+            env: *phase
+      # Copy the files: every file that differs from the commit, every untracked and every ignored file, .env among them; the
+      # T3 proxy device of a non-default Instance; and the check that the container reaches its database server.
+      - name: files
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: workspace, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "im-files-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 1800 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags files "$ORBIT_ANSIBLE/instance-migrate.yml"
+            env: *phase
+      # Agent: a non-default Instance's placeholder model key, the agents' settings, the note links and /etc/orbit/instance.
+      - name: agent
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: files, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.container.clone == null }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "im-agent-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags agent "$ORBIT_ANSIBLE/instance-container.yml"
+            env:
+              <<: *phase
+              ORBIT_MODEL_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.model_environment.vault, inputs.execution_secrets.model_environment.key) }}'
+      # Processes: FrankenPHP as an `orbit-*` unit in the container, enabled and started.
+      - name: container-processes
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: files, condition: {type: succeeded}}
+          - {step: agent, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "im-processes-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags processes "$ORBIT_ANSIBLE/instance-container.yml"
+            env: *phase
+      # Seed: a default's first `seed-<commit>` snapshot, taken with the Processes stopped for a moment; clones copy it.
+      - name: seed
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: container-processes, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.container.clone != null }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "im-seed-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags seed "$ORBIT_ANSIBLE/instance-container.yml"
+            env: *phase
+      # T3: a non-default Instance's T3 starts for the first time, with its own identity, and the workspace becomes its project.
+      - name: t3
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: container-processes, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.container.clone == null }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "im-t3-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags t3 "$ORBIT_ANSIBLE/instance-container.yml"
+            env: *phase
+      # Register (docs/cli/instance/container/t3-register.mmd): `agent` issues the Gateway's and Swamp's sessions; the reply waits
+      # in the run folder for the next step, which never lets a session into the run's outputs.
+      - name: t3-sessions
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: t3, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.container.clone == null }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "im-register-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags register "$ORBIT_ANSIBLE/instance-container.yml"
+            env: *phase
+      - name: t3-register
+        labels: {role: swamp}
+        dependsOn: [{step: t3-sessions, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.container.clone == null }}'
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-t3'
+          behaviorName: '${{ "im-t3-register" }}'
+          methodName: register
+          inputs:
+            instance_id: '${{ inputs.intent.instance_id }}'
+            folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
+      # Move the Route: one publication replaces the checkout's site and PHP-FPM pool with the container's site. It comes last,
+      # when the container has proved itself. The child allows its own step failures; its ready result says whether the Route moved.
+      - name: route
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: container-processes, condition: {type: succeeded}}
+          - {step: seed, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: t3-register, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+        guard: '${{ inputs.intent.route_mutations == null || steps.exists(k, steps[k].status == "failed") }}'
+        allowFailure: true
+        task:
+          type: workflow
+          workflowIdOrName: route-mutation-forward
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent: '${{ {"route_mutations": inputs.intent.route_mutations} }}'
+            execution_secrets: {}
+            parent_run_id: '${{ run.id }}'
+      # Remove the checkout: only when every step before it passed and the Route serves the container. From here the container is
+      # the Instance; a failure of this step leaves a checkout to remove by hand, and no restore.
+      - name: retire
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: container-processes, condition: {type: succeeded}}
+          - {step: seed, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: t3-register, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: route, condition: {type: always}}
+        guard: '${{ steps.exists(k, steps[k].status == "failed") || (inputs.intent.route_mutations != null && !("route" in steps && steps.route.status == "succeeded" && steps.route.outputs.result.ready)) }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "im-retire-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags retire "$ORBIT_ANSIBLE/instance-migrate.yml"
+            env: *phase
+      # Restore the Route: a move that failed after the Route child started puts the checkout's site and pool back.
+      - name: restore-route
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: route, condition: {type: always}}
+          - {step: retire, condition: {type: always}}
+        guard: '${{ inputs.intent.route_mutations == null || !("route" in steps) || steps.route.status == "skipped" || ("retire" in steps && steps.retire.status != "skipped") }}'
+        allowFailure: true
+        task:
+          type: workflow
+          workflowIdOrName: route-mutation-restore
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent: '${{ {"route_mutations": inputs.intent.route_mutations} }}'
+            execution_secrets: {}
+            parent_run_id: '${{ run.id }}'
+      # Restore the checkout: a move that failed before the checkout went removes its container, its ACL, its firewall rules and
+      # its mirror, and writes the awake marker. The checkout and the database were never changed, so the Instance serves as before.
+      - name: restore
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: input, condition: {type: succeeded}}
+          - {step: quiesce, condition: {type: always}}
+          - {step: container, condition: {type: always}}
+          - {step: workspace, condition: {type: always}}
+          - {step: files, condition: {type: always}}
+          - {step: agent, condition: {type: always}}
+          - {step: container-processes, condition: {type: always}}
+          - {step: seed, condition: {type: always}}
+          - {step: t3, condition: {type: always}}
+          - {step: t3-sessions, condition: {type: always}}
+          - {step: t3-register, condition: {type: always}}
+          - {step: retire, condition: {type: always}}
+          - {step: restore-route, condition: {type: always}}
+        guard: '${{ "retire" in steps && steps.retire.status != "skipped" }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "im-restore-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags restore "$ORBIT_ANSIBLE/instance-migrate.yml"
+            env: *phase
+      # Finish: map the first phase that did not finish to the public receipt, with the code its phase wrote in the run folder, and
+      # say whether the Instance moved or the checkout was restored.
+      - name: finish
+        labels: {role: swamp}
+        dependsOn:
+          - {step: input, condition: {type: always}}
+          - {step: retire, condition: {type: always}}
+          - {step: restore-route, condition: {type: always}}
+          - {step: restore, condition: {type: always}}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-dev-command'
+          behaviorName: '${{ "im-finish" }}'
+          methodName: migrate_result
+          inputs:
+            intent: '${{ inputs.intent }}'
+            folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
+            workspace: '${{ "workspace" in steps ? steps.workspace : null }}'
+            phases: '${{ {"quiesce": "quiesce" in steps ? steps.quiesce.status : "skipped", "container": "container" in steps ? steps.container.status : "skipped", "workspace": "workspace" in steps ? steps.workspace.status : "skipped", "files": "files" in steps ? steps.files.status : "skipped", "agent": "agent" in steps ? steps.agent.status : "skipped", "processes": "container-processes" in steps ? steps["container-processes"].status : "skipped", "seed": "seed" in steps ? steps.seed.status : "skipped", "t3": "t3" in steps ? steps.t3.status : "skipped", "register": "t3-sessions" in steps && steps["t3-sessions"].status == "failed" ? "failed" : ("t3-register" in steps ? steps["t3-register"].status : "skipped"), "route": !("route" in steps) || steps.route.status == "skipped" ? "skipped" : (steps.route.status == "succeeded" && steps.route.outputs.result.ready ? "succeeded" : "failed"), "retire": "retire" in steps ? steps.retire.status : "skipped", "restore_route": !("restore-route" in steps) || steps["restore-route"].status == "skipped" ? "skipped" : (steps["restore-route"].status == "succeeded" && steps["restore-route"].outputs.result.ready ? "succeeded" : "failed"), "restore": "restore" in steps ? steps.restore.status : "skipped"} }}'
+            server: '${{ "t3-register" in steps && steps["t3-register"].status == "succeeded" ? steps["t3-register"].outputs.terminal.stdout : null }}'
+      - name: accepted
+        labels: {role: swamp}
+        dependsOn: [{step: finish, condition: {type: succeeded}}]
+        task: {type: assert, expr: 'steps.finish.outputs.ready == true', severity: high, message: The move of the Instance into a container did not complete.}
+      # Cleanup: the run folder of the phases, also after a failure, once finish has read it.
+      - name: cleanup
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: finish, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "im-cleanup-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 30 rm -rf -- "$ORBIT_RUN"
+            env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}

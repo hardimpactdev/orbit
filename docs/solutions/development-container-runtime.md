@@ -113,7 +113,7 @@ Beast and Shark take the dev path beside their task VMs. A task VM host on the b
 | 12 | Switch task work | |
 | 13 | Sleep and wake | |
 | 14 | Start a thread in an Orbit Project (Conn) | Open, [#3308](https://github.com/hardimpactdev/orbit/pull/3308) |
-| 15 | Migrate checkout Instances | |
+| 15 | Migrate checkout Instances | Built, with Processes left to wire after PR 4b |
 | 16 | Switch every `app-dev` Node | |
 | 17 | Remove task VMs, the Pi server and the task container setting | |
 | 18–22 | [Production Instances](#production-instances) | |
@@ -567,20 +567,33 @@ The code changed these points of this plan:
 
 ### PR 15: migrate checkout Instances
 
-The spec commit adds [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd), the page of the temporary command `instance:migrate` and its cases. [Old paths](/reference/old-paths) lists the command until the last checkout Instance has moved.
+The spec commit adds [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd), the page of the temporary command [`instance:migrate`](/cli/instance/migrate) and its cases. [Old paths](/reference/old-paths) lists the command until the last checkout Instance has moved.
 
-- The command moves one checkout Instance into a container: the checkout as it is, its database cloned through the database family, its Route moved.
+- The command moves one checkout Instance into a container: its branch, its changed, untracked and ignored files, and its Route.
 - A default Instance moves before the other Instances of its Project, and keeps its checkout until its last worktree has moved.
 - A non-default checkout is a linked worktree, so the move builds a standalone repository from the Node and copies only the uncommitted and ignored files.
 - A non-default Instance before its default refuses with `instance.default_not_migrated`.
 - A failure leaves the checkout Instance running as before.
 
-Tests: Pest for the admission, the default-first rule and the projection; Ansible `unit` cases; the cases. Live:
+[Migrate a checkout Instance](/reference/development-containers#migrate-a-checkout-instance) has what is built. The code changed these points of this plan:
+
+- **Database.** The database is not cloned. It stays, and the container gets its way to each server the Instance uses.
+- **Why.** An Instance's database name and owner come from its Project and its name. A second database for the same Instance has no name to take.
+- **No drop.** A clone would end with a drop of the old database. Leaving it in place cannot lose data.
+- **Template copy.** A clone of a moved default still copies the default's database with the template copy of PR 5. The default's connection record does not change.
+- **Reuse.** The phases of `instance-container.yml` make the container, unchanged. The Node's mirror fetches the branch from the checkout itself, so the move needs no token.
+- **Chart.** The chart is `docs/cli/instance/migrate.mmd`, not under `container/`. The kind is new and has no checkout chart to wait for.
+- **PHP version.** Most Projects had no recorded PHP version. The admission reads it from `composer.json`, and its refusal names the fix.
+- **Processes.** An Instance with Processes refuses with `operation.kind_unavailable` until the move uses the container Process step of PR 4b.
+
+An Instance with a Route beside its own refuses. The cases file holds the refusals that the proof fleet can run today; the cases that move an Instance wait for a proof Node with the Instance pool, as PR 4 says.
+
+Tests: Pest for the admission, the default-first rule, the PHP version, the databases, the Route publication and the projection. Deno for the receipt. An Ansible fixture test runs the move's phases with the container phases against the Incus stand-in: a default and a worktree with work that was never committed or pushed, the removal, the restore and both refusals. Live:
 
 1. On Beast, a checkout default and one checkout feature with uncommitted files move.
-2. Both answer on their Routes, with the uncommitted files and matching data.
+2. Both answer on their Routes, with the uncommitted files and the same data.
 3. After the default has moved, a feature still on its checkout keeps working until its own move.
-4. A migration that fails at the database clone leaves the checkout Instance serving.
+4. A migration that fails at the check of the database server's port leaves the checkout Instance serving, with the access that the move added removed.
 5. On every `app-dev` Node, each checkout Instance moves, default first, in a window agreed with the people who use them.
 
 ### PR 16: switch every app-dev Node

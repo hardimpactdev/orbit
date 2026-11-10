@@ -1,0 +1,79 @@
+---
+# The move of a checkout Instance into a container on its app-dev Node (docs/cli/instance/migrate.mmd). Temporary: it goes when the
+# last checkout Instance has moved (docs/reference/old-paths.md). The container itself is made by the phases of
+# instance-container.yml, which this playbook does not repeat: `container`, `workspace`, `agent`, `processes`, `t3`, `register`
+# and `seed`. One tagged part per Swamp phase here:
+#   `quiesce`: the checkout is on the recorded branch, a container left by an earlier failed move goes, the Route shows the wake page.
+#   `files`: after `workspace`, the checkout's changed, untracked and ignored files, and the check of the database server's port.
+#   `retire`: after the Route has moved, the checkout goes and the Route serves again.
+#   `restore`: after a failure, the new container and what the move added go, and the checkout serves again.
+# The intent is the Gateway's admitted intent in the run folder: `intent.container` as for a create, `intent.migrate` for the checkout.
+# `quiesce` and `files` write `result.json` in the run folder as the container phases do; a failed phase writes its public error code.
+- name: Pin the Node and address it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh_execution.target }}"
+    address_identity: "{{ intent.ssh_execution.identity_file }}"
+    address_group: migrate_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Run one phase of the move
+  hosts: migrate_node
+  gather_facts: false
+  become: true
+  tags: [quiesce, files, retire, restore]
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    container: "{{ intent.container }}"
+    migrate: "{{ intent.migrate }}"
+    run_id: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN_ID') }}"
+    phase: "{{ ansible_run_tags | first }}"
+  tasks:
+    - name: Run the phase
+      block:
+        # Swamp runs one tag at a time; the included tasks run whatever their own tags, so `always` applies to them.
+        - name: Run the phase's tasks
+          ansible.builtin.include_tasks:
+            file: tasks/instance-migrate-phase.yml
+            apply: { tags: [always] }
+        - name: Write the result
+          when: phase in ['quiesce', 'files']
+          ansible.builtin.copy:
+            content: "{{ {'commit': migrate_commit | default(none)} | to_json }}"
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          # The result file lives in the run folder on the worker: no change to the Node.
+          changed_when: false
+          vars:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      rescue:
+        # The code of a refusal is the fail_msg of its assert; anything else is the phase's own failure. A failed restore keeps
+        # the code of the phase that failed before it.
+        - name: Write the failure
+          when: phase != 'restore'
+          ansible.builtin.copy:
+            content: >-
+              {{ {'error_code': ansible_failed_result.msg
+                  if (ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z0-9_]+$'))
+                  else 'instance.migrate_' ~ phase ~ '_failed'} | to_json }}
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          vars:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+        - name: Fail the phase
+          ansible.builtin.fail:
+            msg: "{{ ansible_failed_result.msg | default('The phase of the move failed.') }}"

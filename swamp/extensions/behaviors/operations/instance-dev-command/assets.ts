@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { MigratePhases, migrateResult, writtenCode } from "./migrate_result.ts";
 import { createResult, Step } from "./result.ts";
 const ObjectValue = z.record(z.string(), z.unknown());
 type Context = {
@@ -6,7 +7,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/instance-dev-command",
-    version: "2026.11.06.2",
+    version: "2026.11.10.1",
     resources: {
         result: { schema: ObjectValue, lifetime: "1d", garbageCollection: 10 },
     },
@@ -59,6 +60,30 @@ export const behavior = {
             ) => {
                 const value = createResult(args.intent, args);
                 await ctx.writeResource("result", "create", value);
+                return value;
+            },
+        },
+        migrate_result: {
+            description: "Map the steps of a move into a container to one public terminal receipt",
+            arguments: z.object({
+                intent: ObjectValue,
+                folder: z.string().regex(/^\/tmp\/orbit-ansible-[A-Za-z0-9-]+$/),
+                workspace: Step.nullable(),
+                phases: MigratePhases,
+                server: z.string().nullable().default(null),
+            }),
+            execute: async (
+                args: {
+                    intent: Record<string, unknown>;
+                    folder: string;
+                    workspace: z.infer<typeof Step> | null;
+                    phases: z.infer<typeof MigratePhases>;
+                    server?: string | null;
+                },
+                ctx: Context,
+            ) => {
+                const value = migrateResult(args.intent, args.phases, args.workspace, args.server ?? null, await writtenCode(args.folder));
+                await ctx.writeResource("result", "migrate", value);
                 return value;
             },
         },

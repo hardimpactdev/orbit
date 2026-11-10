@@ -25,17 +25,20 @@ sequenceDiagram
   %%> Requirements:
   %%> - the Instance is an active checkout Instance on an `app-dev` Node of the build list, else `instance.migrate_unsupported`
   %%> - a non-default Instance needs its Project's default Instance in a container first, else `instance.default_not_migrated`
-  %%> - the Instance has no Processes; a non-default Instance needs Conn and the model router, as a clone does
+  %%> - the Instance has no Processes and no Route beside its own; a non-default Instance needs Conn and the model router, as a clone does
+  %%> - a web-serving Project names its PHP version; the Gateway reads it from `composer.json` when none is recorded, else `project.source_defaults_incomplete`
   %%> - a database on a Database server has an IPv4 address and a port, else `instance.database_clone_unsupported`
   %%> Result:
   %%> - the runtime record is reserved: the next bridge address and, for a non-default Instance, the lowest free T3 port
-  %%> - the checkout stays the Instance's runtime until the run succeeds; the Route's Node is held for the run
+  %%> - the checkout stays the Instance's runtime until the Route has moved; the Route's Node is held for the run
+  %%> - the Instance takes no deployment and no wake while the run lasts
   %%> - a non-default Instance's placeholder model key goes to the vault
   GW->>SW: Start run, full intent<br/>operation-instance-migrate
   GW-->>CLI: 202 Accepted<br/>task ID
   SW->>N: Stop the Instance<br/>Ansible · tags quiesce
   %%> What it does:
   %%> - checks that the checkout is on the recorded branch, else `instance.migrate_branch_changed`
+  %%> - deletes a container that an earlier failed move left
   %%> - removes the awake marker, so the Route shows the wake page and nothing writes the checkout or the database during the move
   SW->>N: Launch the container<br/>Ansible · tags container
   %%> What it does:
@@ -65,10 +68,13 @@ sequenceDiagram
     %%> What it does:
     %%> - removes the checkout and writes the awake marker; a default's checkout stays until its last worktree has moved
     %%> - before a repository goes, its local branches and its stash are kept in the Node's mirror under `refs/migrated/`
+    %%> If it fails:
+    %%> - the container stays the Instance; the run fails with `instance.migrate_retire_failed`, and the checkout is left to remove by hand
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record container runtime
     %%> Result:
     %%> - the Instance's workspace is the container's; the runtime runs, a default's row holds its seed commit
+    %%> - a SQLite file moved with the files, so its connection record goes; stored `.env` values follow the new path
     %%> - the Conn layer records a non-default Instance's T3 server from the result
   else a step fails
     SW->>N: Restore the checkout<br/>Route · container removed
@@ -80,6 +86,7 @@ sequenceDiagram
     Note over GW: Drop the reserved runtime
     %%> Retry:
     %%> - run the same command again; it starts with a new container
+    %%> - a restore that failed keeps the reserved record and its address, and names the failed step
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show TASK

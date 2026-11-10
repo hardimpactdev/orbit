@@ -34,12 +34,23 @@ In a terminal, the CLI asks to confirm that the Instance goes down during the mo
 | Branch | The checkout's current branch, with its commits that were never pushed. Orbit fetches it from the checkout on the Node |
 | Files | Every file that differs from the commit, every untracked file and every ignored file, such as `vendor`, `node_modules`, `storage` and `.env` |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace` |
-| Database on a Database server | It stays where it is. The container gets its own way to the server's port |
+| Database on a Database server | It stays where it is. The container gets its own way to the port of each server the Instance uses, and the move checks it from inside |
 | SQLite file in the checkout | It moves with the files. Orbit drops its database connection record: the file is part of the workspace |
 | Route | The same domain and certificate. It points at FrankenPHP in the container, and the checkout's PHP-FPM pool goes |
 | T3 | A non-default Instance gets its T3 server, registered as a [new Instance's](/cli/instance/create) is. The default runs none |
 
 These do not move: the staging state of the index, stashes, and branches that no Instance has checked out. Before Orbit removes a repository, it keeps the repository's local branches and its stash in the Instance's mirror on the Node, under `refs/migrated/`.
+
+## Before you start
+
+- **Node.** The Instance's Node is on the [build list](/reference/development-containers#the-build-list).
+- **PHP version.** A web-serving Project needs its PHP version. Orbit reads it from `require.php` in `composer.json` on the default branch when the Project has none recorded, so most Projects need nothing. A Project whose `composer.json` names none is refused with `project.source_defaults_incomplete`: add it there and run the command again.
+- **Source access.** Orbit cannot read the source of a `gh_cli` Project. Run `orbit project:update PROJECT --source-access=github_app` first.
+- **Branch.** The checkout is on the branch that Orbit records for the Instance.
+- **Processes.** An Instance with Processes cannot move yet.
+- **Routes.** The Instance has no Route beside its own.
+
+Nobody works in the checkout during the move. Orbit shows the wake page on the Route, and starts no deployment and no wake of the Instance until the move has ended.
 
 ## Order
 
@@ -51,7 +62,9 @@ After the default has moved, an Instance that is still a checkout keeps working 
 
 ## Failure
 
-A move that fails leaves the checkout Instance serving as before. Orbit puts the Route back when the run had moved it, deletes the new container and drops the reserved runtime record. The checkout and the database are never changed before the move has succeeded. Run the same command again to retry.
+A move that fails leaves the checkout Instance serving as before. Orbit puts the Route back when the run had started to move it, deletes the new container with its ACL, its firewall rules and its mirror, and drops the reserved runtime record. So the access to the database server that the move added goes too. The checkout and the database are never changed before the Route serves the container. Run the same command again to retry.
+
+The removal of the checkout is the last step. When only that step fails, the Instance stays in its container, the task fails with `instance.migrate_retire_failed`, and the checkout is left on the Node to remove by hand.
 
 The command starts a task and follows it until it ends, as [`instance:deploy`](/cli/instance/deploy) does. Ctrl-C stops following, not the move, and exits 130.
 
@@ -69,11 +82,13 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `instance.migrate_unsupported` | The Instance already runs in a container, is not active, is a production Instance, or its Node is not on the [build list](/reference/development-containers#the-build-list). |
 | `instance.default_not_migrated` | The Project's default Instance is still a checkout, or its move has not ended. Move it first. |
 | `instance.lifecycle_busy` | A transfer, a removal or another move of the Instance is unfinished. |
-| `operation.kind_unavailable` | The Instance has Processes, which reach a container in a later part of the runtime; or a non-default Instance has no Conn layer. |
+| `instance.migrate_unsupported` | The Instance has a Route beside its own. |
+| `project.source_defaults_incomplete` | A web-serving Project has no PHP version, and `composer.json` on its default branch names none. The message names the fix. |
+| `operation.kind_unavailable` | The Instance has Processes, which reach a container in a later part of the runtime; or a non-default Instance has no Conn layer or no model router. |
 | `instance.database_clone_unsupported` | The Instance's database server has no IPv4 address and port that a container can reach. |
 | `instance.host_unavailable` | The Node has no Instance bridge, the bridge is full, no T3 port is free, or the runtime folder lacks the Project's PHP build. |
 | `instance.migrate_branch_changed` | The checkout is not on the branch that Orbit records. Check out that branch, or record the new one with [`instance:rename`](/cli/instance/rename). |
 | `instance.database_unreachable` | The new container could not reach the database server's port. |
-| `instance.migrate_<step>_failed` | A step of the move failed, such as `instance.migrate_workspace_failed`. The checkout serves as before. |
+| `instance.migrate_<step>_failed` | A step of the move failed, such as `instance.migrate_workspace_failed`. The checkout serves as before, except after `instance.migrate_retire_failed`. |
 | `http.404` | The Instance is unknown. |
 | `node_access.required` | The caller has no access grant to the Instance's Node. |
