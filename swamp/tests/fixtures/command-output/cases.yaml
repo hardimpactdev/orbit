@@ -1333,8 +1333,8 @@ non_command_output:
   field: ansible.builtin.assert.that[5]
   reason: Validates the admitted verifier secret format, not command output.
 - file: operation-node-converge.yml
-  task: Require the pinned Linux platform
-  field: ansible.builtin.assert.that[9]
+  task: Require the recorded CLI pin only for a CLI caller
+  field: ansible.builtin.assert.that[3]
   reason: Validates the admitted CLI digest.
 - file: proof-observers.yml
   task: Require the candidate observer digest
