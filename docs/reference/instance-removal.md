@@ -3,14 +3,11 @@ title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for development source, how owned Processes and Schedules go with it, and how to retry an interrupted removal."
 covers:
   - apps/gateway/app/Actions/{Instances/{ProjectDirectInstanceDestroyAction,StartInstanceDestroyAction},DatabaseConnections/PrepareOwnedDatabaseDestructionAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,Removal/**}
-  - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
-  - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,ContainerInstanceDestroy.php,ContainerDestroyExecutionCopies.php,DirectInstanceDestroyIntent.php,Removal/**}
+  - apps/gateway/app/{Http/Requests/Instances/RemoveInstanceRequest,Models/InstanceRemoval,Models/InstanceRemovalMember}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
-  - swamp/workflows/workflow-operation-instance-destroy.yaml
-  - swamp/ansible/instance-container-destroy.yml
-  - apps/gateway/app/Domain/Instances/{ContainerInstanceDestroy,ContainerDestroyExecutionCopies,DirectInstanceDestroyIntent}.php
+  - swamp/{workflows/workflow-operation-instance-destroy.yaml,ansible/instance-container-destroy.yml}
 ---
 
 # Instance removal
@@ -47,7 +44,7 @@ The Route child allows its own steps to fail, so destroy reads its ready result.
 
 Publication captures include the full site catalogs so unrelated Routes, PHP pools and DNS records remain present. Each native action has its own run and iteration identity. The Gateway does not supply an execution lock or recapture publication intent during the run.
 
-A container Instance follows the [container destroy flow](/reference/development-containers#destroy). This clone-only slice requires `--force`, skips work checks and teardown, and deletes the container with its Processes and owned network state. Container defaults stay unavailable. Conn removes its environment and pairing records after the T3 server is gone. The runtime row stays until success, so its address and port stay reserved during a failed removal.
+A container Instance follows the [container destroy flow](/reference/development-containers#destroy). This clone-only slice requires `--force`, skips work checks and teardown, and deletes the container with its Processes and owned network state. Container defaults stay unavailable. Conn removes its environment and pairing records after the T3 server is gone. Destroy also deletes the owned database’s create copies, which hold its server and owner logins. The runtime row stays until success, so its address and port stay reserved during a failed removal.
 
 ## Retry and ownership
 

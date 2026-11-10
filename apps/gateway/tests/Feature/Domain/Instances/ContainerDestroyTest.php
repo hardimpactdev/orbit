@@ -3,15 +3,21 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\Instances\ContainerDestroyExecutionCopies;
+use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -37,6 +43,8 @@ beforeEach(function (): void {
     {
         public array $messages = [];
 
+        public array $values = [];
+
         private array $last = [];
 
         public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
@@ -48,6 +56,17 @@ beforeEach(function (): void {
 
         public function receive(float $timeoutSeconds): array
         {
+            $key = $this->last['payload']['key'] ?? '';
+            if ($this->last['type'] === 'vault.put') {
+                $this->values[$key] = $this->last['payload']['value'];
+            }
+            if ($this->last['type'] === 'vault.delete') {
+                if (! array_key_exists($key, $this->values)) {
+                    return [['id' => $this->last['id'], 'type' => 'error', 'error' => ['code' => 'not_found']]];
+                }
+                unset($this->values[$key]);
+            }
+
             return [['id' => $this->last['id'], 'type' => $this->last['type'], 'payload' => ['data' => ['vaultName' => 'orbit-control-inputs',
                 'secretKey' => $this->last['payload']['key'] ?? '', 'vaultType' => 'local_encryption']]]];
         }
@@ -151,4 +170,57 @@ it('wires the lifecycle destroy contribution while Conn is disabled', function (
     app(ExtensionStore::class)->set('conn', false);
     $contributions = (new ReflectionProperty(InstanceLifecycleContributions::class, 'contributions'))->getValue(app(InstanceLifecycleContributions::class));
     expect(collect($contributions)->map(fn (object $contribution): string => $contribution::class)->all())->toBe([ConnInstanceLifecycle::class]);
+});
+
+it('deletes the owned server database create and destroy copies but keeps the default copies', function (): void {
+    app(ExtensionStore::class)->set('conn', true);
+    app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
+    {
+        public function assertReady(): void {}
+
+        public function origin(): string
+        {
+            return 'http://10.44.0.3:8318';
+        }
+
+        public function key(): string
+        {
+            return 'placeholder-model-key';
+        }
+    });
+    $node = containerDefaultNode();
+    $process = Process::query()->forceCreate(['owner_type' => 'node', 'owner_id' => $node->id, 'name' => 'db-pg', 'runtime' => 'docker',
+        'runtime_config' => ['image' => 'postgres:18', 'ports' => [$node->wireguard_ip.':5432:5432']], 'status' => 'active']);
+    $server = DatabaseServer::query()->forceCreate(['slug' => 'pg', 'driver' => DatabaseDriver::Pgsql, 'node_id' => $node->id,
+        'process_id' => $process->id, 'tag' => '18', 'port' => 5432, 'status' => 'active', 'root_password' => 'root-secret']);
+    $defaultCreate = containerCreate(containerDefaultProject(), $node, 'default', 'pg');
+    app(DevelopmentInstanceCreateProjection::class)->input($defaultCreate);
+    $default = Instance::query()->findOrFail($defaultCreate->target_id);
+    $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false, 'branch' => 'main', 'starting_commit' => str_repeat('c', 40)]);
+    $default->runtime()->update(['seed_commit' => str_repeat('c', 40)]);
+    $defaultCreate->forceFill(['status' => 'succeeded', 'finished_at' => now()])->save();
+    $create = containerCreate($default->project, $node, 'feature');
+    app(DevelopmentInstanceCreateProjection::class)->input($create);
+    $clone = Instance::query()->findOrFail($create->target_id);
+    $clone->update(['status' => InstanceState::Active, 'first_setup_pending' => false, 'branch' => 'feature', 'starting_commit' => str_repeat('c', 40)]);
+    $create->forceFill(['status' => 'succeeded', 'finished_at' => now()])->save();
+    $cloneIntent = $create->input['direct_provisioning']['server_database']['intent_id'];
+    $defaultIntent = $defaultCreate->input['direct_provisioning']['server_database']['intent_id'];
+    expect($this->socket->values)->toHaveKeys(['database-create-intent-'.$cloneIntent, 'database-create-owner-'.$cloneIntent,
+        'database-create-intent-'.$defaultIntent, 'database-create-owner-'.$defaultIntent]);
+    $destroy = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    app(DevelopmentInstanceDestroyProjection::class)->input($destroy);
+    $destroyIntent = $destroy->input['direct_destroy']['database']['intent_id'];
+    $batches = array_map(fn (string $batch): string => 'database-destroy-owned-'.$destroyIntent.'-'.$server->id.'-'.$batch, ['fence', 'drop', 'gone', 'restore']);
+    expect($this->socket->values)->toHaveKeys($batches);
+    // One copy was already removed: a caller retry must accept native not_found and continue.
+    unset($this->socket->values['database-create-owner-'.$cloneIntent]);
+    app(DevelopmentInstanceDestroyProjection::class)->apply($destroy, destroyTerminal($destroy, 'succeeded'));
+    $deleted = collect($this->socket->messages)->where('type', 'vault.delete')->pluck('payload.key')->all();
+    expect($deleted)->toContain('database-create-intent-'.$cloneIntent, 'database-create-owner-'.$cloneIntent, ...$batches)
+        ->and($this->socket->values)->toHaveKeys(['database-create-intent-'.$defaultIntent, 'database-create-owner-'.$defaultIntent])
+        ->and($this->socket->values)->not->toHaveKeys(['database-create-intent-'.$cloneIntent, ...$batches])
+        ->and(DatabaseConnection::query()->where('owner_instance_id', $clone->id)->exists())->toBeFalse();
+    app(ContainerDestroyExecutionCopies::class)->remove($destroy->fresh());
+    expect($default->fresh())->not->toBeNull();
 });

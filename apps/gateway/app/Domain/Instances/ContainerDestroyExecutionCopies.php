@@ -24,6 +24,12 @@ final readonly class ContainerDestroyExecutionCopies
                 $keys[] = $prefix.$operation->id;
             }
             if ($operation->kind === 'instance.create') {
+                $server = ValidatedData::object(ValidatedData::object($operation->input['direct_provisioning'] ?? [])['server_database'] ?? []);
+                if (isset($server['intent_id'])) {
+                    $intent = ValidatedData::integer($server['intent_id']);
+                    $keys[] = 'database-create-intent-'.$intent;
+                    $keys[] = 'database-create-owner-'.$intent;
+                }
                 foreach (['instance-create-environment-input-', 'instance-create-environment-testing-', 'instance-create-model-', 'instance-create-processes-'] as $prefix) {
                     $keys[] = $prefix.$operation->id;
                 }

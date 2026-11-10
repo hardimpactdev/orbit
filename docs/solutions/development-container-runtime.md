@@ -350,7 +350,7 @@ The code changed these points of this plan:
 - **Template copy.** The template copy on the default's server is built for PostgreSQL. MySQL keeps its dump on the same server.
 - **Renewal.** The daily renewal run moves to PR 13, with the wake that also renews. A session lasts 30 days.
 - **Vault copy.** The Gateway session's vault copy stays, as a pairing's credential does. Swamp has no delete for a sensitive field that a step wrote.
-- **Plug-in point.** `InstanceLifecycleContribution` owns create and destroy: Conn contributes registration and terminal destroy cleanup. It stays loaded while Conn is disabled.
+- **Plug-in point.** `InstanceLifecycleContribution` records creation and terminal destroy cleanup. Conn supplies it.
 - **Limits.** The copy sets no `limits.cpu` or `limits.memory`. No measured figure exists; the parity gate sets them.
 - **Egress and PHP.** The live checks wait on the container egress path of step 2c and on 3b's PHP pin, as PR 4's do.
 
