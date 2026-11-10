@@ -2,7 +2,7 @@ id: 6f0a1c1e-3f2b-4d57-9a0e-5b0f6c1d7e42
 name: operation-instance-migrate
 description: Move a checkout Instance into a container on its Node (docs/cli/instance/migrate.mmd). Temporary, until the last checkout Instance has moved. The container phases are those of operation-instance-create; the checkout's own phases are in instance-migrate.yml.
 vaults: [orbit-control-inputs]
-queueTimeout: 10
+queueTimeout: 30
 labels: {role: swamp}
 inputs:
   type: object
