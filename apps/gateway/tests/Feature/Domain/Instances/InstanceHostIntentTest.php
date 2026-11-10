@@ -6,6 +6,8 @@ use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Actions\Nodes\UpdateNodeAction;
 use App\Data\Nodes\NodeSettingsData;
 use App\Data\Nodes\NodeTaskVmsData;
+use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceDevPorts;
 use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceFolderPlan;
 use App\Domain\Instances\InstanceHostIntent;
@@ -91,7 +93,7 @@ describe('the container branch of the app-dev converge', function (): void {
 
         $intent = app(InstanceHostIntent::class)->for($node);
 
-        expect(array_diff_key($intent, array_flip(['incus', 'image', 'folders', 'egress', 'profile_config', 'dev_ports'])))->toBe([
+        expect(array_diff_key($intent, array_flip(['incus', 'image', 'folders', 'egress', 'ingress', 'profile_config', 'dev_ports'])))->toBe([
             'project' => 'orbit-instances', 'network' => 'orbitinst0', 'pool' => 'orbit-instances', 'cidr' => '10.253.0.0/24',
             'address' => '10.253.0.1/24', 'build_address' => '10.253.0.254', 'dhcp_range' => '10.253.0.2-10.253.0.253', 'stock' => 'ubuntu-26.04-instance-stock',
             'forwarder_port' => 8319, 'ids' => 201 * 65536, 'arc' => true,
@@ -105,6 +107,24 @@ describe('the container branch of the app-dev converge', function (): void {
                 'environment.VP_HOME' => '/opt/orbit-runtime/current/vite-plus-home', 'environment.VP_NO_UPDATE_CHECK' => '1',
                 'environment.HTTPS_PROXY' => 'http://10.253.0.1:3128', 'environment.no_proxy' => 'localhost,127.0.0.1,::1,10.253.0.1'])
             ->and($intent['profile_config'])->toHaveCount(count(InstanceImage::environment('10.253.0.1')) + 1);
+    });
+
+    it('lets the bridge ACL admit what a container\'s ACL may admit: the Node to FrankenPHP and the development ports, and T3\'s clients', function (): void {
+        $node = instanceHostNode();
+        config(['instances.container_nodes' => [$node->id]]);
+        app(InstanceHostIntent::class)->prepare($node);
+
+        $ingress = app(InstanceHostIntent::class)->for($node)['ingress'];
+
+        // Incus rejects everything else that the Node sends or forwards to the bridge, before a container's own ACL sees it.
+        expect($ingress)->toBe([
+            ['action' => 'allow', 'source' => '10.253.0.1/32', 'protocol' => 'tcp', 'destination_port' => '1024-65535', 'state' => 'enabled'],
+            ['action' => 'allow', 'protocol' => 'tcp', 'destination_port' => '3773', 'state' => 'enabled'],
+        ])
+            // One range rule is enough only while FrankenPHP's port lies in the range of the development ports.
+            ->and(InstanceContainer::WebPort)->toBeGreaterThanOrEqual(InstanceDevPorts::First)->toBeLessThanOrEqual(InstanceDevPorts::Last)
+            ->and($ingress[0]['destination_port'])->toBe(InstanceDevPorts::First.'-'.InstanceDevPorts::Last)
+            ->and($ingress[1]['destination_port'])->toBe((string) InstanceHostIntent::T3Port);
     });
 
     it('needs the ID ranges of a host\'s task containers too, which share root\'s one range', function (): void {
@@ -233,6 +253,26 @@ describe('the Instance image', function (): void {
             ->and($files['/etc/systemd/system/t3.service']['mode'])->toBe('0640')
             ->and($files['/home/agent/.codex/config.toml'])->toMatchArray(['content' => "check_for_update_on_startup = false\n", 'uid' => 2750, 'mode' => '0600'])
             ->and($files['/home/orbit/.gitconfig']['content'])->toBe("[safe]\n\tdirectory = /srv/workspace\n");
+    });
+
+    it('removes cloud-init\'s group lxd, which holds the gid of orbit, before it makes the groups', function (): void {
+        $script = InstanceImage::for('10.253.0.1')['prepare'];
+
+        // `groupadd --gid 1000` refuses a taken gid: on the stock image `lxd` took 1000 at first boot, and `ubuntu` got gid 1001.
+        expect($script)->toContain("if getent group lxd >/dev/null 2>&1; then groupdel lxd; fi\n")
+            // The user goes first: `groupdel` refuses a group that is still a user's.
+            ->and(strpos($script, 'userdel --remove ubuntu'))->toBeLessThan(strpos($script, 'groupdel lxd'))
+            ->and(strpos($script, 'groupdel lxd'))->toBeLessThan(strpos($script, 'groupadd --gid 1000 orbit'));
+    });
+
+    it('publishes the image with an empty machine-id, so each container writes its own at its first start', function (): void {
+        $finish = InstanceImage::for('10.253.0.1')['finish'];
+
+        // The file stays: a missing file would make the first start a systemd first boot, which resets the units to their presets.
+        expect($finish)->toContain(['truncate', '--size', '0', '/etc/machine-id'])
+            ->and(array_filter($finish, static fn (array $command): bool => in_array('/etc/machine-id', $command, true) && in_array($command[0], ['rm', 'unlink'], true)))->toBe([])
+            ->and(array_search(['truncate', '--size', '0', '/etc/machine-id'], $finish, true))
+            ->toBeGreaterThan(array_search(['systemctl', 'enable', 'nftables.service', 't3.service'], $finish, true));
     });
 
     it('gives every unit, login shell and apt the egress proxy, and takes no DNS server', function (): void {

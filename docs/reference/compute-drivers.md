@@ -1097,11 +1097,24 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 | Kernel modules, sysctl files | `orbit-task-containers` | None; `60-orbit-instances.conf` |
 | Subordinate IDs | 101,000,000 per place and the base | 65,536 for each of 201 containers, plus the task container need on a host that has both |
 | ACL egress | The VM bridge's rules | Only the model forwarder and the egress proxy, ports 8319 and 3128 of the bridge address |
+| ACL ingress | The VM bridge's rules | TCP ports 1024 to 65535 from the bridge address, and T3's port 3773 from any source |
+| Bridge DNS | dnsmasq answers on the bridge address | None: `raw.dnsmasq` is `port=0`, so dnsmasq serves DHCP only |
 | Profile | Root disk and `eth0` | Also the folders `/opt/orbit-runtime` and `/opt/orbit-agent`, read-only and idmapped, and the proxy settings as `environment.*` keys |
 | Restrictions | Nesting, interception, low-level keys | Isolated ID maps, host disks with no path list (Incus refuses `shift` under one), proxy devices |
 | Input rules | `orbit:task-containers-*`: DHCP and DNS | `orbit:instances-*`: DHCP and the egress proxy, no DNS |
 | Clone probe | Always | On a ZFS pool only; a directory pool makes full copies |
 | Error code | `task_vm.setup_failed` | `instance.host_unavailable` |
+
+Incus checks the bridge ACL before a container's own ACL, and a packet to a container must pass both. Its default rejects what the Node sends or forwards to the bridge. So the bridge ACL admits what a container's ACL may admit, and each container's ACL stays the narrow guard:
+
+| Ingress rule | Who needs it | What narrows it |
+| --- | --- | --- |
+| TCP 1024 to 65535 from the bridge address | The Node's Caddy, which connects from that address: to FrankenPHP at 8080 for the preview, and to an agent's development ports | The container's ACL: a default Instance admits only 8080, and a clone the development ports too |
+| TCP 3773 from any source | T3's clients. The proxy device publishes T3 in NAT mode, so the packet keeps the address of the WireGuard peer | The Node's route rules of the clone, which admit WireGuard peers but no task VM, and the container's ACL: only a clone admits 3773 |
+
+The Gateway renders the rules as the intent's `ingress`. The Node needs no rule for port 8080 alone: it lies in the range of the development ports.
+
+Incus admits DNS to the bridge address ahead of the ACL, and the bridge's dnsmasq would answer every name the Node resolves, fleet names too. The Node's input rules admit no DNS from the bridge, but another rule of the Node may. `port=0` turns dnsmasq's DNS off, so the answer does not depend on the Node's rules. DHCP still works.
 
 The branch then:
 
@@ -1123,6 +1136,8 @@ The runtime folder is readable by everyone. The agent folder's `agent/` is `root
 The image's alias is a digest of the definition that the Gateway sends. A Node without that alias builds it in the container `orbit-instance-build`, from the stock alias, at the bridge's last address. It has the bridge's ACL and reaches the internet through the egress proxy, which the profile names for its `incus exec`.
 
 The build waits for cloud-init's first boot to finish. The build container sets an isolated ID map, as the project requires. The build installs the packages, runs the setup script, writes the files with their owners and modes, enables the units and cleans the package lists.
+
+The first boot leaves two things that the build removes. Cloud-init makes the group `lxd` for its default user, and that group takes gid 1000, which `orbit` needs: the setup script deletes the group after the user. The boot also writes a machine-id, which every container of the image would share: the build empties `/etc/machine-id` last, so each container writes its own at its first start. The file stays, because systemd treats a missing file as a first boot and resets the units to their presets. A clone still copies the machine-id of its default Instance.
 
 The build refuses an image with a sudo path: an `ubuntu` user, a file in `sudoers.d` but its README, or a member of `sudo` or `admin`. Then it publishes the container. The build container goes in every case. The stable alias `orbit-instance` then moves to the new image, and older images whose aliases are only digest aliases go.
 

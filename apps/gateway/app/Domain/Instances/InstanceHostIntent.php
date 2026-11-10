@@ -109,6 +109,7 @@ final readonly class InstanceHostIntent
             // The bridge ACL lets containers reach only the model forwarder (docs/reference/ai-router.md#container-model-forwarder) and
             // the egress proxy, their one way out (docs/reference/development-containers.md#egress-and-dns).
             'forwarder_port' => self::ModelForwarderPort,
+            'ingress' => self::ingress($gateway),
             'egress' => InstanceEgress::for(self::Network, $gateway, $cidr, $this->privateDns->domains()),
             'ids' => (self::Containers + 1) * self::IdMapSize + $taskIds,
             // A task VM host sizes the ARC for its task side, or keeps the Node's own (task-vm-host-prepare.yml): the Instance side
@@ -128,6 +129,25 @@ final readonly class InstanceHostIntent
                     InstanceImage::environment($gateway),
                 ),
             ],
+        ];
+    }
+
+    /**
+     * The bridge ACL's ingress. Incus checks the bridge ACL before a container's own ACL, and a packet to a container must pass both.
+     * So the bridge admits what a container's ACL may admit (InstanceContainer::intent), and no more: the Node's own connections,
+     * which leave from the bridge address, to FrankenPHP's port and the development ports, and T3's port from any source. A proxy
+     * device in NAT mode keeps the address of T3's client, a WireGuard peer; the Node's route rules decide which peers pass. Each
+     * container's ACL stays the narrow guard: a default Instance admits only FrankenPHP's port.
+     *
+     * @return list<array<string, string>>
+     */
+    private static function ingress(string $gateway): array
+    {
+        return [
+            // FrankenPHP's port lies in the range of the development ports, so one rule covers both.
+            ['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
+                'destination_port' => InstanceDevPorts::First.'-'.InstanceDevPorts::Last, 'state' => 'enabled'],
+            ['action' => 'allow', 'protocol' => 'tcp', 'destination_port' => (string) self::T3Port, 'state' => 'enabled'],
         ];
     }
 

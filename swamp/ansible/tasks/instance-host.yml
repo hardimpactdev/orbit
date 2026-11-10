@@ -125,11 +125,16 @@
           protocol: tcp
           destination_port: "{{ instances.egress.port | string }}"
           state: enabled
-      ingress: []
+      # Incus checks the bridge ACL before a container's own, and its default rejects what the Node sends or forwards to the bridge.
+      # So it admits what a container's ACL may admit: the Node's Caddy to FrankenPHP and the development ports, and T3's clients.
+      ingress: "{{ instances.ingress }}"
     container_network_config:
       ipv4.dhcp.ranges: "{{ instances.dhcp_range }}"
       ipv4.nat: 'true'
       ipv6.address: none
+      # Incus admits DNS to the bridge address ahead of the ACL, and dnsmasq would answer there, fleet names too. `port=0` turns its
+      # DNS off, whatever the Node's input rules admit; it still serves DHCP.
+      raw.dnsmasq: port=0
       security.acls: "{{ instances.network }}-egress"
       security.acls.default.ingress.action: reject
       security.acls.default.egress.action: reject

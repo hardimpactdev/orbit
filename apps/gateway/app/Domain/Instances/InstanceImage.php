@@ -42,6 +42,7 @@ final readonly class InstanceImage
             'packages' => self::Packages,
             // Users, the workspace and the leftovers of the stock image. The stock `ubuntu` user holds uid 1000 and a sudo grant, and
             // cloud-init would make it again at each new Instance's first boot, so it is off; the network keeps its DHCP setup.
+            // Cloud-init also made the group `lxd` for that user, and it took gid 1000, which `orbit` needs.
             'prepare' => self::prepare(),
             'files' => [
                 ['path' => '/etc/nftables.conf', 'content' => self::firewall($gateway), 'uid' => 0, 'gid' => 0, 'mode' => '0640'],
@@ -63,6 +64,12 @@ final readonly class InstanceImage
                 ['systemctl', 'enable', 'nftables.service', 't3.service'],
                 ['apt-get', 'clean'],
                 ['find', '/var/lib/apt/lists', '-mindepth', '1', '-delete'],
+                // The build container has booted, so it holds a machine-id, and every container of the image would share it. An empty
+                // file makes each container write its own at its first start; a missing file would make that start a systemd first
+                // boot, which resets the units to their presets.
+                ['truncate', '--size', '0', '/etc/machine-id'],
+                // D-Bus links its copy to that file. A copy that is a file of its own would keep the old id.
+                ['sh', '-c', 'if [ -f /var/lib/dbus/machine-id ] && [ ! -L /var/lib/dbus/machine-id ]; then rm /var/lib/dbus/machine-id; fi'],
             ],
         ];
 
@@ -97,6 +104,7 @@ final readonly class InstanceImage
             set -eu
             touch /etc/cloud/cloud-init.disabled
             if id ubuntu >/dev/null 2>&1; then userdel --remove ubuntu; fi
+            if getent group lxd >/dev/null 2>&1; then groupdel lxd; fi
             groupadd --gid {$agent} agent
             useradd --uid {$agent} --gid agent --create-home --shell /bin/bash agent
             groupadd --gid {$orbit} orbit
