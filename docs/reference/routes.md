@@ -86,8 +86,6 @@ Each active Instance of a web-serving Project has exactly one Route without a we
 
 A visitable development `default` serves its web root from its checkout, which each [deployment](/reference/deployments#development-defaults) updates in place. Defaults without a Route are also kept current.
 
-A successful update of a development Instance's authoritative Route clears its pending publication marker. This completion belongs to the Route, so a default whose seed already matches its branch needs no automatic-deploy policy run to settle it.
-
 ## Route record
 
 The Gateway stores these fields for each Route. `route:show` returns them.

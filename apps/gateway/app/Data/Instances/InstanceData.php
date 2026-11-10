@@ -7,7 +7,6 @@ namespace App\Data\Instances;
 use App\Data\Nodes\NodeIdentityData;
 use App\Data\Projects\ProjectIdentityData;
 use App\Data\Routes\RouteData;
-use App\Domain\Instances\Deployment\DevelopmentSeed;
 use App\Domain\Instances\Deployment\InstanceDeployStepStore;
 use App\Domain\Instances\Deployment\SharedPaths;
 use App\Models\Instance;
@@ -61,7 +60,7 @@ final class InstanceData extends Data
 
     public static function fromModel(Instance $instance): self
     {
-        $instance->loadMissing(['project', 'node', 'routes.targets', 'deploySteps', 'runtime']);
+        $instance->loadMissing(['project', 'node', 'routes.targets', 'deploySteps']);
         $route = $instance->authoritativeRoute() ?? $instance->routes->first();
         $removal = InstanceRemoval::query()
             ->with('members')
@@ -81,7 +80,7 @@ final class InstanceData extends Data
             vitePort: $instance->vite_port,
             ssrPort: $instance->ssr_port,
             seedPath: $instance->seed_path,
-            seedCommit: DevelopmentSeed::commit($instance),
+            seedCommit: $instance->seed_commit,
             name: $instance->name,
             sourceLayout: $instance->source_layout,
             checkoutPath: $instance->checkout_path,
