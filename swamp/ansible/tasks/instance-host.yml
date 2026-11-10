@@ -156,5 +156,67 @@
 - name: Run the egress proxy
   ansible.builtin.include_tasks: instance-egress.yml
 
+# Agent development servers of the clones (docs/reference/development-containers.md#agent-development-servers): new TCP connections from
+# WireGuard peers to a free port of the development range on the Node's WireGuard address go to Caddy's development listener, which
+# routes them by host name to the same port in a clone. The table binds nothing, so a port in use on the Node keeps its program.
+- name: Redirect agent development ports to Caddy
+  vars:
+    dev_ports_file: /etc/orbit/instance-dev-ports.nft
+  block:
+    - name: Make the folder of the table
+      ansible.builtin.file: { path: /etc/orbit, state: directory, owner: root, group: root, mode: "0755" }
+    - name: Write the table
+      ansible.builtin.copy:
+        dest: "{{ dev_ports_file }}"
+        content: "{{ instances.dev_ports.ruleset }}"
+        owner: root
+        group: root
+        mode: "0644"
+        validate: nft --check --file %s
+      register: dev_ports_ruleset
+    # The table loads after `nftables.service`, whose `/etc/nftables.conf` may start with `flush ruleset`. Stopping the unit deletes it.
+    - name: Write the unit of the table
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ instances.dev_ports.unit }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Orbit Instance containers: agent development ports to Caddy
+          DefaultDependencies=no
+          After=local-fs.target nftables.service
+          Before=network-pre.target wg-quick@orbit.service docker.service incus.service
+          Wants=network-pre.target
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStart=/usr/sbin/nft --file {{ dev_ports_file }}
+          ExecReload=/usr/sbin/nft --file {{ dev_ports_file }}
+          ExecStop=/usr/sbin/nft delete table inet {{ instances.dev_ports.table }}
+
+          [Install]
+          WantedBy=sysinit.target
+      register: dev_ports_unit
+    - name: Load the table
+      ansible.builtin.systemd_service:
+        name: "{{ instances.dev_ports.unit }}"
+        daemon_reload: "{{ dev_ports_unit.changed }}"
+        enabled: true
+        state: started
+      register: dev_ports_started
+    # A table deleted by hand while its unit stays active comes back too.
+    - name: Read the live table
+      ansible.builtin.command: { argv: [nft, list, table, inet, "{{ instances.dev_ports.table }}"] }
+      register: dev_ports_live
+      changed_when: false
+      failed_when: false
+    # The file replaces the table in one transaction, so a changed table never leaves a gap.
+    - name: Load a changed or missing table in place
+      ansible.builtin.command: { argv: [nft, --file, "{{ dev_ports_file }}"] }
+      when: (dev_ports_ruleset.changed or dev_ports_live.rc != 0) and not dev_ports_started.changed
+      changed_when: true
+
 - name: Build the Instance image
   ansible.builtin.include_tasks: instance-image.yml

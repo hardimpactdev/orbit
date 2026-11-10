@@ -118,7 +118,7 @@ For Laravel, the [application directory](/reference/projects#application-directo
 
 On `app-prod`, every release links `.env` in its application directory to the production home's file. With root `apps/site/public`, `<home>/releases/<name>/apps/site/.env` links to `<home>/.env`; no release-root `.env` link is needed. Application data uses separate [shared directories](/reference/deployments#shared-paths); changing those paths does not change the environment file. See [Production release layout](/reference/deployments).
 
-A container Instance keeps its `.env` in its workspace, for `orbit` with group `work`; its create flow writes it. `env:sync` and `env:import` refuse a container Instance with `operation.kind_unavailable`. See [the default Instance](/reference/development-containers#the-default-instance).
+A container Instance keeps its `.env` in its workspace, for `orbit` with group `work`; its create flow writes it. A clone stores the default's `APP_KEY`, because its cloned data is encrypted with it. `env:sync` and `env:import` refuse a container Instance with `operation.kind_unavailable`. See [the default Instance](/reference/development-containers#the-default-instance).
 
 ## Import
 

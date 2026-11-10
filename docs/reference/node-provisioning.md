@@ -354,7 +354,9 @@ To install, `@swamp/cfgmgmt/fetch` downloads the binary to `/usr/local/bin/orbit
 | `cli.install_failed` | The download, its checksum, its version check, the link or the profile failed. The link stays as it was when the switch did not happen |
 | `cli.configuration_failed` | The profile could not be written, or the Gateway has no WireGuard address |
 
-A Node of the build list keeps a mirror of each container default's repository at `/var/lib/orbit/instance-repositories/<id>.git`, owned by root. The create and deploy flows fetch into it. See [the default Instance](/reference/development-containers#the-default-instance).
+A Node of the build list keeps a mirror of each container Instance's repository at `/var/lib/orbit/instance-repositories/<id>.git`, owned by root. The create and deploy flows fetch into it. See [the default Instance](/reference/development-containers#the-default-instance).
+
+A clone's create also adds UFW rules under the comment prefix `orbit:instance-<id>-`: the route rules of its published T3 port and the rule to its database server. See [the network](/reference/development-containers#network).
 
 ## Converge the Orbit footprint
 

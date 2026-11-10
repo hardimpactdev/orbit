@@ -540,6 +540,7 @@ final readonly class DevelopmentSiteRepository
                 projectSlug: $instance->project->slug,
                 certificateScope: $domainChange ? "app-instance-{$instance->id}-hostname-change" : null,
                 localHttpUpstream: $runtime->bridge_address.':'.InstanceContainer::WebPort,
+                devUpstream: app(InstanceContainer::class)->servesDevPorts($instance, $runtime, $route) ? $runtime->bridge_address : null,
             );
         }
         // A development default in the old release layout serves through `current` until its next deployment converts it.

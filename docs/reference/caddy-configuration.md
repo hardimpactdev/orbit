@@ -94,6 +94,8 @@ When the withdrawal build fails, or the old Reverb does not stop, or the new Nod
 
 Caddy sends a connection for a specific address only to the sites bound to that address, and every other connection to the `0.0.0.0` sites. Only public Ingress sites bind `0.0.0.0`, so no private site joins the public listener. A public Ingress site also binds the WireGuard and LAN addresses, because a Router forwards to those addresses and public traffic can arrive on the LAN address behind NAT. Router and workload sites never bind `0.0.0.0`, on an Ingress Node or elsewhere.
 
+A container clone's private Route also has a development site on port 444 of the WireGuard address only, with the WireGuard-only client guards. The Node's nftables table sends WireGuard connections on free ports from 1024 to it; see [Agent development servers](/reference/development-containers#agent-development-servers).
+
 A Node that is the Router, the Ingress, and `app-prod` serves its private sites on the WireGuard and LAN addresses, and only its public sites on every address:
 
 ```caddy

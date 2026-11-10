@@ -149,7 +149,7 @@ These points stay open after PR 2. Each named PR settles its point.
 | Point | Fact | PR |
 | --- | --- | --- |
 | One default per Project | Kept, as [Decided](#decided) records: one `default` per Project in the fleet, and its clones on its Node. PR 4 refuses another Instance of the Project on any other Node with `instance.default_missing` | 4, settled |
-| Registration race | Registration reads the environment's Instance only before its T3 calls. The create flow bumps the cleanup revision, or registration reads it again in its lock | 5 |
+| Registration race | Registration reads the environment's Instance only before its T3 calls. The create flow bumps the cleanup revision, and registration compares it again in its lock | 5, settled |
 | Destroy order | An environment that names an Instance keeps the Instance from deletion. Destroy removes the environment through the Conn contribution first | 6 |
 
 ### PR 3: prepare a Node and the shared folders
@@ -315,7 +315,25 @@ The registration and the container's paths:
 - The T3 proxy device and its route rule.
 - The daily renewal run.
 
-Tests: Pest for the intent, the projection, the registration record from a result, `instance.default_missing`; Ansible `unit` cases; tests of the template clone and of the dump path; the `instance:create` cases for a container Node. Live on Beast:
+The code changed these points of this plan:
+
+- **Dump path.** The dump and restore to another server is not built. A clone that names another server refuses with `instance.database_clone_unsupported`.
+- **Template copy.** The template copy on the default's server is built for PostgreSQL. MySQL keeps its dump on the same server.
+- **Renewal.** The daily renewal run moves to PR 13, with the wake that also renews. A session lasts 30 days.
+- **Vault copy.** The Gateway session's vault copy stays, as a pairing's credential does. Swamp has no delete for a sensitive field that a step wrote.
+- **Plug-in point.** `InstanceLifecycleContribution` has only the create part: `assertCreateAvailable()` and `projectCreate()`. PR 6 adds the destroy part.
+- **Limits.** The copy sets no `limits.cpu` or `limits.memory`. No measured figure exists; the parity gate sets them.
+- **Egress and PHP.** The live checks wait on the container egress path of step 2c and on 3b's PHP pin, as PR 4's do.
+
+Agent development servers changed these points:
+
+- **Port preview.** T3's port preview cannot reach an agent's server. Conn resolves a remote server's port to `http://<server host>:<port>`, with no proxy through T3.
+- **Check 8, decided by Nick on 2026-11-10.** The Instance's private Route serves any port from 1024 that the agent opens, at `https://<domain>:<port>`. Public Routes never serve them.
+- **The contract.** [Agent development servers](/reference/development-containers#agent-development-servers) has it. The agent opens the URL in T3's browser.
+- **No Caddy range.** A Caddyfile cannot bind a port range. With a listener per port, a port that another program holds fails the Node's Caddy reload.
+- **The redirect.** An nftables table sends new WireGuard connections on free ports to one Caddy listener, which routes by `Host`.
+
+Tests: Pest for the admission, the intent, the run input with the model key in the vault, the projection, the registration record from a result, `instance.default_missing` and `instance.database_clone_unsupported`, the template statement, and the Conn wiring. Deno for the receipt and the registration step. The Ansible fixture test runs the clone, workspace, agent, Processes, T3 and registration phases against the Incus stand-in, with a rerun that changes nothing. `instance:create` has no cases file yet, for the reason PR 4 gives. Live on Beast, once 2c and 3b's pin have landed:
 
 1. A clone answers on its Route, with the default's data and its own `.env`.
 2. Rows written in the clone are not in the default; the default answers again right after the template copy.
@@ -327,12 +345,13 @@ Tests: Pest for the intent, the projection, the registration record from a resul
 The disk, agent and failure checks follow.
 
 7. `zfs get written` on the clone shows only a few MB.
-8. An agent's `npm run dev` in the container shows in Conn's browser through T3's port preview. Without that, the PR stops and asks for a decision.
-9. A message that the user sends in Conn during a turn is queued, not steered.
-10. A failed step leaves a stopped container; the same create resumes it.
-11. The PR records the clone, database clone, first T3 start and whole create times, for a small and a 1 GB database.
-12. The clone reaches its database server on its port, on the Node and on another Node. Every other address on those Nodes is dropped.
-13. T3's published port answers from a WireGuard peer and refuses a task VM.
+8. An agent's `npm run dev` on port 5173 shows at `https://<domain>:5173` in T3's browser over WireGuard, with hot reload. A second clone on the Node serves its own 5173.
+9. A port bound on the Node stays with its program. A LAN client and a task VM reach no development port.
+10. A message that the user sends in Conn during a turn is queued, not steered.
+11. A failed step leaves a stopped container; the same create resumes it.
+12. The PR records the clone, database clone, first T3 start and whole create times, for a small and a 1 GB database.
+13. The clone reaches its database server on its port, on the Node and on another Node. Every other address on those Nodes is dropped.
+14. T3's published port answers from a WireGuard peer and refuses a task VM.
 
 ### PR 6: destroy a container Instance
 
@@ -483,6 +502,8 @@ Tests: Pest for placement by runtime and the CI proof admission. Live: a normal 
 ### PR 13: sleep and wake
 
 The spec commit adds [container/sleep.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/sleep.mmd) and [container/wake.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/wake.mmd) to the hibernation page.
+
+It also builds the session renewal that PR 5 left out: the wake renews a session within seven days of its expiry, and a daily run (`conn.environment_renew`) renews the sessions of running clones, as [container/t3-register.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/t3-register.mmd) shows.
 
 Tests: Pest for the sweep's choices, the wake admission by caller, and the joined wake. Live on Beast:
 

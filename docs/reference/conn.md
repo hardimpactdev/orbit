@@ -157,6 +157,18 @@ The job sends that token as `admin_session`, with the server's environment id, i
 
 Registering again replaces the stored session. The job registers on each server start and before the session expires. An environment whose session expired shows `status: session_expired` and cannot mint pairings until it registers again.
 
+### Instance servers
+
+A clone of a container default runs its own T3 server. Its create flow registers it ([T3 registration](/reference/development-containers#t3-registration-and-pairing)): the run issues and checks the sessions in the container, and the Gateway records the server from the run's result through the plug-in point `InstanceLifecycleContribution`, which this extension contributes.
+
+- The record names the Instance and its Node, with the URL `http://<Node WireGuard address>:<T3 port>` and the label `<project> / <instance>`.
+- The Gateway reads the session from the vault key the result names. It does not call T3 again: the run made the checks above in the container.
+- A new record starts with its cleanup done. Recording a server again bumps the cleanup revision and starts the cleanup.
+- A resumed create can leave the sessions of its failed run valid in T3, until a later renewal cleans them.
+- The bumped revision also stops a Node's registration of the same id that read the row before the record: that registration compares the revision again in its lock and fails with `conn.environment_changed`.
+- While Conn is off, a clone is refused with `operation.kind_unavailable`: nothing would record its server.
+- A create admitted before Conn went off still records its server.
+
 ## Pairing and revocation
 
 A device asks the Gateway for a pairing link to one registered T3 server. The native Swamp pairing step sends `POST <url>/api/auth/pairing-token` with its admin session, a unique label, such as `phone via Orbit k3j9x0qa`, and T3's administrative scopes (see below). T3 gives the session paired from that link the same client label. The Gateway records the pairing: the Node, the server, the T3 link id, the label, and the link's expiry.

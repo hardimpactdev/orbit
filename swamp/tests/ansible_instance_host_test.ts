@@ -91,6 +91,8 @@ const replacements = (folder: string): [string, string][] => [
   ["/var/cache/orbit/debs", `${folder}/debs`],
   ["/var/cache/orbit/instance-folders", `${folder}/cache`],
   ["/etc/modules-load.d/", `${folder}/modules-load/`],
+  ["/etc/orbit/instance-dev-ports.nft", `${folder}/dev-ports.nft`],
+  ["\"/etc/orbit\"", `"${folder}/etc-orbit"`],
   ["cat /proc/[0-9]*/maps", `cat ${folder}/maps`],
 ];
 
@@ -261,7 +263,8 @@ async function fixture(
     // No Node group holds gid 2750.
     getent: "exit 2",
     // The egress table and Squid configuration validate; the real-kernel check and the live check prove them.
-    nft: "exit 0",
+    // It also records each call, so the live check of the development ports table shows.
+    nft: `echo "$*" >> '${folder}/nft-calls'; exit 0`,
     // A staged configuration that holds BAD does not parse.
     squid: '! grep -qs BAD "$4"',
     systemctl: 'for unit; do [ "$unit" = is-active ] || echo active; done',
@@ -321,6 +324,11 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
         out_interface: null,
         family: "v4",
       },
+    },
+    dev_ports: {
+      table: "orbit_instance_dev_ports",
+      unit: "orbit-instance-dev-ports.service",
+      ruleset: "table inet orbit_instance_dev_ports\ndelete table inet orbit_instance_dev_ports\ntable inet orbit_instance_dev_ports {}\n",
     },
     ids: 201 * 65536,
     profile_config: {
@@ -555,6 +563,12 @@ Deno.test({
       );
       // No modules to load: an Instance container runs no WireGuard or Docker.
       assertEquals([...Deno.readDirSync(`${f.folder}/modules-load`)], []);
+      // The table of agent development ports is written as the Gateway rendered it, and its unit loads it at boot.
+      assertEquals(Deno.readTextFileSync(`${f.folder}/dev-ports.nft`),
+        "table inet orbit_instance_dev_ports\ndelete table inet orbit_instance_dev_ports\ntable inet orbit_instance_dev_ports {}\n");
+      assert(Deno.readTextFileSync(`${f.folder}/systemd/orbit-instance-dev-ports.service`)
+        .includes(`ExecStart=/usr/sbin/nft --file ${f.folder}/dev-ports.nft`));
+      assert(Deno.readTextFileSync(`${f.folder}/nft-calls`).includes("list table inet orbit_instance_dev_ports"));
       assertEquals(
         Deno.readTextFileSync(`${f.folder}/sysctl/fs.inotify.max_user_watches`),
         "1048576 /etc/sysctl.d/60-orbit-instances.conf",

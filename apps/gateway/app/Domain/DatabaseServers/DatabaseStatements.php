@@ -267,6 +267,56 @@ final readonly class DatabaseStatements
     }
 
     /**
+     * A container clone's PostgreSQL database (docs/reference/development-containers.md#clone-the-database): a template copy of the
+     * default's database on the same server, inside the server's container, with the admin login from the first stdin line.
+     * PostgreSQL copies only from a database without sessions, so the run closes the default database to new connections and ends
+     * its sessions first; a trap opens it again whatever happens. The empty database that the create child made is replaced, and
+     * the copy's objects pass from the default's owner to the clone's owner. The names are validated identifiers, and each SQL
+     * batch is one argument, so the shell quotes nothing.
+     *
+     * @return list<string>
+     */
+    public static function template(string $container, string $admin, string $source, string $sourceOwner, string $target, string $targetOwner): array
+    {
+        // Lower case only: the owners are named as `'<name>'::regrole`, which folds case.
+        foreach ([$admin, $source, $sourceOwner, $target, $targetOwner] as $name) {
+            if (preg_match('/\A[a-z0-9_]{1,63}\z/D', $name) !== 1) {
+                throw new ResourceOperationException('database.server_admin_invalid', 'A database or user name is not a plain identifier.', 422);
+            }
+        }
+        $owned = static fn (string $from): string => "{$from} AND n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\\_toast%'";
+        $own = "DO \$orbit\$ DECLARE r record; BEGIN\n"
+            .'FOR r IN SELECT c.oid::regclass AS name, c.relkind FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE '
+            .$owned("c.relowner = '{$sourceOwner}'::regrole AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')")
+            // A sequence that belongs to a column changes owner with its table.
+            ." AND NOT (c.relkind = 'S' AND EXISTS (SELECT FROM pg_depend d WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid AND d.deptype IN ('a', 'i')))\n"
+            ."LOOP EXECUTE format('ALTER %s %s OWNER TO %I', CASE r.relkind WHEN 'S' THEN 'SEQUENCE' WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' WHEN 'f' THEN 'FOREIGN TABLE' ELSE 'TABLE' END, r.name, '{$targetOwner}'); END LOOP;\n"
+            .'FOR r IN SELECT p.oid::regprocedure AS name, p.prokind FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE '
+            .$owned("p.proowner = '{$sourceOwner}'::regrole")
+            ." AND NOT EXISTS (SELECT FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')\n"
+            ."LOOP EXECUTE format('ALTER %s %s OWNER TO %I', CASE r.prokind WHEN 'p' THEN 'PROCEDURE' WHEN 'a' THEN 'AGGREGATE' ELSE 'FUNCTION' END, r.name, '{$targetOwner}'); END LOOP;\n"
+            .'FOR r IN SELECT t.oid::regtype AS name, t.typtype FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE '
+            .$owned("t.typowner = '{$sourceOwner}'::regrole AND (t.typtype IN ('e', 'd', 'r') OR t.typtype = 'c' AND (SELECT relkind FROM pg_class WHERE oid = t.typrelid) = 'c')")
+            ."\nLOOP EXECUTE format('ALTER %s %s OWNER TO %I', CASE r.typtype WHEN 'd' THEN 'DOMAIN' ELSE 'TYPE' END, r.name, '{$targetOwner}'); END LOOP;\n"
+            ."FOR r IN SELECT nspname FROM pg_namespace WHERE nspowner = '{$sourceOwner}'::regrole LOOP EXECUTE format('ALTER SCHEMA %I OWNER TO %I', r.nspname, '{$targetOwner}'); END LOOP;\n"
+            ."END \$orbit\$;\n"
+            ."REVOKE ALL ON DATABASE \"{$target}\" FROM PUBLIC;\nREVOKE CREATE ON SCHEMA public FROM PUBLIC;\n"
+            ."REVOKE ALL ON SCHEMA public FROM \"{$sourceOwner}\";\nGRANT ALL ON SCHEMA public TO \"{$targetOwner}\";\n";
+
+        return ['docker', 'exec', '-i', $container, 'sh', '-c',
+            'set -eu; IFS= read -r PGPASSWORD && export PGPASSWORD; admin=$1; '
+            .'pg() { psql --no-psqlrc --host=127.0.0.1 --username="$admin" --quiet --set=ON_ERROR_STOP=1 "$@" >/dev/null; }; '
+            .'trap \'pg --dbname=postgres --command="$4"\' EXIT; '
+            .'pg --dbname=postgres --command="$5"; pg --dbname=postgres --command="$6"; pg --dbname=postgres --command="$7"; pg --dbname="$3" --command="$8"',
+            'sh', $admin, $source, $target,
+            "ALTER DATABASE \"{$source}\" ALLOW_CONNECTIONS true",
+            "ALTER DATABASE \"{$source}\" ALLOW_CONNECTIONS false; SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{$source}' AND pid <> pg_backend_pid()",
+            "DROP DATABASE IF EXISTS \"{$target}\" WITH (FORCE)",
+            "CREATE DATABASE \"{$target}\" TEMPLATE \"{$source}\" OWNER \"{$targetOwner}\"",
+            $own];
+    }
+
+    /**
      * The copy of one MySQL database into another inside the server's container: the root login from the first stdin
      * line, `mysqldump --single-transaction` piped into `mysql` (ADR 0191). The dump drops and recreates each table.
      *

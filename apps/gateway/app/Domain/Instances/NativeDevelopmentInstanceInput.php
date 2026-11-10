@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseCreateProjection;
 use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Instances\Deployment\DevelopmentDeploySteps;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Processes\ProcessLifecycleInput;
+use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseConnection;
 use App\Models\Instance;
@@ -66,6 +68,9 @@ final readonly class NativeDevelopmentInstanceInput
             'route_secrets' => ($input['route_create'] ?? null) === null ? null : ValidatedData::object($input['execution_secrets'] ?? [])],
             'execution_secrets' => [...$copies,
                 ...($container === null ? [] : app(DevelopmentDeploySteps::class)->copies($operation, $instance->project, ValidatedData::object($container)['steps'])),
+                // A clone's placeholder model key and model origin, for T3's unit.
+                ...(($container === null ? null : ValidatedData::object($container)['clone'] ?? null) === null ? [] : ['model_environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-model-'.$operation->id,
+                    app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), app(TaskVmModelRoute::class)->key()))]),
                 'git_credential' => InstanceGitHubReadTokens::credentialReference($operation),
                 'environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-input-'.$operation->id, $environment->content($instance)),
                 ...($testing === null ? [] : ['environment_testing' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-testing-'.$operation->id, $testing)]),
@@ -107,8 +112,17 @@ final readonly class NativeDevelopmentInstanceInput
         $run = app(DatabaseCreateProjection::class)->input($view);
         $source = ValidatedData::nullableString($admitted['source'] ?? null);
         $connection = DatabaseConnection::query()->findOrFail(ValidatedData::integer($admitted['connection_id']));
+        // The admin login runs `docker exec -i <container> sh -c <script> sh <user> <database>`.
+        $admin = ValidatedData::stringList(ValidatedData::object($run['intent'])['admin_client']);
+        $container = $admin[3];
+        $target = ValidatedData::string($connection->database);
+        $fill = match (true) {
+            $source === null => null,
+            $connection->driver === DatabaseDriver::Pgsql => DatabaseStatements::template($container, $admin[8], $source,
+                ValidatedData::string($admitted['source_owner'] ?? null), $target, ValidatedData::string($connection->username)),
+            default => DatabaseStatements::copy($container, $source, $target),
+        };
 
-        return ['node_id' => $view->node_id, 'intent' => $run['intent'], 'secrets' => $run['execution_secrets'],
-            'fill' => $source === null ? null : DatabaseStatements::copy(ValidatedData::stringList(ValidatedData::object($run['intent'])['admin_client'])[3], $source, ValidatedData::string($connection->database))];
+        return ['node_id' => $view->node_id, 'intent' => $run['intent'], 'secrets' => $run['execution_secrets'], 'fill' => $fill];
     }
 }

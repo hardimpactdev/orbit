@@ -48,6 +48,8 @@ A Project that serves no web pages has no Route and takes no `--domain` (`instan
 
 On a Node of the [build list](/reference/development-containers#the-build-list), the Project's first `default` Instance is a container, not a checkout ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd)). Orbit creates the container from the Node's image and fetches the default branch into a mirror on the Node. It pushes the branch in, writes `.env`, and runs the Project's [development deploy steps](/reference/deployments#development-deploy-steps) as `orbit`; there are no setup steps. Then it starts FrankenPHP, publishes the Route to it, and takes the first seed snapshot. A Project has one `default` in the fleet, and its other Instances are made on that `default`'s Node. [The default Instance](/reference/development-containers#the-default-instance) has the details and what a container default cannot run yet.
 
+Every other Instance of the Project is a clone of that `default` ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd)). Orbit copies the default's newest seed snapshot, a ZFS clone, and gives the copy its own address, ACL and T3 port. It clones the default's database on the same Database server, brings in the Instance's branch, and writes `.env`, the agent settings and `/etc/orbit/instance`. Then it starts FrankenPHP and T3, publishes the Route, and records the T3 server with the [Conn layer](/reference/conn#instance-servers). The branch is the matching origin branch, or a new branch at the seed's commit. [Create](/reference/development-containers#create) has the details.
+
 A failed create leaves the container stopped, with its workspace; the same command resumes it.
 
 ## Branch selection
@@ -89,10 +91,13 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 | `instance.setup_step_failed`, `instance.setup_step_unavailable` | A setup step failed, or its command is missing. |
 | `instance.branch_resolution_failed` | The default branch could not be fetched. |
 | `operation.target_busy` | Another change to the Instance is running. |
-| `instance.default_missing` | The Project's `default` runs in a container on another Node, or a build-list Node has no `default` of the Project yet. |
-| `instance.host_unavailable` | The container Node is not prepared, its bridge is full, or its runtime folder lacks the Project's PHP build. |
+| `instance.default_missing` | The Project's `default` runs in a container on another Node, is not active or has no seed snapshot yet, or a build-list Node has no `default` of the Project yet. |
+| `instance.database_clone_unsupported` | The default's database cannot be cloned: a clone in a container names another Database server, or the database is not on a server. |
+| `instance.t3_unready` | A clone's T3 server did not answer within 30 seconds of its start. |
+| `instance.create_register_failed` | A clone's T3 server refused a session the run issued, or the Gateway's session lacks `access:read` and `access:write`. The step's report names the `conn.*` code. |
+| `instance.host_unavailable` | The container Node is not prepared, its bridge or its T3 ports are full, or its runtime folder lacks the Project's PHP build. |
 | `project.source_defaults_incomplete` | The Project's source defaults are incomplete, or a web-serving Project in a container has no PHP version. |
-| `operation.kind_unavailable` | The request needs a part of the container runtime that is not built yet. |
+| `operation.kind_unavailable` | The request needs a part of the container runtime that is not built yet, or a clone needs Conn or the model router guard. |
 
 ## How it works
 

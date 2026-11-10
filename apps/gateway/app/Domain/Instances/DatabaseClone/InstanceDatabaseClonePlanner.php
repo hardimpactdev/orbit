@@ -21,7 +21,11 @@ final readonly class InstanceDatabaseClonePlanner
 
     public const string PREFIX = 'DB';
 
-    public function plan(Project $project, string $instanceName): ?InstanceDatabaseClonePlan
+    /**
+     * `$container` is true for a clone of a container default, whose PostgreSQL database is cloned on its server with a template
+     * copy (docs/reference/development-containers.md#clone-the-database). A checkout Instance copies only MySQL and SQLite.
+     */
+    public function plan(Project $project, string $instanceName, bool $container = false): ?InstanceDatabaseClonePlan
     {
         if ($instanceName === self::SOURCE_INSTANCE) {
             return null;
@@ -49,11 +53,11 @@ final readonly class InstanceDatabaseClonePlanner
 
         $connection = $target->databaseConnection;
 
-        if ($connection->driver === DatabaseDriver::Mysql) {
+        if ($connection->driver === DatabaseDriver::Mysql || ($container && $connection->driver === DatabaseDriver::Pgsql)) {
             $server = $connection->server;
 
-            if (! $server instanceof DatabaseServer || ! is_string($connection->database)) {
-                throw $this->unsupported('The default Instance\'s MySQL database is not on a Database server.');
+            if (! $server instanceof DatabaseServer || ! is_string($connection->database) || ($container && ! is_string($connection->username))) {
+                throw $this->unsupported("The default Instance's {$connection->driver->value} database is not on a Database server.");
             }
 
             if ($server->driver === DatabaseDriver::Redis) {

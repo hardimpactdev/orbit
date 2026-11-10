@@ -20,11 +20,12 @@ final readonly class DevelopmentCreateEnvironment
 
     /**
      * The Project's environment template, then the Instance's stored values, then Orbit's defaults and, for Laravel, a new APP_KEY.
-     * A retry keeps the values the first admission stored, including its APP_KEY.
+     * A retry keeps the values the first admission stored, including its APP_KEY. A clone of a container default (`$source`) takes
+     * the default's APP_KEY instead: the cloned data is encrypted with it.
      *
      * @return list<string> the environment keys
      */
-    public function admit(Instance $instance, Project $project, ?DatabaseConnection $database = null): array
+    public function admit(Instance $instance, Project $project, ?DatabaseConnection $database = null, ?Instance $source = null): array
     {
         $template = [];
         foreach ($project->environmentTemplate()->first()->entries ?? [] as $entry) {
@@ -44,6 +45,9 @@ final readonly class DevelopmentCreateEnvironment
         if ($project->is_laravel === true && $this->domain($instance) !== null) {
             // The Instance's own Route domain, never the template's literal URL of another Instance.
             $values['APP_URL'] = 'https://{{instance.domain}}';
+        }
+        if ($source instanceof Instance && ($values['APP_KEY'] ?? '') === '') {
+            $values['APP_KEY'] = $this->store->values($source)['APP_KEY'] ?? '';
         }
         if ($project->is_laravel === true && ($values['APP_KEY'] ?? '') === '') {
             $values['APP_KEY'] = LaravelApplicationKey::generate();

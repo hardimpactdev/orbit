@@ -84,7 +84,7 @@ Analytics commands publish the tracking hosts that send visits to the [analytics
 | [`instance:analytics:show`](/cli/instance/analytics-show) | Show the tracking hosts, their DNS records, and the script tag. |
 | [`instance:analytics:disable`](/cli/instance/analytics-disable) | Remove every tracking host. |
 
-On a Node of the build list, a Project's first `default` Instance runs in a container. See [the default Instance](/reference/development-containers#the-default-instance).
+On a Node of the build list, a Project's first `default` Instance runs in a container, and every other Instance of the Project is a [clone](/reference/development-containers#create) of it, with its own T3 server. See [the default Instance](/reference/development-containers#the-default-instance).
 
 ## Related
 

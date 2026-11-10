@@ -17,6 +17,7 @@ use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\Deployment\DevelopmentDeploySteps;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
@@ -38,6 +39,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
+use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -88,7 +90,8 @@ final readonly class StartDevelopmentInstanceCreateAction
             $name = DefaultInstanceName::resolve($project, $data->name);
             $instance = Instance::query()->where('project_id', $project->id)->where('name', $name)->lockForUpdate()->first();
             $created = ! $instance instanceof Instance;
-            $container = $this->container($project, $node, $name, $instance, $data);
+            // A container Instance is the Project's default, or a clone of that default ($source).
+            [$container, $source] = $this->container($project, $node, $name, $instance, $data);
 
             if ($instance instanceof Instance) {
                 $this->assertRetry($instance, $node, $root, $data->branch);
@@ -99,8 +102,11 @@ final readonly class StartDevelopmentInstanceCreateAction
                         "Instance [{$instance->name}] finished its first setup. Create its database with `orbit database:create --server={$data->databaseServer} --instance={$instance->id}`, then run `orbit instance:setup {$instance->id}`.", 409);
                 }
             }
-            $clone = $container || $instance instanceof Instance && ! $instance->first_setup_pending
-                ? null : $this->databases->plan($project, $name);
+            $clone = ($container && ! $source instanceof Instance) || $instance instanceof Instance && ! $instance->first_setup_pending
+                ? null : $this->databases->plan($project, $name, $container);
+            if ($source instanceof Instance) {
+                $clone = $this->containerDatabase($clone, $data->databaseServer);
+            }
             app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($node);
             $sourceRoot = $this->nodeSettings->fromStored($node->settings)?->appsPath();
             if (! $container && (! is_string($sourceRoot) || StoragePath::tryParse($sourceRoot) === null)) {
@@ -187,7 +193,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 if (! $container) {
                     app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
                 }
-                $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? $server['connection'] ?? null);
+                $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? $server['connection'] ?? null, $source);
                 // A rerun after a failed create checks the Processes its first run already started.
                 $input['members'] = $container ? [] : app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions', includeActive: true)['members'];
             }
@@ -197,12 +203,17 @@ final readonly class StartDevelopmentInstanceCreateAction
                     preserveEnvironment: true, preparedWorkloads: true,
                     wakePreparedWorkloads: ! $container && ! $instance->processes()->whereNotIn('id', array_column($input['members'], 'id'))->exists())];
             }
-            $steps = $container && $provisioning['already_active'] !== true ? app(DevelopmentDeploySteps::class)->capture($project) : null;
+            // A clone runs no deploy steps: the default ran them before its seed snapshot.
+            $steps = $container && $provisioning['already_active'] !== true
+                ? ($source instanceof Instance ? [] : app(DevelopmentDeploySteps::class)->capture($project)) : null;
             $input['direct_provisioning'] = [...$provisioning, 'route' => $input['route_create'] ?? null, 'database' => $database,
-                'server_database' => $server['input'] ?? null, 'container' => $steps === null ? null : $this->containerIntent($instance, $node, $steps)];
+                'server_database' => $server['input'] ?? null, 'container' => $steps === null ? null
+                    : $this->containerIntent($instance, $node, $steps, $source, $server['connection'] ?? null,
+                        ValidatedData::string(ValidatedData::object($provisioning['resolve'])['branch']), $route?->domain)];
             if ($steps !== null) {
-                // F8: no container create has run yet, so the run starts at 30 minutes, plus the deploy step timeouts.
-                $input['run_budget_seconds'] = 1800 + array_sum(array_column($steps, 'timeout_seconds'));
+                // F8: no container create has run yet, so the run starts at 30 minutes, plus the deploy step timeouts. A clone runs
+                // no deploy step but adds its database copy and its T3 start.
+                $input['run_budget_seconds'] = 1800 + array_sum(array_column($steps, 'timeout_seconds')) + ($server === null ? 0 : 180);
 
                 return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId);
             }
@@ -220,8 +231,8 @@ final readonly class StartDevelopmentInstanceCreateAction
 
     /**
      * The owner, database and test databases on a Database server, recorded as `database:create --instance` records
-     * them and created by the run's `operation-database-create` child. A MySQL source on that server is the default
-     * Instance's database, which the run then copies in (ADR 0191).
+     * them and created by the run's `operation-database-create` child. A source on that server is the default Instance's
+     * database, which the run then copies in: a MySQL dump (ADR 0191), or a PostgreSQL template copy for a container clone.
      *
      * @return array{connection:DatabaseConnection,input:array<string,mixed>}
      */
@@ -231,10 +242,11 @@ final readonly class StartDevelopmentInstanceCreateAction
         $connection = DatabaseConnection::query()->findOrFail(ValidatedData::integer($prepared->input['connection_id']));
         DatabaseConnectionTarget::query()->updateOrCreate(['instance_id' => $instance->id, 'prefix' => 'DB'],
             ['database_connection_id' => $connection->id, 'network' => 'wireguard']);
-        $source = $clone?->server !== null && $clone->server->id === $connection->database_server_id ? $clone->connection->database : null;
+        $same = $clone?->server !== null && $clone->server->id === $connection->database_server_id;
 
         return ['connection' => $connection, 'input' => ['intent_id' => ValidatedData::integer($prepared->input['intent_id']),
-            'connection_id' => $connection->id, 'server_id' => $prepared->targetId, 'node_id' => $prepared->nodeId, 'source' => $source]];
+            'connection_id' => $connection->id, 'server_id' => $prepared->targetId, 'node_id' => $prepared->nodeId,
+            'source' => $same ? $clone->connection->database : null, 'source_owner' => $same ? $clone->connection->username : null]];
     }
 
     /**
@@ -264,15 +276,20 @@ final readonly class StartDevelopmentInstanceCreateAction
     }
 
     /**
-     * Whether this create builds the Project's default Instance in a container: the Project's one `default` in the fleet, on a Node
-     * of the build list (docs/reference/development-containers.md#the-default-instance). Every clone of it is made on that Node.
-     * Clones, a database on a Database server and the Project's own development Processes come in later parts of the runtime, so a
-     * request that needs one is refused until then.
+     * Whether this create makes a container Instance, and of which default (docs/reference/development-containers.md#lifecycle). The
+     * Project's one `default` in the fleet is a container on a Node of the build list, and every other Instance of the Project is a
+     * clone of it on its Node. The Project's own development Processes come in a later part of the runtime, so a Project that has
+     * them is refused until then.
+     *
+     * @return array{0: bool, 1: Instance|null} Whether it is a container, and the default it clones
      */
-    private function container(Project $project, Node $node, string $name, ?Instance $instance, CreateInstanceData $data): bool
+    private function container(Project $project, Node $node, string $name, ?Instance $instance, CreateInstanceData $data): array
     {
         if ($instance instanceof Instance) {
-            return $instance->runtime()->exists();
+            $runtime = $instance->runtime()->first();
+            $source = $runtime?->clone_source_instance_id === null ? null : Instance::query()->findOrFail($runtime->clone_source_instance_id);
+
+            return [$runtime !== null, $source];
         }
         $default = $name === 'default' ? null : Instance::query()->where('project_id', $project->id)->where('name', 'default')->first();
         if ($default instanceof Instance && $default->runtime()->exists()) {
@@ -280,41 +297,85 @@ final readonly class StartDevelopmentInstanceCreateAction
                 throw new ResourceOperationException('instance.default_missing',
                     "The Project's default Instance runs on Node [{$default->node_id}]. Create its other Instances there.", 409);
             }
-            $this->unavailable('Clones of a container default Instance are not available yet.');
+            if ($default->status !== InstanceState::Active || $default->runtime()->value('seed_commit') === null) {
+                throw new ResourceOperationException('instance.default_missing', 'The Project\'s default Instance has no seed snapshot yet: finish its create first.', 409);
+            }
+            $this->assertContainerProject($project);
+            app(InstanceLifecycleContributions::class)->assertCreateAvailable();
+            $this->modelRoute();
+
+            return [true, $default];
         }
         if (! app(ContainerNodes::class)->includes($node)) {
-            return false;
+            return [false, null];
         }
         if ($name !== 'default') {
             if (! $default instanceof Instance) {
                 throw new ResourceOperationException('instance.default_missing', 'Create the Project\'s default Instance on this Node first.', 409);
             }
 
-            return false;
+            return [false, null];
         }
-        if ($data->databaseServer !== null) {
-            $this->unavailable('A container Instance cannot reach a Database server yet.');
-        }
+        $this->assertContainerProject($project);
+
+        return [true, null];
+    }
+
+    private function assertContainerProject(Project $project): void
+    {
         if (ProcessDefinition::query()->where('project_id', $project->id)->get()
             ->contains(static fn (ProcessDefinition $definition): bool => in_array(DefinitionEnvironment::Development->value, $definition->environments, true))) {
             $this->unavailable('The Project\'s development Processes cannot run in a container yet.');
         }
         app(InstanceContainer::class)->assertPhp($project);
+    }
 
-        return true;
+    /** A clone's agents reach the models only through the Node's forwarder to the router guard, with its placeholder key. */
+    private function modelRoute(): TaskVmModelRoute
+    {
+        if (! app()->bound(TaskVmModelRoute::class)) {
+            $this->unavailable('A clone needs the model router.');
+        }
+        $route = app(TaskVmModelRoute::class);
+        $route->assertReady();
+
+        return $route;
     }
 
     /**
-     * The container, its runtime row and the Project's development deploy steps, which the run copies to the vault.
+     * A clone's database: the default's database on a Database server is cloned on that same server. A dump to another server is a later
+     * part of the runtime. A database in the workspace, such as SQLite, comes with the ZFS clone, so it needs no copy.
+     */
+    private function containerDatabase(?InstanceDatabaseClonePlan $clone, ?string $databaseServer): ?InstanceDatabaseClonePlan
+    {
+        if ($clone?->server === null) {
+            if ($databaseServer !== null) {
+                throw new ResourceOperationException('instance.database_clone_unsupported', 'The default Instance has no database on a Database server to clone.', 422);
+            }
+
+            return null;
+        }
+        if ($databaseServer !== null && $databaseServer !== $clone->server->slug) {
+            throw new ResourceOperationException('instance.database_clone_unsupported',
+                "A clone's database is cloned on the default's server [{$clone->server->slug}]; a copy to another server is not available yet.", 422);
+        }
+
+        return $clone;
+    }
+
+    /**
+     * The container, its runtime row and, for the Project's default, its development deploy steps, which the run copies to the vault.
      *
      * @param  list<array{name:string,phase:string,required:bool,timeout_seconds:int,command_digest:string}>  $steps
      * @return array<string,mixed>
      */
-    private function containerIntent(Instance $instance, Node $node, array $steps): array
+    private function containerIntent(Instance $instance, Node $node, array $steps, ?Instance $source, ?DatabaseConnection $database, string $branch, ?string $domain): array
     {
         $containers = app(InstanceContainer::class);
 
-        return [...$containers->intent($instance, $containers->reserve($instance, $node)), 'steps' => $steps];
+        // The default stays on the Project's default branch, which its deployments follow; a clone takes its own branch.
+        return [...$containers->intent($instance, $containers->reserve($instance, $node, $source), $database, $source instanceof Instance ? $branch : '',
+            $domain === null ? null : 'https://'.$domain), 'steps' => $steps];
     }
 
     private function unavailable(string $message): never

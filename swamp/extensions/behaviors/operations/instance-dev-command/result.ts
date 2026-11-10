@@ -20,6 +20,12 @@ type Container = {
     deploy: string[];
     processes: string;
     seed: string;
+    /** A clone's phases: the agent's files, T3's first start and its registration. */
+    agent?: string;
+    t3?: string;
+    register?: string;
+    /** The registration step's receipt: the T3 server and the vault keys of its sessions. */
+    server?: string | null;
 };
 
 /** The checkout phase prints the commit it left checked out as one `orbit-commit=<sha>` line. */
@@ -82,17 +88,21 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
     ];
     const failed = outcomes.find(([, , failure]) => failure) ??
         outcomes.find(([, finished]) => !finished);
+    const server = failed === undefined && container?.server ? JSON.parse(container.server) : null;
     const result = {
         instance_id: intent.instance_id,
         ready: failed === undefined,
         name_converted_from: intent.name_converted_from ?? null,
         ...(commit ? { commit } : {}),
+        ...(server ? { t3: server } : {}),
         ...(failed
             ? {
                 failed_step: failed[0],
-                // A setup command keeps the public step-list code; other phases name themselves.
+                // A setup command keeps the public step-list code; T3 that never answers has its own; other phases name themselves.
                 error_code: failed[0] === "setup"
                     ? "instance.setup_step_failed"
+                    : failed[0] === "t3"
+                    ? "instance.t3_unready"
                     : "instance.create_" + failed[0] + "_failed",
             }
             : {}),
@@ -102,7 +112,8 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
 
 /**
  * A container default's phases in order: the container, the workspace with its commit, each development deploy step, the
- * Processes, the Route and the seed snapshot.
+ * Processes, the Route and the seed snapshot. A clone has no deploy step and no seed: after the copy and the workspace come the
+ * agent's files, the Processes, T3, the Route and the registration, whose receipt must name the server.
  */
 function containerOutcomes(
     intent: Record<string, unknown>,
@@ -111,6 +122,28 @@ function containerOutcomes(
     phases: Phases,
 ): [string, boolean, boolean][] {
     const certificates = phases.certificates ?? [];
+    const route: [string, boolean, boolean] = [
+        "route",
+        intent.route == null || (phases.route === "succeeded" &&
+            certificates.every((status) => status === "succeeded")),
+        phases.route === "failed" || certificates.includes("failed"),
+    ];
+    const clone = (intent.container as { clone?: unknown } | null)?.clone ?? null;
+    if (clone !== null) {
+        return [
+            ["clone", container.launch === "succeeded", container.launch === "failed"],
+            ["workspace", commit !== null, container.workspace?.status === "failed"],
+            ["agent", container.agent === "succeeded", container.agent === "failed"],
+            ["processes", container.processes === "succeeded", container.processes === "failed"],
+            ["t3", container.t3 === "succeeded", container.t3 === "failed"],
+            route,
+            [
+                "register",
+                container.register === "succeeded" && typeof container.server === "string",
+                container.register === "failed",
+            ],
+        ];
+    }
     return [
         ["container", container.launch === "succeeded", container.launch === "failed"],
         ["workspace", commit !== null, container.workspace?.status === "failed"],

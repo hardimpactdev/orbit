@@ -166,6 +166,26 @@ Creation checks every name before mutation. Failure keeps its reserved intent fo
 
 PostgreSQL database creation accepts `--locale=C.UTF-8` or `--locale=C`. Both use PostgreSQL 18's builtin locale provider, `TEMPLATE template0` and UTF8 encoding. Omitting the option inherits the image default. The connection records the selected locale; it cannot be changed after creation. MySQL, Valkey and external registration refuse this option.
 
+## Reach a server from a container Instance
+
+A [container Instance](/reference/development-containers#network) reaches only its own database server and port. The Instance's create flow adds the way, for a default with `--database-server` and for every clone:
+
+- A rule on the container's NIC ACL allows the server's address and port.
+- A UFW rule on the Instance's Node carries the comment `orbit:instance-<id>-database`.
+- For a server on the same Node, it is an input rule from the container's bridge address.
+- For a server on another Node, it is a route rule out to WireGuard. The bridge's NAT sends that traffic from the Node's WireGuard address.
+
+## Clone a default database for a container clone
+
+A clone of a container default gets its own owner and database on the default's server, from the same `operation-database-create` child. The run then clones the default database into it, in the server's container, with the admin login:
+
+1. It closes the default database to new connections and ends its sessions. A trap opens it again, whether the copy succeeds or not.
+2. It drops the empty database the child made, then runs `CREATE DATABASE <clone> TEMPLATE <default> OWNER <clone owner>`.
+3. In the copy, every object of the default's owner passes to the clone's owner: tables, sequences, views, routines, types and schemas.
+4. `PUBLIC` loses its access to the database. The default's owner loses its grants on `public`.
+
+The default Instance sees refused connections while the copy runs. A MySQL default database is copied with a dump, as for a checkout Instance. A clone on another server than the default's refuses with `instance.database_clone_unsupported`: the dump across servers is not built yet.
+
 ## Repair a PostgreSQL test pool
 
 Repeat the original `database:create` request for an Instance-owned PostgreSQL connection. The server, Instance, locale and worker count must match creation, including defaults. A different request returns `database.slug_conflict` (409).

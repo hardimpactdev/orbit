@@ -117,6 +117,9 @@ final readonly class InstanceHostIntent
             'incus' => $incus,
             'image' => InstanceImage::for($gateway),
             'folders' => InstanceFolderPlan::for($folders),
+            // The redirect of agent development ports on the WireGuard address to Caddy's development listener.
+            'dev_ports' => ['table' => InstanceDevPorts::Table, 'unit' => InstanceDevPorts::TableUnit,
+                'ruleset' => app(InstanceDevPorts::class)->ruleset($node)],
             // `incus exec` sessions get the container environment from the profile; the image gives it to units and login shells.
             'profile_config' => [
                 'environment.PATH' => InstanceImage::Path,
