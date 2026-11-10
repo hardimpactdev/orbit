@@ -172,7 +172,7 @@ function fixture(instance: "default" | "feature" = "default") {
           ANSIBLE_HOME: `${folder}/ansible`,
           ANSIBLE_LOCAL_TEMP: `${folder}/tmp`,
           ORBIT_RUN: `${folder}/run`,
-          ORBIT_RUN_ID: "run-1",
+          ORBIT_RUN_ID: folder.slice(folder.lastIndexOf("/") + 1),
           // As in the workflow of a move, the container phases get no token and no .env from the Gateway.
           GIT_CONFIG_NOSYSTEM: "1",
           HOME: `${folder}/home`,
