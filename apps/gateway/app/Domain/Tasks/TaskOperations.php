@@ -119,7 +119,7 @@ final readonly class TaskOperations
             $this->extension->execute();
             $this->cancel->execute($operation, targetEnding: $subtask === null);
             if (! $operation->refresh()->status->terminal()) {
-                throw new ResourceOperationException('operation.target_busy', 'The group\'s running Operation was asked to stop; cancel again when it has ended.', 409, details: ['operation_id' => $operation->id]);
+                throw new ResourceOperationException('operation.target_busy', 'The group\'s running Operation was asked to stop; retry this request when it has ended.', 409, details: ['operation_id' => $operation->id]);
             }
         }
     }
