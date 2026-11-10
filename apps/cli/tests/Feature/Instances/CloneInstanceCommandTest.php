@@ -5,18 +5,23 @@ declare(strict_types=1);
 use App\Commands\Instances\CloneInstanceCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Support\Operations\OperationFollower;
+use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
 use Orbit\Sdk\Requests\Instances\CloneInstanceRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 require_once __DIR__.'/../../Support/InstanceSourceOutput.php';
 
 beforeEach(function (): void {
+    Sleep::fake(syncWithCarbon: true);
     $this->originalColumns = getenv('COLUMNS');
     putenv('COLUMNS=400');
     MockClient::destroyGlobal();
@@ -31,13 +36,16 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    Sleep::fake(false);
+    Carbon::setTestNow();
+    CarbonImmutable::setTestNow();
     putenv($this->originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$this->originalColumns);
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
 describe('instance:clone request', function (): void {
-    it('sends one typed clone mutation and reads the target release state', function (): void {
+    it('sends one typed clone mutation and reads the final Operation', function (): void {
         $mock = MockClient::global(clone_cli_responses());
 
         $this
@@ -46,13 +54,15 @@ describe('instance:clone request', function (): void {
                 'node' => '7',
                 'name' => 'production',
                 '--preview-name' => 'shop.com',
+                '--json' => true,
             ])
             ->assertExitCode(0);
 
-        [$cloneResponse, $releaseResponse] = $mock->getRecordedResponses();
+        [$cloneResponse, , $operationResponse] = $mock->getRecordedResponses();
+        expect($mock->getRecordedResponses())->toHaveCount(3);
         $requests = [
             $cloneResponse->getPendingRequest()->getRequest(),
-            $releaseResponse->getPendingRequest()->getRequest(),
+            $operationResponse->getPendingRequest()->getRequest(),
         ];
 
         expect($requests)
@@ -68,9 +78,9 @@ describe('instance:clone request', function (): void {
                 'preview_name' => 'shop.com',
             ])
             ->and($requests[1])
-            ->toBeInstanceOf(ListInstanceReleasesRequest::class)
+            ->toBeInstanceOf(ShowOperationRequest::class)
             ->and($requests[1]->resolveEndpoint())
-            ->toBe('/api/v1/instances/29/releases');
+            ->toBe('/api/v1/operations/901');
     });
 
     it('transports optional branch and SQLite inputs without local policy', function (): void {
@@ -157,7 +167,7 @@ describe('instance:clone request', function (): void {
 });
 
 describe('instance:clone output', function (): void {
-    it('reports the target, configured branch, actual preview, and absent first release', function (): void {
+    it('reports the completed clone Operation for humans', function (): void {
         MockClient::global(clone_cli_responses());
 
         expect(Artisan::call('instance:clone', [
@@ -167,13 +177,7 @@ describe('instance:clone output', function (): void {
             '--preview-name' => 'shop.com',
         ]))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'Instance: production',
-            'Target ID 29',
-            'Configured branch release',
-            'Preview domain shop.com.prod.orbit',
-            'Selected release —',
-            'Clone request ID '.clone_cli_request_id(),
-            'Release request ID '.clone_cli_release_request_id(),
+            'Instance clone succeeded.', 'Operation: 901', 'Request ID: '.clone_cli_request_id(),
         );
     });
 
@@ -192,47 +196,30 @@ describe('instance:clone output', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and(trim(Artisan::output()))
-            ->toBe(json_encode([
-                'target_id' => 29,
-                'configured_branch' => 'release',
-                'preview_domain' => 'shop.com.prod.orbit',
-                'selected_release' => null,
-                'warnings' => [],
-                'request_ids' => [
-                    'clone' => clone_cli_request_id(),
-                    'releases' => clone_cli_release_request_id(),
-                ],
-            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            ->toBe(instance_operation_json('instance.clone', clone_cli_result(), ['target_id' => 29], clone_cli_request_id()));
     });
 
-    it('shows clone warnings in human and JSON output', function (bool $json): void {
+    it('preserves clone warnings in JSON and correlates the human completion', function (bool $json): void {
         $warning = 'REDIS_HOST: Copied host points at the candidate Node or its development TLD. Review with env:update, then env:sync.';
-        $responses = clone_cli_responses();
-        $responses[CloneInstanceRequest::class] = MockResponse::make([
-            'data' => [...clone_cli_payload(), 'warnings' => [$warning]],
-            'meta' => ['request_id' => clone_cli_request_id()],
-        ], 201);
+        $responses = clone_cli_responses(['warnings' => [$warning]]);
         MockClient::global($responses);
         expect(Artisan::call('instance:clone', [
             'candidate' => '11', 'node' => '7', 'name' => 'production', '--preview-name' => 'shop.com', '--json' => $json,
         ]))->toBe(0);
         if ($json) {
-            expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['warnings'])->toBe([$warning]);
+            expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['result']['warnings'])->toBe([$warning]);
         } else {
-            expect(instance_source_text(Artisan::output()))->toContain('Warning: '.$warning);
+            expect(instance_source_text(Artisan::output()))->toContain('Instance clone succeeded.', 'Operation: 901', 'Request ID: '.clone_cli_request_id());
         }
     })->with([false, true]);
 
-    it('refuses a clone response without its sole preview Route', function (): void {
-        $payload = clone_cli_payload();
-        $payload['route'] = null;
-        $payload['domain'] = null;
-        $payload['url'] = null;
+    it('refuses a clone admission response without its Operation target', function (): void {
+        $payload = instance_operation_payload('instance.clone', clone_cli_result(), ['target_id' => null]);
         $mock = MockClient::global([
             CloneInstanceRequest::class => MockResponse::make([
                 'data' => $payload,
                 'meta' => ['request_id' => clone_cli_request_id()],
-            ], 201),
+            ], 202),
         ]);
 
         $exitCode = Artisan::call('instance:clone', [
@@ -308,69 +295,24 @@ describe('instance:clone help and execution boundary', function (): void {
 
         expect($source)
             ->toBeString()
-            ->toContain(CloneInstanceRequest::class, ListInstanceReleasesRequest::class)
+            ->toContain(CloneInstanceRequest::class, 'OperationResponse::class', 'followOperation(')
             ->not->toContain('Symfony\\Component\\Process', 'shell_exec', 'proc_open', 'passthru');
     });
 });
 
 /** @return array<class-string, MockResponse> */
-function clone_cli_responses(): array
+function clone_cli_responses(array $result = []): array
 {
-    return [
-        CloneInstanceRequest::class => MockResponse::make([
-            'data' => clone_cli_payload(),
-            'meta' => ['request_id' => clone_cli_request_id()],
-        ], 201),
-        ListInstanceReleasesRequest::class => MockResponse::make([
-            'data' => ['releases' => [], 'selected_release' => null],
-            'meta' => ['request_id' => clone_cli_release_request_id()],
-        ]),
-    ];
+    return instance_operation_responses(CloneInstanceRequest::class, 'instance.clone', clone_cli_result($result),
+        ['target_id' => 29], clone_cli_request_id());
 }
 
 /** @return array<string, mixed> */
-function clone_cli_payload(): array
+function clone_cli_result(array $overrides = []): array
 {
-    return [
-        'id' => 29,
-        'project_id' => 3,
-        'node_id' => 7,
-        'name' => 'production',
-        'environment' => 'production',
-        'source_layout' => 'release',
-        'checkout_path' => '/home/orbit-app-29/releases/candidate',
-        'production_user' => 'orbit-app-29',
-        'production_home' => '/home/orbit-app-29',
-        'root' => null,
-        'effective_root' => '/home/orbit-app-29/current/public',
-        'selected_branch' => 'release',
-        'branch_override' => null,
-        'starting_commit' => str_repeat('a', 40),
-        'detached' => false,
-        'status' => 'active',
-        'route' => [
-            'id' => 41,
-            'kind' => 'app',
-            'project_id' => 3,
-            'node_id' => 7,
-            'cluster_id' => null,
-            'generation_basis_node_id' => null,
-            'domain' => 'shop.com.prod.orbit',
-            'provenance' => 'explicit',
-            'publication' => 'private',
-            'status' => 'active',
-            'failed_step' => null,
-            'error_code' => null,
-            'target' => ['id' => 51, 'instance_id' => 29, 'position' => 1],
-            'process_id' => null,
-            'upstream' => null,
-        ],
-        'domain' => 'shop.com.prod.orbit',
-        'url' => 'https://shop.com.prod.orbit',
-        'removal' => null,
-        'transfer' => null,
-        'deploy_steps' => [],
-    ];
+    return ['instance_id' => 29, 'ready' => true, 'branch' => 'release', 'commit' => str_repeat('a', 40),
+        'php_version' => '8.5', 'laravel' => true, 'candidate_commit' => str_repeat('a', 40),
+        'environment_keys' => ['APP_ENV'], 'warnings' => [], ...$overrides];
 }
 
 function clone_cli_error(string $code, string $message, ?string $requestId = null): string
@@ -394,23 +336,27 @@ function clone_cli_release_request_id(): string
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a845';
 }
 
-it('reports the created clone when the following release lookup fails', function (bool $json): void {
+it('reports a correlated failure when the admitted clone Operation cannot be read', function (bool $json): void {
     $responses = clone_cli_responses();
-    $responses[ListInstanceReleasesRequest::class] = MockResponse::make([
-        'error' => ['code' => 'deployment.releases_unavailable', 'message' => 'Releases are unavailable.'],
+    $responses[CloneInstanceRequest::class] = MockResponse::make([
+        'data' => instance_operation_payload('instance.clone', overrides: ['status' => 'queued', 'poll_after_seconds' => 0, 'target_id' => 29]),
+        'meta' => ['request_id' => clone_cli_request_id()],
+    ], 202);
+    $responses[ShowOperationRequest::class] = MockResponse::make([
+        'error' => ['code' => 'operation.unavailable', 'message' => 'Operation is unavailable.'],
     ], 503, ['X-Orbit-Request-Id' => clone_cli_release_request_id()]);
     $mock = MockClient::global($responses);
     expect(Artisan::call('instance:clone', [
         'candidate' => '11', 'node' => '7', 'name' => 'production', '--preview-name' => 'shop.com', '--json' => $json,
     ]))->toBe(1);
     $output = Artisan::output();
-    expect($mock->getRecordedResponses())->toHaveCount(2);
+    expect($mock->getRecordedResponses())->toHaveCount(2 + OperationFollower::TransientReads);
+    expect($mock->getLastRequest())->toBeInstanceOf(ShowOperationRequest::class);
     if ($json) {
-        expect(trim($output))->toBe(clone_cli_error('deployment.releases_unavailable', 'Releases are unavailable.', clone_cli_release_request_id()));
+        expect(trim($output))->toBe(clone_cli_error('operation.unavailable', 'Operation is unavailable.', clone_cli_release_request_id()));
     } else {
         expect(instance_source_text($output))->toContain(
-            'Instance [production] (#29) was cloned; the selected release could not be read.',
-            'Clone request ID: '.clone_cli_request_id(), 'Releases are unavailable.',
-        )->not->toContain('Instance cloned.');
+            'Operation is unavailable.', 'Request ID: '.clone_cli_release_request_id(),
+        )->not->toContain('Instance clone succeeded.');
     }
 })->with([false, true]);
