@@ -2,6 +2,7 @@
 # One phase of instance-container.yml, `phase`, on the Node. Containers live in `container.project`; `incus` gets no stray input.
 # Work in the container runs through `incus exec` from the Node: root for units and snapshots, `orbit` for the workspace.
 - name: Name the container commands
+  tags: [always]
   ansible.builtin.set_fact:
     incus_project: [incus, --project, "{{ container.project }}"]
     resource_args: >-
@@ -29,6 +30,7 @@
          | map(attribute='name') | list }}
 
 - name: Read the container
+  tags: [container, clone, stop, start]
   ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
   register: container_read
   changed_when: false
@@ -38,6 +40,7 @@
 # The container's own ACL: the bridge's way to the model forwarder stays in the bridge ACL; this one lets the Node's Caddy reach
 # FrankenPHP, a clone's T3 clients reach T3, and the container reach its database server. Network ACLs live in the default project.
 - name: Converge the container's ACL
+  tags: [container, clone]
   when: phase in ['container', 'clone']
   block:
     - name: Read the network ACLs
@@ -71,6 +74,7 @@
 # default. The copy takes its own address and ACL; T3 is published on the Node's WireGuard address in NAT mode, so T3 sees its
 # client's own address.
 - name: Copy the default's seed snapshot
+  tags: [clone]
   when: phase == 'clone'
   block:
     - name: Read the default's seed snapshots
@@ -112,6 +116,7 @@
 # the default's settings: FrankenPHP on the default's address, a queue worker on the default's database. Each later phase of the
 # clone enables the units it sets up. The default's Process units and environment folders go; the `processes` phase checks again.
 - name: Prepare the copy before its first start
+  tags: [clone]
   when: phase == 'clone' and (container_read.rc != 0 or (container_read.stdout | from_json).status != 'Running')
   vars:
     files_route: "/1.0/instances/{{ container.name }}/files?project={{ container.project }}&path="
@@ -147,6 +152,7 @@
 # UFW on the Node, each rule under the Instance's comment prefix: T3's route rules, the task VM range's deny first, and the way to
 # the database server.
 - name: Admit the container's own paths on the Node
+  tags: [container, clone]
   when: phase in ['container', 'clone'] and container.firewall | default([]) | length > 0
   community.general.ufw:
     rule: "{{ item.rule }}"
@@ -162,6 +168,7 @@
   loop_control: { label: "{{ item.comment }}" }
 
 - name: Start the container
+  tags: [container, clone, start]
   when: phase in ['container', 'clone', 'start'] and (container_read.rc != 0 or (container_read.stdout | from_json).status != 'Running')
   ansible.builtin.command: { argv: "{{ incus_project + ['start', container.name] }}" }
   changed_when: true
@@ -169,6 +176,7 @@
 # `php` on every PATH in the container is the Project's static build from the runtime folder: `/usr/local/bin` is on the PATH of
 # units, login shells and `incus exec` sessions, so `composer` runs for `agent` and `orbit` alike. A Project without one has none.
 - name: Link the Project's php
+  tags: [container, start]
   when: phase in ['container', 'start']
   vars:
     container_php: "{{ container.php | default(none) or '' }}"
@@ -198,6 +206,7 @@
 
 # Both static PHP binaries read this compiled-in scan directory; the limit is shared by every container, not a Project setting.
 - name: Configure the container's PHP memory limit
+  tags: [container, clone, start]
   when: phase in ['container', 'clone', 'start']
   vars:
     container_php_ini_path: /etc/orbit/php/conf.d/99-orbit-runtime.ini
@@ -217,12 +226,14 @@
       changed_when: true
 
 - name: Stop the container
+  tags: [stop]
   when: phase == 'stop' and container_read.rc == 0 and (container_read.stdout | from_json).status == 'Running'
   ansible.builtin.command: { argv: "{{ incus_project + ['stop', '--timeout', '30', container.name] }}" }
   changed_when: true
 
 # The branch comes from a mirror on the Node: a container cannot reach GitHub, and the read token never enters it.
 - name: Fetch the branch on the Node
+  tags: [container, clone, fetch]
   when: phase in ['container', 'clone', 'fetch']
   vars:
     credential_path: "/tmp/orbit-git-credential-{{ run_id }}"
@@ -287,6 +298,7 @@
 
 # A pinned commit must be on the branch's first-parent chain; without one the branch's newest commit deploys.
 - name: Check the commit on the Node
+  tags: [fetch]
   when: phase == 'fetch'
   block:
     - name: Read the branch's first-parent chain
@@ -304,6 +316,7 @@
 
 # The first build brings the branch in only when the workspace is not at the mirror's commit yet, so a rerun changes nothing.
 - name: Read the workspace and the mirror
+  tags: [workspace]
   when: phase == 'workspace'
   block:
     - name: Read the workspace repository
@@ -335,6 +348,7 @@
              or workspace_before.results[1].stdout | trim != mirror_head.stdout | trim }}
 
 - name: Bring the branch into the container
+  tags: [fetch, workspace]
   when: phase == 'fetch' or (phase == 'workspace' and workspace_behind | bool)
   block:
     - name: Bundle the branch
@@ -350,6 +364,7 @@
 
 # The workspace is a repository shared by `orbit` and `agent` through the group `work`.
 - name: Check out the branch in the workspace
+  tags: [workspace]
   when: phase == 'workspace' and workspace_behind | bool
   block:
     - name: Fetch the bundle and check out the branch
@@ -364,6 +379,7 @@
       changed_when: false
 
 - name: Read the checked-out commit
+  tags: [workspace]
   when: phase == 'workspace'
   block:
     - name: Read the commit
@@ -377,6 +393,7 @@
 # The .env goes in as `orbit` with group `work`, 0640, through a 0600 file on the Node that is removed at once. It is compared by
 # digest first, so a rerun with the same .env changes nothing.
 - name: Read the digest of .env in the container
+  tags: [workspace]
   when: phase == 'workspace'
   ansible.builtin.command: { argv: "{{ as_root + ['sha256sum', '--', container.environment_file] }}" }
   register: environment_digest
@@ -384,6 +401,7 @@
   failed_when: false
 
 - name: Write .env in the container
+  tags: [workspace]
   when: >-
     phase == 'workspace'
     and (environment_digest.stdout | default('')).split(' ') | first != lookup('ansible.builtin.env', 'ORBIT_ENVIRONMENT') | hash('sha256')
@@ -406,6 +424,7 @@
 
 # A deployment checks out only a clean tree that the commit fast-forwards.
 - name: Check out the commit
+  tags: [checkout]
   when: phase == 'checkout'
   vars:
     target: "{{ container.commit if container.commit is not none else 'refs/remotes/origin/' ~ container.branch }}"
@@ -451,6 +470,7 @@
 # caps their ACL mask, so the other user cannot write there. Before the deploy steps (`checkout`) and after them (`processes`) root
 # gives the group back what the owner has; only entries that lack it change.
 - name: Keep the workspace writable for its group
+  tags: [checkout, processes]
   when: phase in ['checkout', 'processes']
   ansible.builtin.command:
     argv: >-
@@ -462,6 +482,7 @@
 # A Process unit or folder that is not this Instance's goes: a clone starts with its default's units in the seed, and a definition the
 # Project removed leaves its unit behind.
 - name: Remove the Process units of other owners
+  tags: [processes]
   when: phase == 'processes'
   vars:
     owned_units: "{{ container.processes | default([]) | map(attribute='name') | list }}"
@@ -497,6 +518,7 @@
 # FrankenPHP and the Project's other development Processes are `orbit-*` units, so a runtime folder update restarts them too. A
 # Process's environment file is named by the digest of its content, so a changed value is a new file and a changed unit.
 - name: Write the Processes' environment files
+  tags: [processes]
   when: phase == 'processes' and (container.processes | default([]) | selectattr('environment') | list | length > 0)
   vars:
     environments: "{{ lookup('ansible.builtin.env', 'ORBIT_PROCESS_ENVIRONMENTS') | from_json }}"
@@ -524,6 +546,7 @@
 
 # A changed value is a new file; the old one goes, so no former value stays in the container.
 - name: Remove the Processes' former environment files
+  tags: [processes]
   when: phase == 'processes' and (container.processes | default([]) | length > 0)
   ansible.builtin.command:
     argv: >-
@@ -536,6 +559,7 @@
   failed_when: environments_removed.rc != 0 and 'No such file' not in environments_removed.stderr
 
 - name: Install and start the Processes
+  tags: [processes]
   when: phase == 'processes' and unit_files | length > 0
   block:
     - name: Read the units
@@ -576,6 +600,7 @@
 # whose presence starts T3. Whole files are compared by digest; JSON settings merge only Orbit's keys, preserving runtime state.
 # A rerun changes nothing; the key comes through the vault.
 - name: Prepare the agent
+  tags: [agent]
   when: phase == 'agent'
   vars:
     agent_files: >-
@@ -666,6 +691,7 @@
 # T3 starts for the first time and makes its own identity: the default never ran it, so no clone shares one. The workspace becomes
 # its project once; the project's id stays in the agent's settings, so a rerun adds none.
 - name: Start T3
+  tags: [t3]
   when: phase == 't3'
   vars:
     t3_project_mark: "{{ container.clone.t3.project_mark }}"
@@ -709,6 +735,7 @@
 # each, inside the container. The reply goes into the run folder on the worker, 0600; the next step checks it and stores the sessions
 # in the vault. No session enters a log, an argument or the run's outputs.
 - name: Register the T3 server
+  tags: [register]
   when: phase == 'register'
   vars:
     t3_url: "http://127.0.0.1:{{ container.clone.t3.internal_port }}"
@@ -755,6 +782,7 @@
 
 # A clone copies the seed snapshot, so it is taken with the Processes stopped: no file is half written in it.
 - name: Take the seed snapshot
+  tags: [seed]
   when: phase == 'seed'
   block:
     - name: Read the checked-out commit
@@ -794,6 +822,7 @@
       changed_when: true
 
 - name: Check the container
+  tags: [check]
   when: phase == 'check'
   block:
     - name: Read the branch and the commit
@@ -826,6 +855,7 @@
         container_commit: "{{ check_git.results[1].stdout | trim }}"
 
 - name: Report the commit
+  tags: [always]
   when: container_commit is defined
   ansible.builtin.debug:
     msg: "orbit-commit={{ container_commit }}"

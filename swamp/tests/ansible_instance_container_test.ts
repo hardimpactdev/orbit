@@ -376,6 +376,11 @@ Deno.test({
         const again = f.run(phase);
         assert(again.ok, again.output);
         assertEquals(again.changed, 0, `${phase}: ${again.output}`);
+        // Tag selection must not dispatch the other lifecycle phases as skipped tasks.
+        if (phase === "t3") {
+          const skipped = Number(/^node\s*:.*skipped=(\d+)/m.exec(again.output)?.[1] ?? 999);
+          assert(skipped < 10, again.output);
+        }
       }
       assertEquals(f.state().projects, ["/srv/workspace"]);
     } finally {

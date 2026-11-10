@@ -308,7 +308,7 @@ So Composer, npm, Bun, Vite+, Git over HTTPS, curl, apt, Guzzle and Node's `fetc
 
 ## Lifecycle
 
-Every lifecycle flow runs from the Node, with `incus` and Ansible phases. Development Instances have no Schedules: Schedules are production only ([ADR 0215](/decisions/0215-start-development-processes-from-project-definitions)).
+Every lifecycle flow runs from the Node, with `incus` and Ansible phases. Each phase selects only its own tagged tasks before Ansible evaluates their conditions; it does not walk the tasks of other phases. Development Instances have no Schedules: Schedules are production only ([ADR 0215](/decisions/0215-start-development-processes-from-project-definitions)).
 
 ### The default Instance
 
