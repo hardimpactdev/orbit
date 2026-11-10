@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { decoder, playbook, hasAnsible, identity, slots, Slot, Worker, State, stub, root, path, name, accepting, exists, pause, save, event, quote, worker, Fixture, test, fresh, remintTasks } from "./_support/swamp_worker_renewal.ts";
+import { decoder, playbook, hasAnsible, identity, slots, Slot, Worker, State, stub, quote, worker, Fixture, test, fresh, remintTasks } from "./_support/swamp_worker_renewal.ts";
 
 test("failed re-enrollment leaves both survivors running and blocks the next round", async (f) => {
   f.hold("hold-enrollment-a");

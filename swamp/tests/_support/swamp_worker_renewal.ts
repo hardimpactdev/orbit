@@ -42,20 +42,20 @@ export interface State {
 
 // All boundary executables use this Deno stub. No Python test or fixture code.
 export const stub = String.raw`
-export const root = Deno.env.get("RENEWAL_TEST_DIR");
-export const path = root + "/state.json";
+const root = Deno.env.get("RENEWAL_TEST_DIR");
+const path = root + "/state.json";
 let state = JSON.parse(Deno.readTextFileSync(path));
-export const [command, ...args] = Deno.args;
-export const name = command.split("/").at(-1);
-export const accepting = worker => ["idle", "busy"].includes(worker.status);
-export const exists = name => { try { Deno.statSync(root + "/" + name); return true; }
+const [command, ...args] = Deno.args;
+const name = command.split("/").at(-1);
+const accepting = worker => ["idle", "busy"].includes(worker.status);
+const exists = name => { try { Deno.statSync(root + "/" + name); return true; }
     catch (error) { if (error instanceof Deno.errors.NotFound) return false; throw error; } };
-export const pause = () => new Promise(resolve => setTimeout(resolve, 20));
-export const save = () => {
+const pause = () => new Promise(resolve => setTimeout(resolve, 20));
+const save = () => {
     Deno.writeTextFileSync(path + ".new", JSON.stringify(state));
     Deno.renameSync(path + ".new", path);
 };
-export const event = message => Deno.writeTextFileSync(root + "/events", message + "\n", {append: true});
+const event = message => Deno.writeTextFileSync(root + "/events", message + "\n", {append: true});
 if (name === "getent") {
     console.log(Deno.env.get("RENEWAL_TEST_PASSWD"));
 } else if (name === "journalctl") {
