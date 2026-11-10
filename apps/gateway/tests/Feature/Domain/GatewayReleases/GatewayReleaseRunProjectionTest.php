@@ -98,3 +98,13 @@ it('records no collections warning when the check passed', function (): void {
 
     expect($record->phases)->not->toHaveKey('swamp');
 });
+
+it('records a busy refusal with the blocker IDs and pauses after migration without loading or switching', function (): void {
+    $record = endReleaseRun('failed', [], 'Wait for active Operations', 'gateway.release_busy: Active Operations after 600 seconds: 41, 42');
+
+    expect($record->outcome)->toBe('paused')
+        ->and($record->error_code)->toBe('gateway.release_busy')
+        ->and($record->migrations_ran)->toBeTrue()
+        ->and($record->message)->toContain('41, 42')
+        ->and($record->phases['idle'])->toBe(['outcome' => 'failed', 'error_code' => 'gateway.release_busy']);
+});
