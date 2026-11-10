@@ -47,6 +47,8 @@ Retirement removes the checkout from its old live path by renaming the whole dir
 
 Find the root and its retention time with `orbit instance:show INSTANCE --json`: the fields are `retained_git_path` and `retained_git_at`, also returned by `GET /api/v1/instances/{instance}`. `retained.json` inside that root records the same path and time. Both API fields are null until retirement prepares that root. The timestamp is when the root was prepared. A failed retirement can leave an empty or partly filled root; its path is recorded before any checkout moves.
 
+Destroying the migrated Instance keeps this directory. After destroy deletes the Instance record, its successful Operation result keeps `retained_git_path` and `retained_git_at`; read it with `orbit operation:show OPERATION --json`. See [instance:destroy](/cli/instance/destroy).
+
 ### Recovery
 
 To inspect retained commits, use `git --git-dir=RETAINED_CHILD/.git show REF` on the Instance's Node. Repairing a linked worktree's pointers to the retained repository can make it usable again, but it still depends on that repository. Keep the retained root while any worktree depends on it.

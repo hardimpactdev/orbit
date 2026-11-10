@@ -41,6 +41,8 @@ An Instance without a Route can be removed only when its Project does not serve 
 
 A non-default container Instance, cloned or migrated, requires `--force` until guarded removal is built. It withdraws the Route, drops owned databases and stops and deletes the container with its Processes, T3 sessions, history, Incus storage, ACL and firewall rules. It removes Conn records and execution copies, then frees the T3 port. Container defaults remain unavailable. See [clone removal](/reference/development-containers#destroy).
 
+A migrated Instance's [retained Git directory](/cli/instance/migrate#retained-git-data), `<old-checkout>.orbit-retired-git/`, survives destroy. It is purged only by hand under the [manual purge prerequisites](/cli/instance/migrate#manual-purge). After the Instance record is deleted, find its retained path and time in the successful destroy Operation: `orbit operation:show OPERATION --json` or `GET /api/v1/operations/{operation}` returns `result.retained_git_path` and `result.retained_git_at`.
+
 ## How it works
 
 <div className="flow-at" data-chart="instance/destroy"></div>
