@@ -21,6 +21,7 @@ use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use App\Models\Instance;
 use App\Models\Node;
@@ -162,11 +163,15 @@ it('refuses the corrections of a group that is busy or has no task VM workspace'
 
 it('admits corrections on a ready slot VM without a resume', function (): void {
     [$group, $vm] = prepFixWorld(TaskVmState::Ready);
+    Queue::fake([StartAdmittedSwampRun::class]);
+    config(['swamp.run_token' => null]);
 
-    expect(fn () => app(TaskPrepFixIntent::class)->start($group, new StartTaskPrepFixData('Finding 1.'), 'test', null))->toThrow(ResourceOperationException::class);
+    expect(app(TaskPrepFixIntent::class)->start($group, new StartTaskPrepFixData('Finding 1.'), 'test', null)->status)->toBe(OperationStatus::Queued);
 
     $operation = Operation::query()->where('kind', 'tasks.prep_fix')->sole();
-    expect($operation->input['task_vm_id'])->toBe($vm->id)
+    expect($operation->status)->toBe(OperationStatus::Queued)
+        ->and($operation->error_code)->toBeNull()
+        ->and($operation->input['task_vm_id'])->toBe($vm->id)
         ->and($operation->input['node_id'])->toBe($vm->node_id)
         ->and($operation->input)->not->toHaveKey('resume')
         ->and($operation->input)->not->toHaveKey('resume_secrets');
@@ -175,19 +180,45 @@ it('admits corrections on a ready slot VM without a resume', function (): void {
     expect($input['intent'])->not->toHaveKey('resume')
         ->and($input['intent']['task_vm_id'])->toBe($vm->id)
         ->and(json_encode($input['resume_secrets']))->toBe('{}');
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $operation->id);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+
+    expect(fn () => app()->call([new StartAdmittedSwampRun($operation->id), 'handle']))
+        ->toThrow(function (ResourceOperationException $exception) use ($operation): void {
+            expect($exception->errorCode)->toBe('swamp.start_unavailable')
+                ->and($exception->status)->toBe(503)
+                ->and($exception->details)->toBe(['operation_id' => $operation->id]);
+        });
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe('swamp.start_unavailable');
 });
 
 it('captures a resume before corrections on a parked slot VM', function (): void {
     [$group, $vm] = prepFixWorld(TaskVmState::Parked);
+    Queue::fake([StartAdmittedSwampRun::class]);
+    config(['swamp.run_token' => null]);
 
-    expect(fn () => app(TaskPrepFixIntent::class)->start($group, new StartTaskPrepFixData('Finding 1.'), 'test', null))->toThrow(ResourceOperationException::class);
+    expect(app(TaskPrepFixIntent::class)->start($group, new StartTaskPrepFixData('Finding 1.'), 'test', null)->status)->toBe(OperationStatus::Queued);
 
     $operation = Operation::query()->where('kind', 'tasks.prep_fix')->sole();
-    expect($operation->input['task_vm_id'])->toBe($vm->id)
+    expect($operation->status)->toBe(OperationStatus::Queued)
+        ->and($operation->error_code)->toBeNull()
+        ->and($operation->input['task_vm_id'])->toBe($vm->id)
         ->and($operation->input['resume']['task_vm_id'])->toBe($vm->id)
         ->and($operation->input['resume']['mode'])->toBe('resume')
         ->and($operation->input['resume']['provider_input']['name'])->toBe('shark-tvm-2')
         ->and($operation->input)->toHaveKey('resume_secrets');
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $operation->id);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+
+    expect(fn () => app()->call([new StartAdmittedSwampRun($operation->id), 'handle']))
+        ->toThrow(function (ResourceOperationException $exception) use ($operation): void {
+            expect($exception->errorCode)->toBe('swamp.start_unavailable')
+                ->and($exception->status)->toBe(503)
+                ->and($exception->details)->toBe(['operation_id' => $operation->id]);
+        });
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe('swamp.start_unavailable');
 });
 
 /** The owned workspace and author of a succeeded prep run. */
