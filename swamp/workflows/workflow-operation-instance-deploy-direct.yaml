@@ -1314,7 +1314,7 @@ jobs:
         home: ${{ steps["dev-vp-home"].outputs.stdout }}
         store: ${{ steps["dev-vp-store"].outputs.stdout }}
         links: ${{ steps["dev-vp-links"].outputs.links }}
-        workspaces: ${{ steps.filter(k, k.startsWith("dev-vp-read-workspace-")).map(k, steps[k].outputs.stdout) }}
+        workspaces: '${{ steps.filter(k, k.startsWith("dev-vp-read-workspace-")).map(k, {"step": k, "stdout": steps[k].outputs.stdout}) }}'
         production: ${{ inputs.intent.deployment.variant == "production" }}
     guard: ${{ !inputs.intent.deployment.needs_vp }}
   - name: Read Vite manager home

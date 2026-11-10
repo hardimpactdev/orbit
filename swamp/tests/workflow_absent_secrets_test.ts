@@ -3,6 +3,8 @@ import { parse } from "jsr:@std/yaml@1.0.12";
 import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
 import { behavior } from "../extensions/behaviors/operations/instance-dev-command/assets.ts";
 import { createResult } from "../extensions/behaviors/operations/instance-dev-command/result.ts";
+import { behavior as vpRequirements } from "../extensions/behaviors/operations/instance-vp-command/requirements.ts";
+import { vpWorkspaceSteps } from "../extensions/behaviors/operations/instance-vp-command/steps.ts";
 
 /**
  * Swamp evaluates a skipped step's inputs too (docs/reference/swamp-command-steps.md), so an expression that reads a vault key or an
@@ -87,11 +89,12 @@ Deno.test("create finalization evaluates checkout, default and clone receipts wi
   const commit = "a".repeat(40);
   const succeeded = { status: "succeeded" };
   const workspace = { ...succeeded, outputs: { stdout: `orbit-commit=${commit}` } };
-  const server = JSON.stringify({ environment_id: "env-instance-8" });
+  const registration = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-create-16210-t3-register.json", import.meta.url))).step;
+  const server = JSON.parse(registration.outputs.stdout);
   const steps = {
     checkout: workspace, container: succeeded, workspace, seed: succeeded, agent: succeeded, t3: succeeded,
     "container-processes": succeeded, "t3-sessions": succeeded,
-    "t3-register": { ...succeeded, outputs: { terminal: { stdout: server } } },
+    "t3-register": registration,
   };
   for (const container of [null, { clone: null }, { clone: { source: "instance-7" } }]) {
     const intent = { instance_id: 8, already_active: false, container, server_database: null, processes: [], setup_steps: [], route: null };
@@ -104,6 +107,27 @@ Deno.test("create finalization evaluates checkout, default and clone receipts wi
     const result = createResult(intent, args);
     assertEquals(result.ready, true);
     assertEquals(JSON.parse(result.stdout).commit, commit);
-    assertEquals(JSON.parse(result.stdout).t3, container?.clone ? { environment_id: "env-instance-8" } : undefined);
+    assertEquals(JSON.parse(result.stdout).t3, container?.clone ? server : undefined);
+  }
+});
+
+Deno.test("deploy VP workspace reads retain step names for the capture schema", () => {
+  const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-deploy-direct.yaml", import.meta.url))) as Workflow;
+  const capture = workflow.jobs.flatMap((job) => job.steps).find((step) => step.name === "dev-vp-requirements")!;
+  const generated = vpWorkspaceSteps("dev-vp", "inputs.intent").find((step) => step.name === "dev-vp-requirements")!;
+  const expressions = [capture, generated].map((step) => (step.task as { inputs: Record<string, string> }).inputs.workspaces);
+  // No deploy workspace read was recorded in the selector audit. Use the receiver's declared schema
+  // (instance-vp-command/requirements.ts:26), including an empty read and a non-workspace step.
+  const steps = {
+    "dev-vp-read-workspace-1": { outputs: { stdout: '{"name":"vite-plus","version":"0.2.1"}' } },
+    "dev-vp-read-package": { outputs: { stdout: "{}" } },
+    "dev-vp-read-workspace-0": { outputs: { stdout: "" } },
+  };
+  const schema = vpRequirements.methods.capture.arguments.shape.workspaces;
+  for (const expression of expressions) for (const reads of [steps, {}] as Record<string, { outputs: { stdout: string } }>[]) {
+    const value = environment.evaluate(expression.trim().slice(3, -2).trim(), { steps: reads });
+    assertEquals(schema.parse(value), Object.entries(reads)
+      .filter(([name]) => name.startsWith("dev-vp-read-workspace-"))
+      .map(([step, read]) => ({ step, stdout: read.outputs.stdout })));
   }
 });
