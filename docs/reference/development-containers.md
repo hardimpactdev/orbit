@@ -17,7 +17,7 @@ covers:
 
 Every development Instance runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
 
-Every new Instance is a ZFS clone of the Project's default Instance on the Node, and its database is a clone of the default Instance's database. The default Instance is the only one built from scratch, and it deploys every merge to the default branch, so clones start at the current default branch with its dependencies installed. The default Instance never runs T3, so each clone starts T3 for the first time and gets its own T3 identity.
+Every new Instance is a ZFS clone of the Project's default Instance on the Node, and its database is a clone of the default Instance's database. The default Instance is the only one built from scratch, and it deploys every merge to the default branch through the independent [development precheck](/reference/deployments#automatic-deployments), so clones start at the current default branch with its dependencies installed. The default Instance never runs T3, so each clone starts T3 for the first time and gets its own T3 identity.
 
 A task runs in such a container too. There is no separate task container: the same container has two [drivers](#drivers), a user in Conn and Swamp for a task. A Project may turn on a [nested fleet](#nested-fleet), which Orbit needs for its command proofs.
 
