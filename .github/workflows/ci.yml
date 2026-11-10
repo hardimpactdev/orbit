@@ -758,10 +758,10 @@ jobs:
 
   cli-release:
     name: Start the CLI release
-    # Orbit CLI Release also starts when the whole CI run succeeds. With slow checks non-blocking, start it as soon as
-    # Required checks passes on main, so a slow or failed non-blocking job does not hold the manifest back.
+    # Start after Required checks passes on main, independently of the slow-check policy.
+    # The CI-completion trigger is safe: release runs serialize by commit and skip an existing complete release.
     needs: required
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ORBIT_SLOW_CHECKS_BLOCKING == 'false'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
     permissions:
       actions: write
