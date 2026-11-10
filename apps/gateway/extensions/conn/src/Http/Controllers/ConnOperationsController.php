@@ -33,6 +33,8 @@ final class ConnOperationsController extends Controller
 
     public function cancel(EmptyOperationRequest $request, Operation $operation, CancelOperationAction $cancel): JsonResponse
     {
+        // A thread's clone is only followed here; it is cancelled like any create, with instance:create's own tools.
+        abort_if($operation->kind === 'instance.create', 404);
         $this->assertOwner($request, $operation);
 
         return response()->json(['data' => OperationData::fromModel($cancel->execute($operation), $operation->caller_node_name)->toArray(),
@@ -43,9 +45,13 @@ final class ConnOperationsController extends Controller
     {
         $caller = RequireActiveWireGuardPeer::activePeer($request);
         $target = match ($operation->kind) {
-            'conn.pairing_create' => 'conn_pairing', 'conn.pairing_revoke' => 'conn_pairing_node', 'conn.gateway_sessions_revoke' => 'conn_environment', default => null,
+            'conn.pairing_create' => 'conn_pairing', 'conn.pairing_revoke' => 'conn_pairing_node', 'conn.gateway_sessions_revoke' => 'conn_environment',
+            'instance.create' => 'instance', default => null,
         };
-        abort_unless($caller instanceof Node && $operation->callerNodeId() === $caller->id
-            && $target !== null && $operation->target_type === $target, 404);
+        // A thread's clone (/reference/conn#threads-in-an-orbit-project): instance.create records its caller as `node:<id>`.
+        $owner = $operation->kind === 'instance.create'
+            ? $caller instanceof Node && $operation->triggered_by === 'node:'.$caller->id
+            : $caller instanceof Node && $operation->callerNodeId() === $caller->id;
+        abort_unless($owner && $target !== null && $operation->target_type === $target, 404);
     }
 }

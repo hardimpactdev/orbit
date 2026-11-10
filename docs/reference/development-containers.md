@@ -440,7 +440,16 @@ Both send a turn with `queue`, so neither steers the other's turn. No lease deci
 
 ## Threads
 
-Starting a thread in an Orbit Project in Conn creates an Instance, a clone of the default Instance. Conn names it from the first message, pairs with its T3 server and starts the thread there with that message. The [thread chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/thread.mmd) has the steps. A thread started inside an Instance's server stays in that Instance.
+Starting a thread in an Orbit Project in Conn creates an Instance, a clone of the default Instance. Conn names it from the first message, pairs with its T3 server and starts the thread there with that message. The [thread chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/thread.mmd) has the steps, and [Threads in an Orbit Project](/reference/conn#threads-in-an-orbit-project) the endpoints. A thread started inside an Instance's server stays in that Instance.
+
+What is built:
+
+- Conn lists the Projects whose ready container default runs on a Node the device reaches.
+- Conn creates the clone through the Conn layer, on the default's Node.
+- Conn keeps each thread start on the device until its first message is sent. A reload resumes it.
+- Conn pairs once: it follows the pairing's Operation to the end.
+- Conn shows a server whose container is stopped as asleep. It does not wake it yet: the wake is PR 13 of the [build plan](/solutions/development-container-runtime).
+- The desktop app starts these threads. The phone does not yet.
 
 The agents use their own subagents only. MCP servers come from the project's own files: `.mcp.json` for Claude Code and the project's Codex configuration.
 

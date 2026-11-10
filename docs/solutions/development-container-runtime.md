@@ -112,7 +112,7 @@ Beast and Shark take the dev path beside their task VMs. A task VM host on the b
 | — | [Parity gate](#parity-gate) | |
 | 12 | Switch task work | |
 | 13 | Sleep and wake | |
-| 14 | Start a thread in an Orbit Project (Conn) | |
+| 14 | Start a thread in an Orbit Project (Conn) | Open, [#3308](https://github.com/hardimpactdev/orbit/pull/3308) |
 | 15 | Migrate checkout Instances | |
 | 16 | Switch every `app-dev` Node | |
 | 17 | Remove task VMs, the Pi server and the task container setting | |
@@ -523,6 +523,16 @@ This is a Conn PR, with the Orbit parts it needs. It follows [container/thread.m
 - Conn shows a sleeping Instance's server as asleep and wakes it on open.
 
 Tests: Conn tests for the Project list, the create-then-pair flow, the queued send and the asleep state; Pest for any Orbit endpoint it adds. Live: a thread started on the Mac in an Orbit Project ends in a new clone with its first turn answered.
+
+The code changed these points of this plan:
+
+- **Conn layer endpoints.** Conn's desktop app reaches only the Conn layer. So the Project list is `conn:project:list`, and the create is `conn:instance:create`.
+- **Create.** `conn:instance:create` admits the same `instance.create` on the default's Node. Conn Operation show follows it.
+- **Server record.** A server of an Instance names its `instance_id` and `power_state` in the server list, so Conn finds the clone's server and shows it asleep.
+- **Pairing.** Conn follows the pairing's Operation and reads the link once with `conn:pairing:show`.
+- **One pairing.** The device's server sync leaves a clone's server alone during its thread start.
+- **Wake.** Conn shows a stopped server as asleep but does not wake it. PR 13 adds the wake, and Conn calls it then.
+- **Phone.** Only the desktop app starts these threads.
 
 ### PR 15: migrate checkout Instances
 
