@@ -84,6 +84,8 @@ The Node must meet the host requirements of ADR 0250: current kernel, SCTP off a
 
 Every Instance container, default or clone, has the same limits: 4 CPUs, 8 GiB of memory, 4,096 processes and a 40 GiB root disk on the `orbit-instances` ZFS pool.
 
+The clone copy supplies a complete root disk device, including its type, path, pool and size. This works when the seed inherits its root disk from a profile or stores it locally.
+
 Every development container has the same layout. The image and the create set it up. Root owns everything below except the homes and the workspace. A container installs as little as possible: the image holds only OS packages, the users and the firewall.
 
 | Part | Setting |

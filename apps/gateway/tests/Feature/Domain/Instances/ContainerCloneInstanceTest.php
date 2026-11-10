@@ -92,7 +92,7 @@ describe('a clone of the container default', function (): void {
             expect($container)->toMatchArray([
                 'project' => 'orbit-instances',
                 'config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096'],
-                'root_disk_size' => '40GiB',
+                'root_disk_pool' => 'orbit-instances', 'root_disk_size' => '40GiB',
             ]);
         }
     });

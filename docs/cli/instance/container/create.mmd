@@ -33,6 +33,7 @@ sequenceDiagram
   GW->>SW: Start run from queue<br/>operation-instance-create
   SW->>N: Clone default container<br/>Ansible · tags clone
   %%> What it does:
+  %%> - the copy supplies the full root disk device (type, path, pool and size), whether the seed inherits it or stores it locally
   %%> - `incus copy` of the default container's snapshot `seed-<commit>`, a ZFS clone; a stopped default needs no start
   %%> - the copy gets its own bridge address and ACL, and the proxy device `t3`: NAT from the Node's WireGuard address and the T3 port to T3's port 3773
   %%> - the container's ACL lets the Node's Caddy reach port 8080, WireGuard peers reach port 3773, and the container reach its database server's port

@@ -14,7 +14,7 @@ covers:
 
 # Node provisioning
 
-An [Instance container](/reference/development-containers#processes) runs FrankenPHP and development workers as `orbit-*` units inside the container. A shared runtime folder update restarts those units in each running container.
+An [Instance container](/reference/development-containers#processes) runs FrankenPHP and development workers as `orbit-*` units inside the container. A shared runtime folder update restarts those units in each running container. The [clone copy](/reference/development-containers#lifecycle) supplies its complete root disk device, including when the seed inherited it from the Node's profile.
 
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 

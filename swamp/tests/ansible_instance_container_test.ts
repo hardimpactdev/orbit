@@ -80,6 +80,7 @@ function fixture() {
     name: "instance-7",
     image: "orbit-instance",
     config: { "limits.cpu": "4", "limits.memory": "8GiB", "limits.processes": "4096" },
+    root_disk_pool: "orbit-instances",
     root_disk_size: "40GiB",
     address: "10.253.0.2",
     network: "orbitinst0",
@@ -171,7 +172,7 @@ Deno.test({
         "eth0,security.acls=orbitinst0-egress,instance-7",
         "eth0,security.acls.default.egress.action=reject",
         "eth0,security.acls.default.ingress.action=reject",
-        "root,size=40GiB",
+        "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB",
       ]);
       assertEquals(state.containers["instance-7"].config, ["security.idmap.isolated=true", "limits.cpu=4", "limits.memory=8GiB", "limits.processes=4096"]);
       assertEquals(state.containers["instance-7"].status, "Running");
@@ -306,6 +307,12 @@ Deno.test({
     const f = fixture();
     try {
       for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
+      // The live Project 66 seed inherited root from its profile: no local root device.
+      const sourceState = f.state();
+      sourceState.containers["instance-7"].devices = sourceState.containers["instance-7"].devices.filter(
+        (device: string) => !device.startsWith("root,"),
+      );
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(sourceState));
       const seed = git(f.source, "rev-parse", "HEAD");
       // A commit on main after the seed: a new branch starts at the seed, not at main.
       Deno.writeTextFileSync(`${f.source}/index.php`, "<?php echo 2;\n");
@@ -341,7 +348,7 @@ Deno.test({
       }
       const state = f.state();
       assertEquals(state.containers["instance-8"].source, `instance-7/seed-${seed}`);
-      assertEquals(state.containers["instance-8"].devices, ["eth0,ipv4.address=10.253.0.3", "eth0,security.acls=orbitinst0-egress,instance-8", "root,size=40GiB"]);
+      assertEquals(state.containers["instance-8"].devices, ["eth0,ipv4.address=10.253.0.3", "eth0,security.acls=orbitinst0-egress,instance-8", "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB"]);
       assertEquals(state.containers["instance-8"].added, {
         t3: { type: "proxy", settings: ["listen=tcp:10.44.0.7:3800", "connect=tcp:10.253.0.3:3773", "nat=true"] },
       });
