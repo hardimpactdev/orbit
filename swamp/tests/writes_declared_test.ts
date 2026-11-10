@@ -116,7 +116,7 @@ export function unsafeVerb(step: Step): string | null {
     const { args, scripts } = parts(step);
     const commands: { words: string[]; shell: boolean }[] = args.length > 0 ? [{ words: args, shell: false }] : [];
     for (const text of scripts) {
-        for (const segment of text.split(/;|&&|\|\||\||\n/)) {
+        for (const segment of text.replace(/\\\r?\n/g, "").split(/;|&&|\|\||\||\n/)) {
             const words = shellWords(segment);
             if (words.length > 0) commands.push({ words, shell: true });
         }
@@ -187,6 +187,7 @@ Deno.test("the pattern finds the commands that cannot run twice", () => {
     // Commands that cannot run twice, in argv form and in shell text.
     assertEquals(unsafeVerb(step(["/usr/bin/git", "clone", "--", "a.bundle", "dir"])), "git clone");
     assertEquals(unsafeVerb(shell("git clone --branch main -- \"$URL\" \"$DIR\"")), "git clone");
+    assertEquals(unsafeVerb(shell(["curl --fail \\", "  --header 'Content-Type: application/json' \\", "  --data \"$BODY\" \"$URL\""].join("\n"))), "curl with a body");
     assertEquals(unsafeVerb(step(["git", "-C", "dir", "switch", "-c", "task-1"])), "git switch -c");
     assertEquals(unsafeVerb(step(["git", "-C", "dir", "worktree", "add", "--detach", "d", "HEAD"])), "git worktree change");
     assertEquals(unsafeVerb(shell("git -C \"$D\" worktree add \"$P\" HEAD")), "git worktree change");

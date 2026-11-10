@@ -1,5 +1,5 @@
 {
- "maxUnreviewed": 303,
+ "maxUnreviewed": 219,
  "steps": {
   "cluster-router-prepare": {
    "account_command": "read-only",
@@ -199,11 +199,15 @@
   "operation-fleet-peer-dns": {
    "Check resolution": "read-only"
   },
+  "operation-gateway-swamp-load": {
+   "Check the Ansible collections": "read-only"
+  },
   "operation-instance-create": {
    "server-database-check": "unreviewed"
   },
   "operation-instance-deploy-direct": {
    "Check the checkout lock": "unreviewed",
+   "Check the container": "idempotent",
    "Check the local branch": "unreviewed",
    "Check tracked changes": "unreviewed",
    "Count commits after it": "unreviewed",
@@ -219,6 +223,7 @@
    "Read the branch ancestor": "unreviewed",
    "Read the checkout branch": "unreviewed",
    "Read the checkout commit": "unreviewed",
+   "Read the container result": "read-only",
    "Read the key names": "read-only",
    "Read the local branch": "unreviewed",
    "Read the release commit": "unreviewed",
@@ -272,16 +277,6 @@
   "operation-node-agent-rekey": {
    "Check the Node agent": "read-only",
    "Check the new key": "read-only"
-  },
-  "operation-node-converge-direct": {
-   "Check the footprint": "read-only",
-   "Probe the tunnel": "read-only",
-   "Read WireGuard state": "read-only",
-   "Read hub WireGuard state": "read-only",
-   "Read network DNS policy": "unreviewed",
-   "Read the handshake": "read-only",
-   "Read the tunnel key": "read-only",
-   "Resolve WireGuard endpoint": "read-only"
   },
   "operation-node-remove": {
    "Log in to departing Node": "unreviewed"
@@ -364,8 +359,8 @@
   "operation-schedule-destroy": {
    "idle": "read-only"
   },
-  "operation-task-cancel": {
-   "Check the VM is gone": "read-only"
+  "operation-task-idle-save": {
+   "Read the saved commit": "read-only"
   },
   "operation-task-maintenance": {
    "snapshot-tracked": "unreviewed",
@@ -385,10 +380,8 @@
    "Plan the cases 1": "unreviewed"
   },
   "operation-task-provision": {
-   "Check the workspace": "read-only",
-   "Look for ready copies": "read-only",
-   "Wait for the slot agent": "read-only",
-   "Wait for the slot boot": "unreviewed"
+   "Reach the VM by WireGuard": "read-only",
+   "Read the readiness": "read-only"
   },
   "operation-task-publish": {
    "Copy the bundle": "idempotent",
@@ -435,72 +428,12 @@
    "snapshot_after_head": "unreviewed",
    "snapshot_before_head": "unreviewed"
   },
-  "operation-task-vm-converge": {
-   "Check the task VM role": "read-only"
-  },
-  "operation-task-vm-fleet-build": {
-   "Check the nested fleet": "read-only",
-   "Look for the network": "read-only",
-   "Read the Gateway host key": "unreviewed",
-   "Read the Gateway key": "read-only",
-   "Read the Node host keys": "unreviewed",
-   "Read the operator key": "read-only",
-   "Read the release address": "unreviewed",
-   "Read the release commit": "unreviewed",
-   "Wait for app-dev": "read-only",
-   "Wait for app-prod": "read-only",
-   "Wait for cloud-init": "read-only",
-   "Wait for the Gateway Node": "read-only",
-   "Wait for the Gateway role": "read-only",
-   "Wait for the websocket role": "read-only"
-  },
   "operation-task-vm-hub-converge": {
    "Check the new ruleset": "unreviewed"
-  },
-  "operation-task-vm-image-build": {
-   "Check the seed": "unreviewed",
-   "Wait for the builder": "unreviewed"
-  },
-  "operation-task-vm-image-refresh": {
-   "Read the fingerprint": "read-only"
-  },
-  "operation-task-vm-provision": {
-   "result": "read-only"
-  },
-  "operation-task-vm-ready-copies": {
-   "Look for a checkout": "read-only",
-   "Look for the operator peer": "read-only",
-   "Look for the state": "read-only",
-   "Read the MAC": "unreviewed",
-   "Read the address": "unreviewed",
-   "Read the database path": "read-only",
-   "Read the devices": "unreviewed",
-   "Read the format": "read-only",
-   "Read the instance type": "read-only",
-   "Read the operator keys": "read-only",
-   "Read the stored database path": "read-only",
-   "Read the subnet": "read-only",
-   "Read the time": "read-only",
-   "Scan for the Club key": "read-only",
-   "Search for the Club key": "read-only",
-   "Wait for cloud-init": "read-only"
   },
   "operation-task-vm-resume": {
    "Read the guest state": "unreviewed",
    "Wait for the guest agent": "read-only"
-  },
-  "operation-task-vm-slot-enrol": {
-   "Check the VM stopped": "read-only",
-   "result": "read-only"
-  },
-  "operation-task-vm-sweep": {
-   "List again": "unreviewed",
-   "List servers, templates": "unreviewed",
-   "Read the inventory": "unreviewed",
-   "Read the project again": "unreviewed"
-  },
-  "operation-task-vm-upcloud-image-build": {
-   "List servers, templates": "unreviewed"
   },
   "operation-tool-manager-setup": {
    "Check the Tool Manager": "unreviewed",
@@ -541,18 +474,17 @@
   },
   "proof-fleet-verify": {
    "Check the main verdicts": "read-only",
-   "Name the new cases": "read-only",
-   "Plan the merge base": "unreviewed",
+   "Name replay cases": "read-only",
+   "Read runner capabilities": "read-only",
    "Read the nested checkout": "read-only",
+   "Read the runner plan": "read-only",
    "Read the token age": "read-only",
+   "Select replay cases": "read-only",
    "plan": "unreviewed",
    "report": "read-only"
   },
   "proof-fleet-verify-batch": {
    "report": "read-only"
-  },
-  "proof-fleet-verify-case": {
-   "restored": "read-only"
   },
   "route-certificate-publish": {
    "Read the account": "read-only",
@@ -597,12 +529,6 @@
   },
   "swamp-datastore-watch": {
    "measure": "unreviewed"
-  },
-  "task-approved-push": {
-   "Copy the bundle": "idempotent",
-   "Remove the guest bundle": "unreviewed",
-   "Remove the local copy": "unreviewed",
-   "Revoke the token": "idempotent"
   },
   "task-check-ci": {
    "cleanup_remote-${{ self.check.attributes.inputs.operation_id }}": "unreviewed",
@@ -673,141 +599,21 @@
    "Check the services": "read-only",
    "Check the state": "read-only"
   },
-  "task-nested-converge": {
-   "Wait for app-dev": "read-only",
-   "Wait for app-prod": "read-only",
-   "Wait for gateway": "read-only"
-  },
-  "task-nested-fleet": {
-   "Check the tunnel": "read-only",
-   "Look for the network": "read-only",
-   "Read the MAC": "read-only",
-   "Read the address": "read-only",
-   "Read the database path": "read-only",
-   "Read the hub key": "read-only",
-   "Read the network address": "read-only",
-   "Read the operator id": "read-only",
-   "Read the subnet": "read-only",
-   "Wait for cloud-init": "read-only"
-  },
   "task-nested-ready": {
    "Wait for Doctor": "read-only"
-  },
-  "task-vm-bootstrap": {
-   "bootstrap-authorized_key": "unreviewed",
-   "bootstrap-observer": "unreviewed",
-   "bootstrap-observer-checksum": "unreviewed",
-   "bootstrap-observer-download": "unreviewed",
-   "bootstrap-sudo": "unreviewed",
-   "bootstrap-sudo-check": "unreviewed",
-   "bootstrap-verify": "unreviewed",
-   "bootstrap-verify-sudo": "unreviewed"
-  },
-  "task-vm-destroy": {
-   "Read the host again": "unreviewed"
-  },
-  "task-vm-enrollment": {
-   "Pin the guest host key": "idempotent",
-   "observer-ca": "unreviewed",
-   "observer-configuration": "unreviewed",
-   "observer-group": "idempotent",
-   "observer-identity": "unreviewed",
-   "observer-identity-create": "unreviewed",
-   "observer-identity-find": "unreviewed",
-   "observer-identity-folder": "unreviewed",
-   "observer-identity-mode": "unreviewed",
-   "observer-identity-trim": "unreviewed",
-   "observer-reload": "unreviewed",
-   "observer-start": "unreviewed",
-   "observer-unit": "unreviewed",
-   "peer-dns-command": "unreviewed",
-   "peer-enable": "unreviewed",
-   "peer-key-command": "unreviewed",
-   "peer-publish-command": "unreviewed",
-   "peer-start": "unreviewed"
   },
   "task-vm-image-ansible": {
    "Read the guest address": "read-only",
    "Read the guest host key": "unreviewed"
   },
-  "task-vm-image-builder": {
-   "Wait for the builder": "unreviewed"
-  },
-  "task-vm-image-reaper": {
-   "list": "unreviewed",
-   "volumes": "unreviewed"
-  },
-  "task-vm-image-smoke": {
-   "Wait for the copy": "unreviewed"
-  },
-  "task-vm-incus-first-visit": {
-   "cloud-init": "unreviewed",
-   "guest-available": "read-only",
-   "guest-key": "unreviewed"
-  },
   "task-vm-provider-power": {
-   "cloud-after": "unreviewed",
-   "cloud-before": "unreviewed",
-   "cloud-discover": "unreviewed",
-   "incus-action": "unreviewed",
    "incus-after": "unreviewed",
    "incus-before": "unreviewed"
-  },
-  "task-vm-provider-upcloud": {
-   "discover": "unreviewed",
-   "inspect": "unreviewed",
-   "list": "unreviewed",
-   "observe": "unreviewed",
-   "plans": "unreviewed"
-  },
-  "task-vm-runtime": {
-   "Check the Pi build": "read-only",
-   "Check the Pi server": "read-only",
-   "Fetch the Pi build": "idempotent",
-   "result": "read-only"
-  },
-  "task-vm-ssh-prepare": {
-   "authorize": "unreviewed",
-   "available": "unreviewed",
-   "firewall": "idempotent",
-   "host-key": "unreviewed",
-   "host-keys": "unreviewed",
-   "package": "unreviewed",
-   "sshd": "unreviewed",
-   "verify": "read-only"
   },
   "task-vm-workspace": {
    "account": "read-only",
    "directory": "unreviewed",
    "observe": "unreviewed"
-  },
-  "task-workspace-source": {
-   "access-${{ self._index }}": "unreviewed",
-   "bundle": "read-only",
-   "cleanup": "unreviewed",
-   "cleanup_remote": "unreviewed",
-   "composer": "idempotent",
-   "control": "unreviewed",
-   "copy_bundle": "idempotent",
-   "deps_clear": "unreviewed",
-   "deps_remove_files": "unreviewed",
-   "deps_write_composer": "unreviewed",
-   "deps_write_npm": "unreviewed",
-   "identity": "unreviewed",
-   "inspect": "unreviewed",
-   "origin": "unreviewed",
-   "prepare_remote": "unreviewed",
-   "proof_club": "unreviewed",
-   "proof_club_directory": "unreviewed",
-   "proof_club_previous": "unreviewed",
-   "setup_copy": "idempotent"
-  },
-  "task-workspace-teardown": {
-   "cleanup_local": "unreviewed",
-   "cleanup_remote": "unreviewed",
-   "output_copy": "idempotent",
-   "output_local": "unreviewed",
-   "teardown-${{ self._index }}": "unreviewed"
   }
  }
 }

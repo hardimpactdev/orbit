@@ -316,6 +316,7 @@ Deno.test("the rerun posts re-run-failed-jobs once per due run, records it, and 
     // The shared mint child asks for the pass's tokens with the root run, which the Gateway binds to the Operation.
     assertEquals([mint.task.workflowIdOrName, mint.task.inputs.run_id, mint.task.inputs.purpose], ["task-github-mint", "${{ inputs.root_run }}", "ci_rerun"]);
     assertEquals([step.guard, step.allowFailure], ["${{ !inputs.ci }}", true]);
+    assertEquals(step.writes, true, "the rerun sends a POST and revokes its tokens; a lost dispatch must not repeat it");
     assertEquals(step.task.inputs.env.ORBIT_GITHUB, '${{ vault.get("orbit-control-inputs", "fleet-reboot-github-operation-" + string(inputs.operation_id)) }}');
     const pass = workflow("operation-fleet-reboot").jobs.find((job: Record<string, unknown>) => job.name === "nodes").steps[0];
     assertEquals([pass.task.inputs.root_run, pass.task.inputs.ci], ["${{ run.id }}", "${{ inputs.intent.nodes[string(self.node)].ci_project != null }}"]);

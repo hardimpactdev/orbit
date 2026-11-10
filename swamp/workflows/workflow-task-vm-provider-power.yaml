@@ -90,6 +90,7 @@ jobs:
       condition:
         type: always
   - name: incus-action
+    writes: true
     labels: {role: swamp}
     task:
       type: behavior
