@@ -129,6 +129,9 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     project: "orbit-instances",
     name: `instance-${id}`,
     image: "orbit-instance",
+    config: { "limits.cpu": "4", "limits.memory": "8GiB", "limits.processes": "4096" },
+    root_disk_pool: "orbit-instances",
+    root_disk_size: "40GiB",
     address: `10.253.0.${id}`,
     network: "orbitinst0",
     acl: `instance-${id}`,
@@ -248,6 +251,11 @@ Deno.test({
       // The way to the database server came with the container.
       assertEquals(f.state()["network-acls"][0].egress, f.container.acl_rules.egress);
       assertEquals(f.ufw().map((line) => JSON.parse(line).comment), ["orbit:instance-7-database"]);
+      // The move uses create's resource limits and full root device, even for an image-based migration.
+      assertEquals(f.state().containers["instance-7"].config, ["security.idmap.isolated=true", "limits.cpu=4", "limits.memory=8GiB", "limits.processes=4096"]);
+      assertEquals(f.state().containers["instance-7"].devices.filter((device: string) => device.startsWith("root,")), [
+        "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB",
+      ]);
       // Nothing of the copy stays behind, and the checkout is as it was: a failure from here could still restore it.
       assertEquals([...Deno.readDirSync(`${f.rootfs}/srv`)].map((entry) => entry.name), ["workspace"]);
       assertEquals([...Deno.readDirSync(`${f.folder}/mirror`)].map((entry) => entry.name), ["7.git"]);
