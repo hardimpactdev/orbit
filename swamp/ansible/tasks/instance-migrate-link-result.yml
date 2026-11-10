@@ -1,0 +1,14 @@
+---
+- name: Read the symlink result
+  ansible.builtin.set_fact:
+    migrate_links: "{{ migrate_links_read.stdout | from_json }}"
+- name: Explain unsupported symlinks
+  when: migrate_links.refused | length > 0
+  ansible.builtin.set_fact:
+    migrate_refusal_code: instance.migrate_symlink_unsupported
+    migrate_refusal_message: "Cannot migrate checkout {{ migrate.checkout | to_json }}. Unsupported symlinks: {{ migrate_links.refused | to_json }}."
+- name: Refuse broken or external links
+  ansible.builtin.assert:
+    that: migrate_links.refused | length == 0
+    fail_msg: instance.migrate_symlink_unsupported
+    quiet: true

@@ -254,6 +254,7 @@ if (family === "list") {
   const done = new Deno.Command(command[0], {
     args: command.slice(1).map((value) => command[0] === "git" && command[1] === "config" ? value : inside(name, value)),
     cwd: cwd === null ? undefined : inside(name, cwd),
+    stdin: "inherit",
     env: { GIT_CONFIG_NOSYSTEM: "1", HOME: user === "root" ? `${folder}/home` : `${rootfs(name)}/home/${user}` },
   }).outputSync();
   Deno.stdout.writeSync(done.stdout);

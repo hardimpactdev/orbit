@@ -77,7 +77,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   );
   Deno.chmodSync(`${folder}/bin/incus`, 0o755);
   Deno.copyFileSync(new URL("instance_migrate_links.py", root), `${folder}/instance_migrate_links.py`);
-  for (const name of ["instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml"]) {
+  for (const name of ["instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-link-result.yml"]) {
     const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => transform(structuredClone(task)));
     Deno.writeTextFileSync(`${folder}/tasks/${name}`, stringify(tasks));
   }
@@ -97,6 +97,8 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   Deno.mkdirSync(main);
   git(main, "init", "--quiet", "--initial-branch", "main");
   Deno.writeTextFileSync(`${main}/.gitignore`, "vendor/\n.env\ndatabase/*.sqlite\n");
+  Deno.writeTextFileSync(`${main}/composer.json`, "{}\n");
+  Deno.writeTextFileSync(`${main}/package.json`, "{}\n");
   Deno.writeTextFileSync(`${main}/index.php`, "<?php echo 1;\n");
   Deno.writeTextFileSync(`${main}/old.php`, "<?php // goes\n");
   git(main, "add", ".");
@@ -257,25 +259,53 @@ Deno.test({
       Deno.symlinkSync(absolute, `${f.checkout}/local package`);
       Deno.symlinkSync(absolute, `${f.checkout}/ignored-link`);
       Deno.symlinkSync("../storage/./app/public", `${f.checkout}/public/relative`);
-      for (const tree of ["vendor", "node_modules", "apps/web/vendor", "apps/web/node_modules"]) {
+      for (const tree of ["vendor/acme/installed", "node_modules/installed", "apps/web/vendor/acme/installed", "apps/web/node_modules/installed"]) {
         Deno.mkdirSync(`${f.checkout}/${tree}`, { recursive: true });
         Deno.symlinkSync(absolute, `${f.checkout}/${tree}/absolute`);
         Deno.symlinkSync("missing-dependency", `${f.checkout}/${tree}/broken`);
       }
 
+      Deno.writeTextFileSync(`${f.checkout}/apps/web/composer.json`, "{}\n");
+      Deno.writeTextFileSync(`${f.checkout}/apps/web/package.json`, "{}\n");
+      for (const path of ["vendor/acme/package", "vendor/composer/package", "node_modules/package", "node_modules/@acme/package", "resources/views/vendor/storage"]) {
+        Deno.mkdirSync(`${f.checkout}/${path.slice(0, path.lastIndexOf("/"))}`, { recursive: true });
+        Deno.symlinkSync(absolute, `${f.checkout}/${path}`);
+      }
+      const bytes = new Deno.Command("python3", { args: ["-c", `
+import os, sys
+root = os.fsencode(sys.argv[1])
+os.mkdir(root + b'/storage/app/public/data-\\xff')
+with open(root + b'/storage/app/public/data-\\xff/file.txt', 'wb') as file:
+    file.write(b'copied data')
+os.symlink(root + b'/storage/app/public/data-\\xff', root + b'/public/link-\\xfe')
+os.symlink(b'../storage/app/public/data-\\xff', root + b'/public/relative-\\xff')
+`, f.checkout] }).outputSync();
+      assert(bytes.success, new TextDecoder().decode(bytes.stderr));
+
       f.build();
 
       const workspace = `${f.rootfs}/srv/workspace`;
       for (const [path, target] of [["public/storage", "../storage/app/public"], ["local package", "storage/app/public"], ["ignored-link", "storage/app/public"],
-        ["public/relative", "../storage/./app/public"]]) {
+        ["public/relative", "../storage/./app/public"], ["vendor/acme/package", "../../storage/app/public"], ["vendor/composer/package", "../../storage/app/public"],
+        ["node_modules/package", "../storage/app/public"], ["node_modules/@acme/package", "../../storage/app/public"],
+        ["resources/views/vendor/storage", "../../../storage/app/public"]]) {
         assertEquals(Deno.readLinkSync(`${workspace}/${path}`), target);
         assertEquals(Deno.readLinkSync(`${f.checkout}/${path}`), path === "public/relative" ? target : absolute);
         assertEquals(Deno.readTextFileSync(`${workspace}/${path}/file.txt`), "kept storage\n");
       }
-      for (const tree of ["vendor", "node_modules", "apps/web/vendor", "apps/web/node_modules"]) {
+      for (const tree of ["vendor/acme/installed", "node_modules/installed", "apps/web/vendor/acme/installed", "apps/web/node_modules/installed"]) {
         assertEquals(Deno.readLinkSync(`${workspace}/${tree}/absolute`), absolute);
         assertEquals(Deno.readLinkSync(`${workspace}/${tree}/broken`), "missing-dependency");
       }
+      const byteCheck = new Deno.Command("python3", { args: ["-c", `
+import os, sys
+source, workspace = map(os.fsencode, sys.argv[1:])
+assert os.readlink(source + b'/public/link-\\xfe') == source + b'/storage/app/public/data-\\xff'
+assert os.readlink(workspace + b'/public/link-\\xfe') == b'../storage/app/public/data-\\xff'
+assert os.readlink(workspace + b'/public/relative-\\xff') == b'../storage/app/public/data-\\xff'
+assert os.path.isdir(workspace + b'/public/link-\\xfe')
+`, f.checkout, workspace] }).outputSync();
+      assert(byteCheck.success, new TextDecoder().decode(byteCheck.stderr));
       assertEquals(f.workspace("status", "--short", "--", "public/storage"), "M public/storage");
     } finally {
       f.cleanup();
@@ -293,7 +323,7 @@ for (const reason of ["outside checkout", "broken"]) {
         f.migrate.retire = [];
         f.write();
         Deno.mkdirSync(`${f.checkout}/public`);
-        const target = reason === "broken" ? `${f.apps}/missing/storage` : f.apps;
+        const target = reason === "broken" ? `${f.checkout}/missing/storage` : f.apps;
         for (const path of ["public/storage", "local package"]) Deno.symlinkSync(target, `${f.checkout}/${path}`);
         const before = Deno.readTextFileSync(`${f.folder}/state.json`);
 
@@ -312,6 +342,62 @@ for (const reason of ["outside checkout", "broken"]) {
         assert(exists(f.migrate.awake.path));
         assertEquals(Deno.readTextFileSync(`${f.folder}/state.json`), before);
         assert(!exists(`${f.folder}/calls`), "No container command may run after a preflight refusal.");
+      } finally {
+        f.cleanup();
+      }
+    },
+  });
+}
+
+for (const change of ["absolute", "relative", "outside", "broken"]) {
+  Deno.test({
+    name: `the exact archive tree handles ${change} link changes after preflight and preserves rollback`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        f.migrate.retire = [];
+        f.write();
+        Deno.mkdirSync(`${f.checkout}/public`);
+        Deno.mkdirSync(`${f.checkout}/storage/app/public`, { recursive: true });
+        Deno.mkdirSync(`${f.checkout}/alternate`);
+        Deno.writeTextFileSync(`${f.checkout}/alternate/file.txt`, "copied target\n");
+        const link = `${f.checkout}/public/storage`;
+        Deno.symlinkSync(`${f.checkout}/storage/app/public`, link);
+        const target = change === "absolute" ? `${f.checkout}/alternate` : change === "relative" ? "../alternate"
+          : change === "outside" ? f.apps : `${f.checkout}/missing`;
+        // A developer changes the source at the last possible point before tar copies it, after any source-side scan.
+        Deno.writeTextFileSync(`${f.folder}/bin/tar`, `#!/usr/bin/env python3
+import os, sys
+if os.environ.get("ORBIT_CHECKOUT") == ${JSON.stringify(f.checkout)}:
+    os.unlink(${JSON.stringify(link)})
+    os.symlink(${JSON.stringify(target)}, ${JSON.stringify(link)})
+os.execv("/usr/bin/tar", ["tar", *sys.argv[1:]])
+`);
+        Deno.chmodSync(`${f.folder}/bin/tar`, 0o755);
+        for (const phase of ["quiesce", "container", "workspace"]) {
+          const result = f.run(phase);
+          assert(result.ok, result.output);
+        }
+
+        const result = f.run("files");
+
+        assertEquals(Deno.readLinkSync(link), target);
+        if (change === "absolute" || change === "relative") {
+          assert(result.ok, result.output);
+          assertEquals(Deno.readLinkSync(`${f.rootfs}/srv/workspace/public/storage`), "../alternate");
+        } else {
+          assert(!result.ok, result.output);
+          assertEquals(f.result().error_code, "instance.migrate_symlink_unsupported");
+          assertEquals(f.result().preflight_refused, false);
+          assert(f.result().error_message.includes("public/storage"), f.result().error_message);
+          assert(f.result().error_message.includes(target), f.result().error_message);
+          const restored = f.run("restore");
+          assert(restored.ok, restored.output);
+          assert(!exists(f.rootfs));
+          assert(exists(f.migrate.awake.path));
+          assertEquals(Deno.readLinkSync(link), target);
+        }
       } finally {
         f.cleanup();
       }
