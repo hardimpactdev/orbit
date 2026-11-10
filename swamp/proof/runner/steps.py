@@ -656,7 +656,7 @@ def snapshot(run, provider):
         return [line.split()[-2] for line in run.fleet.sh(node, 'ss -Htlun').stdout.splitlines() if len(line.split()) > 3]
     if provider == 'node_records':
         return [json.dumps(recorded_guest(run, {'mode': 'snapshot'}), sort_keys=True)]
-    # Operations are append-only. The newest matching ID detects additions even when older rows leave the 50-row page.
+    # Operations are append-only. The newest matching ID detects additions even when older rows leave the newest page.
     return [str(max(operation_ids(run), default=0))]
 
 
