@@ -199,7 +199,7 @@ describe('instance:clone output', function (): void {
             ->toBe(instance_operation_json('instance.clone', clone_cli_result(), ['target_id' => 29], clone_cli_request_id()));
     });
 
-    it('preserves clone warnings in JSON and correlates the human completion', function (bool $json): void {
+    it('shows clone warnings in human and JSON output', function (bool $json): void {
         $warning = 'REDIS_HOST: Copied host points at the candidate Node or its development TLD. Review with env:update, then env:sync.';
         $responses = clone_cli_responses(['warnings' => [$warning]]);
         MockClient::global($responses);
@@ -209,7 +209,7 @@ describe('instance:clone output', function (): void {
         if ($json) {
             expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['result']['warnings'])->toBe([$warning]);
         } else {
-            expect(instance_source_text(Artisan::output()))->toContain('Instance clone succeeded.', 'Operation: 901', 'Request ID: '.clone_cli_request_id());
+            expect(instance_source_text(Artisan::output()))->toContain($warning, 'Instance clone succeeded.', 'Operation: 901', 'Request ID: '.clone_cli_request_id());
         }
     })->with([false, true]);
 

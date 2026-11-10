@@ -13,7 +13,6 @@ use Orbit\Sdk\Requests\Vault\DestroyVaultRequest;
 use Orbit\Sdk\Requests\Vault\SetupVaultRequest;
 use Orbit\Sdk\Requests\Vault\ShowVaultStatusRequest;
 use Orbit\Sdk\Requests\Vault\SyncVaultRequest;
-use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -498,5 +497,31 @@ function vault_cli_operation_mock(string $request, string $kind, bool $failed = 
 /** @return array<string, mixed> */
 function vault_cli_operation_json(string $kind): array
 {
-    return json_decode(json_encode(OperationResponse::fromGatewayData(vault_cli_operation_payload($kind), vault_cli_request_id())->toArray(), JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
+    return [
+        'id' => 12,
+        'kind' => $kind,
+        'target_type' => 'vault',
+        'target_id' => 7,
+        'input' => [],
+        'status' => 'succeeded',
+        'sequence' => 3,
+        'current_step' => null,
+        'current_step_started_at' => null,
+        'current_step_observed_at' => null,
+        'failed_step' => null,
+        'error_code' => null,
+        'error' => null,
+        'result' => ['outcome' => 'succeeded', 'data' => ['backend' => $kind === 'vault.setup' ? 'configured' : 'synced']],
+        'cancel_requested' => false,
+        'attempts' => 0,
+        'triggered_by' => null,
+        'caller_node_id' => null,
+        'caller_node_name' => null,
+        'created_at' => null,
+        'started_at' => null,
+        'finished_at' => null,
+        'poll_after_seconds' => null,
+        'capacity_wait' => null,
+        'request_id' => vault_cli_request_id(),
+    ];
 }
