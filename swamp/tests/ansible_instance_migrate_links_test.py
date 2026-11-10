@@ -69,6 +69,37 @@ class MigrationLinksTest(unittest.TestCase):
         (self.root / 'indirect').symlink_to(self.root / 'escape')
         self.assertEqual([item['path'] for item in self.plan()['refused']], ['escape', 'indirect'])
 
+    def test_refuses_file_targets_with_directory_suffixes_at_every_hop_in_source_and_copy(self):
+        (self.root / 'storage/file').write_text('data')
+        targets = {}
+        for kind, prefix in [('absolute', str(self.root)), ('relative', '..')]:
+            for label, suffix in [('slash', '/'), ('dot', '/.')]:
+                name = f'public/{kind}-{label}'
+                targets[name] = f'{prefix}/storage/file{suffix}'
+                targets[f'{name}-indirect'] = str(self.root / name)
+        for name, target in targets.items():
+            (self.root / name).symlink_to(target)
+        expected = [{'path': name, 'target': target, 'reason': 'broken'} for name, target in sorted(targets.items())]
+        self.assertEqual(self.plan(None, '--rewrite'), {'rewrites': [], 'refused': expected})
+        for name, target in targets.items():
+            self.assertEqual(os.readlink(self.root / name), target)
+        copied = self.root.parent / 'workspace'
+        shutil.copytree(self.root, copied, symlinks=True)
+        shutil.rmtree(self.root)
+        self.assertEqual(self.plan(copied, '--old-checkout', str(self.root), '--rewrite'), {'rewrites': [], 'refused': expected})
+        for name, target in targets.items():
+            self.assertEqual(os.readlink(copied / name), target)
+
+    def test_allows_directory_targets_with_directory_suffixes(self):
+        for kind, prefix in [('absolute', str(self.root)), ('relative', '..')]:
+            for label, suffix in [('slash', '/'), ('dot', '/.')]:
+                (self.root / f'public/{kind}-{label}').symlink_to(f'{prefix}/storage{suffix}')
+        self.assertEqual(self.plan(None, '--rewrite'), {'rewrites': [
+            {'path': f'public/absolute-{label}', 'target': '../storage'} for label in ['dot', 'slash']
+        ], 'refused': []})
+        for label, suffix in [('slash', '/'), ('dot', '/.')]:
+            self.assertEqual(os.readlink(self.root / f'public/relative-{label}'), f'../storage{suffix}')
+
     def test_does_not_inspect_installed_package_or_git_contents(self):
         for app in ['', 'apps/web']:
             folder = self.root / app

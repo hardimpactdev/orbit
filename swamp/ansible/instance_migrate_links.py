@@ -56,6 +56,8 @@ def resolve(link, root, old_checkout):
     followed = 0
     while pending:
         part = pending.popleft()
+        if part == '.':
+            continue
         if part == '..':
             if not resolved:
                 raise UnsupportedLink('outside checkout')
@@ -68,7 +70,8 @@ def resolve(link, root, old_checkout):
                 followed += 1
                 if followed > 40:
                     raise UnsupportedLink('broken')
-                target = Path(os.readlink(candidate))
+                raw_target = os.readlink(candidate)
+                target = Path(raw_target)
                 if target.is_absolute():
                     parts = inside(target)
                     resolved = []
@@ -76,6 +79,9 @@ def resolve(link, root, old_checkout):
                     parts = target.parts
                     # Check the named destination as well as its resolved destination.
                     inside(candidate.parent / target)
+                # Path drops trailing separators and dots. Retain their directory requirement at this hop.
+                if raw_target.endswith(('/', '/.')):
+                    parts = (*parts, '.')
                 pending.extendleft(reversed(parts))
             else:
                 if pending and not stat.S_ISDIR(mode):
