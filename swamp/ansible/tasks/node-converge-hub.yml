@@ -27,11 +27,12 @@
     cmd: |
       set -euo pipefail
       before=$(wg showconf orbit | sha256sum)
+      # The key line ends once, with or without a final newline in the key file. `wg` prints a value it refuses, which may be
+      # the key: `cut` drops it.
       wg syncconf orbit <(
-        printf '[Interface]\nPrivateKey = '; cat /etc/wireguard/orbit.key
-        printf '\n%s' {{ hub_plan.interface | quote }}
+        printf '[Interface]\nPrivateKey = %s\n%s' "$(cat /etc/wireguard/orbit.key)" {{ hub_plan.interface | quote }}
         for f in /etc/wireguard/orbit-peers.d/*.conf; do [ ! -f "$f" ] || cat "$f"; done
-      )
+      ) 2> >(cut -d'`' -f1 >&2)
       [ "$before" = "$(wg showconf orbit | sha256sum)" ] || echo changed
   register: hub_sync
   changed_when: hub_sync.stdout is search('changed')

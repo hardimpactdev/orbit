@@ -173,8 +173,10 @@
           set -euo pipefail
           umask 077
           before=$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)
-          { printf '[Interface]\nPrivateKey = '; cat {{ net.private_key_file | quote }}; cat; } > {{ net.sync_path | quote }}
-          wg syncconf orbit {{ net.sync_path | quote }}
+          # The key line ends once, with or without a final newline in the key file. `wg` prints a value it refuses, which
+          # may be the key: `cut` drops it.
+          { printf '[Interface]\nPrivateKey = %s\n' "$(cat {{ net.private_key_file | quote }})"; cat; } > {{ net.sync_path | quote }}
+          wg syncconf orbit {{ net.sync_path | quote }} 2> >(cut -d'`' -f1 >&2)
           [ "$before" = "$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)" ] || echo changed
         stdin: "{{ net.sync_body }}"
         stdin_add_newline: false

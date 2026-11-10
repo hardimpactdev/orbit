@@ -8,12 +8,13 @@
       set -euo pipefail
       umask 077
       before=$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)
+      # The key line ends once, with or without a final newline in the key file. `wg` prints a value it refuses, which may be
+      # the key: `cut` drops it.
       {
-        printf '[Interface]\nPrivateKey = '; cat {{ hub_sync.private_key_file | quote }}
-        printf '\n%s\n' {{ hub_sync.interface | quote }}
+        printf '[Interface]\nPrivateKey = %s\n%s\n' "$(cat {{ hub_sync.private_key_file | quote }})" {{ hub_sync.interface | quote }}
         for f in /etc/wireguard/orbit-peers.d/*.conf; do [ ! -f "$f" ] || cat "$f"; done
       } > {{ hub_sync.sync_path | quote }}
-      wg syncconf orbit {{ hub_sync.sync_path | quote }}
+      wg syncconf orbit {{ hub_sync.sync_path | quote }} 2> >(cut -d'`' -f1 >&2)
       [ "$before" = "$(wg showconf orbit | grep -v '^ListenPort' | sha256sum)" ] || echo changed
   register: hub_peers
   changed_when: hub_peers.stdout is search('changed')
