@@ -508,7 +508,7 @@ jobs:
         guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.finish.outputs.ready == true || !(("route-csr-0" in steps && steps["route-csr-0"].status != "skipped") || ("route" in steps && steps.route.status != "skipped")) }}'
         task:
           type: workflow
-          workflowIdOrName: route-withdraw
+          workflowIdOrName: '${{ "route-withdraw" }}'
           inputs:
             operation_id: '${{ inputs.operation_id }}'
             node_id: '${{ inputs.node_id }}'

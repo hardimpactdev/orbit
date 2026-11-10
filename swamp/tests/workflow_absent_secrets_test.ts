@@ -131,3 +131,28 @@ Deno.test("deploy VP workspace reads retain step names for the capture schema", 
       .map(([step, read]) => ({ step, stdout: read.outputs.stdout })));
   }
 });
+
+Deno.test("guarded withdrawal resolves the same child when cleanup is needed and stays deferred during parent preflight", () => {
+  const child = parse(Deno.readTextFileSync(new URL("../workflows/workflow-route-withdraw.yaml", import.meta.url))) as { name: string };
+  const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as {
+    jobs: { steps: { name: string; guard: string; task: { workflowIdOrName: string } }[] }[];
+  };
+  const cleanup = workflow.jobs.flatMap((job) => job.steps).find((step) => step.name === "withdraw-route")!;
+  const evaluate = (expression: string, context: Record<string, unknown> = {}) =>
+    environment.evaluate(expression.slice(3, -2).trim(), context);
+  const context = { inputs: { intent: { already_active: false, route: {} } },
+    steps: { finish: { outputs: { ready: false } }, route: { status: "succeeded" } } };
+
+  // Swamp's guard skips on true: a failed create that published its Route must run the child.
+  assertEquals(evaluate(cleanup.guard, context), false);
+  assertEquals(evaluate(cleanup.guard, { ...context, steps: { ...context.steps, finish: { outputs: { ready: true } } } }), true);
+  for (const name of ["operation-instance-create", "operation-instance-destroy"]) {
+    const parent = parse(Deno.readTextFileSync(new URL(`../workflows/workflow-${name}.yaml`, import.meta.url))) as {
+      jobs: { steps: { task?: { type: string; workflowIdOrName?: string } }[] }[];
+    };
+    const target = parent.jobs.flatMap((job) => job.steps).map((step) => step.task)
+      .find((task) => task?.type === "workflow" && task.workflowIdOrName?.includes("route-withdraw"))!.workflowIdOrName!;
+    assertEquals(target.startsWith("${{"), true, name);
+    assertEquals(evaluate(target), child.name);
+  }
+});

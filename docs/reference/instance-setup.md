@@ -160,7 +160,7 @@ Explicit `instance:setup` returns after admitting the Operation. Each command ru
 
 Native create and destroy return after admission. Each command uses its admitted timeout. The create run budget is 60 seconds, plus the admitted setup timeouts and 30 seconds for the Process step. A Route adds 180 seconds, and so does the Instance's own database (a copy, or one on a Database server); the setup phase stops at 540 seconds. The destroy run budget is 60 seconds, plus the teardown timeouts (at most 540 seconds), plus 180 seconds for each Route it withdraws and 180 seconds when it removes owned databases.
 
-A failed run has no automatic rollback or removal. Retained explicit setup keeps its existing list budget.
+A failed run has no automatic rollback or removal. Retained explicit setup keeps its existing list budget. Failed-create Route withdrawal uses the [deferred child](/reference/instance-removal) shared with removal.
 
 A step that runs past its timeout, is cut short by the list budget, or has no time left to start, ends the Operation with `command.deadline_exceeded`, `outcome: deadline`, and the step name. The Gateway validates this classification against the proven command or budget receipt. Lower the step timeouts until the list fits.
 
