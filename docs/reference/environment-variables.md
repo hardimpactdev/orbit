@@ -33,7 +33,7 @@ The Gateway's own environment is separate from an Instance's stored configuratio
 
 `ORBIT_GATEWAY_CHECKOUT` is the Gateway application directory. It defaults to `/home/orbit/orbit/apps/gateway`, which is a link to the current release in the release layout.
 
-`ORBIT_GATEWAY_RELEASES_KEEP` sets how many recent sealed releases the [release run](/reference/gateway-recovery#release-as-a-swamp-run) keeps. It defaults to `3` and has a minimum of `2`. The current and previous releases and the build served by `web/current` also stay. The run needs 1 GiB free beyond the database size and keeps the newest three [database snapshots](/reference/gateway-recovery#migrations-and-the-snapshot), plus the one a pause names. These limits are fixed in the workflow.
+`ORBIT_GATEWAY_RELEASES_KEEP` sets how many recent sealed releases the [release run](/reference/gateway-recovery#release-as-a-swamp-run) keeps. It defaults to `2` and has a minimum of `2`. The current and previous releases and the build served by `web/current` also stay. The run needs 1 GiB free beyond the database size. [Database snapshot retention](/reference/gateway-recovery#migrations-and-the-snapshot) is fixed independently of this setting.
 
 The release run verifies `/up` and Gateway status at `https://gateway.orbit`, using the Orbit root CA at `/etc/caddy/orbit-cert-current/root-ca.pem`. The verification origin is fixed in the workflow.
 
