@@ -186,11 +186,11 @@
         guard_port: "{{ intent.guard_origin | urlsplit('port') }}"
         check_netns: orbit-forwarder-check
         probe: 169.254.254.2
-        drops: "{{ '(?m)ip daddr ' ~ (guard | regex_escape) ~ ' tcp dport ' ~ guard_port ~ ' counter packets (\\d+) .*drop' }}"
-        resets: "{{ '(?m)ip daddr ' ~ (guard | regex_escape) ~ ' tcp dport ' ~ guard_port ~ ' .*counter packets (\\d+) .*reject' }}"
+        drops: "{{ '(?m)ip daddr ' ~ (guard | regex_escape) ~ ' tcp dport ' ~ guard_port ~ ' counter packets ([0-9]+) .*drop' }}"
+        resets: "{{ '(?m)ip daddr ' ~ (guard | regex_escape) ~ ' tcp dport ' ~ guard_port ~ ' .*counter packets ([0-9]+) .*reject' }}"
         relays: >-
           {{ '(?m)ip daddr ' ~ (intent.address | regex_escape) ~ ' tcp dport ' ~ (intent.origin | urlsplit('port'))
-          ~ ' .*counter packets (\\d+) .*reject' }}
+          ~ ' .*counter packets ([0-9]+) .*reject' }}
       block:
         # A run killed during these checks skips `always`; its leftovers go first.
         - name: Remove leftovers of an earlier check
