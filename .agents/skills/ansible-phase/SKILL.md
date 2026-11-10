@@ -134,3 +134,5 @@ A restored proof Gateway keeps the base image's installed collections and genera
 A proof candidate must install its own frozen observer pin after every base restore. A copied delivery manifest does not update running binaries. The disposable proof VM is the trust boundary; candidate code, including its installer, runs inside it. Require preparation in every batch and direct case, even when an older workflow skips setup. Share the normal checksum-verified installer and require the expected agent version and a new stored host fact before cases. Give preparation a separate bounded budget from batch setup.
 
 `incus copy` applies device overrides to the snapshot's local devices. A profile-only root needs a complete disk definition: pass type, path, pool and size as separate `--device root,key=value` arguments. A comma after the value stays in that value.
+
+Instance container network ACLs live in Incus project `default`, even when the container lives in `orbit-instances`. Destroy removes the container first, then its ACL in the default project. Test both the project and a second removal with zero changes.

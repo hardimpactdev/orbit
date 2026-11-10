@@ -1,0 +1,34 @@
+id: 9897ae74-90ae-493b-a17e-71bbfc6c1749
+name: automatic-development-deploy
+queueTimeout: 30
+description: Run development policy only when the Gateway finds changed defaults.
+labels: {role: swamp}
+inputs:
+  required: [instances]
+  properties:
+    instances:
+      type: array
+      items: { type: integer, minimum: 1 }
+      uniqueItems: true
+      minItems: 1
+      description: Changed defaults selected by the Gateway minute precheck.
+reports:
+  skip: ["@swamp/workflow-summary"]
+jobs:
+  - name: policy
+    steps:
+      - name: tick
+        task:
+          type: model_method
+          modelType: "@nckrtl/automatic-deploy"
+          modelName: automatic-production-deploy
+          methodName: development
+          inputs:
+            instances: "${{ inputs.instances }}"
+      - name: failures
+        dependsOn: [{step: tick, condition: {type: succeeded}}]
+        task:
+          type: assert
+          expr: steps.tick.outputs.failure_count == 0
+          severity: high
+          message: An Instance's automatic deploy tick failed; the Gateway reads the policy producer receipt.

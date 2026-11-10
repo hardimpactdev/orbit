@@ -1302,6 +1302,12 @@
                     "bun": "bun-linux-x64/bun"
                 }
             },
+            "deno": {
+                "tool": "deno",
+                "bin": {
+                    "deno": "deno"
+                }
+            },
             "composer": {
                 "version": "2.9.5",
                 "artifacts": {

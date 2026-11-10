@@ -103,7 +103,7 @@ Beast and Shark take the dev path beside their task VMs. A task VM host on the b
 | 4 | The first default Instance and its deployments | Merged, [#3299](https://github.com/hardimpactdev/orbit/pull/3299) |
 | 4b | The Project's development Processes in a container | Open, [#3309](https://github.com/hardimpactdev/orbit/pull/3309) |
 | 5 | Create an Instance as a clone, with T3 and its sessions | Open, [#3301](https://github.com/hardimpactdev/orbit/pull/3301) |
-| 6 | Destroy a container Instance | |
+| 6 | Destroy a container Instance | Clone cleanup first; defaults and guarded removal follow separately |
 | 7 | Run a task in a clone: start, check, publish, end | |
 | 8 | The `t3` task driver: Swamp drives T3 | |
 | 9 | Attach a task to an Instance | |
@@ -350,7 +350,7 @@ The code changed these points of this plan:
 - **Template copy.** The template copy on the default's server is built for PostgreSQL. MySQL keeps its dump on the same server.
 - **Renewal.** The daily renewal run moves to PR 13, with the wake that also renews. A session lasts 30 days.
 - **Vault copy.** The Gateway session's vault copy stays, as a pairing's credential does. Swamp has no delete for a sensitive field that a step wrote.
-- **Plug-in point.** `InstanceLifecycleContribution` has only the create part: `assertCreateAvailable()` and `projectCreate()`. PR 6 adds the destroy part.
+- **Plug-in point.** `InstanceLifecycleContribution` records creation and terminal destroy cleanup. Conn supplies it.
 - **Limits.** The copy sets no `limits.cpu` or `limits.memory`. No measured figure exists; the parity gate sets them.
 - **Egress and PHP.** The live checks wait on the container egress path of step 2c and on 3b's PHP pin, as PR 4's do.
 
@@ -384,9 +384,11 @@ The disk, agent and failure checks follow.
 
 ### PR 6: destroy a container Instance
 
+The first slice removes clones with `--force`, including their Route, Conn records, execution copies, container storage, ACL and T3 port. Guarded removal, default destruction and the refusal while clones exist follow separately. The first slice runs no Project teardown steps.
+
 The spec commit adds [container/destroy.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/destroy.mmd) to the destroy page and cases.
 
-Tests: Pest for the refusals, `instance.default_has_clones`, the record removal and the port release. Live on Beast:
+The follow-up adds Pest for guarded refusals and `instance.default_has_clones`. Its live proof on Beast:
 
 1. Destroy refuses during a running turn, and with `--force` removes the Instance.
 2. The paired Mac loses the server at once.

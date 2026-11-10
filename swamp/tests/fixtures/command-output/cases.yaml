@@ -602,7 +602,25 @@ contexts:
   ufw-deleted:
     task_host_firewall_removed:
       stdout: Rule deleted
+  instance-destroy-firewall:
+    container: {firewall_prefix: 'orbit:instance-7-'}
+    destroy_firewall:
+      stdout: "[ 1] 3800 ALLOW IN # orbit:instance-7-t3\n[ 2] 3801 ALLOW IN # orbit:instance-8-t3\n[ 3] 5432 ALLOW IN # orbit:instance-7-database\n"
+  instance-destroy-firewall-absent:
+    container: {firewall_prefix: 'orbit:instance-7-'}
+    destroy_firewall:
+      stdout: "[ 2] 3801 ALLOW IN # orbit:instance-8-t3\n"
 cases:
+- file: instance-container-destroy.yml
+  task: Delete only this Instance's rules in reverse order
+  field: loop
+  context: instance-destroy-firewall
+  expected: [3, 1]
+- file: instance-container-destroy.yml
+  task: Delete only this Instance's rules in reverse order
+  field: loop
+  context: instance-destroy-firewall-absent
+  expected: []
 - file: ai-router-model-forwarder.yml
   task: Check that the forwarder's table dropped it
   field: ansible.builtin.assert.that
@@ -1260,6 +1278,10 @@ cases:
   context: ufw-deleted
   expected: true
 non_command_output:
+- file: instance-container-destroy.yml
+  task: Write the phase refusal
+  field: ansible.builtin.copy.content
+  reason: Selects a public error code from Ansible failure metadata.
 - file: route-withdraw.yml
   task: Remove the certificate folders
   field: vars.caddy_folders

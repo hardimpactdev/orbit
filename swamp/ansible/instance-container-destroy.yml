@@ -1,0 +1,114 @@
+---
+# Container removal uses its saved identity, so a retry also works after the container is gone.
+- name: Pin the Node and address it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh_execution.target }}"
+    address_identity: "{{ intent.ssh_execution.identity_file }}"
+    address_group: container_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Remove the admitted container
+  hosts: container_node
+  gather_facts: false
+  become: true
+  tags: [remove]
+  module_defaults:
+    ansible.builtin.command:
+      stdin: ""
+      stdin_add_newline: false
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    container: "{{ intent.container_destroy }}"
+    phase: "{{ ansible_run_tags | first }}"
+    incus: [incus, --project, "{{ container.project }}"]
+  tasks:
+    - name: Run the phase
+      block:
+        - name: Read the container inventory
+          ansible.builtin.command: { argv: "{{ incus + ['list', '--format=json'] }}", stdin: "" }
+          register: destroy_inventory
+          changed_when: false
+        - name: Select the container
+          ansible.builtin.set_fact:
+            present: "{{ (destroy_inventory.stdout | from_json | selectattr('name', 'equalto', container.name) | list) }}"
+        - name: Delete the container and its owned network state
+          when: phase == 'remove'
+          block:
+            - name: Stop and delete the container with its snapshots and volume
+              when: present | length > 0
+              ansible.builtin.command: { argv: "{{ incus + ['delete', '--force', container.name] }}", stdin: "" }
+              changed_when: true
+            - name: Read the ACL inventory in the default project
+              ansible.builtin.command: { argv: [incus, query, --, "/1.0/network-acls?project=default&recursion=1"], stdin: "" }
+              register: destroy_acls
+              changed_when: false
+            - name: Remove its ACL from the default project
+              when: container.acl in (destroy_acls.stdout | from_json | map(attribute='name') | list)
+              ansible.builtin.command: { argv: [incus, network, acl, delete, "{{ container.acl }}", --project, default], stdin: "" }
+              changed_when: true
+            - name: Read the numbered firewall rules
+              ansible.builtin.command: { argv: [ufw, status, numbered], stdin: "" }
+              register: destroy_firewall
+              changed_when: false
+            - name: Delete only this Instance's rules in reverse order
+              ansible.builtin.command: { argv: [ufw, --force, delete, "{{ item }}"], stdin: "" }
+              loop: >-
+                {{ destroy_firewall.stdout | regex_findall('(?m)^\[\s*(\d+)\].*# ' ~ (container.firewall_prefix | regex_escape) ~ '[^\n]*$')
+                   | map('int') | sort(reverse=true) | list }}
+              changed_when: true
+            - name: Remove the Node repository mirror
+              ansible.builtin.file: { path: "{{ container.mirror }}", state: absent }
+            - name: Read the remaining containers
+              ansible.builtin.command: { argv: "{{ incus + ['list', '--format=json'] }}", stdin: "" }
+              register: destroy_remaining
+              changed_when: false
+            - name: Read the storage volumes
+              ansible.builtin.command:
+                argv: [incus, query, --, "/1.0/storage-pools/{{ container.pool }}/volumes?project={{ container.project }}&recursion=1"]
+                stdin: ""
+              register: destroy_volumes
+              changed_when: false
+            - name: Check the container and volume are gone
+              ansible.builtin.assert:
+                that:
+                  - destroy_remaining.stdout | from_json | selectattr('name', 'equalto', container.name) | list | length == 0
+                  - >-
+                    destroy_volumes.stdout | from_json | selectattr('name', 'equalto', container.name)
+                    | selectattr('type', 'equalto', 'container') | list | length == 0
+                fail_msg: instance.removal_incomplete
+                quiet: true
+        - name: Write the phase result
+          ansible.builtin.copy:
+            content: "{{ {'container_present': present | length > 0, 'removed': phase == 'remove'} | to_json }}"
+            dest: "{{ run }}/{{ phase }}.json"
+            mode: "0600"
+          changed_when: false
+          delegate_to: localhost
+          become: false
+          vars: &local
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      rescue:
+        - name: Write the phase refusal
+          ansible.builtin.copy:
+            content: >-
+              {{ {'error_code': ansible_failed_result.msg
+                   if ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z0-9_]+$')
+                   else ('instance.teardown_step_failed' if phase == 'teardown' else 'instance.removal_incomplete')} | to_json }}
+            dest: "{{ run }}/{{ phase }}.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          vars: *local
+        - name: Fail the phase
+          ansible.builtin.fail: { msg: "{{ ansible_failed_result.msg | default('Container removal failed.') }}" }

@@ -77,3 +77,4 @@ Keep target identity outside optional lifecycle inputs. A ready task VM skips re
 After a landed behavior change, replace the affected rule in `docs/swamp/porting.md` the same hour. Keep Swamp mechanics in the official swamp skill, shared flow rules in flow-tighten and playbook rules in ansible-phase.
 
 Optional client publication must leave observer SSH intent and terminal checks intact. A partial fleet admission retains the publication retry for waiting clients; a Node that gains a client caller treats a previously absent client version as drift.
+Before filtering a policy run on a recorded commit, trace the field from terminal projection through the API. Container snapshot seeds live on InstanceRuntime; checkout seeds live on Instance. Use one shared effective seed accessor. When quiet ticks stop entering policy, settle successful deployment status in its terminal projection and publication markers in the Route owner.

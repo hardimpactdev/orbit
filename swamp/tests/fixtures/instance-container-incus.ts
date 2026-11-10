@@ -38,6 +38,8 @@ if (args[0] === "query") {
   const parts = route.split("/");
   if (parts[0] === "network-acls") {
     console.log(JSON.stringify(state["network-acls"]));
+  } else if (parts[0] === "storage-pools") {
+    console.log(JSON.stringify(Object.keys(state.containers).map((name) => ({ name, type: "container" }))));
   } else if (parts[0] === "instances") {
     const container = state.containers[parts[1]];
     if (!container) fail("Instance not found");
@@ -61,9 +63,12 @@ if (args[0] === "query") {
   Deno.exit(0);
 }
 if (args[0] === "network" && args[1] === "acl") {
-  take("--project");
+  const project = take("--project");
   if (args[2] === "create") {
     state["network-acls"].push({ name: args[3], description: "", egress: [], ingress: [] });
+  } else if (args[2] === "delete") {
+    if (project !== "default") fail("ACLs must be removed from default");
+    state["network-acls"] = state["network-acls"].filter((acl: {name: string}) => acl.name !== args[3]);
   } else {
     Object.assign(
       state["network-acls"].find((acl: { name: string }) => acl.name === args[3]),
@@ -75,7 +80,13 @@ if (args[0] === "network" && args[1] === "acl") {
 }
 const project = take("--project");
 const [family] = args;
-if (family === "init") {
+if (family === "list") {
+  console.log(JSON.stringify(Object.entries(state.containers).map(([name, value]) => ({ name, ...(value as object) }))));
+} else if (family === "delete") {
+  const name = args.at(-1)!;
+  delete state.containers[name];
+  Deno.removeSync(rootfs(name), { recursive: true });
+} else if (family === "init") {
   const name = args[2];
   const devices: string[] = [];
   for (let device = take("--device"); device !== null; device = take("--device")) devices.push(device);

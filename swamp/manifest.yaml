@@ -62,6 +62,7 @@ additionalFiles:
   - extensions/behaviors/operations/tools/contract.ts
   - extensions/behaviors/operations/tools/constraints.ts
   - ansible/operation-instance-create.yml
+  - ansible/instance-container-destroy.yml
   - ansible/instance-container.yml
   - ansible/tasks/instance-container-phase.yml
   - ansible/tasks/instance-container-process.yml

@@ -362,6 +362,8 @@ To install, `@swamp/cfgmgmt/fetch` downloads the binary to `/usr/local/bin/orbit
 
 A Node of the build list keeps a mirror of each container Instance's repository at `/var/lib/orbit/instance-repositories/<id>.git`, owned by root. The create and deploy flows fetch into it. See [the default Instance](/reference/development-containers#the-default-instance).
 
+[Instance removal](/reference/development-containers#destroy) deletes its container, mirror and owned rules. Its `instance-<id>` network ACL lives in Incus project `default` and is removed after the container.
+
 A clone's create also adds UFW rules under the comment prefix `orbit:instance-<id>-`: the route rules of its published T3 port and the rule to its database server. See [the network](/reference/development-containers#network).
 
 ## Converge the Orbit footprint
