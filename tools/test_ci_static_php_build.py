@@ -3,6 +3,7 @@ import copy
 import importlib.machinery
 import importlib.util
 import json
+import re
 from pathlib import Path
 import unittest
 
@@ -12,6 +13,7 @@ spec = importlib.util.spec_from_loader(loader.name, loader)
 build = importlib.util.module_from_spec(spec)
 loader.exec_module(build)
 
+WORKFLOW = (ROOT / '.github/workflows/static-php.yml').read_text()
 RECIPE = json.loads((ROOT / 'apps/gateway/resources/machine-software/recipe.json').read_text())
 
 
@@ -67,6 +69,13 @@ class StaticPhpBuildTest(unittest.TestCase):
         self.assertIn('frankenphp:/tmp/frankenphp', craft)
         self.assertIn('sapi: "cli,frankenphp"', craft)
         self.assertNotRegex(craft, r'@[A-Z_]+@')
+
+    def test_the_release_checks_its_sums_beside_the_files(self):
+        # SHA256SUMS names each file without a folder, so each check of it runs in the folder that holds the files.
+        publish = WORKFLOW[WORKFLOW.index('- name: Publish the release'):]
+        self.assertIn('working-directory: release', publish)
+        self.assertNotIn('release/', publish)
+        self.assertEqual(set(re.findall(r'sha256sum --check --strict \S+', WORKFLOW)), {'sha256sum --check --strict SHA256SUMS'})
 
 
 if __name__ == '__main__':

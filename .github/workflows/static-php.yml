@@ -231,14 +231,16 @@ jobs:
           name: ${{ matrix.build.tag }}
           path: release
 
-      # A published build is never replaced: its SHA-256 may already be pinned.
+      # A published build is never replaced: its SHA-256 may already be pinned. SHA256SUMS names its files without a folder,
+      # so the check runs beside them.
       - name: Publish the release
+        working-directory: release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ matrix.build.tag }}
         run: |
           set -euo pipefail
-          sha256sum --check --strict release/SHA256SUMS
+          sha256sum --check --strict SHA256SUMS
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release ${TAG} already exists. Published builds are never replaced."
             exit 1
@@ -246,4 +248,4 @@ jobs:
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
             --title "Static PHP ${{ matrix.build.php_version }} (${TAG})" \
             --notes "The static PHP CLI and FrankenPHP of the Instance runtime folder, built from ${GITHUB_SHA}. See docs/reference/compute-drivers.md#static-php-build." \
-            release/*
+            ./*
