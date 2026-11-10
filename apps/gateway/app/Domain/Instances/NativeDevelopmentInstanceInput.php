@@ -67,7 +67,8 @@ final readonly class NativeDevelopmentInstanceInput
             'route_mutations' => self::routeWithdrawal($input),
             'route_secrets' => ($input['route_create'] ?? null) === null ? null : ValidatedData::object($input['execution_secrets'] ?? [])],
             'execution_secrets' => [...$copies,
-                ...($container === null ? [] : app(DevelopmentDeploySteps::class)->copies($operation, $instance->project, ValidatedData::object($container)['steps'])),
+                ...($container === null || (ValidatedData::object($container)['clone'] ?? null) !== null ? []
+                    : app(DevelopmentDeploySteps::class)->copies($operation, $instance->project, ValidatedData::object($container)['steps'])),
                 // A clone's placeholder model key and model origin, for T3's unit.
                 ...(($container === null ? null : ValidatedData::object($container)['clone'] ?? null) === null ? [] : ['model_environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-model-'.$operation->id,
                     app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), app(TaskVmModelRoute::class)->key()))]),

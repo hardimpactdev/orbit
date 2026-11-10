@@ -24,6 +24,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
+use App\Models\ProjectDevelopmentDeployStep;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -197,6 +198,22 @@ describe('a clone of the container default', function (): void {
         $other = databaseServerOn(containerDefaultNode('shark', '10.44.0.8', listed: false), 'pg2', DatabaseDriver::Pgsql, 5432);
         expect(containerRefusal(fn () => containerCreate($default->project, $node, 'third', $other->slug)))->toBe('instance.database_clone_unsupported');
     });
+});
+
+it('starts a clone without copying the Project development deploy commands that its default already ran', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    ProjectDevelopmentDeployStep::query()->create(['project_id' => $default->project_id, 'name' => 'install', 'position' => 1,
+        'command' => 'bun install', 'required' => true, 'timeout_seconds' => 300]);
+    $operation = containerCreate($default->project, $node, 'feature');
+    $vault = vaultReadingSocket([]);
+
+    $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+
+    expect($run['intent']['container']['steps'])->toBe([])
+        ->and(array_keys($run['execution_secrets']))->not->toContain('step_0')
+        ->and(collect($vault->puts)->pluck('key')->all())->not->toContain('development-deploy-operation-'.$operation->id.'-step-0')
+        ->and($run['execution_secrets']['model_environment']['key'])->toBe('instance-create-model-'.$operation->id);
 });
 
 it('starts the run with the placeholder model key in the vault and the template copy of the default database', function (): void {

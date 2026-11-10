@@ -948,3 +948,5 @@ Task VM host preparation belongs to the [base refresh](/reference/compute-driver
 Proof preparation installs the tested checkout's frozen observer pin on every nested Node with checksum verification. Every batch and direct case prepares independently, including when an older workflow skips setup. One Ansible run uses the Node convergence replacement task, stops all observers, discards their old presence versions and host receipts, starts them, then requires each expected version with its binary digest and a new host fact. Preparation has its own 330-second bound; batch setup gets a separate 120 seconds within the 480-second transport limit. Each restore repeats preparation; no proof changes the base snapshot.
 
 The `ai-router-model-forwarder.yml` playbook, including its numeric packet-counter checks, is documented in [AI router](/reference/ai-router#container-model-forwarder).
+
+The container playbook preserves agent settings outside Orbit's managed JSON keys.
