@@ -32,6 +32,9 @@ sequenceDiagram
   %%> - the Gateway refuses non-development Instances and rechecks the ready container-default rule under the Instance lock
   %%> - the Gateway admits `instance.deploy` for that exact commit, with the Instance lock and a repository read token in the vault
   GW->>SW: Start run, full intent<br/>instance-deploy-direct
+  %%> Before execution:
+  %%> - automatic development work rechecks the same eligibility policy while building its input, including work queued before a release
+  %%> - a checkout default refuses automatic execution; its explicit manual deployment remains allowed
   opt the default Instance is asleep
     SW->>N: Start the container<br/>incus start
   end

@@ -43,6 +43,9 @@ final readonly class DevelopmentDeployInput
         $input = app(InstanceDeploymentDirectInput::class)->admitted($operation);
         $runtime = ValidatedData::object($operation->input['development_runtime']);
         $instance = $this->owner($operation);
+        if ($operation->callerNodeId() !== null || in_array($operation->triggered_by, AutomaticDeployHistory::Triggers, true)) {
+            app(AutomaticDeployPolicyWriter::class)->assertSwamp($instance, development: true);
+        }
         $intent = ValidatedData::object($operation->input['deployment']);
         $copies = $this->steps->copies($operation, $instance->project, ValidatedData::object($input['deployment'])['steps']);
         // The fetch reads a 0600 credential file: a repository-scoped read token, or an empty line for a public origin.

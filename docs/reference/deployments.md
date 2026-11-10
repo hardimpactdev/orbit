@@ -103,7 +103,7 @@ A step and Orbit's checkout take the lock that [setup and teardown steps](/refer
 
 Explicit environment synchronization writes the checkout's `.env` files, so the application sees new values at once. A Route's web root serves files from the checkout, and a deployment does not change the Route.
 
-If the default has pending Route publication, the automatic policy admits a normal Route update before deployment. A matching succeeded Route receipt clears that mark through the policy projection. Native dev deployment does not change the Route. An unchanged tick with a completed projection does not take the [projection lock](/reference/routes#coordinate-publication), because a full converge rebuilds the Node's PHP-FPM pools, Caddy, and DNS and blocks every other Route operation while it runs.
+If the default has pending Route publication, the automatic policy admits a normal Route update before deployment. Successful creation or update of the authoritative Route clears that mark through Route completion. Native dev deployment does not change the Route. An unchanged tick with a completed projection does not take the [projection lock](/reference/routes#coordinate-publication), because a full converge rebuilds the Node's PHP-FPM pools, Caddy, and DNS and blocks every other Route operation while it runs.
 
 ### Seeds
 
@@ -308,7 +308,7 @@ The unique development scan runs on the existing `tasks` queue, away from operat
 
 The scan selects only active container defaults with a seed snapshot on active `app-dev` placement, using the same ready-default rule as [`conn:project:list`](/reference/conn#threads-in-an-orbit-project). It reads each eligible Project default branch once and compares it with the runtime's snapshot seed commit. A matching default starts no Swamp run and makes no policy HTTP requests or vault reads. Only container defaults behind their branch enter a development-only Swamp policy run.
 
-Checkout Instances are the user's working trees and are never auto-deployed, even when named `default` or recorded with `auto_deploy=true`. A container without a seed must first deploy by hand. The Gateway retains admission, locks, authorization and history.
+Checkout Instances are the user's working trees and are never auto-deployed, even when named `default` or recorded with `auto_deploy=true`. The Gateway rechecks the same policy when building automatic execution input, so an old queued checkout deployment cannot run after a release. Manual checkout deployment remains allowed. A container without a seed must first deploy by hand. The Gateway retains admission, locks, authorization and history.
 
 The native end assertion fails when the policy producer records a failure. The Gateway captures the full event receipt from that producer in its existing terminal history read, including events from a failed fire; no reporting step prints it.
 

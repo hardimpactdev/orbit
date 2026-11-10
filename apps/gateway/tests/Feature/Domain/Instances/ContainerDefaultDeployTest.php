@@ -213,6 +213,30 @@ it('keeps a checkout default on the development variant', function (): void {
         ->and($snapshot['needs_vp'])->toBeTrue();
 });
 
+it('rechecks old automatic checkout work at execution input construction but permits manual work', function (?string $trigger, bool $caller): void {
+    deployVault();
+    $instance = deployDefault(container: false);
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Queued, 'triggered_by' => $trigger, 'input' => ['platform' => 'linux', 'architecture' => 'x86_64',
+            'deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance),
+            'development_runtime' => app(DevelopmentDeployInput::class)->capture($instance, false),
+            ...($caller ? ['caller_node_id' => $instance->node_id] : []),
+        ]]);
+
+    if ($trigger === 'operator') {
+        $input = app(DevelopmentDeployInput::class)->workflowInput($operation);
+        expect($input['intent']['container'])->toBeNull()->and($input['intent']['application'])->toBe($instance->checkout_path);
+    } else {
+        expect(fn () => app(DevelopmentDeployInput::class)->workflowInput($operation))
+            ->toThrow(ResourceOperationException::class, 'Checkout Instances are working trees and are never auto-deployed.');
+    }
+})->with([
+    'retained PHP automatic operation' => ['orbit:auto-deploy', false],
+    'retained Swamp automatic operation' => ['swamp:auto-deploy', false],
+    'bound automatic caller' => [null, true],
+    'manual checkout operation' => ['operator', false],
+]);
+
 it('holds the Instance while a container default deploys, so a second deployment is refused', function (): void {
     Queue::fake();
     $instance = deployDefault(container: true);
