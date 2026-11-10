@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Data\Schedules\ScheduleData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -81,6 +82,9 @@ final readonly class NativeSchedules
 
     public function destroy(Schedule $schedule, ?Node $caller, ?string $requestId): Operation
     {
+        if (Instance::isMorphType($schedule->target_type) && ($instance = Instance::query()->find($schedule->target_id)) !== null) {
+            InstanceMigration::assertSettled($instance);
+        }
         $input = ['id' => $schedule->id, 'node_id' => $schedule->host_node_id, 'caller_node_id' => $caller?->id, 'cascade' => false];
         $this->remove($schedule);
 
@@ -208,7 +212,8 @@ final readonly class NativeSchedules
     {
         $intent = ['schedule' => ['id' => $schedule->id, 'command_hash' => hash('sha256', $schedule->command), 'user' => $target->user,
             'working_directory' => $target->workingDirectory ?? '', 'shell' => $target->shell ?? '', 'login_shell' => $target->loginShell, 'timeout_seconds' => $schedule->timeout_seconds],
-            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target->node)];
+            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target->node),
+            ...($target->container === null ? [] : ['container' => $target->container])];
 
         return json_encode([
             'id' => $workflowId,

@@ -100,13 +100,28 @@ The caller picks only the target. The Gateway derives the host Node, the user, t
 | --- | --- | --- | --- |
 | Node | The Node's managed user | That user's home | The user's login shell, with login mode and protected stdin |
 | Instance on `app-dev` | The Node's managed user | The Instance's application directory in its checkout | The user's login shell, with login mode and protected stdin |
+| Instance in a development container | The Node’s managed user, `orbit` or `agent` | The application directory under `/srv/workspace` | `/bin/bash`, with login mode and protected stdin |
 | Instance on `app-prod` | The Instance's production user | The Instance's application directory under `<production-home>/current` | `/bin/bash -s`, without a login |
 
 For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, a Schedule runs in `<checkout>/apps/site` on `app-dev` or `<production-home>/current/apps/site` on `app-prod`, so `php artisan schedule:run` finds that app's `artisan` and `.env`. Root `public` keeps the checkout or release root. Node Schedule working directories do not change. Instances that are not Laravel apps keep their checkout or release root.
 
 The target Node must be an active Linux Node with a WireGuard address. An Instance target must be active. A production Schedule resolves `current` each time it runs, so a new release changes later runs. A production Instance needs a selected release before it can take a Schedule, even one that starts disabled.
 
-A Schedule does not follow its target. While a Schedule exists, the Gateway refuses to remove its target Node or host Node with `schedule.target_in_use` (409). [Instance transfer](/reference/instance-transfer) does not check Schedules. After a transfer, list and show still work, and an identical create returns `schedule.target_in_use`. Run, logs, enable, and destroy fail with `schedule.target_unavailable`, because the Instance runs on another Node than the host Node. Destroy the Instance's Schedules before a transfer. Instance removal removes the Instance's Schedules itself.
+A Schedule does not follow its target to another Node. While a Schedule exists, the Gateway refuses to remove its target Node or host Node with `schedule.target_in_use` (409). [Instance transfer](/reference/instance-transfer) does not check Schedules. After a transfer, list and show still work, and an identical create returns `schedule.target_in_use`. Run, logs, enable, and destroy fail with `schedule.target_unavailable`, because the Instance runs on another Node than the host Node. Destroy the Instance's Schedules before a transfer. Instance removal removes the Instance's Schedules itself.
+
+## Checkout migration
+
+[`instance:migrate`](/cli/instance/migrate) carries registered Node-timer Schedules in the same Operation as the Instance. The timer stays on the Node, with its UUID and calendar. Its replacement service triggers the existing Schedule run path, which enters the Instance container and runs under the same supported user. Working directories and command paths inside the checkout become `/srv/workspace`. Timeout, enabled or paused intent, latest-run fields and existing Operations remain. `schedule:logs` keeps reading the Node journal under the same Schedule identity; later command output is recorded there too.
+
+Before downtime, Orbit refuses a Schedule that cannot run in the container, naming its UUID, name and reason. A native Swamp Schedule has a fixed workflow and must be removed before migration. Node-timer files must belong to their Schedule. Unsupported accounts, shells, external working directories and command paths refuse. Orbit resolves the working directory and literal command paths before checking containment. Symlinked paths refuse because their targets may still name the old checkout after copying.
+
+Migration disables the source timers and stops their services before copying. Failure before cutover removes the failed container before restoring the timers' captured enabled and active states; source files remain unchanged. After cutover, only the admitted Schedules’ services are replaced and their obsolete command and callback files are removed. Their timers remain on the Node. Schedule cutover precedes Git retirement, so a late retirement refusal leaves the moved Schedules running from the container.
+
+The command must be one literal invocation of `php`, `node`, `bun`, `vp`, `composer`, `git`, `true`, `false`, `echo`, `printf` or an executable inside the checkout. Arguments may be whole quoted strings. PHP and Composer need a selected PHP build in the container runtime. An optional `> /dev/null` or `>> /dev/null` may end the command, followed by `2>&1`. Shell operators, patterns, expansion, inline evaluation and executable configuration flags refuse; Orbit does not interpret a shell program to guess which paths it uses.
+
+### Why the timer stays on the Node
+
+Containers cannot reach the Gateway. A timer inside the container could not use the existing Schedule trigger, and would need a new privileged bridge or a change to container isolation. Keeping the trigger on the Node reuses the existing Schedule Operations and the same Incus execution path as container Processes, without a second completion or log mechanism.
 
 ## The Schedule workflow
 
@@ -151,6 +166,8 @@ Enable uses `operation-schedule-control` to enable and start the timer, check sy
 
 Logs read only the Schedule's service, through the Node agent's [log stream](/reference/live-logs#one-shot-reads-use-the-stream-path), with a fixed `journalctl --output short-iso --utc` read. `lines` is 1 through 1,000, and the default is 100. The read waits at most 5 seconds and returns at most 256 KiB. The response holds `output` with the newest complete lines, oldest first, and sets `truncated` to `true` when a limit removed older lines. Logs need an `active` Schedule; otherwise the Gateway returns `schedule.state_invalid`. Orbit stores no journal output. The agent and the Gateway redact credential-shaped text and stored environment values, but keep secrets out of command output. The host Node's journal settings decide how long lines stay.
 
+A migrated development Schedule reads both its retained service entries and later command entries from the Node journal. This bounded read uses the existing runtime inspection path, waits at most 120 seconds and keeps at most 4 MiB. The journal output travels through a private vault copy and receives the same Gateway redaction. `--follow` returns `schedule.target_unsupported` for a migrated Schedule; read without `--follow`.
+
 ## Latest run
 
 The Gateway stores only the latest run, from a recorded fire or a manual run's terminal result. A removing Schedule receives no new latest run. Each fire and manual run is also an Operation.
@@ -171,6 +188,7 @@ Schedule operations return these codes in the Orbit error envelope. The CLI chec
 | `swamp.schedule_publish_unavailable` | Serve did not confirm a workflow or trigger change. Repeat the request. |
 | `schedule.name_invalid`, `schedule.calendar_invalid`, `schedule.command_invalid`, `schedule.timeout_invalid` | The input is outside the accepted form, or Swamp refuses the calendar. |
 | `schedule.target_invalid` | The target does not exist, or the operation does not apply to it. The Gateway also uses it with 403 when a completion report comes from another Node. |
+| `schedule.target_unsupported` | A migrated Schedule has no live log stream; use `schedule:logs` without `--follow`. |
 | `schedule.target_unavailable` | The target, its Node, its user, its working directory, or the command copy cannot run the operation. |
 | `schedule.retry_conflict` | The target already has a Schedule with this name and a different specification. |
 | `schedule.state_invalid` | The Schedule status does not allow the operation, or another operation on the Instance is running. |

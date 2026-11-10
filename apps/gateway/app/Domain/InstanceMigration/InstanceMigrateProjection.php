@@ -182,6 +182,11 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                 }
                 if ($moved) {
                     app(ContainerProcesses::class)->complete($instance, ValidatedData::object($operation->input['container'])['processes'] ?? [], true, null);
+                    $schedules = ValidatedData::object($operation->input['migrate'])['schedules'] ?? [];
+                    if (! is_array($schedules) || ! array_is_list($schedules)) {
+                        throw new \InvalidArgumentException('The admitted Schedules must be a list.');
+                    }
+                    app(MigrateSchedules::class)->complete($instance, array_map(ValidatedData::object(...), $schedules));
                     $this->moved($instance, ValidatedData::object($operation->input['migrate']), ValidatedData::integerList($operation->input['sqlite_connection_ids'] ?? []));
                     // A default's clones start at the seed snapshot the run took of its commit.
                     $runtime->update(['power_state' => InstanceRuntimePowerState::Running,

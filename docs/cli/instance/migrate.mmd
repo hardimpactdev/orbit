@@ -50,8 +50,10 @@ sequenceDiagram
   %%> - fetches the branch from the checkout into the Node's mirror, including commits never pushed
   SW->>N: Check and stop<br/>Ansible · tags quiesce
   %%> What it does:
-  %%> - repeats the branch, retirement, source symlink and environment checks before stopping writers
-  %%> - stops and disables the host Process units, then removes the awake marker
+  %%> - repeats the branch and retirement checks
+  %%> - checks every registered Node-timer Schedule and captures timer activation before stopping any writer; unsupported Schedules refuse with their name and reason
+  %%> - repeats source symlink and environment checks before stopping any writer
+  %%> - stops and disables host Schedule timers and Process units, then removes the awake marker
   %%> - records that quiesce began, so a failure before it never restarts host units or rewrites the awake marker
   SW->>C: Build the workspace<br/>Ansible · tags workspace
   %%> What it does:
@@ -77,6 +79,7 @@ sequenceDiagram
   alt all steps pass
     SW->>N: Remove the checkout<br/>Ansible · tags retire
     %%> What it does:
+    %%> - replaces only the moved Schedules’ checkout-dependent services with host triggers for container execution, keeps their UUID timers and calendars, and resumes each recorded desired state
     %%> - removes the old host Process units and their environment folders
     %%> - repeats the same retirement preflight as an early warning; a new blocker leaves the container serving and the checkout intact
     %%> - atomically moves each old checkout under `<checkout>.orbit-retired-git/<sha256 of original path>`; the retained root is beside the migrating Instance's checkout
@@ -97,6 +100,7 @@ sequenceDiagram
     %%> - puts the Route back on the checkout when the run had moved it
     %%> - deletes the new container, its ACL, its firewall rules and its mirror
     %%> - restores host Process units and the awake marker only when quiesce began; an unreachable target causes zero downtime
+    %%> - restores host Schedule timers to their captured activation states; their unit files stay unchanged before cutover
     %%> - the checkout and database remain in place
     SW--xGW: Run failed<br/>failed step, error_code
     Note over GW: Project native end state

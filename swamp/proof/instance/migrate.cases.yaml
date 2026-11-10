@@ -11,6 +11,9 @@
 # Preset fixture coverage: running/stopped vp-dev uses the same Process phases; rollback restores the host only after
 # container removal. Pest covers preset identity/path/port projection, pre-downtime refusals, scoped ingress, deployment
 # re-rendering and post-move controls. Live vp execution, HTTP/HMR and container networking remain unproved here.
+# Schedule fixtures cover enabled/paused registered timers, current/agent/direct source units, exact observed activation
+# rollback after container removal, and replacing only the admitted checkout-dependent services after cutover. The same UUID
+# host timer remains as a Gateway trigger; real timer firing, Incus command execution and journald retention need fleet proof.
 # Unpushed local branches and detached HEADs refuse with every name and commit count; stashes refuse with their count.
 # Tag-only commits, an expired stash reflog, submodules/nested repositories and a worktree added after the final listing
 # retain their Git data after retirement. Retirement atomically moves the whole checkout and never deletes metadata.
@@ -24,6 +27,14 @@ baseline: [operations]
 
 uncovered:
   "code:instance.migrate_env_service_unreachable": "Environment policy fixtures cover loopback, stale addresses, exact attached targets, driver skips, prefixes, IPv6, quoted values, nested files and redaction. Ansible fixtures prove refusal before Process stop or marker removal; live migration requires the Instance pool/image."
+
+  "code:schedule.container_trigger_unsupported": "Pest covers fixed native workflow refusal before reservation; migration live proof needs the Instance pool/image."
+  "code:schedule.container_state_unsupported": "Pest covers inactive, removing, misplaced and busy Schedules before downtime."
+  "code:schedule.container_account_unsupported": "Pest covers missing and unsupported container accounts before reservation."
+  "code:schedule.container_shell_unsupported": "Pest covers unsupported shell before reservation."
+  "code:schedule.container_path_unsupported": "Pest covers external or dot-segment working directories before reservation."
+  "code:schedule.container_command_unsupported": "Pest covers external command paths and commands that cannot be mapped literally."
+  "code:schedule.container_artifact_unsupported": "Ansible fixtures cover missing, foreign and changed units and unstable timer/service states before downtime."
   "code:process.container_preset_unsupported": "Pest covers unknown presets, versions and options before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
   "code:process.container_command_unsupported": "Pest covers custom commands beside the preset, including the bypass regression before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
   "code:process.container_path_unsupported": "Pest covers external cwd, environment files and absolute environment values, including traversal before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."

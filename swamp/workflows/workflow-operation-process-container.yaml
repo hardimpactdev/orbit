@@ -1,6 +1,6 @@
 id: 6d0b7f4e-3c51-4a8e-9b1f-2e8c5d7a4f10
 name: operation-process-container
-description: One Process of an Instance container through `incus exec` on its Node, the `process` tag of instance-container.yml. A child of process start, stop and restart, the status observation process.inspect, and the Gateway's log read.
+description: One Process of an Instance container through `incus exec` on its Node, the `process` tag of instance-container.yml. A child of process start, stop and restart, the status observation process.inspect, and bounded Process or migrated Schedule log reads.
 vaults:
 - orbit-control-inputs
 queueTimeout: 30
@@ -11,7 +11,7 @@ inputs:
     # 0 for the Gateway's log read, which records no Operation.
     operation_id: {type: integer, minimum: 0}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [process.start, process.stop, process.restart, process.inspect]}
+    kind: {type: string, enum: [process.start, process.stop, process.restart, process.inspect, schedule.inspect]}
     intent:
       type: object
       properties:
@@ -29,6 +29,12 @@ inputs:
             name: {type: string, pattern: '^instance-[1-9][0-9]*$'}
           required: [instance_id, project, name]
           additionalProperties: false
+        schedule:
+          type: object
+          properties:
+            id: {type: string, format: uuid}
+          required: [id]
+          additionalProperties: false
         ssh_execution: {type: object}
         # A read: status or logs, its line count, and the request id that names its vault key.
         read:
@@ -37,9 +43,12 @@ inputs:
             action: {type: string, enum: [status, logs]}
             lines: {type: integer, minimum: 1, maximum: 1000}
             request: {type: string, format: uuid}
-          required: [action, lines, request]
+          required: [lines, request]
           additionalProperties: false
-      required: [control, container, ssh_execution]
+      required: [ssh_execution]
+      oneOf:
+      - required: [control, container]
+      - required: [schedule, read]
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
@@ -60,13 +69,14 @@ jobs:
         path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
   # Start, stop or restart the unit and check its state; or read its state and journal into the run folder on the worker.
   - name: Act on the Process
+    guard: '${{ inputs.kind == "schedule.inspect" }}'
     labels: {role: swamp}
     writes: true
     dependsOn: [{step: input, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "process-in-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}'
+      behaviorName: '${{ ("process-in-container-" + string(inputs.node_id) + "-" + (inputs.kind == "schedule.inspect" ? "schedule" : string(inputs.intent.control.process_id))).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: timeout 90 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags process "$ORBIT_ANSIBLE/instance-container.yml"
@@ -79,16 +89,38 @@ jobs:
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
           ORBIT_PROCESS_ACTION: '${{ inputs.kind == "process.inspect" ? inputs.intent.read.action : inputs.kind.split(".")[1] }}'
+  - name: Read Schedule logs
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ inputs.kind != "schedule.inspect" }}'
+    dependsOn: [{step: input, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "schedule-logs-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 90 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, "$ORBIT_ANSIBLE/schedule-logs.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_RUN_ID: '${{ run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
   # A read keeps its journal lines in the vault and publishes only the state and the vault key.
   - name: Read Process result
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Act on the Process, condition: {type: succeeded}}]
-    guard: '${{ inputs.kind != "process.inspect" }}'
+    dependsOn:
+    - {step: Act on the Process, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Read Schedule logs, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ inputs.kind != "process.inspect" && inputs.kind != "schedule.inspect" }}'
     task:
       type: behavior
       behaviorType: '@nckrtl/process-command-assets'
-      behaviorName: '${{ "process-inspection-" + string(inputs.intent.control.process_id) }}'
+      behaviorName: '${{ ("process-inspection-" + (inputs.kind == "schedule.inspect" ? "schedule-" + string(inputs.node_id) : string(inputs.intent.control.process_id))).split(".").join("-") }}'
       methodName: inspection
       inputs:
         directory: '${{ "/tmp/orbit-ansible-" + run.id }}'
@@ -99,6 +131,7 @@ jobs:
     dependsOn:
     - {step: input, condition: {type: always}}
     - {step: Act on the Process, condition: {type: always}}
+    - {step: Read Schedule logs, condition: {type: always}}
     - {step: Read Process result, condition: {type: always}}
     task:
       type: behavior

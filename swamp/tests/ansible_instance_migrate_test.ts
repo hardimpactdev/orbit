@@ -6,12 +6,40 @@
  */
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
+import { createHash } from "node:crypto";
+import {
+  legacyScheduleUnits,
+  renderScheduleUnits,
+} from "../extensions/behaviors/operations/processes-schedules/contract.ts";
 
 const has = (program: string) => new Deno.Command("sh", { args: ["-c", `command -v ${program}`] }).outputSync().success;
 const hasAnsible = has("ansible-playbook");
 const root = new URL("../ansible/", import.meta.url);
 
 type Task = Record<string, unknown>;
+type MigrationSchedule = {
+  id: string;
+  name: string;
+  service: string;
+  timer: string;
+  user: string;
+  group: string;
+  home: string;
+  shell: string;
+  login_shell: boolean;
+  directory: string;
+  source_directory: string;
+  command_hash: string;
+  mapped_command_hash: string;
+  source_script_hash: string;
+  source_command_paths: string[];
+  calendar: string;
+  timeout_seconds: number;
+  desired: "enabled" | "disabled";
+  container_user: string;
+  container_home: string;
+  container_shell: string;
+};
 
 /** Ownership needs root; the modes stay. UFW rules live in a file of the fixture, one JSON line each: added, and removed again. */
 function transform(task: Task): Task {
@@ -39,6 +67,16 @@ function transform(task: Task): Task {
     delete args.group;
   }
   return task;
+}
+
+/** Only the Schedule task's host paths are remapped; container paths and shared unit contracts stay literal. */
+function scheduleHostPaths(value: unknown): unknown {
+  if (typeof value === "string") return value
+    .replaceAll("/etc/systemd/system/", "{{ lookup('ansible.builtin.env', 'HOST_FIXTURE') }}/host/systemd/")
+    .replaceAll("/etc/orbit/schedules/", "{{ lookup('ansible.builtin.env', 'HOST_FIXTURE') }}/host/schedules/");
+  if (Array.isArray(value)) return value.map(scheduleHostPaths);
+  if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scheduleHostPaths(item)]));
+  return value;
 }
 
 const git = (cwd: string, ...args: string[]) => {
@@ -88,10 +126,19 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   );
   Deno.chmodSync(`${folder}/bin/incus`, 0o755);
   Deno.copyFileSync(new URL("instance_migrate_links.py", root), `${folder}/instance_migrate_links.py`);
-  for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-link-result.yml", "instance-migrate-env-check.yml"]) {
-    const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => transform(structuredClone(task)));
+  for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-schedules.yml", "instance-migrate-schedule-check.yml", "instance-migrate-link-result.yml", "instance-migrate-env-check.yml"]) {
+    const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => {
+      const transformed = transform(structuredClone(task));
+      return name.startsWith("instance-migrate-schedule") ? scheduleHostPaths(transformed) : transformed;
+    });
     Deno.writeTextFileSync(`${folder}/tasks/${name}`, stringify(tasks));
   }
+  Deno.mkdirSync(`${folder}/templates`);
+  Deno.writeTextFileSync(`${folder}/templates/instance-migrate-schedule.j2`,
+    Deno.readTextFileSync(new URL("templates/instance-migrate-schedule.j2", root)).replace("playbook_dir ~ '/../extensions/", "playbook_dir ~ '/extensions/"));
+  const sharedContracts = "extensions/behaviors/operations/processes-schedules";
+  Deno.mkdirSync(`${folder}/${sharedContracts}`, { recursive: true });
+  Deno.copyFileSync(new URL(`../${sharedContracts}/unit-templates.json`, root), `${folder}/${sharedContracts}/unit-templates.json`);
   for (const name of ["instance-container.yml", "instance-migrate.yml", "tasks/address-node.yml"]) {
     const source = Deno.readTextFileSync(new URL(name, root));
     if (name === "instance-migrate.yml") {
@@ -196,6 +243,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     },
     databases: [] as { host: string; port: number }[],
     processes: [] as { name: string; path: string; environment_directory: string; desired: string }[],
+    schedules: [] as MigrationSchedule[],
     firewall_prefix: `orbit:instance-${id}-`,
     retire: [{ path: checkout, mirror: `${folder}/mirror/${id}.git` }] as { path: string; mirror: string; common_of?: string }[],
   };
@@ -226,7 +274,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
       tasks.push({ name: "Force a failure after the phase effects", tags: ["always"], when: `phase == '${phase}'`, "ansible.builtin.fail": { msg: "forced migration failure" } });
       Deno.writeTextFileSync(file, stringify(tasks));
     },
-    run(phase: string, rawContainer = false, runId = folder.slice(folder.lastIndexOf("/") + 1)) {
+    run(phase: string, rawContainer = false, runId = folder.slice(folder.lastIndexOf("/") + 1), extraEnv: Record<string, string> = {}) {
       const playbook = !rawContainer && ["container", "quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
       const done = new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
@@ -243,6 +291,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
           // As in the workflow of a move, the container phases get no token and no .env from the Gateway.
           GIT_CONFIG_NOSYSTEM: "1",
           HOME: `${folder}/home`,
+          ...extraEnv,
         },
       }).outputSync();
       return { ok: done.success, output: new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr) };
@@ -915,6 +964,337 @@ function migrationProcesses(f: ReturnType<typeof fixture>, presetDesired: "runni
   f.write();
   return () => JSON.parse(Deno.readTextFileSync(`${f.folder}/host-processes.json`));
 }
+
+/** The same UUID host timer before and after cutover; only its checkout-dependent service is replaced. */
+function migrationSchedules(f: ReturnType<typeof fixture>, desired: "enabled" | "disabled", kind: "current" | "agent" | "direct" = "current", command = "php artisan schedule:run", sourceDirectory = f.checkout) {
+  const id = "11111111-1111-4111-8111-000000000001";
+  const unrelated = "orbit-schedule-22222222-2222-4222-8222-000000000002";
+  const digest = (value: string) => createHash("sha256").update(value).digest("hex");
+  const schedule: MigrationSchedule = {
+    id,
+    name: "laravel-scheduler",
+    service: `orbit-schedule-${id}.service`,
+    timer: `orbit-schedule-${id}.timer`,
+    user: "orbit",
+    group: "orbit",
+    home: "/home/orbit",
+    shell: "/bin/bash",
+    login_shell: true,
+    directory: "/srv/workspace" + sourceDirectory.slice(f.checkout.length),
+    source_directory: sourceDirectory,
+    command_hash: digest(command),
+    mapped_command_hash: digest(command.replaceAll(f.checkout, "/srv/workspace")),
+    source_script_hash: "",
+    source_command_paths: [],
+    calendar: "*-*-* *:*:00",
+    timeout_seconds: 600,
+    desired,
+    container_user: "orbit",
+    container_home: "/home/orbit",
+    container_shell: "/bin/bash",
+  };
+  const input = {
+    id,
+    user: schedule.user,
+    group: schedule.group,
+    home: schedule.home,
+    working_directory: schedule.source_directory,
+    shell: schedule.shell,
+    login_shell: schedule.login_shell,
+    command_hash: schedule.command_hash,
+    calendar: schedule.calendar,
+    timeout_seconds: schedule.timeout_seconds,
+    desired,
+  };
+  const canonical = renderScheduleUnits(input);
+  const legacy = legacyScheduleUnits(input);
+  const service = kind === "current" ? canonical.service : kind === "agent" ? legacy.agentService : legacy.directService;
+  const systemd = `${f.folder}/host/systemd`;
+  const scripts = `${f.folder}/host/schedules`;
+  Deno.mkdirSync(systemd, { recursive: true });
+  Deno.mkdirSync(scripts, { recursive: true });
+  Deno.writeTextFileSync(`${systemd}/${schedule.service}`, service);
+  Deno.writeTextFileSync(`${systemd}/${schedule.timer}`, canonical.timer);
+  const script = `${legacy.script_prefix}${command}\n`;
+  schedule.source_script_hash = digest(script);
+  Deno.writeTextFileSync(`${scripts}/${id}.sh`, script);
+  Deno.writeTextFileSync(`${scripts}/${id}.complete`, legacy.callback);
+  Deno.writeTextFileSync(`${scripts}/${unrelated}.sh`, "unrelated script\n");
+  for (const extension of ["service", "timer"]) Deno.writeTextFileSync(`${systemd}/${unrelated}.${extension}`, `unrelated ${extension}\n`);
+  const states: Record<string, { state: string; enabled: boolean; status?: Record<string, string> }> = {
+    [schedule.service]: { state: "stopped", enabled: false },
+    [schedule.timer]: { state: desired === "enabled" ? "started" : "stopped", enabled: desired === "enabled" },
+    [`${unrelated}.timer`]: { state: "started", enabled: true },
+  };
+  Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify(states));
+  f.migrate.schedules.push(schedule);
+  f.write();
+  return {
+    schedule,
+    service,
+    timer: canonical.timer,
+    servicePath: `${systemd}/${schedule.service}`,
+    timerPath: `${systemd}/${schedule.timer}`,
+    scriptPath: `${scripts}/${id}.sh`,
+    callbackPath: `${scripts}/${id}.complete`,
+    script,
+    callback: legacy.callback,
+    states,
+    writeStates: () => Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify(states)),
+    host: () => JSON.parse(Deno.readTextFileSync(`${f.folder}/host-processes.json`)),
+    assertUnrelated() {
+      assertEquals(Deno.readTextFileSync(`${systemd}/${unrelated}.service`), "unrelated service\n");
+      assertEquals(Deno.readTextFileSync(`${systemd}/${unrelated}.timer`), "unrelated timer\n");
+      assertEquals(Deno.readTextFileSync(`${scripts}/${unrelated}.sh`), "unrelated script\n");
+      assertEquals(this.host()[`${unrelated}.timer`], { state: "started", enabled: true });
+    },
+  };
+}
+
+for (const [desired, kind] of [["enabled", "current"], ["disabled", "agent"], ["enabled", "direct"]] as const) {
+  Deno.test({
+    name: `Schedule migration repoints a ${kind} timer with ${desired} intent only after successful cutover`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        const schedules = migrationSchedules(f, desired, kind);
+        f.build();
+        assertEquals(schedules.host()[schedules.schedule.timer], { state: "stopped", enabled: false });
+        assertEquals(Deno.readTextFileSync(schedules.servicePath), schedules.service);
+        assertEquals(Deno.readTextFileSync(schedules.timerPath), schedules.timer);
+        assertEquals(Deno.readTextFileSync(schedules.scriptPath), schedules.script);
+        assertEquals(Deno.readTextFileSync(schedules.callbackPath), schedules.callback);
+        assert(exists(f.checkout));
+        const retired = f.run("retire");
+        assert(retired.ok, retired.output);
+        const service = Deno.readTextFileSync(schedules.servicePath);
+        assert(service !== schedules.service);
+        assert(!service.includes(f.checkout));
+        assert(service.includes("WorkingDirectory=/\n"));
+        assert(service.includes(`/schedules/${schedules.schedule.id}/run`));
+        assert(service.includes(schedules.schedule.mapped_command_hash));
+        assertEquals(Deno.readTextFileSync(schedules.timerPath), schedules.timer);
+        assert(!exists(schedules.scriptPath));
+        assert(!exists(schedules.callbackPath));
+        assertEquals(schedules.host()[schedules.schedule.timer], { state: desired === "enabled" ? "started" : "stopped", enabled: desired === "enabled" });
+        assert(!exists(f.checkout));
+        schedules.assertUnrelated();
+      } finally { f.cleanup(); }
+    },
+  });
+}
+
+for (const desired of ["enabled", "disabled"] as const) {
+  Deno.test({
+    name: `Schedule rollback restores exact observed timer activation when its ${desired} intent differs`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        const schedules = migrationSchedules(f, desired, "agent");
+        // Actual activation can differ from the recorded intent; rollback restores what was running.
+        schedules.states[schedules.schedule.timer] = { state: desired === "enabled" ? "started" : "stopped", enabled: desired !== "enabled" };
+        schedules.writeStates();
+        const before = schedules.host();
+        f.build();
+        assertEquals(schedules.host()[schedules.schedule.timer], { state: "stopped", enabled: false });
+        const restored = f.run("restore");
+        assert(restored.ok, restored.output);
+        assertEquals(f.state().containers, {});
+        assertEquals(schedules.host(), before);
+        assertEquals(Deno.readTextFileSync(schedules.servicePath), schedules.service);
+        assertEquals(Deno.readTextFileSync(schedules.timerPath), schedules.timer);
+        assertEquals(Deno.readTextFileSync(schedules.scriptPath), schedules.script);
+        assertEquals(Deno.readTextFileSync(schedules.callbackPath), schedules.callback);
+        assert(exists(f.checkout));
+        assert(exists(f.migrate.awake.path));
+        schedules.assertUnrelated();
+      } finally { f.cleanup(); }
+    },
+  });
+}
+
+Deno.test({
+  name: "Schedule cutover resumes the timer even when a late Git retirement check refuses",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const schedules = migrationSchedules(f, "enabled", "direct");
+      f.build();
+      Deno.writeTextFileSync(`${f.checkout}/index.php`, "late edit kept for recovery\n");
+      const retired = f.run("retire");
+      assert(!retired.ok, retired.output);
+      assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
+      assertEquals(f.result().preflight_refused, false);
+      assertEquals(f.state().containers["instance-7"].status, "Running");
+      assertEquals(schedules.host()[schedules.schedule.timer], { state: "started", enabled: true });
+      const service = Deno.readTextFileSync(schedules.servicePath);
+      assert(service.includes("WorkingDirectory=/\n"));
+      assert(!service.includes(f.checkout));
+      assertEquals(Deno.readTextFileSync(schedules.timerPath), schedules.timer);
+      assert(!exists(schedules.scriptPath));
+      assert(!exists(schedules.callbackPath));
+      assertEquals(Deno.readTextFileSync(`${f.checkout}/index.php`), "late edit kept for recovery\n");
+      assert(exists(f.migrate.awake.path));
+      schedules.assertUnrelated();
+    } finally { f.cleanup(); }
+  },
+});
+
+for (const damaged of ["missing-service", "missing-timer", "foreign-service", "changed-calendar", "masked-timer", "activating-service", "service-dropin", "timer-dropin", "foreign-script", "foreign-callback", "legacy-script-drift", "legacy-context-drift", "legacy-missing-script", "legacy-callback-drift"] as const) {
+  Deno.test({
+    name: `Schedule preflight refuses ${damaged} before stopping any timer or Process`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        const schedules = migrationSchedules(f, "enabled", damaged === "legacy-callback-drift" ? "direct" : damaged.startsWith("legacy-") ? "agent" : "current");
+        if (damaged === "missing-service") Deno.removeSync(schedules.servicePath);
+        else if (damaged === "missing-timer") Deno.removeSync(schedules.timerPath);
+        else if (damaged === "foreign-service") Deno.writeTextFileSync(schedules.servicePath, "[Service]\nExecStart=/bin/true\n");
+        else if (damaged === "foreign-script") Deno.writeTextFileSync(schedules.scriptPath, "# foreign script\n");
+        else if (damaged === "foreign-callback") Deno.writeTextFileSync(schedules.callbackPath, "# foreign callback\n");
+        else if (damaged === "legacy-script-drift") Deno.writeTextFileSync(schedules.scriptPath, schedules.script.replace("php artisan schedule:run", "/outside/custom-command"));
+        else if (damaged === "legacy-context-drift") Deno.writeTextFileSync(schedules.scriptPath, schedules.script.replace(f.checkout, "/outside/workspace"));
+        else if (damaged === "legacy-missing-script") Deno.removeSync(schedules.scriptPath);
+        else if (damaged === "legacy-callback-drift") Deno.writeTextFileSync(schedules.callbackPath, schedules.callback.replace("status=error", "status=success"));
+        else if (damaged === "changed-calendar") Deno.writeTextFileSync(schedules.timerPath, schedules.timer.replace(schedules.schedule.calendar, "daily"));
+        else if (damaged === "masked-timer") schedules.states[schedules.schedule.timer].status = { UnitFileState: "masked" };
+        else if (damaged === "activating-service") schedules.states[schedules.schedule.service].status = { ActiveState: "activating" };
+        else schedules.states[damaged === "service-dropin" ? schedules.schedule.service : schedules.schedule.timer].status = { DropInPaths: "/etc/systemd/system/example.d/override.conf" };
+        schedules.writeStates();
+        const before = schedules.host();
+        const quiesce = f.run("quiesce");
+        assert(!quiesce.ok, quiesce.output);
+        const receipt = f.result();
+        assertEquals(receipt.error_code, "schedule.container_artifact_unsupported");
+        assert(receipt.error_message.includes(schedules.schedule.id), receipt.error_message);
+        assert(receipt.error_message.includes(schedules.schedule.name), receipt.error_message);
+        assertEquals(receipt.preflight_refused, true);
+        assert(exists(f.migrate.awake.path));
+        assertEquals(f.state().containers ?? {}, {});
+        assertEquals(schedules.host(), before);
+        const restored = f.run("restore");
+        assert(restored.ok, restored.output);
+        assertEquals(schedules.host(), before);
+        schedules.assertUnrelated();
+      } finally { f.cleanup(); }
+    },
+  });
+}
+
+Deno.test({
+  name: "Schedule preflight checks every Schedule before stopping the first timer",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const first = migrationSchedules(f, "enabled");
+      const id = "33333333-3333-4333-8333-000000000003";
+      const second = { ...first.schedule, id, name: "second-scheduler", service: `orbit-schedule-${id}.service`, timer: `orbit-schedule-${id}.timer` };
+      const systemd = `${f.folder}/host/systemd`;
+      Deno.writeTextFileSync(`${systemd}/${second.service}`, "[Service]\nExecStart=/bin/true\n");
+      Deno.writeTextFileSync(`${systemd}/${second.timer}`, first.timer.replaceAll(first.schedule.id, id));
+      first.states[second.service] = { state: "stopped", enabled: false };
+      first.states[second.timer] = { state: "started", enabled: true };
+      first.writeStates();
+      f.migrate.schedules.push(second);
+      f.write();
+      const before = first.host();
+      const refused = f.run("quiesce");
+      assert(!refused.ok, refused.output);
+      assertEquals(f.result().error_code, "schedule.container_artifact_unsupported");
+      assert(f.result().error_message.includes(second.id));
+      assert(f.result().error_message.includes(second.name));
+      assertEquals(first.host(), before);
+      assertEquals(Deno.readTextFileSync(first.servicePath), first.service);
+      assert(exists(f.migrate.awake.path));
+      assert(!exists(`${f.folder}/run/schedule-timers.json`));
+    } finally { f.cleanup(); }
+  },
+});
+
+for (const pathKind of ["absolute-command-symlink", "relative-command-symlink", "directory-symlink", "missing-directory", "internal-command-symlink", "internal-directory-symlink"] as const) {
+  Deno.test({
+    name: `Schedule preflight refuses a ${pathKind} that cannot move before downtime`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        // A retained default skips Git retirement, so this exercises the Schedule path preflight itself.
+        f.migrate.retire = [];
+        const external = `${f.folder}/external`;
+        Deno.mkdirSync(external);
+        Deno.writeTextFileSync(`${external}/command.php`, "<?php // external workspace\n");
+        const commandLink = `${f.checkout}/linked.php`;
+        Deno.writeTextFileSync(`${f.checkout}/command.php`, "<?php // workspace command\n");
+        Deno.symlinkSync(pathKind === "internal-command-symlink" ? `${f.checkout}/command.php` : `${external}/command.php`, commandLink);
+        const directoryLink = `${f.checkout}/linked-directory`;
+        Deno.mkdirSync(`${f.checkout}/jobs`);
+        Deno.symlinkSync(pathKind === "internal-directory-symlink" ? `${f.checkout}/jobs` : external, directoryLink);
+        const sourceDirectory = pathKind.endsWith("directory-symlink") ? directoryLink : pathKind === "missing-directory" ? `${f.checkout}/missing-directory` : f.checkout;
+        const command = (pathKind === "absolute-command-symlink" || pathKind === "internal-command-symlink") ? `php ${commandLink}` : pathKind === "relative-command-symlink" ? "php linked.php" : "php artisan schedule:run";
+        const schedules = migrationSchedules(f, "enabled", "agent", command, sourceDirectory);
+        if (pathKind.endsWith("command-symlink")) schedules.schedule.source_command_paths = [commandLink];
+        f.write();
+        const before = schedules.host();
+        const refused = f.run("quiesce");
+        assert(!refused.ok, refused.output);
+        assertEquals(f.result().error_code, pathKind.endsWith("command-symlink") ? "schedule.container_command_unsupported" : "schedule.container_path_unsupported");
+        assert(f.result().error_message.includes(schedules.schedule.id), f.result().error_message);
+        assert(f.result().error_message.includes(schedules.schedule.name), f.result().error_message);
+        assertEquals(f.result().preflight_refused, true);
+        assertEquals(schedules.host(), before);
+        assertEquals(Deno.readTextFileSync(schedules.servicePath), schedules.service);
+        assertEquals(Deno.readTextFileSync(schedules.scriptPath), schedules.script);
+        assert(exists(f.migrate.awake.path));
+        assertEquals(f.state().containers ?? {}, {});
+        const restored = f.run("restore");
+        assert(restored.ok, restored.output);
+        assertEquals(schedules.host(), before);
+        schedules.assertUnrelated();
+      } finally { f.cleanup(); }
+    },
+  });
+}
+
+Deno.test({
+  name: "Schedule rollback restores all timers after only some source timers stopped",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const first = migrationSchedules(f, "enabled");
+      const id = "44444444-4444-4444-8444-000000000004";
+      const second = { ...first.schedule, id, name: "second-scheduler", service: `orbit-schedule-${id}.service`, timer: `orbit-schedule-${id}.timer` };
+      const systemd = `${f.folder}/host/systemd`;
+      Deno.writeTextFileSync(`${systemd}/${second.service}`, first.service.replaceAll(first.schedule.id, id));
+      Deno.writeTextFileSync(`${systemd}/${second.timer}`, first.timer.replaceAll(first.schedule.id, id));
+      first.states[second.service] = { state: "stopped", enabled: false };
+      first.states[second.timer] = { state: "started", enabled: true };
+      first.writeStates();
+      f.migrate.schedules.push(second);
+      f.write();
+      const before = first.host();
+      const failed = f.run("quiesce", false, undefined, { ORBIT_FIXTURE_FAIL_SYSTEMD_STOP: second.timer });
+      assert(!failed.ok, failed.output);
+      assertEquals(f.result().error_code, "instance.migrate_quiesce_failed");
+      assertEquals(first.host()[first.schedule.timer], { state: "stopped", enabled: false });
+      assertEquals(first.host()[second.timer], before[second.timer]);
+      const restored = f.run("restore");
+      assert(restored.ok, restored.output);
+      assertEquals(first.host(), before);
+      assertEquals(Deno.readTextFileSync(first.servicePath), first.service);
+      assertEquals(Deno.readTextFileSync(first.timerPath), first.timer);
+      assertEquals(Deno.readTextFileSync(`${systemd}/${second.service}`), first.service.replaceAll(first.schedule.id, id));
+      assert(exists(f.checkout));
+      assert(exists(f.migrate.awake.path));
+      first.assertUnrelated();
+    } finally { f.cleanup(); }
+  },
+});
 
 for (const presetDesired of ["running", "stopped"] as const) {
   Deno.test({

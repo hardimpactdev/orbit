@@ -1,0 +1,82 @@
+---
+# A Node timer remains the Schedule's Gateway trigger. Its command enters the container through task-command-run.
+# Capture ALL timers before stopping ANY writer. Rollback restores observed activation, not just desired intent.
+- name: Check and capture every Schedule before downtime
+  when: phase == 'quiesce' and schedule_phase == 'check' and migrate.schedules | default([]) | length > 0
+  block:
+    - name: Start the Schedule activation snapshot
+      ansible.builtin.set_fact:
+        schedule_snapshots: []
+    - name: Check the registered Schedule
+      ansible.builtin.include_tasks:
+        file: instance-migrate-schedule-check.yml
+        apply: { tags: [always] }
+      loop: "{{ migrate.schedules }}"
+      loop_control: { loop_var: schedule, label: "{{ schedule.id }}:{{ schedule.name }}" }
+    - name: Save activation states before stopping any timer
+      ansible.builtin.copy:
+        content: "{{ schedule_snapshots | to_json }}"
+        dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/schedule-timers.json"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+- name: Stop the source Schedules only after all checkout preflights passed
+  when: phase == 'quiesce' and schedule_phase == 'stop'
+  block:
+    - name: Stop and disable the source timers
+      ansible.builtin.systemd_service: { name: "{{ item.timer }}", state: stopped, enabled: false }
+      loop: "{{ migrate.schedules }}"
+      loop_control: { label: "{{ item.id }}:{{ item.name }}" }
+    - name: Stop active Schedule services before copying
+      ansible.builtin.systemd_service: { name: "{{ item.service }}", state: stopped }
+      loop: "{{ migrate.schedules }}"
+      loop_control: { label: "{{ item.id }}:{{ item.name }}" }
+
+# This include runs only after discard has removed the failed container. No unit file was changed before cutover.
+- name: Restore the source timers' captured activation states
+  when: phase == 'restore'
+  ansible.builtin.systemd_service:
+    name: "{{ item.schedule.timer }}"
+    enabled: "{{ item.enabled }}"
+    state: "{{ 'started' if item.active else 'stopped' }}"
+  loop: >-
+    {{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/schedule-timers.json', errors='ignore')
+       | default('[]', true) | from_json }}
+  loop_control: { label: "{{ item.schedule.id }}:{{ item.schedule.name }}" }
+
+# The container is now the Instance. Replace only these services; keep timer UUIDs/calendar and the host journal.
+- name: Replace the moved Schedule services
+  when: phase == 'retire'
+  ansible.builtin.copy:
+    content: "{{ (lookup('ansible.builtin.template', '../templates/instance-migrate-schedule.j2') | from_json).service }}"
+    dest: "/etc/systemd/system/{{ schedule.service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ migrate.schedules | default([]) }}"
+  loop_control: { loop_var: schedule, label: "{{ schedule.id }}:{{ schedule.name }}" }
+  notify: Reload the retired Process units
+
+- name: Remove only the moved Schedules' obsolete command and callback files
+  when: phase == 'retire'
+  ansible.builtin.file: { path: "/etc/orbit/schedules/{{ item.0.id }}{{ item.1 }}", state: absent }
+  loop: "{{ (migrate.schedules | default([])) | product(['.sh', '.complete']) | list }}"
+  loop_control: { label: "{{ item.0.id }}{{ item.1 }}" }
+
+- name: Load the replacement Schedule services
+  when: phase == 'retire' and migrate.schedules | default([]) | length > 0
+  ansible.builtin.meta: flush_handlers
+
+- name: Resume the moved Schedule timers
+  when: phase == 'retire'
+  ansible.builtin.systemd_service:
+    name: "{{ item.timer }}"
+    state: "{{ 'started' if item.desired == 'enabled' else 'stopped' }}"
+    enabled: "{{ item.desired == 'enabled' }}"
+  loop: "{{ migrate.schedules | default([]) }}"
+  loop_control: { label: "{{ item.id }}:{{ item.name }}" }

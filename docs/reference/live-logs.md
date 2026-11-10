@@ -18,6 +18,8 @@ A live log stream shows new lines of one Instance or Process log as they are wri
 
 The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance/logs), [`orbit process:logs`](/cli/process/logs) use live streams. One-shot reads, `GET /api/v1/instances/{instance}/logs`, `GET /api/v1/processes/{process}/logs` and `GET /api/v1/schedules/{schedule}/logs`, open a tail that closes after its first lines.
 
+A [migrated Schedule](/reference/schedules#checkout-migration) supports a bounded one-shot read of its retained Node service entries and later command entries. Its live stream refuses with `schedule.target_unsupported`.
+
 A [container Process](/reference/development-containers#processes) supports a one-shot journal read. Live streams and `process:logs --follow` refuse it with `process.target_unsupported`.
 
 ## How a stream works

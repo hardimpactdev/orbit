@@ -5,11 +5,21 @@ sequenceDiagram
   autonumber
   participant CLI as CLI / MCP
   participant GW as Gateway
+  participant SW as Swamp
+  participant N as Node
   alt --follow
     Note over CLI,GW: Refuse Schedule follow<br/>Needs fixed Agent release
     GW-->>CLI: Follow unavailable
   else bounded snapshot
     CLI->>GW: schedule:logs <schedule>
-    Note over GW: Read pinned Agent journal<br/>Redact stored values
+    alt migrated Instance Schedule
+      GW->>SW: Read the Schedule journal<br/>shared runtime inspection
+      SW->>N: Read Schedule journal<br/>Ansible · schedule-logs
+      N-->>SW: Bounded journal read
+      SW-->>GW: Private vault reference
+      Note over GW: Read private output<br/>Redact stored values
+    else other Schedule
+      Note over GW: Read pinned Agent journal<br/>Redact stored values
+    end
     GW-->>CLI: Snapshot and request ID
   end

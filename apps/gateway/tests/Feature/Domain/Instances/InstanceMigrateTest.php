@@ -9,6 +9,9 @@ use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\ReadOperationAction;
 use App\Data\Instances\InstanceData;
 use App\Data\Operations\OperationData;
+use App\Actions\Schedules\CreateScheduleAction;
+use App\Actions\Schedules\ShowScheduleLogsAction;
+use App\Data\Schedules\AddScheduleData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
@@ -27,6 +30,7 @@ use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Logs\LogStreamTargetResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\RoutePublicationHolds;
@@ -36,6 +40,11 @@ use App\Domain\Processes\VpDevPreset;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Schedules\ScheduleControlProjection;
+use App\Domain\Schedules\ScheduleOperationAdmission;
+use App\Domain\Schedules\ScheduleRuntimeAccount;
+use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
+use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
@@ -59,6 +68,7 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\Schedule;
 use App\Support\ValidatedData;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -236,7 +246,7 @@ describe('the admission of a move', function (): void {
                 'awake' => ['directory' => '/dev/shm/orbit/hibernation', 'path' => '/dev/shm/orbit/hibernation/app-instance-'.$default->id.'.awake'],
                 'environment' => ['targets' => [], 'node_addresses' => ['10.44.0.7', '10.44.0.7'],
                     'proxy_policy' => ['private_v4' => InstanceEgress::PrivateV4, 'private_domains' => ['orbit']]],
-                'databases' => [], 'processes' => [], 'firewall_prefix' => 'orbit:instance-'.$default->id.'-',
+                'databases' => [], 'processes' => [], 'schedules' => [], 'firewall_prefix' => 'orbit:instance-'.$default->id.'-',
                 'retire' => [['path' => '/home/orbit/apps/tool/default', 'mirror' => '/var/lib/orbit/instance-repositories/'.$default->id.'.git']]])
             ->and($operation->node_id)->toBe($node->id);
     });
@@ -1843,4 +1853,364 @@ it('returns the stored overdue migrate when the shared read allowance is empty',
     expect($stored->getAttributes())->toBe($before)
         ->and($operation->refresh()->getAttributes())->toBe($before)
         ->and($instance->runtime()->exists())->toBeTrue();
+/** @param array<string,mixed> $attributes */
+function migrationSchedule(Instance $instance, array $attributes = [], ?ScheduleRuntimeAccount $account = null): Schedule
+{
+    $instance->project->update(['php_version' => '8.5']);
+    app()->instance(ScheduleRuntimeAccountResolver::class, new class($account) implements ScheduleRuntimeAccountResolver
+    {
+        public function __construct(private ?ScheduleRuntimeAccount $account) {}
+
+        public function resolve(Node $node, string $user): ScheduleRuntimeAccount
+        {
+            return $this->account ?? new ScheduleRuntimeAccount($user, $user, '/home/'.$user, '/bin/bash');
+        }
+    });
+
+    return Schedule::query()->create([
+        'target_type' => 'instance', 'target_id' => $instance->id, 'host_node_id' => $instance->node_id,
+        'name' => 'nightly', 'calendar' => '*-*-* 03:00:00', 'command' => 'php artisan schedule:run', 'timeout_seconds' => 900,
+        'desired_timer_state' => 'enabled', 'status' => 'active', 'trigger' => 'node',
+        'last_run_at' => '2026-11-08 03:00:00', 'last_run_status' => 'success', ...$attributes,
+    ]);
+}
+
+describe('migrate registered Schedule timers', function (): void {
+    beforeEach(function (): void {
+        $this->freezeTime();
+    });
+    it('keeps enabled and paused Schedule identity, calendar, timeout and history at cutover', function (string $desired): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance, ['command' => 'php '.$instance->checkout_path.'/artisan schedule:run', 'desired_timer_state' => $desired]);
+        $before = $schedule->refresh()->getAttributes();
+
+        $operation = migrateStart($instance);
+        $plan = $operation->input['migrate']['schedules'][0];
+
+        expect($plan)->toMatchArray(['id' => $schedule->id, 'name' => 'nightly', 'source_directory' => $instance->checkout_path,
+            'directory' => '/srv/workspace', 'user' => 'orbit', 'group' => 'orbit', 'home' => '/home/orbit', 'shell' => '/bin/bash',
+            'container_user' => 'orbit', 'calendar' => '*-*-* 03:00:00', 'timeout_seconds' => 900, 'desired' => $desired,
+            'mapped_command_hash' => hash('sha256', 'php /srv/workspace/artisan schedule:run')]);
+        expect($plan['source_command_paths'])->toBe([$instance->checkout_path.'/artisan']);
+        $script = "# X-Orbit-Schedule-ID={$schedule->id}\n# X-Orbit-Execution-Context=".json_encode([
+            'user' => 'orbit', 'group' => 'orbit', 'home' => '/home/orbit', 'working_directory' => $instance->checkout_path,
+            'shell' => '/bin/bash', 'login_shell' => true,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n".$schedule->command."\n";
+        expect($plan['source_script_hash'])->toBe(hash('sha256', $script));
+        expect(json_encode($operation->input, JSON_THROW_ON_ERROR))->not->toContain('php '.$instance->checkout_path.'/artisan');
+        expect($schedule->refresh()->command)->toBe($before['command']);
+
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+
+        expect($schedule->refresh()->command)->toBe('php /srv/workspace/artisan schedule:run');
+        expect(array_diff_assoc($schedule->getAttributes(), $before))->toBe(['command' => 'php /srv/workspace/artisan schedule:run']);
+    })->with(['enabled', 'disabled']);
+
+    it('keeps source Schedule intent after rollback', function (string $desired): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance, ['command' => 'php '.$instance->checkout_path.'/artisan schedule:run', 'desired_timer_state' => $desired]);
+        $before = $schedule->refresh()->getAttributes();
+        $operation = migrateStart($instance);
+
+        migrateEnd($operation, 'failed', ['ready' => false, 'moved' => false, 'restored' => true,
+            'failed_step' => 'files', 'error_code' => 'instance.migrate_files_failed']);
+
+        expect($schedule->refresh()->getAttributes())->toBe($before);
+        expect($instance->runtime()->exists())->toBeFalse();
+    })->with(['enabled', 'disabled']);
+
+    it('refuses unsupported Schedule intent before reserving a runtime', function (string $change, string $code, string $reason): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $account = match ($change) {
+            'shell' => new ScheduleRuntimeAccount('orbit', 'orbit', '/home/orbit', '/bin/zsh'),
+            'group' => new ScheduleRuntimeAccount('orbit', 'work', '/home/orbit', '/bin/bash'),
+            'home' => new ScheduleRuntimeAccount('orbit', 'orbit', '/opt/orbit', '/bin/bash'),
+            default => null,
+        };
+        $schedule = migrationSchedule($instance, [], $account);
+        match ($change) {
+            'native' => $schedule->update(['trigger' => 'swamp']),
+            'failed' => $schedule->update(['status' => 'failed']),
+            'removing' => $schedule->update(['status' => 'removing']),
+            'other Node' => $schedule->update(['host_node_id' => containerDefaultNode('other', '10.44.0.8')->id]),
+            'user' => $instance->node->update(['user' => 'nick']),
+            'working directory' => $instance->update(['source_is_laravel' => true, 'root' => '../external/public']),
+            'external command' => $schedule->update(['command' => '/opt/private/run-scheduler']),
+            'sibling command' => $schedule->update(['command' => 'php '.$instance->checkout_path.'-other/artisan schedule:run']),
+            'traversal command' => $schedule->update(['command' => 'php '.$instance->checkout_path.'/../other/artisan schedule:run']),
+            'relative traversal' => $schedule->update(['command' => '../private/run-scheduler']),
+            'nested relative traversal' => $schedule->update(['command' => 'php scripts/../../private/run.php']),
+            'filesystem root' => $schedule->update(['command' => 'cd /; php script.php']),
+            'dynamic command' => $schedule->update(['command' => 'php "$APP_ROOT/artisan" schedule:run']),
+            'unknown executable' => $schedule->update(['command' => 'my-host-only-command']),
+            'compound command' => $schedule->update(['command' => 'true && php artisan schedule:run']),
+            'pipeline' => $schedule->update(['command' => 'php artisan schedule:run | echo done']),
+            'shell invocation' => $schedule->update(['command' => 'bash -c "php artisan schedule:run"']),
+            'inline evaluation' => $schedule->update(['command' => 'php -r "exit(0)"']),
+            'inline node' => $schedule->update(['command' => 'node --eval=process.exit']),
+            'external flag' => $schedule->update(['command' => 'php artisan --file=/etc/private/config']),
+            'missing PHP' => $instance->project->update(['php_version' => null]),
+            'unavailable PHP' => $instance->project->update(['php_version' => '99.0']),
+            'literal path list' => $schedule->update(['command' => 'php artisan --config='.$instance->checkout_path.'/config:/etc/private']),
+            'inline PHP long' => $schedule->update(['command' => 'php --run=die']),
+            'shell', 'group', 'home' => null,
+        };
+
+        try {
+            migrateStart($instance);
+            $this->fail('The unsupported Schedule was admitted.');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe($code);
+            expect($exception->getMessage())->toContain($schedule->id, $schedule->name, $reason);
+        }
+
+        expect($instance->runtime()->exists())->toBeFalse();
+        expect(Operation::query()->count())->toBe(0);
+    })->with([
+        'native trigger' => ['native', 'schedule.container_trigger_unsupported', 'native workflow'],
+        'failed Schedule' => ['failed', 'schedule.container_state_unsupported', 'not active'],
+        'removing Schedule' => ['removing', 'schedule.container_state_unsupported', 'not active'],
+        'different host Node' => ['other Node', 'schedule.container_state_unsupported', 'this Node'],
+        'missing container user' => ['user', 'schedule.container_account_unsupported', 'user'],
+        'different group' => ['group', 'schedule.container_account_unsupported', 'group'],
+        'different home' => ['home', 'schedule.container_account_unsupported', 'home'],
+        'different shell' => ['shell', 'schedule.container_shell_unsupported', 'shell'],
+        'external working directory' => ['working directory', 'schedule.container_path_unsupported', 'working directory'],
+        'external executable' => ['external command', 'schedule.container_command_unsupported', 'absolute path'],
+        'checkout prefix sibling' => ['sibling command', 'schedule.container_command_unsupported', 'absolute path'],
+        'checkout traversal' => ['traversal command', 'schedule.container_command_unsupported', 'dot-segment'],
+        'relative traversal' => ['relative traversal', 'schedule.container_command_unsupported', 'dot-segment'],
+        'nested traversal' => ['nested relative traversal', 'schedule.container_command_unsupported', 'dot-segment'],
+        'filesystem root' => ['filesystem root', 'schedule.container_command_unsupported', 'absolute path'],
+        'shell expansion' => ['dynamic command', 'schedule.container_command_unsupported', 'shell expansion'],
+        'unknown executable' => ['unknown executable', 'schedule.container_command_unsupported', 'bare executable'],
+        'compound invocation' => ['compound command', 'schedule.container_command_unsupported', 'one literal invocation'],
+        'pipeline' => ['pipeline', 'schedule.container_command_unsupported', 'one literal invocation'],
+        'shell invocation' => ['shell invocation', 'schedule.container_command_unsupported', 'bare executable'],
+        'inline evaluation' => ['inline evaluation', 'schedule.container_command_unsupported', 'one literal invocation'],
+        'inline node evaluation' => ['inline node', 'schedule.container_command_unsupported', 'inline evaluation'],
+        'external flag path' => ['external flag', 'schedule.container_command_unsupported', 'absolute path'],
+        'missing selected PHP' => ['missing PHP', 'schedule.container_command_unsupported', 'selected PHP'],
+        'unavailable selected PHP' => ['unavailable PHP', 'schedule.container_command_unsupported', 'selected PHP'],
+        'literal path list' => ['literal path list', 'schedule.container_command_unsupported', 'one literal workspace path'],
+        'inline PHP long option' => ['inline PHP long', 'schedule.container_command_unsupported', 'inline evaluation'],
+    ]);
+
+    it('carries literal workspace commands, quoted arguments, flags and null redirects', function (string $form): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $command = match ($form) {
+            'absolute' => $instance->checkout_path.'/bin/scheduler "nightly report" --config='.$instance->checkout_path.'/config/jobs.json > /dev/null 2>&1',
+            'relative' => 'bin/scheduler worker.php --config=config/jobs.json >> /dev/null',
+        };
+        migrationSchedule($instance, ['command' => $command]);
+        $plan = migrateStart($instance)->input['migrate']['schedules'][0];
+
+        expect($plan['source_command_paths'])->toBe(match ($form) {
+            'absolute' => [$instance->checkout_path.'/bin/scheduler', $instance->checkout_path.'/config/jobs.json'],
+            'relative' => [$instance->checkout_path.'/bin/scheduler', $instance->checkout_path.'/worker.php', $instance->checkout_path.'/config/jobs.json'],
+        });
+        expect($plan['mapped_command_hash'])->toBe(hash('sha256', str_replace($instance->checkout_path, '/srv/workspace', $command)));
+    })->with(['absolute', 'relative']);
+
+    it('refuses an unfinished Schedule run before downtime', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance);
+        Operation::query()->create(['kind' => 'schedule.run', 'target_type' => 'instance_schedules', 'target_id' => $instance->id,
+            'node_id' => $instance->node_id, 'status' => 'running', 'input' => ['id' => $schedule->id]]);
+
+        expect(containerRefusal(fn () => migrateStart($instance)))->toBe('schedule.container_state_unsupported');
+        expect($instance->runtime()->exists())->toBeFalse();
+        expect(Operation::query()->where('kind', 'instance.migrate')->exists())->toBeFalse();
+    });
+
+    it('refuses Schedule changes while migration owns the Instance', function (string $verb): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance);
+        migrateStart($instance);
+
+        expect(containerRefusal(fn () => app(ScheduleOperationAdmission::class)->inputFor($schedule, $verb)))->toBe('instance.lifecycle_busy');
+    })->with(['run', 'enable', 'destroy', 'create']);
+
+    it('refuses a new Schedule while migration owns its Instance', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        migrateStart($instance);
+
+        expect(containerRefusal(fn () => app(CreateScheduleAction::class)->admit(
+            new AddScheduleData(ScheduleTargetType::Instance, $instance->id,
+                'new-scheduler', '* * * * *', 'php artisan schedule:run'),
+        )))->toBe('instance.lifecycle_busy');
+        expect(Schedule::query()->exists())->toBeFalse();
+        expect(Operation::query()->where('kind', 'schedule.create')->exists())->toBeFalse();
+    });
+
+    it('names the Schedule when its source account is unavailable', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance);
+        app()->instance(ScheduleRuntimeAccountResolver::class, new class implements ScheduleRuntimeAccountResolver
+        {
+            public function resolve(Node $node, string $user): ScheduleRuntimeAccount
+            {
+                throw new ResourceOperationException('schedule.target_unavailable', 'No current account fact.');
+            }
+        });
+
+        try {
+            migrateStart($instance);
+            $this->fail('The unavailable account was admitted.');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode)->toBe('schedule.container_account_unsupported');
+            expect($error->getMessage())->toContain($schedule->id, $schedule->name, 'account is unavailable');
+        }
+        expect($instance->runtime()->exists())->toBeFalse();
+    });
+
+    it('runs a moved Schedule in its container while its host timer and journal retain their identity', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['source_is_laravel' => true, 'root' => 'apps/site/public']);
+        $schedule = migrationSchedule($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $instance->refresh()->update(['provisioning_step' => 'active']);
+        app()->instance(ScheduleRuntimeAccountResolver::class, new class implements ScheduleRuntimeAccountResolver
+        {
+            public function resolve(Node $node, string $user): ScheduleRuntimeAccount
+            {
+                throw new LogicException('A container Schedule must not read a host account fact.');
+            }
+        });
+
+        $admission = app(ScheduleOperationAdmission::class);
+        $input = $admission->inputFor($schedule->refresh(), 'run');
+        $destroy = $admission->inputFor($schedule, 'destroy');
+        $operation = new Operation;
+        $operation->forceFill(['id' => 123, 'kind' => 'schedule.run', 'status' => 'running', 'target_type' => 'instance_schedules',
+            'target_id' => $instance->id, 'node_id' => $instance->node_id, 'input' => $input]);
+        $native = app(ScheduleControlProjection::class)->input($operation);
+
+        expect($input)->toMatchArray(['working_directory' => '/srv/workspace/apps/site', 'user' => 'orbit', 'shell' => '/bin/bash',
+            'home' => '/home/orbit', 'group' => 'orbit', 'container' => ['project' => 'orbit-instances', 'name' => 'instance-'.$instance->id]]);
+        expect($destroy['working_directory'])->toBe('/');
+        expect($native['intent']['container'])->toBe($input['container']);
+        expect(containerRefusal(fn () => app(LogStreamTargetResolver::class)->forSchedule($schedule)))->toBe('schedule.target_unsupported');
+    });
+    it('records later runs on the same Schedule after migration', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance, ['desired_timer_state' => 'disabled']);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $instance->refresh()->update(['provisioning_step' => 'active']);
+        $input = app(ScheduleOperationAdmission::class)->inputFor($schedule->refresh(), 'run');
+        $operation = Operation::query()->create(['kind' => 'schedule.run', 'target_type' => 'instance_schedules', 'target_id' => $instance->id,
+            'node_id' => $instance->node_id, 'status' => 'running', 'input' => $input, 'state' => ['swamp_run_id' => 'schedule-run-1']]);
+
+        app(ScheduleControlProjection::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'schedule-run-1',
+            'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String()]);
+
+        expect($schedule->refresh()->last_run_status->value)->toBe('success');
+        expect($schedule->last_run_at?->toIso8601String())->toBe(now()->toIso8601String());
+        expect($schedule->desired_timer_state->value)->toBe('disabled');
+        expect($operation->refresh()->status->value)->toBe('succeeded');
+    });
+});
+
+/** A Schedule journal read's real event, history and sensitive-value protocol, without contacting Swamp. */
+function migrationScheduleLogSocket(?string $fault = null): object
+{
+    $socket = new class($fault) implements WebSocketClient
+    {
+        /** @var list<array<string,mixed>> */
+        public array $sent = [];
+
+        private string $request = '';
+
+        private const string Run = '123e4567-e89b-42d3-a456-426614174000';
+
+        public function __construct(private ?string $fault) {}
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
+
+        public function send(array $message): void
+        {
+            $this->sent[] = $message;
+            if ($message['type'] === 'workflow.run') {
+                $this->request = $message['payload']['inputs']['intent']['read']['request'];
+            }
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $message = end($this->sent);
+            $type = $message['type'];
+            if ($type === 'workflow.run') {
+                return [['id' => $message['id'], 'type' => 'event', 'event' => ['kind' => 'completed', 'run' => [
+                    'id' => self::Run, 'workflowName' => 'operation-process-container', 'status' => $this->fault === 'failed run' ? 'failed' : 'succeeded',
+                ]]]];
+            }
+            if ($type === 'workflow.history.get') {
+                $request = $this->fault === 'wrong request' ? self::Run : $this->request;
+                $keyRequest = $this->fault === 'wrong key' ? self::Run : $this->request;
+
+                return [['id' => $message['id'], 'type' => $type, 'payload' => ['data' => [
+                    'id' => self::Run, 'workflowName' => 'operation-process-container', 'status' => 'succeeded',
+                    'inputs' => ['kind' => 'schedule.inspect', 'intent' => ['read' => ['request' => $request]]],
+                    'jobs' => [['name' => 'process', 'steps' => [['name' => 'Read Process result', 'status' => 'succeeded',
+                        'outputs' => ['inspection' => ['vault' => 'orbit-control-inputs',
+                            'key' => 'nckrtl-process-command-assets-'.self::Run.'-inspection-inspection-'.$keyRequest.'-value']]]]]],
+                ]]]];
+            }
+            if ($type === 'vault.read-secret') {
+                return [['id' => $message['id'], 'type' => $type, 'payload' => ['data' => [
+                    'vaultName' => $message['payload']['vaultName'], 'secretKey' => $message['payload']['secretKey'], 'vaultType' => 'local_encryption',
+                    'value' => json_encode(['state' => 'active', 'output' => "new command schedule-secret-sentinel\nold service output\n"], JSON_THROW_ON_ERROR),
+                ]]]];
+            }
+
+            throw new LogicException('Unexpected journal request '.$type);
+        }
+
+        public function close(): void {}
+
+        public function isConnected(): bool
+        {
+            return true;
+        }
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token', 'swamp.read_token' => 'read-token']);
+
+    return $socket;
+}
+
+describe('migrated Schedule logs', function (): void {
+    it('reads retained and new command lines through a private request-bound journal read and redacts values', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $instance->refresh()->update(['provisioning_step' => 'active']);
+        $instance->environmentValues()->create(['env_key' => 'CUSTOM_SECRET', 'env_value' => 'schedule-secret-sentinel']);
+        $socket = migrationScheduleLogSocket();
+
+        $logs = app(ShowScheduleLogsAction::class)->execute($schedule->refresh(), 2);
+
+        expect($logs->output)->toBe("old service output\nnew command [REDACTED]\n");
+        expect($logs->truncated)->toBeFalse();
+        expect($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-process-container');
+        expect($socket->sent[0]['payload']['inputs']['intent']['schedule'])->toBe(['id' => $schedule->id]);
+        expect($socket->sent[0]['payload']['inputs']['intent']['read']['lines'])->toBe(2);
+        expect(array_column($socket->sent, 'type'))->toBe(['workflow.run', 'workflow.history.get', 'vault.read-secret']);
+        expect(json_encode($socket->sent, JSON_THROW_ON_ERROR))->not->toContain('schedule-secret-sentinel');
+    });
+
+    it('refuses a failed or mismatched migrated Schedule journal read', function (string $fault, string $code): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $instance->refresh()->update(['provisioning_step' => 'active']);
+        $socket = migrationScheduleLogSocket($fault);
+
+        expect(containerRefusal(fn () => app(ShowScheduleLogsAction::class)->execute($schedule->refresh(), 2)))->toBe($code);
+        expect(array_column($socket->sent, 'type'))->not->toContain('vault.read-secret');
+    })->with([
+        'failed read' => ['failed run', 'schedule.logs_failed'],
+        'different request' => ['wrong request', 'swamp.terminal_result_unavailable'],
+        'different vault key' => ['wrong key', 'schedule.logs_failed'],
+    ]);
 });

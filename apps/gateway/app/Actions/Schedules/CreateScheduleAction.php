@@ -10,7 +10,6 @@ use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationAdmission;
 use App\Domain\Schedules\ScheduleSpecificationValidator;
-use App\Domain\Schedules\ScheduleTarget;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Schedules\ScheduleTrigger;
@@ -56,16 +55,13 @@ final readonly class CreateScheduleAction
     /** @return array{schedule: Schedule, created: bool} */
     private function reserveAdmission(AddScheduleData $data): array
     {
-        $target = DB::transaction(function () use ($data): ScheduleTarget {
+        return DB::transaction(function () use ($data): array {
             $model = match ($data->targetType) {
                 ScheduleTargetType::Node => Node::query()->lockForUpdate()->findOrFail($data->targetId),
                 ScheduleTargetType::Instance => Instance::query()->lockForUpdate()->findOrFail($data->targetId),
             };
 
-            return $this->targets->placement($data->targetType, $model->id);
-        });
-
-        $admission = DB::transaction(function () use ($data, $target): array {
+            $target = $this->targets->placement($data->targetType, $model->id);
             $schedule = Schedule::query()
                 ->whereIn('target_type', $data->targetType->storedTypes())
                 ->where('target_id', $data->targetId)
@@ -118,7 +114,5 @@ final readonly class CreateScheduleAction
 
             return ['schedule' => $schedule, 'created' => $created];
         });
-
-        return $admission;
     }
 }
