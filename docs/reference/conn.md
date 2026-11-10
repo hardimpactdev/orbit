@@ -181,10 +181,14 @@ Conn starts a thread in an Orbit Project in a new clone of the Project's default
 
 - It admits `instance.create` on the default's Node, as `instance:create PROJECT NODE NAME` does.
 - It answers the Operation (202). Its `target_id` is the new Instance.
+- The caller needs node access to the default's Node. That is checked first, so a caller without it gets only `node_access.required` (403).
+- The same name again resumes the caller's own clone, as `instance:create` resumes a failed create.
+- A name that another device's create holds fails with `instance.name_taken` (409).
 - A name that resolves to `default` fails with `validation.failed` (422).
 - A Project without a ready container default fails with `instance.default_missing` (409).
+- An `Idempotency-Key` is bound to the calling Node.
 
-Conn follows that Operation with `GET /operations/{id}`. Conn Operation show also shows an `instance.create` that the caller started, here or with `instance:create`.
+Conn follows that Operation with `GET /operations/{id}`. Conn Operation show also shows an `instance.create` that the caller started, here or with `instance:create`. Conn Operation cancel does not cancel it.
 
 A server of an Instance names its `instance_id` and the container's `power_state`, `running` or `stopped`. Other servers have `null` for both. Conn shows a `stopped` server as asleep.
 
@@ -237,6 +241,8 @@ The objects:
 | `peer.identity_unknown` | 403 | The caller is not an active Node. |
 | `node_access.required` | 403 | The caller has no node access to the server's Node, or to any Node for the profile and Operation endpoints. |
 | `conn.environment_owned` | 409 | Another Node registered this environment id. |
+| `instance.name_taken` | 409 | Another device's create holds the name of a thread's clone. |
+| `instance.default_missing` | 409 | The Project has no default Instance in a container that is active and has a seed snapshot. |
 | `validation.failed` | 422 | The request breaks a rule; `details` names each field. |
 | `conn.settings_version_conflict` | 409 | The document, or a section a patch names, changed since the sent version. `details.current_version` is the document version; a patch adds `details.sections`, the current version of each section it named. |
 | `conn.environment_mismatch` | 422 | `url` serves another environment. |

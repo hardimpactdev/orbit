@@ -22,6 +22,7 @@ sequenceDiagram
   %%> What Conn proposes:
   %%> - an Instance name from the message with a short random suffix; the Instance is always a clone of the Project's default Instance on the default's Node, with a clone of its database
   %%> - Conn keeps the message, the name and each step it finished on the device, so a reload resumes the same thread start
+  %%> - the same name again resumes the device's own clone; a name that another device's create holds is refused with `instance.name_taken`
   CONN->>GW: Create the clone<br/>conn:instance:create PROJECT NAME
   %%> Requirements:
   %%> - the device's Node has node access to the default's Node, the same edge that Conn needs to pair
@@ -41,7 +42,8 @@ sequenceDiagram
   CONN->>GW: Find the server<br/>conn:environment:list
   GW-->>CONN: environment id<br/>named by its Instance
   %%> Result:
-  %%> - each server of an Instance names its `instance_id` and the container's `power_state`; Conn shows a `stopped` server as asleep and wakes it on open with container/wake.mmd
+  %%> - each server of an Instance names its `instance_id` and the container's `power_state`; Conn shows a `stopped` server as asleep
+  %%> - waking it on open with container/wake.mmd comes with sleep and wake
   CONN->>GW: Pair with the server<br/>conn pairing create
   %%> What it does:
   %%> - the pairing of docs/cli/conn/pairing-create.mmd: Conn follows its task with conn:operation:show and reads the link once with conn:pairing:show

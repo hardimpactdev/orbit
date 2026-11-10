@@ -33,6 +33,8 @@ final class ConnOperationsController extends Controller
 
     public function cancel(EmptyOperationRequest $request, Operation $operation, CancelOperationAction $cancel): JsonResponse
     {
+        // A thread's clone is only followed here; it is cancelled like any create, with instance:create's own tools.
+        abort_if($operation->kind === 'instance.create', 404);
         $this->assertOwner($request, $operation);
 
         return response()->json(['data' => OperationData::fromModel($cancel->execute($operation), $operation->caller_node_name)->toArray(),

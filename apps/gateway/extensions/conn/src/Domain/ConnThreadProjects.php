@@ -10,6 +10,7 @@ use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -34,22 +35,38 @@ final readonly class ConnThreadProjects
         return $query->get()->sortBy(static fn (Instance $default): string => $default->project->slug)->values();
     }
 
-    /** The Project's ready default, which the caller must reach to start a thread in a clone of it. */
+    /**
+     * The Project's ready default, which the caller must reach to start a thread in a clone of it. Access is checked first, so a
+     * caller without it learns nothing about the default.
+     */
     public function default(Node $caller, Project $project): Instance
     {
-        $default = $this->ready()->where('project_id', $project->id)->with('node')->first();
-        if (! $default instanceof Instance) {
-            throw new ResourceOperationException('instance.default_missing',
-                "Project [{$project->slug}] has no default Instance in a container that is active and has a seed snapshot.", 409);
-        }
-        if (! $this->access->allows($caller, $default->node)) {
+        $default = Instance::query()->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)->with('node')->first();
+        if ($default instanceof Instance && ! $this->access->allows($caller, $default->node)) {
             throw new ResourceOperationException('node_access.required', 'Node access is required.', 403, details: [
                 'consumer_node' => ['id' => $caller->id, 'name' => $caller->name],
                 'serving_node' => ['id' => $default->node->id, 'name' => $default->node->name],
             ]);
         }
+        if (! $default instanceof Instance || ! $this->ready()->whereKey($default->id)->exists()) {
+            throw new ResourceOperationException('instance.default_missing',
+                "Project [{$project->slug}] has no default Instance in a container that is active and has a seed snapshot.", 409);
+        }
 
         return $default;
+    }
+
+    /**
+     * A name already in the Project resumes that Instance's create. Only the device whose create holds the name may resume it, so a
+     * thread never lands in another device's clone.
+     */
+    public function assertNameFree(Node $caller, Project $project, string $name): void
+    {
+        $existing = Instance::query()->where('project_id', $project->id)->where('name', $name)->value('id');
+        if ($existing !== null && ! Operation::query()->where('kind', 'instance.create')->where('target_type', 'instance')
+            ->where('target_id', $existing)->where('triggered_by', 'node:'.$caller->id)->exists()) {
+            throw new ResourceOperationException('instance.name_taken', "Project [{$project->slug}] already has an Instance named [{$name}].", 409);
+        }
     }
 
     /** @return Builder<Instance> */

@@ -56,10 +56,20 @@ beforeEach(function (): void {
     $this->phone->accessibleNodes()->attach($this->beast->id);
 });
 
-/** @param array<string, mixed> $body */
-function threadCall(Node $caller, string $method, string $path, array $body = []): TestResponse
+/**
+ * @param  array<string, mixed>  $body
+ * @param  array<string, string>  $headers
+ */
+function threadCall(Node $caller, string $method, string $path, array $body = [], array $headers = []): TestResponse
 {
-    return test()->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->json($method, '/api/v1/conn/'.$path, $body);
+    return test()->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->withHeaders($headers)->json($method, '/api/v1/conn/'.$path, $body);
+}
+
+function threadNode(string $name, string $ip): Node
+{
+    return Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => $name, 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => $ip, 'public_ssh_host' => $ip, 'user' => 'orbit',
+    ]));
 }
 
 /** A Project's container default on the Node; `seeded` as its finished create leaves it, with its seed snapshot. */
@@ -77,10 +87,14 @@ function threadDefault(Node $node, string $slug, bool $seeded = true): Instance
     return $default->refresh();
 }
 
-/** The admitted create; the test has no Swamp, so the start fails after admission recorded the Operation it names. */
-function threadCreate(Node $caller, Project $project, string $name): Operation
+/**
+ * The admitted create; the test has no Swamp, so the start fails after admission recorded the Operation it names.
+ *
+ * @param  array<string, string>  $headers
+ */
+function threadCreate(Node $caller, Project $project, string $name, array $headers = []): Operation
 {
-    $response = threadCall($caller, 'POST', "projects/{$project->id}/instances", ['name' => $name])
+    $response = threadCall($caller, 'POST', "projects/{$project->id}/instances", ['name' => $name], $headers)
         ->assertStatus(503)->assertJsonPath('error.code', 'swamp.start_unavailable');
 
     return Operation::query()->findOrFail($response->json('error.details.operation_id'));
@@ -97,6 +111,17 @@ describe('the Project list', function (): void {
 
         expect(array_column($data, 'slug'))->toBe(['alpha', 'zeta'])
             ->and($data[0])->toMatchArray(['name' => 'Alpha', 'node_id' => $this->beast->id, 'node_name' => 'beast']);
+    });
+
+    it('lists every ready default for a caller with Gateway access', function (): void {
+        threadDefault($this->beast, 'alpha');
+        threadDefault($this->mini, 'elsewhere');
+        $gateway = threadNode('gateway', '10.44.0.2');
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+        $operator = threadNode('orbit-ops', '10.44.0.5');
+        $operator->accessibleNodes()->attach($gateway->id);
+
+        expect(array_column(threadCall($operator, 'GET', 'projects')->assertOk()->json('data'), 'slug'))->toBe(['alpha', 'elsewhere']);
     });
 
     it('refuses a caller without node access to any Node', function (): void {
@@ -123,12 +148,13 @@ describe("a thread's clone", function (): void {
     it('shows the create only to the Node that started it', function (): void {
         $default = threadDefault($this->beast, 'tool');
         $operation = threadCreate($this->phone, $default->project, 'fix-login-k3j9');
-        $laptop = Node::withoutEvents(fn (): Node => Node::query()->create([
-            'name' => 'laptop', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.78', 'public_ssh_host' => '10.44.0.78', 'user' => 'orbit',
-        ]));
+        $laptop = threadNode('laptop', '10.44.0.78');
         $laptop->accessibleNodes()->attach($this->beast->id);
 
         threadCall($laptop, 'GET', "operations/{$operation->id}")->assertNotFound();
+        test()->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
+            ->call('POST', "/api/v1/conn/operations/{$operation->id}/cancel", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
+            ->assertNotFound();
     });
 
     it('refuses a name that means the default Instance', function (string $name): void {
@@ -145,13 +171,40 @@ describe("a thread's clone", function (): void {
             ->assertStatus(409)->assertJsonPath('error.code', 'instance.default_missing');
     });
 
-    it("refuses a caller without node access to the default's Node", function (): void {
-        $default = threadDefault($this->mini, 'tool');
+    it("refuses a caller without node access to the default's Node before it reads the name or the default", function (string $name, bool $seeded): void {
+        $default = threadDefault($this->mini, 'tool', $seeded);
 
-        threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login-k3j9'])
+        threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => $name])
             ->assertStatus(403)->assertJsonPath('error.code', 'node_access.required')
             ->assertJsonPath('error.details.serving_node.name', 'mini');
         expect(Operation::query()->where('kind', 'instance.create')->count())->toBe(1);
+    })->with(['valid name' => ['fix-login-k3j9', true], 'default branch' => ['main', true], 'unseeded default' => ['fix-login-k3j9', false]]);
+
+    it("never replays another Node's create for its Idempotency-Key", function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        $operation = threadCreate($this->phone, $default->project, 'fix-login-k3j9', ['Idempotency-Key' => 'thread-k3j9']);
+        $laptop = threadNode('laptop', '10.44.0.78');
+        $laptop->accessibleNodes()->attach($this->mini->id);
+
+        $replay = threadCall($laptop, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login-k3j9'], ['Idempotency-Key' => 'thread-k3j9']);
+
+        expect($replay->status())->toBeIn([403, 409])
+            ->and($replay->json('data.id'))->toBeNull()
+            ->and($replay->json('error.code'))->not->toBe('swamp.start_unavailable')
+            ->and(Operation::query()->where('kind', 'instance.create')->latest('id')->value('id'))->toBe($operation->id);
+    });
+
+    it("refuses a name another device's create holds, and resumes the caller's own", function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        $first = threadCreate($this->phone, $default->project, 'fix-login-k3j9');
+        $laptop = threadNode('laptop', '10.44.0.78');
+        $laptop->accessibleNodes()->attach($this->beast->id);
+
+        threadCall($laptop, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login-k3j9'])
+            ->assertStatus(409)->assertJsonPath('error.code', 'instance.name_taken');
+        $again = threadCreate($this->phone, $default->project, 'fix-login-k3j9');
+
+        expect($again->target_id)->toBe($first->target_id);
     });
 });
 
