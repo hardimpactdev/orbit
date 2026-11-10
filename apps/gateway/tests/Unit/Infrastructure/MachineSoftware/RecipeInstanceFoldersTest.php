@@ -18,7 +18,7 @@ it('reads the two shared folders, a tool part with the tool\'s own pin', functio
     $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
     $node = $recipe->tools['node'];
 
-    expect(array_keys($recipe->instances->runtime))->toBe(['node', 'bun', 'deno', 'composer', 'ripgrep', 'vite-plus'])
+    expect(array_keys($recipe->instances->runtime))->toBe(['node', 'bun', 'deno', 'composer', 'ripgrep', 'php-data-bridge', 'vite-plus'])
         ->and($recipe->instances->runtime['vite-plus']->artifact)->toBe($recipe->tools['vp-cli']->artifacts['amd64'])
         ->and($recipe->instances->runtime['vite-plus']->version)->toBe($recipe->tools['vp']->version)
         ->and($recipe->instances->runtime['vite-plus']->bin)->toBe(['vp' => 'vp'])
@@ -30,6 +30,14 @@ it('reads the two shared folders, a tool part with the tool\'s own pin', functio
         ->and($recipe->instances->runtime['node']->version)->toBe($node->version)
         ->and($recipe->instances->agent['claude-code']->artifact->algorithm)->toBe('sha512')
         ->and($recipe->instances->agent['codex']->bin)->toBe(['codex' => 'package/vendor/x86_64-unknown-linux-musl/bin/codex']);
+});
+
+it('reads a part without `bin` as files that give the folder no program', function (): void {
+    $bridge = new RecipeLoader()->decode(recipeWithInstances(static fn () => null))->instances->runtime['php-data-bridge'];
+
+    expect($bridge->bin)->toBe([])
+        ->and($bridge->version)->toBe('0.3.1')
+        ->and($bridge->artifact->location)->toBe('https://github.com/nckrtl/php-data-bridge/releases/download/v0.3.1/php-data-bridge.tar.gz');
 });
 
 it('publishes Deno from the Node pin in the shared runtime and changes only that folder version', function (): void {
@@ -83,6 +91,12 @@ it('refuses a malformed folder part', function (Closure $change, string $message
     'no program' => [static function (array &$recipe): void {
         $recipe['instances']['runtime']['ripgrep']['bin'] = new stdClass;
     }, 'expected at least one program'],
+    'a tool part without programs' => [static function (array &$recipe): void {
+        unset($recipe['instances']['runtime']['node']['bin']);
+    }, 'instances.runtime.node.bin: expected an object'],
+    'a part without programs and with an unknown field' => [static function (array &$recipe): void {
+        $recipe['instances']['runtime']['php-data-bridge']['extra'] = 'x';
+    }, 'instances.runtime.php-data-bridge: expected exactly fields version, artifacts; got version, artifacts, extra.'],
     'an Ubuntu tool' => [static function (array &$recipe): void {
         $recipe['instances']['runtime']['node']['tool'] = 'composer';
     }, 'expected an artifact tool of the recipe'],
