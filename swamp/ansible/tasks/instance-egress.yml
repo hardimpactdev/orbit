@@ -64,14 +64,28 @@
   when: egress_ruleset.changed and not egress_table_started.changed
   changed_when: true
 
-- name: Write the Squid configuration
+# Squid's AppArmor profile lets it read only `/etc/squid`, so `copy`'s own `validate`, which parses a temporary file elsewhere, would be
+# refused. The next configuration is parsed beside the live one, and only a configuration that parses replaces it.
+- name: Stage the Squid configuration
   ansible.builtin.copy:
-    dest: "{{ instances.egress.directory }}/squid.conf"
+    dest: "{{ instances.egress.config }}.next"
     content: "{{ instances.egress.squid }}"
     owner: root
     group: root
     mode: "0644"
-    validate: squid -k parse -f %s
+
+- name: Parse the staged Squid configuration
+  ansible.builtin.command: { argv: [squid, -k, parse, -f, "{{ instances.egress.config }}.next"] }
+  changed_when: false
+
+- name: Write the Squid configuration
+  ansible.builtin.copy:
+    src: "{{ instances.egress.config }}.next"
+    remote_src: true
+    dest: "{{ instances.egress.config }}"
+    owner: root
+    group: root
+    mode: "0644"
   register: egress_squid
 
 # Squid as `proxy` from the start: port 3128 needs no privilege, and it holds no state, no cache and no PID file. It runs only while the
@@ -94,7 +108,7 @@
       User={{ instances.egress.user }}
       Group={{ instances.egress.user }}
       ExecStartPre=+/usr/sbin/nft list table inet {{ instances.egress.table }}
-      ExecStart=/usr/sbin/squid -N -d 1 -f {{ instances.egress.directory }}/squid.conf
+      ExecStart=/usr/sbin/squid -N -d 1 -f {{ instances.egress.config }}
       Restart=always
       RestartSec=2
       CapabilityBoundingSet=
@@ -142,3 +156,15 @@
     host: "{{ instances.egress.origin | urlsplit('hostname') }}"
     port: "{{ instances.egress.port }}"
     timeout: 30
+
+- name: Read the proxy and its table
+  ansible.builtin.command: { argv: [systemctl, is-active, "{{ instances.egress.table_unit }}", "{{ instances.egress.unit }}"] }
+  register: egress_active
+  changed_when: false
+  failed_when: false
+
+- name: Require the proxy and its table
+  ansible.builtin.assert:
+    that: egress_active.stdout_lines == ['active', 'active']
+    fail_msg: "instance.host_unavailable: the egress proxy or its nftables table is not running"
+    quiet: true

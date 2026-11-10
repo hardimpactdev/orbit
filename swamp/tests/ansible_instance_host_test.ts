@@ -262,7 +262,9 @@ async function fixture(
     getent: "exit 2",
     // The egress table and Squid configuration validate; the real-kernel check and the live check prove them.
     nft: "exit 0",
-    squid: "exit 0",
+    // A staged configuration that holds BAD does not parse.
+    squid: '! grep -qs BAD "$4"',
+    systemctl: 'for unit; do [ "$unit" = is-active ] || echo active; done',
     // The pinned artifacts come from the fixture folder, by the URL's file name.
     curl:
       `out=; for a; do case "$prev" in --output) out=$a;; esac; prev=$a; done
@@ -300,6 +302,7 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
       port: 3128,
       user: "proxy",
       directory: `${folder}/egress`,
+      config: `${folder}/egress/orbit-instance-egress.conf`,
       unit: "orbit-instance-egress.service",
       table_unit: "orbit-instance-egress-table.service",
       table: "orbit_instance_egress",
@@ -505,7 +508,9 @@ Deno.test({
       }
       assertEquals(
         JSON.parse(
-          Deno.readTextFileSync(`${f.folder}/firewall-orbit_instances-egress.json`),
+          Deno.readTextFileSync(
+            `${f.folder}/firewall-orbit_instances-egress.json`,
+          ),
         ),
         {
           rule: "allow",
@@ -528,7 +533,7 @@ Deno.test({
         "table inet orbit_instance_egress\n",
       );
       assertEquals(
-        Deno.readTextFileSync(`${f.folder}/egress/squid.conf`),
+        Deno.readTextFileSync(`${f.folder}/egress/orbit-instance-egress.conf`),
         "http_port 10.253.0.1:3128\n",
       );
       const proxyUnit = Deno.readTextFileSync(
@@ -539,7 +544,7 @@ Deno.test({
           "User=proxy\n",
           "BindsTo=orbit-instance-egress-table.service\n",
           "ExecStartPre=+/usr/sbin/nft list table inet orbit_instance_egress\n",
-          `ExecStart=/usr/sbin/squid -N -d 1 -f ${f.folder}/egress/squid.conf\n`,
+          `ExecStart=/usr/sbin/squid -N -d 1 -f ${f.folder}/egress/orbit-instance-egress.conf\n`,
         ]
       ) assertStringIncludes(proxyUnit, line);
       assertStringIncludes(
@@ -731,6 +736,35 @@ Deno.test({
         { name: "orbit-instance-bbbbbbbbbbbb" },
         { name: "orbit-instance" },
       ]]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "a Squid configuration that does not parse never replaces the live one, and the run fails",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture();
+    try {
+      let result = f.run();
+      assert(result.ok, result.output);
+      f.write({
+        ...f.instances,
+        egress: { ...f.instances.egress, squid: "BAD\n" },
+      });
+      result = f.run();
+      assert(!result.ok);
+      assertStringIncludes(
+        result.output,
+        "Parse the staged Squid configuration",
+      );
+      assertEquals(
+        Deno.readTextFileSync(`${f.folder}/egress/orbit-instance-egress.conf`),
+        "http_port 10.253.0.1:3128\n",
+      );
     } finally {
       f.cleanup();
     }

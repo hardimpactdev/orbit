@@ -185,17 +185,25 @@ This part is built. A container has full outbound access to the public internet,
 
 Each prepared Node runs one proxy for all its containers.
 
-- **Program.** Squid from Ubuntu runs as the system user `proxy`, on port 3128 of the Instance bridge's gateway address. Its unit is `orbit-instance-egress.service`, and its configuration is `/etc/orbit/instance-egress/squid.conf`.
+- **Program.** Squid from Ubuntu runs as the system user `proxy`, on port 3128 of the Instance bridge's gateway address. Its unit is `orbit-instance-egress.service`.
+- **Configuration.** `/etc/squid/orbit-instance-egress.conf`. Squid's AppArmor profile lets it read only `/etc/squid`.
+- **Checked first.** The converge parses a new configuration beside the live one, and only a configuration that parses replaces it.
 - **No stock Squid.** The converge masks the package's own `squid.service` before the package installs. So the stock configuration, which listens on every address, never runs.
+What it serves:
+
 - **Scope.** A forward proxy with `CONNECT`, open to every public host and port.
 - **Nothing kept.** It keeps no cache and no files. It sends no `Via` or `X-Forwarded-For` header.
+- **No cache manager.** It refuses requests for its own cache manager, so a container cannot read what other containers fetch.
 - **Who.** Every container on the bridge uses it, `orbit` and `agent` alike, and so does the image build container.
 - **Admission.** Only the bridge reaches the port. The bridge ACL and the Node's rule `orbit:instances-egress` admit it there. The proxy's table resets a connection to the port from anywhere else.
+- **Health.** The converge ends by checking that the proxy and its table run. Otherwise it fails with `instance.host_unavailable`.
+
 Names and the record:
 
 - **Names.** Containers have no resolver. The proxy resolves each name through the Node's stub resolver, `127.0.0.53`.
-- **Private names.** The proxy refuses a name in the fleet's private routing domains before any lookup. So no lookup reaches the VPN's DNS.
+- **Private names.** The proxy refuses a name in the fleet's private routing domains before any lookup. So such a lookup does not reach the VPN's DNS.
 - **Private domains.** `orbit`, the VPN domain, the Cluster and Node domains, and the private Route names. Each converge renews the list.
+- **A new domain.** A domain added after the last converge is looked up. The table still refuses its address.
 - **Record.** Squid writes one journal line per request. It holds the container's bridge address, the request, the status and the server address.
 - **Not reported.** The Node's agent does not report these lines yet.
 
@@ -203,10 +211,13 @@ Names and the record:
 
 The nftables table `orbit_instance_egress` keeps the proxy on the public internet:
 
-- **Refused.** It rejects every new connection of `proxy` to the Node's own addresses, the WireGuard interface `orbit`, and every private or special address.
+- **Refused.** It rejects every new connection of `proxy` to the Node's own addresses and the WireGuard interface `orbit`.
+- **Also refused.** Every private or special IPv4 address, and all of IPv6.
 - **IPv4 ranges.** `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.0.0.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `224.0.0.0/4` and `240.0.0.0/4`.
-- **IPv6 ranges.** Everything but global unicast, and the tunnel ranges `2001::/32` and `2002::/16` in it.
+- **No IPv6.** A LAN often uses global IPv6 addresses, which no fixed range tells from the internet. So the proxy uses IPv4 only.
 - **Admitted.** Only the stub resolver, on port 53.
+What that means:
+
 - **Effect.** The rule holds whatever a name resolves to. The proxy answers 503.
 - **Out of reach.** The Gateway, WireGuard peers, other Nodes' private services and the Node's LAN.
 - **Order.** The table's unit, `orbit-instance-egress-table.service`, loads early at boot.
@@ -222,14 +233,14 @@ The image sets the proxy for everything that runs in a container. Tools read the
 
 | Where | File |
 | --- | --- |
-| Every unit: T3, FrankenPHP and each Process. Claude Code, Codex and their commands inherit it from T3 | `DefaultEnvironment` in `/etc/systemd/system.conf.d/90-orbit-egress.conf` |
+| Every unit: T3, FrankenPHP and each Process. Claude Code, Codex and their commands inherit it from T3 | `DefaultEnvironment` in `/etc/systemd/system.conf.d/90-orbit-runtime.conf`, beside the runtime folder's variables |
 | `incus exec`: deploy steps, the Node's patch run and the image build | The profile's `environment.*` keys |
-| Login shells | `/etc/profile.d/90-orbit-egress.sh` |
+| Login shells | `/etc/profile.d/90-orbit-runtime.sh` |
 | apt | `/etc/apt/apt.conf.d/90orbit-egress` |
 
 A container takes no DNS server from DHCP (`/etc/netplan/90-orbit-no-dns.yaml`), and its resolver has no fallback (`/etc/systemd/resolved.conf.d/90-orbit-no-dns.conf`). So a name lookup in a container fails at once.
 
-So Composer, npm, Bun, Vite+, Git over HTTPS, curl, apt and the HTTP clients of PHP and Node use the proxy without further settings. A tool that ignores the variables fails at its name lookup. UDP, so also QUIC, and other protocols get no route out. Git over SSH does not work. The container holds no GitHub credentials, so [Git in and out](#git-in-and-out) still goes through the Node.
+So Composer, npm, Bun, Vite+, Git over HTTPS, curl, apt, Guzzle and Node's `fetch` use the proxy without further settings. A tool that ignores the variables fails at its name lookup, such as PHP's `file_get_contents` on a URL or a headless browser. An Instance's own HTTP services, such as a private Reverb host, are not in `NO_PROXY` yet. UDP, so also QUIC, and other protocols get no route out. Git over SSH does not work. The container holds no GitHub credentials, so [Git in and out](#git-in-and-out) still goes through the Node.
 
 ## Lifecycle
 

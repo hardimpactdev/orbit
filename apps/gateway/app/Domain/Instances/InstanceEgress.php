@@ -12,10 +12,13 @@ use App\Infrastructure\Firewall\UfwRuleShape;
  * user `proxy`, on port 3128 of the Instance bridge's gateway address. It is the containers' one way to the internet: a forward proxy
  * with `CONNECT`, open to every public host and port, and the one place where a rule can narrow that later. Containers get no DNS;
  * the proxy resolves each name through the Node's resolver. Two rules keep it off private services:
- * - Squid refuses a name in the fleet's private routing domains before it looks it up, so no lookup reaches the VPN's DNS.
+ * - Squid refuses a name in the fleet's private routing domains before it looks it up, so its lookup does not reach the VPN's DNS.
+ *   The list is the one of the last converge; a domain added since is looked up, and the table still refuses its address.
  * - Its own nftables table rejects every new connection of `proxy` to the Node itself, to the WireGuard interface and to a private
- *   or special address, whatever a name resolved to. It admits only the Node's stub resolver, and only the bridge reaches the port.
- *   This is the only address rule: Squid holds IPv4 as mapped IPv6, so its own address lists cannot state IPv6 ranges safely.
+ *   or special address, and to every IPv6 address, whatever a name resolved to. It admits only the Node's stub resolver, and only
+ *   the bridge reaches the port. This is the only address rule: Squid holds IPv4 as mapped IPv6, so its own address lists cannot
+ *   state IPv6 ranges safely. IPv6 is refused whole because a LAN often uses global IPv6 addresses, which no fixed range can tell
+ *   from the internet.
  */
 final readonly class InstanceEgress
 {
@@ -24,7 +27,10 @@ final readonly class InstanceEgress
     /** The Ubuntu package's system user; nothing else on a Node runs as it, and the output rule names it. */
     public const string User = 'proxy';
 
+    /** The table's folder. Squid's configuration lives under `/etc/squid`, the only configuration its AppArmor profile lets it read. */
     public const string Directory = '/etc/orbit/instance-egress';
+
+    public const string Config = '/etc/squid/orbit-instance-egress.conf';
 
     public const string Unit = 'orbit-instance-egress.service';
 
@@ -45,9 +51,6 @@ final readonly class InstanceEgress
     public const array PrivateV4 = ['0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12', '192.0.0.0/24',
         '192.168.0.0/16', '198.18.0.0/15', '224.0.0.0/4', '240.0.0.0/4'];
 
-    /** IPv6 outside global unicast (`::/3` holds loopback, mapped and translated IPv4), and the global ranges that tunnel to IPv4. */
-    public const array PrivateV6 = ['::/3', '4000::/2', '8000::/1', '2001::/32', '2002::/16'];
-
     /**
      * @param  list<string>  $privateDomains  the fleet's private routing domains, which the Node's resolver sends to the VPN's DNS
      * @return array<string, mixed>
@@ -55,7 +58,7 @@ final readonly class InstanceEgress
     public static function for(string $bridge, string $gateway, string $cidr, array $privateDomains): array
     {
         return [
-            'port' => self::Port, 'user' => self::User, 'directory' => self::Directory, 'unit' => self::Unit, 'table_unit' => self::TableUnit,
+            'port' => self::Port, 'user' => self::User, 'directory' => self::Directory, 'config' => self::Config, 'unit' => self::Unit, 'table_unit' => self::TableUnit,
             'table' => self::Table, 'origin' => self::origin($gateway),
             'squid' => self::squid($gateway, $cidr, $privateDomains),
             'ruleset' => self::ruleset($bridge, $gateway),
@@ -87,7 +90,7 @@ final readonly class InstanceEgress
     /**
      * Squid as a forward proxy only: no cache, no disk, no headers that name the container, and one access log line per request to
      * the journal, with the container's address. Only the bridge may use it, and a name in a private domain is refused before Squid looks
-     * it up. The table refuses private addresses (`ruleset`), so a request for one ends in a 503.
+     * it up, and so is Squid's own cache manager. The table refuses private addresses (`ruleset`), so a request for one ends in a 503.
      *
      * @param  list<string>  $privateDomains
      */
@@ -121,6 +124,8 @@ final readonly class InstanceEgress
             acl bridge src {$cidr}
             acl private_name dstdomain {$domains}
             http_access deny !bridge
+            http_access deny manager
+            http_access deny to_localhost
             http_access deny private_name
             http_access allow bridge
             http_access deny all
@@ -133,7 +138,8 @@ final readonly class InstanceEgress
      * in any base chain is final.
      * - The input chain resets every connection to the proxy that does not come in on the bridge, so no process on the Node uses it.
      * - The output chain rejects every new connection of `proxy` but to the Node's stub resolver: to any address of the Node itself,
-     *   to the WireGuard interface, and to every private or special address. Replies to containers belong to known connections.
+     *   to the WireGuard interface, to every private or special IPv4 address, and to all of IPv6. Replies to containers belong to known
+     *   connections.
      * The file replaces the table whole and atomically, so loading it again leaves no moment without it.
      */
     public static function ruleset(string $bridge, string $gateway): string
@@ -144,7 +150,6 @@ final readonly class InstanceEgress
         $resolver = self::Resolver;
         $wireguard = self::WireGuardInterface;
         $v4 = implode(', ', self::PrivateV4);
-        $v6 = implode(', ', self::PrivateV6);
 
         return <<<NFT
             # Managed by Orbit: the Instance egress proxy (/reference/development-containers#egress-and-dns).
@@ -155,11 +160,6 @@ final readonly class InstanceEgress
             		type ipv4_addr
             		flags interval
             		elements = { {$v4} }
-            	}
-            	set private_v6 {
-            		type ipv6_addr
-            		flags interval
-            		elements = { {$v6} }
             	}
             	chain input {
             		type filter hook input priority filter - 10; policy accept;
@@ -173,7 +173,7 @@ final readonly class InstanceEgress
             		fib daddr type local counter reject
             		oifname "{$wireguard}" counter reject
             		ip daddr @private_v4 counter reject
-            		ip6 daddr @private_v6 counter reject
+            		meta nfproto ipv6 counter reject
             	}
             }
 

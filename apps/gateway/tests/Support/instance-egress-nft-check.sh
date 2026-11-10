@@ -5,9 +5,9 @@
 #
 # A namespace stands in for a container: its veth is a port of BRIDGE, which holds BRIDGE_ADDRESS. Two more namespaces stand in for a
 # public host, at 198.51.100.1, and a private one, at 10.99.0.1. A dummy interface named `orbit` stands in for WireGuard, with a public
-# range behind it. A listener on BRIDGE_ADDRESS stands in for the proxy. After the table, the container reaches the proxy and root does
-# not; PROXY_USER reaches the public host and the stub resolver, and is refused at once by the private host, the Node's own addresses
-# and WireGuard. A refusal must be a reject (curl exit 7), not a timeout. Every name this script makes carries `oechk` and goes again.
+# range behind it, and a fourth namespace for a LAN host with a global IPv6 address, at 2001:db8:7::1. A listener on BRIDGE_ADDRESS stands
+# in for the proxy. After the table, the container reaches the proxy and root does not; PROXY_USER reaches the public host and the stub
+# resolver, and is refused at once by the private host, the Node's own addresses, WireGuard and IPv6. A refusal must be a reject (curl exit 7), not a timeout. Every name this script makes carries `oechk` and goes again.
 set -euo pipefail
 
 ruleset=$1 user=$2 bridge=$3 address=$4 port=$5
@@ -28,8 +28,8 @@ cleanup() {
     set +e
     for server in "${servers[@]}"; do kill "$server" 2>/dev/null; done
     nft delete table inet "$table" 2>/dev/null
-    for name in oechkc oechkp oechkv; do ip netns del "$name" 2>/dev/null; done
-    for name in oechkc0 oechkp0 oechkv0 orbit "$bridge"; do ip link del "$name" 2>/dev/null; done
+    for name in oechkc oechkp oechkv oechk6; do ip netns del "$name" 2>/dev/null; done
+    for name in oechkc0 oechkp0 oechkv0 oechk60 orbit "$bridge"; do ip link del "$name" 2>/dev/null; done
     [[ $made_user == 1 ]] && userdel "$user" 2>/dev/null
 }
 servers=()
@@ -70,6 +70,17 @@ remote() {
 remote oechkp 198.51.100.1 169.254.79.1
 remote oechkv 10.99.0.1 169.254.79.2
 
+# A LAN host with a global IPv6 address, on a link of its own, as a Node's LAN neighbour is.
+ip netns add oechk6
+ip link add oechk60 type veth peer name oechk61 netns oechk6
+ip -6 addr add 2001:db8:7::2/64 dev oechk60 nodad
+ip link set oechk60 up
+inns oechk6 ip link set lo up
+inns oechk6 ip -6 addr add 2001:db8:7::1/64 dev oechk61 nodad
+inns oechk6 ip link set oechk61 up
+inns oechk6 bash -c "$(declare -f serve); serve 2001:db8:7::1 80" &
+servers+=($!)
+
 # The container: a namespace whose veth is a port of the bridge, as an Incus container's is.
 ip link add "$bridge" type bridge
 ip addr add "$address/24" dev "$bridge"
@@ -101,7 +112,7 @@ fi
 id -u "$user" >/dev/null 2>&1 || { useradd --system --no-create-home --shell /usr/sbin/nologin "$user"; made_user=1; }
 
 get() { curl -s -o /dev/null --max-time 2 "$1"; }
-for _ in $(seq 50); do get "http://198.51.100.1/" && get "http://10.99.0.1/" && get "http://$address:$port/" && break; sleep 0.05; done
+for _ in $(seq 50); do get "http://198.51.100.1/" && get "http://10.99.0.1/" && get "http://[2001:db8:7::1]/" && get "http://$address:$port/" && break; sleep 0.05; done
 
 expect() {
     local want=$1 what=$2 code=0
@@ -116,6 +127,7 @@ proxy() { runuser -u "$user" -- curl -s -o /dev/null --max-time 2 "$1"; }
 resolver() { runuser -u "$user" -- bash -c 'exec 3<>/dev/tcp/127.0.0.53/53' 2>/dev/null || return 7; }
 
 expect reached 'the proxy user to a private host, without the table' proxy http://10.99.0.1/
+expect reached 'the proxy user to a global IPv6 host, without the table' proxy 'http://[2001:db8:7::1]/'
 nft --file "$ruleset"
 expect reached 'container to the proxy, on the bridge' container "http://$address:$port/"
 expect refused 'root to the proxy, over lo' get "http://$address:$port/"
@@ -125,6 +137,7 @@ expect refused 'the proxy user to a private host' proxy http://10.99.0.1/
 expect refused 'the proxy user to the bridge address' proxy "http://$address/"
 expect refused 'the proxy user to loopback' proxy http://127.0.0.1/
 expect refused 'the proxy user to WireGuard' proxy http://203.0.113.9/
+expect refused 'the proxy user to a global IPv6 host' proxy 'http://[2001:db8:7::1]/'
 expect reached 'root to a private host' get http://10.99.0.1/
 nft --file "$ruleset"
 expect refused 'the proxy user to a private host, after loading the table again' proxy http://10.99.0.1/
