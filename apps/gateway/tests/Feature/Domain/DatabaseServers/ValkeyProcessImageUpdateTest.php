@@ -21,6 +21,7 @@ use App\Models\Process;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
+use Symfony\Component\Process\Process as ShellProcess;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -228,6 +229,60 @@ it('renders the ACL command mounts and health probe for replacement then complet
     expect($server->process->runtime_config['image'])->toBe('valkey/valkey:8.2');
     expect($server->tag)->toBe('8.1');
 });
+
+it('keeps the updated MySQL image through repair with or without an existing container', function (int $inspectStatus, array $startedCommand): void {
+    $server = valkeyImageUpdateServer('mysql');
+    $response = $this->patchJson('/api/v1/processes/'.$server->process_id, ['image' => 'mysql:8.4.6'])
+        ->assertAccepted();
+    $update = Operation::query()->findOrFail($response->json('data.id'));
+    $update->forceFill(['state' => [...$update->state, 'swamp_run_id' => 'mysql-image-update']])->save();
+    app(ProcessControlProjection::class)->apply($update, [
+        'status' => 'succeeded', 'run_id' => 'mysql-image-update',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+    ]);
+    $folder = sys_get_temp_dir().'/mysql-repair-'.bin2hex(random_bytes(5));
+    mkdir($folder);
+    file_put_contents($folder.'/docker', <<<'SH'
+#!/bin/sh
+if [ "$1" = container ] && [ "$2" = inspect ]; then
+    exit "$ORBIT_TEST_CONTAINER_INSPECT_STATUS"
+fi
+[ "$1" = run ] || exit 99
+printf '%s\n' "$@"
+SH);
+    chmod($folder.'/docker', 0o755);
+
+    $repair = app(CreateDatabaseServerAction::class)->execute(new CreateDatabaseServerData(
+        $server->slug, $server->node_id, DatabaseDriver::Mysql, $server->tag, $server->port,
+    ));
+    $intent = DatabaseExecutionIntent::recorded($repair->input['intent_id'])->payload['admission']['input'];
+    $commands = app(DatabaseServerCommands::class)->render($intent);
+    $start = new ShellProcess($commands['start'], env: [
+        'PATH' => $folder.':'.getenv('PATH'),
+        'ORBIT_TEST_CONTAINER_INSPECT_STATUS' => (string) $inspectStatus,
+    ]);
+    $start->mustRun();
+
+    expect($intent['created'])->toBeFalse()
+        ->and($intent['initialize'])->toBeFalse()
+        ->and($intent['container_input']['image'])->toBe('mysql:8.4.6');
+    expect(array_slice($commands['start'], -2))->toBe(['mysql:8.4.6', 'mysqld']);
+    expect(array_slice($commands['scrub'], -2))->toBe(['mysql:8.4.6', 'mysqld']);
+    expect(array_slice(array_filter(explode("\n", trim($start->getOutput()))), -2))->toBe($startedCommand);
+    $repair->forceFill(['state' => [...$repair->state, 'swamp_run_id' => 'mysql-repair']])->save();
+    app(DatabaseServerCreateProjection::class)->apply($repair, [
+        'status' => 'succeeded', 'run_id' => 'mysql-repair',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['steps' => ['Check the admin login' => ['stdout' => "1\n"]]],
+    ]);
+
+    expect($repair->refresh()->status->value)->toBe('succeeded');
+    expect($server->refresh()->process->runtime_config['image'])->toBe('mysql:8.4.6');
+    expect($server->tag)->toBe('8.4');
+})->with([
+    'container present' => [0, []],
+    'container missing' => [1, ['mysql:8.4.6', 'mysqld']],
+]);
 
 it('keeps ordinary Docker definitions free of Database server health options', function (): void {
     $server = valkeyImageUpdateServer();

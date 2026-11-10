@@ -121,6 +121,8 @@ The Process publishes its port on the Node's WireGuard address to container port
 
 A retry with the same `--idempotency-key` returns the recorded Operation, including its terminal result. After a failed Operation, a new start reuses the server, encrypted password, Process and volume. A request with another Node, driver, tag or port returns `database.server_slug_conflict`. A new start for an active Valkey server [repairs the server](#repair-a-valkey-server).
 
+For every driver, the Process stores the current image. A repair keeps that image, whether the container is present or must be recreated. The server's `tag` selects the image only when the Process is first created and remains the creation tag; repeat `database:server:create` with the original arguments to repair it.
+
 Write endpoints return HTTP 202 with an Operation. List and show return `id`, `slug`, `driver`, `node_id`, `process_id`, `tag`, `port`, `status`, and `databases_count`. Show also returns `databases`, `failed_step` and `error_code`. Passwords never appear in either response.
 
 The server's Process is an ordinary Docker Node Process: read its logs, stop it, start it, or restart it with the [`process`](/cli/process) commands. `process:destroy` refuses it with `process.required_by_database_server`; remove the server instead. MySQL Process updates keep the ordinary partial-update contract.
@@ -129,7 +131,7 @@ Replacement of any Database server's Process keeps the server's Docker health ch
 
 ### Update a Valkey server's image
 
-`process:update` accepts only an image-only update to `valkey/valkey:<tag>` for a `redis` server. For example, `orbit process:update 41 --image=valkey/valkey:8.1.3` changes the image while keeping the command, including `--aclfile`, volumes and every other specification field. The Process stores the current image. A Valkey repair keeps that image, including when it recreates a missing container. The server's `tag` remains the creation tag; repeat `database:server:create` with the original arguments to repair it. Tags contain 1 through 128 letters, digits, underscores, periods or hyphens, and start with a letter, digit or underscore.
+`process:update` accepts only an image-only update to `valkey/valkey:<tag>` for a `redis` server. For example, `orbit process:update 41 --image=valkey/valkey:8.1.3` changes the image while keeping the command, including `--aclfile`, volumes and every other specification field. Tags contain 1 through 128 letters, digits, underscores, periods or hyphens, and start with a letter, digit or underscore.
 
 Request normalization trims surrounding whitespace. Validation then runs before the server ownership check. Invalid input returns HTTP 422, including a supplied `user`, `start`, an empty `command`, or an image containing whitespace within the reference. After validation, an update with any other field, without `image`, or with another image repository returns `process.required_by_database_server` (409). Both refusals leave the Process unchanged.
 
