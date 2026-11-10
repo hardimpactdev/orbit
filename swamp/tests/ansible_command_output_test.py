@@ -76,7 +76,7 @@ class CommandOutputTest(unittest.TestCase):
             with self.subTest(expression=key, context=row['context']):
                 expression, variables = self.inventory[key]
                 context = samples(self.table['contexts'][row['context']])
-                templar = Templar(loader=DataLoader(), variables=trusted({**variables, **context}))
+                templar = Templar(loader=DataLoader(), variables={**trusted(variables), **context})
                 if '{{' not in expression and '{%' not in expression:
                     actual = templar.evaluate_expression(trust_as_template(expression))
                 else:

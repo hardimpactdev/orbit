@@ -83,8 +83,9 @@ def errors_of(name, arguments, specs):
     parameters = {key: stand_in(options[key]) if templated(value) and key in options else value for key, value in arguments.items()}
     # `required_if` reads values, which a stand-in does not have.
     # `omit` removes a parameter at runtime. Presence constraints cannot decide these branches statically.
-    optional = {key for key, value in arguments.items() if isinstance(value, str) and re.search(r'\bdefault\(\s*omit\s*\)', value)}
-    exclusive = [group for group in spec.get('mutually_exclusive', []) if not optional.intersection(group)]
+    optional = {key for key, value in arguments.items() if isinstance(value, str) and templated(value) and re.search(r'\bdefault\(\s*omit\s*\)', value)}
+    exclusive = [[key for key in group if key not in optional] for group in spec.get('mutually_exclusive', [])]
+    exclusive = [group for group in exclusive if len(group) > 1]
     validator = ModuleArgumentSpecValidator(spec['argument_spec'], exclusive, spec.get('required_together'),
                                             spec.get('required_one_of'), None, spec.get('required_by'))
     return validator.validate(parameters).error_messages
