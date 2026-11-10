@@ -13,6 +13,8 @@ covers:
 
 # Instance setup and teardown
 
+[Instance containers](/reference/development-containers#processes) use the Project's development deploy steps to build the default, then install its development Process definitions. A clone inherits that workspace and installs its own Process records.
+
 A Project stores two ordered lists of named commands: setup steps and teardown steps. Orbit runs the setup list before it activates a new development Instance, and the teardown list before it removes an active development Instance. Setup does not require a Route: an unrouted monorepo `default` becomes `active` and runs the same list. Its setup commands can install dependencies in each subproject without application metadata inspection at the repository root.
 
 [Registration](/cli/instance/register) runs this list only with `--setup`, followed by its development Processes. It uses the same frozen list digest and command checks. Setup runs with a private umask, so a command that creates `.env` does not expose it to other accounts. On retry, setup checks and starts existing Project-defined Processes too; it retains their records. An empty list with no Processes or other Node work starts no run.
