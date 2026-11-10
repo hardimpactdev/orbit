@@ -23,6 +23,9 @@ export const behavior = {
                 processes: z.array(z.string()),
                 route: z.string(),
                 certificates: z.array(z.string()).default([]),
+                t3_observation: z.string().default(""),
+                sessions_observation: z.string().default(""),
+                route_observation: ObjectValue.default({}),
                 container: z.object({
                     launch: z.string(),
                     workspace: Step.nullable(),
@@ -44,6 +47,9 @@ export const behavior = {
                     processes: string[];
                     route: string;
                     certificates?: string[];
+                    t3_observation?: string;
+                    sessions_observation?: string;
+                    route_observation?: Record<string, unknown>;
                     container?: {
                         launch: string;
                         workspace: z.infer<typeof Step> | null;

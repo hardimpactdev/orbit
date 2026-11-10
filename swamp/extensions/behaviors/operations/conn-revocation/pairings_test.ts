@@ -162,3 +162,56 @@ Deno.test("zero actual revocations for any delivered pairing fail even when anot
         await Deno.remove(directory, { recursive: true });
     }
 });
+
+Deno.test("an empty pairing or session selection fails before publishing requests", async () => {
+    const directory = await Deno.makeTempDir({
+        prefix: "orbit-conn-revoke.",
+        dir: "/tmp",
+    });
+    try {
+        await Deno.writeTextFile(`${directory}/inventory.json`, "[]");
+        for (const pairings of [[], [{ ...mini, delivered: false }]]) {
+            const { context, getWrittenResources } = createModelTestContext();
+            await assertRejects(
+                () =>
+                    behavior.methods.select.execute({
+                        directory,
+                        intent: {
+                            url: "http://t3.test",
+                            labels: [],
+                            links: ["owned-link"],
+                            pairings,
+                        },
+                    }, context),
+                Error,
+                "conn.revocation_unmatched",
+            );
+            assertEquals(getWrittenResources(), []);
+        }
+    } finally {
+        await Deno.remove(directory, { recursive: true });
+    }
+});
+
+Deno.test("an undelivered pairing still requires an actual session revocation", async () => {
+    const directory = await Deno.makeTempDir({
+        prefix: "orbit-conn-revoke.",
+        dir: "/tmp",
+    });
+    try {
+        await Deno.writeTextFile(
+            `${directory}/session-0.json`,
+            '{"revoked":false}',
+        );
+        const reply = await readReplies(directory, "session", ["succeeded"], [
+            { id: mini.id, delivered: false, indices: [0] },
+        ]);
+        assertEquals(reply.valid, false);
+        assertEquals(
+            JSON.parse(reply.stdout).error_code,
+            "conn.revocation_unmatched",
+        );
+    } finally {
+        await Deno.remove(directory, { recursive: true });
+    }
+});

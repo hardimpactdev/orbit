@@ -221,7 +221,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `POST /environments` | `{"environment_id", "label", "url", "admin_session"}` | environment |
 | `GET /environments/{environment_id}/pairings` | — | list of pairing, newest first |
 | `POST /environments/{environment_id}/pairings` | — | Operation (202) |
-| `POST /environments/{environment_id}/pairings/revoke` | `{"node_id": 4}`, optional | Operation (202) |
+| `POST /environments/{environment_id}/pairings/revoke` | `{"node_id": 4, "pairing_id": 7}`, both optional | Operation (202) |
 
 The objects:
 
@@ -291,11 +291,11 @@ The Gateway stores the versions apart from the document, in `section_meta` on th
 
 ## Session cleanup
 
-Pairing revocation captures its exact pairing IDs, client labels, link IDs, issue windows, Node source IP and T3 URL at admission. The optional `pairing_id` targets one pairing, including a revoked pairing; it must belong to the selected Node and environment. Without it, only open pairings are selected. Overlapping issue windows for that Node and environment refuse with `conn.revocation_ambiguous` before any revoke. Native fan-out uses fixed behavior names, and the Gateway admits one revocation per T3 environment. All native steps run on Node 209.
+Pairing revocation captures its exact pairing IDs, client labels, link IDs, issue windows, Node source IP and T3 URL at admission. The optional API and MCP `pairing_id` targets one pairing, including a revoked pairing; it must belong to the selected Node and environment. Without it, only open pairings are selected. Overlapping issue windows for that Node and environment refuse with `conn.revocation_ambiguous` before any revoke. Native fan-out uses fixed behavior names, and the Gateway admits one revocation per T3 environment. All native steps run on Node 209.
 
 The Gateway sends the existing admin session through the shared execution-copy helper; workflow input holds only the vault and key names. Swamp reads the T3 session list once. Conn sessions retain the exact pairing label on the `one-time-token` subject. CLI-linked sessions use `mcp-client`: Orbit selects every non-current session with that subject, the exact Node WireGuard source IP, and an `issuedAt` inside the pairing’s issue-start to expiry window. 
 
-Stock T3 0.1.7 stores no session-to-pairing key, so this bounded rule cannot prove token provenance. Orbit revokes selected sessions and pairing links in separate native steps and preserves the current admin. A delivered pairing with no matching session, or no session actually revoked, fails with `conn.revocation_unmatched` and keeps the pairing rows unchanged. A cleared credential proves delivery, not redemption; this check is conservative. A failed read is a failure, never an empty inventory. The native terminal check and captured public reply metadata project only the admitted pairings. Valid link completions are recorded even when a later link fails.
+Stock T3 0.1.7 stores no session-to-pairing key, so this bounded rule cannot prove token provenance. Orbit revokes selected sessions and pairing links in separate native steps and preserves the current admin. An empty pairing selection, no matching sessions, or no session actually revoked fails with `conn.revocation_unmatched` and keeps the pairing rows unchanged. A cleared credential proves delivery, not redemption; this check is conservative. A failed read is a failure, never an empty inventory. The native terminal check and captured public reply metadata project only the admitted pairings. Valid link completions are recorded even when a later link fails.
 
 Steps make no Gateway calls.
 

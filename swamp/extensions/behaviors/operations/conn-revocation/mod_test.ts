@@ -182,17 +182,19 @@ Deno.test("selection gives sessions and links ordered request slots without priv
             ],
         );
         await Deno.remove(`${directory}/inventory.json`);
-        assertEquals(
-            await behavior.methods.select.execute({
-                intent: {
-                    url: "https://t3.test",
-                    labels: [],
-                    links: [],
-                    pairings: [],
-                },
-                directory,
-            }, context),
-            { sessions: [], links: [], pairings: [] },
+        await assertRejects(
+            () =>
+                behavior.methods.select.execute({
+                    intent: {
+                        url: "https://t3.test",
+                        labels: [],
+                        links: [],
+                        pairings: [],
+                    },
+                    directory,
+                }, context),
+            Error,
+            "conn.revocation_unmatched",
         );
     } finally {
         await Deno.remove(directory, { recursive: true });

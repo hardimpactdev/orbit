@@ -58,7 +58,7 @@ Orbit adds `reset`, the password, `resetchannels`, `-@all`, and the final `-@adm
 
 ### The Process belongs to the server
 
-`process:update` refuses the Process of a `redis` server with `process.required_by_database_server`, as `process:destroy` already refuses every server Process. So nobody can drop `--aclfile` from the command or add an environment value such as `VALKEY_EXTRA_FLAGS`. `process:start`, `process:stop`, and `process:restart` stay allowed: they keep the command, and the ACL file stays in the volume.
+`process:update` accepts only an image-only update to `valkey/valkey:<tag>` for the Process of a `redis` server. It keeps the stored command, volumes and every other specification field. See [Database servers](/reference/database-servers#update-a-valkey-servers-image) for validation and refusals. `process:destroy` still refuses every server Process. So nobody can drop `--aclfile` from the command or add an environment value such as `VALKEY_EXTRA_FLAGS`. `process:start`, `process:stop`, and `process:restart` stay allowed: they keep the command, and the ACL file stays in the volume.
 
 ### Doctor checks the server
 
@@ -124,7 +124,7 @@ The AI router collector and the Gateway's snapshot reads keep using `services-va
 
 - The Gateway queue gets a user that reaches only its own keys.
 - New Valkey servers require a password. Doctor reports an adopted server that stays open until its clients have moved.
-- A Valkey server's image tag cannot change through `process:update`. A command for that is a follow-up.
+- A Valkey server's image tag changes through an image-only `process:update` within `valkey/valkey:<tag>`. Its ACL command and mounts stay unchanged.
 - Until the collector has its own user, the admin password of the adopted server is also in the collector's environment.
 - Key patterns do not limit the database index: Valkey 8 has no ACL rule for it.
 
@@ -133,4 +133,4 @@ The AI router collector and the Gateway's snapshot reads keep using `services-va
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/web
 - ADRs: [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) gains a driver; [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) binds the collector's own connection at step 4
 - Detail: [Database servers](/reference/database-servers), [Database connections](/reference/database-connections), [Gateway queue: ACL users](/reference/gateway-queue#acl-users), [`doctor`](/cli/doctor)
-- Verify: Gateway tests for Valkey server creation, retry, repair, adoption, the ACL user create and destroy, the `process:update` refusal, and the Doctor family; tests against a real `valkey/valkey:8.1` container that CI runs with `ORBIT_TEST_DOCKER=1`
+- Verify: Gateway tests for Valkey server creation, retry, repair, adoption, the ACL user create and destroy, image-only `process:update` and its refusals, and the Doctor family; tests against a real `valkey/valkey:8.1` container that CI runs with `ORBIT_TEST_DOCKER=1`
