@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\Operations\OperationBudgetTable;
 use App\Domain\Proof\ProofBatchPlan;
+use App\Domain\Proof\ProofChangedFile;
+use App\Domain\Proof\ProofChangedFiles;
+use App\Domain\Proof\ProofSelection;
 
 it('gives each kind a fixed number of seconds or the captured admission field', function (): void {
     foreach (OperationBudgetTable::SecondsByKind as $kind => $budget) {
@@ -17,14 +20,17 @@ it('takes the longest fixed budget as the Swamp serve run cap', function (): voi
     expect(OperationBudgetTable::longestFixedSeconds())->toBe(max($fixed))->and(max($fixed))->toBeGreaterThanOrEqual(10800);
 });
 
-it('has no kind of a command that has a cases file, because a change to the table selects no proof', function (): void {
+it('selects no proof for a budget-only change even when budgeted commands have cases files', function (): void {
     $root = dirname(base_path(), 2);
-    $commands = array_map(static fn (string $file): string => strtr(basename(dirname($file)).'-'.basename($file, '.cases.yaml'), ['.' => '-', '_' => '-']),
+    $files = array_map(static fn (string $file): string => substr($file, strlen($root) + 1),
         glob($root.'/swamp/proof/*/*.cases.yaml') ?: []);
-    $kinds = array_map(static fn (string $kind): string => strtr($kind, ['.' => '-', '_' => '-']), array_keys(OperationBudgetTable::SecondsByKind));
+    $selected = ProofSelection::select((string) file_get_contents($root.'/swamp/proof/selection.txt'),
+        new ProofChangedFiles(str_repeat('a', 40), [new ProofChangedFile('apps/gateway/app/Domain/Operations/OperationBudgetTable.php', 'modified')], true),
+        false, ProofSelection::casesFiles($files));
 
-    // When a command whose kind is budgeted here gets a cases file, map this file to that command in swamp/proof/selection.txt.
-    expect(array_values(array_intersect($commands, $kinds)))->toBe([]);
+    expect($selected->files())->toBe([])
+        ->and($selected->everythingBecause)->toBeNull()
+        ->and($selected->nothingToProve())->toBeTrue();
 });
 
 it('lets serve run the longest proof shard, whose budget the table does not hold', function (): void {
