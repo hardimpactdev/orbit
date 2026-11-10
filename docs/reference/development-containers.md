@@ -127,9 +127,11 @@ The way in has two parts on the Node. A Caddyfile cannot bind a range of ports, 
 | Part | What Orbit does |
 | --- | --- |
 | Range | 1024 to 65535 on the WireGuard address: every port that `agent`, which is not root, can open. The redirect binds nothing, so the size of the range costs nothing |
-| Listening ports | The table leaves every port that a program on the Node listens on, on any address: its socket check finds the program |
+| Listening ports | The table leaves every port that a program on the Node listens on, at the WireGuard address or at every address. Its socket check finds the program |
+| Other addresses | A program that listens only on another address, such as `127.0.0.1`, is not reached from WireGuard anyway. Its port goes to Caddy |
 | Orbit's ports | The table always leaves the Node's own ports, also while their program is down. See the list below |
-The Node's own ports are the SSH port, the egress proxy 3128, the published T3 ports 3800 to 3999, the model guard and forwarder 8318 and 8319, the WireGuard port, and the ports of the Node's Database servers and Processes.
+
+The Node's own ports are the SSH port, the egress proxy 3128, the published T3 ports 3800 to 3999, the model guard and forwarder 8318 and 8319, the WireGuard port, and the ports of the Node's Database servers and Processes. Overlapping ranges merge into one. `/etc/orbit/instance` names them as `ORBIT_DEV_PORTS_TAKEN`, so the agent picks another port.
 
 | Part | What Orbit does |
 | --- | --- |
@@ -143,10 +145,15 @@ Who reaches the servers:
 
 - **WireGuard peers only.** The table takes only connections that come in on the WireGuard interface to its address. The site refuses LAN neighbours and task VMs, as every WireGuard-only site does.
 - **Private Routes only.** A public Route has no development site. Making a Route public takes it away at the next Caddy build.
+- **One rule.** The same rule decides the site, the container's ACL and `/etc/orbit/instance`. The ACL and the file are written at the create.
 - **The container ACL.** Only the bridge's own address, the Node's Caddy, reaches ports 1024 to 65535 in a clone.
 - **Clones with a Route.** The default runs no agent, and a Project without a Route has no domain for them. `/etc/orbit/instance` names `ORBIT_URL` and `ORBIT_DEV_PORTS`.
+Which Node answers:
+
 - **The Node of the clone.** The Route's private name answers with the clone's Node, or with the Cluster's Router.
 - **No other Router.** Only the clone's Node has the table. A clone behind a Router on another Node gets no development ports.
+- **Cluster members on a LAN.** [Private DNS](/reference/private-dns#cluster-router-addresses) gives a Cluster member with a LAN address the Router's LAN address. The table does not take it, so such a member reaches no development port.
+- **WireGuard clients.** A WireGuard client outside the Cluster, such as a Mac, gets the WireGuard address and reaches the ports.
 
 The Node's converge writes the table, and its unit loads it at boot. A Database server or Process added later is left alone by the socket check while it runs; the next converge also adds its port to the ports the Node keeps.
 

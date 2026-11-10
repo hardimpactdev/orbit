@@ -184,8 +184,10 @@
         content: |
           [Unit]
           Description=Orbit Instance containers: agent development ports to Caddy
-          After=nftables.service
-          Before=wg-quick@orbit.service
+          DefaultDependencies=no
+          After=local-fs.target nftables.service
+          Before=network-pre.target wg-quick@orbit.service docker.service incus.service
+          Wants=network-pre.target
 
           [Service]
           Type=oneshot
@@ -195,7 +197,7 @@
           ExecStop=/usr/sbin/nft delete table inet {{ instances.dev_ports.table }}
 
           [Install]
-          WantedBy=multi-user.target
+          WantedBy=sysinit.target
       register: dev_ports_unit
     - name: Load the table
       ansible.builtin.systemd_service:
@@ -204,10 +206,16 @@
         enabled: true
         state: started
       register: dev_ports_started
+    # A table deleted by hand while its unit stays active comes back too.
+    - name: Read the live table
+      ansible.builtin.command: { argv: [nft, list, table, inet, "{{ instances.dev_ports.table }}"] }
+      register: dev_ports_live
+      changed_when: false
+      failed_when: false
     # The file replaces the table in one transaction, so a changed table never leaves a gap.
-    - name: Load a changed table in place
+    - name: Load a changed or missing table in place
       ansible.builtin.command: { argv: [nft, --file, "{{ dev_ports_file }}"] }
-      when: dev_ports_ruleset.changed and not dev_ports_started.changed
+      when: (dev_ports_ruleset.changed or dev_ports_live.rc != 0) and not dev_ports_started.changed
       changed_when: true
 
 - name: Build the Instance image

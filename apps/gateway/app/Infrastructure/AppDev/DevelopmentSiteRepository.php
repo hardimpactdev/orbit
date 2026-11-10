@@ -540,7 +540,7 @@ final readonly class DevelopmentSiteRepository
                 projectSlug: $instance->project->slug,
                 certificateScope: $domainChange ? "app-instance-{$instance->id}-hostname-change" : null,
                 localHttpUpstream: $runtime->bridge_address.':'.InstanceContainer::WebPort,
-                devUpstream: $this->servesDevPorts($instance, $runtime, $route) ? $runtime->bridge_address : null,
+                devUpstream: app(InstanceContainer::class)->servesDevPorts($instance, $runtime, $route) ? $runtime->bridge_address : null,
             );
         }
         // A development default in the old release layout serves through `current` until its next deployment converts it.
@@ -611,15 +611,6 @@ final readonly class DevelopmentSiteRepository
             certificateScope: $domainChange ? "route-{$route->id}-router-hostname-change" : null,
             upstreamSystemRoots: $publicUpstream,
         );
-    }
-
-    /**
-     * A container clone's private Route serves its agent's development servers (docs/reference/development-containers.md#agent-development-servers).
-     * A public Route never does: the servers run as `agent`, and the split of the two users keeps a public URL away from `agent`'s files.
-     */
-    private function servesDevPorts(Instance $instance, InstanceRuntime $runtime, Route $route): bool
-    {
-        return $route->publication !== RoutePublication::Public && app(InstanceContainer::class)->servesDevPorts($instance, $runtime);
     }
 
     /**

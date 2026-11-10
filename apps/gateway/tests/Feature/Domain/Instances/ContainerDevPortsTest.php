@@ -11,6 +11,8 @@ use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\RouteCaddySiteSource;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
@@ -19,6 +21,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\RouteTarget;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 
@@ -45,6 +48,7 @@ function devPortWorld(string $publication = 'private'): array
     $cloneRuntime = $runtime($clone, '10.253.0.3', $default, 3800);
     $route = Route::query()->create(['kind' => 'app', 'project_id' => $project->id, 'node_id' => $node->id, 'provenance' => 'explicit',
         'publication' => $publication, 'domain' => 'feature.tool.test', 'status' => 'pending']);
+    RouteTarget::query()->create(['route_id' => $route->id, 'instance_id' => $clone->id, 'position' => 0]);
 
     return ['node' => $node, 'project' => $project, 'default' => $default, 'clone' => $clone, 'runtime' => $cloneRuntime, 'route' => $route];
 }
@@ -80,15 +84,56 @@ it('serves no development servers on a public Route', function (): void {
     expect(devPortSites($public['clone'], $public['route']))->toBe([]);
 });
 
-it('serves no development servers for the default, or for a Project without a Route', function (): void {
+it('serves no development servers for the default, or for a clone without a Route', function (): void {
     $world = devPortWorld();
     $defaultRuntime = InstanceRuntime::query()->where('instance_id', $world['default']->id)->firstOrFail();
 
     expect(devPortSites($world['default'], $world['route']))->toBe([])
-        ->and(app(InstanceContainer::class)->servesDevPorts($world['default'], $defaultRuntime))->toBeFalse();
+        ->and(app(InstanceContainer::class)->servesDevPorts($world['default'], $defaultRuntime))->toBeFalse()
+        ->and(app(InstanceContainer::class)->servesDevPorts($world['clone'], $world['runtime']))->toBeTrue();
 
-    $world['project']->update(['type' => ProjectType::NodePackage]);
+    RouteTarget::query()->where('instance_id', $world['clone']->id)->delete();
     expect(app(InstanceContainer::class)->servesDevPorts($world['clone']->refresh(), $world['runtime']))->toBeFalse();
+});
+
+it('decides the ACL and the instance file by the same rule as the site: a clone with a public Route gets neither', function (): void {
+    $world = devPortWorld('public');
+
+    $container = app(InstanceContainer::class)->intent($world['clone'], $world['runtime'], url: 'https://feature.tool.test');
+
+    $instanceFile = collect(ValidatedData::object($container['clone'])['files'])->firstWhere('path', '/etc/orbit/instance');
+    expect(collect($container['acl_rules']['ingress'])->pluck('destination_port')->all())->toBe(['8080', '3773'])
+        ->and(str_contains($instanceFile['content'], 'ORBIT_DEV_PORTS'))->toBeFalse();
+});
+
+it('binds the development site to the WireGuard address only, and aborts every client outside the VPN and every task VM', function (): void {
+    $world = devPortWorld();
+    config(['task_vms.enabled' => true, 'task_vms.wireguard_range' => '10.44.0.128/25']);
+    $site = devPortSites($world['clone'], $world['route'])[0];
+    $source = new class($site) implements NodeCaddySiteSource
+    {
+        public function __construct(private CaddySite $site) {}
+
+        public function order(): int
+        {
+            return 1;
+        }
+
+        public function sites(Node $node): array
+        {
+            return [$this->site];
+        }
+    };
+
+    $caddyfile = (new NodeCaddyfileRenderer([$source]))->render($world['node']);
+
+    expect($caddyfile->content)->toContain("https://feature.tool.test:444 {\n    bind 10.44.0.7\n")
+        ->toContain('@orbit_outside not remote_ip 10.44.0.0/24')
+        ->toContain('abort @orbit_outside')
+        ->toContain('@orbit_task_vms remote_ip 10.44.0.128/25')
+        ->toContain('abort @orbit_task_vms')
+        ->and(str_contains($caddyfile->content, 'bind 0.0.0.0'))->toBeFalse()
+        ->and(str_contains($caddyfile->content, '192.168.'))->toBeFalse();
 });
 
 it('lets only the Node\'s Caddy reach the development range in the clone, and names it in the instance file', function (): void {
@@ -99,7 +144,7 @@ it('lets only the Node\'s Caddy reach the development range in the clone, and na
     $instanceFile = collect(ValidatedData::object($container['clone'])['files'])->firstWhere('path', '/etc/orbit/instance');
     expect($container['acl_rules']['ingress'][2])
         ->toBe(['action' => 'allow', 'source' => '10.253.0.1/32', 'protocol' => 'tcp', 'destination_port' => '1024-65535', 'state' => 'enabled'])
-        ->and($instanceFile['content'])->toContain("ORBIT_URL=https://feature.tool.test\nORBIT_DEV_PORTS=1024-65535\n");
+        ->and($instanceFile['content'])->toContain("ORBIT_URL=https://feature.tool.test\nORBIT_DEV_PORTS=1024-65535\nORBIT_DEV_PORTS_TAKEN=3128,3800-3999,8318-8319,51820\n");
 });
 
 describe('the Node\'s redirect of the development range', function (): void {
@@ -111,16 +156,17 @@ describe('the Node\'s redirect of the development range', function (): void {
         Process::query()->forceCreate(['owner_type' => 'node', 'owner_id' => $world['node']->id, 'name' => 'grafana', 'runtime' => 'docker',
             'runtime_config' => ['image' => 'grafana', 'ports' => ['10.44.0.7:3000:3000', '127.0.0.1:80:80']], 'status' => 'active']);
         Process::query()->forceCreate(['owner_type' => Instance::MorphAlias, 'owner_id' => $world['clone']->id, 'name' => 'queue', 'runtime' => 'docker',
-            'runtime_config' => ['image' => 'x', 'ports' => ['9100:9100/tcp']], 'status' => 'active']);
+            'runtime_config' => ['image' => 'x', 'ports' => ['9100:9100/tcp', '3900:3900', '8317:8317']], 'status' => 'active']);
 
         $ruleset = app(InstanceDevPorts::class)->ruleset($world['node']->refresh());
 
         expect(app(InstanceDevPorts::class)->excluded($world['node']))
-            ->toBe(['2222', '3000', '3128', '3800-3999', '5432', '8318-8319', '9100', '51820'])
+            // 3900 lies in the T3 range and 8317 touches the forwarder's range: an nftables interval set refuses overlaps, so they merge.
+            ->toBe(['2222', '3000', '3128', '3800-3999', '5432', '8317-8319', '9100', '51820'])
             ->and($ruleset)->toContain("table inet orbit_instance_dev_ports\ndelete table inet orbit_instance_dev_ports\n")
             ->toContain('type nat hook prerouting priority dstnat + 10; policy accept;')
             ->toContain('iifname "orbit" ip daddr 10.44.0.7 tcp dport 1024-65535 ct state new jump development')
-            ->toContain('elements = { 2222, 3000, 3128, 3800-3999, 5432, 8318-8319, 9100, 51820 }')
+            ->toContain('elements = { 2222, 3000, 3128, 3800-3999, 5432, 8317-8319, 9100, 51820 }')
             ->toContain("tcp dport @excluded return\n\t\tsocket transparent 0 return\n\t\tmeta l4proto tcp counter redirect to :444");
     });
 
@@ -129,7 +175,9 @@ describe('the Node\'s redirect of the development range', function (): void {
 
         $intent = app(InstanceHostIntent::class)->for($world['node']);
 
-        expect($intent['dev_ports'] ?? null)->toBe(['table' => 'orbit_instance_dev_ports', 'unit' => 'orbit-instance-dev-ports.service',
-            'ruleset' => app(InstanceDevPorts::class)->ruleset($world['node'])]);
+        expect(array_keys($intent['dev_ports'] ?? []))->toBe(['table', 'unit', 'ruleset'])
+            ->and($intent['dev_ports']['table'])->toBe('orbit_instance_dev_ports')
+            ->and($intent['dev_ports']['unit'])->toBe('orbit-instance-dev-ports.service')
+            ->and($intent['dev_ports']['ruleset'])->toContain('ip daddr 10.44.0.7 tcp dport 1024-65535 ct state new jump development');
     });
 });

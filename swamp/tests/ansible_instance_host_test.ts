@@ -230,6 +230,9 @@ async function fixture(
   }
   Deno.writeTextFileSync(`${folder}/arc`, "0\n");
   Deno.writeTextFileSync(`${folder}/ip-addr`, addresses.join("\n") + "\n");
+  // nftables: the live table exists once the unit or a load has run; the stand-in records each call.
+  Deno.writeTextFileSync(`${folder}/bin/nft`, `#!/bin/sh\necho "$*" >> '${folder}/nft-calls'\nexit 0\n`);
+  Deno.chmodSync(`${folder}/bin/nft`, 0o755);
   Deno.writeTextFileSync(
     `${folder}/meminfo`,
     `MemTotal:       ${32 * GiB / 1024} kB\n`,
@@ -569,6 +572,7 @@ Deno.test({
         "table inet orbit_instance_dev_ports\ndelete table inet orbit_instance_dev_ports\ntable inet orbit_instance_dev_ports {}\n");
       assert(Deno.readTextFileSync(`${f.folder}/systemd/orbit-instance-dev-ports.service`)
         .includes(`ExecStart=/usr/sbin/nft --file ${f.folder}/dev-ports.nft`));
+      assert(Deno.readTextFileSync(`${f.folder}/nft-calls`).includes("list table inet orbit_instance_dev_ports"));
       assertEquals(
         Deno.readTextFileSync(`${f.folder}/sysctl/fs.inotify.max_user_watches`),
         "1048576 /etc/sysctl.d/60-orbit-instances.conf",

@@ -61,14 +61,30 @@ final readonly class InstanceDevPorts
                 }
             }
         }
-        $ports = array_values(array_filter(array_unique($ports), static function (string $port): bool {
-            $first = (int) explode('-', $port)[0];
+        // An nftables interval set refuses elements that overlap, so overlapping and adjacent ranges merge into one.
+        $ranges = [];
+        foreach ($ports as $port) {
+            if (preg_match('/\A([0-9]{1,5})(?:-([0-9]{1,5}))?\z/D', $port, $match) !== 1) {
+                continue;
+            }
+            $first = max(self::First, (int) $match[1]);
+            $last = min(self::Last, (int) ($match[2] ?? $match[1]));
+            if ($first <= $last) {
+                $ranges[] = [$first, $last];
+            }
+        }
+        usort($ranges, static fn (array $left, array $right): int => $left[0] <=> $right[0]);
+        $merged = [];
+        foreach ($ranges as [$first, $last]) {
+            $previous = array_key_last($merged);
+            if ($previous !== null && $first <= $merged[$previous][1] + 1) {
+                $merged[$previous][1] = max($merged[$previous][1], $last);
+            } else {
+                $merged[] = [$first, $last];
+            }
+        }
 
-            return preg_match('/\A[0-9]{1,5}(?:-[0-9]{1,5})?\z/D', $port) === 1 && (int) (explode('-', $port)[1] ?? $first) >= self::First;
-        }));
-        sort($ports, SORT_NATURAL);
-
-        return $ports;
+        return array_map(static fn (array $range): string => $range[0] === $range[1] ? (string) $range[0] : $range[0].'-'.$range[1], $merged);
     }
 
     /**

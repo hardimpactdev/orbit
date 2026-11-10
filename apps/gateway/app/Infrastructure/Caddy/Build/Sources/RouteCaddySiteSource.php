@@ -81,7 +81,7 @@ final readonly class RouteCaddySiteSource implements NodeCaddySiteSource
     private function devPortSites(Collection $sites): array
     {
         return array_values($sites
-            ->filter(static fn (DevelopmentSite $site): bool => ! $site->publicListener && $site->devUpstream !== null)
+            ->filter(static fn (DevelopmentSite $site): bool => $site->devUpstream !== null)
             ->map(fn (DevelopmentSite $site): CaddySite => new CaddySite(source: $this->source($site), name: "{$site->scope}-dev",
                 listener: CaddyListenerRule::WireGuard, hosts: [$site->domain], port: InstanceDevPorts::Listener,
                 body: $this->renderer->renderDevPorts($site, self::BindPlaceholder), bindPlaceholder: self::BindPlaceholder))

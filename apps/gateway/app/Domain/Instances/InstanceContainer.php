@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\TaskVms\TaskVmConfig;
@@ -15,6 +16,7 @@ use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\Route;
 use App\Support\ValidatedData;
 
 /**
@@ -248,7 +250,8 @@ final readonly class InstanceContainer
             'files' => [
                 ['path' => self::InstanceFile, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => "# Managed by Orbit.\n"
                     ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\nORBIT_URL=".($url ?? '')."\n"
-                    .($this->servesDevPorts($instance, $runtime) ? 'ORBIT_DEV_PORTS='.InstanceDevPorts::First.'-'.InstanceDevPorts::Last."\n" : '')],
+                    .($this->servesDevPorts($instance, $runtime) ? 'ORBIT_DEV_PORTS='.InstanceDevPorts::First.'-'.InstanceDevPorts::Last."\n"
+                        .'ORBIT_DEV_PORTS_TAKEN='.implode(',', app(InstanceDevPorts::class)->excluded($node))."\n" : '')],
                 ['path' => '/home/agent/.codex/config.toml', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => $codex],
                 ['path' => '/home/agent/.claude.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => "{\"hasCompletedOnboarding\": true}\n"],
             ],
@@ -297,11 +300,15 @@ final readonly class InstanceContainer
 
     /**
      * Whether an agent's development servers answer through the Instance's Route (docs/reference/development-containers.md#agent-development-servers):
-     * a clone that runs T3 and has a Route. The default runs no agent, and an Instance without a Route has no domain to serve them on.
+     * a clone that runs T3, with its own private Route. The default runs no agent. A public Route never serves them: the servers run as
+     * `agent`, and the split of the two users keeps a public URL away from `agent`'s files. `$route` is the Route a caller renders;
+     * without it, the Instance's own Route.
      */
-    public function servesDevPorts(Instance $instance, InstanceRuntime $runtime): bool
+    public function servesDevPorts(Instance $instance, InstanceRuntime $runtime, ?Route $route = null): bool
     {
-        return $runtime->clone_source_instance_id !== null && $instance->requiresRoute();
+        $route ??= $instance->routes()->whereNull('web_root')->orderBy('routes.id')->first();
+
+        return $runtime->clone_source_instance_id !== null && $route instanceof Route && $route->publication !== RoutePublication::Public;
     }
 
     /** Every UFW rule of a container Instance carries this comment prefix. */
