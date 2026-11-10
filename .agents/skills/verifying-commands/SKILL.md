@@ -39,7 +39,7 @@ Cases have no undo. Each uses its own resources. A case that changes shared stat
 
 Keep each protocol's bound firewall identity and select the placement anchor for the same protocol. Batch cases can reuse fixture names and leave earlier rules behind, so a comment alone can select another case's rule. Probe a partial state before the action to prove the line that should stay already works.
 
-Derive Operation assertions and locks from every actual CLI call's write kind and target, not the file's command or placed Node alone. Scope known writes before the API's newest-50 limit. Cross-Node calls, unresolved targets and commands without a known write scope (including reads) run exclusively and audit without filters. A no-request case shares its Node only when its setup, stages and negative steps are all reads; a fault or a held lock is a writer on that Node. Test reader overlap, writer exclusion in both orders, and unexpected writes from read commands.
+Derive Operation assertions and locks from every actual CLI call's write kind and target, not the file's command or placed Node alone. Scope known writes before the API's newest-50 limit. Cross-Node calls, unresolved targets and commands without a known write scope (including reads) run exclusively and audit without filters. A no-request case shares its Node only when its setup, stages and negative steps are all reads; a fault, a held lock or a service step is a writer on that Node. Package checks are reads; `node_fixture` and `recorded_request` keep the fleet exclusive. Test reader overlap, writer exclusion in both orders, and unexpected writes from read commands.
 
 ## CI
 

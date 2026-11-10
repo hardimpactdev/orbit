@@ -147,9 +147,21 @@ class PlacementTest(unittest.TestCase):
 
     def test_steps_that_change_what_all_cases_share_run_alone(self):
         for step in ('agent_report: {node: app-dev}', 'node_down: {node: app-dev}', 'node_access_remove: {consumer: app-prod, serving: app-dev}',
-                     'ipv6_addresses: {nodes: [app-dev]}'):
+                     'ipv6_addresses: {nodes: [app-dev]}', 'node_fixture: {kind: managed, as: managed}',
+                     'node_fixture: {kind: retained, as: retained, consumer: app-prod, serving: app-dev}'):
             loaded = load_text(writing('a').replace('    act:\n', f'    setup:\n      - {step}\n    act:\n'))
             self.assertEqual(loaded.cases[0].lock, 'all', step)
+
+    def test_a_recorded_request_runs_alone(self):
+        text = refusal('a').replace('    act:\n', '    act:\n      - recorded_request: {node: app-dev, caller: gateway, expect: []}\n')
+        self.assertEqual(load_text(text).case('a').lock, 'all')
+
+    def test_a_package_check_can_share_its_node_with_readers(self):
+        text = refusal('a').replace('    expect: []', '    expect:\n      - package: {on: app-dev, any: [nginx]}')
+        loaded = load_text(text + refusal('b'))
+        self.assertEqual(loaded.case('a').lock, 'read')
+        self.assertTrue(runner.may_start(loaded.case('a'), [loaded.case('b')]))
+        self.assertEqual(load_text(text.replace('on: app-dev', 'on: gateway')).case('a').lock, 'all')
 
     def test_a_comparison_of_operations_does_not_hold_the_fleet(self):
         loaded = load_text(refusal('a').replace('    expect: []', '    expect:\n      - unchanged: {since: act, what: [operations]}'))
@@ -157,13 +169,14 @@ class PlacementTest(unittest.TestCase):
 
     def test_a_refusal_with_mutating_setup_holds_its_node(self):
         for step in ('fault: {on: app-dev, command: ufw, fail_after: {match: insert, count: 1}}', 'busy_node: {on: app-dev}',
-                     'listener: {on: app-dev, ports: [port]}', 'ufw_rule: {on: app-dev, action: deny, proto: tcp, port: "80"}',
+                     'listener: {on: app-dev, ports: [port]}', 'service: {on: app-dev, name: nginx, state: stop}', 'ufw_rule: {on: app-dev, action: deny, proto: tcp, port: "80"}',
                      'cli: {run: [firewall:allow, "80", "--node=${app-dev.id}"], expect: {exit: 0}}'):
             loaded = load_text(refusal('a').replace('    act:', f'    setup:\n      - {step}\n    act:'))
             self.assertEqual(loaded.cases[0].lock, 'node', step)
 
     def test_a_fault_or_busy_step_on_another_node_holds_the_fleet(self):
-        for step in ('fault: {on: gateway}', 'busy_node: {on: gateway}'):
+        for step in ('fault: {on: gateway}', 'busy_node: {on: gateway}',
+                     'service: {on: gateway, name: nginx, state: stop}'):
             loaded = load_text(refusal('a').replace('    act:', f'    setup:\n      - {step}\n    act:'))
             self.assertEqual(loaded.cases[0].lock, 'all', step)
 

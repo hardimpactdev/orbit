@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: the proof runner inside stage 3 of the command development pipeline (design: reference/verification-cases). One shared runner executes the cases of one command; each batch restores the task's base snapshot once, cases use their own resources and undo nothing, the cases of a batch run in one step, several at a time on different Nodes; a case is a specification built from a fixed set of steps. Orbit's own Swamp runs the runner over SSH in the task VM, as part of the "Run the proof" child of proof:run. The Gateway only admits the request and records the verdicts.
+  %% Target design: the proof runner inside stage 3 of the command development pipeline (design: reference/verification-cases). One shared runner executes the cases of one command; each batch restores the task's base snapshot once, cases use their own resources and undo nothing, the cases of a batch run in one step, several at a time with readers sharing each Node; a case is a specification built from a fixed set of steps. Orbit's own Swamp runs the runner over SSH in the task VM, as part of the "Run the proof" child of proof:run. The Gateway only admits the request and records the verdicts.
   %% status: draft
   %% command: development pipeline stage 3 · proof runner
   %% kind: pipeline.3-proof-runner
@@ -49,7 +49,7 @@ sequenceDiagram
     %%> - cases that change nothing are readers: several may read one Node together; a writer, including a fault or a held lock, is the only case on its Node until it ends
     %%> - resolve every CLI call's write kind and target before granting locks; a cross-Node or unresolved target, or a command without a known write scope, runs alone with an unfiltered Operation audit
     %%> - `request: none` audits the actual CLI call; `operations` compares every CLI step's scope, with filters before the newest-50 limit and newest IDs detecting added Operations
-    %%> - cases that change the shared fleet (`agent_report`, `node_down`, `node_access_remove`, `ipv6_addresses`), read every Node, work on another Node or set `exclusive: true` run alone, after the others
+    %%> - cases that change the shared fleet (`agent_report`, `node_down`, `node_access_remove`, `ipv6_addresses`, `node_fixture`, `recorded_request`), read every Node, work on another Node or set `exclusive: true` run alone, after the others
     %%> - no restore after a failed case: cases use their own resources, undo nothing, and the next batch restores anyway
     %%> Result:
     %%> - one verdict line a case, those that did not pass first; the full receipt of each stays in the evidence directory
