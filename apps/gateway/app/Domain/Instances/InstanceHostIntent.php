@@ -136,8 +136,8 @@ final readonly class InstanceHostIntent
      * The bridge ACL's ingress. Incus checks the bridge ACL before a container's own ACL, and a packet to a container must pass both.
      * So the bridge admits what a container's ACL may admit (InstanceContainer::intent), and no more: the Node's own connections,
      * which leave from the bridge address, to FrankenPHP's port and the development ports, and T3's port from any source. A proxy
-     * device in NAT mode keeps the address of T3's client, a WireGuard peer; the Node's route rules decide which peers pass. Each
-     * container's ACL stays the narrow guard: a default Instance admits only FrankenPHP's port.
+     * device in NAT mode keeps the address of T3's client, a WireGuard peer; the Node's route rules decide which peers pass. The NIC
+     * currently combines this common ACL with its own as a union, so defaults also inherit this ingress (F10, docs/reference/development-containers.md#network).
      *
      * @return list<array<string, string>>
      */

@@ -1105,12 +1105,14 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 | Clone probe | Always | On a ZFS pool only; a directory pool makes full copies |
 | Error code | `task_vm.setup_failed` | `instance.host_unavailable` |
 
-Incus checks the bridge ACL before a container's own ACL, and a packet to a container must pass both. Its default rejects what the Node sends or forwards to the bridge. So the bridge ACL admits what a container's ACL may admit, and each container's ACL stays the narrow guard:
+The bridge ACL admits the Node's preview and development connections and T3's clients:
 
-| Ingress rule | Who needs it | What narrows it |
-| --- | --- | --- |
-| TCP 1024 to 65535 from the bridge address | The Node's Caddy, which connects from that address: to FrankenPHP at 8080 for the preview, and to an agent's development ports | The container's ACL: a default Instance admits only 8080, and a clone the development ports too |
-| TCP 3773 from any source | T3's clients. The proxy device publishes T3 in NAT mode, so the packet keeps the address of the WireGuard peer | The Node's route rules of the clone, which admit WireGuard peers but no task VM, and the container's ACL: only a clone admits 3773 |
+| Ingress rule | Who needs it |
+| --- | --- |
+| TCP 1024 to 65535 from the bridge address | The Node's Caddy, which connects from that address: to FrankenPHP at 8080 for the preview, and to an agent's development ports |
+| TCP 3773 from any source | T3's clients, through a NAT proxy that preserves the WireGuard peer's address |
+
+The clone's Node route rules admit WireGuard peers but no task VM. The NIC combines the common and Instance ACLs as a union, so its own ACL does not narrow these ingress rules. The live check found that the Node also reaches a default's 3773 and 5173; cross-container connections to 3773 and 8080 failed with port isolation enabled. [F10](/reference/development-containers#network) records this limit and the required follow-up.
 
 The Gateway renders the rules as the intent's `ingress`. The Node needs no rule for port 8080 alone: it lies in the range of the development ports.
 

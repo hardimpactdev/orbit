@@ -322,6 +322,8 @@ The Gateway captures the recipe versions, downloads and digests at admission. Sw
 
 Completion requires a successful keyed installer step with `outcome: current|applied`. Source refusals keep `app-prod.php_package_source_unavailable`; other installer refusals keep `app-prod.php_install_failed`. Results expose the outcome, fixed error code and bounded `stale_masters` and `deferred` lists. The Gateway logs those FPM master warnings. Missing result data or an outcome other than `current` or `applied` fails with `app-prod.php_install_failed`. A lost reply uses the same Operation and target receipt. The child requires Kit C list enforcement; admission is unavailable until it lands.
 
+On build-list Nodes, the `app-dev` converge also prepares the [Instance container host](/reference/compute-drivers#prepare-an-instance-container-host), including the image, bridge ingress, DNS shutdown and egress proxy rule; task VM tasks and place counts stay unchanged.
+
 ## Orbit CLI
 
 Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order) runs the Orbit CLI. `fleet.cli_converge` records one intent for the selected Nodes and starts `operation-fleet-cli-converge`. The Gateway captures the release assets, the public profile and each installing Node's SSH descriptor. For each Node in turn, the `fleet-release-node` child checks on Node 209 that the Node may publish, runs the native `node-cli-install` child from Node 209 over SSH, and records the outcome on Node 209. Only `fleet.rollout` then publishes the observer binary, also from Node 209. It never invokes `cli.install` or `cli.self-update` on orbit-agent. No schedule admits rollouts; an operator starts one with `fleet.rollout`.
