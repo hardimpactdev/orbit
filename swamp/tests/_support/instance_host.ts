@@ -280,68 +280,9 @@ export const bridgeAnswersDns = (state: Record<string, any>) =>
 export const caddy = "10.253.0.1";
 export const peer = "10.44.0.20";
 
-type FixtureProcess = { pid: number; parent: number; started: string };
-
-function fixtureProcess(pid: number): FixtureProcess | undefined {
-    try {
-        const stat = Deno.readTextFileSync(`/proc/${pid}/stat`);
-        // The command name can contain spaces and parentheses; fields start after its closing parenthesis.
-        const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-        return { pid, parent: Number(fields[1]), started: fields[19] };
-    } catch (error) {
-        if (error instanceof Deno.errors.NotFound) return;
-        throw error;
-    }
-}
-
-function recordDescendants(known: Map<number, FixtureProcess>) {
-    const live = new Map<number, FixtureProcess>();
-    for (const entry of Deno.readDirSync("/proc")) {
-        if (!/^\d+$/.test(entry.name)) continue;
-        const process = fixtureProcess(Number(entry.name));
-        if (process) live.set(process.pid, process);
-    }
-    const owned = new Set<number>();
-    for (const process of known.values()) {
-        if (live.get(process.pid)?.started === process.started) {
-            owned.add(process.pid);
-        }
-    }
-    // Record parents before children, retaining identities even if Ansible later reparents them.
-    let added = true;
-    while (added) {
-        added = false;
-        for (const process of live.values()) {
-            if (!owned.has(process.pid) && owned.has(process.parent)) {
-                owned.add(process.pid);
-                known.set(process.pid, process);
-                added = true;
-            }
-        }
-    }
-}
-
-function signalFixtureProcess(process: FixtureProcess, signal: Deno.Signal) {
-    // A recorded PID may have exited and been reused during the TERM grace.
-    if (fixtureProcess(process.pid)?.started !== process.started) return;
-    try {
-        Deno.kill(process.pid, signal);
-    } catch (error) {
-        if (!(error instanceof Deno.errors.NotFound)) throw error;
-    }
-}
-
-async function stopFixtureTree(leader: FixtureProcess) {
-    const known = new Map([[leader.pid, leader]]);
-    // Ansible workers call setsid(), so a process-group kill cannot reach their modules.
-    recordDescendants(known);
-    signalFixtureProcess(leader, "SIGTERM");
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    recordDescendants(known);
-    for (const process of [...known.values()].reverse()) {
-        signalFixtureProcess(process, "SIGKILL");
-    }
-}
+// Shared by every file in one serial Deno fixture command. Late playbooks
+// cannot extend the command's deadline by receiving a fresh full allowance.
+const fixtureDeadline = performance.now() + 720_000;
 
 /** `ip -4 -o addr show` of a Node with a CI bridge in the next /24 and the Instance bridge itself. */
 export const nodeAddresses = [
@@ -536,9 +477,23 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
         instances,
         write,
         artifacts: (version: string) => artifacts(folder, version),
-        async run(seconds = 600) {
-            const child = new Deno.Command("ansible-playbook", {
+        async run(seconds = 240) {
+            const remaining = (fixtureDeadline - performance.now()) / 1000;
+            if (remaining <= 0) {
+                throw new Error(
+                    "Instance host fixture command exhausted its 720s budget",
+                );
+            }
+            seconds = Math.min(seconds, remaining);
+            const receipt = `${folder}/supervisor.json`;
+            Deno.writeTextFileSync(receipt, "{}");
+            const child = new Deno.Command("python3", {
                 args: [
+                    new URL("./fixture_supervisor.py", import.meta.url)
+                        .pathname,
+                    String(seconds),
+                    receipt,
+                    "ansible-playbook",
                     "-i",
                     "localhost,",
                     "-c",
@@ -560,30 +515,58 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
                 stdout: "piped",
                 stderr: "piped",
             }).spawn();
-            const leader = fixtureProcess(child.pid)!;
-            let timedOut = false;
-            let deadline: ReturnType<typeof setTimeout>;
-            const expired = new Promise<void>((resolve, reject) => {
-                deadline = setTimeout(() => {
-                    timedOut = true;
-                    stopFixtureTree(leader).then(resolve, reject);
-                }, seconds * 1000);
-            });
-            const outputPromise = child.output();
+            const controller = new AbortController();
+            const chunks: string[] = [];
+            const collect = (stream: ReadableStream<Uint8Array>) => {
+                const decoder = new TextDecoder();
+                return stream.pipeTo(
+                    new WritableStream<Uint8Array>({
+                        write(chunk) {
+                            chunks.push(
+                                decoder.decode(chunk, { stream: true }),
+                            );
+                        },
+                        close() {
+                            chunks.push(decoder.decode());
+                        },
+                    }),
+                    { signal: controller.signal },
+                ).catch((error) => {
+                    if (!controller.signal.aborted) throw error;
+                });
+            };
+            const outputPromise = Promise.all([
+                child.status,
+                collect(child.stdout),
+                collect(child.stderr),
+            ]);
+            let deadline: ReturnType<typeof setTimeout> | undefined;
             try {
-                const result = await Promise.race([outputPromise, expired]);
-                if (timedOut) await expired;
-                const done = result ?? await outputPromise;
-                const output = new TextDecoder().decode(done.stdout) +
-                    new TextDecoder().decode(done.stderr);
-                if (timedOut) {
+                const done = await Promise.race([
+                    outputPromise,
+                    new Promise<undefined>((resolve) => {
+                        deadline = setTimeout(
+                            () => resolve(undefined),
+                            (seconds + 5) * 1000,
+                        );
+                    }),
+                ]);
+                const output = chunks.join("");
+                const supervision = JSON.parse(Deno.readTextFileSync(receipt));
+                if (!done || supervision.timedOut) {
                     throw new Error(
                         `Instance host playbook timed out after ${seconds}s.\n${output}`,
                     );
                 }
-                return { ok: done.success, output };
+                if (supervision.timedOut !== false) {
+                    throw new Error(
+                        `Instance host supervisor failed.\n${output}`,
+                    );
+                }
+                return { ok: done[0].success, output };
             } finally {
-                clearTimeout(deadline!);
+                clearTimeout(deadline);
+                controller.abort();
             }
         },
         state: () => JSON.parse(Deno.readTextFileSync(`${folder}/state.json`)),

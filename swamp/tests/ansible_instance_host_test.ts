@@ -16,6 +16,25 @@ import {
     peer,
 } from "./_support/instance_host.ts";
 
+// Rescue old implementations without ever signalling a reused PID.
+function rescueFixtureChild(folder: string, pidFile: string) {
+    new Deno.Command("python3", {
+        args: [
+            "-c",
+            `import os, signal
+try:
+    pid = int(open(${JSON.stringify(pidFile)}).read())
+    fd = os.pidfd_open(pid)
+    if ${JSON.stringify(folder)} in open(f"/proc/{pid}/cmdline").read():
+        signal.pidfd_send_signal(fd, signal.SIGKILL)
+    os.close(fd)
+except (FileNotFoundError, ProcessLookupError):
+    pass
+`,
+        ],
+    }).outputSync();
+}
+
 Deno.test("a stuck Instance host playbook throws with its last task and kills a descendant holding stdout", async () => {
     const f = await fixture();
     try {
@@ -63,6 +82,135 @@ child.wait()
         f.cleanup();
     }
 });
+
+Deno.test("a late playbook gets only the shared command budget left, then no new playbook starts", () => {
+    const directory = Deno.makeTempDirSync();
+    try {
+        const script = `${directory}/budget.ts`;
+        Deno.writeTextFileSync(
+            script,
+            String.raw`
+import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1";
+let clock = 0;
+Object.defineProperty(performance, "now", { value: () => clock });
+const { fixture } = await import(${
+                JSON.stringify(
+                    new URL("./_support/instance_host.ts", import.meta.url)
+                        .href,
+                )
+            });
+const f = await fixture();
+try {
+    Deno.writeTextFileSync(f.folder + "/bin/ansible-playbook", '#!/bin/sh\necho started >> "$HOST_FIXTURE/starts"\nexec sleep 60\n');
+    Deno.chmodSync(f.folder + "/bin/ansible-playbook", 0o755);
+    clock = 719_900;
+    const started = Date.now();
+    await assertRejects(() => f.run(), Error, "timed out after 0.1s");
+    assert(Date.now() - started < 4500, "late playbook received a fresh allowance");
+    clock = 720_001;
+    await assertRejects(() => f.run(), Error, "exhausted its 720s budget");
+    assertEquals(Deno.readTextFileSync(f.folder + "/starts"), "started\n");
+} finally {
+    f.cleanup();
+}
+`,
+        );
+        const result = new Deno.Command(Deno.execPath(), {
+            args: ["run", "-A", script],
+        }).outputSync();
+        assert(result.success, new TextDecoder().decode(result.stderr));
+    } finally {
+        Deno.removeSync(directory, { recursive: true });
+    }
+});
+
+Deno.test("an ordinary playbook refusal preserves its exit status, including 124", async () => {
+    const f = await fixture();
+    try {
+        Deno.writeTextFileSync(
+            `${f.folder}/bin/ansible-playbook`,
+            "#!/bin/sh\necho fixture-refusal >&2\nexit 124\n",
+        );
+        Deno.chmodSync(`${f.folder}/bin/ansible-playbook`, 0o755);
+        const result = await f.run();
+        assert(!result.ok);
+        assertStringIncludes(result.output, "fixture-refusal");
+    } finally {
+        f.cleanup();
+    }
+});
+
+// These leaders disappear before cleanup can discover their descendants by ancestry.
+for (const duringTerm of [false, true]) {
+    Deno.test(`deadline reaps a detached stdout holder forked ${duringTerm ? "during TERM" : "before leader exit"}`, async () => {
+        const f = await fixture();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let running: Promise<unknown> | undefined;
+        try {
+            Deno.writeTextFileSync(
+                `${f.folder}/orphan.py`,
+                `import os, signal, subprocess, sys
+
+def detach(*_):
+    child = subprocess.Popen([sys.executable, "-c", '''import os, signal, time
+os.setsid()
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+with open(${JSON.stringify(f.folder + "/orphan.pid")}, "w") as output:
+    output.write(str(os.getpid()))
+print("TASK [detached stdout holder]", flush=True)
+time.sleep(60)
+'''])
+    sys.exit(0)
+
+${
+                    duringTerm
+                        ? "signal.signal(signal.SIGTERM, detach)\nsignal.pause()"
+                        : "detach()"
+                }
+`,
+            );
+            Deno.writeTextFileSync(
+                `${f.folder}/bin/ansible-playbook`,
+                `#!/bin/sh\nexec python3 '${f.folder}/orphan.py'\n`,
+            );
+            Deno.chmodSync(`${f.folder}/bin/ansible-playbook`, 0o755);
+            running = f.run(1);
+            const error = await assertRejects(
+                () =>
+                    Promise.race([
+                        running!,
+                        new Promise((_, reject) => {
+                            timer = setTimeout(
+                                () =>
+                                    reject(new Error("cleanup exceeded 4.5s")),
+                                4500,
+                            );
+                        }),
+                    ]),
+                Error,
+                "Instance host playbook timed out after 1s",
+            );
+            assertStringIncludes(
+                error.message,
+                "TASK [detached stdout holder]",
+            );
+            const pid = Deno.readTextFileSync(`${f.folder}/orphan.pid`).trim();
+            let exists = true;
+            try {
+                Deno.statSync(`/proc/${pid}`);
+            } catch (error) {
+                if (!(error instanceof Deno.errors.NotFound)) throw error;
+                exists = false;
+            }
+            assert(!exists, `orphan ${pid} was not reaped`);
+        } finally {
+            clearTimeout(timer);
+            rescueFixtureChild(f.folder, `${f.folder}/orphan.pid`);
+            await running?.catch(() => {});
+            f.cleanup();
+        }
+    });
+}
 
 Deno.test({
     name:
@@ -118,15 +266,7 @@ time.sleep(60)
                 `stalled Ansible command ${pid} survived its deadline`,
             );
         } finally {
-            // Keep the failing regression safe on a revision without descendant cleanup.
-            try {
-                Deno.kill(
-                    Number(Deno.readTextFileSync(pidFile).trim()),
-                    "SIGKILL",
-                );
-            } catch (error) {
-                if (!(error instanceof Deno.errors.NotFound)) throw error;
-            }
+            rescueFixtureChild(f.folder, pidFile);
             f.cleanup();
         }
     },
