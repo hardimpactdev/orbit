@@ -112,7 +112,7 @@ Beast and Shark take the dev path beside their task VMs. A task VM host on the b
 | — | [Parity gate](#parity-gate) | |
 | 12 | Switch task work | |
 | 13 | Sleep and wake | |
-| 14 | Start a thread in an Orbit Project (Conn) | Open |
+| 14 | Start a thread in an Orbit Project (Conn) | Open, [#3308](https://github.com/hardimpactdev/orbit/pull/3308) |
 | 15 | Migrate checkout Instances | |
 | 16 | Switch every `app-dev` Node | |
 | 17 | Remove task VMs, the Pi server and the task container setting | |
