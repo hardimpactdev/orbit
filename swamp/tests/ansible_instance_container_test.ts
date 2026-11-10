@@ -818,3 +818,52 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name: "the agent can commit with its default identity and keeps each configured identity value",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    const rootfs = `${f.folder}/containers/instance-7`;
+    try {
+      for (const phase of ["container", "workspace"]) {
+        const result = f.run(phase);
+        assert(result.ok, result.output);
+      }
+      Object.assign(f.container, {
+        clone: { files: [], links: [],
+          model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" } },
+      });
+      f.write();
+      const prepared = f.run("agent");
+      assert(prepared.ok, prepared.output);
+      const commit = new Deno.Command("git", {
+        args: ["-c", "core.hooksPath=/dev/null", "commit", "--allow-empty", "--no-gpg-sign", "-m", "agent commit"],
+        cwd: `${rootfs}/srv/workspace`, clearEnv: true,
+        env: { HOME: `${rootfs}/home/agent`, PATH: Deno.env.get("PATH")!, GIT_CONFIG_NOSYSTEM: "1" },
+      }).outputSync();
+      assert(commit.success, new TextDecoder().decode(commit.stderr));
+      assertEquals(f.workspace("log", "-1", "--format=%an <%ae>"), "Orbit Agent <agent@orbit.local>");
+
+      const config = (...args: string[]) => git(rootfs, "config", "--file", `${rootfs}/home/agent/.gitconfig`, ...args);
+      config("user.name", "Feature Agent");
+      config("user.email", "feature@example.test");
+      const again = f.run("agent");
+      assert(again.ok, again.output);
+      assertEquals(again.changed, 0, again.output);
+      assertEquals(config("user.name"), "Feature Agent");
+      assertEquals(config("user.email"), "feature@example.test");
+
+      config("--unset", "user.email");
+      const partial = f.run("agent");
+      assert(partial.ok, partial.output);
+      assertEquals(config("user.name"), "Feature Agent");
+      assertEquals(config("user.email"), "agent@orbit.local");
+      const stable = f.run("agent");
+      assert(stable.ok, stable.output);
+      assertEquals(stable.changed, 0, stable.output);
+    } finally {
+      f.cleanup();
+    }
+  },
+});

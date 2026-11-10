@@ -83,6 +83,8 @@ Authorized reads return the commands. [Activity](/cli/activity) records no input
 
 A container Instance has no setup steps: the default's development deploy steps install and migrate, and a clone copies the result. `instance:setup` refuses a container Instance with `operation.kind_unavailable`. See [the default Instance](/reference/development-containers#the-default-instance).
 
+Container agents use `Orbit Agent <agent@orbit.local>` as their Git identity when the name or email is unset. Convergence preserves each configured identity value.
+
 ## Checkout access
 
 The development create workflow runs from Node209 over SSH as the Node's managed user, with two Ansible phases for the Node work. It captures the stored WireGuard endpoint and full host pins at admission. The checkout phase prepares the owned checkout, validates its configured origin, resolves the admitted branch and inspects the source profile. Git permits HTTPS reads only and disables repository hooks, filesystem monitors, alternate-ref commands and credential helpers. The shared source policy refuses foreign preparation markers and preserves unrelated worktrees.
