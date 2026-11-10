@@ -67,7 +67,12 @@ final readonly class LogStreamTargetResolver
 
     public function forProcess(#[SensitiveParameter] Process $process): LogStreamTarget
     {
-        $node = $this->processes->forInspection($process)->node;
+        $target = $this->processes->forInspection($process);
+        if ($target->container !== null) {
+            // The Node agent follows a journal on its Node; a container's journal is out of its reach.
+            throw new ResourceOperationException('process.target_unsupported', 'A Process in an Instance container has no live log stream yet; read its logs without --follow.', 409);
+        }
+        $node = $target->node;
         $source = match ($process->runtime) {
             ProcessRuntime::Systemd => LogStreamSource::journal($this->systemd->unitName($process)),
             ProcessRuntime::Docker => LogStreamSource::docker($this->docker->containerName($process), (int) $process->id),

@@ -14,6 +14,8 @@ covers:
 
 # Node provisioning
 
+An [Instance container](/reference/development-containers#processes) runs FrankenPHP and development workers as `orbit-*` units inside the container. A shared runtime folder update restarts those units in each running container.
+
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 
 Standalone `node.converge`, `node.ssh_access_converge`, `node.agent_rekey` and apps-root `node.update` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings, converge, SSH access and rekey use official `@swamp/cfgmgmt` behaviors and ship no script. Converge applies each role part in its own step; it calls no agent command and never rotates the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
@@ -944,3 +946,7 @@ The Route playbooks `route-create-site.yml` and `route-withdraw.yml` work the sa
 Task VM host preparation belongs to the [base refresh](/reference/compute-drivers#prepare-an-incus-host). Its shared Ansible phase prepares both native-ZFS and loop-backed pools; loop hosts receive a 2 GiB ARC cap to retain memory for their own services. Before the first guest boot, it opens catalog-owned DHCP input on the task bridge and DNS input to the bridge address, as well as forwarding. Settings removal and reachable Node removal withdraw the three input rules through the same Ansible phase. This lets a guest obtain its address and resolve package servers on a host with default-deny input.
 
 Proof preparation installs the tested checkout's frozen observer pin on every nested Node with checksum verification. Every batch and direct case prepares independently, including when an older workflow skips setup. One Ansible run uses the Node convergence replacement task, stops all observers, discards their old presence versions and host receipts, starts them, then requires each expected version with its binary digest and a new host fact. Preparation has its own 330-second bound; batch setup gets a separate 120 seconds within the 480-second transport limit. Each restore repeats preparation; no proof changes the base snapshot.
+
+The `ai-router-model-forwarder.yml` playbook, including its numeric packet-counter checks, is documented in [AI router](/reference/ai-router#container-model-forwarder).
+
+The container playbook preserves agent settings outside Orbit's managed JSON keys.

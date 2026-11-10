@@ -8,6 +8,7 @@ use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Instances\InstanceState;
 use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Process;
 
@@ -24,7 +25,9 @@ final readonly class RuntimeDoctorIntent
     {
         $processes = Process::query()->with('owner')->where(function ($query) use ($node): void {
             $query->where(function ($query) use ($node): void {
-                $query->whereIn('owner_type', Instance::morphTypes())->whereIn('owner_id', Instance::query()->select('id')->where('node_id', $node->id)->where('status', '!=', InstanceState::Removing));
+                // A container Instance's units live in its container, out of the Node agent's sight.
+                $query->whereIn('owner_type', Instance::morphTypes())->whereIn('owner_id', Instance::query()->select('id')->where('node_id', $node->id)->where('status', '!=', InstanceState::Removing)
+                    ->whereNotIn('id', InstanceRuntime::query()->select('instance_id')));
             })->orWhere(function ($query) use ($node): void {
                 $query->where('owner_type', Node::class)->where('owner_id', $node->id);
             });

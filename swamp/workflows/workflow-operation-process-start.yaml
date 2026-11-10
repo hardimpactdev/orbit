@@ -48,6 +48,9 @@ inputs:
           - on_demand
           - vite
           additionalProperties: false
+        # A Process of an Instance container: its Incus project and container.
+        container:
+          type: object
         ssh_execution:
           type: object
         vite_plan:
@@ -72,10 +75,25 @@ jobs:
 - name: runtime
   labels: {role: swamp}
   steps:
+  - name: Act in the container
+    # A Process of an Instance container is an `orbit` unit in it (docs/reference/development-containers.md#processes): the container
+    # workflow changes and checks it through `incus exec` on the Node, and the Node steps below are skipped.
+    labels: {role: swamp}
+    guard: ${{ !has(inputs.intent.container) }}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-container
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: '${{ {"control": {"process_id": inputs.intent.control.process_id, "name": inputs.intent.control.name}, "container": has(inputs.intent.container) ? inputs.intent.container : {}, "ssh_execution": inputs.intent.ssh_execution} }}'
+        execution_secrets: {}
   - name: Publish the dev route
     labels: {role: swamp}
     dependsOn: []
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (!has(inputs.intent.vite_plan) || inputs.kind == "process.stop") }}
+    guard: ${{ has(inputs.intent.container) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (!has(inputs.intent.vite_plan) || inputs.kind == "process.stop") }}
     writes: true
     task:
       type: workflow
@@ -92,7 +110,7 @@ jobs:
   - name: Start the Process
     labels: {role: swamp}
     dependsOn: [{step: Publish the dev route, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd") }}
+    guard: ${{ has(inputs.intent.container) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd") }}
     writes: true
     task:
       type: behavior
@@ -106,7 +124,7 @@ jobs:
   - name: Check the unit
     labels: {role: swamp}
     dependsOn: [{step: Start the Process, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ inputs.intent.control.runtime != "systemd" }}
+    guard: ${{ has(inputs.intent.container) || inputs.intent.control.runtime != "systemd" }}
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/systemd'
@@ -119,7 +137,7 @@ jobs:
   - name: Start the container
     labels: {role: swamp}
     dependsOn: [{step: Publish the dev route, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "docker") }}
+    guard: ${{ has(inputs.intent.container) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "docker") }}
     writes: true
     task:
       type: behavior
@@ -134,7 +152,7 @@ jobs:
   - name: Check the container
     labels: {role: swamp}
     dependsOn: [{step: Start the container, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ inputs.intent.control.runtime != "docker" }}
+    guard: ${{ has(inputs.intent.container) || inputs.intent.control.runtime != "docker" }}
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/docker_container'
@@ -149,7 +167,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [{type: succeeded},
             {type: skipped}]}}]
-    guard: ${{ !has(inputs.intent.vite_plan) }}
+    guard: ${{ has(inputs.intent.container) || !has(inputs.intent.vite_plan) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -164,7 +182,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [{type: succeeded},
             {type: skipped}]}}, {step: Check the listener, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (!has(inputs.intent.vite_plan) || inputs.kind != "process.start" || steps["Check the listener"].outputs.stdout
+    guard: ${{ has(inputs.intent.container) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (!has(inputs.intent.vite_plan) || inputs.kind != "process.start" || steps["Check the listener"].outputs.stdout
       == "") }}
     writes: true
     task:
@@ -178,18 +196,18 @@ jobs:
       inputs: {}
   - name: Verify the state
     labels: {role: swamp}
-    dependsOn: [{step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [{type: succeeded},
+    dependsOn: [{step: Act in the container, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [{type: succeeded},
             {type: skipped}]}}, {step: Mark it awake, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the listener, condition: {type: or, conditions: [
             {type: succeeded}, {type: skipped}]}}]
     task:
       type: assert
-      expr: '(inputs.intent.control.runtime == "systemd" ? (data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status
+      expr: 'has(inputs.intent.container) || ((inputs.intent.control.runtime == "systemd" ? (data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status
         == "compliant" && data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.current.loaded
         && data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.current.active
         == (inputs.kind == "process.stop" ? "inactive" : "active")) : (data.latest("process-container-check-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id),
         inputs.intent.ssh_execution.target.host).attributes.status == "compliant" && data.latest("process-container-check-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id),
         inputs.intent.ssh_execution.target.host).attributes.current.containerStatus == (inputs.kind != "process.stop" ? "running" : "exited"))) && (!has(inputs.intent.vite_plan) || steps["Check
-        the listener"].outputs.stdout != "")'
+        the listener"].outputs.stdout != ""))'
       message: The Process must have its admitted runtime and boot state.
       severity: high
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}

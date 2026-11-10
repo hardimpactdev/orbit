@@ -35,7 +35,7 @@ Enable and disable the extension with `orbit extension:enable tasks` and `orbit 
 
 `task:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at` (always null), `merges`, and `capacity`. `merges` lists each open task whose pull request Orbit reviews and merges: a task with a `pr_url` in a review-and-merge Project, or a task that reviews an incoming pull request. An open task without a pull request, such as one in `backlog`, is absent. `capacity` is described in [Task places](#task-places).
 
-`assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. An ended task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
+`assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. An ended task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A subtask's assistance flag does not add its parent task to the list unless the parent also requests assistance. The view remains available while tasks is disabled.
 
 ## Model
 
@@ -1336,9 +1336,11 @@ An admitted cancel answers HTTP 202 with its `tasks.cancel` Operation. The run r
 
 A task that holds no VM and no workspace, such as one in `todo` or one that waits for a place, has nothing to release. Admission marks it and its open subtasks `cancelled` and records the Operation as succeeded at once, with no run (R1). So the 202 already carries a succeeded Operation, and `task:show` reads `cancelled` from then on. The same holds for `tasks.maintenance_finish` on a task whose VM publication already released.
 
+Cancel asks a running group Operation to stop. If it is still running, the call returns HTTP 409 `operation.target_busy` with its id and confirms the stop request. Run `task:cancel` again once that Operation has ended.
+
 - **Approved work not on origin.** Cancel and complete refuse with HTTP 409 `tasks.approved_work_unpublished` and change nothing. Run `task:publish` first; it resumes a parked VM.
 - **Parked VM.** Neither cancel nor complete starts a parked VM. The release deletes it as it is.
-- **Refused admission.** A refusal such as `tasks.not_cancellable`, `operation.target_busy` or `task_vm.release_refused` changes nothing.
+- **Refused admission.** `tasks.not_cancellable`, `task_vm.release_refused` and a busy VM Operation change nothing.
 - **Failed run.** A cancel run that fails, or whose start Swamp refuses, keeps the task and marks its VM `failed`. Cancel again to release it.
 
 Cancel and complete keep approved work by a precondition, never by a push of their own. The precondition applies while the task holds a workspace or a task VM. Origin's task branch must reach the latest approved commit. That commit is the latest commit Orbit reviewed (ADR 0203), or else the commit of the latest approval.

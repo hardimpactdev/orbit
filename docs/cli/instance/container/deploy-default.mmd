@@ -32,11 +32,15 @@ sequenceDiagram
   SW->>C: Run dev deploy steps<br/>incus exec · vault copy
   %%> What it does:
   %%> - the Project's development deploy steps, as `orbit`: they install changed dependencies and migrate
+  SW->>C: Install the Processes<br/>Ansible · tags processes
+  %%> What it does:
+  %%> - installs the Project's new and changed development Process definitions as `orbit-*` units, with their environment files from the vault
+  %%> - restarts a changed unit and removes a former environment file
   SW->>N: Take the seed snapshot<br/>Ansible · tags seed
   %%> What it does:
   %%> - stops the default's Processes for a moment, snapshots the container and starts them again, so clones copy no half-written file
   %%> - deletes older seed snapshots that no clone uses
-  %%> - starting the units again restarts them on the new code
+  %%> - starting the units again restarts every running Process on the new commit, such as a queue worker
   SW->>C: Check the container<br/>Ansible · tags check
   %%> What it does:
   %%> - the branch is checked out at the commit and the units are active, else `deployment.branch_changed` or `deployment.processes_inactive`

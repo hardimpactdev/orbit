@@ -101,7 +101,7 @@ Beast and Shark take the dev path beside their task VMs. A task VM host on the b
 | 3 | Node preparation and the shared folders | Merged, [#3292](https://github.com/hardimpactdev/orbit/pull/3292) |
 | 3b | The static PHP build | Merged, [#3294](https://github.com/hardimpactdev/orbit/pull/3294) |
 | 4 | The first default Instance and its deployments | Merged, [#3299](https://github.com/hardimpactdev/orbit/pull/3299) |
-| 4b | The Project's development Processes in a container | |
+| 4b | The Project's development Processes in a container | Open, [#3309](https://github.com/hardimpactdev/orbit/pull/3309) |
 | 5 | Create an Instance as a clone, with T3 and its sessions | Open, [#3301](https://github.com/hardimpactdev/orbit/pull/3301) |
 | 6 | Destroy a container Instance | |
 | 7 | Run a task in a clone: start, check, publish, end | |
@@ -266,8 +266,8 @@ The code changed these points of this plan:
 
 - **Database.** A container reaches no Database server until PR 5 adds its NIC rule and the Node's firewall rule. Until then a container default uses the database in its workspace, such as SQLite.
 - **`--database-server`** on a container default refuses with `operation.kind_unavailable` until PR 5.
-- **Processes.** A Project's development Process definitions carry environment values that must go through the vault. Their records and the `process:*` commands must reach the container. PR 4b builds that.
-- **Until PR 4b** a Project with development Process definitions refuses with `operation.kind_unavailable`, and FrankenPHP is the only unit.
+- **Processes.** A Project's development Process definitions carry values that must go through the vault. Their records and the `process:*` commands must reach the container. PR 4b builds that.
+- **Until PR 4b** a Project with development Process definitions refused with `operation.kind_unavailable`.
 - **PHP.** A PHP Project needs the static PHP build of its version in the runtime folder. Until PR 3b's pin records the build's SHA-256, a PHP Project refuses with `instance.host_unavailable`.
 - **Egress.** The deploy steps install dependencies through the [egress proxy](/reference/development-containers#egress-and-dns) of step 2c: their environment carries its proxy settings.
 - **Checkout commands.** Destroy, setup, `env:sync`, `env:import`, transfer, rename and clone refuse a container Instance until their own PRs give them a container path.
@@ -294,7 +294,36 @@ The Project's development Process definitions run as `orbit-*` units in the cont
 - The status observation reads the units in the container.
 - A deployment restarts the Processes whose code changed and installs a changed definition.
 
-It reuses the Process classes from `task-4193` that the reuse table names. Tests: Pest for the records and the target; Ansible fixture tests for the units. Live: a queue worker of the test Project runs in its default container, and `process:restart` restarts it.
+It reuses the Process classes from `task-4193` that the reuse table names. Tests: Pest for the records and the target; Ansible fixture tests for the units.
+
+The code changed these points of this plan:
+
+| Point | What the code does |
+| --- | --- |
+| No Ansible in the container | `task-4193` ran its shared systemd phase inside the container. Here the Node drives the container through `incus exec`, so the container installs no Ansible. |
+| Two tags | The `processes` tag of `instance-container.yml` installs the units. Its new `process` tag changes or reads one unit. |
+| One vault copy | The run's intent holds each unit and its environment file's path. The values go in one vault copy, from path to content. |
+| A changed record refuses | The run makes that copy only while the records still render the admitted units. |
+| `ContainerProcessDefinitions` is not needed | The create and deploy runs install the units, and the Process records complete with the run. |
+| `ContainerProcessTarget` is a branch | The Process target of a container Instance names `orbit` and the workspace's application directory. |
+| Commands that change a record | `process:create`, `process:update` and `process:destroy` refuse a container Instance's Process with `operation.kind_unavailable`. The Project's definitions and a deployment change it. |
+| Docker and presets | A Docker definition or a preset refuses with `process.target_unsupported`. |
+| `--follow` | `process:logs --follow` refuses a container Process with `process.target_unsupported`: the Node agent follows only its own Node's journals. The one-shot read works. |
+| Removed definitions | A later PR removes the record and unit of a definition the Project removes. Until then they stay. |
+| Clones | A clone of PR 5 records its own Processes from the definitions. Its `processes` phase removes the default's units and environment folders that came with the seed, then starts its own. |
+| Restart on deploy | Each deployment's new seed stops and starts every running unit, so every running Process restarts on the new commit. A container ignores the restart-on-deploy setting. |
+| Sleep and Doctor | The Node's idle hibernation and `orbit doctor` leave container Processes out: their units are not the Node's. PR 13 sleeps the whole container. |
+
+Live on Beast, with the test Laravel Project `P` (PHP 8.5) and its default Instance `I` in a container. The queue uses the workspace's SQLite database.
+
+1. Add the definition: `orbit process:create queue --project=P --for=development --command=/opt/orbit-runtime/current/php/8.5/bin/php --command=artisan --command=queue:work --command=--tries=1 --restart=always`.
+2. Deploy it: `orbit instance:deploy I` (or create the default with `orbit instance:create P beast default`). The deployment succeeds, and `orbit process:list --instance=I` lists `queue`, active within 30 seconds.
+3. On Beast: `incus exec --project orbit-instances instance-I -- systemctl show -p User,ActiveState orbit-process-<id>-queue.service` prints `User=orbit` and `ActiveState=active`.
+4. Set `QUEUE_NAME=high` in the definition's `spec.environment` with the MCP tool `project-process-definition-update`, and deploy again. `/etc/orbit/processes/<id>/` in the container holds its environment file, root only, mode 0600.
+5. `orbit process:restart <id>` succeeds, and the unit's `ExecMainStartTimestamp` changes. `orbit process:logs <id>` shows the worker's start lines.
+6. `orbit process:stop <id>`, then `orbit process:list --instance=I` shows it `inactive`; `orbit process:start <id>` brings it back.
+7. A merge to the default branch deploys, and the worker restarts on the new commit.
+8. The PR records the times of steps 2, 5 and 7.
 
 ### PR 5: create an Instance as a clone of the default
 
@@ -722,7 +751,7 @@ Each PR moves its part into these pages. The specification stays on [Instance co
 | [Instance releases](/reference/deployments) | Development deployment in the default container; later production releases in containers | 4, 21 |
 | [`instance:create`](/cli/instance/create) | The clone path, the first default, the new errors | 4, 5 |
 | [Conn layer](/reference/conn) | Registration by the create flow's result, the Swamp session, the environment's Instance, the asleep state, `conn.environment_asleep` | 5, 13 |
-| [Processes and Schedules](/reference/processes-and-schedules) | Processes as `orbit` units in a container; production Schedules inside | 4, 20 |
+| [Processes and Schedules](/reference/processes-and-schedules) | Processes as `orbit` units in a container; production Schedules inside | 4b, 20 |
 | [PHP runtime](/reference/php-runtime) | FrankenPHP and the PHP CLI in containers | 4 |
 | [Routes](/reference/routes) | An upstream at a container's bridge address | 4 |
 | [Environment variables](/reference/environment-variables) | `.env` in a container, owned by `orbit` with group `work` | 4 |

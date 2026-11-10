@@ -56,6 +56,11 @@ sequenceDiagram
   else Docker
     SW->>N: Start the container<br/>ssh exec · docker start
     SW->>N: Check the container<br/>cfgmgmt/docker_container
+  else Instance container
+    SW->>N: Act in the container<br/>Ansible · tags process
+    %%> What it does:
+    %%> - the Process is an `orbit` unit in its Instance container; the child run `operation-process-container` changes it through `incus exec` on the Node and checks its state
+    %%> - a stopped container fails the change; its next deployment starts it
   end
   opt Vite dev Process
     SW->>N: Check the listener<br/>ssh exec · ss

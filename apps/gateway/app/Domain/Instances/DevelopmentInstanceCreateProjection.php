@@ -79,6 +79,11 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 }
                 app(ProcessInstanceOperation::class)->completeMembers($operation, OperationStatus::from(ValidatedData::string($data['status'])),
                     ValidatedData::nullableString($data['error_code'] ?? null), $result);
+                $container = ValidatedData::object($input['direct_provisioning'])['container'] ?? null;
+                if (is_array($container) && in_array($data['status'], ['succeeded', 'failed', 'cancelled'], true)) {
+                    app(ContainerProcesses::class)->complete($instance, $container['processes'] ?? [], $data['status'] === 'succeeded',
+                        ValidatedData::nullableString($data['error_code'] ?? null));
+                }
             }
 
             return $this->direct->project($operation, $data, $result);

@@ -45,6 +45,8 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 Orbit CI runs builds and static checks. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same gate.
 
+The Swamp shape job has a temporary 30-minute limit so its serial fixtures can finish on a loaded runner.
+
 | Check | Work |
 | --- | --- |
 | PHP syntax and Composer | Check frozen agent command references, validate every tracked Composer manifest and run `php -l` on changed PHP files, with at most four workers |
@@ -61,6 +63,8 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Required checks | Require every selected build, static check and PR proof to succeed; only an explicitly untouched job may skip |
 
 The Swamp gate production-lints the observer preparation play. Its fixture tests install the candidate pin on all three nested Nodes and reject checksum and download failures. Gateway tests require new presence versions and host facts after a controlled restart. Runner tests require preparation before every batch and direct case, including old workflow calls without setup, and give preparation and batch setup separate bounded budgets.
+
+The gate also runs the real Ansible readiness tasks against sockets, checking that the Instance proxy and model forwarder observe their exact listeners without opening host TCP connections. Private dpkg databases prove that installed Incus packages stay untouched with or without a hold, while removed packages are installed.
 
 The Swamp gate rejects a new behavior name that carries a run id. A task workflow names its local and data steps by the address of the task VM, as [Behavior names](/reference/tasks#behavior-names) says.
 
@@ -127,7 +131,9 @@ CI uses `pull_request_target` only in the label workflow `proof-outside.yml`, wh
 
 Build jobs, including Swamp validation, shape and unit tests, start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Each uses the same `bin/ci-build-plan` policy.
 
-The three Swamp subjobs read their own selections; their aggregate remains the one Swamp dependency of `Required checks`. Known documentation, contract-generation and proof tools select only their consumers. The planner fixture job always runs. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
+The three Swamp subjobs read their own selections. `Required checks` reads their results through the Actions API so it can require validation and Deno tests without waiting for shape when [slow checks are non-blocking](/reference/command-development-pipeline#capacity-ideal-state).
+
+Known documentation, contract-generation and proof tools select only their consumers. The planner fixture job always runs. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
 On agent source, Cargo or test changes, CI runs `cargo check --locked --all-targets` and `scripts/check-crates test --locked`, including composed extension crates, within a 15-minute job budget. On Pi source changes, CI runs its check, tests and build within an eight-minute job budget. Shared CI changes select both jobs too. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 

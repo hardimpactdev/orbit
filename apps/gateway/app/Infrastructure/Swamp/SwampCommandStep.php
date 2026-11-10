@@ -668,6 +668,26 @@ final readonly class SwampCommandStep
         return is_array($decoded) && is_string($decoded['stdout'] ?? null) ? $decoded['stdout'] : null;
     }
 
+    /**
+     * The published part of a finished container Process read: the unit's state and the vault key of its journal lines. Only a
+     * succeeded `operation-process-container` read with this request id answers.
+     *
+     * @return array<string,mixed>
+     */
+    public function processInspection(string $runId, string $request): array
+    {
+        $run = $this->history($runId);
+        $inputs = ValidatedData::object($run['inputs'] ?? []);
+        $read = ValidatedData::object(ValidatedData::object($inputs['intent'] ?? [])['read'] ?? []);
+        if (($run['id'] ?? null) !== $runId || ($run['workflowName'] ?? null) !== 'operation-process-container'
+            || ($run['status'] ?? null) !== 'succeeded' || ($inputs['kind'] ?? null) !== 'process.inspect' || ($read['request'] ?? null) !== $request) {
+            throw $this->unavailable();
+        }
+
+        return $this->terminalOutput($run, ['job' => 'process', 'step' => 'Read Process result', 'native' => true,
+            'captures' => ['inspection' => ['job' => 'process', 'step' => 'Read Process result', 'field' => 'inspection']]]);
+    }
+
     /** One request following a native terminal event. Receiving its response is not status polling.
      * @return array<string,mixed>
      */

@@ -13,14 +13,15 @@ inputs:
     intent: {type: object}
     # Names only: git_credential and environment, member_<Process id> for each development Process environment,
     # server_database_create and server_database_check for an owned server database, step_<index> for each development
-    # deploy step of a container default, and model_environment for a clone's placeholder model key.
+    # deploy step of a container default, model_environment for a clone's placeholder model key, and process_environments for
+    # a container's Process environment files.
     execution_secrets:
       type: object
       additionalProperties:
         type: object
         properties:
           vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^(?:instance-(?:git-(?:operation|credential)-|create-environment-(?:input|testing)-|create-model-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*|database-create-(?:intent|owner)-[1-9][0-9]*|development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01]))$'}
+          key: {type: string, pattern: '^(?:instance-(?:git-(?:operation|credential)-|create-environment-(?:input|testing)-|create-model-|create-processes-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*|database-create-(?:intent|owner)-[1-9][0-9]*|development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01]))$'}
         required: [vault, key]
         additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -170,7 +171,8 @@ jobs:
             argv: '${{ ["incus", "exec", "--project", inputs.intent.container.project, "--cwd", inputs.intent.container.workspace, inputs.intent.container.name, "--", "runuser", "-u", "orbit", "--", "/usr/bin/env", "-i"] + inputs.intent.container.environment + ["/bin/sh", "-c", self.step.required ? "s=$(cat) && exec timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1" : "s=$(cat) || exit 1; timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1; echo \"$?\"", "sh", string(self.step.timeout_seconds)] }}'
             stdin: '${{ vault.get(inputs.execution_secrets["step_" + string(self._index)].vault, inputs.execution_secrets["step_" + string(self._index)].key) }}'
             timeoutSec: '${{ self.step.timeout_seconds + 10 }}'
-      # Processes: FrankenPHP as an `orbit-*` unit in the container, enabled and started.
+      # Processes: FrankenPHP and the Project's development Processes as `orbit-*` units in the container, enabled and started; each
+      # Process's environment file comes from the vault.
       - name: container-processes
         labels: {role: swamp}
         writes: true
@@ -185,7 +187,7 @@ jobs:
           methodName: execute
           inputs:
             run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags processes "$ORBIT_ANSIBLE/instance-container.yml"
-            env: &container_phase
+            env:
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_RUN_ID: '${{ run.id }}'
               ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
@@ -193,6 +195,8 @@ jobs:
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
               ANSIBLE_FORCE_COLOR: '0'
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              # The Processes' environment files, path to content, which the phase pushes into the container.
+              ORBIT_PROCESS_ENVIRONMENTS: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.container != null ? inputs.execution_secrets.process_environments.key : inputs.execution_secrets.environment.key) }}'
       # Database: the default Instance's SQLite file, copied with the same children as instance:clone (ADR 0191).
       - name: database-snapshot
         labels: {role: swamp}
@@ -403,7 +407,14 @@ jobs:
           methodName: execute
           inputs:
             run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags t3 "$ORBIT_ANSIBLE/instance-container.yml"
-            env: *container_phase
+            env: &container_phase
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
+              ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
       # Register (docs/cli/instance/container/t3-register.mmd): `agent` issues the Gateway's and Swamp's sessions and T3 answers about
       # each; the reply waits in the run folder for the next step, which never lets a session into the run's outputs.
       - name: t3-sessions
@@ -450,6 +461,7 @@ jobs:
           inputs:
             run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags seed "$ORBIT_ANSIBLE/instance-container.yml"
             env: *container_phase
+
       # Finish: map the first phase that did not finish to the public receipt. The cleanup of the run folder runs beside it.
       - name: finish
         labels: {role: swamp}
@@ -485,7 +497,7 @@ jobs:
             processes: '${{ inputs.intent.processes.map(p, ("processes-" + string(p.index)) in steps ? steps["processes-" + string(p.index)].status : "skipped") }}'
             route: '${{ "route" in steps ? steps.route.status : "skipped" }}'
             certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps ? steps["route-csr-" + string(i)].status : "skipped") }}'
-            container: '${{ inputs.intent.container == null ? null : {"launch": "container" in steps ? steps.container.status : "skipped", "workspace": "workspace" in steps ? steps.workspace : null, "deploy": steps.filter(k, k.startsWith("deploy-")).map(k, steps[k].status), "processes": "container-processes" in steps ? steps["container-processes"].status : "skipped", "seed": "seed" in steps ? steps.seed.status : "skipped", "agent": "agent" in steps ? steps.agent.status : "skipped", "t3": "t3" in steps ? steps.t3.status : "skipped", "register": "t3-sessions" in steps && steps["t3-sessions"].status == "failed" ? "failed" : ("t3-register" in steps ? steps["t3-register"].status : "skipped"), "server": "t3-register" in steps && steps["t3-register"].status == "succeeded" ? steps["t3-register"].outputs.terminal.stdout : null} }}'
+            container: '${{ inputs.intent.container == null ? dyn(null) : {"launch": "container" in steps ? steps.container.status : "skipped", "workspace": "workspace" in steps ? steps.workspace : null, "deploy": steps.filter(k, k.startsWith("deploy-")).map(k, steps[k].status), "processes": "container-processes" in steps ? steps["container-processes"].status : "skipped", "seed": "seed" in steps ? steps.seed.status : "skipped", "agent": "agent" in steps ? steps.agent.status : "skipped", "t3": "t3" in steps ? steps.t3.status : "skipped", "register": "t3-sessions" in steps && steps["t3-sessions"].status == "failed" ? "failed" : ("t3-register" in steps ? steps["t3-register"].status : "skipped"), "server": "t3-register" in steps && steps["t3-register"].status == "succeeded" ? steps["t3-register"].outputs.terminal.stdout : null} }}'
       # Withdraw the Route: a create that failed after its key was made takes back what it published, the reverse of the publication that the
       # Gateway captured at admission (the site, the pool, the DNS records, the certificate folders). The failure the run reports is the one
       # that finish read; the Instance and its checkout stay, marked failed. It runs before accepted, so a failing accepted does not cut it short.

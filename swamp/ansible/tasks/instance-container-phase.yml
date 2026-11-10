@@ -19,7 +19,11 @@
     node_bundle: "/tmp/orbit-instance-{{ container.instance_id }}-{{ run_id }}.bundle"
     # Run-scoped, so the run of another Operation never removes it; the fetch and checkout phases of one run share it.
     container_bundle: "/tmp/orbit-workspace-{{ run_id }}.bundle"
-    units: "{{ container.units | map(attribute='name') | list }}"
+    # FrankenPHP and the Project's development Processes; `units` are those that run, which seed and check stop, start and read.
+    unit_files: "{{ container.units + (container.processes | default([])) }}"
+    units: >-
+      {{ (container.units + (container.processes | default([]) | selectattr('desired', 'equalto', 'running') | list))
+         | map(attribute='name') | list }}
 
 - name: Read the container
   ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
@@ -98,6 +102,43 @@
           {{ incus_project + ['config', 'device', 'add', container.name, container.clone.t3.device, 'proxy',
               'listen=tcp:' ~ container.clone.t3.listen ~ ':' ~ container.clone.t3.port,
               'connect=tcp:' ~ container.address ~ ':' ~ container.clone.t3.internal_port, 'nat=true'] }}
+      changed_when: true
+
+# The copy is the default's machine until it is prepared, so it is prepared while it is stopped, before its first start: its own
+# machine-id, and no `orbit-*` unit that starts at boot. The seed keeps the default's units enabled, and at boot they would run with
+# the default's settings: FrankenPHP on the default's address, a queue worker on the default's database. Each later phase of the
+# clone enables the units it sets up. The default's Process units and environment folders go; the `processes` phase checks again.
+- name: Prepare the copy before its first start
+  when: phase == 'clone' and (container_read.rc != 0 or (container_read.stdout | from_json).status != 'Running')
+  vars:
+    files_route: "/1.0/instances/{{ container.name }}/files?project={{ container.project }}&path="
+  block:
+    - name: Read the units that start at boot, the Process units and the Process folders
+      ansible.builtin.command: { argv: [incus, query, "--", "{{ files_route }}{{ item }}"] }
+      loop: [/etc/systemd/system/multi-user.target.wants, /etc/systemd/system, /etc/orbit/processes]
+      register: copy_read
+      changed_when: false
+      failed_when: copy_read.rc != 0 and 'not found' not in (copy_read.stderr | lower)
+    - name: Name what the copy must not start or keep
+      ansible.builtin.set_fact:
+        copy_remove: >-
+          {{ ((copy_read.results[0].stdout | default('[]', true) | from_json) | select('match', '^orbit-.*[.]service$')
+               | map('regex_replace', '^', '/etc/systemd/system/multi-user.target.wants/') | list)
+             + ((copy_read.results[1].stdout | default('[]', true) | from_json) | select('match', '^orbit-process-[0-9]+-.*[.]service$')
+               | reject('in', container.processes | default([]) | map(attribute='name') | list)
+               | map('regex_replace', '^', '/etc/systemd/system/') | list)
+             + ((copy_read.results[2].stdout | default('[]', true) | from_json)
+               | reject('in', container.processes | default([]) | map(attribute='id') | map('string') | list)
+               | map('regex_replace', '^', '/etc/orbit/processes/') | list) }}
+    - name: Keep the default's units from starting in the copy
+      when: copy_remove | length > 0
+      ansible.builtin.command: { argv: "{{ incus_project + ['file', 'delete', '--force'] + (copy_remove | map('regex_replace', '^', container.name) | list) }}" }
+      changed_when: true
+    # Incus's own id of the copy, without dashes, the form systemd writes.
+    - name: Give the copy its own machine-id
+      ansible.builtin.command:
+        argv: "{{ incus_project + ['file', 'push', '--uid', '0', '--gid', '0', '--mode', '0444', '-', container.name ~ '/etc/machine-id'] }}"
+        stdin: "{{ (clone_read.stdout | from_json).config['volatile.uuid'] | replace('-', '') }}"
       changed_when: true
 
 # UFW on the Node, each rule under the Instance's comment prefix: T3's route rules, the task VM range's deny first, and the way to
@@ -383,13 +424,100 @@
       ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_bundle] }}" }
       changed_when: false
 
-# FrankenPHP and the Project's other development Processes are `orbit-*` units, so a runtime folder update restarts them too.
+# `orbit` and `agent` share the workspace through the group `work`. A tool that asks for 0755 folders, such as Bun in `node_modules`,
+# caps their ACL mask, so the other user cannot write there. Before the deploy steps (`checkout`) and after them (`processes`) root
+# gives the group back what the owner has; only entries that lack it change.
+- name: Keep the workspace writable for its group
+  when: phase in ['checkout', 'processes']
+  ansible.builtin.command:
+    argv: >-
+      {{ as_root + ['find', container.workspace, '(', '(', '-type', 'd', '!', '-perm', '-g=rwx', ')', '-o',
+          '(', '-type', 'f', '!', '-perm', '-g=rw', ')', ')', '-print', '-exec', 'chmod', 'g+rwX', '{}', '+'] }}
+  register: workspace_modes
+  changed_when: workspace_modes.stdout != ''
+
+# A Process unit or folder that is not this Instance's goes: a clone starts with its default's units in the seed, and a definition the
+# Project removed leaves its unit behind.
+- name: Remove the Process units of other owners
+  when: phase == 'processes'
+  vars:
+    owned_units: "{{ container.processes | default([]) | map(attribute='name') | list }}"
+    owned_ids: "{{ container.processes | default([]) | map(attribute='id') | map('string') | list }}"
+  block:
+    - name: Read the Process units and folders
+      ansible.builtin.command:
+        argv: "{{ as_root + ['find', item, '-mindepth', '1', '-maxdepth', '1', '-name', 'orbit-process-*.service' if item == '/etc/systemd/system' else '[0-9]*'] }}"
+      loop: [/etc/systemd/system, /etc/orbit/processes]
+      register: foreign_read
+      changed_when: false
+      failed_when: foreign_read.rc != 0 and 'No such file' not in foreign_read.stderr
+    - name: Name the foreign units and folders
+      ansible.builtin.set_fact:
+        foreign_units: "{{ foreign_read.results[0].stdout_lines | map('basename') | reject('in', owned_units) | list }}"
+        foreign_folders: "{{ foreign_read.results[1].stdout_lines | map('basename') | reject('in', owned_ids) | list }}"
+    - name: Stop and disable the foreign units
+      when: foreign_units | length > 0
+      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'disable', '--now', '--'] + foreign_units }}" }
+      changed_when: true
+    - name: Remove the foreign units and folders
+      when: foreign_units | length > 0 or foreign_folders | length > 0
+      ansible.builtin.command:
+        argv: >-
+          {{ as_root + ['rm', '-rf', '--'] + (foreign_units | map('regex_replace', '^', '/etc/systemd/system/') | list)
+             + (foreign_folders | map('regex_replace', '^', '/etc/orbit/processes/') | list) }}
+      changed_when: true
+    - name: Reload systemd after the removal
+      when: foreign_units | length > 0
+      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'daemon-reload'] }}" }
+      changed_when: true
+
+# FrankenPHP and the Project's other development Processes are `orbit-*` units, so a runtime folder update restarts them too. A
+# Process's environment file is named by the digest of its content, so a changed value is a new file and a changed unit.
+- name: Write the Processes' environment files
+  when: phase == 'processes' and (container.processes | default([]) | selectattr('environment') | list | length > 0)
+  vars:
+    environments: "{{ lookup('ansible.builtin.env', 'ORBIT_PROCESS_ENVIRONMENTS') | from_json }}"
+  block:
+    - name: Read the environment files
+      ansible.builtin.command: { argv: "{{ as_root + ['test', '-f', item.environment] }}" }
+      loop: "{{ container.processes | selectattr('environment') | list }}"
+      loop_control: { label: "{{ item.name }}" }
+      register: environments_read
+      changed_when: false
+      failed_when: environments_read.rc not in [0, 1]
+    # Root reads it when systemd starts the unit; the values go in on standard input and never touch the Node's disk.
+    - name: Push the missing environment files
+      when: item.rc != 0
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['file', 'push', '--create-dirs', '--uid', '0', '--gid', '0', '--mode', '0600', '-',
+              container.name ~ item.item.environment] }}
+        stdin: "{{ environments[item.item.environment] }}"
+        stdin_add_newline: false
+      loop: "{{ environments_read.results }}"
+      loop_control: { label: "{{ item.item.name }}" }
+      no_log: true
+      changed_when: true
+
+# A changed value is a new file; the old one goes, so no former value stays in the container.
+- name: Remove the Processes' former environment files
+  when: phase == 'processes' and (container.processes | default([]) | length > 0)
+  ansible.builtin.command:
+    argv: >-
+      {{ as_root + ['find', '/etc/orbit/processes/' ~ item.id, '-maxdepth', '1', '-type', 'f', '-name', '*.env']
+         + (['!', '-path', item.environment] if item.environment else []) + ['-print', '-delete'] }}
+  loop: "{{ container.processes }}"
+  loop_control: { label: "{{ item.name }}" }
+  register: environments_removed
+  changed_when: environments_removed.stdout != ''
+  failed_when: environments_removed.rc != 0 and 'No such file' not in environments_removed.stderr
+
 - name: Install and start the Processes
-  when: phase == 'processes' and units | length > 0
+  when: phase == 'processes' and unit_files | length > 0
   block:
     - name: Read the units
       ansible.builtin.command: { argv: "{{ as_root + ['cat', '/etc/systemd/system/' ~ item.name] }}" }
-      loop: "{{ container.units }}"
+      loop: "{{ unit_files }}"
       loop_control: { label: "{{ item.name }}" }
       register: units_read
       changed_when: false
@@ -409,24 +537,30 @@
       ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'daemon-reload'] }}" }
       changed_when: true
     - name: Enable and start the units
+      when: units | length > 0
       ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'enable', '--now', '--'] + units }}" }
       changed_when: false
+    # A changed unit restarts. A deployment's new seed then stops and starts every running unit on the new commit.
     - name: Restart the changed units
-      when: units_written.results | selectattr('changed', 'defined') | selectattr('changed') | list | length > 0
+      when: (units_written.results | selectattr('changed', 'defined') | selectattr('changed') | map(attribute='item.item.name') | select('in', units) | list | length) > 0
       ansible.builtin.command:
-        argv: "{{ as_root + ['systemctl', 'restart', '--'] + (units_written.results | selectattr('changed', 'defined') | selectattr('changed') | map(attribute='item.item.name') | list) }}"
+        argv: >-
+          {{ as_root + ['systemctl', 'restart', '--']
+             + (units_written.results | selectattr('changed', 'defined') | selectattr('changed') | map(attribute='item.item.name') | select('in', units) | list) }}
       changed_when: true
 
 # The agent's side of a clone: the placeholder model key, the Claude Code and Codex settings, the note links, and the instance file,
-# whose presence starts T3. Each file is compared by digest, so a rerun changes nothing; the key comes through the vault.
+# whose presence starts T3. Whole files are compared by digest; JSON settings merge only Orbit's keys, preserving runtime state.
+# A rerun changes nothing; the key comes through the vault.
 - name: Prepare the agent
   when: phase == 'agent'
   vars:
     agent_files: >-
-      {{ container.clone.files + [container.clone.model_environment | combine({'content': lookup('ansible.builtin.env', 'ORBIT_MODEL_ENVIRONMENT')})] }}
+      {{ (container.clone.files | selectattr('content', 'defined') | list)
+         + [container.clone.model_environment | combine({'content': lookup('ansible.builtin.env', 'ORBIT_MODEL_ENVIRONMENT')})] }}
   block:
-    - name: Make the agent's Claude Code folder
-      ansible.builtin.command: { argv: "{{ as_agent + ['mkdir', '-p', '-m', '0700', '/home/agent/.claude'] }}" }
+    - name: Make the agent's configuration folders
+      ansible.builtin.command: { argv: "{{ as_agent + ['mkdir', '-p', '-m', '0700', '/home/agent/.claude', '/home/agent/.t3/userdata'] }}" }
       changed_when: false
     - name: Read the digests of the agent's files
       ansible.builtin.command: { argv: "{{ as_root + ['sha256sum', '--', item.path] }}" }
@@ -444,6 +578,28 @@
         stdin: "{{ item.item.content }}"
         stdin_add_newline: false
       loop: "{{ agent_digests.results }}"
+      loop_control: { label: "{{ item.item.path }}" }
+      no_log: true
+      changed_when: true
+    - name: Read the agent's JSON settings
+      ansible.builtin.command: { argv: "{{ as_root + ['cat', '--', item.path] }}" }
+      loop: "{{ container.clone.files | selectattr('json', 'defined') | list }}"
+      loop_control: { label: "{{ item.path }}" }
+      register: agent_settings
+      changed_when: false
+      failed_when: agent_settings.rc != 0 and 'No such file or directory' not in agent_settings.stderr
+      no_log: true
+    - name: Merge Orbit's changed JSON settings
+      vars:
+        settings: "{{ item.stdout | from_json if item.rc == 0 else {} }}"
+      when: item.rc != 0 or settings != (settings | combine(item.item.json))
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['file', 'push', '--uid', item.item.uid | string, '--gid', item.item.gid | string, '--mode', item.item.mode,
+              '-', container.name ~ item.item.path] }}
+        stdin: "{{ settings | combine(item.item.json) | to_json }}\n"
+        stdin_add_newline: false
+      loop: "{{ agent_settings.results }}"
       loop_control: { label: "{{ item.item.path }}" }
       no_log: true
       changed_when: true

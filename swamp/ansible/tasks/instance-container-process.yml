@@ -1,0 +1,75 @@
+---
+# One Process of an Instance container (docs/reference/development-containers.md#processes), the `process` tag of
+# instance-container.yml. `process_action` is start, stop or restart, which change the Process's `orbit-*` unit in the container
+# and check its state, or status or logs, which read the unit's state and its newest journal lines into `process_result`.
+- name: Name the Process command
+  ansible.builtin.set_fact:
+    as_root: "{{ ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
+    process_unit: "{{ intent.control.name }}"
+    process_action: "{{ lookup('ansible.builtin.env', 'ORBIT_PROCESS_ACTION') }}"
+
+- name: Refuse another unit or action
+  ansible.builtin.assert:
+    that:
+      - process_unit is match('^orbit-process-[1-9][0-9]*-[a-z0-9-]+\.service$')
+      - process_action in ['start', 'stop', 'restart', 'status', 'logs']
+    fail_msg: process.target_unsupported
+    quiet: true
+
+- name: Read the container
+  ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
+  register: process_container
+  changed_when: false
+  failed_when: false
+
+# A stopped container has no running unit to change or read; its deployment or wake starts it.
+- name: Require the running container
+  ansible.builtin.assert:
+    that: process_container.rc == 0 and (process_container.stdout | from_json).status == 'Running'
+    fail_msg: process.target_inactive
+    quiet: true
+
+# The boot policy follows the desired state, as on a Node: a stopped Process stays stopped when the container starts again.
+- name: Change the unit
+  when: process_action in ['start', 'stop', 'restart']
+  ansible.builtin.command: { argv: "{{ as_root + ['systemctl'] + item + ['--', process_unit] }}" }
+  loop: >-
+    {{ {'start': [['enable', '--now']], 'stop': [['disable', '--now']], 'restart': [['enable'], ['restart']]}[process_action] }}
+  changed_when: true
+
+- name: Read the unit's state
+  ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'is-active', '--', process_unit] }}" }
+  register: process_state
+  changed_when: false
+  failed_when: false
+  until: >-
+    process_action not in ['start', 'stop', 'restart']
+    or (process_state.stdout | trim) == ('inactive' if process_action == 'stop' else 'active')
+  retries: 10
+  delay: 1
+
+- name: Require the admitted state
+  when: process_action in ['start', 'stop', 'restart']
+  ansible.builtin.assert:
+    that: (process_state.stdout | trim) == ('inactive' if process_action == 'stop' else 'active')
+    fail_msg: "process.{{ process_action }}_failed"
+    quiet: true
+
+# Newest entry first, as the Node agent reads a unit's journal; the Gateway puts them in time order and redacts them.
+- name: Read the unit's journal
+  when: process_action == 'logs'
+  ansible.builtin.command:
+    argv: >-
+      {{ as_root + ['journalctl', '--unit', process_unit, '--lines', (intent.read.lines | int | string), '--reverse',
+          '--output', 'short-iso', '--utc', '--no-pager', '--quiet'] }}
+    strip_empty_ends: false
+  register: process_journal
+  changed_when: false
+  no_log: true
+
+- name: Keep the result
+  ansible.builtin.set_fact:
+    process_result:
+      state: "{{ process_state.stdout | trim or 'unknown' }}"
+      output: "{{ (process_journal.stdout | default(''))[:1048576] }}"
+  no_log: true

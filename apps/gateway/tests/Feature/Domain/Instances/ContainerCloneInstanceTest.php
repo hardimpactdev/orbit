@@ -23,6 +23,8 @@ use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
+use App\Models\ProcessDefinition;
+use App\Models\ProjectDevelopmentDeployStep;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -92,6 +94,25 @@ describe('a clone of the container default', function (): void {
         ]);
     });
 
+    it('runs its own records of the Project\'s development Processes, not the default\'s units from the seed', function (): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'worker', 'environments' => ['development'],
+            'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'node', 'worker.js'], 'environment' => ['QUEUE' => 'high']]]);
+        $default = Instance::query()->findOrFail(containerCreate($project, $node)->target_id);
+        $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
+        InstanceRuntime::query()->where('instance_id', $default->id)->firstOrFail()
+            ->update(['seed_commit' => str_repeat('c', 40), 'power_state' => InstanceRuntimePowerState::Running]);
+
+        $operation = containerCreate($project, $node, 'feature');
+
+        $own = Process::query()->where('owner_id', $operation->target_id)->sole();
+        $units = ValidatedData::object(containerIntentOf($operation))['processes'];
+        expect($own->id)->not->toBe(Process::query()->where('owner_id', $default->id)->sole()->id)
+            ->and(array_column($units, 'name'))->toBe(["orbit-process-{$own->id}-worker.service"])
+            ->and($units[0]['environment'])->toStartWith("/etc/orbit/processes/{$own->id}/");
+    });
+
     it('hands the run the seed snapshot, T3\'s port and files, its firewall rules and no deploy step', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
@@ -108,9 +129,11 @@ describe('a clone of the container default', function (): void {
             ->and($clone['source_mirror'])->toBe('/var/lib/orbit/instance-repositories/'.$default->id.'.git')
             ->and($clone['t3'])->toMatchArray(['port' => 3800, 'listen' => '10.44.0.7', 'device' => 't3', 'internal_port' => 3773,
                 'url' => 'http://10.44.0.7:3800', 'label' => 'tool / feature'])
-            ->and(collect($clone['files'])->pluck('path')->all())->toBe(['/etc/orbit/instance', '/home/agent/.codex/config.toml', '/home/agent/.claude.json'])
+            ->and(collect($clone['files'])->pluck('path')->all())->toBe(['/etc/orbit/instance', '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json'])
             ->and($clone['files'][0]['content'])->toBe("# Managed by Orbit.\nORBIT_INSTANCE_ID={$id}\nORBIT_INSTANCE=feature\nORBIT_PROJECT=tool\nORBIT_URL=\n")
             ->and($clone['files'][1]['content'])->toContain('base_url = "http://10.253.0.1:8319/v1"')
+            ->and($clone['files'][2])->toBe(['path' => '/home/agent/.claude.json', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]])
+            ->and($clone['files'][3])->toBe(['path' => '/home/agent/.t3/userdata/settings.json', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true]])
             ->and($clone['model_environment'])->toBe(['path' => '/home/agent/.config/orbit/model.env', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600'])
             ->and($clone['links'][0])->toBe(['path' => '/home/agent/.claude/CLAUDE.md', 'target' => '/opt/orbit-agent/current/notes/package.md'])
             // WireGuard peers reach T3, the task VM range first refused.
@@ -175,6 +198,22 @@ describe('a clone of the container default', function (): void {
         $other = databaseServerOn(containerDefaultNode('shark', '10.44.0.8', listed: false), 'pg2', DatabaseDriver::Pgsql, 5432);
         expect(containerRefusal(fn () => containerCreate($default->project, $node, 'third', $other->slug)))->toBe('instance.database_clone_unsupported');
     });
+});
+
+it('starts a clone without copying the Project development deploy commands that its default already ran', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    ProjectDevelopmentDeployStep::query()->create(['project_id' => $default->project_id, 'name' => 'install', 'position' => 1,
+        'command' => 'bun install', 'required' => true, 'timeout_seconds' => 300]);
+    $operation = containerCreate($default->project, $node, 'feature');
+    $vault = vaultReadingSocket([]);
+
+    $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+
+    expect($run['intent']['container']['steps'])->toBe([])
+        ->and(array_keys($run['execution_secrets']))->not->toContain('step_0')
+        ->and(collect($vault->puts)->pluck('key')->all())->not->toContain('development-deploy-operation-'.$operation->id.'-step-0')
+        ->and($run['execution_secrets']['model_environment']['key'])->toBe('instance-create-model-'.$operation->id);
 });
 
 it('starts the run with the placeholder model key in the vault and the template copy of the default database', function (): void {

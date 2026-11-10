@@ -155,8 +155,16 @@
         daemon_reload: "{{ unit.changed }}"
         enabled: true
         state: "{{ 'restarted' if (unit.changed or caddyfile.changed) else 'started' }}"
+    # A host connection to the bridge address enters over lo, which the table rejects. Inspect the exact listener instead;
+    # the check phase proves the request path from the bridge after the guard admits the Node.
     - name: Wait for the forwarder
-      ansible.builtin.wait_for: { host: "{{ intent.address }}", port: "{{ intent.origin | urlsplit('port') }}", timeout: 15 }
+      ansible.builtin.command:
+        argv: [ss, -H, -ltn4, src, "{{ intent.address }}", sport, "=", ":{{ intent.origin | urlsplit('port') }}"]
+      register: forwarder_listener
+      changed_when: false
+      until: forwarder_listener.stdout | length > 0
+      retries: 15
+      delay: 1
     - name: Place the UFW rules
       ansible.builtin.import_tasks: tasks/firewall.yml
       vars:
@@ -178,11 +186,11 @@
         guard_port: "{{ intent.guard_origin | urlsplit('port') }}"
         check_netns: orbit-forwarder-check
         probe: 169.254.254.2
-        drops: "{{ '(?m)ip daddr ' ~ (guard | regex_escape) ~ ' tcp dport ' ~ guard_port ~ ' counter packets (\\d+) .*drop' }}"
-        resets: "{{ '(?m)ip daddr ' ~ (guard | regex_escape) ~ ' tcp dport ' ~ guard_port ~ ' .*counter packets (\\d+) .*reject' }}"
+        drops: "{{ '(?m)ip daddr ' ~ (guard | regex_escape) ~ ' tcp dport ' ~ guard_port ~ ' counter packets ([0-9]+) .*drop' }}"
+        resets: "{{ '(?m)ip daddr ' ~ (guard | regex_escape) ~ ' tcp dport ' ~ guard_port ~ ' .*counter packets ([0-9]+) .*reject' }}"
         relays: >-
           {{ '(?m)ip daddr ' ~ (intent.address | regex_escape) ~ ' tcp dport ' ~ (intent.origin | urlsplit('port'))
-          ~ ' .*counter packets (\\d+) .*reject' }}
+          ~ ' .*counter packets ([0-9]+) .*reject' }}
       block:
         # A run killed during these checks skips `always`; its leftovers go first.
         - name: Remove leftovers of an earlier check
@@ -213,7 +221,7 @@
             - [ip, -n, "{{ check_netns }}", route, add, "{{ intent.address }}", dev, ofchk1]
             - [ip, -n, "{{ check_netns }}", route, add, default, via, "{{ intent.address }}", dev, ofchk1, onlink]
             - [ip, route, add, "{{ probe }}/32", dev, "{{ intent.bridge }}"]
-          changed_when: true
+          changed_when: false
         # The bridge rule, the forwarder, the output rule for its user and the guard's admission, in one request: the guard answers
         # 401 only to a source it admits, so a no-key request through the forwarder proves it admits the Node and demands the key. A
         # source it refuses gets 403, and without its UFW allow the forwarder answers 502.
@@ -293,7 +301,7 @@
             - [ip, route, del, "{{ probe }}/32", dev, "{{ intent.bridge }}"]
             - [ip, link, del, ofchk0]
             - [ip, netns, del, "{{ check_netns }}"]
-          changed_when: true
+          changed_when: false
           failed_when: false
 
 - name: Remove the forwarder

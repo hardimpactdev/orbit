@@ -23,6 +23,11 @@ const fail = (message: string) => {
   Deno.exit(1);
 };
 const save = () => Deno.writeTextFileSync(file, JSON.stringify(state));
+/** Incus's own id of a container: a UUID that differs per container. */
+const uuid = (name: string) => {
+  const hex = [...new TextEncoder().encode(name.padEnd(16, "-"))].slice(0, 16).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+};
 const rootfs = (name: string) => `${folder}/containers/${name}`;
 /** A container path inside its folder; other arguments stay as they are. */
 const inside = (name: string, value: string) =>
@@ -36,12 +41,21 @@ if (args[0] === "query") {
   } else if (parts[0] === "instances") {
     const container = state.containers[parts[1]];
     if (!container) fail("Instance not found");
-    if (parts[2] === "snapshots") {
+    if (parts[2] === "files") {
+      // A directory's entries, as Incus lists them; it works on a stopped container too.
+      const path = new URLSearchParams(query).get("path")!;
+      try {
+        console.log(JSON.stringify([...Deno.readDirSync(rootfs(parts[1]) + path)].map((entry) => entry.name).sort()));
+      } catch {
+        fail("Not Found");
+      }
+    } else if (parts[2] === "snapshots") {
       console.log(
         JSON.stringify(container.snapshots.map((name: string) => ({ name }))),
       );
     } else {
-      console.log(JSON.stringify({ name: parts[1], status: container.status, query, devices: container.added ?? {} }));
+      console.log(JSON.stringify({ name: parts[1], status: container.status, query, devices: container.added ?? {},
+        config: { "volatile.uuid": container.uuid } }));
     }
   } else fail(`Unexpected query ${route}`);
   Deno.exit(0);
@@ -65,11 +79,14 @@ if (family === "init") {
   const name = args[2];
   const devices: string[] = [];
   for (let device = take("--device"); device !== null; device = take("--device")) devices.push(device);
-  state.containers[name] = { project, image: args[1], status: "Stopped", devices, config: take("--config"), snapshots: [] };
+  state.containers[name] = { project, image: args[1], status: "Stopped", devices, config: take("--config"), snapshots: [], uuid: uuid(name) };
   Deno.mkdirSync(`${rootfs(name)}/srv/workspace`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/etc/systemd/system`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/tmp`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/usr/local/bin`, { recursive: true });
+  Deno.mkdirSync(`${rootfs(name)}/etc/systemd/system/multi-user.target.wants`, { recursive: true });
+  // The image was published from a booted container, so every container made from it starts with the image's machine-id.
+  Deno.writeTextFileSync(`${rootfs(name)}/etc/machine-id`, "0123456789abcdef0123456789abcdef\n");
 } else if (family === "copy") {
   // A copy of a snapshot: the source's root file system as it is, a new container with the overridden devices.
   const [, from, name] = args;
@@ -82,7 +99,7 @@ if (family === "init") {
   for (const path of ["home/agent/.codex", "home/agent/.config/orbit", "etc/orbit"]) {
     Deno.mkdirSync(`${rootfs(name)}/${path}`, { recursive: true });
   }
-  state.containers[name] = { project, source: from, status: "Stopped", devices, snapshots: [] };
+  state.containers[name] = { project, source: from, status: "Stopped", devices, snapshots: [], uuid: uuid(name) };
 } else if (family === "config" && args[1] === "device" && args[2] === "add") {
   const [, , , name, device, type, ...settings] = args;
   state.containers[name].added ??= {};
@@ -91,6 +108,18 @@ if (family === "init") {
   const name = args.at(-1)!;
   if (!state.containers[name]) fail("Instance not found");
   state.containers[name].status = family === "start" ? "Running" : "Stopped";
+  // A boot starts every unit that is enabled: a link in multi-user.target.wants.
+  if (family === "start") {
+    const wants = `${rootfs(name)}/etc/systemd/system/multi-user.target.wants`;
+    let booted: string[] = [];
+    try {
+      booted = [...Deno.readDirSync(wants)].map((entry) => entry.name).sort();
+    } catch { /* no unit is enabled */ }
+    state.containers[name].booted = [...(state.containers[name].booted ?? []), booted];
+    state.containers[name].bootMachineIds = [...(state.containers[name].bootMachineIds ?? []),
+      Deno.readTextFileSync(`${rootfs(name)}/etc/machine-id`).trim()];
+    state.inactive = (state.inactive ?? []).filter((unit: string) => !booted.includes(unit) || (state.failing ?? []).includes(unit));
+  }
 } else if (family === "snapshot") {
   const [, verb, name, snapshot] = args;
   const container = state.containers[name];
@@ -100,13 +129,21 @@ if (family === "init") {
   } else {
     container.snapshots = container.snapshots.filter((s: string) => s !== snapshot);
   }
+} else if (family === "file" && args[1] === "delete") {
+  for (const target of args.slice(2).filter((arg) => !arg.startsWith("-"))) {
+    const name = target.slice(0, target.indexOf("/"));
+    Deno.removeSync(rootfs(name) + target.slice(name.length), { recursive: args.includes("--force") });
+  }
 } else if (family === "file" && args[1] === "push") {
+  const createDirs = args.indexOf("--create-dirs");
+  if (createDirs >= 0) args.splice(createDirs, 1);
   const uid = take("--uid");
   const gid = take("--gid");
   const mode = take("--mode")!;
   const [, , source, target] = args;
   const name = target.slice(0, target.indexOf("/"));
   const path = rootfs(name) + target.slice(name.length);
+  if (createDirs >= 0) Deno.mkdirSync(path.slice(0, path.lastIndexOf("/")), { recursive: true });
   const content = source === "-"
     ? new Uint8Array(await new Response(Deno.stdin.readable).arrayBuffer())
     : Deno.readFileSync(source);
@@ -125,12 +162,35 @@ if (family === "init") {
     state.systemctl ??= [];
     state.systemctl.push(command.slice(1));
     if (command[1] === "start" && command.includes("t3.service")) state.containers[name].t3 = true;
+    // A started unit runs and a stopped one does not, unless the test holds it in `failing`.
+    const units = command.slice(command.indexOf("--") + 1);
+    const wants = `${rootfs(name)}/etc/systemd/system/multi-user.target.wants`;
+    if (command[1] === "enable" || command[1] === "disable") {
+      Deno.mkdirSync(wants, { recursive: true });
+      for (const unit of units) {
+        try {
+          Deno.removeSync(`${wants}/${unit}`);
+        } catch { /* not enabled */ }
+        if (command[1] === "enable") Deno.symlinkSync(`/etc/systemd/system/${unit}`, `${wants}/${unit}`);
+      }
+    }
+    state.inactive ??= [];
+    if (["start", "restart"].includes(command[1]) || (command[1] === "enable" && command[2] === "--now")) {
+      state.inactive = state.inactive.filter((unit: string) => !units.includes(unit) || (state.failing ?? []).includes(unit));
+    } else if (command[1] === "stop" || (command[1] === "disable" && command[2] === "--now")) {
+      state.inactive = [...new Set([...state.inactive, ...units])];
+    }
     save();
     if (command[1] === "is-active") {
       const inactive = command.slice(3).filter((unit) => (state.inactive ?? []).includes(unit));
       for (const unit of command.slice(3)) console.log(inactive.includes(unit) ? "inactive" : "active");
       Deno.exit(inactive.length > 0 ? 3 : 0);
     }
+    Deno.exit(0);
+  }
+  if (command[0] === "journalctl") {
+    const unit = command[command.indexOf("--unit") + 1];
+    for (const line of (state.journal?.[unit] ?? []).slice().reverse()) console.log(line);
     Deno.exit(0);
   }
   // T3 in the container: its well-known document once started, sessions it issues and knows, and the project it adds.

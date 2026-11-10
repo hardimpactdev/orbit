@@ -543,11 +543,12 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [php, gateway-static, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, pi, agent, swamp, proof, proof-run, gateway-release, changes]
+    needs: [php, gateway-static, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, pi, agent, proof, gateway-release, changes]
     runs-on: ubuntu-26.04
     permissions:
       contents: read
       statuses: read
+      actions: read
     steps:
       - name: Require builds and static checks
         env:
@@ -555,6 +556,9 @@ jobs:
           PROOF_REQUIRED: ${{ github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' }}
           # Set the repository variable ORBIT_PROOF_BLOCKING to false to report the proof without blocking this result.
           PROOF_BLOCKING: ${{ vars.ORBIT_PROOF_BLOCKING != 'false' }}
+          # Set the repository variable ORBIT_SLOW_CHECKS_BLOCKING to false to report shape and proof without waiting for them.
+          SLOW_CHECKS_BLOCKING: ${{ vars.ORBIT_SLOW_CHECKS_BLOCKING != 'false' }}
+          CI_RUN_ID: ${{ github.run_id }}
           FORK_PROOF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           PROOF_SHA: ${{ github.event.pull_request.head.sha }}
           GH_TOKEN: ${{ github.token }}
@@ -562,17 +566,58 @@ jobs:
           PROOF_RUN_URL_PREFIX: ${{ github.server_url }}/${{ github.repository }}/actions/runs/
         run: |
           python3 - <<'PYTHON'
-          import json, os, subprocess, sys
+          import json, os, subprocess, sys, time
           needs = json.loads(os.environ['NEEDS'])
           if needs['changes']['result'] != 'success':
               sys.exit('Build input selection failed')
           selected = json.loads(needs['changes']['outputs']['jobs'])
           selected['proof-run'] = os.environ['PROOF_REQUIRED'] == 'true'
           selected['gateway-release'] = needs['changes']['outputs']['gateway_release'] == 'true'
-          expected = set(needs) - {'changes'}
+          expected = (set(needs) - {'changes'}) | {'swamp', 'proof-run'}
           if set(selected) != expected or any(type(value) is not bool for value in selected.values()):
               sys.exit('Incomplete build selections')
-          if selected['proof-run'] and os.environ['FORK_PROOF'] == 'true':
+          slow_blocking = os.environ['SLOW_CHECKS_BLOCKING'] == 'true'
+          proof_blocking = slow_blocking and os.environ['PROOF_BLOCKING'] == 'true'
+          # The reusable Swamp call cannot be a static dependency: it waits for shape too.
+          # Its other two jobs always remain required, on main as well as pull requests.
+          pending = {
+              'Swamp / Swamp workflow validate': 'swamp',
+              'Swamp / Swamp Deno tests': 'swamp',
+          }
+          if slow_blocking:
+              pending['Swamp / Swamp shape gate'] = 'swamp'
+          if proof_blocking and selected['proof-run'] and os.environ['FORK_PROOF'] != 'true':
+              pending['CI proof'] = 'proof-run'
+          needs['swamp'] = {'result': 'success'}
+          needs['proof-run'] = {'result': 'skipped'}
+          # Bound the API wait by the existing longest explicit job budget (CI proof: 195 minutes).
+          deadline = time.monotonic() + 195 * 60
+          while pending:
+              pages = json.loads(subprocess.check_output([
+                  'timeout', '60', 'gh', 'api', '--paginate', '--slurp',
+                  f"repos/{os.environ['GH_REPO']}/actions/runs/{os.environ['CI_RUN_ID']}/jobs?filter=all&per_page=100",
+              ], timeout=65))
+              # A rerun of this gate alone must retain successful jobs from earlier attempts.
+              latest = {}
+              for job in (job for page in pages for job in page['jobs']):
+                  name = job['name']
+                  previous = latest.get(name)
+                  if previous is None or (job['run_attempt'], job['id']) > (previous['run_attempt'], previous['id']):
+                      latest[name] = job
+              for name, job in latest.items():
+                  if name not in pending or job['status'] != 'completed':
+                      continue
+                  component = pending.pop(name)
+                  result = job['conclusion']
+                  if result != 'success' and not (not selected[component] and result == 'skipped'):
+                      sys.exit(f'Required job failed: {name}: {result}')
+                  needs[component]['result'] = 'success'
+              if pending:
+                  if time.monotonic() >= deadline:
+                      sys.exit(f'Timed out waiting for required jobs: {list(pending)}')
+                  print(f'Waiting for required jobs: {list(pending)}', flush=True)
+                  time.sleep(15)
+          if proof_blocking and selected['proof-run'] and os.environ['FORK_PROOF'] == 'true':
               pages = json.loads(subprocess.check_output([
                   'timeout', '60', 'gh', 'api', '--paginate', '--slurp',
                   f"repos/{os.environ['GH_REPO']}/commits/{os.environ['PROOF_SHA']}/statuses?per_page=100",
@@ -584,7 +629,7 @@ jobs:
               if status is None or status['state'] != 'success':
                   sys.exit('The outside proof has not passed on this head. Approve and run it, then rerun Required checks.')
               needs['proof-run']['result'] = 'success'
-          if os.environ['PROOF_BLOCKING'] != 'true':
+          if not proof_blocking:
               selected['proof-run'] = False
               needs['proof-run']['result'] = 'skipped'
           failed = {job: needs[job]['result'] for job, touched in selected.items()

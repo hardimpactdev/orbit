@@ -25,6 +25,10 @@ final readonly class ProcessSpecification
     /** @return array{runtime: ProcessRuntime, working_directory: ?string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool, restart_on_deploy: bool} */
     public function attributes(#[SensitiveParameter] AddProcessData $data, ProcessTarget $target): array
     {
+        // A container's Processes are `orbit` units in it: no Docker, and no preset that names Node paths.
+        if ($target->container !== null && ($data->runtime !== ProcessRuntime::Systemd || $data->preset !== null)) {
+            throw new ResourceOperationException('process.target_unsupported', 'A Process in an Instance container must be an ordinary systemd Process.', 409);
+        }
         $workingDirectory =
             $data->workingDirectory
             ?? ($data->runtime === ProcessRuntime::Systemd ? $target->defaultWorkingDirectory : null);

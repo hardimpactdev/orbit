@@ -74,6 +74,8 @@ A decision that is more than a `when` becomes a Jinja template, read with `looku
 - `regex_search` with a `'\1'` group argument fails. Use `regex_findall`.
 
 - A successful `Type=oneshot` service without `RemainAfterExit` is inactive. `state: started` reruns it every time. Compare the live state it owns and apply only on drift, keeping its unit conditions.
+
+- Give each phase fixture its own `ORBIT_RUN_ID`. Concurrent worktrees share the Node's `/tmp`, so a repeated fixture id can overwrite another run's bundles and credential files.
 - Open Docker-to-host Analytics storage ports before running `createdb` or migrations. Keep publication ports after readiness.
 - Keep the readiness wait after the step that starts a service. Analytics starts in a native child after the Node phase; a readiness phase after that child waits before publication.
 

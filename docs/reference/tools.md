@@ -17,6 +17,8 @@ A Tool is one package that Orbit manages on one Node through one Tool Manager. T
 
 The [machine software recipe](/reference/compute-drivers#machine-software-recipe) defines the versioned Ubuntu snapshot, machine tool pins, and role tool sets. Its read-only loader and validator do not run Tool operations or change today's enrollment and image programs. Project packages and their lockfiles remain separate from machine software.
 
+[Instance containers](/reference/development-containers#processes) use shared runtime folders from the recipe. Installing their development Processes creates no Tool records and runs no Tool operation.
+
 Recording a development [Instance branch rename](/cli/instance/rename) does not install, update, adopt, or remove packages. The Gateway keeps branch inspection separate from Tool manager operations; rename does not rerun Project setup.
 
 [Importing workspace CI caches](/reference/instance-setup#import-ci-main-caches) restores private test and analysis data, not Tools or packages. It does not call a Tool Manager, fill a package download cache, or install a missing dependency. The Project's setup steps must install dependencies before importing these caches.

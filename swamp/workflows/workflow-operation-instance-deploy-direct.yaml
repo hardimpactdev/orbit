@@ -27,7 +27,7 @@ inputs:
             - orbit-control-inputs
           key:
             type: string
-            pattern: ^(process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*|(development|instance)-deploy-operation-[1-9][0-9]*-(step-([0-9]|[12][0-9]|3[01])|credential)|instance-environment-(testing-)?[1-9][0-9]*)$
+            pattern: ^(process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*|(development|instance)-deploy-operation-[1-9][0-9]*-(step-([0-9]|[12][0-9]|3[01])|credential|processes)|instance-environment-(testing-)?[1-9][0-9]*)$
         required:
         - vault
         - key
@@ -1870,7 +1870,9 @@ jobs:
       item: step
       in: '${{ inputs.intent.deployment.variant != "container" ? [] : inputs.intent.deployment.steps }}'
     concurrency: 1
-  - name: Take the seed snapshot
+  - name: Install the Processes
+    # The Project's development Processes: changed units and environment files go in and restart, and a moved commit restarts the
+    # Processes that restart on deploy. Each environment file comes from the vault.
     labels:
       role: swamp
     writes: true
@@ -1881,6 +1883,31 @@ jobs:
     - step: Run dev deploy steps
       condition:
         type: always
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "instance-deploy-container-processes-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags processes "$ORBIT_ANSIBLE/instance-container.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_RUN_ID: ${{ run.id }}
+          ORBIT_ANSIBLE: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets : "" }}'
+          ANSIBLE_CONFIG: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets + "/ansible.cfg" : "" }}'
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+          ORBIT_PROCESS_ENVIRONMENTS: '${{ vault.get(inputs.execution_secrets.credential.vault, inputs.intent.deployment.variant == "container" ? inputs.execution_secrets.process_environments.key : inputs.execution_secrets.credential.key) }}'
+  - name: Take the seed snapshot
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: Install the Processes
+      condition:
+        type: succeeded
     guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
     task:
       type: behavior
@@ -1921,6 +1948,9 @@ jobs:
       condition:
         type: always
     - step: Run dev deploy steps
+      condition:
+        type: always
+    - step: Install the Processes
       condition:
         type: always
     - step: Take the seed snapshot
