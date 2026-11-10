@@ -708,7 +708,7 @@ describe('CLI binary workflow', function (): void {
         $jobs = cli_binary_workflow()['jobs'];
 
         // A local action exists only after checkout, which under workflow_call checks out the release commit.
-        expect(array_slice(cli_binary_step_uses($jobs['build']), 0, 2))->toBe(['actions/checkout', './.github/actions/php']);
+        expect(array_slice(cli_binary_step_uses($jobs['build']), 0, 3))->toBe(['actions/checkout', './.github/actions/ci-scope', './.github/actions/php']);
 
         foreach ($jobs as $name => $job) {
             $runners = isset($job['strategy']) ? array_column($job['strategy']['matrix']['include'], 'runner') : [$job['runs-on']];

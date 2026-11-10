@@ -50,7 +50,10 @@ it('passes only a POST of the task key from the range to the inference routes, w
     file_put_contents("{$directory}/Caddyfile", $caddyfile);
     $caddy = Process::start(['caddy', 'run', '--adapter', 'caddyfile', '--config', "{$directory}/Caddyfile"]);
     try {
-        retry(50, static fn () => Http::post("http://127.0.0.1:{$guard}/"), 100);
+        retry(50, static function () use ($upstream, $guard): void {
+            Http::post("http://127.0.0.1:{$upstream}/");
+            Http::post("http://127.0.0.1:{$guard}/");
+        }, 100);
         $send = static fn (string $method, string $uri, ?string $key = 'task-key'): array => [
             ($response = Http::withHeaders(array_filter(['Authorization' => $key === null ? null : "Bearer {$key}", 'X-Api-Key' => 'other']))
                 ->send($method, "http://127.0.0.1:{$guard}{$uri}"))->status(), $response->body()];
@@ -74,7 +77,10 @@ it('passes only a POST of the task key from the range to the inference routes, w
         // From a source outside the range, the task key gets 403.
         file_put_contents("{$directory}/Caddyfile", strtr($caddyfile, ['remote_ip 127.0.0.1/32' => 'remote_ip 10.44.0.128/25']));
         $caddy = Process::start(['caddy', 'run', '--adapter', 'caddyfile', '--config', "{$directory}/Caddyfile"]);
-        retry(50, static fn () => Http::post("http://127.0.0.1:{$guard}/"), 100);
+        retry(50, static function () use ($upstream, $guard): void {
+            Http::post("http://127.0.0.1:{$upstream}/");
+            Http::post("http://127.0.0.1:{$guard}/");
+        }, 100);
         expect($send('POST', '/v1/responses')[0])->toBe(403);
     } finally {
         $caddy->stop(2);

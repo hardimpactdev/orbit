@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 
-JOBS = ('php', 'gateway-static', 'cli', 'cli-static', 'sdk-static', 'e2e-static', 'docs', 'api-reference', 'web', 'pi', 'agent', 'swamp', 'proof')
+JOBS = ('php', 'gateway-static', 'gateway-tests', 'cli', 'cli-static', 'sdk-static', 'e2e-static', 'docs', 'api-reference', 'web', 'pi', 'agent', 'swamp', 'proof')
 ROOT = Path(__file__).resolve().parent.parent
 # Gateway files that the Swamp gate and its Deno tests read: the grant renderer, the workflow definition that a Deno test parses, and the
 # frozen agent contract, whose check scans the Gateway and Swamp sources (the PHP job runs the same check for PHP files only).
@@ -173,10 +173,12 @@ def tooling_jobs(path):
     if path.startswith(('.agents/', '.codex/', '.githooks/')):
         return {'docs'}
     if path == 'bin/docs-navigation':
-        return {'docs', 'api-reference', 'web'}
+        return {'docs', 'gateway-tests', 'api-reference', 'web'}
+    if path in ('bin/build-api', 'bin/docs-openapi', 'bin/mcp-tools'):
+        return {'gateway-tests', 'api-reference', 'web'}
     if path.startswith(('bin/docs-', 'bin/check-flows')) and path != 'bin/docs-openapi':
         return {'docs'}
-    if path in ('bin/build-api', 'bin/docs-openapi', 'bin/mcp-tools', 'bin/api-fixtures', 'bin/check-operation-kinds'):
+    if path in ('bin/api-fixtures', 'bin/check-operation-kinds'):
         return {'api-reference', 'web'}
     if path == 'bin/swamp-shape-gate':
         return set()
@@ -202,6 +204,16 @@ def select(paths, main=False, selection=None):
     swamp_checks = dict.fromkeys(('shape', 'validate', 'tests'), False)
     agent = False
     for path in paths:
+        # Gateway tests invoke the CLI consent fixture and native firewall behavior, and read
+        # proof cases, operation schemas, workflow/Ansible contracts and chart-backed metadata.
+        if (path.startswith(('apps/gateway/', 'apps/cli/', 'packages/php-sdk/'))
+                or not path.endswith(PROSE) and path.startswith(('swamp/workflows/', 'swamp/ansible/', 'swamp/proof/', 'swamp/config/',
+                             'swamp/extensions/behaviors/operations/', 'swamp/extensions/behaviors/_lib/'))
+                or path in ('swamp/deno.lock', 'swamp/deno.json', 'swamp/deno.jsonc', 'swamp/.swamp.yaml',
+                            'tools/swamp-proof-guest/ansible-recaps.php', 'docs/site.json')
+                or path.startswith('docs/navigation/') and path.endswith('.json')
+                or path.startswith('docs/cli/') and path.endswith('.mmd')):
+            jobs['gateway-tests'] = True
         for name in swamp_inputs(path):
             swamp_checks[name] = True
         # Skills and Swamp prose never install application or Swamp toolchains.
