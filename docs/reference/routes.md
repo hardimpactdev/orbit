@@ -86,7 +86,7 @@ Each active Instance of a web-serving Project has exactly one Route without a we
 
 A visitable development `default` serves its web root from its checkout, which each [deployment](/reference/deployments#development-defaults) updates in place. Automatic deployment keeps only seeded container defaults current, with or without a Route. Checkout defaults are working trees and deploy only on request.
 
-A successful update of a development Instance's authoritative Route clears its pending publication marker. This completion belongs to the Route, so a default whose seed already matches its branch needs no automatic-deploy policy run to settle it.
+A successful initial publication or update of a development Instance's authoritative Route clears its pending publication marker. A failed publication or an unrelated Route does not clear it. This completion belongs to the Route, so a newly routed default can deploy by hand, and a default whose seed already matches its branch needs no automatic-deploy policy run to settle it.
 
 ## Route record
 

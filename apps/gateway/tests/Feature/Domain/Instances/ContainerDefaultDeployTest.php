@@ -16,6 +16,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Routes\NativeRouteConvergenceProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
@@ -25,6 +26,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\ProjectDevelopmentDeployStep;
+use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -142,6 +144,53 @@ it('admits a ready container through the development API and binds its receipt a
     $this->withHeader('Idempotency-Key', 'development.absent')->postJson($path, ['commit' => $commit])->assertAccepted()
         ->assertJsonPath('data.id', $fenced)->assertJsonPath('data.status', 'cancelled');
 });
+
+it('allows manual deployment after the create projector publishes the authoritative Route', function (): void {
+    Queue::fake();
+    deployVault();
+    $instance = deployDefault(container: true);
+    $instance->update(['development_projection_pending' => true]);
+    $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+        'domain' => 'tool.orbit', 'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => 'activating']);
+    $operation = Operation::query()->create(['kind' => 'route.create', 'target_type' => 'route', 'target_id' => $route->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'input' => ['route_lifecycle' => ['effectful' => true, 'public_activated' => false]],
+        'state' => ['swamp_run_id' => 'route-run']]);
+    expect(fn () => app(StartInstanceDeployAction::class)->execute($instance, 'operator', null))
+        ->toThrow(ResourceOperationException::class, 'The default Route projection must finish before deployment.');
+
+    app(NativeRouteConvergenceProjection::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'route-run',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => []]);
+
+    expect($route->fresh()->sites_published)->toBeTrue()
+        ->and($instance->fresh()->development_projection_pending)->toBeFalse();
+    $deployment = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
+    expect($deployment->kind)->toBe('instance.deploy')->and($deployment->input['deployment']['projection_route_id'])->toBeNull();
+});
+
+it('keeps pending publication after a failed create or publication of an unrelated Route', function (bool $succeeded): void {
+    $instance = deployDefault(container: true);
+    $instance->update(['development_projection_pending' => true]);
+    $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+        'domain' => 'tool.orbit', 'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    if ($succeeded) {
+        $route->update(['web_root' => 'other/public']);
+        $other = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+            'domain' => 'authoritative.orbit', 'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending']);
+        $other->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+        $other->update(['status' => 'active']);
+    }
+    $operation = Operation::query()->create(['kind' => 'route.create', 'target_type' => 'route', 'target_id' => $route->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'input' => ['route_lifecycle' => ['effectful' => true, 'public_activated' => false]],
+        'state' => ['swamp_run_id' => 'route-run']]);
+
+    app(NativeRouteConvergenceProjection::class)->apply($operation, ['status' => $succeeded ? 'succeeded' : 'failed', 'run_id' => 'route-run',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => []]);
+
+    expect($instance->fresh()->development_projection_pending)->toBeTrue();
+})->with(['failed initial publication' => false, 'unrelated publication' => true]);
 
 it('deploys a container default as the container variant, whose commands need no Vite+ store on the Node', function (): void {
     $instance = deployDefault(container: true);

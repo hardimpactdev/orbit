@@ -63,6 +63,7 @@ final readonly class NativeRouteConvergenceProjection implements DirectOperation
                 Route::query()->whereKey($operation->target_id)->update(['status' => RouteStatus::Active, 'sites_published' => true,
                     'replacement_step' => $intent['public_activated'] ? RouteReplacementStep::IngressFirewall : null,
                     'failed_step' => null, 'error_code' => null]);
+                app(DevelopmentRoutePublication::class)->settle(Route::query()->findOrFail($operation->target_id));
             } elseif ($intent['effectful'] && $operation->status === OperationStatus::Failed) {
                 Route::query()->whereKey($operation->target_id)->update(['failed_step' => $step ?? 'native-create', 'error_code' => $operation->error_code]);
             }

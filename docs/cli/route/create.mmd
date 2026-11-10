@@ -63,6 +63,8 @@ sequenceDiagram
     alt every step succeeds
       SW-->>GW: Run succeeded<br/>terminal event + outputs
       Note over GW: Record result<br/>Route active
+      %%> Result:
+      %%> - a successful initial publication clears the pending marker of each development Instance for which this is the authoritative Route, so deployment can start
     else a step fails
       SW--xGW: Run failed<br/>error_code, failed step
       Note over GW: Record the failure<br/>Route pending · failed step
