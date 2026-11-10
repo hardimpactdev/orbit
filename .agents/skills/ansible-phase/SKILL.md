@@ -59,6 +59,8 @@ A decision that is more than a `when` becomes a Jinja template, read with `looku
 
 ## Pitfalls from the trial
 
+- Capture a binary's selected path before publishing its replacement. Retain that exact path for rollback; the second-highest release number can be a different binary. Prune only after successful publication, under the updater's lock, and leave the rollback intact on an unchanged repeat.
+
 - A new task file must be listed in `swamp/manifest.yaml` `additionalFiles`. Otherwise the playbook fails on the worker in about a second, before any task runs, and the step records no stderr. `swamp/bin/source_test.ts` checks every file under `swamp/ansible/`.
 - Disambiguate a task import when a top-level playbook shares its basename. Nested runtime includes can resolve the playbook first; use the `tasks/` path and keep the colliding playbook in the include regression fixture.
 - `incus query` takes the Project in the URL (`?project=...`), not `--project`.

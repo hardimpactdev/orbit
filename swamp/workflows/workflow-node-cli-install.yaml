@@ -63,6 +63,21 @@ jobs:
         argv: ${{ ["timeout", "60", "/usr/sbin/runuser", "-u", inputs.intent.cli.user, "--"] + ["/usr/local/bin/orbit", "self-update",
           "--help"] }}
     allowFailure: true
+  - name: cli_previous
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-cli-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 15
+        argv: [readlink, -e, /usr/local/bin/orbit]
+    allowFailure: true
   - name: cli_plan
     labels:
       role: swamp
@@ -76,11 +91,15 @@ jobs:
         observed: '${{ has(steps.cli_version.outputs) && has(steps.cli_version.outputs.stdout) ? steps.cli_version.outputs.stdout :
           null }}'
         self_update: ${{ steps.cli_self_update.status == "succeeded" }}
+        previous_path: '${{ has(steps.cli_previous.outputs) && has(steps.cli_previous.outputs.stdout) ? steps.cli_previous.outputs.stdout : null }}'
     dependsOn:
     - step: cli_version
       condition:
         type: always
     - step: cli_self_update
+      condition:
+        type: always
+    - step: cli_previous
       condition:
         type: always
   - name: cli_fetch
@@ -225,6 +244,29 @@ jobs:
       condition:
         type: succeeded
     writes: true
+  - name: cli_prune
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-cli-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 135
+        argv: ${{ ["timeout", "130"] + steps.cli_plan.outputs.prune_argv }}
+    dependsOn:
+    - step: cli_profile
+      condition:
+        type: succeeded
+    - step: cli_link
+      condition:
+        type: succeeded
+    guard: ${{ !steps.cli_plan.outputs.install }}
+    writes: true
   - name: result
     labels:
       role: swamp
@@ -242,3 +284,9 @@ jobs:
     - step: cli_profile
       condition:
         type: succeeded
+    - step: cli_prune
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped

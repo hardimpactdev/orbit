@@ -49,6 +49,9 @@
     quiet: true
 - name: Reconcile the recorded CLI release
   block:
+    - name: Remember the CLI selected before installation
+      ansible.builtin.stat: { path: /usr/local/bin/orbit, follow: false, get_checksum: false }
+      register: cli_previous
     - name: Install the pinned CLI
       ansible.builtin.import_tasks: node-converge-replace.yml
       vars:
@@ -70,3 +73,35 @@
         content: "{{ intent.cli.profile }}"
         owner: root
         mode: "0600"
+    - name: Keep the selected and previous CLI binaries
+      when: cli_previous.stat.lnk_source | default('') != '/usr/local/bin/orbit-' ~ intent.cli.release.version
+      ansible.builtin.command:
+        argv:
+          - flock
+          - --wait
+          - "120"
+          - /run/lock/orbit-self-update.lock
+          - find
+          - -H
+          - /usr/local/bin
+          - -maxdepth
+          - "1"
+          - -regextype
+          - posix-extended
+          - -type
+          - f
+          - -regex
+          - '/usr/local/bin/orbit-0\.[1-9][0-9]{0,9}\.0'
+          - "!"
+          - -samefile
+          - /usr/local/bin/orbit
+          - "!"
+          - -path
+          - "/usr/local/bin/orbit-{{ intent.cli.release.version }}"
+          - "!"
+          - -path
+          - "{{ cli_previous.stat.lnk_source | default('/usr/local/bin/orbit-' ~ intent.cli.release.version) }}"
+          - -print
+          - -delete
+      register: cli_pruned
+      changed_when: cli_pruned.stdout | length > 0

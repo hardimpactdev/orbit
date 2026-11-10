@@ -23,11 +23,13 @@ export const CliPlan = z.object({
     install: z.boolean(),
     version: z.string(),
     path: z.string(),
+    prune_argv: z.array(z.string()),
 }).strict();
 export const CliPlanInput = z.object({
     release: CliInstallInput.shape.release,
     observed: z.string().nullable(),
     self_update: z.boolean(),
+    previous_path: z.string().nullable(),
 }).strict();
 export function cliPlan(raw: z.infer<typeof CliPlanInput>) {
     const { release, observed, self_update } = CliPlanInput.parse(raw);
@@ -44,9 +46,23 @@ export function cliPlan(raw: z.infer<typeof CliPlanInput>) {
         );
     if (install && !release) throw new Error("cli.release_needed");
     const version = install ? release!.version : current!;
+    const path = "/usr/local/bin/orbit-" + version;
     return CliPlan.parse({
         install,
         version,
-        path: "/usr/local/bin/orbit-" + version,
+        path,
+        // -H follows the reference link for -samefile, while -type f leaves
+        // version-shaped symlinks and directories alone. The update lock keeps
+        // self-update from switching the live target during this cleanup.
+        prune_argv: [
+            "flock", "--wait", "120", "/run/lock/orbit-self-update.lock",
+            "find", "-H", "/usr/local/bin", "-maxdepth", "1",
+            "-regextype", "posix-extended", "-type", "f",
+            "-regex", "/usr/local/bin/orbit-0\\.[1-9][0-9]{0,9}\\.0",
+            "!", "-samefile", "/usr/local/bin/orbit",
+            "!", "-path", path,
+            "!", "-path", raw.previous_path?.trim() || path,
+            "-print", "-delete",
+        ],
     });
 }
