@@ -31,7 +31,7 @@ The role also runs Swamp's workers on its Node. Official `@swamp/cfgmgmt` steps 
 
 Steps that run on the swamp Node select its workers by label, `labels: {role: swamp}`, not by the token name `orbit-node-209`. Steps for one effect Node select `labels: {node: "<id>"}`; every Node worker carries its `node` label. Any number of workers can carry a label, so a worker drains and restarts while another takes its steps, and no step names a token.
 
-Serve and each worker run with their own `TMPDIR` in their state directory, `/var/lib/orbit-swamp-serve/tmp` and `/var/lib/orbit-swamp-worker/<instance>/tmp`. Deno places the compiled Swamp start cache there, so a root run using `/tmp` does not replace the units’ caches.
+Serve and each worker run with their own `TMPDIR` in their state directory, `/var/lib/orbit-swamp-serve/tmp` and `/var/lib/orbit-swamp-worker/<instance>/tmp`. Deno places the compiled Swamp start cache there, so a root run using `/tmp` does not replace the units' caches.
 
 ### Serve and grants
 
