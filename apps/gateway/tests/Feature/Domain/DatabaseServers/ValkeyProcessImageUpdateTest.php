@@ -207,8 +207,8 @@ it('renders the ACL command mounts and health probe for replacement then complet
     expect($intent['created'])->toBeFalse()
         ->and($intent['container_input']['image'])->toBe('valkey/valkey:8.2')
         ->and($intent['container_input']['healthcheck_arguments'])->toBe($healthcheck);
-    expect(array_slice($commands['start'], -7))->toBe(['valkey/valkey:8.2', ...$replacement['command']]);
-    expect(array_slice($commands['scrub'], -7))->toBe(['valkey/valkey:8.2', ...$replacement['command']]);
+    expect(array_slice($commands['start'], -8))->toBe(['valkey/valkey:8.2', ...$replacement['command']]);
+    expect(array_slice($commands['scrub'], -8))->toBe(['valkey/valkey:8.2', ...$replacement['command']]);
     expect(array_slice($commands['start'], array_search('--health-cmd', $commands['start'], true), 10))->toBe($healthcheck);
     expect(array_slice($commands['scrub'], array_search('--health-cmd', $commands['scrub'], true), 10))->toBe($healthcheck);
     expect($commands['wait'])->toBe(['timeout', '60', 'sh', '-c',
