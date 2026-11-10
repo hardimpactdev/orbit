@@ -47,6 +47,8 @@ Upstream fixes go through the orchestrator to Nick. Only official Swamp versions
 
 ## Terminal outputs
 
+Native behavior resources expose their attributes directly under `outputs`. The T3 registration resource named `terminal` therefore supplies `outputs.stdout`; its resource name adds no level.
+
 The action that produces public values prints one JSON object on stdout. Native `command/shell` stores it in `jobs[].steps[].outputs.stdout`, alongside `exitCode`, `executedAt`, `command`, `durationMs` and `stderr`. Keep secret values out of every output. On official e459 a step that exits nonzero keeps no outputs. A refusing action fails with its own exit code; the family projector maps the native failure to its public refusal. Native dependencies skip subsequent actions.
 
 The shared subscriber calls `projectTerminal(Operation $operation, array $terminalRun, array{job:string,step:string} $selector): Operation` with the native event's `run` object and the fixed family declaration. The helper reads that exact root with `workflow.history.get`, authenticated with the existing `swamp.read_token`. It does not require the separate `swamp.run_token` used to start work. It selects the named job and step and decodes stdout. After the history request finishes, it briefly locks and reloads the Operation and checks its run binding. It releases that transaction before calling the family `projection.apply`, so native secret reads and cleanup never inherit a shared write lock.

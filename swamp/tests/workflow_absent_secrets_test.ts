@@ -87,11 +87,12 @@ Deno.test("create finalization evaluates checkout, default and clone receipts wi
   const commit = "a".repeat(40);
   const succeeded = { status: "succeeded" };
   const workspace = { ...succeeded, outputs: { stdout: `orbit-commit=${commit}` } };
-  const server = JSON.stringify({ environment_id: "env-instance-8" });
+  const registration = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-create-16210-t3-register.json", import.meta.url))).step;
+  const server = JSON.parse(registration.outputs.stdout);
   const steps = {
     checkout: workspace, container: succeeded, workspace, seed: succeeded, agent: succeeded, t3: succeeded,
     "container-processes": succeeded, "t3-sessions": succeeded,
-    "t3-register": { ...succeeded, outputs: { terminal: { stdout: server } } },
+    "t3-register": registration,
   };
   for (const container of [null, { clone: null }, { clone: { source: "instance-7" } }]) {
     const intent = { instance_id: 8, already_active: false, container, server_database: null, processes: [], setup_steps: [], route: null };
@@ -104,6 +105,6 @@ Deno.test("create finalization evaluates checkout, default and clone receipts wi
     const result = createResult(intent, args);
     assertEquals(result.ready, true);
     assertEquals(JSON.parse(result.stdout).commit, commit);
-    assertEquals(JSON.parse(result.stdout).t3, container?.clone ? { environment_id: "env-instance-8" } : undefined);
+    assertEquals(JSON.parse(result.stdout).t3, container?.clone ? server : undefined);
   }
 });
