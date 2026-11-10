@@ -605,6 +605,8 @@ The Vite+ part runs only when a step needs Vite+. A failed required command skip
 
 The shared terminal subscriber reads Swamp's native run data and records the deployment once. The first failed step names the error code, as [Development defaults](#development-defaults) lists. Only a verified native success advances the Instance seed. Development has no result callback, private-material read, token-mint request or Gateway command executor.
 
+A `default` Instance in a container deploys with the variant `container` in the same workflow. Ansible phases start the container, fetch the commit into the Node's mirror and push it in, check it out under the same refusals, take the seed snapshot and check the result. Each Project command runs in the container as `orbit`, from its vault copy. [The default Instance](/reference/development-containers#the-default-instance) has the details.
+
 When a development deploy runs, it leaves Process definitions, Route publication and PHP configuration with their existing native kinds. A pending default Route projection refuses deploy admission.
 
 ### Automatic policy

@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
 use App\Domain\Instances\Environment\ObservedInstanceEnvironment;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
@@ -26,6 +27,7 @@ final readonly class StartInstanceEnvironmentSyncAction
         if (($replay = $this->idempotency->replay('instance.sync_environment')) !== null) {
             return $replay;
         }
+        InstanceContainer::assertCheckout($instance);
         if (app(DirectOperation::class)->definition('instance.sync_environment') === null) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Native environment synchronization is unavailable.', 409);
         }

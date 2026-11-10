@@ -118,6 +118,8 @@ For Laravel, the [application directory](/reference/projects#application-directo
 
 On `app-prod`, every release links `.env` in its application directory to the production home's file. With root `apps/site/public`, `<home>/releases/<name>/apps/site/.env` links to `<home>/.env`; no release-root `.env` link is needed. Application data uses separate [shared directories](/reference/deployments#shared-paths); changing those paths does not change the environment file. See [Production release layout](/reference/deployments).
 
+A container Instance keeps its `.env` in its workspace, for `orbit` with group `work`; its create flow writes it. `env:sync` and `env:import` refuse a container Instance with `operation.kind_unavailable`. See [the default Instance](/reference/development-containers#the-default-instance).
+
 ## Import
 
 Import reads the Instance's `.env`. It never reads `.env.example`. A Swamp run on Node 209 checks the file type, the owner, and the size over SSH, then copies the bytes into the Swamp vault key `instance-env-import.content.<operation>`. A missing, unsafe, or oversized file fails the Operation with `env.import_source_missing`. The run returns only the size and sha256, and removes its private temporary copies after success or failure. The Gateway reads the vault key once, checks the sha256, parses and stores the file, and then deletes the key, also after a failure. A size or sha256 mismatch fails with `env.import_unconfirmed` and stores nothing. The [`env:import` chart](/cli/env/import) shows each step.

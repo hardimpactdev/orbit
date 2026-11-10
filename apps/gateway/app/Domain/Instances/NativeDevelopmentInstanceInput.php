@@ -6,6 +6,7 @@ namespace App\Domain\Instances;
 
 use App\Domain\DatabaseServers\DatabaseCreateProjection;
 use App\Domain\DatabaseServers\DatabaseStatements;
+use App\Domain\Instances\Deployment\DevelopmentDeploySteps;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Processes\ProcessLifecycleInput;
@@ -25,10 +26,12 @@ final readonly class NativeDevelopmentInstanceInput
         $instance = Instance::query()->with(['node', 'project'])->findOrFail($operation->target_id);
         $plan = ValidatedData::object($input['direct_provisioning']);
         $environment = app(DevelopmentCreateEnvironment::class);
+        $container = $plan['container'] ?? null;
         $programs = ValidatedData::object(app(NativeInstanceProvisioningSetup::class)->resolve($operation, $instance->id, '', 'setup_programs')->value);
         $seeded = ($input['seed_path'] ?? null) !== $plan['checkout'];
         $steps = [];
-        foreach (InstanceLifecycleInput::members(['members' => $programs['steps']]) as $raw) {
+        // A container default has no setup steps: its development deploy steps install and migrate.
+        foreach ($container !== null ? [] : InstanceLifecycleInput::members(['members' => $programs['steps']]) as $raw) {
             $step = ValidatedData::object($raw);
             $command = ValidatedData::string($step['command']);
             $steps[] = ['index' => count($steps), 'name' => $step['name'], 'command' => $command, 'sha256' => hash('sha256', $command),
@@ -62,6 +65,7 @@ final readonly class NativeDevelopmentInstanceInput
             'route_mutations' => self::routeWithdrawal($input),
             'route_secrets' => ($input['route_create'] ?? null) === null ? null : ValidatedData::object($input['execution_secrets'] ?? [])],
             'execution_secrets' => [...$copies,
+                ...($container === null ? [] : app(DevelopmentDeploySteps::class)->copies($operation, $instance->project, ValidatedData::object($container)['steps'])),
                 'git_credential' => InstanceGitHubReadTokens::credentialReference($operation),
                 'environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-input-'.$operation->id, $environment->content($instance)),
                 ...($testing === null ? [] : ['environment_testing' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-testing-'.$operation->id, $testing)]),

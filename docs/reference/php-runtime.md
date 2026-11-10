@@ -109,6 +109,8 @@ php_admin_value[opcache.revalidate_freq] = 0
 
 `opcache.file_update_protection` stays at its stock 2 seconds, because file times have one-second resolution.
 
+A development Instance in a container uses no pool: FrankenPHP serves it in its container, from the static PHP build of its version in the runtime folder. See [the default Instance](/reference/development-containers#the-default-instance).
+
 ## Production runtime
 
 Each production Instance that serves PHP has a dedicated service for its Unix user. Production users on one Node share the installed PHP packages, but not a PHP-FPM master.

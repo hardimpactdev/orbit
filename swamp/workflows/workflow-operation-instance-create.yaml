@@ -1,6 +1,6 @@
 id: c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a
 name: operation-instance-create
-description: Development Instance create from 209; the checkout with its .env and the Project setup steps are two Ansible phases, the database, Process and Route work are children.
+description: Development Instance create from 209; the checkout with its .env and the Project setup steps are two Ansible phases, the database, Process and Route work are children. A container default runs its container, workspace, Process and seed phases instead.
 vaults: [orbit-control-inputs]
 queueTimeout: 10
 labels: {role: swamp}
@@ -11,15 +11,16 @@ inputs:
     node_id: {type: integer, minimum: 1}
     kind: {type: string, const: instance.create}
     intent: {type: object}
-    # Names only: git_credential and environment, member_<Process id> for each development Process environment, and
-    # server_database_create and server_database_check for an owned server database.
+    # Names only: git_credential and environment, member_<Process id> for each development Process environment,
+    # server_database_create and server_database_check for an owned server database, and step_<index> for each development
+    # deploy step of a container default.
     execution_secrets:
       type: object
       additionalProperties:
         type: object
         properties:
           vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^(?:instance-(?:git-(?:operation|credential)-|create-environment-(?:input|testing)-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*|database-create-(?:intent|owner)-[1-9][0-9]*)$'}
+          key: {type: string, pattern: '^(?:instance-(?:git-(?:operation|credential)-|create-environment-(?:input|testing)-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*|database-create-(?:intent|owner)-[1-9][0-9]*|development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01]))$'}
         required: [vault, key]
         additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -47,7 +48,7 @@ jobs:
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: input, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-        guard: '${{ inputs.intent.already_active }}'
+        guard: '${{ inputs.intent.already_active || inputs.intent.container != null }}'
         task:
           type: behavior
           behaviorType: command/shell
@@ -67,6 +68,105 @@ jobs:
               ORBIT_GIT_CREDENTIAL: '${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.execution_secrets.git_credential.key) }}'
               ORBIT_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}'
               ORBIT_ENVIRONMENT_TESTING: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.environment_testing ? inputs.execution_secrets.environment_testing.key : inputs.execution_secrets.environment.key) }}'
+      # A Project's first default Instance on a Node of the build list is a container, not a checkout
+      # (docs/cli/instance/container/create-default.mmd). Container: create it from the image with its address and its ACL, start it, and
+      # fetch the default branch into the Node's mirror with the read token, which never enters the container.
+      - name: container
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        guard: '${{ inputs.intent.already_active || inputs.intent.container == null }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "ic-container-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags container "$ORBIT_ANSIBLE/instance-container.yml"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
+              ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ORBIT_GIT_CREDENTIAL: '${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.execution_secrets.git_credential.key) }}'
+      # Workspace: the branch in as a bundle, checked out in /srv/workspace as `orbit`, and .env for `orbit` with group `work`. No
+      # /etc/orbit/instance, so T3 never starts in the default Instance.
+      - name: workspace
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: container, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.already_active || inputs.intent.container == null }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "ic-workspace-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags workspace "$ORBIT_ANSIBLE/instance-container.yml"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
+              ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ORBIT_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}'
+      # Deploy: each development deploy step in list order, as `orbit` in the workspace with the runtime folder's PATH, from its own
+      # vault copy on standard input. A best-effort step prints its exit status, so it never fails the run.
+      - name: deploy
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: workspace, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || steps.exists(k, k.startsWith("deploy") && steps[k].status == "failed") }}'
+        forEach: {item: step, in: '${{ inputs.intent.container == null ? [] : inputs.intent.container.steps }}'}
+        concurrency: 1
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("ic-deploy-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ ("ic-deploy-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+              hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
+            hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}'}]
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ ["incus", "exec", "--project", inputs.intent.container.project, "--cwd", inputs.intent.container.workspace, inputs.intent.container.name, "--", "runuser", "-u", "orbit", "--", "/usr/bin/env", "-i"] + inputs.intent.container.environment + ["/bin/sh", "-c", self.step.required ? "s=$(cat) && exec timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1" : "s=$(cat) || exit 1; timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1; echo \"$?\"", "sh", string(self.step.timeout_seconds)] }}'
+            stdin: '${{ vault.get(inputs.execution_secrets["step_" + string(self._index)].vault, inputs.execution_secrets["step_" + string(self._index)].key) }}'
+            timeoutSec: '${{ self.step.timeout_seconds + 10 }}'
+      # Processes: FrankenPHP as an `orbit-*` unit in the container, enabled and started.
+      - name: container-processes
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: workspace, condition: {type: succeeded}}
+          - {step: deploy, condition: {type: always}}
+        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || steps.exists(k, steps[k].status == "failed") }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "ic-processes-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags processes "$ORBIT_ANSIBLE/instance-container.yml"
+            env: &container_phase
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
+              ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
       # Database: the default Instance's SQLite file, copied with the same children as instance:clone (ADR 0191).
       - name: database-snapshot
         labels: {role: swamp}
@@ -245,6 +345,7 @@ jobs:
         dependsOn:
           - {step: route-csr, condition: {type: always}}
           - {step: checkout, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: container-processes, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
           - {step: database-install, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
           - {step: server-database-check, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
           - {step: server-database-fill, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
@@ -261,6 +362,22 @@ jobs:
             execution_secrets: '${{ inputs.intent.route_secrets }}'
             signed: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps && steps["route-csr-" + string(i)].status == "succeeded" ? steps["route-csr-" + string(i)].outputs.sign.stdout : "") }}'
             prepared: '${{ string(inputs.node_id) }}'
+      # Seed: the first `seed-<commit>` snapshot, taken with the Processes stopped for a moment; clones copy it.
+      - name: seed
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: container-processes, condition: {type: succeeded}}
+          - {step: route, condition: {type: always}}
+        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || steps.exists(k, steps[k].status == "failed") }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "ic-seed-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags seed "$ORBIT_ANSIBLE/instance-container.yml"
+            env: *container_phase
       # Finish: map the first phase that did not finish to the public receipt. The cleanup of the run folder runs beside it.
       - name: finish
         labels: {role: swamp}
@@ -274,6 +391,11 @@ jobs:
           - {step: processes, condition: {type: always}}
           - {step: route, condition: {type: always}}
           - {step: route-csr, condition: {type: always}}
+          - {step: container, condition: {type: always}}
+          - {step: workspace, condition: {type: always}}
+          - {step: deploy, condition: {type: always}}
+          - {step: container-processes, condition: {type: always}}
+          - {step: seed, condition: {type: always}}
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
@@ -287,6 +409,7 @@ jobs:
             processes: '${{ inputs.intent.processes.map(p, ("processes-" + string(p.index)) in steps ? steps["processes-" + string(p.index)].status : "skipped") }}'
             route: '${{ "route" in steps ? steps.route.status : "skipped" }}'
             certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps ? steps["route-csr-" + string(i)].status : "skipped") }}'
+            container: '${{ inputs.intent.container == null ? null : {"launch": "container" in steps ? steps.container.status : "skipped", "workspace": "workspace" in steps ? steps.workspace : null, "deploy": steps.filter(k, k.startsWith("deploy-")).map(k, steps[k].status), "processes": "container-processes" in steps ? steps["container-processes"].status : "skipped", "seed": "seed" in steps ? steps.seed.status : "skipped"} }}'
       # Withdraw the Route: a create that failed after its key was made takes back what it published, the reverse of the publication that the
       # Gateway captured at admission (the site, the pool, the DNS records, the certificate folders). The failure the run reports is the one
       # that finish read; the Instance and its checkout stay, marked failed. It runs before accepted, so a failing accepted does not cut it short.
@@ -305,11 +428,27 @@ jobs:
             side: restore
             intent: '${{ {"route_mutations": inputs.intent.route_mutations} }}'
             execution_secrets: {}
+      # Stop the container: a create that failed after it started leaves the container stopped, with its workspace; the same command
+      # resumes it, and instance:destroy removes it.
+      - name: stop-container
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: finish, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || steps.finish.outputs.ready == true || !("container" in steps && steps.container.status != "skipped") }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "ic-stop-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags stop "$ORBIT_ANSIBLE/instance-container.yml"
+            env: *container_phase
       - name: accepted
         labels: {role: swamp}
         dependsOn:
           - {step: finish, condition: {type: succeeded}}
           - {step: withdraw-route, condition: {type: always}}
+          - {step: stop-container, condition: {type: always}}
         task: {type: assert, expr: 'steps.finish.outputs.ready == true', severity: high, message: The development Instance create did not complete.}
       # Cleanup: the run folder of the phases, also after a failure. It sits at the depth of finish, so the two run side by side.
       - name: cleanup
@@ -318,6 +457,11 @@ jobs:
         dependsOn:
           - {step: input, condition: {type: always}}
           - {step: checkout, condition: {type: always}}
+          - {step: container, condition: {type: always}}
+          - {step: workspace, condition: {type: always}}
+          - {step: container-processes, condition: {type: always}}
+          - {step: seed, condition: {type: always}}
+          - {step: stop-container, condition: {type: always}}
           - {step: setup, condition: {type: always}}
           - {step: processes, condition: {type: always}}
           - {step: route, condition: {type: always}}

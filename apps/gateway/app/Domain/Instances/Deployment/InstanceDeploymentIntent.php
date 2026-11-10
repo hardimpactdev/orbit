@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Deployment;
 
 use App\Actions\Instances\InstanceDeploymentConfigResolver;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
@@ -46,19 +47,22 @@ final readonly class InstanceDeploymentIntent
         if ($instance->placedOnAppDev() && ! $rollback) {
             $this->assertDevelopment($instance);
             $development = $this->development->ordered($instance->project);
-            $steps = array_map(static fn (DevelopmentDeployStep $step): array => [
-                'name' => $step->name, 'phase' => 'before_activation', 'required' => $step->required,
-                'timeout_seconds' => $step->timeoutSeconds, 'command_digest' => hash('sha256', $step->command),
-            ], $development);
+            $steps = app(DevelopmentDeploySteps::class)->capture($instance->project);
+
+            // A default Instance in a container deploys in it (docs/reference/development-containers.md#the-default-instance); its
+            // commands run with the runtime folder, so it needs no Vite+ store on the Node.
+            $container = $instance->runtime()->exists();
 
             return [
-                'variant' => 'development', 'runtime_synchronous' => false, 'php_profile' => null, 'projection_route_id' => $instance->development_projection_pending ? $instance->authoritativeRoute()?->id : null, 'php' => false, 'steps' => $steps,
+                'variant' => $container ? 'container' : 'development', 'runtime_synchronous' => false, 'php_profile' => null, 'projection_route_id' => $instance->development_projection_pending ? $instance->authoritativeRoute()?->id : null, 'php' => false, 'steps' => $steps,
                 'php_version' => null, 'php_runtime' => null, 'php_refresh' => null,
                 'user' => null, 'relative_root' => null, 'application_suffix' => null, 'served' => [], 'shared_paths' => [],
-                'needs_vp' => array_any($development, static fn (DevelopmentDeployStep $step): bool => InstanceVpEnvironmentMaterial::required($step->name, $step->command)),
+                'needs_vp' => ! $container && array_any($development, static fn (DevelopmentDeployStep $step): bool => InstanceVpEnvironmentMaterial::required($step->name, $step->command)),
                 'project_id' => $instance->project_id, 'node_user' => $instance->node->user,
                 'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])), 'branch' => $instance->project->default_branch,
                 'repository' => $instance->project->repository_url, 'home' => $instance->checkout_path,
+                // The container is frozen with the rest of the intent; the run adds only the pinned commit.
+                'container' => $container ? app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail()) : null,
             ];
         }
         $config = $this->production->resolve($instance);
@@ -132,7 +136,7 @@ final readonly class InstanceDeploymentIntent
         }
         $data = ValidatedData::object($operation->input['deployment']);
         $variant = ValidatedData::string($data['variant']);
-        if (! in_array($variant, ['development', 'production', 'rollback'], true)
+        if (! in_array($variant, ['development', 'container', 'production', 'rollback'], true)
             || ! is_bool($data['runtime_synchronous']) || ! is_bool($data['php']) || ! is_bool($data['needs_vp'])
             || ! is_array($data['steps']) || ! array_is_list($data['steps'])) {
             throw new InvalidArgumentException('Invalid admitted deployment intent.');
@@ -148,7 +152,8 @@ final readonly class InstanceDeploymentIntent
                 'command_digest' => ValidatedData::string($step['command_digest'])];
         }
         $served = [];
-        if ($variant !== 'development') {
+        $development = self::development($variant);
+        if (! $development) {
             if (! is_array($data['served']) || ! array_is_list($data['served'])) {
                 throw new InvalidArgumentException('Invalid admitted application roots.');
             }
@@ -165,10 +170,16 @@ final readonly class InstanceDeploymentIntent
             'php_refresh' => $data['php_refresh'] === null ? null : ValidatedData::object($data['php_refresh']),
             'project_id' => ValidatedData::integer($data['project_id']), 'branch' => ValidatedData::string($data['branch']),
             'repository' => ValidatedData::string($data['repository']), 'home' => ValidatedData::string($data['home']),
-            'user' => $variant === 'development' ? null : ValidatedData::string($data['user']),
-            'relative_root' => $variant === 'development' ? null : ValidatedData::string($data['relative_root']),
-            'application_suffix' => $variant === 'development' ? null : ValidatedData::string($data['application_suffix']),
-            'served' => $served, 'shared_paths' => $variant === 'development' ? [] : ValidatedData::stringList($data['shared_paths']), 'steps' => $steps];
+            'user' => $development ? null : ValidatedData::string($data['user']),
+            'relative_root' => $development ? null : ValidatedData::string($data['relative_root']),
+            'application_suffix' => $development ? null : ValidatedData::string($data['application_suffix']),
+            'served' => $served, 'shared_paths' => $development ? [] : ValidatedData::stringList($data['shared_paths']), 'steps' => $steps];
+    }
+
+    /** A development default deploys in its checkout, or, as `container`, in its container. Neither has releases. */
+    public static function development(string $variant): bool
+    {
+        return in_array($variant, ['development', 'container'], true);
     }
 
     public function assertDevelopment(Instance $instance): void

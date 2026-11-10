@@ -3,14 +3,17 @@ title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
   - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer}.php
+  - apps/gateway/app/Domain/Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php
+  - apps/gateway/database/migrations/2027_02_04_000000_add_seed_commit_to_instance_runtimes.php
+  - swamp/ansible/{instance-container.yml,tasks/instance-container-phase.yml}
   - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/notes/**}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image}.yml
 ---
 
 # Instance containers
 
-**Not built, except the [records](#records) and the [Node preparation](#prepare-a-node).** This page specifies steps 3, 4, 5 and 8 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order). It describes the target, and the production basics of step 10. The parity gate of step 6 lives in the plan. The PRs in [Container runtime](/solutions/development-container-runtime) build it, one part at a time, and move each part into its owning page. Until then, development Instances run from checkouts on their Node, as [Applications](/domains/applications) describes, and task groups run on [task VMs](/reference/compute-drivers#task-vms).
+**Not built, except the [records](#records), the [Node preparation](#prepare-a-node) and the [default Instance](#the-default-instance).** This page specifies steps 3, 4, 5 and 8 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order). It describes the target, and the production basics of step 10. The parity gate of step 6 lives in the plan. The PRs in [Container runtime](/solutions/development-container-runtime) build it, one part at a time, and move each part into its owning page. Until then, development Instances run from checkouts on their Node, as [Applications](/domains/applications) describes, and task groups run on [task VMs](/reference/compute-drivers#task-vms).
 
 Every development Instance runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
 
@@ -171,11 +174,32 @@ Every lifecycle flow runs from the Node, with `incus` and Ansible phases. Develo
 
 ### The default Instance
 
-The default Instance is the clone source of its Project on the Node. Orbit builds the Project's first default Instance from scratch. It launches a container from the image and pushes in the default branch, fetched on the Node. The database family creates the database. Orbit writes `.env` and runs the Project's [development deploy steps](/reference/deployments#development-deploy-steps), which install dependencies and migrate. The [first default chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd) has the steps.
+The default Instance is the clone source of its Project on the Node. Orbit builds the Project's first default Instance from scratch. It launches a container from the image and pushes in the default branch, fetched on the Node. The database family creates the database on a Database server once the container can reach one; until then the default uses the database in its workspace. Orbit writes `.env` and runs the Project's [development deploy steps](/reference/deployments#development-deploy-steps), which install dependencies and migrate. The [first default chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd) has the steps.
 
 After that, the default Instance deploys every merge to the default branch, as a checkout default does today ([development deployment](/reference/deployments)). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
 
 There are no development setup steps. The default Instance has them done already, so a clone needs none.
+
+#### What is built
+
+The first default Instance and its deployments are built for the Nodes of the [build list](#the-build-list). A Project has one `default` Instance in the whole fleet, and every clone of it is made on its Node.
+
+| Part | What Orbit does |
+| --- | --- |
+| Container | `instance-<id>` in the project `orbit-instances`, from the image `orbit-instance`, at the lowest free guest address of the bridge. It has no T3 port |
+| ACL | The NIC carries the bridge ACL and the container's own ACL `instance-<id>`. Only the Node's Caddy, from the bridge's address, reaches port 8080 |
+| Git | The Node fetches with the read token into its mirror `/var/lib/orbit/instance-repositories/<id>.git`. A bundle carries the branch into the container, and `orbit` checks it out in `/srv/workspace` |
+| Checkout path | The workspace's path on the Node, inside the container's root file system. It keeps the path unique on the Node; Orbit never works in it from the Node |
+| `.env` | In the workspace's application directory, for `orbit` with group `work`, mode 0640 |
+| Deploy steps | Each runs as `orbit` at `/srv/workspace`, from its own vault copy. Its environment holds only `HOME`, `USER`, `LOGNAME`, `PATH`, and the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1` |
+| `PATH` | The Project's PHP build, then the runtime folder's `bin`, then the system folders |
+| FrankenPHP | The unit `orbit-frankenphp.service` runs `frankenphp php-server` as `orbit` on port 8080 of the bridge address. The Route proxies to it; the Node runs no PHP pool for it |
+| Seed | After the first build and each deployment that passes, Orbit stops the units, takes `seed-<commit>` and starts them again. It deletes older seeds, and the runtime row records the commit |
+| Deployment | The variant `container` starts a stopped container and fetches the commit on the Node. It refuses `deployment.checkout_dirty`, `deployment.commit_not_on_branch` and `deployment.branch_diverged` as a checkout does |
+
+A container default cannot reach a Database server yet, so it uses the database its Project names in the workspace; `--database-server` refuses with `operation.kind_unavailable`. A Project with development Process definitions refuses the same way. Dependency installs in the deploy steps need the container egress path of [step 2c of the rollout](/solutions/agent-runtime-and-manual-mode).
+
+A web-serving Project without a PHP version refuses with `project.source_defaults_incomplete`, and one whose PHP build the runtime folder lacks with `instance.host_unavailable`. Destroy, setup, `env:sync`, `env:import`, transfer, rename and clone refuse a container Instance with `operation.kind_unavailable`: they work on a checkout from the Node. Another Instance of the Project refuses with `instance.default_missing` on any Node but the default's, and with `operation.kind_unavailable` on that Node until clones are built.
 
 ### Create
 
@@ -468,7 +492,7 @@ The release flow, with release containers, gets its own specification in the fir
 
 ## Records
 
-The records exist; no flow writes them yet.
+The create flow of the [default Instance](#the-default-instance) writes the runtime row; its create and each deployment record the seed commit.
 
 Each Node records its Instance bridge, as [Nodes](#nodes) describes. Each container Instance has one runtime row, `instance_runtimes`. A checkout Instance has none.
 
@@ -480,6 +504,7 @@ Each Node records its Instance bridge, as [Nodes](#nodes) describes. Each contai
 | `runtime_version`, `agent_version` | The versions of the shared folders the container started with |
 | `clone_source_instance_id` | The default Instance it was cloned from. Null for the default Instance and for a migrated checkout |
 | `power_state` | `running` or `stopped`. A sleeping container is stopped |
+| `seed_commit` | A default Instance's commit of its newest `seed-<commit>` snapshot, which clones copy. Null before its first seed |
 
 The database keeps these rules:
 
@@ -498,7 +523,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
-| `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node |
+| `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node. Also when the Project's default runs on another Node |
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
 | `instance.default_not_migrated` | 409 | `instance:migrate` of a non-default Instance whose default Instance is still a checkout |
 | `instance.turn_running` | 409 | `instance:destroy` without `--force` while a T3 turn runs in the container |
@@ -507,6 +532,9 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `node.instance_bridge_exhausted` | 409 | No `/24` of the fleet range is free for a Node's Instance bridge |
 | `instance.container_nodes_invalid` | 500 | `ORBIT_INSTANCES_CONTAINER_NODES` is not a JSON list of Node ids |
 | `instance.host_unavailable` | 409 | A build-list Node cannot be prepared: it lacks the pool `orbit-instances` or enough subordinate IDs, or the recipe has no pin for it |
+| `instance.host_unavailable` | 409 | A container default cannot be placed: the Node has no bridge, the bridge is full, or the runtime folder lacks the Project's PHP build |
+| `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
+| `instance.container_<phase>_failed` | 502 | A phase of a container default's create or deployment failed without a refusal, such as `instance.container_start_failed` |
 
 ## Why it works this way
 

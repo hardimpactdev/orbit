@@ -1,0 +1,74 @@
+---
+# The container of a Project's default Instance on its app-dev Node (docs/reference/development-containers.md#the-default-instance):
+# its first build (instance:create) and its development deployments (instance:deploy). One tagged part per Swamp phase.
+#   create: `container`, `workspace`, `processes`, `seed`, and `stop` after a failure.
+#   deploy: `start`, `fetch`, `checkout`, `seed`, `check`.
+# The Project's deploy commands are not here: Swamp runs each one in the container from its vault copy, as `orbit`.
+# Git runs on the Node with a read token in a 0600 file; the container gets the branch as a bundle and never a token. The intent is
+# the Gateway's admitted intent in the run folder; `intent.container` names the container, its paths, its ACL and its units.
+# Every phase writes `result.json` in the run folder: the commit it left checked out, or the public error code of the refusal.
+- name: Pin the Node and address it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh_execution.target }}"
+    address_identity: "{{ intent.ssh_execution.identity_file }}"
+    address_group: container_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Run one phase of the default Instance's container
+  hosts: container_node
+  gather_facts: false
+  become: true
+  tags: [container, workspace, processes, seed, stop, start, fetch, checkout, check]
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    container: "{{ intent.container }}"
+    run_id: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN_ID') }}"
+  tasks:
+    - name: Run the phase
+      block:
+        # Swamp runs one tag at a time; the included tasks run whatever their own tags, so `always` applies to them.
+        - name: Run the phase's tasks
+          ansible.builtin.include_tasks:
+            file: tasks/instance-container-phase.yml
+            apply: { tags: [always] }
+          vars:
+            phase: "{{ ansible_run_tags | first }}"
+        - name: Write the result
+          ansible.builtin.copy:
+            content: "{{ {'commit': container_commit | default(none)} | to_json }}"
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          # The result file lives in the run folder on the worker: no change to the Node.
+          changed_when: false
+          vars:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      rescue:
+        # The code of a refusal is the fail_msg of its assert; anything else is the phase's own failure.
+        - name: Write the failure
+          ansible.builtin.copy:
+            content: >-
+              {{ {'error_code': ansible_failed_result.msg
+                  if (ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z_]+$'))
+                  else 'instance.container_' ~ (ansible_run_tags | first) ~ '_failed'} | to_json }}
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          vars:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+        - name: Fail the phase
+          ansible.builtin.fail:
+            msg: "{{ ansible_failed_result.msg | default('The container phase failed.') }}"

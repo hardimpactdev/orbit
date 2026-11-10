@@ -6,6 +6,7 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Operations\OperationIdempotency;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -22,6 +23,7 @@ final readonly class StartInstanceEnvironmentImportAction
         if (($replay = $this->idempotency->replay('instance.env_import')) !== null) {
             return $replay;
         }
+        InstanceContainer::assertCheckout($instance);
 
         return DB::transaction(function () use ($instance, $replace, $caller, $requestId): Operation {
             $context = $this->contexts->resolve($instance->refresh(), true);

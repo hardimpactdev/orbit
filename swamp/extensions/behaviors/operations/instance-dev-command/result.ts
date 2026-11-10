@@ -11,6 +11,15 @@ type Phases = {
     route: string;
     /** The statuses of the Route's CSR and signing steps, which run beside the checkout. */
     certificates?: string[];
+    /** A container default's phases, which run instead of the checkout, the database and the setup. */
+    container?: Container | null;
+};
+type Container = {
+    launch: string;
+    workspace: Phase;
+    deploy: string[];
+    processes: string;
+    seed: string;
 };
 
 /** The checkout phase prints the commit it left checked out as one `orbit-commit=<sha>` line. */
@@ -31,16 +40,19 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
         };
         return { ready: true, stdout: JSON.stringify(result) };
     }
-    const commit = phases.checkout?.status === "succeeded"
-        ? COMMIT.exec(String(phases.checkout.outputs?.stdout ?? ""))?.[1] ??
-            null
+    const container = phases.container ?? null;
+    const source = container === null ? phases.checkout : container.workspace;
+    const commit = source?.status === "succeeded"
+        ? COMMIT.exec(String(source.outputs?.stdout ?? ""))?.[1] ?? null
         : null;
     const steps = z.array(z.object({ name: z.string() }).passthrough()).parse(
         intent.setup_steps,
     );
     const certificates = phases.certificates ?? [];
     // [phase, finished, failed]
-    const outcomes: [string, boolean, boolean][] = [
+    const outcomes: [string, boolean, boolean][] = container !== null
+        ? containerOutcomes(intent, container, commit, phases)
+        : [
         ["checkout", commit !== null, commit === null],
         // Only a create that copies the default database or owns a server database runs the database phase.
         [
@@ -86,4 +98,34 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
             : {}),
     };
     return { ready: failed === undefined, stdout: JSON.stringify(result) };
+}
+
+/**
+ * A container default's phases in order: the container, the workspace with its commit, each development deploy step, the
+ * Processes, the Route and the seed snapshot.
+ */
+function containerOutcomes(
+    intent: Record<string, unknown>,
+    container: Container,
+    commit: string | null,
+    phases: Phases,
+): [string, boolean, boolean][] {
+    const certificates = phases.certificates ?? [];
+    return [
+        ["container", container.launch === "succeeded", container.launch === "failed"],
+        ["workspace", commit !== null, container.workspace?.status === "failed"],
+        [
+            "deploy",
+            container.deploy.every((status) => status === "succeeded"),
+            container.deploy.includes("failed"),
+        ],
+        ["processes", container.processes === "succeeded", container.processes === "failed"],
+        [
+            "route",
+            intent.route == null || (phases.route === "succeeded" &&
+                certificates.every((status) => status === "succeeded")),
+            phases.route === "failed" || certificates.includes("failed"),
+        ],
+        ["seed", container.seed === "succeeded", container.seed === "failed"],
+    ];
 }

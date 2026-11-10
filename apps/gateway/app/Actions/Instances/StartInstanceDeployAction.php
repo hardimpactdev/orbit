@@ -51,6 +51,7 @@ final readonly class StartInstanceDeployAction
 
         return DB::transaction(function () use ($instance, $triggeredBy, $requestId, $commit, $callerNodeId): Operation {
             $instance = Instance::query()->with(['node', 'project'])->lockForUpdate()->findOrFail($instance->id);
+            // A checkout default serializes its deployments with the checkout lock on the Node; a container default holds the Instance.
             $development = $instance->placedOnAppDev();
             $members = $development ? null : app(InstanceRuntimeDefinitions::class)->capture($instance);
             $deployment = $this->intent->snapshot($instance);
@@ -80,7 +81,7 @@ final readonly class StartInstanceDeployAction
                 $input['caller_node_id'] = $callerNodeId;
             }
             $operation = $this->operations->execute(OperationKinds::InstanceDeploy, OperationKinds::InstanceTarget, $instance->id, $instance->node_id,
-                $input, $triggeredBy, $requestId, lockKey: $development ? null : OperationStore::lockKey(OperationKinds::InstanceTarget, $instance->id));
+                $input, $triggeredBy, $requestId, lockKey: $development && $deployment['variant'] !== 'container' ? null : OperationStore::lockKey(OperationKinds::InstanceTarget, $instance->id));
             if ($development || ! $operation->wasRecentlyCreated) {
                 return $operation;
             }

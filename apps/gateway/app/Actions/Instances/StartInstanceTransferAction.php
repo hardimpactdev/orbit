@@ -7,6 +7,7 @@ namespace App\Actions\Instances;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\TransferInstanceData;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\InstanceTransferProcesses;
 use App\Domain\Instances\NativeInstanceTransferIntent;
@@ -48,6 +49,7 @@ final readonly class StartInstanceTransferAction
         if (($replay = $this->idempotency->replay('instance.transfer')) !== null) {
             return $replay;
         }
+        InstanceContainer::assertCheckout($instance);
         app(DirectOperation::class)->writer('instance.transfer');
 
         return DB::transaction(function () use ($instance, $data, $caller, $requestId): Operation {

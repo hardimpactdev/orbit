@@ -77,6 +77,8 @@ The first command adds a 180-second step and lowers `build-assets` by 180 second
 
 Authorized reads return the commands. [Activity](/cli/activity) records no input for the step commands and `instance:setup`, so it never holds command text or command output.
 
+A container default has no setup steps: its development deploy steps install and migrate. `instance:setup` refuses a container Instance with `operation.kind_unavailable`. See [the default Instance](/reference/development-containers#the-default-instance).
+
 ## Checkout access
 
 The development create workflow runs from Node209 over SSH as the Node's managed user, with two Ansible phases for the Node work. It captures the stored WireGuard endpoint and full host pins at admission. The checkout phase prepares the owned checkout, validates its configured origin, resolves the admitted branch and inspects the source profile. Git permits HTTPS reads only and disables repository hooks, filesystem monitors, alternate-ref commands and credential helpers. The shared source policy refuses foreign preparation markers and preserves unrelated worktrees.

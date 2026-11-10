@@ -22,20 +22,24 @@ sequenceDiagram
   opt the default Instance is asleep
     SW->>N: Start the container<br/>incus start
   end
-  SW->>N: Fetch the commit<br/>git fetch · read token
+  SW->>N: Fetch into the mirror<br/>Ansible · tags fetch
   %%> What it does:
-  %%> - fetches on the Node and pushes the commit into the container's repository; the token never enters the container
-  SW->>C: Check out the commit<br/>Ansible · tags checkout
+  %%> - fetches into the Node's mirror and pushes the branch into the container as a bundle; the token never enters the container
+  %%> - a pinned commit off the branch's first-parent chain refuses `deployment.commit_not_on_branch`
+  SW->>C: Check out in the container<br/>Ansible · tags checkout
   %%> What it does:
   %%> - the same checks as a checkout default: a dirty tree refuses `deployment.checkout_dirty`, a diverged branch `deployment.branch_diverged`
-  SW->>C: Run dev deploy steps<br/>Ansible · tags deploy
+  SW->>C: Run dev deploy steps<br/>incus exec · vault copy
   %%> What it does:
   %%> - the Project's development deploy steps, as `orbit`: they install changed dependencies and migrate
-  %%> - restarts the Processes whose code changed
-  SW->>N: Take the seed snapshot<br/>incus snapshot seed-COMMIT
+  SW->>N: Take the seed snapshot<br/>Ansible · tags seed
   %%> What it does:
   %%> - stops the default's Processes for a moment, snapshots the container and starts them again, so clones copy no half-written file
   %%> - deletes older seed snapshots that no clone uses
+  %%> - starting the units again restarts them on the new code
+  SW->>C: Check the container<br/>Ansible · tags check
+  %%> What it does:
+  %%> - the branch is checked out at the commit and the units are active, else `deployment.branch_changed` or `deployment.processes_inactive`
   alt every required step passes
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record the seed commit
