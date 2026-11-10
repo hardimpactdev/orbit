@@ -104,7 +104,7 @@ final class InstanceData extends Data
                 ->map(static fn (Route $candidate): RouteData => RouteData::fromModel($candidate))
                 ->all()),
             domain: $route?->domain,
-            url: $route instanceof Route ? "https://{$route->domain}" : null,
+            url: $instance->url(),
             removal: $removal instanceof InstanceRemoval
                 ? InstanceRemovalData::fromModel($removal)
                 : null,
