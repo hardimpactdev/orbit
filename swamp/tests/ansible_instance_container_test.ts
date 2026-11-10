@@ -633,6 +633,7 @@ Deno.test({
       assert(result.ok, result.output);
       // At its first boot nothing of the default starts: no FrankenPHP on the default's address, no worker on its database.
       assertEquals(f.state().containers["instance-8"].booted, [[]]);
+      assertEquals(f.state().containers["instance-8"].bootMachineIds, ["696e7374616e63652d382d2d2d2d2d2d"]);
       assertEquals([...Deno.readDirSync(`${clone}/etc/orbit/processes`)], []);
       assertEquals(Deno.readTextFileSync(`${clone}/etc/machine-id`), "696e7374616e63652d382d2d2d2d2d2d\n");
       assert(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/machine-id`) !== Deno.readTextFileSync(`${clone}/etc/machine-id`));

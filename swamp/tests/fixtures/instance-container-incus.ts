@@ -116,6 +116,9 @@ if (family === "init") {
       booted = [...Deno.readDirSync(wants)].map((entry) => entry.name).sort();
     } catch { /* no unit is enabled */ }
     state.containers[name].booted = [...(state.containers[name].booted ?? []), booted];
+    state.containers[name].bootMachineIds = [...(state.containers[name].bootMachineIds ?? []),
+      Deno.readTextFileSync(`${rootfs(name)}/etc/machine-id`).trim()];
+    state.inactive = (state.inactive ?? []).filter((unit: string) => !booted.includes(unit) || (state.failing ?? []).includes(unit));
   }
 } else if (family === "snapshot") {
   const [, verb, name, snapshot] = args;
