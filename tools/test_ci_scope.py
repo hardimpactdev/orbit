@@ -106,6 +106,22 @@ class ScopeActionTest(unittest.TestCase):
         self.assertNotIn('selected', values)
         self.assertIn('Unknown CI source root', done.stderr)
 
+    def test_gateway_pest_scope_follows_cli_fixture_and_skips_docs(self):
+        (self.root / 'docs').mkdir()
+        (self.root / 'docs/example.md').write_text('Docs only\n')
+        self.commit('Docs change')
+        docs = self.git('rev-parse', 'HEAD')
+        result, values = self.scope(self.imported, job='gateway-tests')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(values['selected'], 'false')
+        fixture = self.root / 'apps/cli/tests/Fixtures/Console/command-consent.php'
+        fixture.parent.mkdir(parents=True)
+        fixture.write_text('<?php // the NodeMetrics child CLI fixture\n')
+        self.commit('CLI consent fixture')
+        result, values = self.scope(docs, job='gateway-tests')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(values['selected'], 'true')
+
     def test_bad_comparison_fails_and_zero_event_base_uses_parent(self):
         result, _ = self.scope('f' * 40)
         self.assertNotEqual(result.returncode, 0)
