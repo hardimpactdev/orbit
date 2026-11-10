@@ -190,6 +190,7 @@ const nodeAddresses = [
   "1: lo    inet 127.0.0.1/8 scope host lo\\       valid_lft forever preferred_lft forever",
   "3: enp10s0    inet 192.168.6.20/24 brd 192.168.6.255 scope global enp10s0\\       valid_lft forever preferred_lft forever",
   "6: orbitci0    inet 10.253.1.1/24 scope global orbitci0\\       valid_lft forever preferred_lft forever",
+  "8: tun0    inet 10.99.0.2 peer 10.99.0.1/32 scope global tun0\\       valid_lft forever preferred_lft forever",
   "7: orbitinst0    inet 10.253.0.1/24 scope global orbitinst0\\       valid_lft forever preferred_lft forever",
 ];
 

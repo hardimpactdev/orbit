@@ -37,7 +37,8 @@
       {%- for line in instance_node_addresses.stdout_lines -%}
         {%- set f = line.split() -%}
         {%- if f | length > 3 and f[2] == 'inet' and f[1] != instances.network -%}
-          {%- set a = f[3].split('/') -%}{%- set q = a[0].split('.') | map('int') | list -%}
+          {#- A point-to-point address, `inet A peer B/len`, is the one address A: its peer is no range of this Node. -#}
+          {%- set a = (f[3] if '/' in f[3] else f[3] ~ '/32').split('/') -%}{%- set q = a[0].split('.') | map('int') | list -%}
           {%- set size = 2 ** (32 - (a[1] | int)) -%}{%- set ip = ((q[0] * 256 + q[1]) * 256 + q[2]) * 256 + q[3] -%}
           {%- set start = ip - ip % size -%}
           {%- if start <= last and first <= start + size - 1 -%}{%- set ns.out = ns.out + [f[1] ~ ' ' ~ f[3]] -%}{%- endif -%}

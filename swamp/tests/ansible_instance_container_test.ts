@@ -265,6 +265,12 @@ Deno.test({
       assert(result.ok, result.output);
       assertEquals(result.changed, 0, result.output);
       assert(Deno.lstatSync(link).isFile);
+      f.container.php = "/opt/orbit-runtime/current/php/8.5/bin/php";
+      f.write();
+      result = f.run("start");
+      assert(result.ok, result.output);
+      assertEquals(result.changed, 0, result.output);
+      assert(Deno.lstatSync(link).isFile);
     } finally {
       f.cleanup();
     }

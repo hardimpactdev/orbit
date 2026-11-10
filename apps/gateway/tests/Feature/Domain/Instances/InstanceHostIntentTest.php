@@ -191,7 +191,9 @@ describe('the Instance image', function (): void {
 
         expect($files['/etc/systemd/system.conf.d/90-orbit-runtime.conf']['content'])
             ->toBe("# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PATH={$path} VP_HOME=/opt/orbit-runtime/current/vite-plus-home VP_NO_UPDATE_CHECK=1\n")
-            ->and($files['/etc/profile.d/90-orbit-runtime.sh']['content'])->toBe("# Managed by Orbit.\nexport PATH={$path} VP_HOME=/opt/orbit-runtime/current/vite-plus-home VP_NO_UPDATE_CHECK=1\n")
+            // A login shell keeps what it inherits, such as the agent folder from T3's unit.
+            ->and($files['/etc/profile.d/90-orbit-runtime.sh']['content'])
+            ->toBe("# Managed by Orbit.\nexport PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:\$PATH VP_HOME=/opt/orbit-runtime/current/vite-plus-home VP_NO_UPDATE_CHECK=1\n")
             ->and($files['/etc/profile.d/90-orbit-runtime.sh']['mode'])->toBe('0644');
     });
 

@@ -73,8 +73,16 @@
       register: container_php_link
       changed_when: false
       failed_when: false
+    - name: Read whether a php that is no link is there
+      ansible.builtin.command: { argv: "{{ as_root + ['test', '-e', '/usr/local/bin/php'] }}" }
+      register: container_php_file
+      changed_when: false
+      failed_when: false
+    # A `php` that is no link is not Orbit's: it stays.
     - name: Point the php link at the Project's PHP
-      when: container_php != '' and container_php_link.stdout != container_php
+      when: >-
+        container_php != '' and container_php_link.stdout != container_php
+        and (container_php_link.rc == 0 or container_php_file.rc != 0)
       ansible.builtin.command: { argv: "{{ as_root + ['ln', '-sfn', container_php, '/usr/local/bin/php'] }}" }
       changed_when: true
     # Only a link goes: `readlink` fails on anything else.
