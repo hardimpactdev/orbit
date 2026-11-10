@@ -30,10 +30,12 @@ final class MigrateInstanceCommand extends GatewayCommand
 
     #[\Override]
     protected $help = <<<'HELP'
-        Moves one checkout Instance into a container on its Node: its branch, its changed, untracked and ignored files,
-        and its Route. Its database stays where it is. A Project's default Instance moves first. A move that fails leaves
-        the checkout Instance serving as before.
-        HELP;
+Migrate moves one development checkout Instance into an Instance container on its Node: its branch, its changed, untracked and ignored files, and its Route. Its database stays where it is.
+
+A Project's default Instance moves first. A move that fails leaves the checkout Instance serving as before.
+
+The command is temporary: it goes when the last checkout Instance has moved. --json disables prompts and requires --force.
+HELP;
 
     public function handle(
         GatewayConfigRepository $repository,
