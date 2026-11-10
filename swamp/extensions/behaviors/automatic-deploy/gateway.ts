@@ -171,6 +171,7 @@ export class GatewayClient implements Gateway {
             this.http,
             context,
             {
+                checks: (id, commit, name) => this.checks(id, commit, name),
                 deploy: (id, commit, key) => this.deploy(id, commit, key, true),
                 receipt: (id, commit, key) =>
                     this.receipt(id, commit, key, true),

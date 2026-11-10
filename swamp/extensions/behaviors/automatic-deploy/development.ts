@@ -1,8 +1,10 @@
 import { z } from "npm:zod@4.4.3";
 import type { Http } from "./gateway.ts";
 import {
+    type Check,
     isAdmissionFence,
     isAutomaticDeployment,
+    mergeCheckResult,
     type Operation,
     PolicyError,
     type PolicyEvent,
@@ -39,6 +41,7 @@ export type DevelopmentContext = {
 /** Adds one policy event to the fire's terminal result; the Gateway records it. */
 export type Emit = (instance: number, key: string, body: PolicyEvent) => void;
 type Admissions = {
+    checks(instance: number, commit: string, name: string): Promise<Check[]>;
     deploy(instance: number, commit: string, key: string): Promise<Operation>;
     receipt(
         instance: number,
@@ -56,6 +59,7 @@ const Instance = z.object({
     auto_deploy: z.object({
         policy_owner: z.string(),
         development_eligible: z.boolean(),
+        gate: z.string().nullable(),
         resumed_after: z.number().int(),
         history_version: z.string(),
     }),
@@ -334,6 +338,23 @@ export async function tickDevelopment(
             if (head === instance.seed_commit) {
                 await publish("up_to_date");
                 continue;
+            }
+            if (instance.auto_deploy.gate !== null) {
+                const check = mergeCheckResult(
+                    await admissions.checks(
+                        id,
+                        head,
+                        instance.auto_deploy.gate,
+                    ),
+                    head,
+                    instance.auto_deploy.gate,
+                );
+                if (check !== "passed") {
+                    await publish(
+                        check === "failed" ? "gate_failed" : "gate_pending",
+                    );
+                    continue;
+                }
             }
             if (state.retry_after !== null) {
                 if (Date.parse(now) < Date.parse(state.retry_after)) {

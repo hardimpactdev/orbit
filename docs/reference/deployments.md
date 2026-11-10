@@ -325,7 +325,9 @@ A head the Gateway cannot read fails the tick for that Instance with `source.hea
 
 ### Automatic development defaults
 
-A seeded container default follows its Project's default branch. Its deployed commit is its runtime's `seed_commit`. A failed commit retries as the [failure rules](#failures-of-automatic-deployments) describe; for a default every failure is retryable.
+A seeded container default follows its Project's default branch. Its deployed commit is its runtime's `seed_commit`. A moved head deploys only when green: the Gateway reads the head commit's check runs for the Project's configured `merge_check` (for example, `Required checks`). Development and production share the same verdict: all matching runs must come from GitHub Actions, name exactly that SHA, and finish with `success`. Missing or running checks wait; failed checks do not deploy.
+
+Development tests only the current head, not older green ancestors. Each later tick reads the checks again, so a head that turns green deploys then. With no Project `merge_check`, it follows production's existing rule and deploys a moved head without checking; the Instance output warns about this. A failed deployment retries as the [failure rules](#failures-of-automatic-deployments) describe; for a default every failure is retryable.
 
 The `auto_deploy` flag has the same meaning for development and production: on permits automatic deployment; off excludes selection and admission. A new container default starts with it on when creation succeeds and records its first seed. An expand-only data migration enables existing ready container defaults; it changes neither checkout Instances nor production settings.
 

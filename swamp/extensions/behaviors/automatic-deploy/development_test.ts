@@ -5,7 +5,7 @@ import {
 } from "jsr:@std/assert@1.0.19";
 import { tickDevelopment } from "./development.ts";
 import { GatewayClient, type Http } from "./gateway.ts";
-import type { Operation, Row } from "./policy.ts";
+import type { Check, Operation, Row } from "./policy.ts";
 import { PolicyError } from "./policy.ts";
 const A = "a".repeat(40), B = "b".repeat(40), now = "2026-10-31T05:00:00.000Z";
 function fixture() {
@@ -22,6 +22,7 @@ function fixture() {
             policy_owner: "swamp",
             eligible: true,
             development_eligible: true,
+            gate: null as string | null,
             resumed_after: 0,
             history_version: "f".repeat(64) as string | null,
         },
@@ -34,7 +35,7 @@ function fixture() {
             body: unknown;
             key?: string;
         }[] = [];
-    const history: Row[] = [], starts: string[] = [];
+    const history: Row[] = [], starts: string[] = [], checks: Check[] = [];
     const writes: { name: string; version: number }[] = [];
     const source = { head: B };
     let holder = false,
@@ -58,7 +59,9 @@ function fixture() {
         else if (path === "/api/v1/instances/7") data = instance;
         else if (path.endsWith("/deployments")) data = history;
         else if (path.endsWith("/head")) data = source;
-        else if (path.includes("/operations?")) {
+        else if (path.includes("/deployment-source/checks?")) {
+            data = { gate: instance.auto_deploy.gate, runs: checks };
+        } else if (path.includes("/operations?")) {
             data = holder && path.endsWith("queued")
                 ? [{ ...operation, target_type: "instance", target_id: 7 }]
                 : [];
@@ -78,6 +81,8 @@ function fixture() {
     };
     const emitted: { instance: number; key: string; body: unknown }[] = [];
     const admissions = {
+        checks: (id: number, commit: string, name: string) =>
+            new GatewayClient(http).checks(id, commit, name),
         deploy: (_id: number, commit: string, key: string) => {
             assertEquals(
                 (memory.get("development-7")?.pending as { key: string }).key,
@@ -141,6 +146,7 @@ function fixture() {
         memory,
         requests,
         history,
+        checks,
         source,
         starts,
         writes,
@@ -175,6 +181,103 @@ function failed(id: number, manual = false): Row {
         finished_at: now,
     };
 }
+for (
+    const [label, status, conclusion, expected] of [
+        ["red", "completed", "failure", "gate_failed"],
+        ["running", "in_progress", null, "gate_pending"],
+        ["green", "completed", "success", "started"],
+    ] as const
+) {
+    Deno.test(`development moved head with ${label} Required checks is ${expected}`, async () => {
+        const f = fixture();
+        f.instance.auto_deploy.gate = "Required checks";
+        f.checks.push({
+            name: "Required checks",
+            head_sha: B,
+            app: "github-actions",
+            status,
+            conclusion,
+        });
+
+        await f.run();
+
+        assertEquals(f.starts.length, expected === "started" ? 1 : 0);
+        assertEquals(f.memory.get("development-7")?.result, expected);
+        assertEquals(
+            f.requests.filter((r) => r.path.includes("/checks?")).map((r) =>
+                r.path
+            ),
+            [
+                `/api/v1/instances/7/deployment-source/checks?commit=${B}`,
+            ],
+        );
+    });
+}
+Deno.test("development retries the same moved head's running check and deploys once green", async () => {
+    const f = fixture();
+    f.instance.auto_deploy.gate = "Required checks";
+    f.checks.push({
+        name: "Required checks",
+        head_sha: B,
+        app: "github-actions",
+        status: "in_progress",
+        conclusion: null,
+    });
+    await f.run();
+    assertEquals(f.starts, []);
+    f.checks[0].status = "completed";
+    f.checks[0].conclusion = "success";
+
+    await f.run("2026-10-31T05:01:00.000Z");
+
+    assertEquals(f.starts.length, 1);
+    assertEquals(f.memory.get("development-7")?.result, "started");
+});
+Deno.test("development rereads red checks and deploys the same head after a green rerun", async () => {
+    const f = fixture();
+    f.instance.auto_deploy.gate = "Required checks";
+    f.checks.push({
+        name: "Required checks",
+        head_sha: B,
+        app: "github-actions",
+        status: "completed",
+        conclusion: "failure",
+    });
+    await f.run();
+    assertEquals(f.starts, []);
+    f.checks[0].conclusion = "success";
+    await f.run("2026-10-31T05:01:00.000Z");
+    assertEquals(f.starts.length, 1);
+});
+Deno.test("development waits for a missing configured check and never uses unrelated green evidence", async () => {
+    for (
+        const check of [null, {
+            name: "other",
+            head_sha: B,
+            app: "github-actions",
+            status: "completed",
+            conclusion: "success",
+        }, {
+            name: "Required checks",
+            head_sha: A,
+            app: "github-actions",
+            status: "completed",
+            conclusion: "success",
+        }, {
+            name: "Required checks",
+            head_sha: B,
+            app: "other-app",
+            status: "completed",
+            conclusion: "success",
+        }]
+    ) {
+        const f = fixture();
+        f.instance.auto_deploy.gate = "Required checks";
+        if (check) f.checks.push(check);
+        await f.run();
+        assertEquals(f.starts, []);
+    }
+});
 Deno.test("development policy admits only after Gateway ownership switches", async () => {
     const f = fixture();
     f.instance.auto_deploy.policy_owner = "gateway";

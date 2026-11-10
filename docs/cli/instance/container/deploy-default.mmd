@@ -28,6 +28,12 @@ sequenceDiagram
       %%> What it does:
       %%> - shares the retained behavior identity and development state; keeps pending admissions, backoff and retry limits
       %%> - never discovers or admits production work; its paused production schedule stays unchanged
+      Note over SW: Check the moved head<br/>Project merge_check
+      %%> What it does:
+      %%> - reads the head commit's configured check runs through the same Gateway source contract and verdict rule as production
+      %%> - the named GitHub Actions runs must all complete successfully on exactly that SHA; running or missing checks wait, failed checks do not deploy
+      %%> - development checks only the current head and reads it again on the next tick; it never chooses an older green commit
+      %%> - with no Project merge_check, permits the moved head without a check, as production does
   SW->>GW: Admit the development deployment<br/>instance:deploy:automatic:development
   %%> What it does:
   %%> - Swamp rechecks development-specific eligibility from the Gateway, not the eligibility shared with production

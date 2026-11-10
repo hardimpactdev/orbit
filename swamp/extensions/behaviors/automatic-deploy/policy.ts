@@ -78,6 +78,23 @@ export interface Check {
     status: string | null;
     conclusion: string | null;
 }
+/** The configured check must prove this exact commit through completed GitHub Actions runs. */
+export function mergeCheckResult(
+    checks: Check[],
+    commit: string,
+    name: string,
+): "pending" | "passed" | "failed" {
+    const runs = checks.filter((r) => r.name === name);
+    return !runs.length
+        ? "pending"
+        : runs.some((r) => r.app !== "github-actions" || r.head_sha !== commit)
+        ? "failed"
+        : runs.some((r) => r.status !== "completed")
+        ? "pending"
+        : runs.every((r) => r.conclusion === "success")
+        ? "passed"
+        : "failed";
+}
 export interface Gateway {
     observe(instance: number): Promise<Observation>;
     history(instance: number): Promise<Row[]>;
@@ -555,31 +572,17 @@ export async function tick(
                                 examined++
                             ) {
                                 if (!blocked.includes(candidate.sha)) {
-                                    const runs = (await gateRead(() =>
-                                        gateway.checks(
-                                            instance,
-                                            candidate!.sha,
-                                            observation.gate!,
-                                        )
-                                    )).filter((r) =>
-                                        r.name === observation.gate
+                                    const check = mergeCheckResult(
+                                        await gateRead(() =>
+                                            gateway.checks(
+                                                instance,
+                                                candidate!.sha,
+                                                observation.gate!,
+                                            )
+                                        ),
+                                        candidate.sha,
+                                        observation.gate,
                                     );
-                                    const check = !runs.length
-                                        ? "pending"
-                                        : runs.some((r) =>
-                                                r.app !== "github-actions" ||
-                                                r.head_sha !== candidate!.sha
-                                            )
-                                        ? "failed"
-                                        : runs.some((r) =>
-                                                r.status !== "completed"
-                                            )
-                                        ? "pending"
-                                        : runs.every((r) =>
-                                                r.conclusion === "success"
-                                            )
-                                        ? "passed"
-                                        : "failed";
                                     if (candidate.sha === walk.head) {
                                         headState = check;
                                     }

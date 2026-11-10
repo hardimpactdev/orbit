@@ -204,6 +204,19 @@ it('shares container eligibility across automatic admission discovery and Instan
     expect(AutomaticDeployPolicyWriter::Swamp->eligibilityRefusal($production->fresh()))->toBe(AutomaticDeployPolicyWriter::InactiveRole);
 });
 
+it('exposes the same configured merge check and ungated warning for development and production', function (): void {
+    foreach ([RoleName::AppDev, RoleName::AppProd] as $role) {
+        $instance = developmentTickDefault(role: $role);
+        $instance->update(['auto_deploy' => true]);
+        $instance->project->update(['merge_check' => 'Required checks']);
+        $automatic = InstanceData::fromModel($instance)->autoDeploy;
+        expect($automatic->gate)->toBe('Required checks')->and($automatic->warning)->toBeNull();
+        $instance->project->update(['merge_check' => null]);
+        expect(InstanceData::fromModel($instance)->autoDeploy->warning)
+            ->toBe('The Project has no merge_check, so every new commit on the branch deploys without a check.');
+    }
+});
+
 it('uses one flag for development selection admission output and operator control', function (): void {
     $instance = developmentTickDefault();
     Node::withoutEvents(fn () => $instance->node->update(['wireguard_ip' => '10.44.0.7']));
