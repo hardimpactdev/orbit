@@ -10,5 +10,5 @@ return [
         'projection' => InstanceMigrateProjection::class,
         // `finish` reports the failed step, the commit and whether a failed move restored; the check after it says the container is gone.
         'terminal_result' => ['job' => 'migrate', 'step' => 'finish'],
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-migrate-model-[1-9][0-9]*$']]],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-migrate-(?:model|processes)-[1-9][0-9]*$']]],
 ];

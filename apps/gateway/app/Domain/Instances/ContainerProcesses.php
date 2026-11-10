@@ -34,6 +34,7 @@ final readonly class ContainerProcesses
     {
         $units = [];
         foreach ($this->records($instance) as $process) {
+            $process = $this->placed($process, $instance);
             $target = $this->targets->forInspection($process);
             if ($target->container === null || $process->runtime !== ProcessRuntime::Systemd) {
                 throw new ResourceOperationException('process.target_unsupported', 'A Process in an Instance container must be an ordinary systemd Process.', 409);
@@ -57,6 +58,7 @@ final readonly class ContainerProcesses
         }
         $files = [];
         foreach ($this->records($instance) as $process) {
+            $process = $this->placed($process, $instance);
             $target = $this->targets->forInspection($process);
             if ($this->hasEnvironment($process, $target)) {
                 $files[$this->systemd->environmentPath($process, $target)] = $this->systemd->environmentContent($process, $target);
@@ -80,12 +82,47 @@ final readonly class ContainerProcesses
                 continue;
             }
             if ($succeeded) {
-                $process->forceFill(['status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null,
+                $placed = $this->placed($process, $instance);
+                $process->forceFill(['working_directory' => $placed->working_directory, 'runtime_config' => $placed->runtime_config,
+                    'status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null,
                     'systemd_activation_hash' => hash('sha256', ValidatedData::string($unit['content'])), 'systemd_activation_pending' => false])->save();
             } elseif ($process->status !== LifecycleStatus::Active) {
                 $process->forceFill(['status' => LifecycleStatus::Failed, 'failed_step' => 'container', 'error_code' => $errorCode ?? 'operation.cancelled'])->save();
             }
         }
+    }
+
+    /** Render a copy at its container placement; migration saves these paths only after cutover succeeds. */
+    private function placed(Process $process, Instance $instance): Process
+    {
+        $placed = clone $process;
+        $checkout = rtrim($instance->checkout_path, '/');
+        $config = $process->runtime_config;
+        array_walk_recursive($config, static function (mixed &$value) use ($checkout): void {
+            if (is_string($value)) {
+                $value = str_replace($checkout, InstanceHostIntent::Workspace, $value);
+            }
+        });
+        $placed->runtime_config = $config;
+        if (is_string($process->working_directory)) {
+            $placed->working_directory = str_replace($checkout, InstanceHostIntent::Workspace, $process->working_directory);
+        }
+
+        return $placed;
+    }
+
+    /** The host units that migration stops, restores on failure and retires after cutover.
+     * @return list<array{name:string,path:string,environment_directory:string,desired:string}>
+     */
+    public function source(Instance $instance): array
+    {
+        return $this->records($instance)->map(function (Process $process): array {
+            $target = $this->targets->forInspection($process);
+
+            return ['name' => $this->systemd->unitName($process), 'path' => $this->systemd->unitPath($process),
+                'environment_directory' => dirname($this->systemd->environmentPath($process, $target)),
+                'desired' => $process->desired_state->value];
+        })->all();
     }
 
     /** @return Collection<int, Process> */

@@ -10,12 +10,14 @@ use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\InstanceMigration\InstanceMigrationRoute;
 use App\Domain\Instances\ContainerNodes;
+use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\TaskVms\TaskVmModelRoute;
@@ -62,9 +64,12 @@ final readonly class StartInstanceMigrateAction
             $this->assertCheckout($instance, $node);
             // Null for the Project's default itself; every other Instance moves after it.
             $default = $instance->name === 'default' ? null : $this->movedDefault($instance);
-            if ($instance->processes()->exists()) {
-                throw new ResourceOperationException('operation.kind_unavailable', 'The Processes of an Instance do not move into a container yet.', 503);
+            if ($instance->processes()->where('status', LifecycleStatus::Removing)->exists()
+                || Operation::query()->where('target_type', 'process')->whereIn('target_id', $instance->processes()->select('id'))
+                    ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
+                throw new ResourceOperationException('instance.lifecycle_busy', 'An Instance Process has an unfinished operation.', 409);
             }
+            $sourceProcesses = app(ContainerProcesses::class)->source($instance);
             $this->assertPhp($instance->project);
             $route = $this->route($instance);
             $databases = $this->databases($instance);
@@ -102,7 +107,7 @@ final readonly class StartInstanceMigrateAction
                     'checkout' => $instance->checkout_path, 'branch' => $branch, 'default' => $default === null,
                     'application' => ApplicationDirectory::resolve($instance->checkout_path, $instance->root ?? $instance->project->root),
                     'awake' => ['directory' => RuntimeHibernation::MarkerDirectory, 'path' => RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id))],
-                    'databases' => $reach, 'firewall_prefix' => InstanceContainer::firewallPrefix($instance),
+                    'databases' => $reach, 'processes' => $sourceProcesses, 'firewall_prefix' => InstanceContainer::firewallPrefix($instance),
                     'retire' => $this->retire($instance, $default),
                 ],
                 'container' => $container,

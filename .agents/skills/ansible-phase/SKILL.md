@@ -137,3 +137,5 @@ A proof candidate must install its own frozen observer pin after every base rest
 `incus copy` applies device overrides to the snapshot's local devices. A profile-only root needs a complete disk definition: pass type, path, pool and size as separate `--device root,key=value` arguments. A comma after the value stays in that value.
 
 Instance container network ACLs live in Incus project `default`, even when the container lives in `orbit-instances`. Destroy removes the container first, then its ACL in the default project. Test both the project and a second removal with zero changes.
+
+A Process move disables the source units before copying. Render container units from a copy of their records and save the new paths only after cutover. A failed move removes the new container before restoring source units, so two runtimes never run the same writer.

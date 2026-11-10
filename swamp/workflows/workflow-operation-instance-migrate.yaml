@@ -11,14 +11,14 @@ inputs:
     node_id: {type: integer, minimum: 1}
     kind: {type: string, const: instance.migrate}
     intent: {type: object}
-    # Names only: model_environment, the placeholder model key of an Instance with T3. A default's copy holds no key.
+    # Names only: model_environment for T3, and process_environments for the existing Processes' private files.
     execution_secrets:
       type: object
       additionalProperties:
         type: object
         properties:
           vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^instance-migrate-model-[1-9][0-9]*$'}
+          key: {type: string, pattern: '^instance-migrate-(?:model|processes)-[1-9][0-9]*$'}
         required: [vault, key]
         additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -131,7 +131,9 @@ jobs:
           methodName: execute
           inputs:
             run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags processes "$ORBIT_ANSIBLE/instance-container.yml"
-            env: *phase
+            env:
+              <<: *phase
+              ORBIT_PROCESS_ENVIRONMENTS: '${{ vault.get(inputs.execution_secrets.process_environments.vault, inputs.execution_secrets.process_environments.key) }}'
       # Seed: a default's first `seed-<commit>` snapshot, taken with the Processes stopped for a moment; clones copy it.
       - name: seed
         labels: {role: swamp}

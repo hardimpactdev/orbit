@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\InstanceMigration;
 
+use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceContainer;
@@ -57,6 +58,8 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
             'route_mutations' => $publication === null ? null : ValidatedData::object($publication['route_mutations']),
         ], 'execution_secrets' => [
             ...($publication === null ? [] : ValidatedData::object($publication['execution_secrets'])),
+            'process_environments' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-migrate-processes-'.$operation->id,
+                app(ContainerProcesses::class)->environments($instance, $container['processes'] ?? [])),
             'model_environment' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-migrate-model-'.$operation->id, $model),
         ]];
     }
@@ -82,6 +85,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
             if (! $operation->status->terminal()) {
                 $runtime = $instance->runtime()->first();
                 if ($moved && $runtime !== null) {
+                    app(ContainerProcesses::class)->complete($instance, $operation->input['container']['processes'] ?? [], true, null);
                     $this->moved($instance, ValidatedData::object($operation->input['migrate']), ValidatedData::integerList($operation->input['sqlite_connection_ids'] ?? []));
                     // A default's clones start at the seed snapshot the run took of its commit.
                     $runtime->update(['power_state' => InstanceRuntimePowerState::Running,

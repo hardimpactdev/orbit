@@ -47,6 +47,21 @@
   loop: "{{ migrate.retire }}"
   loop_control: { loop_var: retired, label: "{{ retired.path }}" }
 
+# The same Process ids are about to run in the container. Disable host boot links before copying, so a Node reboot cannot start
+# a second writer. A failed move restores desired state only after its container is gone. A recorded but uninstalled unit skips.
+- name: Read the old Process unit files
+  when: phase in ['quiesce', 'restore']
+  ansible.builtin.stat: { path: "{{ item.path }}" }
+  loop: "{{ migrate.processes }}"
+  loop_control: { label: "{{ item.name }}" }
+  register: source_process_files
+
+- name: Stop the old Process units before copying
+  when: phase == 'quiesce' and item.stat.exists
+  ansible.builtin.systemd_service: { name: "{{ item.item.name }}", state: stopped, enabled: false }
+  loop: "{{ source_process_files.results | default([]) }}"
+  loop_control: { label: "{{ item.item.name }}" }
+
 # A container that an earlier failed move left is not the Instance's: this move starts with a new one. After a failure the new
 # container goes with what the move added on the Node, so the checkout Instance is as it was.
 - name: Remove the move's container
@@ -54,6 +69,26 @@
   ansible.builtin.include_tasks:
     file: instance-migrate-discard.yml
     apply: { tags: [always] }
+
+- name: Restore the old Process units after removing the failed container
+  when: phase == 'restore' and item.stat.exists
+  ansible.builtin.systemd_service:
+    name: "{{ item.item.name }}"
+    state: "{{ 'started' if item.item.desired == 'running' else 'stopped' }}"
+    enabled: "{{ item.item.desired == 'running' }}"
+  loop: "{{ source_process_files.results | default([]) }}"
+  loop_control: { label: "{{ item.item.name }}" }
+
+# The container already serves at retire, even if checkout removal later refuses. Retire only this Instance's disabled units.
+- name: Remove the old Process units and environment folders
+  when: phase == 'retire'
+  ansible.builtin.file: { path: "{{ item }}", state: absent }
+  loop: "{{ (migrate.processes | map(attribute='path') | list) + (migrate.processes | map(attribute='environment_directory') | list) }}"
+  notify: Reload the retired Process units
+
+- name: Finish retiring the Process units
+  when: phase == 'retire'
+  ansible.builtin.meta: flush_handlers
 
 # Without its awake marker the Route shows the wake page, and the Gateway starts no wake while the move runs. So nothing writes
 # the checkout or the database between the copy and the Route's move.
