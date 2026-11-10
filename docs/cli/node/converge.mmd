@@ -76,6 +76,7 @@ sequenceDiagram
     SW->>N: Install Orbit's layer<br/>Ansible phase: agent
     %%> What it does:
     %%> - applies the agent, CLI, Orbit-owned files and units, and the kernel policy (SCTP blocked, non-local bind); restarts only changed services
+    %%> - a successful CLI switch keeps its selected binary and the prior link target, then prunes older versioned regular files under the self-update lock; an unchanged selection does not prune
     SW->>N: Install pinned software<br/>Ansible phase: software
     %%> What it does:
     %%> - reads recipe.json and holds its selected packages at their pins
