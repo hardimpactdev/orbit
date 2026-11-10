@@ -25,7 +25,8 @@ sequenceDiagram
   %%> Requirements:
   %%> - the Instance is an active checkout Instance on an `app-dev` Node of the build list, else `instance.migrate_unsupported`
   %%> - a non-default Instance needs its Project's default Instance in a container first, else `instance.default_not_migrated`
-  %%> - the Instance has only ordinary systemd Processes, no Node-bound presets, no unfinished deployment or Process operation/runtime cleanup and no Route beside its own; a non-default Instance needs Conn and the model router, as a clone does
+  %%> - the Instance has only ordinary systemd or supported `vp-dev` Processes, no unfinished deployment or Process operation/runtime cleanup and no Route beside its own; a non-default Instance needs Conn and the model router, as a clone does
+  %%> - `vp-dev` keeps its identity, assigned port and desired state; unsupported preset versions, custom commands, external paths and recorded container port conflicts refuse before downtime, naming the Process and reason
   %%> - a web-serving Project names its PHP version; a missing version refuses with `project.source_defaults_incomplete`, naming `orbit project:update PROJECT --source-access=github_app` to record it from source
   %%> - a database on a Database server has an IPv4 address and a port, else `instance.database_clone_unsupported`
   %%> Result:
@@ -60,6 +61,7 @@ sequenceDiagram
   SW->>C: Start the container<br/>Processes · T3 · seed
   %%> What it does:
   %%> - starts FrankenPHP and the Instance's existing Processes as `orbit`, with the same ids and desired states; their environment files come through the vault
+  %%> - `vp-dev` uses the runtime folder’s `current/bin/vp`, workspace paths and its assigned port on `0.0.0.0`; only the Node can reach that port, and Caddy sends `/__orbit/vite` there
   %%> - a non-default Instance gets `/etc/orbit/instance`, the agent settings and its T3 server, registered as in create
   %%> - a default Instance gets its first `seed-<commit>` snapshot
   SW->>N: Move the Route<br/>child route-mutation-forward

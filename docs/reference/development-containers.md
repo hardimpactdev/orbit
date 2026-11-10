@@ -345,7 +345,7 @@ The first default Instance and its deployments are built for the Nodes of the [b
 
 #### Processes
 
-A container Instance's Processes come from the Project's development Process definitions. Each one is a Process record and an `orbit-process-<id>-<name>.service` unit in the container, as the [Process lifecycle](/reference/processes-and-schedules) renders it for a Node, with these differences:
+A container Instance's Processes come from the Project's development Process definitions, or from an existing checkout during [migration](#migrate-a-checkout-instance). Each one is a Process record and an `orbit-process-<id>-<name>.service` unit in the container, as the [Process lifecycle](/reference/processes-and-schedules) renders it for a Node, with these differences:
 
 | Part | In a container |
 | --- | --- |
@@ -353,7 +353,7 @@ A container Instance's Processes come from the Project's development Process def
 | Directory | The workspace's application directory, `/srv/workspace` or the Project root in it |
 | `PATH` | The Project's PHP build, then the runtime folder's `bin`, then the system folders. A definition's command is an absolute path, such as `/opt/orbit-runtime/current/php/8.5/bin/php` |
 | Environment | The workspace's `.env`, then the definition's own values in `/etc/orbit/processes/<id>/<sha256>.env`, root only, mode 0600. The values come only from the run's vault copy |
-| Runtime | systemd only. A Docker definition or a preset refuses with `process.target_unsupported` |
+| Runtime | systemd only. New definitions with Docker or a preset refuse with `process.target_unsupported`; migration also accepts the supported `vp-dev` preset |
 
 The create run installs and starts the units after the deploy steps. A unit whose desired state is stopped is installed, not started.
 
@@ -493,7 +493,9 @@ The end of the move and its failure:
 
 The database is not cloned. An Instance's database name, owner and connection come from its Project and its name. So a second database for the same Instance has no name to take, and a clone would end with a drop of the old one. Leaving it in place cannot lose data. A clone of a moved default still copies the default's database with the template copy of [Clone the database](#clone-the-database): the default's connection record is the one it had.
 
-The move keeps each ordinary systemd Process and its desired state. It stops and disables the host units before copying files, installs the same Processes in the container with their private environment files, and removes the host units and environment folders after the Route moves. A failed move removes the container before restoring the host units to their recorded desired states. An unfinished Process operation, removal or previous runtime cleanup blocks migration, and Process changes wait until migration settles. Docker Processes and Node-bound presets such as `vp-dev` refuse with `process.target_unsupported`, as for a new container.
+The move keeps each ordinary systemd Process or supported `vp-dev` preset and its desired state. It stops and disables the host units before copying files, installs the same Processes in the container with their private environment files, and removes the host units and environment folders after the Route moves. A failed move removes the container before restoring the host units to their recorded desired states. An unfinished Process operation, removal or previous runtime cleanup blocks migration, and Process changes wait until migration settles. Docker Processes refuse with `process.target_unsupported`.
+
+The [migration command](/cli/instance/migrate#before-you-start) defines the supported preset forms and refusals. A migrated `vp-dev` uses the shared runtime, binds its assigned port in the container, and keeps `/__orbit/vite` on the Route. The container admits that port only from the Node, including after a deployment rebuilds its intent.
 
 ## T3 registration and pairing
 

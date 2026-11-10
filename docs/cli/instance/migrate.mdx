@@ -85,9 +85,13 @@ Only after all data is saved and no surviving worktree uses a retained Git direc
 - **PHP version.** A web-serving Project needs its PHP version recorded before the move. A missing version refuses with `project.source_defaults_incomplete`. Set `require.php` in `composer.json` on the default branch, then run `orbit project:update PROJECT --source-access=github_app` to record it. This command also enables source access for a `gh_cli` Project.
 - **Branch.** The checkout is on the branch that Orbit records for the Instance.
 - **Deployments.** Wait for an unfinished deployment before starting the move.
-- **Processes.** Ordinary systemd Processes keep their ids and desired states. Docker Processes and Node-bound presets cannot move. Finish pending Process operations, removals and previous runtime cleanup first.
+- **Processes.** Ordinary systemd Processes keep their ids and desired states. The `vp-dev` preset also moves; Docker Processes and other presets cannot move. Finish pending Process operations, removals and previous runtime cleanup first.
 - **Routes.** The Instance has no Route beside its own.
 - **Retirement.** Every checkout scheduled for retirement is clean and has no other worktree registered on its Git directory. Orbit checks before downtime and again before moving the checkout to retention. `instance.migrate_retirement_blocked` names the checkout, other worktree paths and changed files, with total counts and the first 20 entries of each list. Ignored files do not block. Every local branch and a detached HEAD must have no commits unreachable from all remote-tracking refs, and the repository must have no stashes. `instance.migrate_unpushed_commits` names every affected branch (or detached HEAD) and its commit count; `instance.migrate_stashes_present` names the stash count. Orbit reads the local remote-tracking refs without fetching. Orbit never stashes, pushes, prunes or removes blockers for you.
+
+The `vp-dev` preset keeps its id, preset identity, assigned Vite port and running or stopped intent. It runs as `orbit` with the shared runtime’s `current/bin/vp`, binds `0.0.0.0`, and keeps `/__orbit/vite` on the same Route. Its checkout working directory, environment file and absolute environment paths must stay inside the checkout; Orbit maps them to `/srv/workspace`. Private environment values use the same protected delivery as other Processes.
+
+Orbit accepts the unversioned catalogue command, preset version `1`, and the surveyed Node command that unsets the two Vite certificate variables and runs the Node account’s Vite+ binary on the assigned port. A custom command beside the preset refuses. Missing, reserved or conflicting recorded ports, duplicate `vp-dev` Processes, unknown preset versions and external paths refuse before downtime, naming the Process and reason.
 
 A default checkout that is retained can copy uncommitted files. A checkout scheduled for retirement must pass every retirement check.
 
@@ -128,7 +132,11 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `instance.migrate_unsupported` | The Instance has a Route beside its own. |
 | `project.source_defaults_incomplete` | A web-serving Project has no recorded PHP version. Run `orbit project:update PROJECT --source-access=github_app` after setting `require.php` in its source. |
 | `operation.kind_unavailable` | A non-default Instance has no Conn layer or no model router. |
-| `process.target_unsupported` | The Instance has a Docker Process or a Node-bound preset such as `vp-dev`. |
+| `process.target_unsupported` | The Instance has a Docker Process. |
+| `process.container_preset_unsupported` | A named Process has an unknown preset or preset version, or unsupported preset options. |
+| `process.container_command_unsupported` | A named preset Process has a custom command. |
+| `process.container_path_unsupported` | A named preset Process has a working directory, environment file or absolute environment value outside its checkout, or a path with dot segments. |
+| `process.container_port_conflict` | A named preset Process has no valid assigned port, shares it with a recorded Process or reserved container service, or duplicates another preset. |
 | `instance.database_clone_unsupported` | The Instance's database server has no IPv4 address and port that a container can reach. |
 | `instance.host_unavailable` | The Node has no Instance bridge, the bridge is full, no T3 port is free, or the runtime folder lacks the Project's PHP build. |
 | `instance.migrate_branch_changed` | The checkout is not on the branch that Orbit records. Check out that branch, or record the new one with [`instance:rename`](/cli/instance/rename). |
