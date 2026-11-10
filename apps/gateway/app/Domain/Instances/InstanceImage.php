@@ -18,10 +18,10 @@ final readonly class InstanceImage
     public const array Packages = ['acl', 'git', 'nftables'];
 
     /**
-     * The environment of every program from the runtime folder: Vite+ runs from the folder's prepared home (InstanceFolderPlan) and
-     * never updates its pinned, read-only copy.
+     * The environment of every program from the runtime folder: Vite+ links the prepared runtime from its writable home,
+     * where it can install the Project's package manager without changing the pinned runtime.
      */
-    public const array RuntimeEnvironment = ['VP_HOME' => InstanceHostIntent::RuntimeFolder.'/current/vite-plus-home', 'VP_NO_UPDATE_CHECK' => '1'];
+    public const array RuntimeEnvironment = ['VP_HOME' => '/var/lib/orbit/vite-plus-home', 'VP_NO_UPDATE_CHECK' => '1'];
 
     /**
      * The `PATH` of units, login shells and `incus exec` sessions: the runtime folder's programs, such as `composer`, before the
@@ -42,6 +42,7 @@ final readonly class InstanceImage
             'packages' => self::Packages,
             // Users, the workspace and the leftovers of the stock image. The stock `ubuntu` user holds uid 1000 and a sudo grant, and
             // cloud-init would make it again at each new Instance's first boot, so it is off; the network keeps its DHCP setup.
+            // Cloud-init also made the group `lxd` for that user, and it took gid 1000, which `orbit` needs.
             'prepare' => self::prepare(),
             'files' => [
                 ['path' => '/etc/nftables.conf', 'content' => self::firewall($gateway), 'uid' => 0, 'gid' => 0, 'mode' => '0640'],
@@ -63,6 +64,12 @@ final readonly class InstanceImage
                 ['systemctl', 'enable', 'nftables.service', 't3.service'],
                 ['apt-get', 'clean'],
                 ['find', '/var/lib/apt/lists', '-mindepth', '1', '-delete'],
+                // The build container has booted, so it holds a machine-id, and every container of the image would share it. An empty
+                // file makes each container write its own at its first start; a missing file would make that start a systemd first
+                // boot, which resets the units to their presets.
+                ['truncate', '--size', '0', '/etc/machine-id'],
+                // D-Bus links its copy to that file. A copy that is a file of its own would keep the old id.
+                ['sh', '-c', 'if [ -f /var/lib/dbus/machine-id ] && [ ! -L /var/lib/dbus/machine-id ]; then rm /var/lib/dbus/machine-id; fi'],
             ],
         ];
 
@@ -92,11 +99,14 @@ final readonly class InstanceImage
         $orbit = InstanceHostIntent::OrbitUid;
         $work = InstanceHostIntent::WorkGid;
         $workspace = InstanceHostIntent::Workspace;
+        $vite = self::RuntimeEnvironment['VP_HOME'];
+        $sharedVite = InstanceHostIntent::RuntimeFolder.'/current/vite-plus-home';
 
         return <<<SH
             set -eu
             touch /etc/cloud/cloud-init.disabled
             if id ubuntu >/dev/null 2>&1; then userdel --remove ubuntu; fi
+            if getent group lxd >/dev/null 2>&1; then groupdel lxd; fi
             groupadd --gid {$agent} agent
             useradd --uid {$agent} --gid agent --create-home --shell /bin/bash agent
             groupadd --gid {$orbit} orbit
@@ -113,6 +123,12 @@ final readonly class InstanceImage
             install -d -o root -g root -m 0755 /etc/orbit
             install -d -o agent -g work -m 2770 {$workspace}
             setfacl -m g:work:rwX -m d:u::rwX,d:g::rwX,d:g:work:rwX,d:o::--- {$workspace}
+            install -d -o agent -g work -m 2770 {$vite}
+            setfacl -m g:work:rwX -m d:u::rwX,d:g::rwX,d:g:work:rwX,d:o::--- {$vite}
+            install -d -o agent -g work -m 2770 {$vite}/cache
+            for part in bin js_runtime node_modules recipe config.json; do
+                ln -s {$sharedVite}/\$part {$vite}/\$part
+            done
             echo 'proc /proc proc defaults,hidepid=invisible 0 0' >> /etc/fstab
 
             SH;

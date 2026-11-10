@@ -141,10 +141,10 @@
     enabled: true
     state: "{{ 'restarted' if (egress_unit.changed or egress_squid.changed) else 'started' }}"
 
+# `interface_in` gives the rule its direction, `allow in on <bridge>`; the module refuses `direction` beside it.
 - name: Admit the containers to the proxy
   community.general.ufw:
     rule: "{{ instances.egress.rule.action }}"
-    direction: "{{ instances.egress.rule.direction }}"
     interface_in: "{{ instances.egress.rule.in_interface }}"
     proto: "{{ instances.egress.rule.protocol }}"
     to_ip: "{{ instances.egress.rule.destination }}"

@@ -20,6 +20,64 @@ const fail = (message: string) => {
 };
 const instance = (named: string) =>
   state.instances.find((r: { name: string }) => r.name === named);
+/** Incus splits `key=value` at the first `=`: a value such as `port=0` holds one itself. */
+const pair = (argument: string) => {
+  const at = argument.indexOf("=");
+  return [argument.slice(0, at), argument.slice(at + 1)];
+};
+type Accounts = {
+  users: Record<string, number>;
+  groups: Record<string, number>;
+};
+/**
+ * The account commands of a setup script, as the shadow tools answer them in a container: `groupadd` and `useradd` refuse an id
+ * that is taken, and `groupdel` a group that is missing. Other lines change nothing here.
+ */
+function accounts(row: Accounts, script: string) {
+  const refuse = (message: string, code: number) => {
+    console.error(message);
+    Deno.exit(code);
+  };
+  const run = (line: string) => {
+    const words = line.split(/\s+/);
+    const name = words.at(-1)!;
+    const option = (flag: string) => words[words.indexOf(flag) + 1];
+    if (words[0] === "userdel") {
+      // The user's own group goes with it; a group it only was a member of stays.
+      delete row.users[name];
+      delete row.groups[name];
+    } else if (words[0] === "groupdel") {
+      if (!(name in row.groups)) {
+        refuse(`groupdel: group '${name}' does not exist`, 6);
+      }
+      delete row.groups[name];
+    } else if (words[0] === "groupadd") {
+      const gid = Number(option("--gid"));
+      if (Object.values(row.groups).includes(gid)) {
+        refuse(`groupadd: GID '${gid}' already exists`, 4);
+      }
+      row.groups[name] = gid;
+    } else if (words[0] === "useradd") {
+      const uid = Number(option("--uid"));
+      if (Object.values(row.users).includes(uid)) {
+        refuse(`useradd: UID ${uid} is not unique`, 4);
+      }
+      if (!(option("--gid") in row.groups)) {
+        refuse(`useradd: group '${option("--gid")}' does not exist`, 6);
+      }
+      row.users[name] = uid;
+    }
+  };
+  for (const line of script.split("\n").map((l) => l.trim())) {
+    const guarded = line.match(
+      /^if (id|getent group) (\S+) >\/dev\/null 2>&1; then (.+); fi$/,
+    );
+    if (!guarded) run(line);
+    else if (guarded[2] in (guarded[1] === "id" ? row.users : row.groups)) {
+      run(guarded[3]);
+    }
+  }
+}
 if (family === "query") {
   const path = args.at(-1)!;
   const [route, query = ""] = path.slice(5).split("?");
@@ -90,7 +148,7 @@ if (family === "query") {
       s.includes("=") && !s.startsWith("--")
     )
   ) {
-    const [key, value] = argument.split("=");
+    const [key, value] = pair(argument);
     row.config[key] = value;
   }
 } else if (family === "profile" && action === "edit") {
@@ -122,10 +180,21 @@ if (family === "query") {
   );
 } else if (family === "publish") {
   const alias = args[args.indexOf("--alias") + 1];
-  state.images.push({ fingerprint: `fp-${alias}`, aliases: [{ name: alias }] });
+  // An image is the container's files as they are, its machine-id too.
+  state.images.push({
+    fingerprint: `fp-${alias}`,
+    aliases: [{ name: alias }],
+    machine_id: instance(action)?.machine_id,
+  });
 } else if (family === "exec") {
   if (!instance(action)) fail("Instance not found");
   const command = args.slice(args.indexOf("--") + 1);
+  if (command[0] === "sh" && command[1] === "-c" && instance(action).groups) {
+    accounts(instance(action), command[2]);
+  }
+  if (command.join(" ") === "truncate --size 0 /etc/machine-id") {
+    instance(action).machine_id = "";
+  }
   // The audit of the image's sudo paths reads what the fixture says the build left; a clean image prints nothing.
   if (command[0] === "sh" && command[2]?.includes("sudoers.d")) {
     if (state.sudo_paths) console.log(state.sudo_paths);
@@ -183,6 +252,13 @@ if (family === "query") {
     }
   }
   instance(named).status = family === "start" ? "Running" : "Stopped";
+  if (family === "start" && instance(named).machine_id === undefined) {
+    // The first boot of the stock image: systemd writes the machine-id, and cloud-init makes its default user. The user's group
+    // `lxd` comes first and takes gid 1000, so `ubuntu` gets uid 1000 with gid 1001.
+    instance(named).machine_id = crypto.randomUUID().replaceAll("-", "");
+    instance(named).users = { ubuntu: 1000 };
+    instance(named).groups = { lxd: 1000, ubuntu: 1001 };
+  }
 } else if (family === "delete") {
   const named = args.at(-1)!;
   if (!instance(named)) {

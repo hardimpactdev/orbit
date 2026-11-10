@@ -196,6 +196,84 @@ async function artifacts(folder: string, version: string) {
   };
 }
 
+/**
+ * The image's setup script and finish commands, read from the Gateway's source, so the build container of the fixture runs the
+ * real ones against the accounts and the machine-id of a booted stock image.
+ */
+function gatewayImage() {
+  const source = Deno.readTextFileSync(
+    new URL(
+      "../../apps/gateway/app/Domain/Instances/InstanceImage.php",
+      import.meta.url,
+    ),
+  );
+  const values: Record<string, string> = {
+    agent: "2750",
+    orbit: "1000",
+    work: "2760",
+    workspace: "/srv/workspace",
+    vite: "/var/lib/orbit/vite-plus-home",
+    sharedVite: "/opt/orbit-runtime/current/vite-plus-home",
+  };
+  const prepare = source.match(/return <<<SH\n([\s\S]*?\n)\s*SH;/)![1]
+    .split("\n").map((line) => line.trim()).join("\n")
+    .replace(/\{\$(\w+)\}/g, (_, name) => values[name]);
+  const finish = source.match(/'finish' => \[\n([\s\S]*?)\n\s*\],\n\s*\];/)![1]
+    .split("\n").map((line) => line.trim()).filter((line) =>
+      line.startsWith("[")
+    ).map((line) =>
+      [...line.matchAll(/'((?:[^'\\]|\\.)*)'/g)].map((match) => match[1])
+    );
+  assert(!prepare.includes("$agent") && finish.length > 0);
+  return { prepare, finish };
+}
+
+type Rule = {
+  action: string;
+  state: string;
+  protocol?: string;
+  source?: string;
+  destination_port?: string;
+};
+
+/**
+ * Whether a new TCP connection that the Node sends or forwards to a container passes the bridge ACL. Incus checks that ACL before
+ * the container's own: an enabled allow rule of the ACL's ingress admits it, and anything else gets the bridge's default action.
+ */
+function bridgeAdmits(
+  state: Record<string, any>,
+  packet: { source: string; port: number },
+) {
+  const bridge = state.networks.find((n: { name: string }) =>
+    n.name === "orbitinst0"
+  );
+  const acl = state["network-acls"].find((a: { name: string }) =>
+    a.name === bridge.config["security.acls"]
+  );
+  const rule = (acl.ingress as Rule[]).find((rule) => {
+    const [first, last = first] = (rule.destination_port ?? "0-65535").split(
+      "-",
+    ).map(Number);
+    return rule.state === "enabled" && (rule.protocol ?? "tcp") === "tcp" &&
+      (rule.source === undefined || rule.source === `${packet.source}/32`) &&
+      first <= packet.port && packet.port <= last;
+  });
+  return (rule?.action ??
+    bridge.config["security.acls.default.ingress.action"]) === "allow";
+}
+
+/**
+ * Whether a container's DNS query to the bridge address gets an answer. Incus admits DNS there ahead of the ACL, and the bridge's
+ * dnsmasq answers every name the Node resolves, unless `port=0` turns its DNS off.
+ */
+const bridgeAnswersDns = (state: Record<string, any>) =>
+  !(state.networks.find((n: { name: string }) => n.name === "orbitinst0")
+    .config["raw.dnsmasq"] ?? "").split("\n").includes("port=0");
+
+/** The Node's Caddy, which connects from the bridge address, and a WireGuard peer whose connection to a published T3 the Node forwards. */
+const caddy = "10.253.0.1";
+const peer = "10.44.0.20";
+
 /** `ip -4 -o addr show` of a Node with a CI bridge in the next /24 and the Instance bridge itself. */
 const nodeAddresses = [
   "1: lo    inet 127.0.0.1/8 scope host lo\\       valid_lft forever preferred_lft forever",
@@ -301,6 +379,18 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
     dhcp_range: "10.253.0.2-10.253.0.253",
     stock: "ubuntu-26.04-instance-stock",
     forwarder_port: 8319,
+    ingress: [{
+      action: "allow",
+      source: "10.253.0.1/32",
+      protocol: "tcp",
+      destination_port: "1024-65535",
+      state: "enabled",
+    }, {
+      action: "allow",
+      protocol: "tcp",
+      destination_port: "3773",
+      state: "enabled",
+    }],
     egress: {
       port: 3128,
       user: "proxy",
@@ -332,7 +422,7 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
     },
     ids: 201 * 65536,
     profile_config: {
-      "environment.VP_HOME": "/opt/orbit-runtime/current/vite-plus-home",
+      "environment.VP_HOME": "/var/lib/orbit/vite-plus-home",
       "environment.VP_NO_UPDATE_CHECK": "1",
       "environment.HTTPS_PROXY": "http://10.253.0.1:3128",
     },
@@ -340,7 +430,7 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
     image: {
       alias: "orbit-instance-aaaaaaaaaaaa",
       packages: ["acl", "git", "nftables"],
-      prepare: "set -eu\n",
+      ...gatewayImage(),
       files: [{
         path: "/etc/nftables.conf",
         content: "flush ruleset\n",
@@ -348,7 +438,6 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
         gid: 0,
         mode: "0640",
       }],
-      finish: [["systemctl", "enable", "nftables.service", "t3.service"]],
     },
     folders: {
       runtime: {
@@ -447,7 +536,7 @@ Deno.test({
       });
       // Every process in a container, `incus exec` sessions too, gets the runtime folder's environment and the egress proxy.
       assertEquals(state.profiles["orbit-instances"].config, {
-        "environment.VP_HOME": "/opt/orbit-runtime/current/vite-plus-home",
+        "environment.VP_HOME": "/var/lib/orbit/vite-plus-home",
         "environment.VP_NO_UPDATE_CHECK": "1",
         "environment.HTTPS_PROXY": "http://10.253.0.1:3128",
       });
@@ -482,10 +571,13 @@ Deno.test({
         "ipv4.dhcp.ranges": "10.253.0.2-10.253.0.253",
         "ipv4.nat": "true",
         "ipv6.address": "none",
+        "raw.dnsmasq": "port=0",
         "security.acls": "orbitinst0-egress",
         "security.acls.default.ingress.action": "reject",
         "security.acls.default.egress.action": "reject",
       });
+      // No DNS: the bridge's dnsmasq serves DHCP only, whatever the Node's input rules admit.
+      assert(!bridgeAnswersDns(state));
       const acls = Object.fromEntries(
         state["network-acls"].map((a: { name: string }) => [a.name, a]),
       );
@@ -505,6 +597,14 @@ Deno.test({
         state: "enabled",
       }]);
       assertEquals(acls["orbitinst0-build"], undefined);
+      // Into a container, the bridge admits what a container's own ACL may admit: the Node's Caddy to FrankenPHP and the
+      // development ports, and T3's clients. Everything else gets the default reject.
+      assert(bridgeAdmits(state, { source: caddy, port: 8080 }));
+      assert(bridgeAdmits(state, { source: caddy, port: 5173 }));
+      assert(bridgeAdmits(state, { source: peer, port: 3773 }));
+      assert(!bridgeAdmits(state, { source: peer, port: 8080 }));
+      assert(!bridgeAdmits(state, { source: peer, port: 5173 }));
+      assert(!bridgeAdmits(state, { source: caddy, port: 22 }));
       // The input rules have the names of the firewall catalog: DHCP and the proxy, and no DNS.
       for (const name of ["dhcp", "egress"]) {
         assert(f.has(`firewall-orbit_instances-${name}.json`), name);
@@ -518,9 +618,9 @@ Deno.test({
             `${f.folder}/firewall-orbit_instances-egress.json`,
           ),
         ),
+        // `interface_in` alone: the real module refuses `direction` beside it (tests/ansible_instance_module_args_test.py).
         {
           rule: "allow",
-          direction: "in",
           interface_in: "orbitinst0",
           proto: "tcp",
           to_ip: "10.253.0.1",
@@ -631,6 +731,9 @@ Deno.test({
           c.includes("install") && c.includes("nftables") && c.includes("acl")
         ),
       );
+      // The build ran the Gateway's real setup script. A started stock container has cloud-init's group `lxd` on gid 1000, and the
+      // fixture's `groupadd` refuses a taken gid, as the real one does: the script must delete the group first.
+      assert(f.instances.image.prepare.includes("groupadd --gid 1000 orbit"));
       // Cloud-init's first boot ends before anything runs in the build container, so it cannot add a sudo user after the setup.
       const inBuild = f.calls().filter((c) =>
         c[0] === "exec" || c.includes("exec")
@@ -650,6 +753,8 @@ Deno.test({
           { name: "orbit-instance" },
         ],
       );
+      // The build container booted, so it had a machine-id; the image has none, and each container writes its own.
+      assertEquals(state.images.at(-1).machine_id, "");
       assertEquals(
         state.instances.map((i: { name: string }) => i.name),
         [],
@@ -665,6 +770,28 @@ Deno.test({
           c.includes("publish") || c.includes("orbit-instance-build")
         ),
       );
+
+      // A Node prepared before these rules, as Beast was: the bridge's dnsmasq answers DNS, and the ACL rejects all that goes to
+      // a container. The next converge gives the existing bridge and ACL both.
+      const old = f.state();
+      delete old.networks.find((n: { name: string }) =>
+        n.name === "orbitinst0"
+      ).config["raw.dnsmasq"];
+      old["network-acls"].find((a: { name: string }) =>
+        a.name === "orbitinst0-egress"
+      ).ingress = [];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(old));
+      assert(bridgeAnswersDns(f.state()));
+      assert(!bridgeAdmits(f.state(), { source: caddy, port: 8080 }));
+      assert(!bridgeAdmits(f.state(), { source: peer, port: 3773 }));
+      result = f.run();
+      assert(result.ok, result.output);
+      assert(!bridgeAnswersDns(f.state()));
+      assert(bridgeAdmits(f.state(), { source: caddy, port: 8080 }));
+      assert(bridgeAdmits(f.state(), { source: peer, port: 3773 }));
+      assert(!bridgeAdmits(f.state(), { source: peer, port: 8080 }));
+      assertEquals(f.state().networks, state.networks);
+      assertEquals(f.state()["network-acls"], state["network-acls"]);
     } finally {
       f.cleanup();
     }

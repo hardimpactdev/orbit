@@ -77,6 +77,7 @@ A decision that is more than a `when` becomes a Jinja template, read with `looku
 - Open Docker-to-host Analytics storage ports before running `createdb` or migrations. Keep publication ports after readiness.
 - Keep the readiness wait after the step that starts a service. Analytics starts in a native child after the Node phase; a readiness phase after that child waits before publication.
 
+- Fixture modules can hide invalid arguments. Run the real pinned module argument validator too, with `ANSIBLE_COLLECTIONS_PATH` set to the gate's pinned collection directory; a fixture passing does not prove the real module accepts the call.
 - UFW skips an existing rule even when its position is wrong. Compare the public rule shape and numbered order, remove only changed owned rules, then insert the specific allow before its isolation deny and broad peer trust. Remove a replaced broad tuple only when its complete old shape matches.
 - Ansible templates preserve regex backslashes. Use folded YAML scalars with one backslash per regex escape; doubling them can silently match nothing. Exercise damaged state through Ansible itself, including the indices used for removal.
 

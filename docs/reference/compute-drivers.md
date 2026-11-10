@@ -94,13 +94,13 @@ The `instances` object pins the two shared folders of an [Instance container hos
 
 #### The Vite+ home
 
-`vp` runs only from a home that holds its locked `vite-plus` package and its Node, and it fetches both on first use. A container has no internet, so the host builds that home once and containers use it read-only. The home holds absolute paths, so the host builds it at its final path, `/opt/orbit-runtime/vite-plus/<digest>`. The digest names what goes into it: the `vp-cli` release, the [Vite+ runtime lock](#bump-vite) and the recipe's Node release.
+`vp` runs only from a home that holds its locked `vite-plus` package and its Node, and it fetches both on first use. The host builds that home once; containers link its runtime files read-only and use their egress proxy to fetch Project package managers. The home holds absolute paths, so the host builds it at its final path, `/opt/orbit-runtime/vite-plus/<digest>`. The digest names what goes into it: the `vp-cli` release, the [Vite+ runtime lock](#bump-vite) and the recipe's Node release.
 
 The folder install builds the home the way a Node builds its Vite+ store. It copies the release's `vp`, installs the locked package with the folder's own npm and `npm ci --ignore-scripts`, and links the `node`, `npm` and `npx` shims. Then `vp env default` and `vp env install` make the recipe's Node the home's Node, and the install checks that `vp env exec node` reports it. `vp` checks the signature of the Node release it downloads; Orbit never sets `VP_NODE_SKIP_SIGNATURE_VERIFY`. `.complete` comes last; the next run removes a home without it and builds it again.
 
-Each runtime folder version links `vite-plus-home` to its home and `bin/vp` to `vite-plus-home/bin/vp`. A home goes once no folder version links it and no process maps it. A process maps the home's own path, so a running `vp` keeps its home after its folder version went. The runtime folder must have a Vite+ part: every container's environment names its home.
+Each runtime folder version links `vite-plus-home` to its home and `bin/vp` to `vite-plus-home/bin/vp`. A home goes once no folder version links it and no process maps it. A process maps the home's own path, so a running `vp` keeps its home after its folder version went. The runtime folder must have a Vite+ part: every container links its home.
 
-Every process in a container gets `VP_HOME=/opt/orbit-runtime/current/vite-plus-home` and `VP_NO_UPDATE_CHECK=1`: the Instance profile sets them for `incus exec` sessions, systemd's `DefaultEnvironment` for units, and `/etc/profile.d` for login shells. `InstanceImage::RuntimeEnvironment` holds the one list. So `vp` never checks for a release of its pinned copy, and a container user's `vp` writes nothing to the home. The profile converge adds and changes keys; it removes none.
+Every process in a container gets `VP_HOME=/var/lib/orbit/vite-plus-home` and `VP_NO_UPDATE_CHECK=1`: the Instance profile sets them for `incus exec` sessions, systemd's `DefaultEnvironment` for units, and `/etc/profile.d` for login shells. `InstanceImage::RuntimeEnvironment` holds the one list. The container home is writable by `agent` and `orbit`, with the workspace's group and default ACL. Its `bin`, `js_runtime`, `node_modules`, `recipe` and `config.json` link into `/opt/orbit-runtime/current/vite-plus-home`; its cache and downloaded package managers stay in the container. Thus `vp install` can fetch the Project's pinned manager, such as Bun, without changing the shared runtime. A seed snapshot carries those downloads into its clones. `vp` never checks for a release of its pinned copy. The profile converge adds and changes keys; it removes none.
 
 The object is not part of the [recipe identity](#recipe-identity): no task image or Node profile holds the folders, so a new T3 or Claude Code rebuilds no image. A Node gets the new pins with its next converge.
 
@@ -1097,11 +1097,26 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 | Kernel modules, sysctl files | `orbit-task-containers` | None; `60-orbit-instances.conf` |
 | Subordinate IDs | 101,000,000 per place and the base | 65,536 for each of 201 containers, plus the task container need on a host that has both |
 | ACL egress | The VM bridge's rules | Only the model forwarder and the egress proxy, ports 8319 and 3128 of the bridge address |
+| ACL ingress | The VM bridge's rules | TCP ports 1024 to 65535 from the bridge address, and T3's port 3773 from any source |
+| Bridge DNS | dnsmasq answers on the bridge address | None: `raw.dnsmasq` is `port=0`, so dnsmasq serves DHCP only |
 | Profile | Root disk and `eth0` | Also the folders `/opt/orbit-runtime` and `/opt/orbit-agent`, read-only and idmapped, and the proxy settings as `environment.*` keys |
 | Restrictions | Nesting, interception, low-level keys | Isolated ID maps, host disks with no path list (Incus refuses `shift` under one), proxy devices |
 | Input rules | `orbit:task-containers-*`: DHCP and DNS | `orbit:instances-*`: DHCP and the egress proxy, no DNS |
 | Clone probe | Always | On a ZFS pool only; a directory pool makes full copies |
 | Error code | `task_vm.setup_failed` | `instance.host_unavailable` |
+
+The bridge ACL admits the Node's preview and development connections and T3's clients:
+
+| Ingress rule | Who needs it |
+| --- | --- |
+| TCP 1024 to 65535 from the bridge address | The Node's Caddy, which connects from that address: to FrankenPHP at 8080 for the preview, and to an agent's development ports |
+| TCP 3773 from any source | T3's clients, through a NAT proxy that preserves the WireGuard peer's address |
+
+The clone's Node route rules admit WireGuard peers but no task VM. The NIC combines the common and Instance ACLs as a union, so its own ACL does not narrow these ingress rules. The live check found that the Node also reaches a default's 3773 and 5173; cross-container connections to 3773 and 8080 failed with port isolation enabled. [F10](/reference/development-containers#network) records this limit and the required follow-up.
+
+The Gateway renders the rules as the intent's `ingress`. The Node needs no rule for port 8080 alone: it lies in the range of the development ports.
+
+Incus admits DNS to the bridge address ahead of the ACL, and the bridge's dnsmasq would answer every name the Node resolves, fleet names too. The Node's input rules admit no DNS from the bridge, but another rule of the Node may. `port=0` turns dnsmasq's DNS off, so the answer does not depend on the Node's rules. DHCP still works.
 
 The branch then:
 
@@ -1123,6 +1138,8 @@ The runtime folder is readable by everyone. The agent folder's `agent/` is `root
 The image's alias is a digest of the definition that the Gateway sends. A Node without that alias builds it in the container `orbit-instance-build`, from the stock alias, at the bridge's last address. It has the bridge's ACL and reaches the internet through the egress proxy, which the profile names for its `incus exec`.
 
 The build waits for cloud-init's first boot to finish. The build container sets an isolated ID map, as the project requires. The build installs the packages, runs the setup script, writes the files with their owners and modes, enables the units and cleans the package lists.
+
+The first boot leaves two things that the build removes. Cloud-init makes the group `lxd` for its default user, and that group takes gid 1000, which `orbit` needs: the setup script deletes the group after the user. The boot also writes a machine-id, which every container of the image would share: the build empties `/etc/machine-id` last, so each container writes its own at its first start. The file stays, because systemd treats a missing file as a first boot and resets the units to their presets. A clone still copies the machine-id of its default Instance.
 
 The build refuses an image with a sudo path: an `ubuntu` user, a file in `sudoers.d` but its README, or a member of `sudo` or `admin`. Then it publishes the container. The build container goes in every case. The stable alias `orbit-instance` then moves to the new image, and older images whose aliases are only digest aliases go.
 
