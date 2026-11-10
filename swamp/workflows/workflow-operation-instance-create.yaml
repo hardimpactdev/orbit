@@ -140,7 +140,7 @@ jobs:
               ANSIBLE_FORCE_COLOR: '0'
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               # Swamp evaluates a skipped step's inputs too, so the reference falls back to a key every run has.
-              ORBIT_MODEL_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.environment.vault, "model_environment" in inputs.execution_secrets ? inputs.execution_secrets.model_environment.key : inputs.execution_secrets.environment.key) }}'
+              ORBIT_MODEL_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.container != null && inputs.intent.container.clone != null ? inputs.execution_secrets.model_environment.key : inputs.execution_secrets.environment.key) }}'
       # Deploy: each development deploy step in list order, as `orbit` in the workspace with the runtime folder's PATH, from its own
       # vault copy on standard input. A best-effort step prints its exit status, so it never fails the run.
       - name: deploy
