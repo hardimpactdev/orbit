@@ -52,8 +52,6 @@ function transform(task: Task, folder: string): Task {
       mode: "0600",
     };
   }
-  const nft = task["ansible.builtin.copy"] as Record<string, unknown> | undefined;
-  if (nft && typeof nft.validate === "string" && nft.validate.startsWith("nft ")) delete nft.validate;
   for (
     const module of [
       "ansible.builtin.apt",
@@ -230,9 +228,6 @@ async function fixture(
   }
   Deno.writeTextFileSync(`${folder}/arc`, "0\n");
   Deno.writeTextFileSync(`${folder}/ip-addr`, addresses.join("\n") + "\n");
-  // nftables: the live table exists once the unit or a load has run; the stand-in records each call.
-  Deno.writeTextFileSync(`${folder}/bin/nft`, `#!/bin/sh\necho "$*" >> '${folder}/nft-calls'\nexit 0\n`);
-  Deno.chmodSync(`${folder}/bin/nft`, 0o755);
   Deno.writeTextFileSync(
     `${folder}/meminfo`,
     `MemTotal:       ${32 * GiB / 1024} kB\n`,
@@ -268,7 +263,8 @@ async function fixture(
     // No Node group holds gid 2750.
     getent: "exit 2",
     // The egress table and Squid configuration validate; the real-kernel check and the live check prove them.
-    nft: "exit 0",
+    // It also records each call, so the live check of the development ports table shows.
+    nft: `echo "$*" >> '${folder}/nft-calls'; exit 0`,
     // A staged configuration that holds BAD does not parse.
     squid: '! grep -qs BAD "$4"',
     systemctl: 'for unit; do [ "$unit" = is-active ] || echo active; done',
