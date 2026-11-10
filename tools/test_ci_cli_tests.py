@@ -33,6 +33,10 @@ class CliTestsPolicyTest(unittest.TestCase):
         self.assertNotIn('--no-dev', JOB)
         self.assertNotIn('cache-hit', JOB)
 
+    def test_release_tests_verify_the_hosted_images_jq_before_pest(self):
+        self.assertIn('runs-on: ubuntu-26.04', JOB)
+        self.assertLess(JOB.index('jq --version'), JOB.index('vendor/bin/pest '))
+
     def test_php_children_inherit_memory_and_junit_upload_runs_on_failure(self):
         self.assertIn('echo \'memory_limit=1G\' > "$RUNNER_TEMP/cli-tests-php/memory.ini"', JOB)
         self.assertIn('PHP_INI_SCAN_DIR=${PHP_INI_SCAN_DIR:-}:$RUNNER_TEMP/cli-tests-php', JOB)

@@ -71,6 +71,13 @@ class BuildPlanTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertFalse(plan.select([path])['jobs']['cli-tests'])
 
+    def test_root_codex_configuration_selects_cli_pest_before_the_guidance_shortcut(self):
+        for main in (False, True):
+            with self.subTest(main=main):
+                self.assertEqual({'docs', 'cli-tests'} | ({'web'} if main else set()),
+                                 self.selected(['.codex/config.toml'], main))
+        self.assertEqual({'docs'}, self.selected(['.codex/README.md']))
+
     def test_gateway_pest_skips_unrelated_docs_web_and_swamp_tools(self):
         for path in ('docs/reference/tasks.md', 'docs/cli/firewall/allow.mdx', 'apps/docs/composer.lock',
                      'apps/web/src/main.ts', 'apps/web/bun.lock', 'swamp/docs/swamp-shape.md',

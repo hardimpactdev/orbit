@@ -125,6 +125,7 @@ class ScopeActionTest(unittest.TestCase):
     def test_cli_pest_scope_follows_its_cross_project_inputs_and_skips_unrelated_docs(self):
         previous = self.imported
         for path, selected in (('docs/reference/tasks.md', 'false'),
+                               ('.codex/config.toml', 'true'),
                                ('docs/cli/instance/create.mdx', 'true'),
                                ('docs/reference/cli-command-vocabulary.md', 'true'),
                                ('packages/php-sdk/fixtures/instance.json', 'true'),

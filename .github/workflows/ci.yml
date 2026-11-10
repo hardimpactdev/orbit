@@ -293,6 +293,8 @@ jobs:
       - name: Run the complete CLI Pest suite
         working-directory: apps/cli
         run: |
+          # jq ships with ubuntu-26.04 and is required by the CLI release tests.
+          jq --version
           php -r 'if (ini_get("memory_limit") !== "1G") { exit(1); }'
           vendor/bin/pest --compact --colors=never --log-junit="$RUNNER_TEMP/cli-tests.xml"
       - name: Publish CLI Pest results

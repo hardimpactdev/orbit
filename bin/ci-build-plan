@@ -218,6 +218,7 @@ def select(paths, main=False, selection=None):
         # exercise the release helpers. Select these before the prose/test-only shortcuts.
         if (path.startswith(('apps/cli/', 'packages/php-sdk/'))
                 or path.startswith('docs/cli/') and path.endswith('.mdx')
+                or path == '.codex/config.toml'
                 or path == 'docs/reference/cli-command-vocabulary.md'
                 or path.startswith('apps/gateway/routes/api/') and path.endswith('.php')
                 or path == 'apps/agent/scripts/source-commit'):
