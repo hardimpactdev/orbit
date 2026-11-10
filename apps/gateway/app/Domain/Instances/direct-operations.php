@@ -35,6 +35,7 @@ return [
         'projection' => DevelopmentInstanceCreateProjection::class,
         'terminal_result' => ['job' => 'create', 'step' => 'finish'],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(?:instance-git-(?:operation|credential)-[1-9][0-9]*|instance-create-environment-(?:input|testing)-[1-9][0-9]*|instance-create-(?:model|processes)-[1-9][0-9]*)$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^nckrtl-instance-t3-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-register-session-(?:gateway|swamp)-[1-9][0-9]*-token$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'],
             // A container default runs the Project's development deploy steps, each from its own copy.
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$'],

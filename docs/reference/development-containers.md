@@ -459,6 +459,8 @@ On the Swamp worker:
 2. That step stores both sessions in the vault, as native sensitive fields.
 3. It returns the environment id, the server version, the expiry and the two vault keys.
 
+The create's grants cover both session keys, scoped by behavior UUID and Instance id.
+
 In the Gateway:
 
 1. The Gateway records the server with the admitted URL: the Node's WireGuard address and the T3 port. It does not call T3 again.
