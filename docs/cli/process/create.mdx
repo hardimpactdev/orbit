@@ -34,7 +34,7 @@ orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --pro
 
 A preset owns the runtime, command, working directory, and environment, and refuses those options. It also refuses `--user`.
 
-`--user` is accepted only with `--node` and a systemd runtime. An Instance, Docker, a preset, or a Project definition returns `process.option_invalid` and sends no request. A name that fails the pattern returns `process.user_invalid` and sends no request. The API field is `user`, and `CreateProcessRequest` takes the same argument. `root` is refused as `process.user_invalid`. The Gateway checks the named account with `getent passwd` over SSH and returns `process.user_unavailable` when it is absent or its home is invalid. The default working directory is that account's home; `--working-directory` overrides it. [Processes and schedules](/reference/processes-and-schedules#owners) describes the option.
+`--user` is accepted only with `--node` and a systemd runtime. An Instance, Docker, a preset, or a Project definition returns `process.option_invalid` and sends no request. A name that fails the pattern returns `process.user_invalid` and sends no request. The API field is `user`. `root` is refused as `process.user_invalid`. See [Node account](/reference/processes-and-schedules#node-account) for account resolution and refusals. The default working directory is that account's home; `--working-directory` overrides it. [Processes and schedules](/reference/processes-and-schedules#owners) describes the option.
 
 ```bash
 orbit process:create assets --instance=orbit.test --preset=vp-dev --start
