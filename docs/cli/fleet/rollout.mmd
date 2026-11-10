@@ -19,7 +19,8 @@ sequenceDiagram
   %%> Decided by the orchestrator, for Nick's review:
   %%> - the verified release admits the rollout, as `gateway:release:deploy` says; the deleted `fleet-maintenance` schedule did it each minute until 2026-11-06
   %%> - most releases land outside the window, so a daily pass at window open visits the Nodes they deferred
-  %%> - the admission waits a minute at a time while CI has not published the commit's CLI release yet, or another rollout runs
+  %%> - the admission waits while another rollout runs; Nodes without CLI intent need no CLI release
+  %%> - a Node with CLI intent waits for its CLI release; this does not hold back Nodes without CLI intent
   %%> Picks:
   %%> - a Node whose last visit for this commit did not converge it, a drifted Node, or a Node not visited yet
   %%> - at most once per 5 minutes per Node; the last visit is read from earlier rollout results
@@ -27,7 +28,7 @@ sequenceDiagram
   %%> - in risk order: `app-dev`, then `ci-runner` `metrics` `analytics`, then `database` `websocket` `vpn` `router`, then `app-prod` `ingress`
   GW->>SW: Start run, full intent<br/>operation-fleet-rollout
   %%> Input:
-  %%> - the commit, the CLI release, the agent pin and each picked Node
+  %%> - the commit, the agent pin and each picked Node; CLI intent only for Nodes that require it
   %%> Requirements:
   %%> - no other rollout is running
   loop each Node, in risk order
@@ -35,10 +36,15 @@ sequenceDiagram
     %%> Why:
     %%> - `app-dev`-only Nodes go at any hour; others only 03:00–06:00 Europe/Amsterdam
     %%> - a closed window defers the Node to a later pass; it is not a failure
-    SW->>N: Converge the Node<br/>operation-node-converge
-    %%> Why the same workflow:
-    %%> - one way to bring a Node to the release
-    %%> - a failed Tool does not fail the Node; Doctor shows it
+    opt Node carries CLI intent
+      SW->>N: Publish the CLI<br/>cli · node-cli-install
+      %%> What it does:
+      %%> - the Gateway uses the shared CLI eligibility rule; failed publication stops this Node
+    end
+    SW->>N: Publish and check the observer<br/>observer_fetch · observer_read · observer_restart · observer_check
+    %%> What it does:
+    %%> - a Node without CLI intent skips the CLI child and publishes its observer independently
+    %%> - the running digest and active unit prove the pinned observer
   end
   alt every Node converged or deferred
     SW-->>GW: Run succeeded

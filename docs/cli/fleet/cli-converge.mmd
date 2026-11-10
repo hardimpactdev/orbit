@@ -13,13 +13,13 @@ sequenceDiagram
   participant N as Target Node<br/>reached over ssh
   Note over GW: Converge the CLI<br/>task #5170
   %%> When:
-  %%> - an operator or a tool calls `POST /api/v1/fleet/cli/converge`, for the whole rollout set
+  %%> - an operator or a tool calls `POST /api/v1/fleet/cli/converge`, for the CLI-eligible Nodes of the rollout set
   %%> Input:
   %%> - optional API field `node_ids`, for example `[12]`, limits convergence to those eligible Nodes
   %%> - without it, the whole rollout set is selected; an ineligible listed Node is rejected before admission
   %%> What it decides:
   %%> - per Node: the CLI release with its SHA-256, the root profile, and the public SSH descriptor of each Node that installs
-  %%> - a Node whose release is unpublished is skipped; it needs no SSH target
+  %%> - a Node without a CLI caller is skipped (`cli_not_required`); a Node whose release is unpublished is also skipped; neither needs an SSH target
   %%> Result:
   %%> - task #5170 recorded with the full intent; the Gateway replies 202
   GW->>SW: Start run, full intent<br/>operation-fleet-cli-converge

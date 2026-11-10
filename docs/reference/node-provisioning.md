@@ -328,9 +328,11 @@ On build-list Nodes, the `app-dev` converge also prepares the [Instance containe
 
 ## Orbit CLI
 
-Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order) runs the Orbit CLI. `fleet.cli_converge` records one intent for the selected Nodes and starts `operation-fleet-cli-converge`. The Gateway captures the release assets, the public profile and each installing Node's SSH descriptor. For each Node in turn, the `fleet-release-node` child checks on Node 209 that the Node may publish, runs the native `node-cli-install` child from Node 209 over SSH, and records the outcome on Node 209. Only `fleet.rollout` then publishes the observer binary, also from Node 209. It never invokes `cli.install` or `cli.self-update` on orbit-agent. No schedule admits rollouts; an operator starts one with `fleet.rollout`.
+Only Nodes with a recorded `ci-runner` assignment that is not being removed carry the packaged Orbit CLI. This assignment is the Gateway’s single rule for CLI intent, including a base-only converge. Host CI proof runners call `bin/ci-proof-run`, which invokes `orbit proof:run`. Workload Nodes without this assignment, Swamp and the Gateway need no packaged CLI. Instance containers do not install it. Task VMs keep the checkout’s source CLI for proof and profile setup; operator machines manage their own CLI.
 
-`POST /api/v1/fleet/cli/converge` selects the fleet, or the optional `node_ids` list. A selected ineligible Node is rejected. An unpublished release is skipped. Role add and role relocate run the same `node-cli-install` child in their parent run.
+For eligible Nodes, `fleet.cli_converge` records one intent for the selected Nodes and starts `operation-fleet-cli-converge`. The Gateway captures the release assets, the public profile and each installing Node's SSH descriptor. For each Node in turn, the `fleet-release-node` child checks on Node 209 that the Node may publish, runs the native `node-cli-install` child from Node 209 over SSH, and records the outcome on Node 209. `fleet.rollout` also publishes the observer binary from Node 209. Nodes without CLI intent roll out their observer without waiting for a CLI release or CLI installation. It never invokes `cli.install` or `cli.self-update` on orbit-agent. No schedule admits rollouts; an operator starts one with `fleet.rollout`.
+
+`POST /api/v1/fleet/cli/converge` selects the fleet, or the optional `node_ids` list. A selected ineligible Node is rejected. An unpublished release is skipped. Enrollment runs the same `node-cli-install` child only for CLI-eligible Nodes.
 
 | Item | Path or value |
 | --- | --- |
@@ -366,7 +368,7 @@ A clone's create also adds UFW rules under the comment prefix `orbit:instance-<i
 
 `orbit node:converge <node> [--base | --roles=a,b] [--idempotency-key=KEY] [--json]` repairs one active, managed Linux Node against the release. It never runs `node:add`, changes an Instance, or adds or removes a role assignment, so a Node that owns Instances can converge. Fleet release rollout remains a separate CLI and observer publication path.
 
-With no scope flag, the attempt includes Orbit's base and every recorded role. `--base` selects only the agent, CLI and Orbit-owned files and units. `--roles=a,b` selects the base plus the named existing assignments, and refuses an empty, unknown or unassigned role. The two flags are mutually exclusive. There is no `--force` or `--full` option.
+With no scope flag, the attempt includes Orbit's base and every recorded role. `--base` selects only the agent, the Node’s CLI state and Orbit-owned files and units. `--roles=a,b` selects the base plus the named existing assignments, and refuses an empty, unknown or unassigned role. The two flags are mutually exclusive. There is no `--force` or `--full` option.
 
 The Gateway validates recorded state without a live preflight, reserves the target and its first recorded VPN hub until settlement, and captures an immutable intent. Another converge that owns either reservation causes `operation.target_busy`. Unreachable machines fail during execution, not admission. The CLI validates inputs, calls the SDK and renders the Operation; the Gateway admits, records and projects; Swamp executes.
 
@@ -374,8 +376,8 @@ The native Swamp workflow runs these phases in order. Input preparation writes p
 
 | Phase | Work |
 | --- | --- |
-| `input` | Prepare this attempt's recorded roles, Tools, network and release pins, plus vault key references. Require the CLI pin before machine work. |
-| `agent` | Reconcile the pinned agent, versioned CLI, selection link, Orbit-owned configuration and units, the [kernel policy](#kernel-policy) and the [update policy](#update-policy). Restart services only for managed changes. |
+| `input` | Prepare this attempt's recorded roles, Tools, network and release pins, plus vault key references. Require a CLI pin only when the Gateway includes a CLI plan. |
+| `agent` | Reconcile the pinned agent and, when required, the versioned CLI, selection link and root profile; otherwise remove those managed CLI files. Reconcile Orbit-owned configuration and units, the [kernel policy](#kernel-policy) and the [update policy](#update-policy). Restart services only for managed changes. |
 | `software` | Read the selected pins from `recipe.json`, install them and hold the selected packages at those pins. On the Swamp Node, install the recipe's pinned Deno, which runs the Tool helper. |
 | `roles` | Repair the selected roles' configuration without changing an Instance or assignment. |
 | `tools` | Run the Tool helper once to prove that it works. Then apply recorded Tools within scope, recording each Tool's own result and continuing after an individual Tool failure. |
@@ -388,7 +390,9 @@ A failed phase stops later phases and fails the Operation with its failed step a
 
 The Tool helper is the TypeScript policy that judges each Tool. It runs on the Swamp Node, with the Deno at `/usr/local/bin/deno`; on its first run for a worker, Deno downloads the helper's two pinned npm imports. A helper that cannot run is not a Tool failure: the `tools` phase fails before it judges a Tool, and no Tool is marked failed. Converge the Swamp Node to install its Deno, then converge the Node again.
 
-Agent and CLI replacements share the existing Node-local update lock with self-update. Only each final atomic rename holds it, not the whole phase. [One update at a time](/reference/self-update#one-update-at-a-time) owns the staging, timeout and failure rules. Converge checks the existing agent secret against the admitted verifier without rotating it or changing the Gateway's hash.
+Without a CLI plan, the base phase removes `/usr/local/bin/orbit` when it is a managed version link, regular `/usr/local/bin/orbit-0.N.0` binaries and the managed root profile `/root/.orbit/config.json`. It preserves unrelated executables, backups, directories. The final check requires these managed files to be absent. A failed phase retains completed changes; a new converge repeats the same desired state.
+
+Agent and CLI replacements and CLI removal share the existing Node-local update lock with self-update. Only each final atomic rename holds it, not the whole phase. [One update at a time](/reference/self-update#one-update-at-a-time) owns the staging, timeout and failure rules. Converge checks the existing agent secret against the admitted verifier without rotating it or changing the Gateway's hash.
 
 Metrics exporters, cAdvisor and the FPM exporter stay outside this footprint; Metrics fleet reconciliation owns them. Convergence does not publish Instances, Routes or Process units.
 
@@ -513,7 +517,7 @@ The hub step marks the `vpn` role active. After serve and both workers run, the 
 
 `orbit:node-add NODE HOST [--role=ROLE] [--wireguard-ip=IP] [--host-key-fingerprint=SHA256:...]` admits `node.add` from the Gateway itself, as `node:add` does through the API; Swamp then enrolls the Node.
 
-`orbit:node-converge NODE` admits `node.converge` from the Gateway itself. The Gateway converges its own Node this way, which installs the agent and the CLI on its machine.
+`orbit:node-converge NODE` admits `node.converge` from the Gateway itself. The Gateway converges its own Node this way, which installs the agent and removes the packaged CLI from its machine.
 
 The Swamp role's own steps are workflow steps bound to worker labels, so a Gateway without a worker cannot run them; once its own Swamp serves, `node:role:add` converges the roles through it.
 
