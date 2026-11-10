@@ -85,7 +85,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
             if (! $operation->status->terminal()) {
                 $runtime = $instance->runtime()->first();
                 if ($moved && $runtime !== null) {
-                    app(ContainerProcesses::class)->complete($instance, $operation->input['container']['processes'] ?? [], true, null);
+                    app(ContainerProcesses::class)->complete($instance, ValidatedData::object($operation->input['container'])['processes'] ?? [], true, null);
                     $this->moved($instance, ValidatedData::object($operation->input['migrate']), ValidatedData::integerList($operation->input['sqlite_connection_ids'] ?? []));
                     // A default's clones start at the seed snapshot the run took of its commit.
                     $runtime->update(['power_state' => InstanceRuntimePowerState::Running,

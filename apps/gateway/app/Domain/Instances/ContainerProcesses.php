@@ -116,13 +116,15 @@ final readonly class ContainerProcesses
      */
     public function source(Instance $instance): array
     {
-        return $this->records($instance)->map(function (Process $process): array {
+        $units = [];
+        foreach ($this->records($instance) as $process) {
             $target = $this->targets->forInspection($process);
-
-            return ['name' => $this->systemd->unitName($process), 'path' => $this->systemd->unitPath($process),
+            $units[] = ['name' => $this->systemd->unitName($process), 'path' => $this->systemd->unitPath($process),
                 'environment_directory' => dirname($this->systemd->environmentPath($process, $target)),
                 'desired' => $process->desired_state->value];
-        })->all();
+        }
+
+        return $units;
     }
 
     /** @return Collection<int, Process> */
