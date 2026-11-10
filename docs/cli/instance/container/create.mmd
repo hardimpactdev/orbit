@@ -31,51 +31,57 @@ sequenceDiagram
   Note over GW: Commit, push copies<br/>queue start · answer 202
   GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start run from queue<br/>operation-instance-create
-  SW->>N: Clone default container<br/>Ansible · tags clone
-  %%> What it does:
-  %%> - the copy supplies the full root disk device (type, path, pool and size), whether the seed inherits it or stores it locally
-  %%> - `incus copy` of the default container's snapshot `seed-<commit>`, a ZFS clone; a stopped default needs no start
-  %%> - the copy gets its own bridge address and ACL, and the proxy device `t3`: NAT from the Node's WireGuard address and the T3 port to T3's port 3773
-  %%> - the container's ACL lets the Node's Caddy reach port 8080, WireGuard peers reach port 3773, and the container reach its database server's port
-  %%> - UFW: a route rule admits WireGuard peers to T3, below a deny for the task VM range; a rule admits the container to its database server's port
-  %%> - starts the copy: nftables, `hidepid` and the image's units start; T3 does not, because `/etc/orbit/instance` does not exist yet
-  %%> Branch:
-  %%> - fetches the Instance's branch into the Node's mirror with the read token, or creates it at the seed commit; the token stays on the Node
-  opt database on a Database server
-    SW->>N: Create the database<br/>child operation-database-create
-    %%> What it does, through the database family:
-    %%> - creates the Instance's owner and an empty database on the default's server
-    SW->>N: Clone the default database<br/>docker exec · admin login
+  par container and T3 preparation
+    SW->>N: Clone default container<br/>Ansible · tags clone
     %%> What it does:
-    %%> - PostgreSQL: refuses new connections to the default database and ends its sessions, then `CREATE DATABASE … TEMPLATE`, and gives the clone's objects to the new owner
-    %%> - a cleanup that always runs allows connections to the default database again
-    %%> - MySQL: a dump of the default database restored into the new one
-    %%> Runs beside the clone step: Swamp starts both at once.
-  end
-  SW->>C: Prepare the workspace<br/>Ansible · tags workspace
-  %%> What it does:
-  %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
-  %%> - writes `.env` for `orbit` with group `work`; it keeps the default's `APP_KEY`, because the cloned data is encrypted with it
-  %%> No setup steps:
-  %%> - the default Instance installed the dependencies and migrated; a later lockfile change is installed in the workspace
-  SW->>C: Prepare the agent<br/>Ansible · tags agent
-  %%> What it does:
-  %%> - writes the placeholder key for `agent`, and the Claude Code and Codex settings that point at the model forwarder
-  %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type
-  %%> - writes `/etc/orbit/instance`, owned by root and readable by all
-  SW->>C: Start Processes<br/>Ansible · tags processes
-  %%> What it does:
-  %%> - rewrites FrankenPHP's unit for the clone's own bridge address and restarts it as `orbit`
-  SW->>C: Start T3<br/>Ansible · tags t3
-  %%> What it does:
-  %%> - T3 starts for the first time and creates its identity; the T3 project `/srv/workspace` is added as `agent`
-  %%> Check:
-  %%> - waits up to 30 s for `/.well-known/t3/environment`, else `instance.t3_unready`
-  opt web-serving Project
-    SW->>N: Create the Route<br/>child operation-route-create
-    %%> What it adds:
-    %%> - the same steps as `route:create`, with its key and signature, then a TLS probe of the site
-    %%> - the Node's Caddy proxies the Route to FrankenPHP at the container's bridge address
+    %%> - the copy supplies the full root disk device (type, path, pool and size), whether the seed inherits it or stores it locally
+    %%> - `incus copy` of the default container's snapshot `seed-<commit>`, a ZFS clone; a stopped default needs no start
+    %%> - the copy gets its own bridge address and ACL, and the proxy device `t3`: NAT from the Node's WireGuard address and the T3 port to T3's port 3773
+    %%> - the container's ACL lets the Node's Caddy reach port 8080, WireGuard peers reach port 3773, and the container reach its database server's port
+    %%> - UFW: a route rule admits WireGuard peers to T3, below a deny for the task VM range; a rule admits the container to its database server's port
+    %%> - starts the copy: nftables, `hidepid` and the image's units start; T3 does not, because `/etc/orbit/instance` does not exist yet
+    %%> Branch:
+    %%> - fetches the Instance's branch into the Node's mirror with the read token, or creates it at the seed commit; the token stays on the Node
+    opt database on a Database server
+      SW->>N: Create the database<br/>child operation-database-create
+      %%> What it does, through the database family:
+      %%> - creates the Instance's owner and an empty database on the default's server
+      SW->>N: Clone the default database<br/>docker exec · admin login
+      %%> What it does:
+      %%> - PostgreSQL: refuses new connections to the default database and ends its sessions, then `CREATE DATABASE … TEMPLATE`, and gives the clone's objects to the new owner
+      %%> - a cleanup that always runs allows connections to the default database again
+      %%> - MySQL: a dump of the default database restored into the new one
+      %%> Runs beside the clone step: Swamp starts both at once.
+    end
+    SW->>C: Prepare the workspace<br/>Ansible · tags workspace
+    %%> What it does:
+    %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
+    %%> - writes `.env` for `orbit` with group `work`; it keeps the default's `APP_KEY`, because the cloned data is encrypted with it
+    %%> No setup steps:
+    %%> - the default Instance installed the dependencies and migrated; a later lockfile change is installed in the workspace
+    SW->>C: Prepare the agent<br/>Ansible · tags agent
+    %%> What it does:
+    %%> - writes the placeholder key for `agent`, and the Claude Code and Codex settings that point at the model forwarder
+    %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type
+    %%> - writes `/etc/orbit/instance`, owned by root and readable by all
+    SW->>C: Start Processes<br/>Ansible · tags processes
+    %%> What it does:
+    %%> - rewrites FrankenPHP's unit for the clone's own bridge address and restarts it as `orbit`
+    SW->>C: Start T3<br/>Ansible · tags t3
+    %%> What it does:
+    %%> - T3 starts for the first time and creates its identity; the T3 project `/srv/workspace` is added as `agent`
+    %%> Check:
+    %%> - waits up to 30 s for `/.well-known/t3/environment`, else `instance.t3_unready`
+  and Route publication
+    opt web-serving Project
+      SW->>N: Make, sign Route key<br/>child route-create-csr
+      SW->>N: Create the Route<br/>child operation-route-create
+      %%> What it adds:
+      %%> - the same steps as `route:create`, with the signed certificate, then a TLS handshake check; no HTTP request waits for app startup
+      %%> - the Node's Caddy proxies the Route to FrankenPHP at the container's bridge address
+      %%> - Swamp step `clone-route` waits only for `route-csr`; the admitted upstream address needs no running container
+      %%> - the prepared Route skips workspace ACL and environment writes; the container chain owns those
+    end
   end
   SW->>C: Register the T3 server<br/>sensitive output · vault
   %%> What it does:

@@ -318,7 +318,7 @@ The default Instance is the clone source of its Project on the Node. Orbit build
 
 After that, the default Instance deploys every merge to the default branch, as a checkout default does today ([development deployment](/reference/deployments)). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
 
-There are no development setup steps. The default Instance has them done already, so a clone needs none.
+There are no development setup steps. The default Instance has them done already, so a clone needs none. A clone publishes its Route, certificate and DNS beside container preparation. The Route checks the TLS handshake, so it does not wait for the application to start. Workspace access and environment files stay in the container preparation.
 
 #### What is built
 

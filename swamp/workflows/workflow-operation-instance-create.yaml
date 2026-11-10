@@ -366,21 +366,14 @@ jobs:
             leaf: '${{ self.leaf }}'
             operation_id: '${{ inputs.operation_id }}'
             parent_run_id: '${{ run.id }}'
-      # Route: a web-serving Project's Route, through the same child that route:create runs, beside the setup (same depth as it). The
-      # checkout phase has granted Caddy its access and written the URL, so the child skips both on this Node.
-      # It waits for the same steps as the setup, so a Swamp job puts both at one depth and does not make one wait for the other.
-      - name: route
+      # A clone's admitted reverse-proxy address exists before its container. Prepared publication touches no workspace;
+      # the child checks TLS, not an app response. Start it beside workspace, after the certificate is signed.
+      - name: clone-route
         labels: {role: swamp}
         writes: true
-        dependsOn:
-          - {step: route-csr, condition: {type: always}}
-          - {step: checkout, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-          - {step: container-processes, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-          - {step: database-install, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-          - {step: server-database-check, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-          - {step: server-database-fill, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-        guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.exists(k, steps[k].status == "failed") }}'
-        task:
+        dependsOn: [{step: route-csr, condition: {type: always}}]
+        guard: '${{ inputs.intent.already_active || inputs.intent.route == null || inputs.intent.container == null || inputs.intent.container.clone == null || steps.exists(k, steps[k].status == "failed") }}'
+        task: &instance_route
           type: workflow
           workflowIdOrName: operation-route-create
           inputs:
@@ -392,6 +385,19 @@ jobs:
             execution_secrets: '${{ inputs.intent.route_secrets }}'
             signed: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps && steps["route-csr-" + string(i)].status == "succeeded" ? steps["route-csr-" + string(i)].outputs.sign.stdout : "") }}'
             prepared: '${{ string(inputs.node_id) }}'
+      # Checkout Instances and first defaults keep the existing publication prerequisites.
+      - name: route
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: route-csr, condition: {type: always}}
+          - {step: checkout, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: container-processes, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: database-install, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: server-database-check, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: server-database-fill, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+        guard: '${{ inputs.intent.already_active || inputs.intent.route == null || (inputs.intent.container != null && inputs.intent.container.clone != null) || steps.exists(k, steps[k].status == "failed") }}'
+        task: *instance_route
       # T3: a clone's T3 starts for the first time, with its own identity, and the workspace becomes its project.
       - name: t3
         labels: {role: swamp}
@@ -423,6 +429,7 @@ jobs:
         dependsOn:
           - {step: t3, condition: {type: succeeded}}
           - {step: route, condition: {type: always}}
+          - {step: clone-route, condition: {type: always}}
         guard: '${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone == null || steps.exists(k, steps[k].status == "failed") }}'
         task:
           type: behavior
@@ -474,6 +481,7 @@ jobs:
           - {step: setup, condition: {type: always}}
           - {step: processes, condition: {type: always}}
           - {step: route, condition: {type: always}}
+          - {step: clone-route, condition: {type: always}}
           - {step: route-csr, condition: {type: always}}
           - {step: container, condition: {type: always}}
           - {step: workspace, condition: {type: always}}
@@ -495,7 +503,7 @@ jobs:
             database: '${{ inputs.intent.server_database == null ? ("database-install" in steps ? steps["database-install"].status : "skipped") : (inputs.intent.server_database.fill != null ? ("server-database-fill" in steps ? steps["server-database-fill"].status : "skipped") : ("server-database-check" in steps ? steps["server-database-check"].status : "skipped")) }}'
             setup: '${{ "setup" in steps ? steps.setup.status : "skipped" }}'
             processes: '${{ inputs.intent.processes.map(p, ("processes-" + string(p.index)) in steps ? steps["processes-" + string(p.index)].status : "skipped") }}'
-            route: '${{ "route" in steps ? steps.route.status : "skipped" }}'
+            route: '${{ inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-route" in steps ? steps["clone-route"].status : "skipped") : ("route" in steps ? steps.route.status : "skipped") }}'
             certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps ? steps["route-csr-" + string(i)].status : "skipped") }}'
             container: '${{ inputs.intent.container == null ? dyn(null) : {"launch": "container" in steps ? steps.container.status : "skipped", "workspace": "workspace" in steps ? steps.workspace : null, "deploy": steps.filter(k, k.startsWith("deploy-")).map(k, steps[k].status), "processes": "container-processes" in steps ? steps["container-processes"].status : "skipped", "seed": "seed" in steps ? steps.seed.status : "skipped", "agent": "agent" in steps ? steps.agent.status : "skipped", "t3": "t3" in steps ? steps.t3.status : "skipped", "register": "t3-sessions" in steps && steps["t3-sessions"].status == "failed" ? "failed" : ("t3-register" in steps ? steps["t3-register"].status : "skipped"), "server": "t3-register" in steps && steps["t3-register"].status == "succeeded" ? steps["t3-register"].outputs.stdout : null} }}'
       # Withdraw the Route: a create that failed after its key was made takes back what it published, the reverse of the publication that the
@@ -505,7 +513,7 @@ jobs:
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: finish, condition: {type: succeeded}}]
-        guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.finish.outputs.ready == true || !(("route-csr-0" in steps && steps["route-csr-0"].status != "skipped") || ("route" in steps && steps.route.status != "skipped")) }}'
+        guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.finish.outputs.ready == true || !(("route-csr-0" in steps && steps["route-csr-0"].status != "skipped") || ("route" in steps && steps.route.status != "skipped") || ("clone-route" in steps && steps["clone-route"].status != "skipped")) }}'
         task:
           type: workflow
           workflowIdOrName: '${{ "route-withdraw" }}'
@@ -557,6 +565,7 @@ jobs:
           - {step: setup, condition: {type: always}}
           - {step: processes, condition: {type: always}}
           - {step: route, condition: {type: always}}
+          - {step: clone-route, condition: {type: always}}
         guard: '${{ inputs.intent.already_active }}'
         task:
           type: behavior

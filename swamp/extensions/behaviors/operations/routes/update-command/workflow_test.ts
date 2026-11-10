@@ -139,3 +139,21 @@ Deno.test("Route primitive and shared publication children use one209selector", 
         assertSwampSelector((await read(name)).flow);
     }
 });
+
+Deno.test("a clone publishes its prepared Route beside workspace without waiting for app startup", async () => {
+    const create = await steps("operation-instance-create");
+    const early = create.find((step) => step.name === "clone-route")!;
+    assert(early, "clones need their own early publication path");
+    assertEquals(early.dependsOn!.map((item) => item.step), ["route-csr"]);
+    assertEquals(early.task.workflowIdOrName, "operation-route-create");
+    assertEquals(early.task.inputs?.prepared, "${{ string(inputs.node_id) }}");
+    const normal = create.find((step) => step.name === "route")!;
+    assert(normal.dependsOn!.some((item) => item.step === "container-processes"));
+    const finish = create.find((step) => step.name === "finish")!;
+    assert(String(finish.task.inputs?.route).includes('steps["clone-route"].status'));
+    for (const name of ["finish", "cleanup"]) {
+        assert(create.find((step) => step.name === name)!.dependsOn!.some((item) => item.step === "clone-route"));
+    }
+    const withdraw = create.find((step) => step.name === "withdraw-route")! as Step & { guard: string };
+    assert(withdraw.guard.includes('steps["clone-route"].status != "skipped"'));
+});
