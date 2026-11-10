@@ -66,6 +66,14 @@ type harness struct {
 	log      *syncBuffer
 	dir      string
 	state    string
+	dialMu   sync.Mutex
+	dialed   []string
+}
+
+func (h *harness) dialedAddresses() []string {
+	h.dialMu.Lock()
+	defer h.dialMu.Unlock()
+	return append([]string(nil), h.dialed...)
 }
 
 // newHarness runs the proxy on loopback. The test client's address, 127.0.0.1, is container instance-7. The upstream is an
@@ -90,7 +98,10 @@ func newHarness(t *testing.T, bindings []Binding) *harness {
 		Floor:         Floor{},
 		UpstreamRoots: roots,
 		Log:           h.log,
-		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			h.dialMu.Lock()
+			h.dialed = append(h.dialed, address)
+			h.dialMu.Unlock()
 			var d net.Dialer
 			return d.DialContext(ctx, "tcp", upstreamAddr)
 		},
@@ -331,6 +342,7 @@ func TestRefusesPrivateNamesAndAddresses(t *testing.T) {
 		"127.0.0.1:443":           403,
 		"10.0.0.2:22":             403,
 		"[::1]:443":               400,
+		"localhost:443":           400,
 		"evil..example.com:443":   400,
 		"example.123:443":         400,
 		"missing.example.com:443": 502,
@@ -504,5 +516,127 @@ func TestCALeafStaysWithinTheCA(t *testing.T) {
 	}
 	if _, err := EnsureCA(t.TempDir(), "../etc"); err == nil {
 		t.Fatal("a path name was accepted")
+	}
+}
+
+// writeAtomic renames a finished file into place, as delivery does.
+func writeAtomic(path string, data []byte, mode os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+func TestDialsOnlyTheAddressItChecked(t *testing.T) {
+	h := newHarness(t, []Binding{stripeBinding()})
+	h.do("GET", "https://example.com/", http.Header{"Authorization": {"Bearer " + stripePlaceholder}})
+	h.upstreamSaw()
+	h.do("GET", "https://api.example.com/", nil)
+	h.upstreamSaw()
+	for _, address := range h.dialedAddresses() {
+		if address != "93.184.216.34:443" && address != "93.184.216.35:443" {
+			t.Fatalf("dialed %s", address)
+		}
+	}
+	if len(h.dialedAddresses()) != 2 {
+		t.Fatalf("dialed %v", h.dialedAddresses())
+	}
+}
+
+func TestTunnelsALargeClientHello(t *testing.T) {
+	h := newHarness(t, nil)
+	conn := h.connect("example.com:443")
+	defer conn.Close()
+	// Long ALPN names push the ClientHello past net/http's 4 KiB hijack buffer.
+	var protos []string
+	for i := 0; i < 40; i++ {
+		protos = append(protos, fmt.Sprintf("%03d-%s", i, strings.Repeat("x", 150)))
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(h.upstream.Certificate())
+	tlsConn := tls.Client(conn, &tls.Config{ServerName: "example.com", RootCAs: roots, NextProtos: append(protos, "http/1.1")})
+	if err := tlsConn.Handshake(); err != nil {
+		t.Fatalf("handshake: %v", err)
+	}
+}
+
+func TestRefusesTraceToABoundHost(t *testing.T) {
+	h := newHarness(t, []Binding{stripeBinding()})
+	resp, _ := h.do("TRACE", "https://example.com/", http.Header{"Authorization": {"Bearer " + stripePlaceholder}})
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("status %d, want 405", resp.StatusCode)
+	}
+	h.upstreamSawNothing()
+}
+
+func TestRefusesAnotherPortInsideAReadTunnel(t *testing.T) {
+	h := newHarness(t, []Binding{stripeBinding()})
+	conn := h.connect("example.com:443")
+	defer conn.Close()
+	ca, _ := EnsureCA(h.state, "instance-7")
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(ca.PEM())
+	tlsConn := tls.Client(conn, &tls.Config{ServerName: "example.com", RootCAs: roots})
+	fmt.Fprintf(tlsConn, "GET / HTTP/1.1\r\nHost: example.com:8443\r\nAuthorization: Bearer %s\r\n\r\n", stripePlaceholder)
+	resp, err := http.ReadResponse(bufio.NewReader(tlsConn), nil)
+	if err != nil || resp.StatusCode != http.StatusMisdirectedRequest {
+		t.Fatalf("status %v %v, want 421", resp, err)
+	}
+	h.upstreamSawNothing()
+}
+
+func TestRefusesAPlaceholderInBasicCredentialsInClearText(t *testing.T) {
+	h := newHarness(t, []Binding{stripeBinding()})
+	encoded := base64.StdEncoding.EncodeToString([]byte("api:" + stripePlaceholder))
+	resp, _ := h.do("GET", "http://example.com/", http.Header{"Authorization": {"Basic " + encoded}})
+	if resp.StatusCode != http.StatusMisdirectedRequest {
+		t.Fatalf("status %d, want 421", resp.StatusCode)
+	}
+	h.upstreamSawNothing()
+}
+
+func TestABadFileKeepsOnlyItsOwnLastState(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	write := func(name, address string, bindings []Binding, at time.Time) {
+		raw, _ := json.Marshal(Container{Name: name, Address: address, Bindings: bindings})
+		os.WriteFile(filepath.Join(dir, name+".json"), raw, 0o640)
+		os.Chtimes(filepath.Join(dir, name+".json"), at, at)
+		store.checked = time.Time{}
+	}
+	now := time.Now()
+	write("instance-1", "10.9.0.2", []Binding{stripeBinding()}, now)
+	write("instance-2", "10.9.0.3", []Binding{stripeBinding()}, now)
+	store.Lookup(netip.MustParseAddr("10.9.0.2"))
+	os.WriteFile(filepath.Join(dir, "instance-1.json"), []byte("not json"), 0o640)
+	os.Chtimes(filepath.Join(dir, "instance-1.json"), now, now.Add(time.Second))
+	// The unbind of instance-2 applies although instance-1's file is bad.
+	write("instance-2", "10.9.0.3", nil, now.Add(2*time.Second))
+	if c, _ := store.Lookup(netip.MustParseAddr("10.9.0.3")); len(c.Bindings) != 0 {
+		t.Fatal("instance-2's unbind did not apply")
+	}
+	if c, _ := store.Lookup(netip.MustParseAddr("10.9.0.2")); len(c.Bindings) != 1 {
+		t.Fatal("instance-1 lost its last good state")
+	}
+	if store.Err() == nil {
+		t.Fatal("no error")
+	}
+	// Two files that claim one address give it no bindings.
+	write("instance-3", "10.9.0.3", []Binding{stripeBinding()}, now.Add(3*time.Second))
+	if _, ok := store.Lookup(netip.MustParseAddr("10.9.0.3")); ok {
+		t.Fatal("a shared address kept a container")
 	}
 }

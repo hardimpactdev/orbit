@@ -87,7 +87,11 @@ func EnsureCA(state, container string) (*CA, error) {
 	}
 	// Another process may have won the rename; its pair is the one to use.
 	_ = os.Rename(tmp, dir)
-	return loadCA(certPath, keyPath)
+	ca, err := loadCA(certPath, keyPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("%s holds no CA: remove the folder", dir)
+	}
+	return ca, err
 }
 
 func loadCA(certPath, keyPath string) (*CA, error) {
@@ -153,26 +157,6 @@ func (ca *CA) leaf(host string, now time.Time) (*tls.Certificate, error) {
 func serial() *big.Int {
 	n, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 127))
 	return n
-}
-
-func writeAtomic(path string, data []byte, mode os.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
 }
 
 // leafCache keeps the leaf certificates of the 1024 hosts used last, across containers, so wildcard bindings cannot grow memory.

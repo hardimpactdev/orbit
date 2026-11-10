@@ -2,7 +2,8 @@ name: Egress proxy release
 
 # Builds orbit-egress, the Instance egress proxy (docs/decisions/0254-inject-external-secrets-at-the-node-egress-proxy.md), and on
 # main, from a push or a manual run, publishes a build of a source that has no release yet. The release tag names the Git tree of
-# apps/egress, so the same source never builds twice. A later reviewed commit pins the published SHA-256, as for the static PHP build.
+# apps/egress, so the same source never builds twice. Go is pinned and the build is reproducible, so the SHA-256 is known before the
+# release exists; a reviewed commit pins it, as for the static PHP build.
 on:
   push:
     branches: [main]
@@ -50,7 +51,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: steps.tag.outputs.missing == 'true'
         with:
-          go-version-file: apps/egress/go.mod
+          go-version: 1.27.3
           cache: false
 
       - name: Test and build the static Linux binary

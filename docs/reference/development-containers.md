@@ -266,18 +266,21 @@ Delivery:
 - **Proxy.** It loads the file into memory each time the file changes.
 - **Clone.** A clone keeps its default's bindings and placeholders.
 
-Each container also gets its own CA, made by the proxy under `/var/lib/orbit-egress/ca/<container>/`. Its key stays there. The container trusts the certificate through its system store, and `NODE_EXTRA_CA_CERTS` names it. Each container's NIC sets `security.ipv4_filtering` and `security.mac_filtering`, so its bridge address names it.
+Each container also gets its own CA under `/var/lib/orbit-egress/ca/<container>/`. The converge makes it with `orbit-egress ca` as user `orbit-egress`, which refuses to run as root, and the key stays there. The container trusts the certificate through its system store, and `NODE_EXTRA_CA_CERTS` names it. Each container's NIC sets `security.ipv4_filtering` and `security.mac_filtering`, so its bridge address names it.
 
 How the proxy treats a request:
 
 | Request | Result |
 | --- | --- |
-| A name in a private domain, `.orbit` among them, or a name with other characters or an empty label | `403`, or `400` for a malformed name, before any lookup |
+| A name in a private domain, `.orbit` among them | `403`, before any lookup |
+| A name of one label, with other characters or with an empty label | `400` |
 | A name with a private, special, IPv6 or Node address among its answers | `403` |
-| `CONNECT` to a host with no binding of this container | A tunnel, untouched. A TLS ClientHello must name the host in its SNI, or the tunnel closes. |
-| `CONNECT` to a bound host on port 443 | Read with a leaf certificate from the container's CA. The upstream connection verifies the server against the system roots. |
+| `CONNECT` to a host with no binding of this container | A tunnel, untouched. A TLS ClientHello must name the host in its SNI, or the tunnel closes. A placeholder inside reaches the host as a meaningless string. |
+| `CONNECT` to a bound host on port 443 | Read with a leaf certificate from the container's CA, over `http/1.1` only. The upstream connection verifies the server against the system roots. |
 | In a read tunnel, a request whose `Host` is not the `CONNECT` host | `421` |
-| A request with a placeholder of a key that has no binding for its host, plain HTTP included | `421` |
+| A plain HTTP request with any placeholder of the container | `421` |
+| In a read tunnel, a request with a placeholder of a key that has no binding for its host | `421` |
+| In a read tunnel, `TRACE` | `405` |
 | A request with a placeholder of a key bound to its host | The value replaces the placeholder in the bound headers, also inside `Basic` credentials |
 
 The proxy writes one JSON line per request to the journal: `container`, `client`, `method`, `host`, `port`, `decision` (`tunnel`, `intercept`, `forward` or `refuse`), `status`, `reason` and `injected`, the injected keys' names. It never writes a value.

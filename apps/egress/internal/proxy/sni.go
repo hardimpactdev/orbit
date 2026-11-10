@@ -11,6 +11,9 @@ import (
 
 // clientHelloServerName reads the first bytes of a tunnel. For a TLS ClientHello it reads the whole message and returns its SNI;
 // other first bytes return isTLS false. The bytes stay in the reader, so the tunnel sends them on unchanged.
+// maxClientHello bounds the ClientHello the proxy reads; the tunnel's reader must hold this much.
+const maxClientHello = 64<<10 + 5
+
 func clientHelloServerName(r *bufio.Reader) (serverName string, isTLS bool, err error) {
 	first, err := r.Peek(1)
 	if err != nil {
@@ -30,7 +33,7 @@ func clientHelloServerName(r *bufio.Reader) (serverName string, isTLS bool, err 
 			return "", true, errors.New("not a ClientHello")
 		}
 		length := int(header[offset+3])<<8 | int(header[offset+4])
-		if offset+5+length > 64<<10 {
+		if offset+5+length > maxClientHello {
 			return "", true, errors.New("ClientHello too large")
 		}
 		record, err := r.Peek(offset + 5 + length)

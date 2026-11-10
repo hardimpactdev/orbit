@@ -92,21 +92,23 @@ func validContainer(name string) bool {
 }
 
 // Store holds the containers' files in memory. It reads the folder again when a file in it changes, so a delivery
-// takes effect on the next request without a restart, and a request never reads the Gateway.
+// takes effect on the next request without a restart, and a request never reads the Gateway. A file that does not read keeps
+// that container's last good state; the other containers' changes still apply.
 type Store struct {
 	dir string
-	// Report hears each failed read; the proxy keeps the last good state.
+	// Report hears each failed read.
 	Report func(error)
 
 	mu        sync.RWMutex
 	stamp     string
 	checked   time.Time
+	byFile    map[string]Container
 	byAddress map[netip.Addr]Container
 	err       error
 }
 
 func NewStore(dir string) *Store {
-	return &Store{dir: dir, byAddress: map[netip.Addr]Container{}}
+	return &Store{dir: dir, byFile: map[string]Container{}, byAddress: map[netip.Addr]Container{}}
 }
 
 // Lookup returns the container at a bridge address. An unknown address has no bindings.
@@ -118,7 +120,7 @@ func (s *Store) Lookup(addr netip.Addr) (Container, bool) {
 	return c, ok
 }
 
-// Err is the error of the last read, if the folder held a file that does not parse. The previous state stays then.
+// Err is the first error of the last read, or nil.
 func (s *Store) Err() error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -139,46 +141,73 @@ func (s *Store) refresh() {
 	if stamp == s.stamp {
 		return
 	}
-	// A bad file is reported once; the next change reads the folder again.
 	s.stamp = stamp
-	next := map[netip.Addr]Container{}
+	s.err = nil
+	byFile := map[string]Container{}
 	for _, file := range files {
-		raw, err := os.ReadFile(file)
+		c, err := readContainer(file)
 		if err != nil {
-			s.err = err
-			s.report()
-			return
+			s.fail(err)
+			if last, ok := s.byFile[file]; ok {
+				byFile[file] = last
+			}
+			continue
 		}
-		var c Container
-		if err := json.Unmarshal(raw, &c); err != nil {
-			s.err = fmt.Errorf("parse %s: %w", filepath.Base(file), err)
-			s.report()
-			return
-		}
-		if err := c.check(); err != nil {
-			s.err = err
-			s.report()
-			return
-		}
-		if filepath.Base(file) != c.Name+".json" {
-			s.err = fmt.Errorf("%s names container %s", filepath.Base(file), c.Name)
-			s.report()
-			return
-		}
-		addr := netip.MustParseAddr(c.Address)
-		if other, taken := next[addr]; taken {
-			s.err = fmt.Errorf("containers %s and %s share address %s", other.Name, c.Name, addr)
-			s.report()
-			return
-		}
-		next[addr] = c
+		byFile[file] = c
 	}
-	s.byAddress, s.err = next, nil
+	byAddress := map[netip.Addr]Container{}
+	names := make([]string, 0, len(byFile))
+	for file := range byFile {
+		names = append(names, file)
+	}
+	sort.Strings(names)
+	for _, file := range names {
+		c := byFile[file]
+		addr := netip.MustParseAddr(c.Address)
+		if other, taken := byAddress[addr]; taken {
+			// Neither keeps the address: a request from it gets no bindings rather than another container's.
+			s.fail(fmt.Errorf("containers %s and %s share address %s", other.Name, c.Name, addr))
+			byAddress[addr] = Container{}
+			continue
+		}
+		byAddress[addr] = c
+	}
+	for addr, c := range byAddress {
+		if c.Name == "" {
+			delete(byAddress, addr)
+		}
+	}
+	s.byFile, s.byAddress = byFile, byAddress
 }
 
-func (s *Store) report() {
+func (s *Store) fail(err error) {
+	if s.err == nil {
+		s.err = err
+	}
+	s.report(err)
+}
+
+func readContainer(file string) (Container, error) {
+	var c Container
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return c, err
+	}
+	if err := json.Unmarshal(raw, &c); err != nil {
+		return c, fmt.Errorf("parse %s: %w", filepath.Base(file), err)
+	}
+	if err := c.check(); err != nil {
+		return c, err
+	}
+	if filepath.Base(file) != c.Name+".json" {
+		return c, fmt.Errorf("%s names container %s", filepath.Base(file), c.Name)
+	}
+	return c, nil
+}
+
+func (s *Store) report(err error) {
 	if s.Report != nil {
-		s.Report(s.err)
+		s.Report(err)
 	}
 }
 

@@ -50,7 +50,7 @@ There is no second store and no second value. `env:update` changes the value; th
 `orbit-egress` replaces Squid: one process per Node, as its own system user `orbit-egress`, on the same address and port, behind the same [nftables table](/reference/development-containers#the-proxys-table). It is written in Go on the standard library only.
 
 - **Who.** It knows a container by its bridge address. Each container's NIC turns on Incus `security.ipv4_filtering` and `security.mac_filtering`, so a container cannot take another's address. An unknown address on the bridge, such as the image build, gets plain egress with no bindings.
-- **Names.** It resolves each name itself through the Node's resolver and dials the address it checked. It refuses a name in the fleet's private domains, `.orbit` among them, before any lookup. It refuses a private, loopback, link-local, CGNAT or special address, IPv6, and the Node's own addresses. A name must be letters, digits, `-`, `_` and `.`.
+- **Names.** It resolves each name itself through the Node's resolver, as an absolute name, and dials the address it checked. It refuses a name in the fleet's private domains, `.orbit` among them, before any lookup, and a name of one label. It refuses a private, loopback, link-local, CGNAT or special address, IPv6, and the Node's own addresses. A name must be letters, digits, `-`, `_` and `.`.
 - **Tunnels.** A `CONNECT` to a host without a binding is tunneled untouched, to any public host and port. If the first bytes are a TLS ClientHello, its SNI must name the `CONNECT` host.
 - **Policy.** Any public host, as today. One function decides each request, so an allowlist can join it without a change in the containers.
 - **Record.** One JSON line per request to the journal: container, method, host, port, decision, status, reason and the names of the keys it injected. Never a value.
@@ -59,16 +59,19 @@ There is no second store and no second value. `env:update` changes the value; th
 
 A `CONNECT` to a bound host on port 443 is intercepted. The proxy ends the container's TLS with a certificate from the container's own CA, reads each request, replaces the placeholder, and sends it on over a new TLS connection that it verifies against the system roots.
 
-- **The CA.** ECDSA P-256, one per container, made by the proxy on the Node. Its key never leaves the Node. Valid for 5 years; each leaf for one day.
+- **The CA.** ECDSA P-256, one per container, made on the Node as the proxy's user. Its key never leaves the Node. Valid for 5 years; each leaf for one day.
+- **HTTP/1.1 inside.** The proxy offers only `http/1.1` to the container in a read tunnel. A client that offers only `h2`, such as a gRPC client set to HTTP/2 only, cannot reach a bound host.
 - **Trust.** Only that container trusts its CA, from the system store (`update-ca-certificates`), so PHP, curl, Git and Composer trust it. `NODE_EXTRA_CA_CERTS` points Node, Bun and Vite+ at it.
 
 ### Injection and refusals
 
 - **Where.** Only in the binding's headers, only on its hosts, only over TLS. In `Authorization: Basic`, the proxy also replaces it inside the decoded credentials.
 - **Wrong host.** In an intercepted tunnel, each request's `Host` must be the `CONNECT` host. Otherwise the proxy answers `421`.
+- **No echo.** In an intercepted tunnel, the proxy refuses `TRACE` with `405`, as the server would send the injected value back.
 - **Wrong place.** A request that carries any of the container's placeholders, in any header, to a host whose bindings do not hold that key gets `421`. That covers plain HTTP to any host and intercepted hosts with other bindings. A tunnel to a host with no binding is not read, so a placeholder sent there reaches that host as a meaningless string.
 - **Not in scope for v1.** The body and the query. So these do not work with a binding: OAuth client secrets sent in a form body (client credentials flows), Google API keys in `?key=`, tokens in a URL path (Slack incoming webhooks, Telegram bots), and any key used to sign requests on the client (AWS SigV4 for S3 and SES, Pusher and Reverb). Stripe, OpenAI, Anthropic, Postmark (`X-Postmark-Server-Token`), Mailgun and Twilio (Basic), Resend, SendGrid and GitHub send their keys in headers and work.
 - **Never a binding.** A key the app uses itself, such as `APP_KEY` or a webhook signing secret that it checks, cannot be a placeholder.
+- **Accepted risk: a host that reflects.** The proxy passes responses back unread. A bound host that echoes request headers, through a debug endpoint or an error page that prints the key, hands the value to the container. Bind the exact API host, never a wildcard that covers user content.
 
 ### Who it applies to
 
@@ -106,6 +109,7 @@ Each row takes the recommendation; Nick can change one in review.
 
 - A container's `.env` no longer holds a bound key's value. An agent that prints it sees the placeholder.
 - A bound key works only from inside its container, only towards its hosts, and only in its headers. Body, query and signing keys keep their real values in `.env`; covering them needs a new ADR.
+- A bound host that reflects request headers can hand the value back to the container; that is why bindings name exact hosts.
 - The Node holds the values of its containers' bound keys in one file per container, which only root and the proxy read. Root on the Node already reaches every container.
 - `orbit-egress` replaces Squid on every prepared Node. The address, port, table and environment of a container stay the same.
 - A new binary ships with its own release and pin, as the static PHP build does.

@@ -129,10 +129,10 @@ Run it from a WireGuard peer of the fleet. The [Node agent](/reference/node-agen
 gofmt -l .
 go vet ./...
 go test -race -count=1 ./...
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o orbit-egress ./cmd/orbit-egress
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o orbit-egress-linux-x86_64 ./cmd/orbit-egress
 ```
 
-CI runs these when its sources change. On `main`, `.github/workflows/egress-release.yml` publishes a release named after the Git tree of `apps/egress`, with `SHA256SUMS`, when that tree has none. A reviewed commit pins its SHA-256 for Nodes.
+CI and the release use Go 1.27.3. Go builds are reproducible, so this command gives the release's bytes on any host with that Go. CI runs these when its sources change. On `main`, `.github/workflows/egress-release.yml` publishes a release named after the Git tree of `apps/egress`, with `SHA256SUMS`, when that tree has none. A reviewed commit pins its SHA-256 for Nodes.
 
 ## Desktop app
 

@@ -39,6 +39,10 @@ func normalizeHost(host string) (string, bool) {
 			}
 		}
 	}
+	// A single label would take the resolver's search domains, which can name a private domain after the check.
+	if !strings.Contains(host, ".") {
+		return "", false
+	}
 	// A name whose last label is all digits reads as an address to some resolvers.
 	last := host[strings.LastIndex(host, ".")+1:]
 	if strings.Trim(last, "0123456789") == "" || strings.HasPrefix(last, "0x") {
@@ -132,7 +136,8 @@ type Resolver interface {
 	Lookup(ctx context.Context, host string) ([]netip.Addr, error)
 }
 
-// DNSResolver asks the Node's stub resolver, and only it, for IPv4 addresses.
+// DNSResolver asks the Node's stub resolver for IPv4 addresses. It looks the name up as absolute, so no search domain joins it; Go
+// still reads /etc/hosts first, whose answers meet the same address floor.
 type DNSResolver struct {
 	Server string
 }
@@ -144,7 +149,7 @@ func (r DNSResolver) Lookup(ctx context.Context, host string) ([]netip.Addr, err
 	}}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	return resolver.LookupNetIP(ctx, "ip4", host)
+	return resolver.LookupNetIP(ctx, "ip4", host+".")
 }
 
 // resolve checks a host and returns the one address to dial: any refused answer refuses the name, as a name that resolves to

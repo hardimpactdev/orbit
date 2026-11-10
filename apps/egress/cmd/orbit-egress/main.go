@@ -46,6 +46,10 @@ func main() {
 			fail(err)
 		}
 	case "ca":
+		// The proxy reads the key as its own user; a key that root made would lock it out.
+		if os.Geteuid() == 0 {
+			fail(fmt.Errorf("run ca as the proxy's user, not as root"))
+		}
 		ca, err := proxy.EnsureCA(config.State, *container)
 		if err != nil {
 			fail(err)

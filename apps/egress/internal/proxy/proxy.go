@@ -224,7 +224,8 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request, container Contai
 		p.intercept(&bufferedConn{Conn: client, r: buffered.Reader}, container, host)
 		return
 	}
-	p.tunnel(client, buffered.Reader, upstream, host, rec)
+	// net/http's hijacked reader holds 4 KiB; a ClientHello may be larger. The bytes it already holds are kept.
+	p.tunnel(client, bufio.NewReaderSize(buffered.Reader, maxClientHello), upstream, host, rec)
 }
 
 // tunnel checks the SNI of a TLS ClientHello against the CONNECT host, then copies both ways.
@@ -326,6 +327,11 @@ func (p *Proxy) intercept(client net.Conn, container Container, host string) {
 // inside serves one request in an intercepted tunnel: same host, placeholders only where bound, then on to the host over TLS.
 func (p *Proxy) inside(w http.ResponseWriter, r *http.Request, container Container, host string) {
 	rec := Record{Container: container.Name, Client: r.RemoteAddr, Method: r.Method, Host: host, Port: 443}
+	// TRACE echoes the request, so an injected value would come back to the container.
+	if r.Method == http.MethodTrace || r.Method == "TRACK" {
+		p.fail(w, rec, refuse(http.StatusMethodNotAllowed, "trace_refused"))
+		return
+	}
 	if name, port, err := splitRequestHost(r.Host, 443); err != nil || name != host || port != 443 {
 		p.fail(w, rec, refuse(http.StatusMisdirectedRequest, "host_mismatch"))
 		return
@@ -449,7 +455,7 @@ func (p *Proxy) Serve(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	server := &http.Server{Handler: p, ReadHeaderTimeout: 30 * time.Second, ErrorLog: log.New(io.Discard, "", 0)}
+	server := &http.Server{Handler: p, ReadHeaderTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute, ErrorLog: log.New(io.Discard, "", 0)}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 2*time.Second)
