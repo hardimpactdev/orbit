@@ -277,6 +277,44 @@ it('records a running container but no seed when a deployment fails after the co
         ->and($operation->refresh()->error_code)->toBe('deployment.checkout_dirty');
 });
 
+it('settles a failed automatic observation only after a successful manual deployment of its head', function (bool $container, bool $matching, bool $succeeded): void {
+    $instance = deployDefault(container: $container);
+    $seed = str_repeat('a', 40);
+    $commit = str_repeat('b', 40);
+    if ($container) {
+        $instance->runtime()->update(['seed_commit' => $seed]);
+    } else {
+        $instance->update(['seed_commit' => $seed]);
+    }
+    $failed = ['result' => 'failed', 'head' => str_repeat($matching ? 'b' : 'c', 40), 'commit' => $commit,
+        'since' => now()->subMinute()->toIso8601String(), 'error_code' => 'deployment.step_failed', 'message' => 'Build failed.'];
+    $instance->update(['auto_deploy_state' => $failed]);
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'triggered_by' => 'operator', 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance), 'commit' => $commit],
+        'state' => ['swamp_run_id' => 'manual-run']]);
+    $step = $container ? 'Read the container result' : 'Read the checkout commit';
+    $stdout = $container ? json_encode(['commit' => $commit], JSON_THROW_ON_ERROR) : $commit;
+
+    app(InstanceDeployProjection::class)->apply($operation, ['status' => $succeeded ? 'succeeded' : 'failed', 'run_id' => 'manual-run',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [
+            'steps' => [$step => ['stdout' => $stdout]], 'summary' => ['failed_steps' => $succeeded ? [] : ['Run dev deploy steps-0']]]]);
+
+    $instance->refresh();
+    expect($container ? $instance->runtime()->firstOrFail()->seed_commit : $instance->seed_commit)->toBe($succeeded ? $commit : $seed);
+    if ($succeeded && $matching) {
+        expect($instance->auto_deploy_state)->toMatchArray(['result' => 'up_to_date', 'head' => $commit, 'commit' => $commit, 'error_code' => null, 'message' => null]);
+    } else {
+        expect($instance->auto_deploy_state)->toBe($failed);
+    }
+})->with([
+    'container matching head' => [true, true, true],
+    'checkout matching head' => [false, true, true],
+    'container newer observation' => [true, false, true],
+    'checkout newer observation' => [false, false, true],
+    'container failed manual deployment' => [true, true, false],
+    'checkout failed manual deployment' => [false, true, false],
+]);
+
 it('records the seed commit and a running container after a deployment passes, and leaves the checkout seed alone', function (): void {
     $instance = deployDefault(container: true);
     $commit = str_repeat('c', 40);

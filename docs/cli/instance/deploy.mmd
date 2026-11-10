@@ -215,6 +215,7 @@ sequenceDiagram
     Note over GW: Record the deployment<br/>release, commit · task succeeded
     %%> Result:
     %%> - deployment 88 succeeds with its release and commit
+    %%> - a successful development deployment, manual or automatic, settles automatic status as up_to_date when its commit matches the observed head, clearing the earlier error
     %%> - task #5150 succeeds
   else a required step fails
     N--xSW: exit ≠ 0 or timeout
