@@ -107,13 +107,50 @@ The build container reaches the internet as every container does, through the [e
 
 ### Who runs what
 
-The app runs as `orbit`: FrankenPHP, queue workers, development servers and every Orbit Process. `orbit` cannot run the agent binaries, read `/home/agent`, reach the model route or T3's port, or see agent processes. A preview URL reaches only an Orbit Process, so an attacker who comes in through it lands as `orbit`.
+The app runs as `orbit`: FrankenPHP, queue workers and every Orbit Process. `orbit` cannot run the agent binaries, read `/home/agent`, reach the model route or T3's port, or see agent processes. A public preview URL reaches only an Orbit Process, so an attacker who comes in through it lands as `orbit`.
 
 T3 and the agents run as `agent`, and so do the shell commands of Claude Code and Codex. There is no wrapper shell. Both users read and write the workspace: a file each one writes is `rw-rw----`, group `work`.
 
-An agent may start its own development server, such as `npm run dev`, as `agent`. Orbit does not publish it and does not restrict it. Such a server can read what `agent` can read, so no Route points at it.
+There is one exception to "a URL reaches only `orbit`". An agent may start its own development server, such as `npm run dev`, as `agent`, and the Instance's Route reaches it on the server's own port. That server can read what `agent` can read. So only a private Route serves it, which only WireGuard peers reach; a public Route never does. [Agent development servers](#agent-development-servers) has the details.
 
-T3's port preview does not reach such a server yet. Conn resolves a server port of a remote T3 server to `http://<server host>:<port>`, and a clone's server host is its Node's WireGuard address, which publishes only T3's own port. Conn names an authenticated preview gateway for this case, which it does not have yet. The [plan](/solutions/development-container-runtime#pr-5-create-an-instance-as-a-clone-of-the-default) holds the decision this needs.
+### Agent development servers
+
+An agent's development server answers at the Instance's Route with its own port, such as `https://feature.tool.test:5173`. Any port from 1024 to 65535 works, and the agent picks it. It opens that URL in T3's browser. Conn needs no change.
+
+The way in has two parts on the Node. A Caddyfile cannot bind a range of ports, and a listener per port would fail the Node's whole Caddy reload whenever another program held one. So Orbit binds nothing in the range:
+
+1. **The redirect.** The nftables table `orbit_instance_dev_ports` takes new TCP connections from WireGuard peers to the Node's WireGuard address on ports 1024 to 65535.
+2. **The listener.** The table sends them to Caddy's development listener, port 444.
+3. **Caddy.** A private Route of a clone has a site on port 444, with the Route's name and certificate.
+4. **The port.** The site reads the port from the request's `Host`, which keeps the port the client named. It proxies to that port at the container's bridge address.
+
+| Part | What Orbit does |
+| --- | --- |
+| Range | 1024 to 65535 on the WireGuard address: every port that `agent`, which is not root, can open. The redirect binds nothing, so the size of the range costs nothing |
+| Listening ports | The table leaves every port that a program on the Node listens on, on any address: its socket check finds the program |
+| Orbit's ports | The table always leaves the Node's own ports, also while their program is down. See the list below |
+The Node's own ports are the SSH port, the egress proxy 3128, the published T3 ports 3800 to 3999, the model guard and forwarder 8318 and 8319, the WireGuard port, and the ports of the Node's Database servers and Processes.
+
+| Part | What Orbit does |
+| --- | --- |
+| Docker | The table runs after Docker's own address mapping, so a port that Docker publishes keeps its mapping |
+| Listener | 444, below the range, so no agent port and no client port meets it |
+| Many clones | Caddy routes by host name, so every clone on the Node has the whole range |
+| Upgrades | WebSocket upgrades, such as hot reload, pass through. Caddy keeps the client's `Host`, which Vite checks |
+| Nothing listens | A port where nothing listens in the container answers `502`. A `Host` without a port in the range answers `404` |
+
+Who reaches the servers:
+
+- **WireGuard peers only.** The table takes only connections that come in on the WireGuard interface to its address. The site refuses LAN neighbours and task VMs, as every WireGuard-only site does.
+- **Private Routes only.** A public Route has no development site. Making a Route public takes it away at the next Caddy build.
+- **The container ACL.** Only the bridge's own address, the Node's Caddy, reaches ports 1024 to 65535 in a clone.
+- **Clones with a Route.** The default runs no agent, and a Project without a Route has no domain for them. `/etc/orbit/instance` names `ORBIT_URL` and `ORBIT_DEV_PORTS`.
+- **The Node of the clone.** The Route's private name answers with the clone's Node, or with the Cluster's Router.
+- **No other Router.** Only the clone's Node has the table. A clone behind a Router on another Node gets no development ports.
+
+The Node's converge writes the table, and its unit loads it at boot. A Database server or Process added later is left alone by the socket check while it runs; the next converge also adds its port to the ports the Node keeps.
+
+The [environment notes](#environment-notes) tell the agent to bind to `0.0.0.0`, to allow the Instance's host name, and to point hot reload at the URL and port. For Vite, those are `server.host`, `server.allowedHosts` and `server.hmr`.
 
 ### PHP
 
@@ -156,7 +193,7 @@ Each Project type has one note in the agent folder, at `notes/<note>.md`. The no
 | `monorepo` | `monorepo` |
 | `laravel-package`, `node-package` | `package` |
 
-When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are. It says how previews work and how an agent views its own server. It says that there is no sudo and no direct internet, how the egress proxy works, and how Git leaves the container.
+When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are. It says how previews work, and how an agent's own development server becomes reachable: the port range, the address to bind and the host name to allow.
 
 A note gives no instructions about the work. Instructions, skills and MCP servers come from the project's own files.
 
@@ -173,6 +210,7 @@ A container reaches only what this table lists. Everything else is dropped at it
 | T3 | An Incus proxy device in NAT mode publishes T3 at a port from 3800 to 3999 on the Node's WireGuard address. A firewall route rule admits WireGuard peers, but not task VMs |
 | Other containers | None. Each NIC has `security.port_isolation`, so containers on the bridge cannot reach each other |
 | Preview | The Instance's Route on the Node's Caddy proxies to FrankenPHP in the container, at its bridge address |
+| Development ports | Any port from 1024 of a private Route, redirected to the Node's Caddy and proxied to the same port in a clone. Only the Node's Caddy reaches them in the container |
 | Database | The Instance's own database server and port, on the Node or over WireGuard. A rule on the container's NIC, from the create flow. The server admits the Instance's role only |
 | Models | The forwarder at the bridge's gateway address |
 | Internet | The [egress proxy](#egress-and-dns) at port 3128 of the bridge's gateway address: every public host and port, over HTTP and `CONNECT` |
@@ -298,7 +336,7 @@ Clones are built for the Nodes of the [build list](#the-build-list).
 | Conn and models | Conn is on, else `operation.kind_unavailable`. The model router has its guard, else the router's own code |
 | Runtime row | The next free bridge address, the lowest free T3 port from 3800, and the default as clone source |
 | Copy | `incus copy` of `seed-<commit>` with the clone's own address and ACL. A stopped default needs no start |
-| ACL | The Node's Caddy reaches port 8080, any WireGuard peer reaches port 3773, and the container reaches its database server's port |
+| ACL | The Node's Caddy reaches port 8080 and ports 1024 to 65535, any WireGuard peer reaches port 3773, and the container reaches its database server's port |
 | T3 port | The proxy device `t3` in NAT mode, from the Node's WireGuard address and the T3 port to port 3773 |
 | UFW | Under the comment prefix `orbit:instance-<id>-`: a route deny from the task VM range, then a route allow to port 3773; and the rule to the database server |
 | Agent files | `/home/agent/.config/orbit/model.env` with the placeholder key from the vault, Codex's and Claude Code's settings that point at the forwarder, the note links, and `/etc/orbit/instance` |

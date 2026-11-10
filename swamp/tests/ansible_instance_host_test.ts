@@ -52,6 +52,8 @@ function transform(task: Task, folder: string): Task {
       mode: "0600",
     };
   }
+  const nft = task["ansible.builtin.copy"] as Record<string, unknown> | undefined;
+  if (nft && typeof nft.validate === "string" && nft.validate.startsWith("nft ")) delete nft.validate;
   for (
     const module of [
       "ansible.builtin.apt",
@@ -91,6 +93,8 @@ const replacements = (folder: string): [string, string][] => [
   ["/var/cache/orbit/debs", `${folder}/debs`],
   ["/var/cache/orbit/instance-folders", `${folder}/cache`],
   ["/etc/modules-load.d/", `${folder}/modules-load/`],
+  ["/etc/orbit/instance-dev-ports.nft", `${folder}/dev-ports.nft`],
+  ["\"/etc/orbit\"", `"${folder}/etc-orbit"`],
   ["cat /proc/[0-9]*/maps", `cat ${folder}/maps`],
 ];
 
@@ -321,6 +325,11 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
         out_interface: null,
         family: "v4",
       },
+    },
+    dev_ports: {
+      table: "orbit_instance_dev_ports",
+      unit: "orbit-instance-dev-ports.service",
+      ruleset: "table inet orbit_instance_dev_ports\ndelete table inet orbit_instance_dev_ports\ntable inet orbit_instance_dev_ports {}\n",
     },
     ids: 201 * 65536,
     profile_config: {
@@ -555,6 +564,11 @@ Deno.test({
       );
       // No modules to load: an Instance container runs no WireGuard or Docker.
       assertEquals([...Deno.readDirSync(`${f.folder}/modules-load`)], []);
+      // The table of agent development ports is written as the Gateway rendered it, and its unit loads it at boot.
+      assertEquals(Deno.readTextFileSync(`${f.folder}/dev-ports.nft`),
+        "table inet orbit_instance_dev_ports\ndelete table inet orbit_instance_dev_ports\ntable inet orbit_instance_dev_ports {}\n");
+      assert(Deno.readTextFileSync(`${f.folder}/systemd/orbit-instance-dev-ports.service`)
+        .includes(`ExecStart=/usr/sbin/nft --file ${f.folder}/dev-ports.nft`));
       assertEquals(
         Deno.readTextFileSync(`${f.folder}/sysctl/fs.inotify.max_user_watches`),
         "1048576 /etc/sysctl.d/60-orbit-instances.conf",

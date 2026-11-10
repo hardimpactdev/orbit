@@ -323,15 +323,15 @@ The code changed these points of this plan:
 - **Vault copy.** The Gateway session's vault copy stays, as a pairing's credential does. Swamp has no delete for a sensitive field that a step wrote.
 - **Plug-in point.** `InstanceLifecycleContribution` has only the create part: `assertCreateAvailable()` and `projectCreate()`. PR 6 adds the destroy part.
 - **Limits.** The copy sets no `limits.cpu` or `limits.memory`. No measured figure exists; the parity gate sets them.
-- **Port preview.** Conn resolves a port of a remote T3 server to `http://<server host>:<port>`, with no proxy through T3.
-- **Check 8.** A clone's server host is its Node's WireGuard address. That address publishes only T3's port, so check 8 fails by design. This PR asks for the decision that check 8 names.
-
-The options for the port preview:
-
-1. Conn's authenticated preview gateway, which Conn names for this case, through T3's own port. A Conn change.
-2. Route the Instance bridge over WireGuard, so the server host is the container's own address.
-3. A Route per agent server. The [Who runs what](/reference/development-containers#who-runs-what) rule forbids it today.
 - **Egress and PHP.** The live checks wait on the container egress path of step 2c and on 3b's PHP pin, as PR 4's do.
+
+Agent development servers changed these points:
+
+- **Port preview.** T3's port preview cannot reach an agent's server. Conn resolves a remote server's port to `http://<server host>:<port>`, with no proxy through T3.
+- **Check 8, decided by Nick on 2026-11-10.** The Instance's private Route serves any port from 1024 that the agent opens, at `https://<domain>:<port>`. Public Routes never serve them.
+- **The contract.** [Agent development servers](/reference/development-containers#agent-development-servers) has it. The agent opens the URL in T3's browser.
+- **No Caddy range.** A Caddyfile cannot bind a port range. With a listener per port, a port that another program holds fails the Node's Caddy reload.
+- **The redirect.** An nftables table sends new WireGuard connections on free ports to one Caddy listener, which routes by `Host`.
 
 Tests: Pest for the admission, the intent, the run input with the model key in the vault, the projection, the registration record from a result, `instance.default_missing` and `instance.database_clone_unsupported`, the template statement, and the Conn wiring. Deno for the receipt and the registration step. The Ansible fixture test runs the clone, workspace, agent, Processes, T3 and registration phases against the Incus stand-in, with a rerun that changes nothing. `instance:create` has no cases file yet, for the reason PR 4 gives. Live on Beast, once 2c and 3b's pin have landed:
 
@@ -345,12 +345,13 @@ Tests: Pest for the admission, the intent, the run input with the model key in t
 The disk, agent and failure checks follow.
 
 7. `zfs get written` on the clone shows only a few MB.
-8. An agent's `npm run dev` in the container shows in Conn's browser through T3's port preview. Without that, the PR stops and asks for a decision.
-9. A message that the user sends in Conn during a turn is queued, not steered.
-10. A failed step leaves a stopped container; the same create resumes it.
-11. The PR records the clone, database clone, first T3 start and whole create times, for a small and a 1 GB database.
-12. The clone reaches its database server on its port, on the Node and on another Node. Every other address on those Nodes is dropped.
-13. T3's published port answers from a WireGuard peer and refuses a task VM.
+8. An agent's `npm run dev` on port 5173 shows at `https://<domain>:5173` in T3's browser over WireGuard, with hot reload. A second clone on the Node serves its own 5173.
+9. A port bound on the Node stays with its program. A LAN client and a task VM reach no development port.
+10. A message that the user sends in Conn during a turn is queued, not steered.
+11. A failed step leaves a stopped container; the same create resumes it.
+12. The PR records the clone, database clone, first T3 start and whole create times, for a small and a 1 GB database.
+13. The clone reaches its database server on its port, on the Node and on another Node. Every other address on those Nodes is dropped.
+14. T3's published port answers from a WireGuard peer and refuses a task VM.
 
 ### PR 6: destroy a container Instance
 

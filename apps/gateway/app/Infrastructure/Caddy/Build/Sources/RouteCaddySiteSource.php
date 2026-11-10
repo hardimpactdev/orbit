@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Caddy\Build\Sources;
 
+use App\Domain\Instances\InstanceDevPorts;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -44,8 +45,9 @@ final readonly class RouteCaddySiteSource implements NodeCaddySiteSource
      */
     public function fromSites(Collection $sites): array
     {
-        return array_values($sites
-            ->sortBy(static fn (DevelopmentSite $site): string => $site->domain."\0".$site->scope)
+        $sorted = $sites->sortBy(static fn (DevelopmentSite $site): string => $site->domain."\0".$site->scope);
+
+        return [...array_values($sorted
             ->map(function (DevelopmentSite $site): CaddySite {
                 $name = $site->scope;
 
@@ -66,6 +68,23 @@ final readonly class RouteCaddySiteSource implements NodeCaddySiteSource
                         : [],
                 );
             })
+            ->all()), ...$this->devPortSites($sorted)];
+    }
+
+    /**
+     * The development site of a container clone on a private Route, on the WireGuard address only: WireGuard peers reach it, LAN
+     * neighbours and task VMs do not (docs/reference/development-containers.md#agent-development-servers).
+     *
+     * @param  Collection<int, DevelopmentSite>  $sites
+     * @return list<CaddySite>
+     */
+    private function devPortSites(Collection $sites): array
+    {
+        return array_values($sites
+            ->filter(static fn (DevelopmentSite $site): bool => ! $site->publicListener && $site->devUpstream !== null)
+            ->map(fn (DevelopmentSite $site): CaddySite => new CaddySite(source: $this->source($site), name: "{$site->scope}-dev",
+                listener: CaddyListenerRule::WireGuard, hosts: [$site->domain], port: InstanceDevPorts::Listener,
+                body: $this->renderer->renderDevPorts($site, self::BindPlaceholder), bindPlaceholder: self::BindPlaceholder))
             ->all());
     }
 

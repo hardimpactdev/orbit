@@ -6,6 +6,7 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Instances\InstanceDevPorts;
 use Illuminate\Support\Collection;
 
 final readonly class DevelopmentCaddyConfigRenderer
@@ -136,6 +137,36 @@ final readonly class DevelopmentCaddyConfigRenderer
                 {$application}
             }
             CADDY;
+    }
+
+    /**
+     * The site of a container clone's development servers on Caddy's development listener, where the Node's nftables table
+     * redirects every connection to a port of the development range. It proxies to the port the client named in the container,
+     * which Caddy reads from `Host`. Caddy keeps that `Host`, which Vite checks, and passes WebSocket upgrades, so hot reload works.
+     * A port where nothing listens answers 502; a `Host` without a port in the range answers 404.
+     */
+    public function renderDevPorts(DevelopmentSite $site, string $bind): string
+    {
+        $listener = InstanceDevPorts::Listener;
+        $first = InstanceDevPorts::First;
+        $last = InstanceDevPorts::Last;
+
+        return <<<CADDY
+            https://{$site->domain}:{$listener} {
+                bind {$bind}
+                tls {$site->certificateDirectory()}/cert.pem {$site->certificateDirectory()}/key.pem
+                @orbit_dev_port expression `string({http.request.port}).matches('^[0-9]+$') && int({http.request.port}) >= {$first} && int({http.request.port}) <= {$last}`
+                handle @orbit_dev_port {
+                    reverse_proxy {$site->devUpstream}:{http.request.port} {
+                        flush_interval -1
+                        transport http {
+                            read_timeout 1h
+                        }
+                    }
+                }
+                respond "Orbit development port refused" 404
+            }
+            CADDY.PHP_EOL;
     }
 
     private function handler(DevelopmentSite $site): string

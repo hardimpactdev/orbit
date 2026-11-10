@@ -172,7 +172,10 @@ final readonly class InstanceContainer
                     'destination_port' => (string) $access['port'], 'state' => 'enabled']],
                 'ingress' => [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
                     'destination_port' => (string) self::WebPort, 'state' => 'enabled'],
-                    ...($clone === null ? [] : [['action' => 'allow', 'protocol' => 'tcp', 'destination_port' => (string) InstanceHostIntent::T3Port, 'state' => 'enabled']])]],
+                    ...($clone === null ? [] : [['action' => 'allow', 'protocol' => 'tcp', 'destination_port' => (string) InstanceHostIntent::T3Port, 'state' => 'enabled']]),
+                    // An agent's development servers: only the Node's Caddy reaches them, and it serves them only on a private Route.
+                    ...($this->servesDevPorts($instance, $runtime) ? [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
+                        'destination_port' => InstanceDevPorts::First.'-'.InstanceDevPorts::Last, 'state' => 'enabled']] : [])]],
             // UFW on the Node, under one comment prefix per Instance, so its removal takes them all.
             'firewall' => [...($clone === null ? [] : $this->t3Firewall($instance, $runtime)), ...($access === null ? [] : [$access['rule']])],
             'mirror' => self::mirror($instance), 'repository' => $project->repository_url,
@@ -244,7 +247,8 @@ final readonly class InstanceContainer
             'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600'],
             'files' => [
                 ['path' => self::InstanceFile, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => "# Managed by Orbit.\n"
-                    ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\nORBIT_URL=".($url ?? '')."\n"],
+                    ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\nORBIT_URL=".($url ?? '')."\n"
+                    .($this->servesDevPorts($instance, $runtime) ? 'ORBIT_DEV_PORTS='.InstanceDevPorts::First.'-'.InstanceDevPorts::Last."\n" : '')],
                 ['path' => '/home/agent/.codex/config.toml', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => $codex],
                 ['path' => '/home/agent/.claude.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => "{\"hasCompletedOnboarding\": true}\n"],
             ],
@@ -289,6 +293,15 @@ final readonly class InstanceContainer
             ...($local ? [] : ['route' => 'yes', 'interface_out' => self::WireGuardInterface])];
 
         return ['host' => $host, 'port' => $port, 'rule' => $rule];
+    }
+
+    /**
+     * Whether an agent's development servers answer through the Instance's Route (docs/reference/development-containers.md#agent-development-servers):
+     * a clone that runs T3 and has a Route. The default runs no agent, and an Instance without a Route has no domain to serve them on.
+     */
+    public function servesDevPorts(Instance $instance, InstanceRuntime $runtime): bool
+    {
+        return $runtime->clone_source_instance_id !== null && $instance->requiresRoute();
     }
 
     /** Every UFW rule of a container Instance carries this comment prefix. */

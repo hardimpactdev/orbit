@@ -51,6 +51,11 @@ final readonly class DevelopmentSite
         public ?string $websocketKey = null,
         public ?string $websocketAppId = null,
         public ?string $managedTlsUpstream = null,
+        /**
+         * The bridge address of a container clone whose agent's development servers this private site serves on Caddy's
+         * development listener, at the port the client names (docs/reference/development-containers.md#agent-development-servers).
+         */
+        public ?string $devUpstream = null,
     ) {}
 
     public function withWebSocket(string $key, string $websocketAppId): self

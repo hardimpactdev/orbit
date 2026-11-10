@@ -244,6 +244,8 @@ Orbit does not change session, cookie, or encryption settings when it builds a p
 
 An Instance in a container is served by FrankenPHP in the container. Its Route's site proxies to port 8080 of the container's bridge address, with no PHP pool or checkout access on the Node. See [the default Instance](/reference/development-containers#the-default-instance).
 
+A private Route of a clone also gets a development site on port 444 of the Node's WireGuard address. The Node redirects WireGuard connections to its free ports from 1024 to this site, which proxies to the port the client named in the container, such as `https://<domain>:5173`. A public Route gets none. See [Agent development servers](/reference/development-containers#agent-development-servers).
+
 ## Serve several web roots
 
 A Project has one repository. An Instance is one checkout of it, and it can serve several sites: one Route for each web root. A Route's `web_root` names a directory relative to the repository, such as `apps/docs/public`. Null serves the Instance's effective root, as every Route did before.
