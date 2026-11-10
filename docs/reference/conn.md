@@ -31,6 +31,8 @@ Conn uses the existing [node access](/cli/node/access-add) edges. It has no gran
 | --- | --- |
 | Server list, pairing list, show, create and revoke | Node access to the Node that registered the server. The list shows only those servers. |
 | `GET /me`, `PUT /me/profile`, profiles and settings, Conn Operation show and cancel | Node access to at least one Node: the [collection rule](/cli/node#authority) that `node:list` uses. |
+| Project list | Node access to at least one Node. The list shows only the Projects whose default Instance runs on a Node the caller has node access to. |
+| Thread start, `POST /projects/{id}/instances` | Node access to the Node of the Project's default Instance. |
 | `POST /environments`, registration | No edge. |
 
 The Gateway Node, its serving host, and a Node with an edge to the Gateway Node have access to every Node, so they reach every server. When a server's Node was removed, only those callers reach it. A refused call gets `node_access.required` (403), with `details.consumer_node` and, for a server, `details.serving_node`.
@@ -169,6 +171,23 @@ A clone of a container default runs its own T3 server. Its create flow registers
 - While Conn is off, a clone is refused with `operation.kind_unavailable`: nothing would record its server.
 - A create admitted before Conn went off still records its server.
 
+## Threads in an Orbit Project
+
+Conn starts a thread in an Orbit Project in a new clone of the Project's default Instance ([Threads](/reference/development-containers#threads)). The [thread chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/thread.mmd) has the steps.
+
+`GET /projects` lists the Projects a thread can start in. Each one has a `default` Instance that runs in a container, is active and has a seed snapshot. That default runs on a Node the caller has node access to, and the entry names that Node.
+
+`POST /projects/{id}/instances` with `{"name"}` creates the thread's clone:
+
+- It admits `instance.create` on the default's Node, as `instance:create PROJECT NODE NAME` does.
+- It answers the Operation (202). Its `target_id` is the new Instance.
+- A name that resolves to `default` fails with `validation.failed` (422).
+- A Project without a ready container default fails with `instance.default_missing` (409).
+
+Conn follows that Operation with `GET /operations/{id}`. Conn Operation show also shows an `instance.create` that the caller started, here or with `instance:create`.
+
+A server of an Instance names its `instance_id` and the container's `power_state`, `running` or `stopped`. Other servers have `null` for both. Conn shows a `stopped` server as asleep.
+
 ## Pairing and revocation
 
 A device asks the Gateway for a pairing link to one registered T3 server. The native Swamp pairing step sends `POST <url>/api/auth/pairing-token` with its admin session, a unique label, such as `phone via Orbit k3j9x0qa`, and T3's administrative scopes (see below). T3 gives the session paired from that link the same client label. The Gateway records the pairing: the Node, the server, the T3 link id, the label, and the link's expiry.
@@ -190,6 +209,8 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `GET /profiles/{id}/settings` | — | settings |
 | `PUT /profiles/{id}/settings` | `{"version": 3, "settings": {"workspaces": [...]}}`; any of `workspaces`, `appearance`, `devices` | settings |
 | `PATCH /profiles/{id}/settings` | `{"sections": {"appearance": {"version": 2, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}` | settings |
+| `GET /projects` | — | list of project |
+| `POST /projects/{id}/instances` | `{"name": "fix-login-k3j9"}` | Operation (202) |
 | `GET /environments` | — | list of environment |
 | `POST /environments` | `{"environment_id", "label", "url", "admin_session"}` | environment |
 | `GET /environments/{environment_id}/pairings` | — | list of pairing, newest first |
@@ -203,7 +224,8 @@ The objects:
   "node": {"id": 4, "name": "phone", "wireguard_ip": "10.44.0.77", "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"}},
   "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"},
   "settings": {"profile_id": 1, "version": 3, "settings": {"workspaces": []}, "sections": {"workspaces": {"version": 1, "updated_at": "2026-10-08T10:00:00+00:00", "updated_by": "phone"}}, "updated_at": "2026-10-08T10:00:00+00:00"},
-  "environment": {"environment_id": "env-beast", "label": "beast", "url": "http://10.44.0.30:3773", "server_version": "0.9.1", "registered_by": "beast", "registered_at": "2026-10-08T09:00:00+00:00", "admin_session_expires_at": "2026-11-07T09:00:00+00:00", "status": "registered"},
+  "environment": {"environment_id": "env-beast", "label": "beast", "url": "http://10.44.0.30:3773", "server_version": "0.9.1", "registered_by": "beast", "registered_at": "2026-10-08T09:00:00+00:00", "admin_session_expires_at": "2026-11-07T09:00:00+00:00", "status": "registered", "instance_id": null, "power_state": null},
+  "project": {"id": 3, "slug": "mealou", "name": "Mealou", "node_id": 7, "node_name": "beast"},
   "pairing": {"id": 7, "environment_id": "env-beast", "node_id": 4, "node_name": "phone", "client_label": "phone via Orbit k3j9x0qa", "issued_at": "2026-10-08T10:00:00+00:00", "expires_at": "2026-10-08T10:05:00+00:00", "revoked_at": null}
 }
 ```

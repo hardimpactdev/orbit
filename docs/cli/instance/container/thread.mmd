@@ -12,28 +12,40 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
   participant T3 as T3 server<br/>in the container
+  CONN->>GW: List the Projects<br/>conn:project:list
+  %%> What it returns:
+  %%> - each Project whose default Instance runs in a container, is active and has a seed snapshot, on a Node the device has node access to
+  GW-->>CONN: Projects · default's Node
   Note over CONN: Start a thread<br/>Orbit Project · message
   %%> What the user does:
-  %%> - picks an Orbit Project and a Node, and writes the first message
+  %%> - picks an Orbit Project and writes the first message
   %%> What Conn proposes:
-  %%> - an Instance name from the message; the Instance is always a clone of the Project's default Instance on the Node, with a clone of its database
-  CONN->>GW: instance:create<br/>PROJECT NODE NAME
+  %%> - an Instance name from the message with a short random suffix; the Instance is always a clone of the Project's default Instance on the default's Node, with a clone of its database
+  %%> - Conn keeps the message, the name and each step it finished on the device, so a reload resumes the same thread start
+  CONN->>GW: Create the clone<br/>conn:instance:create PROJECT NAME
   %%> Requirements:
-  %%> - the device's Node has node access to the target Node, the same edge that Conn needs to pair
+  %%> - the device's Node has node access to the default's Node, the same edge that Conn needs to pair
+  %%> What it does:
+  %%> - admits `instance.create` with the default's Node, as `instance:create PROJECT NODE NAME` does
   GW->>SW: Start run, full intent<br/>operation-instance-create
-  GW-->>CONN: 202 Accepted<br/>task ID
+  GW-->>CONN: 202 Accepted<br/>task ID · Instance ID
   SW->>T3: Create the Instance<br/>container/create.mmd
   %%> What it does:
   %%> - the whole create: the clone of the default container and database, the workspace, the first T3 start, the Processes, the Route and the registration
   SW-->>GW: Run succeeded<br/>terminal event
   Note over GW: Record Instance, T3 server
   loop every 2 s until terminal
-    CONN->>GW: operation:show TASK
-    GW-->>CONN: active · environment id
+    CONN->>GW: conn:operation:show TASK
+    GW-->>CONN: status
   end
+  CONN->>GW: Find the server<br/>conn:environment:list
+  GW-->>CONN: environment id<br/>named by its Instance
+  %%> Result:
+  %%> - each server of an Instance names its `instance_id` and the container's `power_state`; Conn shows a `stopped` server as asleep and wakes it on open with container/wake.mmd
   CONN->>GW: Pair with the server<br/>conn pairing create
   %%> What it does:
-  %%> - the usual pairing of docs/cli/conn/pairing-create.mmd: the Gateway admits it and waits up to 30 s for the run
+  %%> - the pairing of docs/cli/conn/pairing-create.mmd with `async: true`: Conn follows its task with conn:operation:show and reads the link once with conn:pairing:show
+  %%> - Conn pairs once: the device's own server sync joins this pairing instead of starting a second one
   GW->>SW: Start run, full intent<br/>operation-conn-pairing-create
   SW->>T3: Mint a pairing link<br/>POST api/auth/pairing-token
   %%> What it does:
