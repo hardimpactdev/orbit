@@ -11,6 +11,7 @@ use Orbit\Extensions\Conn\Http\Controllers\ConnNodesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnOperationsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnPairingsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProfilesController;
+use Orbit\Extensions\Conn\Http\Controllers\ConnProjectsController;
 
 // Conn reuses node access (/reference/conn#access): a server is reached through its registering Node.
 // Registration needs none: it ties the server to the calling Node.
@@ -37,6 +38,8 @@ Route::middleware([
         Route::patch('profiles/{profile}/settings', [ConnProfilesController::class, 'patchSettings'])
             ->whereNumber('profile')
             ->name('conn:profile:settings:patch');
+        Route::get('projects', [ConnProjectsController::class, 'index'])->name('conn:project:list');
+        Route::post('projects/{project}/instances', [ConnProjectsController::class, 'createInstance'])->whereNumber('project')->name('conn:instance:create');
         Route::get('environments', [ConnEnvironmentsController::class, 'index'])->name('conn:environment:list');
         Route::post('environments/{environment}/sessions/cleanup', [ConnEnvironmentsController::class, 'cleanup'])->name('conn:environment:cleanup');
         Route::get('environments/{environment}/pairings', [ConnPairingsController::class, 'index'])->name('conn:pairing:list');

@@ -24,11 +24,13 @@ final class ConnEnvironmentData extends Data
         public string $status,
         public bool $cleanupPending,
         public int $cleanupVersion,
+        public ?int $instanceId,
+        public ?string $powerState,
     ) {}
 
     public static function fromModel(ConnEnvironment $environment): self
     {
-        $environment->loadMissing('node');
+        $environment->loadMissing(['node', 'instance.runtime']);
 
         return new self(
             environmentId: $environment->environment_id,
@@ -41,6 +43,9 @@ final class ConnEnvironmentData extends Data
             status: $environment->admin_session_expires_at->isAfter(CarbonImmutable::now()) ? 'registered' : 'session_expired',
             cleanupPending: $environment->cleanup_version > $environment->cleanup_completed_version,
             cleanupVersion: $environment->cleanup_version,
+            // The server of a container Instance names it, and the container's power state: a stopped one is asleep.
+            instanceId: $environment->instance_id,
+            powerState: $environment->instance?->runtime?->power_state->value,
         );
     }
 }
