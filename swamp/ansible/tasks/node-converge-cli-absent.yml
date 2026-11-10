@@ -1,0 +1,25 @@
+---
+# file/find modules cannot share self-update's flock. Keep the read and removal in one
+# bounded critical section so a concurrent publication cannot select a deleted binary.
+- name: Reconcile retired managed CLI files under the update lock
+  ansible.builtin.shell: |
+    set -eu
+    flock --wait 120 /run/lock/orbit-self-update.lock sh -eu -c '
+      remove="$1"
+      if [ -L /usr/local/bin/orbit ] && readlink /usr/local/bin/orbit | grep -Eq "^(/usr/local/bin/)?orbit-0[.][0-9]+[.]0$"; then
+        printf "%s\n" /usr/local/bin/orbit
+        if [ "$remove" = true ]; then rm -- /usr/local/bin/orbit; fi
+      fi
+      if [ "$remove" = true ]; then
+        find /usr/local/bin -maxdepth 1 -regextype posix-extended -type f -regex ".*/orbit-0[.][0-9]+[.]0" -print -delete
+      else
+        find /usr/local/bin -maxdepth 1 -regextype posix-extended -type f -regex ".*/orbit-0[.][0-9]+[.]0" -print
+      fi
+      if [ -f /root/.orbit/config.json ] || [ -L /root/.orbit/config.json ]; then
+        printf "%s\n" /root/.orbit/config.json
+        if [ "$remove" = true ]; then rm -- /root/.orbit/config.json; fi
+      fi
+    ' sh {{ cli_remove | bool | lower }}
+  register: cli_retired
+  changed_when: cli_remove | bool and cli_retired.stdout | length > 0
+  failed_when: cli_retired.rc != 0 or (not cli_remove | bool and cli_retired.stdout | length > 0)

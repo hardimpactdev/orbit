@@ -41,7 +41,7 @@ sequenceDiagram
       %%> What it does:
       %%> - the Gateway uses the shared CLI eligibility rule; failed publication stops this Node
     end
-    SW->>N: Publish and check the observer<br/>observer_fetch · observer_read · observer_restart · observer_check
+    SW->>N: Publish the observer<br/>observer
     %%> What it does:
     %%> - a Node without CLI intent skips the CLI child and publishes its observer independently
     %%> - the running digest and active unit prove the pinned observer

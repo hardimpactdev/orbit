@@ -123,13 +123,13 @@ it('keeps an earlier visit when a later run did not reach the Node', function ()
     expect(plannedNames())->toBe(['dev']);
 });
 
-it('counts only visits of the desired commit, and revisits a Node whose CLI version drifted', function (): void {
+it('counts only visits of the desired commit, and checks CLI drift only for CI callers', function (): void {
+    Node::query()->findOrFail($this->nodes['dev'])->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
     rolloutRun(['dev' => 'converged', 'db' => 'converged', 'prod' => 'converged'], minutes: 30, commit: OtherCommit);
     expect(plannedNames())->toBe(['dev', 'db', 'prod']);
 
-    rolloutRun(['dev' => 'converged', 'db' => 'converged'], minutes: 20);
-    rolloutRun(['prod' => 'converged'], minutes: 20, cli: '0.1.0');
-    expect(plannedNames())->toBe(['prod']);
+    rolloutRun(['dev' => 'converged', 'db' => 'converged', 'prod' => 'converged'], minutes: 20, cli: '0.1.0');
+    expect(plannedNames())->toBe(['dev']);
 });
 
 it('alerts once per Node, commit and error code across retries', function (): void {
@@ -194,7 +194,10 @@ it('reports a lagging Node to Doctor from the same visits', function (): void {
         ->and($lag->observe(Node::query()->findOrFail($this->nodes['prod'])))->toBe(['expected' => substr(RolloutCommit, 0, 12), 'observed' => 'no visit yet']);
 });
 
-it('waits a minute when the commit has no CLI release yet, and when a rollout runs', function (): void {
+it('waits a minute when only CI callers need an unpublished CLI, and when a rollout runs', function (): void {
+    foreach ($this->nodes as $id) {
+        Node::query()->findOrFail($id)->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    }
     unlink($this->base.'/cli.json');
     Cache::flush();
     $job = new AdmitFleetRollout()->withFakeQueueInteractions();
@@ -222,4 +225,19 @@ it('admits nothing and ends quietly when the rollout is off', function (): void 
 
     $job->assertNotReleased();
     expect(Operation::query()->where('kind', 'fleet.rollout')->exists())->toBeFalse();
+});
+
+it('plans non-CLI Nodes while a CI caller waits for release publication', function (): void {
+    Node::query()->findOrFail($this->nodes['dev'])->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    unlink($this->base.'/cli.json');
+    Cache::flush();
+
+    expect(plannedNames())->toBe(['db', 'prod']);
+});
+
+it('plans all workload Nodes without a CLI release', function (): void {
+    unlink($this->base.'/cli.json');
+    Cache::flush();
+
+    expect(plannedNames())->toBe(['dev', 'db', 'prod']);
 });
