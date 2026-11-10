@@ -61,6 +61,7 @@ final class ShowInstanceCommand extends GatewayCommand
         }
 
         $this->writeInstanceDetails($instance);
+        $this->writeAttachedTargets($instance);
         if ($instance->routes !== []) {
             $this->writeRoutes($instance->routes);
         }
@@ -89,5 +90,29 @@ final class ShowInstanceCommand extends GatewayCommand
         ConsoleWriter::write($this->output, $this->humanRenderer()->table($headers, array_values($rows), 'No Processes.'));
 
         return self::SUCCESS;
+    }
+
+    private function writeAttachedTargets(InstanceResponse $instance): void
+    {
+        $items = [];
+        foreach ($instance->attachedTargets as $target) {
+            $items[] = [
+                'label' => "{$target->name} ({$target->id}) · {$target->kind} ({$target->driver})",
+                'fields' => [
+                    'Node' => $target->node === null ? null : "{$target->node->name} ({$target->node->id})",
+                    'Endpoint' => $target->host === null ? null : $target->host.($target->port === null ? '' : ":{$target->port}"),
+                    'Database' => $target->database,
+                    'User' => $target->username,
+                    'Prefix' => $target->prefix,
+                    'Server' => $target->server === null ? null : "{$target->server['name']} ({$target->server['id']})",
+                ],
+            ];
+        }
+        ConsoleWriter::write($this->output, $this->humanRenderer()->properties([
+            ['title' => 'Attached targets', 'items' => $items],
+        ]));
+        if ($items === []) {
+            ConsoleWriter::write($this->output, $this->humanRenderer()->table([], [], 'No attached targets.'));
+        }
     }
 }

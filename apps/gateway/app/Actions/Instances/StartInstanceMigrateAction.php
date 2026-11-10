@@ -11,6 +11,7 @@ use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\InstanceMigration\InstanceMigrationRoute;
 use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\ContainerProcesses;
+use App\Domain\Instances\InstanceAttachedTargets;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceState;
@@ -23,7 +24,6 @@ use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\DatabaseConnection;
-use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
@@ -185,9 +185,7 @@ final readonly class StartInstanceMigrateAction
     private function databases(Instance $instance): array
     {
         $servers = $sqlite = [];
-        $targets = DatabaseConnectionTarget::query()->with('databaseConnection.server')->where('instance_id', $instance->id)
-            ->orderByRaw("prefix = 'DB' desc")->orderBy('id')->get();
-        foreach ($targets as $target) {
+        foreach (InstanceAttachedTargets::forInstance($instance) as $target) {
             $connection = $target->databaseConnection;
             if ($connection->driver !== DatabaseDriver::Sqlite) {
                 $servers[$connection->id] = $connection;

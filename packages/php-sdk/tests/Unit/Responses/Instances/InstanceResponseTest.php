@@ -63,6 +63,7 @@ describe(InstanceResponse::class, function (): void {
             'url' => null,
             'removal' => null,
             'transfer' => null,
+            'attached_targets' => [],
             'deploy_steps' => [],
             'auto_deploy' => null,
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
@@ -182,4 +183,35 @@ it('maps automatic deployment and drops a malformed pause', function (): void {
         ->and($response->toArray()['auto_deploy'])->toBe($auto)
         ->and(InstanceResponse::fromGatewayData(['auto_deploy' => [...$auto, 'pause' => ['reason' => 'rollback']]], 'request-id')->autoDeploy?->pause)->toBeNull()
         ->and(InstanceResponse::fromGatewayData(['auto_deploy' => 'on'], 'request-id')->autoDeploy)->toBeNull();
+});
+
+it('transports only public attached target fields and preserves an empty target list', function (): void {
+    $target = [
+        'kind' => 'database', 'driver' => 'pgsql', 'id' => 14, 'name' => 'food-catalog',
+        'node' => ['id' => 3, 'name' => 'services'], 'host' => '10.44.0.3', 'port' => 5434,
+        'database' => 'food_catalog', 'username' => 'catalog_reader', 'prefix' => 'FOOD_CATALOG',
+        'server' => ['id' => 9, 'name' => 'catalog-postgres'],
+    ];
+    $response = InstanceResponse::fromGatewayData(['attached_targets' => [[
+        ...$target, 'password' => 'db-password-sentinel', 'vault_key' => 'vault-key-sentinel',
+        'node' => [...$target['node'], 'secret' => 'node-secret-sentinel'],
+        'server' => [...$target['server'], 'root_password' => 'root-secret-sentinel'],
+    ]]], 'request-id');
+
+    expect($response->attachedTargets[0]->toArray())->toBe($target)
+        ->and($response->toArray()['attached_targets'])->toBe([$target])
+        ->and(json_encode($response, JSON_THROW_ON_ERROR))->not->toContain('sentinel')
+        ->and(InstanceResponse::fromGatewayData(['attached_targets' => []], 'request-id')->toArray()['attached_targets'])->toBe([])
+        ->and(InstanceResponse::fromGatewayData([], 'request-id')->attachedTargets)->toBe([]);
+});
+
+it('drops malformed attached targets and keeps nullable connection fields', function (): void {
+    $target = [
+        'kind' => 'database', 'driver' => 'sqlite', 'id' => 14, 'name' => 'local',
+        'node' => null, 'host' => null, 'port' => null, 'database' => null, 'username' => null,
+        'prefix' => 'DB', 'server' => null,
+    ];
+    $response = InstanceResponse::fromGatewayData(['attached_targets' => [$target, false, ['id' => 'invalid']]], 'request-id');
+
+    expect($response->toArray()['attached_targets'])->toBe([$target]);
 });

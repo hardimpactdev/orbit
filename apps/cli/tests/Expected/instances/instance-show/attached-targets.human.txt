@@ -1,0 +1,61 @@
+Fetching Instance...
+Fetching Processes...
+
+┌  Instance: default
+│
+├  ID                1
+│
+├  Project           hauzer
+│
+├  Node              beast
+│
+├  Status            active
+│
+├  Source layout     checkout
+│
+├  Checkout          /home/orbit/apps/hauzer/default
+│
+├  Vite port         —
+│
+├  SSR port          —
+│
+├  Root override     —
+│
+├  Effective root    .
+│
+├  Selected branch   main
+│
+├  Branch override   —
+│
+├  Domain            —
+│
+└  URL               —
+
+Attached targets
+  hauzer-main (2) · database (mysql)
+    Node: beast (1)
+    Endpoint: 10.44.0.7:3306
+    Database: hauzer
+    User: hauzer
+    Prefix: DB
+    Server: —
+  hauzer-cache (1) · redis (redis)
+    Node: beast (1)
+    Endpoint: 10.44.0.7:6379
+    Database: 2
+    User: —
+    Prefix: REDIS
+    Server: —
+  food-catalog (3) · database (pgsql)
+    Node: Services (2)
+    Endpoint: 10.44.0.3:5434
+    Database: food_catalog
+    User: catalog_reader
+    Prefix: FOOD_CATALOG
+    Server: catalog-postgres (1)
+ ┌────┬───────────┬─────────┬─────────┬────────────────┬────────┐
+ │ ID │ NAME      │ RUNTIME │ DESIRED │ RUNTIME STATUS │ STATUS │
+ ├────┼───────────┼─────────┼─────────┼────────────────┼────────┤
+ │ 1  │ queue     │ systemd │ running │ running        │ active │
+ │ 2  │ scheduler │ systemd │ running │ running        │ active │
+ └────┴───────────┴─────────┴─────────┴────────────────┴────────┘

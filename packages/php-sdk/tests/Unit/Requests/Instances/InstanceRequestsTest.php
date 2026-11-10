@@ -351,6 +351,7 @@ function instance_gateway_data(): array
         'url' => 'https://orbit-docs.test',
         'removal' => null,
         'transfer' => null,
+        'attached_targets' => [],
         'deploy_steps' => [],
         'auto_deploy' => null,
     ];

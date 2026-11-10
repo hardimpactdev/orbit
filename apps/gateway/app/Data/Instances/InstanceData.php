@@ -9,6 +9,7 @@ use App\Data\Projects\ProjectIdentityData;
 use App\Data\Routes\RouteData;
 use App\Domain\Instances\Deployment\InstanceDeployStepStore;
 use App\Domain\Instances\Deployment\SharedPaths;
+use App\Domain\Instances\InstanceAttachedTargets;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceTransfer;
@@ -58,6 +59,8 @@ final class InstanceData extends Data
         public ?int $developmentProjectionRouteId = null,
         public ?string $retainedGitPath = null,
         public ?string $retainedGitAt = null,
+        /** @var list<InstanceAttachedTargetData> */
+        public array $attachedTargets = [],
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -73,6 +76,7 @@ final class InstanceData extends Data
             ->first();
 
         return new self(
+            attachedTargets: array_values(InstanceAttachedTargets::forInstance($instance)->map(InstanceAttachedTargetData::fromModel(...))->all()),
             sharedPaths: SharedPaths::forInstance($instance),
             id: $instance->id,
             projectId: $instance->project_id,

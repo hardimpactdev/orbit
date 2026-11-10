@@ -11,6 +11,7 @@ use Orbit\Sdk\Responses\Routes\RouteResponse;
 use SensitiveParameter;
 
 /**
+ * @phpstan-import-type AttachedTargetRecord from InstanceAttachedTargetResponse
  * @phpstan-import-type AutoDeployRecord from InstanceAutoDeployResponse
  *
  * @phpstan-type InstanceRecordFields array{
@@ -45,6 +46,7 @@ use SensitiveParameter;
  *     url: string|null,
  *     removal: array<string, bool|int|string|null>|null,
  *     transfer: array<string, mixed>|null,
+ *     attached_targets: list<AttachedTargetRecord>,
  *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
  *     warnings?: list<string>,
  *     name_converted_from?: string,
@@ -82,6 +84,7 @@ use SensitiveParameter;
  *     url: string|null,
  *     removal: array<string, bool|int|string|null>|null,
  *     transfer: array<string, mixed>|null,
+ *     attached_targets: list<AttachedTargetRecord>,
  *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
  *     auto_deploy: AutoDeployRecord|null,
  *     warnings?: list<string>,
@@ -132,6 +135,8 @@ final readonly class InstanceResponse
         public ?string $nameConvertedFrom = null,
         public ?string $retainedGitPath = null,
         public ?string $retainedGitAt = null,
+        /** @var list<InstanceAttachedTargetResponse> */
+        public array $attachedTargets = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -175,6 +180,7 @@ final readonly class InstanceResponse
             removal: self::removal($data['removal'] ?? null),
             transfer: self::transfer($data['transfer'] ?? null),
             deploySteps: self::parseDeploySteps($data['deploy_steps'] ?? []),
+            attachedTargets: self::attachedTargets($data['attached_targets'] ?? []),
             sharedPaths: self::sharedPaths($data['shared_paths'] ?? null),
             requestId: $requestId,
             autoDeploy: InstanceAutoDeployResponse::tryFromGatewayData($data['auto_deploy'] ?? null),
@@ -214,6 +220,7 @@ final readonly class InstanceResponse
             'url' => $this->url,
             'removal' => $this->removal?->toArray(),
             'transfer' => $this->transfer?->toArray(),
+            'attached_targets' => array_map(static fn (InstanceAttachedTargetResponse $target): array => $target->toArray(), $this->attachedTargets),
             'deploy_steps' => array_map(
                 static fn (DeploymentStepResponse $step): array => $step->toArray(),
                 $this->deploySteps,
@@ -224,6 +231,16 @@ final readonly class InstanceResponse
             'auto_deploy' => $this->autoDeploy?->toArray(),
             'request_id' => $this->requestId,
         ];
+    }
+
+    /** @return list<InstanceAttachedTargetResponse> */
+    private static function attachedTargets(#[SensitiveParameter] mixed $value): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(InstanceAttachedTargetResponse::tryFromGatewayData(...), $value)));
     }
 
     /** @return list<string>|null */

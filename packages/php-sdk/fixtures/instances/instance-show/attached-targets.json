@@ -1,0 +1,124 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Instances\\ShowInstanceRequest",
+    "route": "GET /api/v1/instances/{instance}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "project_id": 1,
+            "node_id": 1,
+            "project": {
+                "id": 1,
+                "name": "Hauzer",
+                "slug": "hauzer",
+                "type": "node-package"
+            },
+            "node": {
+                "id": 1,
+                "name": "beast"
+            },
+            "name": "default",
+            "source_layout": "checkout",
+            "checkout_path": "/home/orbit/apps/hauzer/default",
+            "production_user": null,
+            "production_home": null,
+            "root": null,
+            "effective_root": ".",
+            "selected_branch": "main",
+            "deployment_branch": null,
+            "branch_override": null,
+            "starting_commit": null,
+            "detached": false,
+            "status": "active",
+            "route": null,
+            "domain": null,
+            "url": null,
+            "removal": null,
+            "transfer": null,
+            "deploy_steps": [],
+            "vite_port": null,
+            "ssr_port": null,
+            "seed_path": null,
+            "seed_commit": null,
+            "routes": [],
+            "shared_paths": [],
+            "auto_deploy": {
+                "enabled": false,
+                "policy_owner": "swamp",
+                "gate": null,
+                "warning": null,
+                "result": null,
+                "commit": null,
+                "head": null,
+                "since": null,
+                "error_code": null,
+                "message": null,
+                "pause": null,
+                "resumed_after": 0,
+                "blocked": [],
+                "history_version": null,
+                "eligible": false
+            },
+            "development_projection_route_id": null,
+            "retained_git_path": null,
+            "retained_git_at": null,
+            "attached_targets": [
+                {
+                    "kind": "database",
+                    "id": 2,
+                    "name": "hauzer-main",
+                    "driver": "mysql",
+                    "node": {
+                        "id": 1,
+                        "name": "beast"
+                    },
+                    "host": "10.44.0.7",
+                    "port": 3306,
+                    "database": "hauzer",
+                    "username": "hauzer",
+                    "prefix": "DB",
+                    "server": null
+                },
+                {
+                    "kind": "redis",
+                    "id": 1,
+                    "name": "hauzer-cache",
+                    "driver": "redis",
+                    "node": {
+                        "id": 1,
+                        "name": "beast"
+                    },
+                    "host": "10.44.0.7",
+                    "port": 6379,
+                    "database": "2",
+                    "username": null,
+                    "prefix": "REDIS",
+                    "server": null
+                },
+                {
+                    "kind": "database",
+                    "id": 3,
+                    "name": "food-catalog",
+                    "driver": "pgsql",
+                    "node": {
+                        "id": 2,
+                        "name": "Services"
+                    },
+                    "host": "10.44.0.3",
+                    "port": 5434,
+                    "database": "food_catalog",
+                    "username": "catalog_reader",
+                    "prefix": "FOOD_CATALOG",
+                    "server": {
+                        "id": 1,
+                        "name": "catalog-postgres"
+                    }
+                }
+            ]
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

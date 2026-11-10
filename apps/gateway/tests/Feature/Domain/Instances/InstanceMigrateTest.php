@@ -478,6 +478,9 @@ describe('the databases of a move', function (): void {
         $default = migrateCheckout(containerDefaultProject(), $node);
         $valkey = migrateServerDatabase($default, migrateDatabaseServer($node, 'cache', DatabaseDriver::Redis, 6379), 'REDIS');
         $database = migrateServerDatabase($default, migrateDatabaseServer($node, 'pg', DatabaseDriver::Pgsql, 5432));
+        $services = containerDefaultNode('Services', '10.44.0.3', false);
+        $catalog = migrateServerDatabase($default, migrateDatabaseServer($services, 'catalog', DatabaseDriver::Pgsql, 5434), 'FOOD_CATALOG');
+        $shownTargets = InstanceData::fromModel($default)->toArray()['attached_targets'];
 
         $operation = migrateStart($default);
 
@@ -485,13 +488,20 @@ describe('the databases of a move', function (): void {
         $rule = ['rule' => 'allow', 'interface_in' => 'orbitinst0', 'from_ip' => '10.253.0.2', 'to_ip' => '10.44.0.7', 'proto' => 'tcp'];
         expect($container['acl_rules']['egress'])->toBe([
             ['action' => 'allow', 'destination' => '10.44.0.7/32', 'protocol' => 'tcp', 'destination_port' => '5432', 'state' => 'enabled'],
-            ['action' => 'allow', 'destination' => '10.44.0.7/32', 'protocol' => 'tcp', 'destination_port' => '6379', 'state' => 'enabled']])
+            ['action' => 'allow', 'destination' => '10.44.0.7/32', 'protocol' => 'tcp', 'destination_port' => '6379', 'state' => 'enabled'],
+            ['action' => 'allow', 'destination' => '10.44.0.3/32', 'protocol' => 'tcp', 'destination_port' => '5434', 'state' => 'enabled']])
             ->and($container['firewall'])->toEqual([[...$rule, 'to_port' => '5432', 'comment' => "orbit:instance-{$default->id}-database"],
-                [...$rule, 'to_port' => '6379', 'comment' => "orbit:instance-{$default->id}-database-{$valkey->id}"]])
+                [...$rule, 'to_port' => '6379', 'comment' => "orbit:instance-{$default->id}-database-{$valkey->id}"],
+                [...$rule, 'to_ip' => '10.44.0.3', 'to_port' => '5434', 'route' => 'yes', 'interface_out' => 'orbit', 'comment' => "orbit:instance-{$default->id}-database-{$catalog->id}"]])
             // The move proves each way from inside the container, `DB` first.
-            ->and($operation->input['migrate']['databases'])->toBe([['host' => '10.44.0.7', 'port' => 5432], ['host' => '10.44.0.7', 'port' => 6379]])
+            ->and($operation->input['migrate']['databases'])->toBe([
+                ['host' => '10.44.0.7', 'port' => 5432], ['host' => '10.44.0.7', 'port' => 6379], ['host' => '10.44.0.3', 'port' => 5434],
+            ])
+            ->and(array_column($shownTargets, 'id'))->toBe([$database->id, $valkey->id, $catalog->id])
+            ->and(array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port']], $shownTargets))
+            ->toBe($operation->input['migrate']['databases'])
             // No second database: the Instance keeps the one it has.
-            ->and(DatabaseConnection::query()->where('owner_instance_id', $default->id)->pluck('id')->all())->toEqualCanonicalizing([$valkey->id, $database->id]);
+            ->and(DatabaseConnection::query()->where('owner_instance_id', $default->id)->pluck('id')->all())->toEqualCanonicalizing([$valkey->id, $database->id, $catalog->id]);
     });
 
     it('still lets a clone of the moved default copy its database with a template copy on the same server', function (): void {
