@@ -39,8 +39,8 @@ return [
     ],
     // Gateway release limits (docs/reference/gateway-recovery.md#release-layout).
     'gateway_releases' => [
-        // The most releases deploy keeps, the current and the previous one included; at least 2, so the way back stays.
-        'keep' => (int) env('ORBIT_GATEWAY_RELEASES_KEEP', 3),
+        // Recent sealed releases to keep; pruning also protects the current and previous releases.
+        'keep' => (int) env('ORBIT_GATEWAY_RELEASES_KEEP', 2),
         // Automatic releases ship the newest commit of this branch whose check run of this name passed.
         // The repository is the origin of the shared release repository.
         'branch' => env(key: 'ORBIT_GATEWAY_RELEASE_BRANCH', default: 'main'),
