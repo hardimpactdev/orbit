@@ -92,9 +92,10 @@ describe('the container branch of the app-dev converge', function (): void {
         expect(array_diff_key($intent, array_flip(['incus', 'image', 'folders'])))->toBe([
             'project' => 'orbit-instances', 'network' => 'orbitinst0', 'pool' => 'orbit-instances', 'cidr' => '10.253.0.0/24',
             'address' => '10.253.0.1/24', 'build_address' => '10.253.0.254', 'dhcp_range' => '10.253.0.2-10.253.0.253', 'stock' => 'ubuntu-26.04-instance-stock',
-            'forwarder_port' => 8319, 'ids' => 201 * 65536,
+            'forwarder_port' => 8319, 'ids' => 201 * 65536, 'arc' => true,
             // `incus exec` sessions, which neither systemd nor a login shell starts, get it from the profile.
-            'profile_config' => ['environment.VP_HOME' => '/opt/orbit-runtime/current/vite-plus-home', 'environment.VP_NO_UPDATE_CHECK' => '1'],
+            'profile_config' => ['environment.PATH' => '/opt/orbit-runtime/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+                'environment.VP_HOME' => '/opt/orbit-runtime/current/vite-plus-home', 'environment.VP_NO_UPDATE_CHECK' => '1'],
         ])
             ->and($intent['incus'])->toBe($recipe->incus('amd64'))
             ->and($intent['image'])->toBe(InstanceImage::for('10.253.0.1'))
@@ -112,6 +113,22 @@ describe('the container branch of the app-dev converge', function (): void {
         app(InstanceHostIntent::class)->prepare($node);
 
         expect(app(InstanceHostIntent::class)->for($node)['ids'])->toBe(201 * 65536 + 4 * 101000000);
+    });
+
+    it('prepares a task VM host beside its task side: its own bridge, and the task side keeps the ARC', function (): void {
+        $node = Node::withoutEvents(fn (): Node => Node::query()->create([
+            'name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.7',
+            'public_ssh_host' => '10.44.0.7', 'user' => 'orbit', 'settings' => ['task_vms' => NodeTaskVmsData::validated(
+                ['cidr' => '10.253.0.0/24', 'task_places' => 4, 'ci_places' => 2], Ipv4Subnet::from('10.44.0.0/24'))->toArray()],
+        ]));
+        config(['instances.container_nodes' => [$node->id]]);
+        app(InstanceHostIntent::class)->prepare($node);
+
+        $intent = app(InstanceHostIntent::class)->for($node);
+
+        // The task bridge holds the first /24 of the range, so the Instance bridge takes the next one.
+        expect($intent)->toMatchArray(['project' => 'orbit-instances', 'network' => 'orbitinst0', 'pool' => 'orbit-instances',
+            'cidr' => '10.253.1.0/24', 'ids' => 201 * 65536, 'arc' => false]);
     });
 
     it('adds the branch to the app-dev runtime of a build-list Node only, so every other intent stays exactly as it was', function (): void {
@@ -167,12 +184,16 @@ describe('the Instance image', function (): void {
         );
     });
 
-    it('runs Vite+ from the folder\'s home with its update check off, for every unit and login shell', function (): void {
+    it('puts the runtime folder and /usr/local/bin, where the Project\'s php is, on the PATH of every unit and login shell, and runs Vite+ from the folder\'s home', function (): void {
         $files = array_column(InstanceImage::for('10.253.0.1')['files'], null, 'path');
+        // `composer` is in the runtime folder's bin; the container phase links the Project's `php` into /usr/local/bin.
+        $path = '/opt/orbit-runtime/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
 
         expect($files['/etc/systemd/system.conf.d/90-orbit-runtime.conf']['content'])
-            ->toBe("# Managed by Orbit.\n[Manager]\nDefaultEnvironment=VP_HOME=/opt/orbit-runtime/current/vite-plus-home VP_NO_UPDATE_CHECK=1\n")
-            ->and($files['/etc/profile.d/90-orbit-runtime.sh']['content'])->toBe("# Managed by Orbit.\nexport VP_HOME=/opt/orbit-runtime/current/vite-plus-home VP_NO_UPDATE_CHECK=1\n")
+            ->toBe("# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PATH={$path} VP_HOME=/opt/orbit-runtime/current/vite-plus-home VP_NO_UPDATE_CHECK=1\n")
+            // A login shell keeps what it inherits, such as the agent folder from T3's unit.
+            ->and($files['/etc/profile.d/90-orbit-runtime.sh']['content'])
+            ->toBe("# Managed by Orbit.\nexport PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:\$PATH VP_HOME=/opt/orbit-runtime/current/vite-plus-home VP_NO_UPDATE_CHECK=1\n")
             ->and($files['/etc/profile.d/90-orbit-runtime.sh']['mode'])->toBe('0644');
     });
 
@@ -279,7 +300,8 @@ describe('the shared folders', function (): void {
     it('states facts only: the users, the workspace, the Instance file, no sudo and no internet', function (string $note): void {
         expect(InstanceNotes::all()[$note])->toContain('`agent`', '`orbit`', '`/srv/workspace`', '`/etc/orbit/instance`', 'There is no sudo.', 'no direct internet')
             // The pinned static PHP build and Composer are in the runtime folder, and the note says where.
-            ->and(InstanceNotes::all()[$note])->toContain('Composer', '`/opt/orbit-runtime/current/php/<version>/bin`', '`php` and `frankenphp`', 'No `php` is on `PATH`');
+            ->and(InstanceNotes::all()[$note])->toContain('Composer', '`/opt/orbit-runtime/current/php/<version>/bin`', '`php` and `frankenphp`', '`php` on `PATH`', 'so `composer` works')
+            ->and(InstanceNotes::all()[$note])->not->toContain('No `php` is on `PATH`');
     })->with(['web-app', 'monorepo', 'package']);
 });
 

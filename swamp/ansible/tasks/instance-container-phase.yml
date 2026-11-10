@@ -61,6 +61,36 @@
   ansible.builtin.command: { argv: "{{ incus_project + ['start', container.name] }}" }
   changed_when: true
 
+# `php` on every PATH in the container is the Project's static build from the runtime folder: `/usr/local/bin` is on the PATH of
+# units, login shells and `incus exec` sessions, so `composer` runs for `agent` and `orbit` alike. A Project without one has none.
+- name: Link the Project's php
+  when: phase in ['container', 'start']
+  vars:
+    container_php: "{{ container.php | default(none) or '' }}"
+  block:
+    - name: Read the php link
+      ansible.builtin.command: { argv: "{{ as_root + ['readlink', '/usr/local/bin/php'] }}" }
+      register: container_php_link
+      changed_when: false
+      failed_when: false
+    - name: Read whether a php that is no link is there
+      ansible.builtin.command: { argv: "{{ as_root + ['test', '-e', '/usr/local/bin/php'] }}" }
+      register: container_php_file
+      changed_when: false
+      failed_when: false
+    # A `php` that is no link is not Orbit's: it stays.
+    - name: Point the php link at the Project's PHP
+      when: >-
+        container_php != '' and container_php_link.stdout != container_php
+        and (container_php_link.rc == 0 or container_php_file.rc != 0)
+      ansible.builtin.command: { argv: "{{ as_root + ['ln', '-sfn', container_php, '/usr/local/bin/php'] }}" }
+      changed_when: true
+    # Only a link goes: `readlink` fails on anything else.
+    - name: Remove the php link of a Project without PHP
+      when: container_php == '' and container_php_link.rc == 0
+      ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '/usr/local/bin/php'] }}" }
+      changed_when: true
+
 - name: Stop the container
   when: phase == 'stop' and container_read.rc == 0 and (container_read.stdout | from_json).status == 'Running'
   ansible.builtin.command: { argv: "{{ incus_project + ['stop', '--timeout', '30', container.name] }}" }

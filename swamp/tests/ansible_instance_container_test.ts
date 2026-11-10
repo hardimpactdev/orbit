@@ -3,7 +3,7 @@
  * build, a rerun that changes nothing, a deployment, the refusals of a deployment and the result file each phase writes. The Node is
  * this machine: the run's connection is local and nothing becomes root.
  */
-import { assert, assertEquals } from "jsr:@std/assert@1";
+import { assert, assertEquals, assertThrows } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
 
 const hasAnsible =
@@ -84,6 +84,7 @@ function fixture() {
     workspace: "/srv/workspace",
     environment_file: "/srv/workspace/.env",
     units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=orbit\n" }],
+    php: "/opt/orbit-runtime/current/php/8.5/bin/php" as string | null,
   };
   const ssh_execution = {
     identity_file: "/dev/null",
@@ -153,6 +154,11 @@ Deno.test({
       ]);
       assertEquals(state.containers["instance-7"].config, "security.idmap.isolated=true");
       assertEquals(state.containers["instance-7"].status, "Running");
+      // `php` on every PATH in the container is the Project's static build.
+      assertEquals(
+        Deno.readLinkSync(`${f.folder}/containers/instance-7/usr/local/bin/php`),
+        "/opt/orbit-runtime/current/php/8.5/bin/php",
+      );
       assertEquals(f.workspace("rev-parse", "HEAD"), head);
       assertEquals(f.workspace("symbolic-ref", "--short", "HEAD"), "main");
       assertEquals(state.files["/srv/workspace/.env"], { uid: "1000", gid: "2760", mode: "0640" });
@@ -229,6 +235,42 @@ Deno.test({
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
       assert(!f.run("start").ok);
       assertEquals(f.result(), { error_code: "instance.container_start_failed" });
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a start points php at the Project's PHP version, and removes the link of a Project without PHP",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    const link = `${f.folder}/containers/instance-7/usr/local/bin/php`;
+    try {
+      assert(f.run("container").ok);
+      f.container.php = "/opt/orbit-runtime/current/php/8.4/bin/php";
+      f.write();
+      let result = f.run("start");
+      assert(result.ok, result.output);
+      assertEquals(Deno.readLinkSync(link), "/opt/orbit-runtime/current/php/8.4/bin/php");
+      f.container.php = null;
+      f.write();
+      result = f.run("start");
+      assert(result.ok, result.output);
+      assertThrows(() => Deno.lstatSync(link));
+      // A php that is no link is not Orbit's to remove.
+      Deno.writeTextFileSync(link, "#!/bin/sh\n");
+      result = f.run("start");
+      assert(result.ok, result.output);
+      assertEquals(result.changed, 0, result.output);
+      assert(Deno.lstatSync(link).isFile);
+      f.container.php = "/opt/orbit-runtime/current/php/8.5/bin/php";
+      f.write();
+      result = f.run("start");
+      assert(result.ok, result.output);
+      assertEquals(result.changed, 0, result.output);
+      assert(Deno.lstatSync(link).isFile);
     } finally {
       f.cleanup();
     }

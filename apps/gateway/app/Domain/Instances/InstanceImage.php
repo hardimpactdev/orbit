@@ -24,6 +24,15 @@ final readonly class InstanceImage
     public const array RuntimeEnvironment = ['VP_HOME' => InstanceHostIntent::RuntimeFolder.'/current/vite-plus-home', 'VP_NO_UPDATE_CHECK' => '1'];
 
     /**
+     * The `PATH` of units, login shells and `incus exec` sessions: the runtime folder's programs, such as `composer`, before the
+     * system's. The container phase links the Project's `php` into `/usr/local/bin` (InstanceContainer::intent), so it is on it too.
+     */
+    public const string Path = InstanceHostIntent::RuntimeFolder.'/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+
+    /** A login shell puts the same folders before the PATH it inherits. */
+    public const string ShellPath = InstanceHostIntent::RuntimeFolder.'/current/bin:/usr/local/bin:$PATH';
+
+    /**
      * @return array{alias: string, packages: list<string>, prepare: string,
      *     files: list<array{path: string, content: string, uid: int, gid: int, mode: string}>, finish: list<list<string>>}
      */
@@ -42,8 +51,9 @@ final readonly class InstanceImage
                     'uid' => InstanceHostIntent::OrbitUid, 'gid' => InstanceHostIntent::OrbitUid, 'mode' => '0640'],
                 // The runtime environment for units (T3, its agents and every Orbit Process) and login shells; the Instance profile
                 // gives it to `incus exec` sessions.
-                ['path' => '/etc/systemd/system.conf.d/90-orbit-runtime.conf', 'content' => "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=".self::assignments()."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
-                ['path' => '/etc/profile.d/90-orbit-runtime.sh', 'content' => "# Managed by Orbit.\nexport ".self::assignments()."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                ['path' => '/etc/systemd/system.conf.d/90-orbit-runtime.conf', 'content' => "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=".self::assignments(self::Path)."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                // A login shell keeps the PATH it inherits, such as the agent folder that T3's unit gives `agent`.
+                ['path' => '/etc/profile.d/90-orbit-runtime.sh', 'content' => "# Managed by Orbit.\nexport ".self::assignments(self::ShellPath)."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
                 // Codex reads its update check only from its own configuration; the create flow adds the model provider.
                 ['path' => '/home/agent/.codex/config.toml', 'content' => "check_for_update_on_startup = false\n",
                     'uid' => InstanceHostIntent::AgentUid, 'gid' => InstanceHostIntent::AgentUid, 'mode' => '0600'],
@@ -58,10 +68,12 @@ final readonly class InstanceImage
         return ['alias' => self::StableAlias.'-'.substr(hash('sha256', json_encode($image, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)), 0, 12), ...$image];
     }
 
-    private static function assignments(): string
+    private static function assignments(string $path): string
     {
+        $environment = ['PATH' => $path, ...self::RuntimeEnvironment];
+
         return implode(' ', array_map(static fn (string $name, string $value): string => "{$name}={$value}",
-            array_keys(self::RuntimeEnvironment), self::RuntimeEnvironment));
+            array_keys($environment), $environment));
     }
 
     private static function prepare(): string
