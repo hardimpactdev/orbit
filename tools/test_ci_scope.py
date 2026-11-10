@@ -121,7 +121,7 @@ class ScopeActionTest(unittest.TestCase):
         self.assertIn('changed-only: true', swamp)
         source = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
         self.assertIn('working-directory: ${{ github.workspace }}', ACTION)
-        for name, end in [('shape', 'validate'), ('validate', 'tests'), ('tests', None)]:
+        for name, end in [('validate', 'tests'), ('tests', None)]:
             job = source.split('  ' + name + ':\n', 1)[1]
             if end:
                 job = job.split('  ' + end + ':\n', 1)[0]
@@ -137,10 +137,18 @@ class ScopeActionTest(unittest.TestCase):
         self.assertNotIn('if:', scope)
         self.assertIn("enabled: ${{ github.event_name != 'schedule' }}", scope)
         self.assertNotIn('inputs.changed-only', validate)
-        shape = source.split('  shape:', 1)[1].split('  validate:', 1)[0]
-        self.assertIn('fetch-depth: 0', shape)
-        self.assertIn('steps.scope.outputs.swamp-base-ref', shape)
-        self.assertIn('bin/swamp-shape-gate" --only shape --strict --base "$SHAPE_BASE"', shape)
+        plan = source.split('  shape-plan:', 1)[1].split('  shape-control:', 1)[0]
+        self.assertIn('fetch-depth: 0', plan)
+        self.assertIn('steps.scope.outputs.swamp-base-ref', plan)
+        self.assertIn("job: swamp-shape", plan)
+        self.assertIn("sys.argv[2] not in ('true', 'false')", plan)
+        for name, end in [('shape-control', 'shape-shards'), ('shape-shards', 'shape')]:
+            block = source.split('  ' + name + ':', 1)[1].split('  ' + end + ':', 1)[0]
+            self.assertIn('needs: shape-plan', block)
+            self.assertIn("if: needs.shape-plan.outputs.selected == 'true'", block)
+            self.assertIn('needs.shape-plan.outputs.base', block)
+            self.assertNotIn('id: scope', block)
+
 
 
 if __name__ == '__main__':

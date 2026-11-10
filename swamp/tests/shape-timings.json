@@ -1,0 +1,590 @@
+{
+  "sources": [
+    "https://github.com/hardimpactdev/orbit/actions/runs/42861369691/job/129988062104",
+    "https://github.com/hardimpactdev/orbit/actions/runs/42868182599/job/130012034224",
+    "https://github.com/hardimpactdev/orbit/actions/runs/42878450222/job/130047950178"
+  ],
+  "note": "Scheduling weights, seconds, rounded to 0.1. Split times are forecasts, not sharded measurements. Successful samples only; latest censored cases use an explicit 1.7x allowance. New files still run with 1s when absent.",
+  "units": {
+    "ansible-lint": {
+      "shark": 40.7,
+      "sabre": 79.3,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "bin/check-swamp-base-policy_test.ts": {
+      "shark": 20.1,
+      "sabre": 40.8,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "bin/check-swamp-shape_test.ts": {
+      "shark": 14.2,
+      "sabre": 31.5,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "bin/lint-behavior-names_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.2,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "bin/source_test.ts": {
+      "shark": 0.3,
+      "sabre": 0.7,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "bin/swamp-liveness_test.ts": {
+      "shark": 1.2,
+      "sabre": 2.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "bin/swamp-shape-python_test.ts": {
+      "shark": 3.8,
+      "sabre": 7.9,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "bin/validate-swamp-workflows_test.ts": {
+      "shark": 0.2,
+      "sabre": 0.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "extensions/behaviors/automatic-deploy/development_test.ts": {
+      "shark": 0.5,
+      "sabre": 1.1,
+      "basis": "rounded directory command estimate, 4.3s Shark / 9.2s Sabre over eight files"
+    },
+    "extensions/behaviors/automatic-deploy/gateway_test.ts": {
+      "shark": 0.5,
+      "sabre": 1.1,
+      "basis": "rounded directory command estimate, 4.3s Shark / 9.2s Sabre over eight files"
+    },
+    "extensions/behaviors/automatic-deploy/mod_test.ts": {
+      "shark": 0.5,
+      "sabre": 1.1,
+      "basis": "rounded directory command estimate, 4.3s Shark / 9.2s Sabre over eight files"
+    },
+    "extensions/behaviors/composer-maintenance/mod_test.ts": {
+      "shark": 0.5,
+      "sabre": 1.1,
+      "basis": "rounded directory command estimate, 4.3s Shark / 9.2s Sabre over eight files"
+    },
+    "extensions/behaviors/js-maintenance/mod_test.ts": {
+      "shark": 0.5,
+      "sabre": 1.1,
+      "basis": "rounded directory command estimate, 4.3s Shark / 9.2s Sabre over eight files"
+    },
+    "extensions/behaviors/projects/horizon-new-dawn/gateway_test.ts": {
+      "shark": 0.5,
+      "sabre": 1.1,
+      "basis": "rounded directory command estimate, 4.3s Shark / 9.2s Sabre over eight files"
+    },
+    "extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
+      "shark": 0.5,
+      "sabre": 1.1,
+      "basis": "rounded directory command estimate, 4.3s Shark / 9.2s Sabre over eight files"
+    },
+    "extensions/behaviors/projects/horizon-new-dawn/queue_test.ts": {
+      "shark": 0.5,
+      "sabre": 1.1,
+      "basis": "rounded directory command estimate, 4.3s Shark / 9.2s Sabre over eight files"
+    },
+    "ruff": {
+      "shark": 0.0,
+      "sabre": 0.1,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_artifact_test.py": {
+      "shark": 0.1,
+      "sabre": 0.2,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_command_output_test.py": {
+      "shark": 2.0,
+      "sabre": 3.3,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_container_host_system_test.py": {
+      "shark": 4.2,
+      "sabre": 10.3,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_firewall_test.py": {
+      "shark": 3.0,
+      "sabre": 7.6,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_gateway_retired_settings_test.ts": {
+      "shark": 1.1,
+      "sabre": 3.2,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_gateway_swamp_grants_test.py": {
+      "shark": 17.1,
+      "sabre": 37.2,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_hub_converge_peers_test.py": {
+      "shark": 6.6,
+      "sabre": 17.7,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_hub_prune_test.py": {
+      "shark": 2.7,
+      "sabre": 6.5,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_inputs_test.py": {
+      "shark": 15.2,
+      "sabre": 42.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_instance_container_agent_test.ts": {
+      "shark": 77.8,
+      "sabre": 124.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_instance_container_build_test.ts": {
+      "shark": 56.4,
+      "sabre": 98.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_instance_container_clone_refusal_test.ts": {
+      "shark": 41.4,
+      "sabre": 50.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_instance_container_clone_test.ts": {
+      "shark": 93.4,
+      "sabre": 160.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_instance_container_deploy_test.ts": {
+      "shark": 86.4,
+      "sabre": 146.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_instance_container_php_test.ts": {
+      "shark": 40.4,
+      "sabre": 66.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_instance_container_process_build_test.ts": {
+      "shark": 78.8,
+      "sabre": 111.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_instance_container_process_control_test.ts": {
+      "shark": 128.2,
+      "sabre": 181.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_instance_container_workspace_test.ts": {
+      "shark": 27.4,
+      "sabre": 42.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_instance_egress_test.py": {
+      "shark": 8.4,
+      "sabre": 13.7,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_instance_host_create_test.ts": {
+      "shark": 83.3,
+      "sabre": 130.3,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224"
+    },
+    "tests/ansible_instance_host_deadline_test.ts": {
+      "shark": 17.1,
+      "sabre": 19.2,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_instance_host_image_pool_test.ts": {
+      "shark": 38.3,
+      "sabre": 57.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_instance_host_image_refuse_sudo_test.ts": {
+      "shark": 39.8,
+      "sabre": 58.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_instance_host_image_replace_test.ts": {
+      "shark": 65.8,
+      "sabre": 95.8,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224"
+    },
+    "tests/ansible_instance_host_resources_test.ts": {
+      "shark": 38.6,
+      "sabre": 57.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_instance_host_runtime_deno_test.ts": {
+      "shark": 65.0,
+      "sabre": 100.0,
+      "basis": "new pinned-Deno case forecast; no earlier CI sample"
+    },
+    "tests/ansible_instance_host_runtime_php_test.ts": {
+      "shark": 52.5,
+      "sabre": 133.4,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; 1.7x forecast for censored late cases on loaded Sabre"
+    },
+    "tests/ansible_instance_host_runtime_vite_home_test.ts": {
+      "shark": 148.5,
+      "sabre": 376.6,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; 1.7x forecast for censored late cases on loaded Sabre"
+    },
+    "tests/ansible_instance_host_updates_mapped_runtime_test.ts": {
+      "shark": 91.8,
+      "sabre": 234.6,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; 1.7x forecast for censored late cases on loaded Sabre"
+    },
+    "tests/ansible_instance_host_updates_project_paths_test.ts": {
+      "shark": 82.8,
+      "sabre": 123.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224"
+    },
+    "tests/ansible_instance_host_updates_runtime_test.ts": {
+      "shark": 66.8,
+      "sabre": 104.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224"
+    },
+    "tests/ansible_instance_host_updates_squid_test.ts": {
+      "shark": 55.8,
+      "sabre": 87.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224"
+    },
+    "tests/ansible_instance_module_args_test.py": {
+      "shark": 1.0,
+      "sabre": 2.7,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_model_forwarder_test.py": {
+      "shark": 6.9,
+      "sabre": 14.7,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_node_add_test.py": {
+      "shark": 0.1,
+      "sabre": 0.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_shape_gate_tools_test.py": {
+      "shark": 1.0,
+      "sabre": 2.8,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_static_php_test.py": {
+      "shark": 0.1,
+      "sabre": 0.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_swamp_start_cache_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_task_container_host_prepare_arc_test.ts": {
+      "shark": 93.8,
+      "sabre": 291.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_task_container_host_prepare_packages_test.ts": {
+      "shark": 49.8,
+      "sabre": 149.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_task_container_host_prepare_refusals_test.ts": {
+      "shark": 74.2,
+      "sabre": 255.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_task_container_host_prepare_setup_test.ts": {
+      "shark": 87.2,
+      "sabre": 266.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/ansible_task_host_firewall_remove_test.ts": {
+      "shark": 5.9,
+      "sabre": 20.7,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_task_vm_apt_cache_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.2,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_task_vm_base_creation_test.ts": {
+      "shark": 7.4,
+      "sabre": 26.2,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_task_vm_checkout_test.py": {
+      "shark": 2.8,
+      "sabre": 5.5,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_task_vm_docker_boot_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_task_vm_fleet_build_test.ts": {
+      "shark": 69.2,
+      "sabre": 243.6,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_task_vm_fleet_wait_test.py": {
+      "shark": 22.9,
+      "sabre": 40.8,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_task_vm_host_clean_test.ts": {
+      "shark": 51.8,
+      "sabre": 188.2,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_task_vm_host_egress_test.py": {
+      "shark": 104.7,
+      "sabre": 262.2,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_task_vm_host_prepare_test.ts": {
+      "shark": 53.3,
+      "sabre": 188.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_task_vm_identity_boot_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.5,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_task_vm_idle_save_test.py": {
+      "shark": 7.4,
+      "sabre": 17.2,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_task_vm_role_test.py": {
+      "shark": 0.3,
+      "sabre": 0.7,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_task_vm_uplink_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.3,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/ansible_wireguard_hub_lan_test.py": {
+      "shark": 159.4,
+      "sabre": 290.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/apt_proxy_test.ts": {
+      "shark": 2.5,
+      "sabre": 12.5,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/automatic_deploy_test.ts": {
+      "shark": 0.2,
+      "sabre": 0.5,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/batch_maintenance_test.ts": {
+      "shark": 4.4,
+      "sabre": 16.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/database_placement_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.3,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/dependency_inventory_test.ts": {
+      "shark": 0.2,
+      "sabre": 0.6,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/dependency_observations_test.ts": {
+      "shark": 0.2,
+      "sabre": 0.8,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/dependency_projects_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.5,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/dependency_results_fixtures_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.2,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/dependency_results_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.6,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/dependency_retention_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.3,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/fleet_reboot_test.ts": {
+      "shark": 19.0,
+      "sabre": 67.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/gateway_swamp_load_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/github_mint_test.ts": {
+      "shark": 0.6,
+      "sabre": 1.9,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/guard_syntax_test.ts": {
+      "shark": 0.2,
+      "sabre": 0.7,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/maintenance_inspect_test.ts": {
+      "shark": 0.2,
+      "sabre": 0.5,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/maintenance_resources_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/node_converge_ansible_test.ts": {
+      "shark": 42.5,
+      "sabre": 141.0,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/node_converge_lock_test.ts": {
+      "shark": 25.1,
+      "sabre": 77.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/node_converge_test.ts": {
+      "shark": 0.3,
+      "sabre": 0.8,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/node_network_hub_prune_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/node_worker_systemd_cleanup_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.4,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/operation_schedules_test.ts": {
+      "shark": 0.2,
+      "sabre": 0.8,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/project_batches_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.7,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/project_deliverables_test.ts": {
+      "shark": 0.2,
+      "sabre": 1.2,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/project_extensions_test.ts": {
+      "shark": 0.2,
+      "sabre": 0.6,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/project_fleet_test.ts": {
+      "shark": 0.2,
+      "sabre": 0.3,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/project_inputs_test.ts": {
+      "shark": 0.2,
+      "sabre": 0.5,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/proof_keep_failed_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.3,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/proof_observers_test.ts": {
+      "shark": 34.4,
+      "sabre": 122.5,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/proof_workspace_commit_test.ts": {
+      "shark": 0.3,
+      "sabre": 0.7,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/revoke_report_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.5,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/route_hold_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.3,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/schedule_placement_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.3,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/service_detection_test.ts": {
+      "shark": 0.2,
+      "sabre": 0.5,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/swamp_role_worker_credentials_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.3,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/swamp_worker_renewal_enrollment_test.ts": {
+      "shark": 104.5,
+      "sabre": 161.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/swamp_worker_renewal_peers_test.ts": {
+      "shark": 54.2,
+      "sabre": 142.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/swamp_worker_renewal_rotation_test.ts": {
+      "shark": 62.9,
+      "sabre": 162.0,
+      "basis": "split estimate from printed case times + process overhead + 1s, jobs 129988062104 / 130012034224; max successful Sabre case samples including job 130047950178 + 3s"
+    },
+    "tests/task_review_check_outputs_test.ts": {
+      "shark": 0.2,
+      "sabre": 0.6,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/worker_query_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.3,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/workflow_absent_secrets_test.ts": {
+      "shark": 1.2,
+      "sabre": 1.8,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    },
+    "tests/workflow_placement_test.ts": {
+      "shark": 0.1,
+      "sabre": 0.3,
+      "basis": "measured commands, jobs 129988062104 / 130012034224; max with complete job 130047950178 command"
+    }
+  }
+}

@@ -20,19 +20,21 @@ on:
     - cron: '17 3 * * *'
 permissions:
   contents: read
+# No host selector exists for Shark. Bound all gate runs before runner placement.
+# GitHub retains one running and one pending run; a newer pending run replaces the old one.
 concurrency:
-  group: swamp-shape-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: swamp-shape-capacity
+  cancel-in-progress: false
 
 jobs:
-  shape:
-    name: Swamp shape gate
-    runs-on: [self-hosted, hardimpact]
-    # The gate takes a few minutes; a hung step fails here instead of holding main for hours.
-    timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: ${{ inputs.working-directory || 'swamp' }}
+  shape-plan:
+    name: Swamp shape plan
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      selected: ${{ steps.plan.outputs.selected }}
+      base: ${{ steps.plan.outputs.base }}
+      manifest: ${{ steps.plan.outputs.manifest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -44,26 +46,120 @@ jobs:
         with:
           job: swamp-shape
           swamp-base: 'true'
+      - name: Freeze shape selection and manifest
+        id: plan
+        env:
+          SELECTED: ${{ inputs.changed-only && steps.scope.outputs.selected || (!inputs.changed-only && 'true' || '') }}
+          SHAPE_BASE: ${{ steps.scope.outputs.swamp-base-ref || inputs.base-ref || github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          python3 - "$SHAPE_BASE" "$SELECTED" >> "$GITHUB_OUTPUT" <<'PY'
+          import runpy, sys
+          gate = runpy.run_path('bin/swamp-shape-gate')
+          if sys.argv[2] not in ('true', 'false'):
+              raise SystemExit('shape selection must be explicit')
+          print('selected=' + sys.argv[2])
+          print('base=' + gate['resolve_base'](sys.argv[1]))
+          print('manifest=' + gate['manifest_id']())
+          PY
+
+  shape-control:
+    name: Swamp shape control
+    needs: shape-plan
+    if: needs.shape-plan.outputs.selected == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || 'swamp' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
           deno-version: v2.9.8
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
           python-version: "3.13"
-      # One script holds the steps, their order and the pinned linters (swamp/ansible/shape-gate-requirements.txt),
-      # so a local run before a push checks what this job checks.
-      - name: Run the shape gate
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+      - name: Run source ratchets once
         env:
-          SHAPE_BASE: ${{ steps.scope.outputs.swamp-base-ref || inputs.base-ref || github.event.pull_request.base.sha || github.event.before }}
-        run: python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only shape --strict --base "$SHAPE_BASE" --reports "$RUNNER_TEMP"
+          SHAPE_BASE: ${{ needs.shape-plan.outputs.base }}
+        run: python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only shape --strict --base "$SHAPE_BASE" --control-only --reports "$RUNNER_TEMP"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: ${{ always() && (!inputs.changed-only || steps.scope.outputs.selected == 'true') }}
+        if: always()
         with:
           name: swamp-shape-metrics
           path: ${{ runner.temp }}/shape.json
+
+  shape-shards:
+    name: Swamp shape shard ${{ matrix.shard }}/3
+    needs: shape-plan
+    if: needs.shape-plan.outputs.selected == 'true'
+    runs-on: [self-hosted, Linux, X64, hardimpact, orbit-shard]
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      # Together with the workflow concurrency group: at most two shape jobs
+      # repository-wide, hence at most two per host, with three workers each.
+      max-parallel: 2
+      matrix:
+        shard: [1, 2, 3]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || 'swamp' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.9.8
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Run one shape shard
+        env:
+          SHAPE_BASE: ${{ needs.shape-plan.outputs.base }}
+          SHAPE_SHARD: ${{ matrix.shard }}
+        run: python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only shape --strict --base "$SHAPE_BASE" --shard="$SHAPE_SHARD/3" --workers 3 --reports "$RUNNER_TEMP/shape-shard"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: swamp-shape-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/shape-shard/shard.json
+          if-no-files-found: error
+
+  shape:
+    # Required checks and ORBIT_SLOW_CHECKS_BLOCKING depend on this exact name.
+    name: Swamp shape gate
+    needs: [shape-plan, shape-control, shape-shards]
+    if: always()
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.shape-plan.outputs.selected == 'true'
+        with:
+          pattern: swamp-shape-shard-*-${{ github.run_id }}-${{ github.run_attempt }}
+          path: shape-reports
+      - name: Require all selected work and matching coverage
+        if: always()
+        env:
+          SELECTION: ${{ needs.shape-plan.outputs.selected }}
+          PLAN_RESULT: ${{ needs.shape-plan.result }}
+          CONTROL_RESULT: ${{ needs.shape-control.result }}
+          SHARDS_RESULT: ${{ needs.shape-shards.result }}
+          SHAPE_BASE: ${{ needs.shape-plan.outputs.base }}
+          MANIFEST_ID: ${{ needs.shape-plan.outputs.manifest }}
+        run: |
+          python3 bin/ci-swamp-shape-result --selection "$SELECTION" --plan-result "$PLAN_RESULT" \
+            --control-result "$CONTROL_RESULT" --shards-result "$SHARDS_RESULT" --base "$SHAPE_BASE" \
+            --sha "$GITHUB_SHA" --manifest-id "$MANIFEST_ID" --reports shape-reports
 
   validate:
     name: Swamp workflow validate
@@ -115,7 +211,7 @@ jobs:
 
   tests:
     name: Swamp Deno tests
-    runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","orbit-shard"]') || 'ubuntu-26.04' }}
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || 'swamp' }}

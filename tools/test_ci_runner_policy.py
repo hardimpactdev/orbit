@@ -13,18 +13,20 @@ def job(workflow, name):
 
 
 class RunnerPolicyTest(unittest.TestCase):
-    def test_unit_job_keeps_the_pool_switch_and_same_repository_guard(self):
-        for workflow, name in [('swamp-shape.yml', 'tests')]:
-            with self.subTest(job=name):
-                block = job(workflow, name)
-                self.assertEqual(re.search(r'^    runs-on: (.+)$', block, re.M).group(1), POOL)
-                self.assertNotIn('sudo -n true', block)
-                self.assertNotIn('docker info', block)
-                self.assertNotIn('shivammathur/setup-php', block)
+    def test_shape_jobs_use_current_labels_and_a_bounded_pool(self):
+        source = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
+        self.assertIn('group: swamp-shape-capacity', source)
+        self.assertIn('cancel-in-progress: false', source)
+        shards = job('swamp-shape.yml', 'shape-shards')
+        self.assertIn('runs-on: [self-hosted, Linux, X64, hardimpact, orbit-shard]', shards)
+        self.assertIn('max-parallel: 2', shards)
+        self.assertIn('--workers 3', shards)
+        self.assertNotIn('orbit-shape]', shards)
+        self.assertIn('runs-on: ubuntu-26.04', job('swamp-shape.yml', 'tests'))
 
     def test_light_jobs_and_validation_stay_hosted(self):
         for workflow, names in [('ci.yml', ['docs', 'web', 'api-reference']),
-                                ('swamp-shape.yml', ['validate'])]:
+                                ('swamp-shape.yml', ['validate', 'tests', 'shape-plan', 'shape-control', 'shape'])]:
             for name in names:
                 with self.subTest(job=name):
                     self.assertIn('runs-on: ubuntu-26.04', job(workflow, name))

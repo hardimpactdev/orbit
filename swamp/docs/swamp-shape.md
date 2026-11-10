@@ -73,7 +73,7 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
 - `ansible-lint` for every playbook, and the Molecule `unit` cases of every template under `swamp/ansible/templates/`.
 - `deno test` for `extensions/behaviors/operations`.
 - The placement lint.
-- The Swamp-shape gate. It fails on:
+- The Swamp-shape gate runs three deterministic file shards and one control job. Its stable `Swamp / Swamp shape gate` result requires all selected jobs and complete, non-overlapping file reports. See the [gate and per-host concurrency limits](../../docs/reference/implementation-loop.md#run-the-swamp-shape-gate-before-you-push). It fails on:
   - scripts embedded in TypeScript;
   - many-action behaviors;
   - custom waits, retries or polling of our own (a tool's native retry is allowed, see rule 6);

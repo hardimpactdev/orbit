@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""Fail the stable shape result on missing work, failed children or mismatched receipts."""
+import argparse
+from collections import Counter
+import json
+from pathlib import Path
+import runpy
+
+ROOT = Path(__file__).resolve().parent.parent
+gate = runpy.run_path(str(ROOT / 'bin/swamp-shape-gate'))
+
+
+def verify(selection, plan_result, control_result, shards_result, reports, base, sha, identity):
+    if plan_result != 'success':
+        raise ValueError('shape selection did not succeed')
+    if selection == 'false':
+        if (control_result, shards_result) != ('skipped', 'skipped'):
+            raise ValueError('unselected shape jobs must both be skipped')
+        return 'Shape gate unselected'
+    if selection != 'true':
+        raise ValueError('shape selection must be explicit')
+    if (control_result, shards_result) != ('success', 'success'):
+        raise ValueError(f'selected shape jobs did not succeed: control={control_result}, shards={shards_result}')
+    if identity != gate['manifest_id']():
+        raise ValueError('shape plan identity does not match this checkout')
+    files = sorted(reports.rglob('shard.json'))
+    if len(files) != 3:
+        raise ValueError(f'expected exactly three shard reports, found {len(files)}')
+    plan = gate['plan'](base, Path('REPORTS'), Path('CACHE'), Path('COLLECTIONS'))
+    seen_shards, units = set(), Counter()
+    for file in files:
+        report = json.loads(file.read_text())
+        shard = report['shard']
+        if shard not in ('1/3', '2/3', '3/3') or shard in seen_shards:
+            raise ValueError('duplicate or invalid shard report')
+        seen_shards.add(shard)
+        if (report['sha'], report['base'], report['manifest_id']) != (sha, base, identity):
+            raise ValueError('shard tested a different commit, base or manifest')
+        expected = gate['shard_units'](plan, int(shard[0]))
+        actual = report['units']
+        if [(u['unit'], u['argv']) for u in actual] != [(u.unit, u.argv) for u in expected]:
+            raise ValueError(f'shard {shard} has omitted, duplicated or changed units')
+        if any(u['outcome'] != 'passed' for u in actual):
+            raise ValueError(f'shard {shard} has unsuccessful units')
+        units.update(u['unit'] for u in actual)
+    if units != Counter(step.unit for step in plan if step.parallel) or any(n != 1 for n in units.values()):
+        raise ValueError('shards do not cover the canonical manifest exactly once')
+    return f'Shape gate passed: {len(units)} units across three shards and four control ratchets'
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    for name in ('selection', 'plan-result', 'control-result', 'shards-result', 'base', 'sha', 'manifest-id'):
+        parser.add_argument('--' + name, required=True)
+    parser.add_argument('--reports', type=Path, required=True)
+    args = vars(parser.parse_args())
+    args['identity'] = args.pop('manifest_id')
+    try:
+        print(verify(**args))
+    except (ValueError, KeyError, OSError, TypeError) as error:
+        parser.exit(1, f'Shape gate failed: {error}\n')
+
+
+if __name__ == '__main__':
+    main()
