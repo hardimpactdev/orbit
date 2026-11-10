@@ -546,16 +546,25 @@ describe('the end of a move', function (): void {
             ->and(InstanceRuntime::query()->where('instance_id', $default->id)->value('bridge_address'))->toBe('10.253.0.2');
     });
 
-    it('keeps the reserved address when the restore failed, and lets the same command start anew', function (): void {
+    it('keeps the reserved address and database rules on retry after a failed restore even when a lower address is freed', function (): void {
         $node = containerDefaultNode();
-        $default = migrateCheckout(containerDefaultProject(), $node);
+        $project = containerDefaultProject();
+        $earlier = migrateCheckout($project, $node, 'earlier');
+        $occupied = app(InstanceContainer::class)->reserve($earlier, $node);
+        $default = migrateCheckout($project, $node);
+        migrateServerDatabase($default, migrateDatabaseServer($node, 'pg', DatabaseDriver::Pgsql, 5432));
         $operation = migrateStart($default);
+        $reserved = $default->runtime()->firstOrFail();
 
         migrateEnd($operation, 'failed', ['ready' => false, 'moved' => false, 'restored' => false, 'failed_step' => 'route', 'error_code' => 'instance.migrate_route_failed']);
+        $occupied->delete();
+        $retry = migrateStart($default);
 
-        expect(InstanceRuntime::query()->where('instance_id', $default->id)->value('bridge_address'))->toBe('10.253.0.2')
+        expect($retry->id)->not->toBe($operation->id)
+            ->and($default->runtime()->firstOrFail()->id)->toBe($reserved->id)
+            ->and($retry->input['container']['address'])->toBe('10.253.0.3')
+            ->and($retry->input['container']['firewall'])->toBe($operation->input['container']['firewall'])
             ->and($default->refresh()->checkout_path)->toBe('/home/orbit/apps/tool/default');
-        expect(migrateStart($default)->id)->not->toBe($operation->id);
     });
 
     it('keeps the Instance in its container when only the removal of the checkout failed', function (): void {

@@ -105,7 +105,7 @@ Core receives tagged implementations through constructor parameters marked with 
 | `App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard` | [`database:destroy`](/cli/database/destroy) | `assertRemovable()` |
 | `App\Domain\Operations\DirectOperationContribution` | The shared direct-start registry | `definitions()` |
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
-| `App\\Domain\\Instances\\InstanceLifecycleContribution` | Container Instance create, migrate and destroy | `assertCreateAvailable()`, `projectCreate()` and `projectDestroy()` |
+| `App\Domain\Instances\InstanceLifecycleContribution` | Container Instance create, migrate and destroy | `assertCreateAvailable()`, `projectCreate()` and `projectDestroy()` |
 
 `DirectOperationContribution::definitions()` contributes fixed workflow and projection declarations to the shared direct-start helper. Providers tag contributions with this interface. Declarations remain available while an extension is disabled so existing Operations can finish; family admission keeps its extension gate. Conn and Vault contribute their converted kind declarations. Conn session cleanup projects the native child receipt and needs no private-material provider. Core imports neither extension. Native bootstrap reads use execution-copy vault references, so core registers no Gateway-local bootstrap identity source. A declaration may select a typed `NativeGitHubTokenIssuer` at the existing numeric Operation GitHub mint endpoint.
 

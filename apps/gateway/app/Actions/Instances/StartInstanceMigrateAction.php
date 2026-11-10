@@ -76,8 +76,7 @@ final readonly class StartInstanceMigrateAction
             $this->assertPhp($instance->project);
             $route = $this->route($instance);
             $databases = $this->databases($instance);
-            // A move whose restore failed kept its reserved row, so no other Instance took its address; this run reserves anew.
-            $instance->runtime()->delete();
+            // Keep a failed restore's reservation: its leftover container and firewall rules still use that address and T3 port.
             // The checkout's site, as it serves before the move.
             $before = $route === null ? null : $this->routes->before($route);
             $runtime = $this->containers->reserve($instance, $node);

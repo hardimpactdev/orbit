@@ -479,7 +479,7 @@ The end of the move and its failure:
 | Last worktree | Its move also removes the default's old checkout, when the Node shows that the worktree belonged to it |
 | Failed removal | The container stays the Instance. The run fails with `instance.migrate_retire_failed`, and the checkout is left to remove by hand |
 | Failure | The Route's restore side runs when the run had started to move it. Then the container, its ACL, its firewall rules and its mirror go |
-| Reserved row | The Gateway drops it after a restore, and when the run could not start. A restore that failed keeps the row and its address until the same command runs again |
+| Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
 | After a failed restore | The site stays the checkout's, and a deployment refuses with `instance.lifecycle_busy` until the move has run again |
 
 The code changed two points of the first design.
