@@ -351,6 +351,17 @@ describe('the default-first rule', function (): void {
         }],
     ]);
 
+    it('refuses a non-default move while Conn is disabled before reserving its runtime', function (): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        migrateMovedDefault($project, $node);
+        $feature = migrateCheckout($project, $node, 'feature');
+        app(ExtensionStore::class)->set('conn', false);
+
+        expect(containerRefusal(fn () => migrateStart($feature)))->toBe('operation.kind_unavailable')
+            ->and($feature->runtime()->exists())->toBeFalse();
+    });
+
     it('gives a non-default Instance a T3 port and T3\'s files once its default has moved, with no clone source', function (): void {
         $node = containerDefaultNode();
         $project = containerDefaultProject();
@@ -507,6 +518,8 @@ describe('the end of a move', function (): void {
         $feature = migrateCheckout($project, $node, 'feature');
         $operation = migrateStart($feature);
 
+        // An admitted move must finish even if Conn is disabled while its run is in flight.
+        app(ExtensionStore::class)->set('conn', false);
         migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('e', 40), 't3' => migrateServer($feature)]);
 
         $environment = ConnEnvironment::query()->where('environment_id', 'env-feature')->firstOrFail();
