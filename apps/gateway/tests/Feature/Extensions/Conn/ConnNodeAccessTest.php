@@ -4,15 +4,22 @@ declare(strict_types=1);
 
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Operations\OperationStatus;
+use App\Http\Mcp\ApiDispatcher;
+use App\Http\Mcp\ApiOperationTool;
+use App\Http\Mcp\ToolManifest;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\Route;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
+use Laravel\Mcp\Request as McpRequest;
 use Orbit\Extensions\Conn\Domain\T3AdminSession;
 use Orbit\Extensions\Conn\Domain\T3EnvironmentDescriptor;
 use Orbit\Extensions\Conn\Domain\T3ServerClient;
@@ -38,6 +45,25 @@ function conn_server(string $environmentId, ?Node $node): ConnEnvironment
         'node_id' => $node?->id, 'admin_session' => 'admin-token', 'admin_session_expires_at' => Carbon::now()->addDays(30),
         'registered_at' => Carbon::now(),
     ]);
+}
+
+function conn_clone(Node $node, string $name): ConnEnvironment
+{
+    $project = Project::query()->create(['name' => ucfirst($name), 'slug' => $name, 'repository_url' => "https://github.com/nckrtl/{$name}.git", 'default_branch' => 'main', 'root' => '.']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'feature', 'checkout_path' => '/srv/workspace/'.$name]);
+    $server = conn_server('env-'.$name, $node);
+    $server->forceFill(['instance_id' => $instance->id])->save();
+
+    return $server;
+}
+
+/** @param array{domain: string, status: string, web_root?: string} $attributes */
+function conn_route(ConnEnvironment $server, array $attributes): void
+{
+    $route = Route::query()->create(['project_id' => $server->instance->project_id, 'node_id' => $server->instance->node_id,
+        'provenance' => 'explicit', 'publication' => 'private', ...$attributes, 'status' => 'pending']);
+    $server->instance->routes()->attach($route->id, ['position' => 0]);
+    $route->update(['status' => $attributes['status']]);
 }
 
 /** A Node with an edge to the active Gateway Node has Gateway access: it reaches every Node. */
@@ -73,6 +99,64 @@ describe('servers', function (): void {
         $response = conn_call($this->phone, 'GET', 'environments')->assertOk();
 
         expect(array_column($response->json('data'), 'environment_id'))->toBe(['env-beast']);
+    });
+
+    it('uses the Instance URL rule instead of the T3 server URL', function (array $routes, ?string $url): void {
+        $server = conn_clone($this->beast, 'tool');
+        foreach ($routes as $attributes) {
+            conn_route($server, $attributes);
+        }
+
+        $data = collect(conn_call($this->phone, 'GET', 'environments')->assertOk()->json('data'))->keyBy('environment_id');
+
+        expect($data['env-tool']['instance_url'])->toBe($url)
+            ->and($data['env-tool']['url'])->toBe('http://10.44.0.30:3773');
+    })->with([
+        'no Route' => [[], null],
+        'first Route when none is authoritative' => [[['domain' => 'pending.orbit', 'status' => 'pending']], 'https://pending.orbit'],
+        'authoritative over pending' => [[['domain' => 'pending.orbit', 'status' => 'pending', 'web_root' => 'public'], ['domain' => 'active.orbit', 'status' => 'active']], 'https://active.orbit'],
+        'own Route over a web root Route' => [[['domain' => 'web-root.orbit', 'status' => 'active', 'web_root' => 'public'], ['domain' => 'own.orbit', 'status' => 'active']], 'https://own.orbit'],
+    ]);
+
+    it('keeps the list query count flat as distinct clone environments grow', function (): void {
+        $first = conn_clone($this->beast, 'first');
+        conn_route($first, ['domain' => 'first.orbit', 'status' => 'active']);
+        conn_call($this->phone, 'GET', 'environments')->assertOk();
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        conn_call($this->phone, 'GET', 'environments')->assertOk()->assertJsonCount(2, 'data');
+        $smallCount = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        for ($index = 1; $index <= 8; $index++) {
+            $server = conn_clone($this->beast, 'clone-'.$index);
+            conn_route($server, ['domain' => "clone-{$index}.orbit", 'status' => 'active']);
+        }
+
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        conn_call($this->phone, 'GET', 'environments')->assertOk()->assertJsonCount(10, 'data');
+        $largeCount = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        expect($largeCount)->toBe($smallCount);
+    });
+
+    it('returns clone Orbit facts through the generated conn-environment-list MCP tool', function (): void {
+        $server = conn_clone($this->beast, 'tool');
+        conn_route($server, ['domain' => 'feature.orbit', 'status' => 'active']);
+        $definition = collect(ToolManifest::default()->definitions())->firstWhere('name', 'conn-environment-list');
+        $tool = new ApiOperationTool($definition, app(ApiDispatcher::class));
+        $caller = HttpRequest::create('/mcp', 'POST', server: ['REMOTE_ADDR' => $this->phone->wireguard_ip]);
+
+        $response = $tool->handle(new McpRequest, $caller);
+        $data = collect(json_decode((string) $response->content(), true, flags: JSON_THROW_ON_ERROR)['data'])->keyBy('environment_id');
+
+        expect($data['env-tool'])->toMatchArray([
+            'instance_id' => $server->instance_id, 'project_id' => $server->instance->project_id,
+            'project_name' => 'Tool', 'project_slug' => 'tool', 'instance_name' => 'feature',
+            'node_name' => 'beast', 'instance_url' => 'https://feature.orbit',
+        ]);
     });
 
     it('lists a server whose Node was removed only for a caller with Gateway access', function (): void {

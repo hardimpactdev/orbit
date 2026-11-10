@@ -259,6 +259,13 @@ final class Instance extends Model
             ?? $authoritative->first();
     }
 
+    public function url(): ?string
+    {
+        $route = $this->authoritativeRoute() ?? $this->routes->first();
+
+        return $route instanceof Route ? "https://{$route->domain}" : null;
+    }
+
     /** @return HasMany<InstanceDeployStep, $this> */
     public function deploySteps(): HasMany
     {
