@@ -747,9 +747,9 @@ Deno.test({
                 assertStringIncludes(result.output, `${status === "Running" ? "profile-only-instance" : "orbit-instance-build"}/eth0 needs an effective ACL`);
                 assertEquals(f.state().networks.find((network: {name: string}) => network.name === "orbitinst0").config["security.acls.default.egress.action"], "reject");
                 assert(!f.calls().slice(before).some((call) => call.includes("security.acls.default.egress.action=allow")));
-                // Removing the unsafe local override restores the profile gate without an Instance ACL.
+                // Removing the whole local device restores the profile gate; individual missing properties do not inherit.
                 const fixed = f.state();
-                delete fixed.instances.at(-1).devices.eth0["security.acls"];
+                delete fixed.instances.at(-1).devices.eth0;
                 Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(fixed));
                 result = await f.run();
                 assert(result.ok, result.output);

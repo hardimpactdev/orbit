@@ -98,7 +98,8 @@ if (family === "query") {
   } else if (resource === "instances" && !item) {
     console.log(JSON.stringify(state.instances.map((row: { project: string; devices?: Record<string, Record<string, string>> }) => {
       const devices = structuredClone(state.profiles[row.project]?.devices ?? {});
-      for (const [name, device] of Object.entries(row.devices ?? {})) devices[name] = { ...devices[name], ...device };
+      // Incus replaces a whole device of the same name; it does not inherit missing local properties.
+      for (const [name, device] of Object.entries(row.devices ?? {})) devices[name] = device;
       return { ...row, expanded_devices: devices };
     })));
   } else if (resource === "profiles") {
