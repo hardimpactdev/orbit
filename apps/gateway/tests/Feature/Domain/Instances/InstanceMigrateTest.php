@@ -567,6 +567,21 @@ describe('the end of a move', function (): void {
             ->and($default->refresh()->checkout_path)->toBe('/home/orbit/apps/tool/default');
     });
 
+    it('releases only a new reservation when Swamp cannot start the run', function (bool $retry): void {
+        $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $reserved = null;
+        if ($retry) {
+            $operation = migrateStart($default);
+            $reserved = $default->runtime()->firstOrFail();
+            migrateEnd($operation, 'failed', ['ready' => false, 'moved' => false, 'restored' => false, 'failed_step' => 'route', 'error_code' => 'instance.migrate_route_failed']);
+        }
+        config(['swamp.run_token' => '']);
+
+        expect(containerRefusal(fn () => app(StartInstanceMigrateAction::class)->execute($default, null, null)))->toBe('swamp.start_unavailable')
+            ->and($default->runtime()->exists())->toBe($retry)
+            ->and($default->runtime()->first()?->id)->toBe($reserved?->id);
+    })->with(['first attempt' => false, 'failed restore retry' => true]);
+
     it('keeps the Instance in its container when only the removal of the checkout failed', function (): void {
         $node = containerDefaultNode();
         $default = migrateCheckout(containerDefaultProject(), $node);
