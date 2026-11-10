@@ -11,6 +11,7 @@ use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampConnection;
+use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
@@ -20,6 +21,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\SwampNodeFixture;
 
@@ -152,21 +154,32 @@ function allow_port_counting_sent(object $reverb): array
 
 describe('record events of a request', function (): void {
     it('go out after the response of a command admission, not inside it', function (): void {
+        Queue::fake([StartAdmittedSwampRun::class]);
         $reverb = reverb_recorder();
         swamp_accepting_starts();
 
         [$response, $sentBeforeResponse] = allow_port_counting_sent($reverb);
 
         $response->assertStatus(202);
+        Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+        app('request')->setRouteResolver(static fn () => null);
+        app()->call([Queue::pushed(StartAdmittedSwampRun::class)->sole(), 'handle']);
+
         expect($sentBeforeResponse)->toBe(0)
             ->and(array_column($reverb->sent, 'type'))->toContain('activity.created', 'operation.created', 'operation.updated', 'activity.updated');
     });
 
     it('keep the order of one record, so the sequence of an operation never goes down', function (): void {
+        Queue::fake([StartAdmittedSwampRun::class]);
         $reverb = reverb_recorder();
         swamp_accepting_starts();
 
-        allow_port_counting_sent($reverb);
+        [$response, $sentBeforeResponse] = allow_port_counting_sent($reverb);
+        $response->assertStatus(202);
+        expect($sentBeforeResponse)->toBe(0);
+        Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+        app('request')->setRouteResolver(static fn () => null);
+        app()->call([Queue::pushed(StartAdmittedSwampRun::class)->sole(), 'handle']);
 
         $types = array_column($reverb->sent, 'type');
         $operationId = Operation::query()->value('id');
