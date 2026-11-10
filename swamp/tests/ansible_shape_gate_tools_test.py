@@ -7,7 +7,9 @@ import stat
 import subprocess
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 from unittest import mock
 
 import yaml
@@ -99,6 +101,30 @@ class ShapeGateToolsTest(unittest.TestCase):
         self.assertEqual(planned, [file for file in files if file not in self.gate.DENO_TESTS_ELSEWHERE])
         self.assertIn('tests/ansible_instance_host_test.ts', planned)
         self.assertTrue(all(step.parallel for step in steps if step.argv[-1] in planned))
+
+    def test_a_completed_command_is_reported_while_its_neighbor_is_still_running(self):
+        blocked, release, reported = Event(), Event(), Event()
+        steps = [self.gate.Step('shape', name, ['unused'], parallel=True) for name in ('slow', 'fast')]
+
+        def run(step, *_args):
+            if step.name == 'slow':
+                blocked.set()
+                self.assertTrue(release.wait(5), 'test did not release the slow command')
+            return (step, 'passed', 0.0, 'exit 0'), step.name + ' output\n'
+
+        def printed(message, **_kwargs):
+            if message == '==> fast: passed':
+                reported.set()
+
+        with mock.patch.object(self.gate, 'run_step', side_effect=run), \
+                mock.patch('builtins.print', side_effect=printed), ThreadPoolExecutor(max_workers=1) as executor:
+            result = executor.submit(self.gate.execute, steps, {}, False, 2)
+            try:
+                self.assertTrue(blocked.wait(1), 'slow command did not start')
+                self.assertTrue(reported.wait(1), 'completed command output is held behind the slow command')
+            finally:
+                release.set()
+            self.assertEqual([item[0].name for item in result.result(timeout=2)], ['fast', 'slow'])
 
 
 if __name__ == '__main__':

@@ -277,7 +277,11 @@ bin/swamp-shape-gate --base REF     # compare with another base
 bin/swamp-shape-gate --only shape   # or --only validate
 ```
 
-The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate`, keyed by their pins, and reuses it. `swamp/ansible/shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts` and the frozen agent command check. It runs every step, prints a summary, and exits 1 when any step failed. It retries nothing. A run takes about one minute once the environment exists. The JSON reports go to `--reports DIR`, by default a per-user directory in the temporary directory.
+The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate`, keyed by their pins, and reuses it. `swamp/ansible/shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts` and the frozen agent command check.
+
+Independent commands share up to four workers, with one worker inside each command. The Instance host fixture cases use separate files to share that budget; each fixture playbook has a 120-second limit that kills its process group. A timeout fails the case with the playbook output, including its last task.
+
+The gate prints each command's start and reports its result as soon as it finishes. It runs every step, prints a summary, and exits 1 when any step failed. It retries nothing. The JSON reports go to `--reports DIR`, by default a per-user directory in the temporary directory.
 
 A task VM holds the same environment in `/opt/orbit-shape-gate`. The task VM role playbook builds it for the pins of its release. The script uses it when its name matches the pins, so the check runs offline.
 

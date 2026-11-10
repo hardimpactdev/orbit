@@ -49,6 +49,8 @@ When parallelizing CI commands, bound their nested worker pools as well as the o
 
 Before you finish, add what you learned to the skill that owns it (this one, swamp-flow, ansible-phase or flow-tighten), in the same PR. Say what changed.
 
+For a shape-gate cancellation, identify the slow command from its completed output. Long fixture files share the existing worker budget only after they are split into independent files.
+
 
 A provider retirement needs its full resource inventory. An empty task VM sweep does not prove templates or storage are absent; verified templates can be deliberately excluded from sweep results. Close that inventory before removing the provider path.
 
