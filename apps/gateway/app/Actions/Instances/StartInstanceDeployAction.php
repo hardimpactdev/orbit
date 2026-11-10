@@ -109,11 +109,11 @@ final readonly class StartInstanceDeployAction
     }
 
     /** The HTTP boundary requires Gateway Node access before admitting automatic origin. */
-    public function automatic(Instance $instance, Node $caller, ?string $requestId, string $commit): Operation
+    public function automatic(Instance $instance, Node $caller, ?string $requestId, string $commit, bool $development = false): Operation
     {
-        return DB::transaction(function () use ($instance, $caller, $requestId, $commit): Operation {
+        return DB::transaction(function () use ($instance, $caller, $requestId, $commit, $development): Operation {
             $instance = Instance::query()->lockForUpdate()->findOrFail($instance->id);
-            $this->writer->assertSwamp($instance);
+            $this->writer->assertSwamp($instance, $development);
 
             return $this->pinned($instance, AutomaticDeployHistory::SwampTrigger, $requestId, $commit, $caller->id);
         });

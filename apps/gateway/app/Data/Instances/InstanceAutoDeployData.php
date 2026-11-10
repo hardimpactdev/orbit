@@ -37,6 +37,7 @@ final class InstanceAutoDeployData extends Data
         public array $blocked,
         public ?string $historyVersion,
         public bool $eligible,
+        public bool $developmentEligible,
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -45,7 +46,7 @@ final class InstanceAutoDeployData extends Data
         $state = $automatic->toArray();
         $placement = $instance->placementEnvironment();
         $eligible = app(AutomaticDeployPolicyWriter::class)->eligibilityRefusal($instance) === null;
-        $developmentDefault = $placement === 'development' && $eligible;
+        $developmentDefault = app(AutomaticDeployPolicyWriter::class)->developmentEligibilityRefusal($instance) === null;
         $enabled = $developmentDefault || ($placement === 'production' && $instance->auto_deploy);
         $history = $enabled ? new AutomaticDeployHistory($instance)->snapshot() : null;
         $gate = $developmentDefault ? null : $instance->project->mergeCheckName();
@@ -54,6 +55,7 @@ final class InstanceAutoDeployData extends Data
 
         return new self(
             eligible: $eligible,
+            developmentEligible: $developmentDefault,
             resumedAfter: $instance->auto_deploy_resumed_after,
             blocked: $history === null ? [] : array_values(array_unique([...$automatic->blocked(), ...$history->rolledAway])),
             historyVersion: $history?->version,

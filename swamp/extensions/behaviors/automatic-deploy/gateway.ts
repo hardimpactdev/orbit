@@ -54,7 +54,10 @@ const OperationSchema = z.object({
     error_code: z.string().nullable(),
 });
 // operation:list rows carry no input or result (docs/reference/operations.md#page-the-list); a holder is read in full by its ID.
-const OperationListRowSchema = OperationSchema.omit({ input: true, result: true });
+const OperationListRowSchema = OperationSchema.omit({
+    input: true,
+    result: true,
+});
 const ReceiptSchema = z.object({
     request_key: z.string(),
     found: z.boolean(),
@@ -164,7 +167,21 @@ export class GatewayClient implements Gateway {
         filter: number[],
         emit: Emit,
     ) {
-        return tickDevelopment(this.http, context, this, now, emit, filter);
+        return tickDevelopment(
+            this.http,
+            context,
+            {
+                deploy: (id, commit, key) => this.deploy(id, commit, key, true),
+                receipt: (id, commit, key) =>
+                    this.receipt(id, commit, key, true),
+                resolve: (id, commit, key) =>
+                    this.resolve(id, commit, key, true),
+                operation: (id) => this.operation(id),
+            },
+            now,
+            emit,
+            filter,
+        );
     }
     async discover(filter: number[] = []): Promise<number[]> {
         // Both list endpoints return complete arrays, without pagination.
@@ -378,11 +395,14 @@ export class GatewayClient implements Gateway {
         instance: number,
         commit: string,
         key: string,
+        development = false,
     ): Promise<Operation | null> {
         const receipt = await this.read(
-            `/api/v1/instances/${instance}/deploy/automatic/receipt?request_key=${
-                encodeURIComponent(key)
-            }&commit=${encodeURIComponent(commit)}`,
+            `/api/v1/instances/${instance}/deploy/automatic${
+                development ? "/development" : ""
+            }/receipt?request_key=${encodeURIComponent(key)}&commit=${
+                encodeURIComponent(commit)
+            }`,
             ReceiptSchema,
         );
         return this.receiptOperation(instance, commit, key, receipt);
@@ -391,11 +411,14 @@ export class GatewayClient implements Gateway {
         instance: number,
         commit: string,
         key: string,
+        development = false,
     ): Promise<Operation> {
         const parsed = ReceiptSchema.safeParse(
             await this.request(
                 "POST",
-                `/api/v1/instances/${instance}/deploy/automatic/resolve`,
+                `/api/v1/instances/${instance}/deploy/automatic${
+                    development ? "/development" : ""
+                }/resolve`,
                 { request_key: key, commit },
             ),
         );
@@ -486,11 +509,14 @@ export class GatewayClient implements Gateway {
         instance: number,
         commit: string,
         key: string,
+        development = false,
     ): Promise<Operation> {
         const receipt = OperationSchema.safeParse(
             await this.request(
                 "POST",
-                `/api/v1/instances/${instance}/deploy/automatic`,
+                `/api/v1/instances/${instance}/deploy/automatic${
+                    development ? "/development" : ""
+                }`,
                 { commit },
                 key,
             ),

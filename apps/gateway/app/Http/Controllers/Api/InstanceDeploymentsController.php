@@ -75,15 +75,34 @@ final class InstanceDeploymentsController extends Controller
         ], 202);
     }
 
+    #[StartsOperation(OperationKinds::InstanceDeploy, requiresKey: true, bindCaller: true)]
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function automaticDevelopment(AutomaticDeployInstanceRequest $request, Instance $instance, StartInstanceDeployAction $action): JsonResponse
+    {
+        return $this->automatic($request, $instance, $action, development: true);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function developmentReceipt(AutomaticDeployReceiptRequest $request, Instance $instance, ReadAutomaticDeployReceiptAction $action): JsonResponse
+    {
+        return $this->receipt($request, $instance, $action, development: true);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function developmentResolve(ResolveAutomaticDeployAdmissionRequest $request, Instance $instance, ResolveAutomaticDeployAdmissionAction $action): JsonResponse
+    {
+        return $this->resolve($request, $instance, $action, development: true);
+    }
+
     /** Starts a pinned automatic deploy using the caller's existing fleet authority. */
     #[StartsOperation(OperationKinds::InstanceDeploy, requiresKey: true, bindCaller: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function automatic(AutomaticDeployInstanceRequest $request, Instance $instance, StartInstanceDeployAction $action): JsonResponse
+    public function automatic(AutomaticDeployInstanceRequest $request, Instance $instance, StartInstanceDeployAction $action, bool $development = false): JsonResponse
     {
         $caller = $request->user();
         assert($caller instanceof Node);
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->automatic($instance, $caller, $requestId === '' ? null : $requestId, $request->commit());
+        $operation = $action->automatic($instance, $caller, $requestId === '' ? null : $requestId, $request->commit(), $development);
 
         return response()->json([
             'data' => OperationData::fromModel($operation, CallerName::fromRequest($request))->toArray(),
@@ -92,22 +111,22 @@ final class InstanceDeploymentsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function receipt(AutomaticDeployReceiptRequest $request, Instance $instance, ReadAutomaticDeployReceiptAction $action): JsonResponse
+    public function receipt(AutomaticDeployReceiptRequest $request, Instance $instance, ReadAutomaticDeployReceiptAction $action, bool $development = false): JsonResponse
     {
         $caller = $request->user();
         assert($caller instanceof Node);
 
-        return response()->json(['data' => $action->execute($instance, $caller, $request->requestKey(), $request->commit())->toArray(), 'meta' => $this->meta($request)]);
+        return response()->json(['data' => $action->execute($instance, $caller, $request->requestKey(), $request->commit(), $development)->toArray(), 'meta' => $this->meta($request)]);
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function resolve(ResolveAutomaticDeployAdmissionRequest $request, Instance $instance, ResolveAutomaticDeployAdmissionAction $action): JsonResponse
+    public function resolve(ResolveAutomaticDeployAdmissionRequest $request, Instance $instance, ResolveAutomaticDeployAdmissionAction $action, bool $development = false): JsonResponse
     {
         $caller = $request->originalCaller();
         request()->attributes->set('orbit.automatic_deploy_resolution', ['caller_node_id' => $caller->id]);
 
         return response()->json([
-            'data' => $action->execute($instance, $caller, $request->requestKey(), $request->commit(), $request->attributes->getString('orbit.request_id'))->toArray(),
+            'data' => $action->execute($instance, $caller, $request->requestKey(), $request->commit(), $request->attributes->getString('orbit.request_id'), $development)->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

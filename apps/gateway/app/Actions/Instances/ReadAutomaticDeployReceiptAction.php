@@ -22,13 +22,13 @@ final readonly class ReadAutomaticDeployReceiptAction
 {
     public function __construct(private OperationRequestFingerprint $fingerprints) {}
 
-    public function execute(Instance $instance, Node $caller, string $key, string $commit): AutomaticDeployReceiptData
+    public function execute(Instance $instance, Node $caller, string $key, string $commit, bool $development = false): AutomaticDeployReceiptData
     {
         $operation = Operation::query()->withCallerNodeName()->where('kind', OperationKinds::InstanceDeploy)->where('idempotency_key', $key)->first();
         if ($operation === null) {
             return new AutomaticDeployReceiptData($key, false, null, null);
         }
-        $fingerprint = $this->fingerprint($instance, $caller, $commit);
+        $fingerprint = $this->fingerprint($instance, $caller, $commit, $development);
         if ($operation->idempotency_fingerprint !== $fingerprint) {
             throw new ResourceOperationException('operation.idempotency_conflict', 'The request key belongs to another caller, command, Instance, or input.', 409);
         }
@@ -39,9 +39,9 @@ final readonly class ReadAutomaticDeployReceiptAction
     }
 
     /** The same identity is used by admission, lookup, and the no-effect fence. */
-    public function fingerprint(Instance $instance, Node $caller, string $commit): string
+    public function fingerprint(Instance $instance, Node $caller, string $commit, bool $development = false): string
     {
-        $route = Route::getRoutes()->getByName('instance:deploy:automatic') ?? throw new LogicException('The automatic admission route is missing.');
+        $route = Route::getRoutes()->getByName($development ? 'instance:deploy:automatic:development' : 'instance:deploy:automatic') ?? throw new LogicException('The automatic admission route is missing.');
         $start = StartsOperation::forRoute($route) ?? throw new LogicException('Automatic admission must declare StartsOperation.');
 
         return $this->fingerprints->make($caller, $route->getName(), ['instance' => $instance], json_encode(['commit' => $commit], JSON_THROW_ON_ERROR), $start);

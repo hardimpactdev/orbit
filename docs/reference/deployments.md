@@ -391,6 +391,8 @@ A rollback or manual deployment can also end between the tick's read of the hist
 
 The Gateway exposes policy evidence to Swamp. Swamp never reads GitHub, the database, or a notifier directly. These contracts require Gateway Node access. Policy starts stay on API/MCP; receipt resolution also has an operator CLI command.
 
+Development policy checks `auto_deploy.development_eligible` in both list and fresh detail responses. It uses `POST /api/v1/instances/{instance}/deploy/automatic/development` with `commit`; admission rechecks development placement and the shared ready-container rule under the Instance lock. Enabled production Instances do not qualify. Its receipt and resolution paths append `/receipt` and `/resolve` to that development path and bind the development command. Production keeps its existing admission and receipt paths.
+
 | Request | Evidence or effect |
 | --- | --- |
 | `GET /api/v1/instances/{instance}/deployment-source/head` | A fresh credentialed `head` of the recorded deployment branch. Works without a GitHub gate. |

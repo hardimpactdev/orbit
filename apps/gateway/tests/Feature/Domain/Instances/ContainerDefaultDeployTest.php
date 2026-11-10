@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
@@ -101,6 +102,46 @@ function deployDefault(bool $container): Instance
 
     return $instance;
 }
+
+it('refuses an ineligible Instance at the development automatic API before recording work', function (string $variant): void {
+    Queue::fake();
+    $instance = deployDefault(container: $variant !== 'checkout');
+    $instance->update(['auto_deploy' => true]);
+    if ($variant === 'production') {
+        $instance->node->roles()->update(['role' => RoleName::AppProd]);
+        $instance->runtime()->update(['seed_commit' => str_repeat('a', 40)]);
+    }
+    $instance->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
+
+    $this->withHeader('Idempotency-Key', 'development.refused')->postJson('/api/v1/instances/'.$instance->id.'/deploy/automatic/development', ['commit' => str_repeat('b', 40)])
+        ->assertConflict()->assertJsonPath('error.code', AutomaticDeployPolicyWriter::ContainerDefaultRequired);
+
+    expect(Operation::query()->count())->toBe(0)->and($instance->deployments()->count())->toBe(0);
+    Queue::assertNothingPushed();
+})->with(['enabled production' => 'production', 'checkout working tree' => 'checkout', 'unseeded container' => 'unseeded']);
+
+it('admits a ready container through the development API and binds its receipt and fence to that command', function (): void {
+    Queue::fake();
+    deployVault();
+    $instance = deployDefault(container: true);
+    $instance->runtime()->update(['seed_commit' => str_repeat('a', 40)]);
+    $instance->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
+    $path = '/api/v1/instances/'.$instance->id.'/deploy/automatic/development';
+    $commit = str_repeat('b', 40);
+
+    $id = $this->withHeader('Idempotency-Key', 'development.start')->postJson($path, ['commit' => $commit])->assertAccepted()->json('data.id');
+
+    expect(Operation::query()->findOrFail($id)->triggered_by)->toBe('swamp:auto-deploy');
+    $this->getJson($path.'/receipt?request_key=development.start&commit='.$commit)->assertOk()
+        ->assertJsonPath('data.found', true)->assertJsonPath('data.operation.id', $id);
+    $this->getJson('/api/v1/instances/'.$instance->id.'/deploy/automatic/receipt?request_key=development.start&commit='.$commit)
+        ->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
+    $fenced = $this->postJson($path.'/resolve', ['request_key' => 'development.absent', 'commit' => $commit])->assertOk()->json('data.operation.id');
+    $this->withHeader('Idempotency-Key', 'development.absent')->postJson($path, ['commit' => $commit])->assertAccepted()
+        ->assertJsonPath('data.id', $fenced)->assertJsonPath('data.status', 'cancelled');
+});
 
 it('deploys a container default as the container variant, whose commands need no Vite+ store on the Node', function (): void {
     $instance = deployDefault(container: true);

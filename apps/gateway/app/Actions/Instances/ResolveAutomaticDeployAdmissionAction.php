@@ -17,21 +17,21 @@ final readonly class ResolveAutomaticDeployAdmissionAction
 {
     public function __construct(private ReadAutomaticDeployReceiptAction $receipts, private OperationStore $operations) {}
 
-    public function execute(Instance $instance, Node $caller, string $key, string $commit, string $requestId): AutomaticDeployReceiptData
+    public function execute(Instance $instance, Node $caller, string $key, string $commit, string $requestId, bool $development = false): AutomaticDeployReceiptData
     {
-        return DB::transaction(function () use ($instance, $caller, $key, $commit, $requestId): AutomaticDeployReceiptData {
+        return DB::transaction(function () use ($instance, $caller, $key, $commit, $requestId, $development): AutomaticDeployReceiptData {
             $instance = Instance::query()->lockForUpdate()->findOrFail($instance->id);
-            $receipt = $this->receipts->execute($instance, $caller, $key, $commit);
+            $receipt = $this->receipts->execute($instance, $caller, $key, $commit, $development);
             if ($receipt->found) {
                 return $receipt;
             }
             $this->operations->fenceAdmission(
-                OperationKinds::InstanceDeploy, $key, $this->receipts->fingerprint($instance, $caller, $commit),
+                OperationKinds::InstanceDeploy, $key, $this->receipts->fingerprint($instance, $caller, $commit, $development),
                 OperationKinds::InstanceTarget, $instance->id, $instance->node_id,
                 ['commit' => $commit, 'caller_node_id' => $caller->id], AutomaticDeployHistory::SwampTrigger, $requestId,
             );
 
-            return $this->receipts->execute($instance, $caller, $key, $commit);
+            return $this->receipts->execute($instance, $caller, $key, $commit, $development);
         });
     }
 }

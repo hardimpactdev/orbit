@@ -102,6 +102,9 @@ Route::middleware([
     Route::get('instances/{instance}/deploy/automatic/receipt', [InstanceDeploymentsController::class, 'receipt'])->name('instance:deploy:automatic:receipt');
     Route::put('instances/{instance}/auto-deploy/policy', [InstanceAutomaticDeployPolicyController::class, 'update'])->name('instance:auto-deploy:policy:update');
     Route::post('instances/{instance}/deploy/automatic', [InstanceDeploymentsController::class, 'automatic'])->name('instance:deploy:automatic');
+    Route::post('instances/{instance}/deploy/automatic/development', [InstanceDeploymentsController::class, 'automaticDevelopment'])->name('instance:deploy:automatic:development');
+    Route::get('instances/{instance}/deploy/automatic/development/receipt', [InstanceDeploymentsController::class, 'developmentReceipt'])->name('instance:deploy:automatic:development:receipt');
+    Route::post('instances/{instance}/deploy/automatic/development/resolve', [InstanceDeploymentsController::class, 'developmentResolve'])->name('instance:deploy:automatic:development:resolve');
     Route::post(
         'instances/{instance}/rollback',
         [InstanceRollbacksController::class, 'store'],

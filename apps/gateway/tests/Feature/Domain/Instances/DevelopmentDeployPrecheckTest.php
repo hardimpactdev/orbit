@@ -193,6 +193,10 @@ it('shares container eligibility across automatic admission discovery and Instan
             ->and(InstanceData::fromModel($instance)->autoDeploy->eligible)->toBeFalse()
             ->and(InstanceData::fromModel($instance)->autoDeploy->enabled)->toBeFalse();
     }
+    expect(InstanceData::fromModel($container)->autoDeploy->developmentEligible)->toBeTrue();
+    foreach ([$checkout, $unseeded, $production, $disabledProduction] as $instance) {
+        expect(InstanceData::fromModel($instance)->autoDeploy->developmentEligible)->toBeFalse();
+    }
     expect(InstanceData::fromModel($disabledProduction)->autoDeploy->eligible)->toBeFalse();
     $production->node->roles()->update(['status' => 'failed']);
     expect(AutomaticDeployPolicyWriter::Swamp->eligibilityRefusal($production->fresh()))->toBe(AutomaticDeployPolicyWriter::InactiveRole);

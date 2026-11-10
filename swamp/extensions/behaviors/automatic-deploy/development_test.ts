@@ -4,7 +4,7 @@ import {
     assertRejects,
 } from "jsr:@std/assert@1.0.19";
 import { tickDevelopment } from "./development.ts";
-import type { Http } from "./gateway.ts";
+import { GatewayClient, type Http } from "./gateway.ts";
 import type { Operation, Row } from "./policy.ts";
 import { PolicyError } from "./policy.ts";
 const A = "a".repeat(40), B = "b".repeat(40), now = "2026-10-31T05:00:00.000Z";
@@ -21,6 +21,7 @@ function fixture() {
         auto_deploy: {
             policy_owner: "swamp",
             eligible: true,
+            development_eligible: true,
             resumed_after: 0,
             history_version: "f".repeat(64) as string | null,
         },
@@ -133,6 +134,8 @@ function fixture() {
             filter,
         );
     return {
+        http,
+        ctx,
         instance,
         listed,
         memory,
@@ -522,6 +525,99 @@ Deno.test("native-first deployment skips the old Gateway dev owner before readin
     );
 });
 
+Deno.test("Gateway development admissions and lost-response recovery use only development routes", async () => {
+    for (const found of [true, false]) {
+        const f = fixture();
+        const paths: string[] = [];
+        const operation = {
+            ...f.operation,
+            target_type: "instance",
+            target_id: 7,
+            attempts: 0,
+            input: { commit: B, caller_node_id: 9 },
+            caller_node_id: 9,
+            error_code: null,
+        };
+        const client = new GatewayClient((method, path, body, key) => {
+            if (!path.includes("/deploy/automatic")) {
+                return f.http(method, path, body, key);
+            }
+            paths.push(path);
+            const base = "/api/v1/instances/7/deploy/automatic/development";
+            if (path === base) throw new Error("Lost admission reply");
+            const requestKey =
+                (f.memory.get("development-7")?.pending as { key: string }).key;
+            if (path.startsWith(base + "/receipt?")) {
+                return Promise.resolve({
+                    status: 200,
+                    body: {
+                        data: {
+                            request_key: requestKey,
+                            found,
+                            operation: found ? operation : null,
+                            deployment: null,
+                        },
+                    },
+                });
+            }
+            assertEquals(path, base + "/resolve");
+            return Promise.resolve({
+                status: 200,
+                body: {
+                    data: {
+                        request_key: requestKey,
+                        found: true,
+                        operation: {
+                            ...operation,
+                            status: "cancelled",
+                            error_code: "operation.admission_fenced",
+                            result: { admission_fenced: true },
+                        },
+                        deployment: null,
+                    },
+                },
+            });
+        });
+        const run = () => client.development(f.ctx, now, [7], () => {});
+        await assertRejects(run);
+        await run();
+        assertEquals(paths.length, found ? 2 : 3);
+        assertEquals(
+            paths.every((path) => path.includes("/automatic/development")),
+            true,
+        );
+    }
+});
+
+Deno.test("development policy refuses an enabled production Instance explicitly included in its input", async () => {
+    const f = fixture();
+    f.instance.source_layout = "release";
+    f.instance.auto_deploy.development_eligible = false;
+    assertEquals(f.instance.auto_deploy.eligible, true);
+
+    await f.run(now, [7]);
+
+    assertEquals(f.starts, []);
+    assertEquals(f.memory.size, 0);
+    assertEquals(f.requests.map((r) => r.path), ["/api/v1/instances"]);
+});
+
+Deno.test("a fresh production placement refuses a stale development selection", async () => {
+    const f = fixture();
+    f.listed.splice(0, 1, structuredClone(f.instance));
+    f.instance.auto_deploy.development_eligible = false;
+    assertEquals(f.instance.auto_deploy.eligible, true);
+
+    await f.run(now, [7]);
+
+    assertEquals(f.starts, []);
+    assertEquals(f.memory.size, 0);
+    assertEquals(f.requests.map((r) => r.path), [
+        "/api/v1/instances",
+        "/api/v1/instances/7",
+    ]);
+});
+
 Deno.test("development policy never discovers work outside the Gateway selection", async () => {
     const f = fixture();
     await f.run(now, []);
@@ -534,6 +630,7 @@ Deno.test("fresh Gateway refusal stops a selected default before history or head
     const f = fixture();
     f.listed.splice(0, 1, structuredClone(f.instance));
     f.instance.auto_deploy.eligible = false;
+    f.instance.auto_deploy.development_eligible = false;
     f.instance.auto_deploy.history_version = null;
     await f.run();
     assertEquals(f.starts, []);
@@ -547,6 +644,7 @@ Deno.test("fresh Gateway refusal stops a selected default before history or head
 Deno.test("canonical Gateway refusal skips ambiguous app-dev plus app-prod placement", async () => {
     const f = fixture();
     f.instance.auto_deploy.eligible = false;
+    f.instance.auto_deploy.development_eligible = false;
     await f.run();
     assertEquals(f.starts, []);
     assertEquals(f.memory.size, 0);

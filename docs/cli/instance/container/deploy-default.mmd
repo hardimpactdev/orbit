@@ -25,8 +25,10 @@ sequenceDiagram
       %%> What it does:
       %%> - shares the retained behavior identity and development state; keeps pending admissions, backoff and retry limits
       %%> - never discovers or admits production work; its paused production schedule stays unchanged
-  SW->>GW: Admit the deployment<br/>instance:deploy-automatic
+  SW->>GW: Admit the development deployment<br/>instance:deploy:automatic:development
   %%> What it does:
+  %%> - Swamp rechecks development-specific eligibility from the Gateway, not the eligibility shared with production
+  %%> - the Gateway refuses non-development Instances and rechecks the ready container-default rule under the Instance lock
   %%> - the Gateway admits `instance.deploy` for that exact commit, with the Instance lock and a repository read token in the vault
   GW->>SW: Start run, full intent<br/>instance-deploy-direct
   opt the default Instance is asleep

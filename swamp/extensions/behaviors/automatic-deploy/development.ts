@@ -55,7 +55,7 @@ const Instance = z.object({
     development_projection_route_id: z.number().int().positive().nullable(),
     auto_deploy: z.object({
         policy_owner: z.string(),
-        eligible: z.boolean(),
+        development_eligible: z.boolean(),
         resumed_after: z.number().int(),
         history_version: z.string(),
     }),
@@ -100,7 +100,7 @@ export async function tickDevelopment(
     }).extend({
         auto_deploy: z.object({
             policy_owner: z.string(),
-            eligible: z.boolean().optional().default(false),
+            development_eligible: z.boolean().optional().default(false),
         }),
     });
     const records = z.array(discovery).parse(
@@ -110,7 +110,8 @@ export async function tickDevelopment(
     const failures: string[] = [];
     for (const listed of records) {
         if (
-            !filter.includes(listed.id) || !listed.auto_deploy.eligible ||
+            !filter.includes(listed.id) ||
+            !listed.auto_deploy.development_eligible ||
             listed.auto_deploy.policy_owner !== "swamp"
         ) continue;
         try {
@@ -120,7 +121,8 @@ export async function tickDevelopment(
             );
             const current = discovery.parse(record);
             if (
-                !current.auto_deploy.eligible || current.id !== listed.id ||
+                !current.auto_deploy.development_eligible ||
+                current.id !== listed.id ||
                 current.node_id !== listed.node_id ||
                 current.auto_deploy.policy_owner !== "swamp"
             ) continue;
