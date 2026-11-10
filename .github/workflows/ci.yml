@@ -151,9 +151,36 @@ jobs:
           cp apps/cli/.env.example apps/cli/.env
           composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-scripts
           composer install --working-dir=apps/cli --no-interaction --prefer-dist --no-scripts
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+      - name: Cache pinned Deno download
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          deno-version: v2.9.8
+          path: ~/.cache/orbit-gateway-tests/deno
+          key: gateway-tests-deno-download-${{ runner.os }}-${{ runner.arch }}-2.9.8-${{ hashFiles('apps/gateway/resources/machine-software/recipe.json') }}
+      - name: Verify and extract the recipe Deno
+        run: |
+          python3 - <<'PYTHON'
+          import hashlib, json, os, subprocess, urllib.request, zipfile
+          from pathlib import Path
+          tool = json.loads(Path('apps/gateway/resources/machine-software/recipe.json').read_text())['tools']['deno']
+          if tool['version'] != '2.9.8':
+              raise SystemExit('Update the Gateway test Deno pin with the recipe')
+          artifact = tool['artifacts']['amd64']
+          archive = Path.home() / '.cache/orbit-gateway-tests/deno/deno_2.9.8_linux_amd64.zip'
+          archive.parent.mkdir(parents=True, exist_ok=True)
+          if not archive.exists():
+              urllib.request.urlretrieve(artifact['url'], archive)
+          if hashlib.sha256(archive.read_bytes()).hexdigest() != artifact['sha256']:
+              raise SystemExit('Deno checksum mismatch')
+          destination = Path(os.environ['RUNNER_TEMP']) / 'gateway-tests-deno-bin'
+          with zipfile.ZipFile(archive) as release:
+              release.extract('deno', destination)
+          binary = destination / 'deno'
+          binary.chmod(0o755)
+          if subprocess.check_output([str(binary), '--version'], text=True).split()[:2] != ['deno', '2.9.8']:
+              raise SystemExit('Deno version mismatch')
+          with open(os.environ['GITHUB_PATH'], 'a') as output:
+              output.write(str(binary.parent) + '\n')
+          PYTHON
       - name: Cache firewall Deno dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
