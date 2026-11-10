@@ -548,6 +548,19 @@ Step 9 of ADR 0250. It needs PR 12 on every task host and PR 16.
 
 Tests: Pest for the removed admissions and settings; the task VM tests go with their code. Live: every task host converges without task VM parts, and a task and a CI proof still run in containers.
 
+## Secret placeholders
+
+[ADR 0254](/decisions/0254-inject-external-secrets-at-the-node-egress-proxy) runs beside the dev path and never blocks it. Each part rebases on the dev path's PRs as they merge.
+
+| Part | Work | State |
+| --- | --- | --- |
+| S1 | The ADR, this plan, the [proxy's specification](/reference/development-containers#secret-bindings), and `orbit-egress` in Go with its unit tests and its release workflow. No Node changes. | |
+| S2 | Pin the first `orbit-egress` release. Add secret bindings and their three commands on the Gateway. | |
+| S2b | Write placeholders into `.env` and the bindings file onto the Node. Replace Squid with `orbit-egress`. Give each container its CA and address filtering. | |
+| S3 | Prove it on Beast with a throwaway Project: a bound key reaches a test host only through the proxy, and `orbit` and `agent` see only the placeholder. | |
+
+The pin in S2 needs the release that S1's workflow publishes after its merge, as the [static PHP build](#pr-3b-the-static-php-build) did.
+
 ## Production Instances
 
 Step 10 of ADR 0250 moves production Instances into containers on every `app-prod` Node, after PR 16. The [container plan](/solutions/container-instances-and-releases#production-design) holds the release design that these PRs specify and build.

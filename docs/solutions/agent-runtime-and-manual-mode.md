@@ -83,7 +83,7 @@ Track A replaces task VMs and the Project VM with containers, in the order ADR 0
 | 2a | Reboot all managed Nodes into current kernels. | Done: 7.0.0-43 on 9 November |
 | 2b | Block SCTP on every Node through node converge. | In progress in the reboot-fixes PR; set by hand on Beast, Shark and Sabre |
 | 2c | Define the container egress and DNS model on Beast. | In review: a Squid proxy on each Instance container host, no DNS in containers ([Egress and DNS](/reference/development-containers#egress-and-dns)) |
-| 2d | Keep secrets off agent hosts. | Open |
+| 2d | Keep secrets off agent hosts. | In progress: external keys reach containers as placeholders that the Node's egress proxy replaces ([ADR 0254](/decisions/0254-inject-external-secrets-at-the-node-egress-proxy), [plan](/solutions/development-container-runtime#secret-placeholders)) |
 | 2e | Patch kernels automatically, with planned reboots. | In progress |
 | 3 | Run Instances in containers on the Nodes of a build list, with T3 inside. | Specified in [Instance containers](/reference/development-containers); plan in [Container runtime](/solutions/development-container-runtime) |
 | 4 | Run tasks in Instance containers, driven by Swamp through T3. | Planned in [Container runtime](/solutions/development-container-runtime#pr-7-run-a-task-in-a-clone) |
