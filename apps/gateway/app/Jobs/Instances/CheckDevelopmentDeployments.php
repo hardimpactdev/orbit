@@ -22,7 +22,7 @@ final class CheckDevelopmentDeployments implements ShouldBeUnique, ShouldQueue
 
     public function __construct()
     {
-        $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Operations->value);
+        $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Tasks->value);
     }
 
     public function handle(DevelopmentDeployPrecheck $precheck): void

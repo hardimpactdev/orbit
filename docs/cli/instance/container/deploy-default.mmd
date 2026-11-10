@@ -17,7 +17,8 @@ sequenceDiagram
     %%> What it does:
     %%> - selects only active container defaults with a seed snapshot and active app-dev placement, using the same ready-default rule as conn:project:list
     %%> - never selects checkout Instances: they are the user's working trees, not managed seed containers
-    %%> - reads each eligible Project's default branch once through the cached source reader; no environment-template refresh
+    %%> - runs the unique scan on the existing tasks queue, not the single-worker operations queue
+    %%> - reads each eligible Project's default branch once through the cached source reader, with the existing 60-second Git read limit; no environment-template refresh
     alt seed matches branch head
       Note over GW: Nothing to deploy<br/>no Swamp run
     else default is behind

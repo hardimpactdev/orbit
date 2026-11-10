@@ -25,6 +25,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Symfony\Component\Yaml\Yaml;
 
@@ -200,6 +201,13 @@ it('shares container eligibility across automatic admission discovery and Instan
     expect(InstanceData::fromModel($disabledProduction)->autoDeploy->eligible)->toBeFalse();
     $production->node->roles()->update(['status' => 'failed']);
     expect(AutomaticDeployPolicyWriter::Swamp->eligibilityRefusal($production->fresh()))->toBe(AutomaticDeployPolicyWriter::InactiveRole);
+});
+
+it('runs the unique development scan on the background tasks queue', function (): void {
+    $job = new CheckDevelopmentDeployments;
+
+    expect($job->connection)->toBe('gateway')->and($job->queue)->toBe('tasks')
+        ->and($job)->toBeInstanceOf(ShouldBeUnique::class);
 });
 
 it('registers an independent enabled minute tick', function (): void {

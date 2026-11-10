@@ -302,7 +302,11 @@ After that reload, a rollback reloads or restarts the same active, opted-in Inst
 
 ## Automatic deployments
 
-Production policy keeps its independent Swamp schedule at second 30 (`30 * * * * *`) and its existing pause. Development uses an enabled Gateway scheduler job each minute. It selects only active container defaults with a seed snapshot on active `app-dev` placement, using the same ready-default rule as [`conn:project:list`](/reference/conn#threads-in-an-orbit-project). It reads each eligible Project default branch once and compares it with the runtime's snapshot seed commit. A matching default starts no Swamp run and makes no policy HTTP requests or vault reads. Only container defaults behind their branch enter a development-only Swamp policy run.
+Production policy keeps its independent Swamp schedule at second 30 (`30 * * * * *`) and its existing pause. Development uses an enabled Gateway scheduler job each minute.
+
+The unique development scan runs on the existing `tasks` queue, away from operation starts and reconciliation on `operations`. Each repository's Git read retains its 60-second limit.
+
+The scan selects only active container defaults with a seed snapshot on active `app-dev` placement, using the same ready-default rule as [`conn:project:list`](/reference/conn#threads-in-an-orbit-project). It reads each eligible Project default branch once and compares it with the runtime's snapshot seed commit. A matching default starts no Swamp run and makes no policy HTTP requests or vault reads. Only container defaults behind their branch enter a development-only Swamp policy run.
 
 Checkout Instances are the user's working trees and are never auto-deployed, even when named `default` or recorded with `auto_deploy=true`. A container without a seed must first deploy by hand. The Gateway retains admission, locks, authorization and history.
 
