@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Hibernation\ActivateInstanceRuntimeAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceMigrateAction;
+use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
@@ -29,6 +30,8 @@ use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\Swamp\StartSwampRun;
+use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
@@ -636,7 +639,11 @@ describe('the end of a move', function (): void {
         }
         config(['swamp.run_token' => '']);
 
-        expect(containerRefusal(fn () => app(StartInstanceMigrateAction::class)->execute($default, null, null)))->toBe('swamp.start_unavailable')
+        $admitted = app(StartInstanceMigrateAction::class)->execute($default, null, null);
+        expect($admitted->status->value)->toBe('queued');
+        Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $admitted->id);
+
+        expect(containerRefusal(fn () => (new StartAdmittedSwampRun($admitted->id))->handle(app(StartSwampRun::class), app(ExpireOperationAction::class))))->toBe('swamp.start_unavailable')
             ->and($default->runtime()->exists())->toBe($retry)
             ->and($default->runtime()->first()?->id)->toBe($reserved?->id);
     })->with(['first attempt' => false, 'failed restore retry' => true]);
@@ -705,7 +712,11 @@ describe('a reserved runtime row', function (): void {
         config(['swamp.address' => null]);
         $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
 
-        expect(containerRefusal(fn () => app(StartInstanceMigrateAction::class)->execute($default, null, null)))->toBe('swamp.start_unavailable')
+        $admitted = app(StartInstanceMigrateAction::class)->execute($default, null, null);
+        expect($admitted->status->value)->toBe('queued');
+        Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $admitted->id);
+
+        expect(containerRefusal(fn () => (new StartAdmittedSwampRun($admitted->id))->handle(app(StartSwampRun::class), app(ExpireOperationAction::class))))->toBe('swamp.start_unavailable')
             ->and(InstanceRuntime::query()->where('instance_id', $default->id)->exists())->toBeFalse()
             ->and(Operation::query()->where('kind', 'instance.migrate')->where('target_id', $default->id)->value('status')->value)->toBe('failed');
         InstanceContainer::assertCheckout($default);

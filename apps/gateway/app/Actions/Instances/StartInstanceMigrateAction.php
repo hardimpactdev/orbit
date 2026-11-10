@@ -51,16 +51,7 @@ final readonly class StartInstanceMigrateAction
             return $replay;
         }
 
-        $hadReservation = $instance->runtime()->exists();
-        try {
-            return $this->admit($instance, $caller, $requestId);
-        } catch (ResourceOperationException $exception) {
-            // Release only this admission's new row. A previous failed restore still needs its address for cleanup.
-            if (! $hadReservation && $exception->errorCode === 'swamp.start_unavailable' && ! InstanceMigration::running($instance) && InstanceMigration::pending($instance)) {
-                $instance->runtime()->delete();
-            }
-            throw $exception;
-        }
+        return $this->admit($instance, $caller, $requestId);
     }
 
     private function admit(Instance $instance, ?string $caller, ?string $requestId): Operation

@@ -13,6 +13,7 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -28,9 +29,17 @@ use Illuminate\Support\Facades\DB;
  * the Instance's runtime: its checkout path becomes the workspace, the runtime runs, and a non-default Instance's T3 server is
  * recorded. A move that failed and restored drops the reserved runtime row, so the Instance is the checkout Instance it was.
  */
-final readonly class InstanceMigrateProjection implements DirectOperationProjection
+final readonly class InstanceMigrateProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
     public function __construct(private DirectOperation $direct) {}
+
+    public function refused(Operation $operation): void
+    {
+        // A queued start that never reached Swamp owns no Node effects. A retry keeps an earlier failed restore's reservation.
+        if (($operation->input['had_runtime_reservation'] ?? false) !== true) {
+            Instance::query()->findOrFail($operation->target_id)->runtime()->delete();
+        }
+    }
 
     public function input(Operation $operation): array
     {

@@ -35,18 +35,18 @@ final readonly class ActivateInstanceRuntimeAction
     {
         $instance->loadMissing('node');
 
+        // An Instance that moves into a container stays behind the wake page until the move has ended, so nothing writes its
+        // checkout or its database meanwhile. The move writes the awake marker itself.
+        if (InstanceMigration::running($instance)) {
+            return;
+        }
+
         if (! $this->policy->appliesToInstance($instance)) {
             throw new HibernationException(
                 errorCode: 'hibernation.target_ineligible',
                 message: "Instance [{$instance->name}] is not an app-dev development target.",
                 status: 404,
             );
-        }
-
-        // An Instance that moves into a container stays behind the wake page until the move has ended, so nothing writes its
-        // checkout or its database meanwhile. The move writes the awake marker itself.
-        if (InstanceMigration::running($instance)) {
-            return;
         }
 
         $instanceId = $instance->id;
