@@ -11,7 +11,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * A pairing link the Gateway minted on a T3 server for one Node. The session the Node gets from it
- * carries `client_label` on that server, which is how a revoke finds it.
+ * retains the label for Conn clients; MCP sessions require bounded source-IP attribution.
  *
  * @property int $id
  * @property int $node_id

@@ -23,6 +23,20 @@ inputs:
           type: array
           items:
             type: string
+        pairings:
+          type: array
+          maxItems: 4096
+          items:
+            type: object
+            properties:
+              id: {type: integer, minimum: 1}
+              label: {type: string}
+              ipAddress: {type: string, minLength: 1}
+              issuedAfter: {type: string}
+              expiresAt: {type: string}
+              delivered: {type: boolean}
+            required: [id, label, ipAddress, issuedAfter, expiresAt, delivered]
+            additionalProperties: false
         links:
           type: array
           items:
@@ -30,6 +44,7 @@ inputs:
       required:
       - url
       - labels
+      - pairings
       - links
       additionalProperties: false
     execution_secrets:
@@ -93,7 +108,7 @@ jobs:
     - step: Create private replies
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.labels.size() == 0 }}
+    guard: ${{ inputs.intent.labels.size() == 0 && inputs.intent.pairings.size() == 0 }}
   - name: Select the sessions
     labels:
       role: swamp
@@ -160,6 +175,7 @@ jobs:
       inputs:
         directory: ${{ steps["Create private replies"].outputs.directory }}
         family: session
+        pairings: ${{ steps["Select the sessions"].outputs.pairings }}
         statuses: ${{ steps["Select the sessions"].outputs.sessions.map(item, steps["Revoke the sessions-" + string(item.index)].status) }}
 - name: links
   dependsOn:
@@ -209,6 +225,7 @@ jobs:
       inputs:
         directory: ${{ steps["Create private replies"].outputs.directory }}
         family: link
+        pairings: []
         statuses: ${{ steps["Select the sessions"].outputs.links.map(item, steps["Revoke unused links-" + string(item.index)].status) }}
 - name: cleanup
   dependsOn:

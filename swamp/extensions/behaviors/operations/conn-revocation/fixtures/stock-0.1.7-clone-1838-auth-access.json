@@ -1,0 +1,303 @@
+{
+  "_tag": "Chunk",
+  "requestId": "1",
+  "values": [
+    {
+      "version": 1,
+      "revision": 1,
+      "type": "snapshot",
+      "payload": {
+        "pairingLinks": [],
+        "clientSessions": [
+          {
+            "sessionId": "10275507-0526-4a7e-b365-be59aa9f5439",
+            "subject": "one-time-token",
+            "scopes": [
+              "orchestration:read",
+              "orchestration:operate",
+              "terminal:operate",
+              "relay:read",
+              "access:read",
+              "access:write",
+              "relay:write"
+            ],
+            "permissions": [
+              "orchestration:read",
+              "orchestration:operate",
+              "settings:write",
+              "providers:manage",
+              "environment:maintain",
+              "preview:operate",
+              "diagnostics:read",
+              "terminal:read",
+              "terminal:operate",
+              "source-control:write",
+              "filesystem:read",
+              "filesystem:write",
+              "relay:read",
+              "access:read",
+              "access:write",
+              "relay:write"
+            ],
+            "method": "bearer-access-token",
+            "client": {
+              "label": "nick via Orbit xfw0gxzm",
+              "ipAddress": "10.44.0.6",
+              "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Conn/0.1.8-nckrtl.20261110.4 Chrome/152.0.7977.169 Electron/44.10.1 Safari/537.36",
+              "deviceType": "desktop",
+              "os": "macOS",
+              "browser": "Electron"
+            },
+            "issuedAt": "2026-11-10T16:51:59.675Z",
+            "expiresAt": "2026-12-10T16:51:59.675Z",
+            "lastConnectedAt": "2026-11-10T16:51:59.785Z",
+            "connected": true,
+            "current": false
+          },
+          {
+            "sessionId": "bdddaa7a-779a-4cae-a459-411357423296",
+            "subject": "cli-issued-session",
+            "scopes": [
+              "orchestration:read",
+              "orchestration:operate",
+              "terminal:operate",
+              "relay:read",
+              "access:read",
+              "access:write",
+              "relay:write"
+            ],
+            "permissions": [
+              "orchestration:read",
+              "orchestration:operate",
+              "settings:write",
+              "providers:manage",
+              "environment:maintain",
+              "preview:operate",
+              "diagnostics:read",
+              "terminal:read",
+              "terminal:operate",
+              "source-control:write",
+              "filesystem:read",
+              "filesystem:write",
+              "relay:read",
+              "access:read",
+              "access:write",
+              "relay:write"
+            ],
+            "method": "bearer-access-token",
+            "client": {
+              "label": "Orbit Gateway",
+              "deviceType": "bot"
+            },
+            "issuedAt": "2026-11-10T16:51:22.372Z",
+            "expiresAt": "2026-12-10T16:51:22.372Z",
+            "lastConnectedAt": "2026-11-10T18:45:17.631Z",
+            "connected": true,
+            "current": true
+          },
+          {
+            "sessionId": "b3f0b7e2-de84-43e5-9afe-989650d6775c",
+            "subject": "one-time-token",
+            "scopes": [
+              "orchestration:read",
+              "orchestration:operate",
+              "terminal:operate",
+              "relay:read",
+              "access:read",
+              "access:write",
+              "relay:write"
+            ],
+            "permissions": [
+              "orchestration:read",
+              "orchestration:operate",
+              "settings:write",
+              "providers:manage",
+              "environment:maintain",
+              "preview:operate",
+              "diagnostics:read",
+              "terminal:read",
+              "terminal:operate",
+              "source-control:write",
+              "filesystem:read",
+              "filesystem:write",
+              "relay:read",
+              "access:read",
+              "access:write",
+              "relay:write"
+            ],
+            "method": "bearer-access-token",
+            "client": {
+              "label": "nick-vm via Orbit t1vwg6cr",
+              "ipAddress": "10.44.0.14",
+              "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Conn/0.1.8-nckrtl.20261110.5 Chrome/152.0.7977.169 Electron/44.10.1 Safari/537.36",
+              "deviceType": "desktop",
+              "os": "macOS",
+              "browser": "Electron"
+            },
+            "issuedAt": "2026-11-10T17:19:41.606Z",
+            "expiresAt": "2026-12-10T17:19:41.606Z",
+            "lastConnectedAt": "2026-11-10T17:19:41.722Z",
+            "connected": false,
+            "current": false
+          },
+          {
+            "sessionId": "f2840d76-508a-43cb-8225-78e4abda21fd",
+            "subject": "one-time-token",
+            "scopes": [
+              "orchestration:read",
+              "orchestration:operate",
+              "terminal:operate",
+              "relay:read",
+              "access:read",
+              "access:write",
+              "relay:write"
+            ],
+            "permissions": [
+              "orchestration:read",
+              "orchestration:operate",
+              "settings:write",
+              "providers:manage",
+              "environment:maintain",
+              "preview:operate",
+              "diagnostics:read",
+              "terminal:read",
+              "terminal:operate",
+              "source-control:write",
+              "filesystem:read",
+              "filesystem:write",
+              "relay:read",
+              "access:read",
+              "access:write",
+              "relay:write"
+            ],
+            "method": "bearer-access-token",
+            "client": {
+              "label": "polar via Orbit gxacwese",
+              "ipAddress": "10.44.0.8",
+              "userAgent": "Conn/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+              "deviceType": "mobile",
+              "os": "iOS"
+            },
+            "issuedAt": "2026-11-10T17:17:26.972Z",
+            "expiresAt": "2026-12-10T17:17:26.972Z",
+            "lastConnectedAt": "2026-11-10T18:43:39.787Z",
+            "connected": false,
+            "current": false
+          },
+          {
+            "sessionId": "16ebcd31-192b-4e50-94f4-284118a698bf",
+            "subject": "one-time-token",
+            "scopes": [
+              "orchestration:read",
+              "orchestration:operate",
+              "terminal:operate",
+              "relay:read",
+              "access:read",
+              "access:write",
+              "relay:write"
+            ],
+            "permissions": [
+              "orchestration:read",
+              "orchestration:operate",
+              "settings:write",
+              "providers:manage",
+              "environment:maintain",
+              "preview:operate",
+              "diagnostics:read",
+              "terminal:read",
+              "terminal:operate",
+              "source-control:write",
+              "filesystem:read",
+              "filesystem:write",
+              "relay:read",
+              "access:read",
+              "access:write",
+              "relay:write"
+            ],
+            "method": "bearer-access-token",
+            "client": {
+              "label": "nick-vm via Orbit fng56iox",
+              "ipAddress": "10.44.0.14",
+              "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Conn/0.1.8-nckrtl.20261110.5 Chrome/152.0.7977.169 Electron/44.10.1 Safari/537.36",
+              "deviceType": "desktop",
+              "os": "macOS",
+              "browser": "Electron"
+            },
+            "issuedAt": "2026-11-10T17:12:31.294Z",
+            "expiresAt": "2026-12-10T17:12:31.294Z",
+            "lastConnectedAt": null,
+            "connected": false,
+            "current": false
+          },
+          {
+            "sessionId": "c7d1a24b-ac03-4a60-b8a4-e5d2e1b3823a",
+            "subject": "cli-issued-session",
+            "scopes": [
+              "orchestration:read",
+              "orchestration:operate",
+              "terminal:operate",
+              "relay:read",
+              "access:read",
+              "access:write",
+              "relay:write"
+            ],
+            "permissions": [
+              "orchestration:read",
+              "orchestration:operate",
+              "settings:write",
+              "providers:manage",
+              "environment:maintain",
+              "preview:operate",
+              "diagnostics:read",
+              "terminal:read",
+              "terminal:operate",
+              "source-control:write",
+              "filesystem:read",
+              "filesystem:write",
+              "relay:read",
+              "access:read",
+              "access:write",
+              "relay:write"
+            ],
+            "method": "bearer-access-token",
+            "client": {
+              "label": "Orbit Swamp",
+              "deviceType": "bot"
+            },
+            "issuedAt": "2026-11-10T16:51:23.165Z",
+            "expiresAt": "2026-12-10T16:51:23.165Z",
+            "lastConnectedAt": null,
+            "connected": false,
+            "current": false
+          },
+          {
+            "sessionId": "855dbc55-99e7-4d3b-8ea2-548df4165297",
+            "subject": "mcp-client",
+            "scopes": [
+              "orchestration:read",
+              "orchestration:operate"
+            ],
+            "permissions": [
+              "orchestration:read",
+              "orchestration:operate",
+              "settings:write",
+              "source-control:write"
+            ],
+            "method": "bearer-access-token",
+            "client": {
+              "label": "T3 Code · mini",
+              "ipAddress": "10.44.0.9",
+              "userAgent": "node",
+              "deviceType": "bot"
+            },
+            "issuedAt": "2026-11-10T16:53:21.318Z",
+            "expiresAt": "2026-12-10T16:53:21.318Z",
+            "lastConnectedAt": null,
+            "connected": false,
+            "current": false
+          }
+        ]
+      }
+    }
+  ]
+}

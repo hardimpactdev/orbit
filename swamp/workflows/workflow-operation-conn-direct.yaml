@@ -82,5 +82,6 @@ jobs:
         intent:
           url: ${{ inputs.intent.url }}
           labels: ${{ inputs.intent.labels }}
+          pairings: []
           links: ${{ inputs.intent.links }}
         execution_secrets: ${{ inputs.execution_secrets }}
