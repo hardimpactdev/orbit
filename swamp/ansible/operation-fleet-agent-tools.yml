@@ -1,0 +1,465 @@
+---
+# fleet.agent_tools (ADR 0255, docs/cli/fleet/agent-tools.mmd, /reference/gateway-recovery#agent-tool-updates): keep the agent CLIs on
+# the T3 hosts and the model router at their latest release. Every host keeps its install method: a phase updates what is
+# installed, the way it is installed, and records each tool's version before and after. A running agent session keeps the
+# binary it started with; the next session starts the new one.
+#
+# Tags, one per Swamp phase: `cli` updates every host at once; `router-stage` installs the latest router release beside the
+# others and flips `current`; `router-check` sends one request through the restarted router and flips the link back when it
+# fails; `report` collects every record into one report for the Gateway. Records live in the run folder on the Swamp Node.
+- name: Address the hosts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [cli, router-stage, router-check]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    targets: "{{ intent.hosts + ([intent.router] if intent.router else []) }}"
+  tasks:
+    # Host keys come from the admitted intent; nothing is scanned.
+    - name: Pin the host keys
+      ansible.builtin.known_hosts:
+        path: "{{ run }}/known_hosts"
+        name: "{{ item.0.host if item.0.port == 22 else '[' ~ item.0.host ~ ']:' ~ item.0.port }}"
+        key: "{{ (item.0.host if item.0.port == 22 else '[' ~ item.0.host ~ ']:' ~ item.0.port) ~ ' ' ~ item.1 }}"
+        state: present
+      check_mode: false
+      loop: "{{ targets | subelements('host_keys') }}"
+      loop_control: { label: "{{ item.0.name }}" }
+    - name: Address the T3 hosts
+      ansible.builtin.add_host:
+        name: "host-{{ item.node_id }}"
+        groups: [agent_hosts]
+        ansible_host: "{{ item.host }}"
+        ansible_user: "{{ item.user }}"
+        ansible_port: "{{ item.port }}"
+        ansible_ssh_private_key_file: "{{ item.identity_file }}"
+        target: "{{ item }}"
+      loop: "{{ intent.hosts }}"
+      loop_control: { label: "{{ item.name }}" }
+    - name: Address the router's Node
+      ansible.builtin.add_host:
+        name: router
+        groups: [agent_router]
+        ansible_host: "{{ intent.router.host }}"
+        ansible_user: "{{ intent.router.user }}"
+        ansible_port: "{{ intent.router.port }}"
+        ansible_ssh_private_key_file: "{{ intent.router.identity_file }}"
+        target: "{{ intent.router }}"
+      when: intent.router
+
+# All hosts at once. Each tool has its own rescue, so one failed tool leaves the other tools and the other hosts running. A
+# host that cannot be reached writes no record; the report marks it failed.
+- name: Update the agent CLIs
+  hosts: agent_hosts
+  gather_facts: false
+  tags: [cli]
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    # Where Vite+ keeps the binaries of its global packages: its first home, then its current default.
+    vite_plus_bins: [.vite-plus/bin, .local/share/vite-plus/bin]
+    brew: /home/linuxbrew/.linuxbrew/bin/brew
+    home: "{{ ansible_facts.env.HOME }}"
+    tools: []
+  tasks:
+    - name: Read the home folder
+      ansible.builtin.setup: { gather_subset: ["!all", "!min", "env"] }
+    - name: Find Vite+
+      ansible.builtin.stat: { path: "{{ home }}/{{ item }}/vp" }
+      loop: "{{ vite_plus_bins }}"
+      register: vite_plus
+    - name: Find the self-updating installs
+      ansible.builtin.stat: { path: "{{ item }}" }
+      loop: ["{{ home }}/.grok/bin/grok", "{{ home }}/.local/share/cursor-agent/versions", "{{ brew }}"]
+      register: installs
+    - name: Name the installs
+      vars:
+        found: "{{ vite_plus.results | selectattr('stat.exists') | map(attribute='item') | list }}"
+      ansible.builtin.set_fact:
+        vp_bin: "{{ (home ~ '/' ~ found[0]) if found else '' }}"
+        grok: "{{ installs.results[0].stat.exists }}"
+        cursor: "{{ installs.results[1].stat.exists }}"
+        has_brew: "{{ installs.results[2].stat.exists }}"
+
+    # Vite+: the configured packages that this host has installed globally, in one install of their latest releases.
+    - name: Update the Vite+ globals
+      when: vp_bin != ''
+      environment: { PATH: "{{ vp_bin }}:/usr/local/bin:/usr/bin:/bin" }
+      block:
+        - name: List the Vite+ globals before
+          ansible.builtin.command: { argv: ["{{ vp_bin }}/vp", list, -g] }
+          changed_when: false
+          register: vp_before
+        - name: Pick the packages to update
+          vars:
+            installed: "{{ dict(vp_before.stdout | regex_findall('^(@?[^@\\s]+)@(\\S+)\\s', multiline=True)) }}"
+          ansible.builtin.set_fact:
+            vp_versions: "{{ installed }}"
+            vp_packages: "{{ intent.packages | select('in', installed) | list }}"
+        - name: Install their latest releases
+          ansible.builtin.command: { argv: "{{ [vp_bin ~ '/vp', 'i', '-g'] + (vp_packages | map('regex_replace', '$', '@latest') | list) }}" }
+          when: vp_packages | length > 0
+          timeout: 900
+          changed_when: true
+        - name: List the Vite+ globals after
+          ansible.builtin.command: { argv: ["{{ vp_bin }}/vp", list, -g] }
+          changed_when: false
+          register: vp_after
+        - name: Record the Vite+ packages
+          vars:
+            after: "{{ dict(vp_after.stdout | regex_findall('^(@?[^@\\s]+)@(\\S+)\\s', multiline=True)) }}"
+          ansible.builtin.set_fact:
+            tools: "{{ tools + [{'name': item, 'method': 'vite-plus', 'before': vp_versions[item], 'after': after[item] | default(none),
+              'outcome': 'updated' if after[item] | default(none) != vp_versions[item] else 'current'}] }}"
+          loop: "{{ vp_packages }}"
+      rescue:
+        - name: Record the failed Vite+ update
+          ansible.builtin.set_fact:
+            tools: "{{ tools + [{'name': 'vite-plus', 'method': 'vite-plus', 'outcome': 'failed', 'error': (ansible_failed_result.msg | default('failed'))[:300]}] }}"
+
+    # Grok's own install updates itself.
+    - name: Update Grok's own install
+      when: grok | bool
+      block:
+        - name: Read Grok's version before
+          ansible.builtin.command: { argv: ["{{ home }}/.grok/bin/grok", --version] }
+          changed_when: false
+          register: grok_before
+        - name: Run Grok's updater
+          ansible.builtin.command: { argv: ["{{ home }}/.grok/bin/grok", update] }
+          timeout: 300
+          changed_when: true
+        - name: Read Grok's version after
+          ansible.builtin.command: { argv: ["{{ home }}/.grok/bin/grok", --version] }
+          changed_when: false
+          register: grok_after
+        - name: Record Grok
+          vars:
+            before: "{{ grok_before.stdout | regex_search('[0-9]+\\.[0-9]+\\.[0-9]+') }}"
+            after: "{{ grok_after.stdout | regex_search('[0-9]+\\.[0-9]+\\.[0-9]+') }}"
+          ansible.builtin.set_fact:
+            tools: "{{ tools + [{'name': 'grok', 'method': 'grok-update', 'before': before, 'after': after, 'outcome': 'updated' if before != after else 'current'}] }}"
+      rescue:
+        - name: Record the failed Grok update
+          ansible.builtin.set_fact:
+            tools: "{{ tools + [{'name': 'grok', 'method': 'grok-update', 'outcome': 'failed', 'error': (ansible_failed_result.msg | default('failed'))[:300]}] }}"
+
+    # Cursor's installer installs the latest version beside the others and moves the `cursor-agent` link to it.
+    - name: Update the Cursor agent
+      when: cursor | bool
+      block:
+        - name: Read the Cursor agent's link before
+          ansible.builtin.stat: { path: "{{ home }}/.local/bin/cursor-agent" }
+          register: cursor_before
+        - name: Make a folder for the installer
+          ansible.builtin.tempfile: { state: directory, suffix: -cursor }
+          register: cursor_folder
+        - name: Download the Cursor installer
+          ansible.builtin.get_url: { url: "https://cursor.com/install", dest: "{{ cursor_folder.path }}/install.sh", mode: "0700", timeout: 30 }
+        - name: Run the Cursor installer
+          ansible.builtin.command: { argv: [bash, "{{ cursor_folder.path }}/install.sh"] }
+          timeout: 300
+          changed_when: true
+        - name: Read the Cursor agent's link after
+          ansible.builtin.stat: { path: "{{ home }}/.local/bin/cursor-agent" }
+          register: cursor_after
+        - name: Record the Cursor agent
+          vars:
+            before: "{{ cursor_before.stat.lnk_target | default('') | regex_search('versions/([^/]+)/', '\\1') | default([none], true) | first }}"
+            after: "{{ cursor_after.stat.lnk_target | default('') | regex_search('versions/([^/]+)/', '\\1') | default([none], true) | first }}"
+          ansible.builtin.set_fact:
+            tools: "{{ tools + [{'name': 'cursor-agent', 'method': 'cursor-install', 'before': before, 'after': after,
+              'outcome': 'updated' if before != after else 'current'}] }}"
+      rescue:
+        - name: Record the failed Cursor update
+          ansible.builtin.set_fact:
+            tools: "{{ tools + [{'name': 'cursor-agent', 'method': 'cursor-install', 'outcome': 'failed', 'error': (ansible_failed_result.msg | default('failed'))[:300]}] }}"
+      always:
+        - name: Remove the installer
+          ansible.builtin.file: { path: "{{ cursor_folder.path }}", state: absent }
+          when: cursor_folder.path is defined
+
+    # Antigravity's CLI (`agy`) as a Homebrew cask, where the host installed it that way.
+    - name: Update the Antigravity CLI
+      when: has_brew | bool
+      environment: { PATH: "{{ brew | dirname }}:/usr/local/bin:/usr/bin:/bin" }
+      block:
+        - name: Read the cask's version before
+          ansible.builtin.command: { argv: ["{{ brew }}", list, --cask, --versions, antigravity-cli] }
+          changed_when: false
+          failed_when: false
+          register: agy_before
+        - name: Upgrade the cask
+          ansible.builtin.command: { argv: ["{{ brew }}", upgrade, --cask, antigravity-cli] }
+          when: agy_before.rc == 0
+          timeout: 600
+          changed_when: true
+        - name: Read the cask's version after
+          ansible.builtin.command: { argv: ["{{ brew }}", list, --cask, --versions, antigravity-cli] }
+          when: agy_before.rc == 0
+          changed_when: false
+          register: agy_after
+        - name: Record the Antigravity CLI
+          when: agy_before.rc == 0
+          vars:
+            before: "{{ agy_before.stdout.split() | last }}"
+            after: "{{ agy_after.stdout.split() | last }}"
+          ansible.builtin.set_fact:
+            tools: "{{ tools + [{'name': 'antigravity-cli', 'method': 'homebrew-cask', 'before': before, 'after': after,
+              'outcome': 'updated' if before != after else 'current'}] }}"
+      rescue:
+        - name: Record the failed Antigravity update
+          ansible.builtin.set_fact:
+            tools: "{{ tools + [{'name': 'antigravity-cli', 'method': 'homebrew-cask', 'outcome': 'failed', 'error': (ansible_failed_result.msg | default('failed'))[:300]}] }}"
+
+    # `-i localhost,` makes localhost an inventory host, so a task delegated to it needs the local connection.
+    - name: Write the host's record
+      vars:
+        failed: "{{ tools | selectattr('outcome', 'eq', 'failed') | list | length > 0 }}"
+        updated: "{{ tools | selectattr('outcome', 'eq', 'updated') | list | length > 0 }}"
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      ansible.builtin.copy:
+        dest: "{{ run }}/host-{{ target.node_id }}.json"
+        mode: "0600"
+        content: "{{ {'node_id': target.node_id, 'name': target.name, 'tools': tools,
+          'outcome': 'failed' if failed else ('updated' if updated else 'current'),
+          'error_code': 'fleet.agent_tools_tool_failed' if failed else none} | to_json }}"
+      delegate_to: localhost
+
+# Install the latest upstream release beside the others and flip `current` to it. Nothing changes before the archive matched
+# its published checksum and the new binary reported its version. The flag tells the workflow whether to restart the router.
+- name: Stage the router release
+  hosts: agent_router
+  gather_facts: false
+  tags: [router-stage]
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    router: "{{ target }}"
+    record: "{{ run }}/router.json"
+    download: "https://github.com/{{ router.repository }}/releases/download/v{{ latest }}"
+    asset: "CLIProxyAPI_{{ latest }}_{{ router.asset }}.tar.gz"
+    newer: "{{ latest is version(before, '>') }}"
+    local: &local
+      ansible_connection: local
+      ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  tasks:
+    - name: Read the current release
+      ansible.builtin.stat: { path: "{{ router.folder }}/current" }
+      register: link
+    - name: Check the current link
+      ansible.builtin.assert:
+        that:
+          - link.stat.islnk | default(false)
+          - link.stat.lnk_target | default('') | basename is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+        fail_msg: "{{ router.folder }}/current is not a link to releases/<version>."
+    # A transient GitHub error gets the module's own retry: three tries, 10 s apart.
+    - name: Read the latest upstream release
+      ansible.builtin.uri:
+        url: "https://api.github.com/repos/{{ router.repository }}/releases/latest"
+        headers: { Accept: application/vnd.github+json }
+        timeout: 20
+      register: release
+      retries: 3
+      delay: 10
+      until: release.status == 200
+    - name: Name the releases
+      ansible.builtin.set_fact:
+        before: "{{ link.stat.lnk_target | basename }}"
+        latest: "{{ release.json.tag_name | regex_replace('^v', '') }}"
+    - name: Check the upstream version
+      ansible.builtin.assert:
+        that:
+          - latest is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+        fail_msg: "The latest upstream tag {{ release.json.tag_name }} is not a version."
+    # The check needs a client key and the port; a router without them is never flipped, so it never rolls back for them.
+    - name: Read the router's configuration
+      ansible.builtin.slurp: { src: "{{ router.config }}" }
+      register: config
+      no_log: true
+    - name: Check the router's configuration
+      ansible.builtin.assert:
+        that:
+          - (config.content | b64decode | from_yaml)['api-keys'] | default([]) | length > 0
+          - (config.content | b64decode | from_yaml).port | default(0) | int > 0
+        fail_msg: The router's configuration has no client key or no port.
+        quiet: true
+      no_log: true
+    - name: Record the releases
+      vars: *local
+      ansible.builtin.copy:
+        dest: "{{ record }}"
+        mode: "0600"
+        content: "{{ {'node_id': router.node_id, 'name': router.name, 'before': before, 'latest': latest} | to_json }}"
+      delegate_to: localhost
+    - name: Install the latest release
+      when: newer | bool
+      block:
+        - name: Make a download folder
+          ansible.builtin.tempfile: { state: directory, suffix: -router }
+          register: folder
+        # get_url reads the archive's line from the release's checksums.txt and refuses a mismatch.
+        - name: Download the release
+          ansible.builtin.get_url:
+            url: "{{ download }}/{{ asset }}"
+            dest: "{{ folder.path }}/{{ asset }}"
+            checksum: "sha256:{{ download }}/checksums.txt"
+            mode: "0600"
+            timeout: 60
+        - name: Make the release folder
+          ansible.builtin.file: { path: "{{ router.folder }}/releases/{{ latest }}", state: directory, mode: "0775" }
+        - name: Unpack the release
+          ansible.builtin.unarchive: { src: "{{ folder.path }}/{{ asset }}", dest: "{{ router.folder }}/releases/{{ latest }}", remote_src: true }
+        - name: Check the new binary's version
+          ansible.builtin.command: { argv: ["{{ router.folder }}/releases/{{ latest }}/cli-proxy-api", --help] }
+          register: help
+          changed_when: false
+          failed_when: "('CLIProxyAPI Version: ' ~ latest ~ ',') not in (help.stdout ~ help.stderr)"
+        # The file module makes the new link beside the old one and renames it over `current`: one atomic step.
+        - name: Flip the current link
+          ansible.builtin.file: { src: "releases/{{ latest }}", dest: "{{ router.folder }}/current", state: link, force: true }
+      always:
+        - name: Remove the download folder
+          ansible.builtin.file: { path: "{{ folder.path }}", state: absent }
+          when: folder.path is defined
+    - name: Record the staged release
+      vars: *local
+      ansible.builtin.copy:
+        dest: "{{ record }}"
+        mode: "0600"
+        content: "{{ {'node_id': router.node_id, 'name': router.name, 'before': before, 'latest': latest,
+          'after': latest if newer | bool else before, 'outcome': 'staged' if newer | bool else 'current'} | to_json }}"
+      delegate_to: localhost
+    - name: Tell the workflow whether to restart
+      vars: *local
+      ansible.builtin.copy: { dest: "{{ run }}/router-restart", mode: "0600", content: "{{ 'restart' if newer | bool else 'none' }}" }
+      delegate_to: localhost
+
+# One request for one token through the restarted router, with a client key of its own configuration. 200 passes, and so does
+# 429: the provider took the request and only refused the quota. Anything else, or a failed restart, flips `current` back to
+# the release before; the workflow then restarts the router again. After a pass, keep the `keep` newest other releases.
+- name: Check the router
+  hosts: agent_router
+  gather_facts: false
+  tags: [router-check]
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    restart: "{{ lookup('ansible.builtin.env', 'ORBIT_RESTART') }}"
+    router: "{{ target }}"
+    record_path: "{{ run }}/router.json"
+    staged: "{{ lookup('ansible.builtin.file', record_path) | from_json }}"
+    local: &check_local
+      ansible_connection: local
+      ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  tasks:
+    - name: Check the new release
+      block:
+        - name: Check that the restart succeeded
+          ansible.builtin.assert: { that: [restart == 'succeeded'], fail_msg: "The router's restart ended {{ restart }}." }
+        - name: Read the router's configuration
+          ansible.builtin.slurp: { src: "{{ router.config }}" }
+          register: config
+          no_log: true
+        - name: Name the port
+          ansible.builtin.set_fact: { router_port: "{{ (config.content | b64decode | from_yaml).port | int }}" }
+        - name: Wait for the router
+          ansible.builtin.wait_for: { host: 127.0.0.1, port: "{{ router_port }}", timeout: 30 }
+        # The router may still load its accounts just after the start: three tries, 5 s apart.
+        - name: Send one request through the router
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:{{ router_port }}/v1/messages"
+            method: POST
+            body_format: json
+            body: { model: "{{ router.model }}", max_tokens: 1, messages: [{ role: user, content: ping }] }
+            headers:
+              Authorization: "Bearer {{ (config.content | b64decode | from_yaml)['api-keys'][0] }}"
+              anthropic-version: "2023-06-01"
+            status_code: [200, 429]
+            timeout: 60
+            use_proxy: false
+          register: probe
+          retries: 3
+          delay: 5
+          until: probe.status in [200, 429]
+          no_log: true
+        - name: Find the releases
+          ansible.builtin.find: { paths: "{{ router.folder }}/releases", file_type: directory, patterns: '^[0-9]+\.[0-9]+\.[0-9]+$', use_regex: true }
+          register: releases
+        - name: Remove the releases past the newest others
+          ansible.builtin.file: { path: "{{ router.folder }}/releases/{{ item }}", state: absent }
+          loop: "{{ (releases.files | map(attribute='path') | map('basename') | reject('eq', staged.latest)
+            | community.general.version_sort | reverse | list)[router.keep:] }}"
+          register: pruned
+        - name: Record the updated router
+          vars: *check_local
+          ansible.builtin.copy:
+            dest: "{{ record_path }}"
+            mode: "0600"
+            content: "{{ staged | combine({'outcome': 'updated', 'pruned': pruned.results | default([]) | map(attribute='item') | list}) | to_json }}"
+          delegate_to: localhost
+        - name: Tell the workflow to keep it
+          vars: *check_local
+          ansible.builtin.copy: { dest: "{{ run }}/router-rollback", mode: "0600", content: none }
+          delegate_to: localhost
+      rescue:
+        - name: Flip the current link back
+          ansible.builtin.file: { src: "releases/{{ staged.before }}", dest: "{{ router.folder }}/current", state: link, force: true }
+        - name: Record the rollback
+          vars: *check_local
+          ansible.builtin.copy:
+            dest: "{{ record_path }}"
+            mode: "0600"
+            content: "{{ staged | combine({'outcome': 'rolled_back', 'after': staged.before, 'step': 'check',
+              'error_code': 'fleet.agent_tools_router_restart_failed' if restart != 'succeeded' else 'fleet.agent_tools_router_check_failed'}) | to_json }}"
+          delegate_to: localhost
+        - name: Tell the workflow to restart the release before
+          vars: *check_local
+          ansible.builtin.copy: { dest: "{{ run }}/router-rollback", mode: "0600", content: rollback }
+          delegate_to: localhost
+
+# Every record as one report for the Gateway. The phase fails after it wrote the report when a part failed, so the run and its
+# Operation fail and the report still reaches the Gateway.
+- name: Report the run
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [report]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    rollback_restart: "{{ lookup('ansible.builtin.env', 'ORBIT_ROLLBACK_RESTART') }}"
+  tasks:
+    - name: Find the host records
+      ansible.builtin.find: { paths: "{{ run }}", patterns: "host-*.json" }
+      register: records
+    - name: Read the router record
+      ansible.builtin.set_fact:
+        router_record: "{{ lookup('ansible.builtin.file', run ~ '/router.json', errors='ignore') | default('{}', true) | from_json }}"
+    # A router record without an end state belongs to a phase that failed or was cut; `staged` was flipped but never checked.
+    - name: Settle the router's record
+      ansible.builtin.set_fact:
+        router_report: >-
+          {{ none if not intent.router else
+          ({'node_id': intent.router.node_id, 'name': intent.router.name} | combine(router_record)
+          | combine({'outcome': 'failed', 'error_code': 'fleet.agent_tools_router_failed'} if router_record.outcome | default('') in ['', 'staged'] else {})
+          | combine({'error_code': 'fleet.agent_tools_router_rollback_failed'}
+            if router_record.outcome | default('') == 'rolled_back' and rollback_restart != 'succeeded' else {})) }}
+    - name: Write the report
+      ansible.builtin.copy:
+        dest: "{{ run }}/report.json"
+        mode: "0600"
+        content: "{{ {'hosts': query('ansible.builtin.file', *(records.files | map(attribute='path') | sort)) | map('from_json') | list,
+          'router': router_report} | to_json }}"
+    - name: Check every part
+      vars:
+        report: "{{ lookup('ansible.builtin.file', run ~ '/report.json') | from_json }}"
+      ansible.builtin.assert:
+        that:
+          - report.hosts | length == intent.hosts | length
+          - report.hosts | selectattr('outcome', 'eq', 'failed') | list | length == 0
+          - report.router is none or report.router.outcome in ['updated', 'current']
+        fail_msg: A host or the router failed; the report lists each.

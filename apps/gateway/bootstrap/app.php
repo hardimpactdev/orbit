@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Console\Kernel as GatewayConsoleKernel;
 use App\Console\Scheduling\GatewaySchedule;
+use App\Domain\Fleet\AgentTools;
 use App\Domain\Tasks\TaskSchedule;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Http\Middleware\AnnounceDesiredCliVersion;
@@ -21,6 +22,7 @@ use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Infrastructure\Swamp\SwampScheduledResults;
+use App\Jobs\Fleet\AdmitAgentTools;
 use App\Jobs\Fleet\AdmitFleetReboot;
 use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Jobs\Fleet\CheckFleetRebootConfirmation;
@@ -86,6 +88,9 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // A host with a refresh open returns it, so a repeat starts nothing.
         GatewaySchedule::job($schedule, new RefreshTaskVmImages)->dailyAt('03:20')
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
+        // ADR 0255: the daily update of the agent CLIs on the T3 hosts and of the model router, before the fleet window opens.
+        GatewaySchedule::job($schedule, new AdmitAgentTools)->dailyAt(AgentTools::Schedule['at'])->timezone(AgentTools::Schedule['timezone'])
+            ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->boolean('fleet.agent_tools'));
         // Stage 8: a verified release admits the fleet rollout (release projection). Nodes outside the daytime set wait for the
         // 03:00–06:00 Amsterdam window, so the rollout is also admitted once when that window opens.
         GatewaySchedule::job($schedule, new AdmitFleetRollout)->dailyAt('03:05')->timezone('Europe/Amsterdam')

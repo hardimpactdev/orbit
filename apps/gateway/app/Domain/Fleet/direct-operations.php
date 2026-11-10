@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Fleet\AgentToolsProjection;
 use App\Domain\Fleet\FleetRebootGitHubTokens;
 use App\Domain\Fleet\FleetRebootProjection;
 use App\Domain\Fleet\FleetReleaseProjection;
@@ -19,6 +20,12 @@ return [
         'terminal_result' => ['job' => 'pass', 'step' => 'Report the pass', 'data' => 'fleet-reboot-report'],
         'github_token_issuer' => FleetRebootGitHubTokens::class,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^fleet-reboot-github-operation-[1-9][0-9]*$']],
+    ],
+    'fleet.agent_tools' => [
+        'workflow' => 'operation-fleet-agent-tools',
+        'projection' => AgentToolsProjection::class,
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'report', 'step' => 'Report the run', 'data' => 'fleet-agent-tools-report'],
     ],
     'fleet.cli_converge' => [
         'workflow' => 'operation-fleet-cli-converge',

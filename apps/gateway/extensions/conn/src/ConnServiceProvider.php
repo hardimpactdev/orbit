@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn;
 
 use App\Domain\Activity\ActivityInputRedaction;
+use App\Domain\Fleet\AgentToolsContribution;
 use App\Domain\Instances\InstanceLifecycleContribution;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Providers\ExtensionServiceProvider;
+use Orbit\Extensions\Conn\Domain\ConnAgentTools;
 use Orbit\Extensions\Conn\Domain\ConnDirectOperations;
 use Orbit\Extensions\Conn\Domain\ConnInstanceLifecycle;
 use Orbit\Extensions\Conn\Domain\T3ServerClient;
@@ -37,6 +39,7 @@ final class ConnServiceProvider extends ExtensionServiceProvider
         $this->contribute(DirectOperationContribution::class, ConnDirectOperations::class);
         $this->contribute(ActivityInputRedaction::class, ConnActivityInputRedaction::class);
         $this->contribute(InstanceLifecycleContribution::class, ConnInstanceLifecycle::class);
+        $this->contribute(AgentToolsContribution::class, ConnAgentTools::class);
     }
 
     public function boot(): void

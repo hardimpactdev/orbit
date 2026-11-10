@@ -1,0 +1,199 @@
+id: 7c3e9a52-41d8-4b6f-a0e2-5d18c6f4b937
+name: operation-fleet-agent-tools
+description: "fleet.agent_tools: update the agent CLIs on every T3 host and the model router beside them, as Ansible phases from 209; report each part's versions before and after."
+vaults: [orbit-control-inputs]
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: fleet.agent_tools}
+    intent:
+      type: object
+      properties:
+        packages: {type: array, items: {type: string}}
+        hosts: {type: array}
+        router: {type: [object, 'null']}
+      required: [packages, hosts, router]
+      additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: input
+  labels: {role: swamp}
+  steps:
+    # Input: the admitted intent and the shipped playbooks, as the run folder that every phase reads and writes.
+  - name: 'input'
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: write
+      inputs:
+        intent: '${{ inputs.intent }}'
+        path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+- name: hosts
+  labels: {role: swamp}
+  dependsOn: [{job: input, condition: {type: succeeded}}]
+  steps:
+    # Every host at once: the configured Vite+ globals it has, Grok's own install, the Cursor installer and the Antigravity
+    # cask, each where the host installed it. A failed tool or host is recorded and leaves the others running.
+  - name: 'Update the agent CLIs'
+    labels: {role: swamp}
+    guard: '${{ size(inputs.intent.hosts) == 0 }}'
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: fleet-agent-tools-cli
+      methodName: execute
+      inputs:
+        run: timeout 1200 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags cli "$ORBIT_ANSIBLE/operation-fleet-agent-tools.yml"
+        env: &phase
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+- name: router
+  labels: {role: swamp}
+  dependsOn: [{job: input, condition: {type: succeeded}}]
+  steps:
+    # Stage: read the latest upstream release; when it is newer, download it, check its checksum and version, unpack it
+    # beside the others and flip `current`. A failure here changes nothing the router runs.
+  - name: 'Stage the router release'
+    labels: {role: swamp}
+    guard: '${{ inputs.intent.router == null }}'
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: fleet-agent-tools-router-stage
+      methodName: execute
+      inputs:
+        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags router-stage "$ORBIT_ANSIBLE/operation-fleet-agent-tools.yml"
+        env: *phase
+  - name: 'Read the stage'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Stage the router release', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: fleet-agent-tools-router-staged
+      methodName: execute
+      inputs:
+        run: timeout 10 cat "$ORBIT_RUN/router-restart"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
+    # Restart: the router's Process through the Process restart workflow, with the restart intent the Gateway admitted.
+  - name: 'Restart the router'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Read the stage', condition: {type: succeeded}}]
+    guard: '${{ steps["Read the stage"].outputs.stdout.trim() != "restart" }}'
+    allowFailure: true
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-control
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.router.node_id }}'
+        kind: process.restart
+        intent: '${{ inputs.intent.router.restart }}'
+        execution_secrets: {}
+    # Check: one request through the new release; a failed restart or request flips `current` back.
+  - name: 'Check the router'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Restart the router', condition: {type: completed}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: fleet-agent-tools-router-check
+      methodName: execute
+      inputs:
+        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags router-check "$ORBIT_ANSIBLE/operation-fleet-agent-tools.yml"
+        env:
+          <<: *phase
+          ORBIT_RESTART: '${{ steps["Restart the router"].status }}'
+  - name: 'Read the check'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Check the router', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: fleet-agent-tools-router-checked
+      methodName: execute
+      inputs:
+        run: timeout 10 cat "$ORBIT_RUN/router-rollback"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
+    # Roll back: restart the router again on the release before.
+  - name: 'Restart the release before'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Read the check', condition: {type: succeeded}}]
+    guard: '${{ steps["Read the check"].outputs.stdout.trim() != "rollback" }}'
+    allowFailure: true
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-control
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.router.node_id }}'
+        kind: process.restart
+        intent: '${{ inputs.intent.router.restart }}'
+        execution_secrets: {}
+- name: report
+  labels: {role: swamp}
+  dependsOn:
+  - {job: input, condition: {type: succeeded}}
+  - {job: hosts, condition: {type: always}}
+  - {job: router, condition: {type: always}}
+  steps:
+    # The records of every host and the router, as one report for the Gateway; the phase fails after it when a part failed.
+  - name: 'Collect the results'
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: fleet-agent-tools-collect
+      methodName: execute
+      inputs:
+        run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags report "$ORBIT_ANSIBLE/operation-fleet-agent-tools.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ORBIT_ROLLBACK_RESTART: '${{ "Restart the release before" in steps ? steps["Restart the release before"].status : "skipped" }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
+          ANSIBLE_FORCE_COLOR: '0'
+  - name: 'Report the run'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Collect the results', condition: {type: always}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: fleet-agent-tools-report
+      methodName: execute
+      inputs:
+        run: timeout 10 cat "$ORBIT_RUN/report.json"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
+  - name: 'cleanup'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Report the run', condition: {type: always}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: fleet-agent-tools-cleanup
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_RUN"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}

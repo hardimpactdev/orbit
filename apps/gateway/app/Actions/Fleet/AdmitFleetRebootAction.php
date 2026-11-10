@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Fleet;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Fleet\AgentTools;
 use App\Domain\Fleet\FleetReboot;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\SwampNode;
@@ -50,10 +51,11 @@ final readonly class AdmitFleetRebootAction
         if (FleetReboot::open() instanceof Operation) {
             throw new ResourceOperationException('fleet.reboot_busy', 'A fleet reboot pass is already running.', 409);
         }
-        if (Operation::query()->where('kind', 'fleet.rollout')->whereNotIn('status', OperationStatus::terminalValues())->exists()
+        // An agent tool update installs on the hosts the pass reboots (ADR 0255); the pass waits for it as for a rollout.
+        if (Operation::query()->whereIn('kind', ['fleet.rollout', AgentTools::Kind])->whereNotIn('status', OperationStatus::terminalValues())->exists()
             || GatewayRelease::query()->whereIn('outcome', [GatewayRelease::Running, GatewayRelease::Queued])->get()
                 ->contains(static fn (GatewayRelease $record): bool => ! $record->awaitingPublication())) {
-            throw new ResourceOperationException('fleet.reboot_waiting', 'A fleet rollout or a Gateway release runs; the pass waits for it.', 409);
+            throw new ResourceOperationException('fleet.reboot_waiting', 'A fleet rollout, an agent tool update or a Gateway release runs; the pass waits for it.', 409);
         }
         $members = $this->reboot->members();
         if ($nodeIds !== null) {

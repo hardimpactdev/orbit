@@ -23,6 +23,7 @@ additionalFiles:
   - ansible/tasks/node-kernel-policy.yml
   - ansible/tasks/node-update-policy.yml
   - ansible/operation-fleet-reboot.yml
+  - ansible/operation-fleet-agent-tools.yml
   - ansible/tasks/fleet-reboot-record.yml
   - ansible/tasks/fleet-reboot-read.yml
   - ansible/tasks/fleet-reboot-failed.yml

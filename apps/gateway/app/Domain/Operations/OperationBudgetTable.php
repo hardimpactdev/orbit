@@ -36,6 +36,10 @@ final class OperationBudgetTable
         // and a check; most Nodes drain at once. The window is three hours, and the pass never starts a Node it cannot finish before 06:00,
         // so the budget is the window. Replace with the 14-day p95 after the first nights.
         'fleet.reboot' => 10800,
+        // No run yet. Basis: the hosts update in parallel; a Vite+ global install of four packages, the Cursor installer and a
+        // Homebrew cask upgrade take about 5 minutes on beast, the router about 2 with two restarts. The CLI phase is bounded at
+        // 1,200 s; x 1.5, rounded up to five minutes. Replace with the 14-day p95 after the first runs.
+        'fleet.agent_tools' => 1800,
         // No native run yet. Basis: the legacy runner's last 47 verified releases (p95 117 s, longest 125 s) plus the
         // Horizon drain, which waits for running jobs up to the longest supervisor timeout + 30 s (1,730 s); x 1.5 = 2,783 s,
         // rounded up to five minutes. An expiry pauses releases. Replace with the 14-day p95 after the first success.
