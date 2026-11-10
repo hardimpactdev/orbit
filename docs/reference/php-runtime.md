@@ -111,6 +111,8 @@ php_admin_value[opcache.revalidate_freq] = 0
 
 A development Instance in a container uses no pool: FrankenPHP serves it in its container, from the static PHP build of its version in the runtime folder. See [the default Instance](/reference/development-containers#the-default-instance).
 
+Container PHP uses `memory_limit=1G`, matching the CI test limit. The container phase writes it to `/etc/orbit/php/conf.d/99-orbit-runtime.ini`, which the static PHP CLI and FrankenPHP both read.
+
 ## Production runtime
 
 Each production Instance that serves PHP has a dedicated service for its Unix user. Production users on one Node share the installed PHP packages, but not a PHP-FPM master.
