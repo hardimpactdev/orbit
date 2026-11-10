@@ -49,6 +49,8 @@ When parallelizing CI commands, bound their nested worker pools as well as the o
 
 Before you finish, add what you learned to the skill that owns it (this one, swamp-flow, ansible-phase or flow-tighten), in the same PR. Say what changed.
 
+For a shape-gate cancellation, identify the slow command from its completed output. Long fixture files share the existing worker budget only after they are split into independent files.
+
 
 A provider retirement needs its full resource inventory. An empty task VM sweep does not prove templates or storage are absent; verified templates can be deliberately excluded from sweep results. Close that inventory before removing the provider path.
 
@@ -60,6 +62,8 @@ Before changing a CI cache, separate hits from misses in job logs. A Cargo lock 
 
 Nested command proof must cross the same CLI, typed SDK and Gateway validation boundaries as ordinary commands. Reuse CI's cases-file lookup so `node:role:add` resolves to `node/role-add.cases.yaml`. Run the approved human-only refusal cases too: JSON coverage alone does not prove that operators can see the stable error code. Pass that code through the shared renderer's code argument, not through its bounded validation fields. Map the command's implementation in the shared proof selection list when its cases become runnable.
 
+
+Ansible fixture deadlines need pinned-Ansible and orphan regressions: test an exited leader and a child forked during TERM. Own descendants from launch with a Linux subreaper, signal through pidfds, and bound output collection. Deno test files have separate isolates: establish a shared command deadline in the parent environment and test exhaustion across two files. Size both the playbook guard and the shared serial-command budget from slow-runner measurements; include a stall in the last playbook and the rest of the gate in the arithmetic.
 
 ## Report
 

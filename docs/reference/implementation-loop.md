@@ -283,7 +283,17 @@ bin/swamp-shape-gate --base REF     # compare with another base
 bin/swamp-shape-gate --only shape   # or --only validate
 ```
 
-The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate`, keyed by their pins, and reuses it. `swamp/ansible/shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts` and the frozen agent command check. It runs every step, prints a summary, and exits 1 when any step failed. It retries nothing. A run takes about one minute once the environment exists. The JSON reports go to `--reports DIR`, by default a per-user directory in the temporary directory.
+The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate`, keyed by their pins, and reuses it. `swamp/ansible/shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts` and the frozen agent command check.
+
+Independent commands share up to four workers, with one worker inside each command. The Instance host fixture files run in two serial groups at the front of the queue. At most two Instance host playbooks run at once, leaving workers for the other checks. On ci-shark-3, the groups took 328.1 and 503.7 seconds in a 14m57s job. Older Sabre cases regroup to about 468 and 569 seconds.
+
+Each playbook has a four-minute hang guard. Before launching a fixture command, the gate sets `ORBIT_INSTANCE_HOST_DEADLINE_MS` to the current epoch time in milliseconds plus twelve minutes. Every test file reads that same deadline; a late playbook gets only the time left. A file run outside the gate defaults to twelve minutes from its helper import. The shared budget leaves 216.3 seconds (42.9%) above the slower ci-shark-3 group and 151 seconds (26.5%) above Sabre. Cleanup and output collection take at most five more seconds.
+
+Setup and the rest of the measured CI job add `ceil(897 - 503.7) = 394` seconds. The calibrated stall estimate is `720 + 5 + 394 = 1119` seconds (18m39s), leaving 1m21s below the twenty-minute target and 11m21s below the unchanged thirty-minute workflow limit. This estimate depends on measured runner overhead; it is not a hard bound on unrelated setup or checks.
+
+A Python child subreaper owns each playbook from launch. Detached workers and orphans reparent to it. On deadline it sends TERM to its children, waits one second, then repeatedly kills and reaps children, including those adopted during cleanup. Signals use pidfds. Output collection also has a deadline. A timeout fails the case with the captured output, including its last task.
+
+The gate prints each command's start and reports its result as soon as it finishes. It runs every step, prints a summary, and exits 1 when any step failed. It retries nothing. The JSON reports go to `--reports DIR`, by default a per-user directory in the temporary directory.
 
 The shape checker resolves a constant quoted CEL child-workflow name and scans that child just as it scans a literal target.
 

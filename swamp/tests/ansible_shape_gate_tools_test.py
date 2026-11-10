@@ -7,7 +7,9 @@ import stat
 import subprocess
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 from unittest import mock
 
 import yaml
@@ -89,16 +91,57 @@ class ShapeGateToolsTest(unittest.TestCase):
         for step in deno_tests:
             self.assertEqual(step.env.get('ANSIBLE_COLLECTIONS_PATH'), str(collections), step.name)
 
-    def test_each_deno_test_file_is_its_own_parallel_step(self):
+    def test_every_deno_test_file_runs_once_with_two_early_instance_host_groups(self):
         steps = self.gate.plan('HEAD', self.system, self.system, self.system / 'collections')
         files = sorted(str(path.relative_to(ROOT / 'swamp')) for path in (ROOT / 'swamp/tests').glob('*_test.ts'))
-        planned = [step.argv[-1] for step in steps if step.group == 'shape' and step.argv[:3] == ['deno', 'test', '-A'] and step.argv[-1].startswith('tests/')]
+        commands = [step for step in steps if step.group == 'shape' and step.argv[:3] == ['deno', 'test', '-A'] and step.argv[-1].startswith('tests/')]
+        planned = [file for step in commands for file in step.argv[3:]]
         elsewhere = [step.argv[-1] for step in steps if step.group == 'validate' and step.argv[-1].startswith('tests/')]
         self.assertTrue(set(elsewhere) <= set(self.gate.DENO_TESTS_ELSEWHERE))
         self.assertTrue(set(self.gate.DENO_TESTS_ELSEWHERE) <= set(files), 'each file left out exists')
-        self.assertEqual(planned, [file for file in files if file not in self.gate.DENO_TESTS_ELSEWHERE])
+        self.assertEqual(sorted(planned), [file for file in files if file not in self.gate.DENO_TESTS_ELSEWHERE])
         self.assertIn('tests/ansible_instance_host_test.ts', planned)
-        self.assertTrue(all(step.parallel for step in steps if step.argv[-1] in planned))
+        self.assertTrue(all(step.parallel for step in commands))
+        instance = [step for step in commands if any('ansible_instance_host' in arg for arg in step.argv)]
+        self.assertEqual(len(instance), 2, 'at most two Instance-host playbooks run at once')
+        self.assertEqual([step.argv[3:] for step in instance], [list(group) for group in self.gate.INSTANCE_HOST_TEST_GROUPS])
+        self.assertEqual(steps[2:4], instance, 'long fixtures start before the other independent tests')
+        self.assertTrue(all('--parallel' not in step.argv for step in instance), 'files inside a group run serially')
+
+    def test_each_instance_command_receives_one_deadline_at_launch(self):
+        steps = self.gate.plan('HEAD', self.system, self.system, self.system / 'collections')
+        commands = [step for step in steps if tuple(step.argv[3:]) in self.gate.INSTANCE_HOST_TEST_GROUPS]
+        self.assertEqual(len(commands), 2)
+        for step in commands:
+            with mock.patch.object(self.gate.time, 'time', return_value=1_000_000.125), \
+                    mock.patch.object(self.gate.subprocess, 'run') as run:
+                run.return_value.returncode = 0
+                self.gate.run_step(step, {'ORBIT_INSTANCE_HOST_DEADLINE_MS': 'expired'}, False)
+                self.assertEqual(run.call_args.kwargs['env']['ORBIT_INSTANCE_HOST_DEADLINE_MS'], '1000720125')
+
+    def test_a_completed_command_is_reported_while_its_neighbor_is_still_running(self):
+        blocked, release, reported = Event(), Event(), Event()
+        steps = [self.gate.Step('shape', name, ['unused'], parallel=True) for name in ('slow', 'fast')]
+
+        def run(step, *_args):
+            if step.name == 'slow':
+                blocked.set()
+                self.assertTrue(release.wait(5), 'test did not release the slow command')
+            return (step, 'passed', 0.0, 'exit 0'), step.name + ' output\n'
+
+        def printed(message, **_kwargs):
+            if message == '==> fast: passed':
+                reported.set()
+
+        with mock.patch.object(self.gate, 'run_step', side_effect=run), \
+                mock.patch('builtins.print', side_effect=printed), ThreadPoolExecutor(max_workers=1) as executor:
+            result = executor.submit(self.gate.execute, steps, {}, False, 2)
+            try:
+                self.assertTrue(blocked.wait(1), 'slow command did not start')
+                self.assertTrue(reported.wait(1), 'completed command output is held behind the slow command')
+            finally:
+                release.set()
+            self.assertEqual([item[0].name for item in result.result(timeout=2)], ['slow', 'fast'])
 
 
 if __name__ == '__main__':
