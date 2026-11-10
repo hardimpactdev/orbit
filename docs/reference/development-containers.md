@@ -51,7 +51,7 @@ This part is built. The `app-dev` role converge of a Node on the [build list](#t
 - **Pool.** The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge chooses no disk itself.
 - **Missing pool.** A Node without the pool is refused with `instance.host_unavailable`.
 - **Project.** Containers of `orbit-instances` must set an isolated ID map. They mount only the two shared folders, may have proxy devices, and cannot be VMs.
-- **Profile.** The default profile sets the [proxy settings](#egress-and-dns) as `environment.*` keys, so every `incus exec` has them.
+- **Profile.** The default profile sets the [proxy settings](#egress-and-dns) as `environment.*` keys, so every `incus exec` that keeps its environment has them.
 - **Bridge.** `orbitinst0` has NAT and no IPv6. DHCP leaves the last address free for the image build.
 - **Bridge ACL.** A container reaches only two ports of the bridge address: the model forwarder at 8319 and the egress proxy at 3128. Each Instance's own paths come with its create flow.
 - **Input rules.** The Node admits DHCP from the bridge under `orbit:instances-dhcp`, and the egress proxy under `orbit:instances-egress`. It admits no DNS from the bridge.
@@ -154,7 +154,9 @@ Each Project type has one note in the agent folder, at `notes/<note>.md`. The no
 | `monorepo` | `monorepo` |
 | `laravel-package`, `node-package` | `package` |
 
-When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are. It says how previews work and how an agent views its own server. It says that there is no sudo and no direct internet, how the egress proxy works, and how Git leaves the container. It gives no instructions about the work. Instructions, skills and MCP servers come from the project's own files.
+When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are. It says how previews work and how an agent views its own server. It says that there is no sudo and no direct internet, how the egress proxy works, and how Git leaves the container.
+
+A note gives no instructions about the work. Instructions, skills and MCP servers come from the project's own files.
 
 ## Model access
 
@@ -225,7 +227,7 @@ What that means:
 
 ### Proxy settings in a container
 
-The image sets the proxy for everything that runs in a container. Tools read the upper-case or the lower-case names, so both are set:
+Orbit sets the proxy for everything that runs in a container. Tools read the upper-case or the lower-case names, so both are set:
 
 - `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy` and `https_proxy` are `http://<bridge gateway>:3128`.
 - `NO_PROXY` and `no_proxy` are `localhost,127.0.0.1,::1,<bridge gateway>`, so the model forwarder stays off the proxy.
@@ -234,7 +236,8 @@ The image sets the proxy for everything that runs in a container. Tools read the
 | Where | File |
 | --- | --- |
 | Every unit: T3, FrankenPHP and each Process. Claude Code, Codex and their commands inherit it from T3 | `DefaultEnvironment` in `/etc/systemd/system.conf.d/90-orbit-runtime.conf`, beside the runtime folder's variables |
-| `incus exec`: deploy steps, the Node's patch run and the image build | The profile's `environment.*` keys |
+| `incus exec`: the Node's patch run and the image build | The profile's `environment.*` keys |
+| Deploy steps of a default Instance, which run under `env -i` | The intent's `environment` list: `HOME`, `USER`, `LOGNAME`, `PATH` and the container environment |
 | Login shells | `/etc/profile.d/90-orbit-runtime.sh` |
 | apt | `/etc/apt/apt.conf.d/90orbit-egress` |
 
@@ -265,13 +268,13 @@ The first default Instance and its deployments are built for the Nodes of the [b
 | Git | The Node fetches with the read token into its mirror `/var/lib/orbit/instance-repositories/<id>.git`. A bundle carries the branch into the container, and `orbit` checks it out in `/srv/workspace` |
 | Checkout path | The workspace's path on the Node, inside the container's root file system. It keeps the path unique on the Node; Orbit never works in it from the Node |
 | `.env` | In the workspace's application directory, for `orbit` with group `work`, mode 0640 |
-| Deploy steps | Each runs as `orbit` at `/srv/workspace`, from its own vault copy. Its environment holds only `HOME`, `USER`, `LOGNAME`, `PATH`, and the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1` |
+| Deploy steps | Each runs as `orbit` at `/srv/workspace`, from its own vault copy. Its environment holds only `HOME`, `USER`, `LOGNAME`, `PATH`, the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, and the [proxy settings](#proxy-settings-in-a-container) |
 | `PATH` | The Project's PHP build, then the runtime folder's `bin`, then the system folders |
 | FrankenPHP | The unit `orbit-frankenphp.service` runs `frankenphp php-server` as `orbit` on port 8080 of the bridge address. The Route proxies to it; the Node runs no PHP pool for it |
 | Seed | After the first build and each deployment that passes, Orbit stops the units, takes `seed-<commit>` and starts them again. It deletes older seeds, and the runtime row records the commit |
 | Deployment | The variant `container` starts a stopped container and fetches the commit on the Node. It refuses `deployment.checkout_dirty`, `deployment.commit_not_on_branch` and `deployment.branch_diverged` as a checkout does |
 
-A container default cannot reach a Database server yet, so it uses the database its Project names in the workspace; `--database-server` refuses with `operation.kind_unavailable`. A Project with development Process definitions refuses the same way. Dependency installs in the deploy steps need the container egress path of [step 2c of the rollout](/solutions/agent-runtime-and-manual-mode).
+A container default cannot reach a Database server yet, so it uses the database its Project names in the workspace; `--database-server` refuses with `operation.kind_unavailable`. A Project with development Process definitions refuses the same way. Dependency installs in the deploy steps reach the internet through the [egress proxy](#egress-and-dns).
 
 A web-serving Project without a PHP version refuses with `project.source_defaults_incomplete`, and one whose PHP build the runtime folder lacks with `instance.host_unavailable`. Destroy, setup, `env:sync`, `env:import`, transfer, rename and clone refuse a container Instance with `operation.kind_unavailable`: they work on a checkout from the Node. Another Instance of the Project refuses with `instance.default_missing` on any Node but the default's, and with `operation.kind_unavailable` on that Node until clones are built.
 

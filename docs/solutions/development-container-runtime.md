@@ -269,7 +269,7 @@ The code changed these points of this plan:
 - **Processes.** A Project's development Process definitions carry environment values that must go through the vault. Their records and the `process:*` commands must reach the container. PR 4b builds that.
 - **Until PR 4b** a Project with development Process definitions refuses with `operation.kind_unavailable`, and FrankenPHP is the only unit.
 - **PHP.** A PHP Project needs the static PHP build of its version in the runtime folder. Until PR 3b's pin records the build's SHA-256, a PHP Project refuses with `instance.host_unavailable`.
-- **Egress.** The deploy steps install dependencies, which needs the container egress path of step 2c. The live checks of PR 4 wait for it.
+- **Egress.** The deploy steps install dependencies through the [egress proxy](/reference/development-containers#egress-and-dns) of step 2c: their environment carries its proxy settings.
 - **Checkout commands.** Destroy, setup, `env:sync`, `env:import`, transfer, rename and clone refuse a container Instance until their own PRs give them a container path.
 
 Another Instance of a Project whose default is a container refuses with `instance.default_missing` on any other Node, and with `operation.kind_unavailable` on the default's Node until PR 5 makes clones.

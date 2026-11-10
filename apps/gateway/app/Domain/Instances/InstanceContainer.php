@@ -127,12 +127,13 @@ final readonly class InstanceContainer
         $workspace = InstanceHostIntent::Workspace;
         $application = ApplicationDirectory::resolve($workspace, $instance->root ?? $project->root);
         $gateway = Ipv4Subnet::from(ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')))->usableRange()[0];
+        $environment = InstanceImage::environment($gateway);
 
         return [
             'instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
             'image' => self::Image, 'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
             'acl' => $runtime->container_name,
-            // The bridge ACL keeps the way to the model forwarder; this one lets only the Node's Caddy reach FrankenPHP.
+            // The bridge ACL keeps the ways to the model forwarder and the egress proxy; this one lets only the Node's Caddy reach FrankenPHP.
             'acl_rules' => ['description' => 'Orbit Instance '.$instance->id, 'egress' => [],
                 'ingress' => [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
                     'destination_port' => (string) self::WebPort, 'state' => 'enabled']]],
@@ -140,9 +141,10 @@ final readonly class InstanceContainer
             'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])),
             'branch' => ValidatedData::string($project->default_branch), 'commit' => null,
             'workspace' => $workspace, 'environment_file' => $application.'/.env',
-            // The deploy commands' whole environment: `orbit`'s home and the runtime folder, the Project's PHP first, and the Vite+ home.
+            // The deploy commands' whole environment: `orbit`'s home and the runtime folder, the Project's PHP first, the Vite+ home and
+            // the egress proxy (docs/reference/development-containers.md#egress-and-dns).
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.$this->path($project),
-                ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys(InstanceImage::RuntimeEnvironment), InstanceImage::RuntimeEnvironment)],
+                ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment)],
             'units' => $this->units($instance, $runtime, $application),
             // `php` on every PATH in the container is the Project's static build, so `composer` runs for `agent` and `orbit` alike.
             'php' => $this->php($project),
