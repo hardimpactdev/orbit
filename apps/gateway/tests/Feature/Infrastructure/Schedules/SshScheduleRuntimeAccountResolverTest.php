@@ -44,8 +44,8 @@ function schedule_account_view(Node $node, int $eventAge = 0, int $subscriberAge
     $view = new CacheAgentStateView(Cache::store('array'));
     app()->instance(AgentStateView::class, $view);
     $view->putSubscriber(true, true, 1);
-    $view->putNode($node->id, [], 'absent', 1, CacheAgentStateView::now() - $eventAge, null);
     test()->travel($subscriberAge)->seconds();
+    $view->putNode($node->id, [], 'absent', 1, CacheAgentStateView::now() - $eventAge, null);
 }
 
 beforeEach(function (): void {
