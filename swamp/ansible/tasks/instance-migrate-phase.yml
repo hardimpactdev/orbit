@@ -101,7 +101,9 @@
       changed_when: true
     - name: Push the archive and the deleted files into the container
       ansible.builtin.command:
-        argv: "{{ incus_project + ['file', 'push', '--uid', '1000', '--gid', '2760', '--mode', '0640', node_archive ~ item, container.name ~ container_archive ~ item] }}"
+        argv: >-
+          {{ incus_project + ['file', 'push', '--uid', '1000', '--gid', '2760', '--mode', '0640',
+              node_archive ~ item, container.name ~ container_archive ~ item] }}
       loop: [".tar", ".deleted"]
       changed_when: true
     - name: Extract the archive in the workspace
