@@ -59,7 +59,7 @@ it('follows lifecycle admission and emits only the final Operation in JSON', fun
     'destroy' => ['instance:destroy', DestroyInstanceRequest::class, ['instance' => 501, '--yes' => true, '--force' => true], ['force' => true]],
 ]);
 
-it('names retirement blockers in human and JSON migration failures', function (bool $json, string $code, string $message): void {
+it('names blockers in human and JSON migration failures', function (bool $json, string $code, string $message): void {
     $final = ['id' => 901, 'kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => 501,
         'status' => 'failed', 'sequence' => 8, 'error_code' => $code,
         'result' => ['instance_id' => 501, 'moved' => false, 'error_message' => $message]];
@@ -83,4 +83,5 @@ it('names retirement blockers in human and JSON migration failures', function (b
     'worktrees and files' => ['instance.migrate_retirement_blocked', 'Cannot retire checkout "/fixture". Other worktrees: /detached. Changed files: index.php.'],
     'unpushed commits' => ['instance.migrate_unpushed_commits', 'Cannot retire checkout "/fixture". Branch spare has 2 unpushed commits.'],
     'stashes' => ['instance.migrate_stashes_present', 'Cannot retire checkout "/fixture". Stashes: 2.'],
+    'symlinks' => ['instance.migrate_symlink_unsupported', 'Cannot migrate checkout "/fixture". Unsupported symlinks: [{"path":"public/storage","target":"/missing/storage","reason":"broken"},{"path":"local-package","target":"/shared/package","reason":"outside checkout"}].'],
 ]);

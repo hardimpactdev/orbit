@@ -600,6 +600,28 @@ describe('the end of a move', function (): void {
         'stashes' => ['instance.migrate_stashes_present', 'Cannot retire checkout "/fixture". Stashes: 2.'],
     ]);
 
+    it('records a named symlink preflight refusal without changing checkout state or choosing a repair', function (string $reason, string $target): void {
+        $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $operation = migrateStart($default);
+        $checkout = $default->checkout_path;
+        $message = 'Cannot migrate checkout "'.$checkout.'". Unsupported symlinks: '.json_encode([
+            ['path' => 'public/storage', 'target' => $target, 'reason' => $reason],
+            ['path' => 'local-package', 'target' => $target, 'reason' => $reason],
+        ], JSON_THROW_ON_ERROR).'.';
+
+        migrateEnd($operation, 'failed', ['ready' => false, 'moved' => false, 'restored' => true, 'preflight_refused' => true,
+            'failed_step' => 'quiesce', 'error_code' => 'instance.migrate_symlink_unsupported', 'error_message' => $message]);
+
+        expect($operation->input['migrate']['checkout'])->toBe($checkout)
+            ->and($operation->input['container']['repository'])->toBe($checkout)
+            ->and($operation->input['container']['workspace'])->toBe('/srv/workspace')
+            ->and($operation->input['container']['steps'])->toBe([])
+            ->and($operation->refresh()->error_code)->toBe('instance.migrate_symlink_unsupported')
+            ->and($operation->result['error_message'])->toBe($message)
+            ->and($default->refresh()->only(['checkout_path', 'status']))->toBe(['checkout_path' => $checkout, 'status' => InstanceState::Active])
+            ->and($default->runtime()->exists())->toBeFalse();
+    })->with(['external' => ['outside checkout', '/shared/storage'], 'broken' => ['broken', '/missing/other-checkout/storage']]);
+
     it('leaves a checkout Instance as it was when the move failed and restored', function (): void {
         $node = containerDefaultNode();
         $default = migrateCheckout(containerDefaultProject(), $node);
