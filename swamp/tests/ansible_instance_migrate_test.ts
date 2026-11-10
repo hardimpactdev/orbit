@@ -1,7 +1,7 @@
 /**
  * Run the shipped playbook of a move (instance-migrate.yml) with the container phases it builds on (instance-container.yml)
  * against a stateful Incus boundary: a default with work that was never committed or pushed, a non-default worktree with the
- * default's old checkout, the restore after a failure and the two refusals. The Node is this machine: the run's connection is
+ * default's old checkout, the restore after a failure and the refusals. The Node is this machine: the run's connection is
  * local and nothing becomes root.
  */
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1";
@@ -127,6 +127,8 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     git(checkout, "add", "--all");
     git(checkout, "commit", "--quiet", "-m", "save changes before retirement");
   }
+  // Clean retirement fixtures have all commits reachable from a local remote-tracking ref.
+  if (!dirty) git(checkout, "update-ref", "refs/remotes/origin/main", "HEAD");
   const id = instance === "default" ? 7 : 8;
   const clone = instance === "default" ? null : {
     t3: { port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 2 },
@@ -190,6 +192,10 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     container,
     migrate,
     rootfs,
+    retained: () => {
+      const root = `${checkout}.orbit-retired-git`;
+      return `${root}/${[...Deno.readDirSync(root)].find((entry) => entry.isDirectory)!.name}`;
+    },
     write,
     run(phase: string) {
       const playbook = ["quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
@@ -232,13 +238,12 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
 }
 
 Deno.test({
-  name: "a default moves with its unpushed commit and its changed, staged, untracked, deleted and ignored files; then its checkout goes",
+  name: "a retained default copies its unpushed commit and changed, staged, untracked, deleted and ignored files",
   ignore: !hasAnsible,
   fn() {
     const f = fixture("default", true);
     try {
       // A retained default can copy its local files; its checkout is not scheduled for deletion yet.
-      const retirements = f.migrate.retire;
       f.migrate.retire = [];
       f.write();
       const head = git(f.checkout, "rev-parse", "HEAD");
@@ -274,25 +279,11 @@ Deno.test({
       assertEquals(git(f.checkout, "status", "--porcelain"), status);
       assertEquals(Deno.readTextFileSync(`${f.checkout}/.env`), `APP_KEY=base64:kept\nDB_DATABASE=${f.checkout}/database/database.sqlite\n`);
 
-      git(f.checkout, "branch", "spare");
-      git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
-      const olderStash = git(f.checkout, "rev-parse", "refs/stash");
-      Deno.writeTextFileSync(`${f.checkout}/new-stash.txt`, "newer stash\n");
-      git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
-      const newerStash = git(f.checkout, "rev-parse", "refs/stash");
-      f.migrate.retire = retirements;
-      f.write();
       const retire = f.run("retire");
       assert(retire.ok, retire.output);
-      assert(!exists(f.checkout));
+      assert(exists(f.checkout));
+      assertEquals(git(f.checkout, "status", "--porcelain"), status);
       assert(exists(f.migrate.awake.path));
-      // No commit went with the repository: its local branches and its stash are in the mirror.
-      assertEquals(git(f.container.mirror, "rev-parse", "refs/migrated/heads/main"), head);
-      assertEquals(git(f.container.mirror, "rev-parse", "refs/migrated/heads/spare"), head);
-      assertEquals(git(f.container.mirror, "rev-parse", `refs/migrated/stashes/${olderStash}`), olderStash);
-      assertEquals(git(f.container.mirror, "rev-parse", `refs/migrated/stashes/${newerStash}`), newerStash);
-      assertEquals(git(f.container.mirror, "show", `${olderStash}^3:note.txt`), "untracked");
-      assertEquals(git(f.container.mirror, "show", `${newerStash}^3:new-stash.txt`), "newer stash");
       assertEquals(f.state().containers["instance-7"].status, "Running");
       const again = f.run("retire");
       assert(again.ok, again.output);
@@ -553,7 +544,7 @@ Deno.test({
   },
 });
 
-for (const blocker of ["changes", "worktree"] as const) {
+for (const blocker of ["changes", "worktree", "commits", "stashes"] as const) {
   Deno.test({
     name: `retirement rechecks ${blocker} created after preflight and leaves the container and source intact`,
     ignore: !hasAnsible,
@@ -563,16 +554,25 @@ for (const blocker of ["changes", "worktree"] as const) {
         f.build();
         const path = blocker === "changes" ? `${f.checkout}/late.txt` : `${f.apps}/late-worktree`;
         if (blocker === "changes") Deno.writeTextFileSync(path, "late edit\n");
-        else git(f.checkout, "worktree", "add", "--quiet", "--detach", path);
+        else if (blocker === "worktree") git(f.checkout, "worktree", "add", "--quiet", "--detach", path);
+        else if (blocker === "commits") git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "late commit");
+        else {
+          Deno.writeTextFileSync(`${f.checkout}/late-stash.txt`, "late stash\n");
+          git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
+        }
+        const refs = git(f.checkout, "show-ref");
         const state = f.state();
         const retire = f.run("retire");
         assert(!retire.ok, retire.output);
-        assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
-        assert(f.result().error_message.includes(blocker === "changes" ? "late.txt" : path));
+        const code = blocker === "commits" ? "instance.migrate_unpushed_commits" : blocker === "stashes" ? "instance.migrate_stashes_present" : "instance.migrate_retirement_blocked";
+        assertEquals(f.result().error_code, code);
+        const detail = blocker === "changes" ? "late.txt" : blocker === "worktree" ? path : blocker === "commits" ? '"commits": 1' : "Stashes: 1";
+        assert(f.result().error_message.includes(detail), f.result().error_message);
+        assertEquals(git(f.checkout, "show-ref"), refs);
         assertEquals(f.result().preflight_refused, false);
         assert(exists(f.migrate.awake.path), "The container Route must serve after a retirement refusal.");
         assert(exists(f.checkout));
-        assert(exists(path));
+        if (["changes", "worktree"].includes(blocker)) assert(exists(path));
         assertEquals(f.state(), state);
         assertEquals(f.state().containers["instance-7"].status, "Running");
       } finally {
@@ -581,7 +581,6 @@ for (const blocker of ["changes", "worktree"] as const) {
     },
   });
 }
-
 
 function migrationProcesses(f: ReturnType<typeof fixture>) {
   const states: Record<string, { state: string; enabled: boolean }> = {};
@@ -651,5 +650,282 @@ Deno.test({
       for (const unit of f.migrate.processes) assert(exists(unit.path));
       assert(exists(f.checkout));
     } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "preflight names every unpushed local branch with its count against all remote-tracking refs",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const pushed = git(f.checkout, "rev-parse", "HEAD");
+      // None of these branches needs an upstream. Remote-only commits count as pushed on any remote.
+      git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "remote-only");
+      git(f.checkout, "update-ref", "refs/remotes/second/shared", "HEAD");
+      git(f.checkout, "branch", "remote-only");
+      git(f.checkout, "checkout", "--quiet", "-b", "spare", pushed);
+      git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "one unpushed commit");
+      git(f.checkout, "branch", "another");
+      git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "two unpushed commits");
+      git(f.checkout, "checkout", "--quiet", "main");
+      const refs = git(f.checkout, "show-ref");
+      const status = git(f.checkout, "status", "--porcelain");
+      const quiesce = f.run("quiesce");
+      assert(!quiesce.ok, quiesce.output);
+      const receipt = f.result();
+      assertEquals(receipt.error_code, "instance.migrate_unpushed_commits");
+      assert(receipt.error_message.includes(f.checkout));
+      assert(receipt.error_message.includes('"branch": "another", "commits": 1'), receipt.error_message);
+      assert(receipt.error_message.includes('"branch": "spare", "commits": 2'), receipt.error_message);
+      assert(!receipt.error_message.includes('"branch": "main"'));
+      assert(!receipt.error_message.includes('"branch": "remote-only"'));
+      assertEquals(receipt.preflight_refused, true);
+      assert(exists(f.migrate.awake.path));
+      assertEquals(f.state().containers ?? {}, {});
+      assert(f.run("restore").ok);
+      assertEquals(git(f.checkout, "show-ref"), refs);
+      assertEquals(git(f.checkout, "status", "--porcelain"), status);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+for (const detached of [false, true]) {
+  Deno.test({
+    name: detached ? "preflight refuses and counts an unpushed detached HEAD" : "preflight refuses and counts every commit when no remote-tracking refs exist",
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        if (detached) {
+          git(f.checkout, "checkout", "--quiet", "--detach");
+          git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "detached local commit");
+        } else git(f.checkout, "update-ref", "-d", "refs/remotes/origin/main");
+        const head = git(f.checkout, "rev-parse", "HEAD");
+        const refs = git(f.checkout, "show-ref");
+        const quiesce = f.run("quiesce");
+        assert(!quiesce.ok, quiesce.output);
+        assertEquals(f.result().error_code, "instance.migrate_unpushed_commits");
+        const expected = detached ? '"branch": "detached HEAD", "commits": 1' : '"branch": "main", "commits": 3';
+        assert(f.result().error_message.includes(expected), f.result().error_message);
+        assert(exists(f.migrate.awake.path));
+        assertEquals(f.state().containers ?? {}, {});
+        assertEquals(git(f.checkout, "rev-parse", "HEAD"), head);
+        assertEquals(git(f.checkout, "show-ref"), refs);
+      } finally {
+        f.cleanup();
+      }
+    },
+  });
+}
+
+Deno.test({
+  name: "preflight refuses stashes with the full count and preserves every entry and earlier move resource",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      for (const name of ["first", "second"]) {
+        Deno.writeTextFileSync(`${f.checkout}/${name}.txt`, name);
+        git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
+      }
+      const stashes = git(f.checkout, "stash", "list", "--format=%H");
+      const refs = git(f.checkout, "show-ref");
+      assert(f.run("container").ok);
+      const state = f.state();
+      const quiesce = f.run("quiesce");
+      assert(!quiesce.ok, quiesce.output);
+      assertEquals(f.result().error_code, "instance.migrate_stashes_present");
+      assert(f.result().error_message.includes("Stashes: 2"));
+      assert(f.result().error_message.includes(f.checkout));
+      assertEquals(f.result().preflight_refused, true);
+      assert(exists(f.migrate.awake.path));
+      assertEquals(f.state(), state);
+      assert(f.run("restore").ok);
+      assertEquals(f.state(), state);
+      assertEquals(git(f.checkout, "show-ref"), refs);
+      assertEquals(git(f.checkout, "stash", "list", "--format=%H"), stashes);
+      for (const [index, name] of [[0, "second"], [1, "first"]] as const) {
+        assertEquals(git(f.checkout, "show", `stash@{${index}}^3:${name}.txt`), name);
+      }
+      assertEquals(git(f.checkout, "status", "--porcelain"), "");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a clean default with pushed commits and no stash retains all Git metadata and repeats without changes",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      git(f.checkout, "branch", "spare");
+      const head = git(f.checkout, "rev-parse", "HEAD");
+      f.build();
+      const retire = f.run("retire");
+      assert(retire.ok, retire.output);
+      assert(!exists(f.checkout));
+      assert(exists(f.migrate.awake.path));
+      assertEquals(git(f.retained(), "rev-parse", "refs/heads/main"), head);
+      assertEquals(git(f.retained(), "rev-parse", "refs/heads/spare"), head);
+      const again = f.run("retire");
+      assert(again.ok, again.output);
+      assertMatch(again.output, /changed=0\s/);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+for (const common of [false, true]) {
+  Deno.test({
+    name: `a ${common ? "common_of" : "direct"} repository refuses a worktree created before its final preflight`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        f.build();
+        if (common) {
+          // The linked checkout has gone; its common Git directory identifies this retirement candidate by equality.
+          f.migrate.retire[0].common_of = `${f.apps}/already-retired`;
+          f.write();
+          const playbook = `${f.folder}/instance-migrate.yml`;
+          const plays = parse(Deno.readTextFileSync(playbook)) as Task[];
+          for (const play of plays) {
+            if (play.hosts === "migrate_node") (play.vars as Task).migrate_common = `${f.checkout}/.git`;
+          }
+          Deno.writeTextFileSync(playbook, stringify(plays));
+        }
+        const late = `${f.apps}/unmanaged-late`;
+        const file = `${f.folder}/tasks/instance-migrate-retire.yml`;
+        const tasks = parse(Deno.readTextFileSync(file)) as Task[];
+        // The batch check has passed; the shared per-checkout preflight still refuses this blocker.
+        tasks.unshift({
+          name: "Fixture creates an unmanaged worktree before final preflight",
+          "ansible.builtin.command": { argv: ["git", "-C", f.checkout, "worktree", "add", "--quiet", "--detach", late] },
+          changed_when: true,
+        });
+        Deno.writeTextFileSync(file, stringify(tasks));
+        const head = git(f.checkout, "rev-parse", "HEAD");
+        const state = f.state();
+        const retire = f.run("retire");
+        assert(!retire.ok, retire.output);
+        assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
+        assert(f.result().error_message.includes(late), f.result().error_message);
+        assertEquals(f.result().preflight_refused, false);
+        assert(exists(`${f.checkout}/.git`));
+        assert(exists(late));
+        assertEquals(git(late, "rev-parse", "HEAD"), head);
+        assertEquals(git(f.checkout, "rev-parse", "HEAD"), head);
+        assertEquals(f.state(), state);
+        assert(exists(f.migrate.awake.path));
+      } finally {
+        f.cleanup();
+      }
+    },
+  });
+}
+
+Deno.test({
+  name: "a worktree created after the final listing keeps all its Git data after retirement",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.build();
+      const late = `${f.apps}/after-final-listing`;
+      const file = `${f.folder}/tasks/instance-migrate-retire.yml`;
+      const tasks = parse(Deno.readTextFileSync(file)) as Task[];
+      const retain = tasks.findIndex((task) => task.name === "Retain the checkout without deleting any files");
+      tasks.splice(retain, 0, {
+        name: "Fixture adds a late worktree after the final preflight listing",
+        "ansible.builtin.command": { argv: ["git", "-C", f.checkout, "worktree", "add", "--quiet", "--detach", late] },
+        changed_when: true,
+      });
+      Deno.writeTextFileSync(file, stringify(tasks));
+      const head = git(f.checkout, "rev-parse", "HEAD");
+      const retire = f.run("retire");
+      assert(retire.ok, retire.output);
+      assert(!exists(f.checkout));
+      const retained = f.retained();
+      assert(exists(`${retained}/.git/worktrees/after-final-listing/HEAD`));
+      assertEquals(git(retained, "cat-file", "-t", head), "commit");
+      assertEquals(Deno.readTextFileSync(`${late}/.git`).trim(), `gitdir: ${f.checkout}/.git/worktrees/after-final-listing`);
+      assert(exists(`${late}/index.php`));
+      const receipt = JSON.parse(Deno.readTextFileSync(`${f.folder}/run/retained-git.json`));
+      assertEquals(receipt.retained_git_path, `${f.checkout}.orbit-retired-git`);
+      assertMatch(receipt.retained_git_at, /^\d{4}-\d{2}-\d{2}T/);
+      assert(exists(f.migrate.awake.path));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a stash ref with an expired reflog still refuses before downtime",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      Deno.writeTextFileSync(`${f.checkout}/expired-stash.txt`, "kept stash data\n");
+      git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
+      const stash = git(f.checkout, "rev-parse", "refs/stash");
+      git(f.checkout, "reflog", "expire", "--expire=all", "refs/stash");
+      assertEquals(git(f.checkout, "stash", "list"), "");
+      const quiesce = f.run("quiesce");
+      assert(!quiesce.ok, quiesce.output);
+      assertEquals(f.result().error_code, "instance.migrate_stashes_present");
+      assert(f.result().error_message.includes("Stashes: 1"));
+      assertEquals(git(f.checkout, "rev-parse", "refs/stash"), stash);
+      assertEquals(git(f.checkout, "show", `${stash}^3:expired-stash.txt`), "kept stash data");
+      assert(exists(f.migrate.awake.path));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test("retention keeps real Git edge cases intact", () => {
+  const done = new Deno.Command("python3", {
+    args: ["-I", new URL("fixtures/instance-migrate-retention.py", import.meta.url).pathname],
+  }).outputSync();
+  assert(done.success, new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr));
+});
+
+Deno.test({
+  name: "a worker receipt failure leaves the source untouched and a retry reuses the prepared retention time",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.build();
+      const file = `${f.folder}/tasks/instance-migrate-retire.yml`;
+      const original = Deno.readTextFileSync(file);
+      const tasks = parse(original) as Task[];
+      const record = tasks.find((task) => task.name === "Record retained Git data for the terminal result")!;
+      (record["ansible.builtin.copy"] as Task).dest = `${f.folder}/missing-parent/retained-git.json`;
+      Deno.writeTextFileSync(file, stringify(tasks));
+      const head = git(f.checkout, "rev-parse", "HEAD");
+      const failed = f.run("retire");
+      assert(!failed.ok, failed.output);
+      assert(exists(`${f.checkout}/.git`));
+      assertEquals(git(f.checkout, "rev-parse", "HEAD"), head);
+      assert(!exists(`${f.folder}/run/retained-git.json`));
+      const prepared = JSON.parse(Deno.readTextFileSync(`${f.checkout}.orbit-retired-git/retained.json`));
+      Deno.writeTextFileSync(file, original);
+      const retry = f.run("retire");
+      assert(retry.ok, retry.output);
+      const recorded = JSON.parse(Deno.readTextFileSync(`${f.folder}/run/retained-git.json`));
+      assertEquals(recorded.retained_git_at, prepared.retained_git_at);
+      assertEquals(git(f.retained(), "rev-parse", "HEAD"), head);
+      assert(!exists(f.checkout));
+    } finally {
+      f.cleanup();
+    }
   },
 });

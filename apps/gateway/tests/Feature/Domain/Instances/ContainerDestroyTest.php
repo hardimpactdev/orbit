@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Data\Operations\OperationData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerDestroyExecutionCopies;
@@ -152,6 +153,26 @@ it('removes container Processes and disabled Conn records and frees the port onl
         ->toContain(($migrated ? 'instance-migrate-processes-' : 'instance-create-processes-').$create->id)
         ->not->toContain('instance-create-model-'.Operation::query()->where('target_id', $default->id)->value('id'));
 })->with(['clone' => false, 'migrated checkout' => true]);
+
+it('keeps retained Git findable in the destroy result after deleting a migrated Instance', function (): void {
+    $clone = destroyClone(destroyDefault(), true);
+    $path = '/home/orbit/apps/tool/feature.orbit-retired-git';
+    $at = '2026-11-10T19:00:00+00:00';
+    $clone->update(['retained_git_path' => $path, 'retained_git_at' => $at]);
+    $operation = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    $terminal = destroyTerminal($operation, 'succeeded');
+
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, $terminal);
+
+    expect($clone->fresh())->toBeNull()
+        ->and(OperationData::summary($operation->fresh())->result)->toBe([
+            'removed' => true, 'retained_git_path' => $path, 'retained_git_at' => $at,
+        ]);
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation->fresh(), $terminal);
+    expect($operation->fresh()->result)->toBe([
+        'removed' => true, 'retained_git_path' => $path, 'retained_git_at' => $at,
+    ]);
+});
 
 it('keeps a failed removal retryable without freeing the port', function (): void {
     $default = destroyDefault();

@@ -6,6 +6,7 @@ use App\Actions\Hibernation\ActivateInstanceRuntimeAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceMigrateAction;
 use App\Actions\Operations\ExpireOperationAction;
+use App\Data\Instances\InstanceData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
@@ -48,6 +49,7 @@ use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 uses(LazilyRefreshDatabase::class);
@@ -571,25 +573,28 @@ describe('the end of a move', function (): void {
             ->and($feature->refresh()->checkout_path)->toBe(InstanceContainer::workspaceOnNode($feature));
     });
 
-    it('keeps an earlier reservation after a refused retirement preflight, and releases only a fresh one', function (bool $retry): void {
+    it('keeps an earlier reservation after a refused retirement preflight, and releases only a fresh one', function (bool $retry, string $code, string $message): void {
         $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
         if ($retry) {
             $previous = migrateStart($default);
             migrateEnd($previous, 'failed', ['ready' => false, 'moved' => false, 'restored' => false, 'failed_step' => 'files']);
         }
         $operation = migrateStart($default);
-        $message = 'Cannot retire checkout "/fixture". Other worktrees (1 total; first 20): ["/detached"]. Changed files (1 total; first 20): [" M index.php"].';
         $result = ['ready' => false, 'moved' => false, 'restored' => true, 'preflight_refused' => true,
-            'failed_step' => 'quiesce', 'error_code' => 'instance.migrate_retirement_blocked', 'error_message' => $message];
+            'failed_step' => 'quiesce', 'error_code' => $code, 'error_message' => $message];
 
         migrateEnd($operation, 'failed', $result);
 
         expect($operation->input['had_runtime_reservation'])->toBe($retry)
             ->and($default->runtime()->exists())->toBe($retry)
             ->and($default->refresh()->checkout_path)->toBe('/home/orbit/apps/tool/default')
-            ->and($operation->refresh()->error_code)->toBe('instance.migrate_retirement_blocked')
+            ->and($operation->refresh()->error_code)->toBe($code)
             ->and($operation->result['error_message'])->toBe($message);
-    })->with(['new move' => false, 'retry after failed restore' => true]);
+    })->with(['new move' => false, 'retry after failed restore' => true])->with([
+        'worktrees or changes' => ['instance.migrate_retirement_blocked', 'Cannot retire checkout "/fixture". Other worktrees (1 total; first 20): ["/detached"].'],
+        'unpushed commits' => ['instance.migrate_unpushed_commits', 'Cannot retire checkout "/fixture". Unpushed branches or detached HEAD (1 total): [{"branch": "spare", "commits": 2}].'],
+        'stashes' => ['instance.migrate_stashes_present', 'Cannot retire checkout "/fixture". Stashes: 2.'],
+    ]);
 
     it('leaves a checkout Instance as it was when the move failed and restored', function (): void {
         $node = containerDefaultNode();
@@ -646,17 +651,48 @@ describe('the end of a move', function (): void {
             ->and($default->runtime()->first()?->id)->toBe($reserved?->id);
     })->with(['first attempt' => false, 'failed restore retry' => true]);
 
-    it('keeps the Instance in its container when only the removal of the checkout failed', function (): void {
+    it('keeps the Instance in its container when only the removal of the checkout failed', function (string $code): void {
         $node = containerDefaultNode();
         $default = migrateCheckout(containerDefaultProject(), $node);
         $operation = migrateStart($default);
 
         migrateEnd($operation, 'failed', ['ready' => false, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40),
-            'failed_step' => 'retire', 'error_code' => 'instance.migrate_retire_failed']);
+            'failed_step' => 'retire', 'error_code' => $code, 'error_message' => 'Retirement refused without changing the source.']);
 
         expect($default->refresh()->checkout_path)->toBe(InstanceContainer::workspaceOnNode($default))
             ->and(InstanceRuntime::query()->where('instance_id', $default->id)->value('seed_commit'))->toBe(str_repeat('d', 40))
-            ->and($operation->refresh()->status->value)->toBe('failed');
+            ->and($operation->refresh()->status->value)->toBe('failed')
+            ->and($operation->error_code)->toBe($code)
+            ->and($operation->result['error_message'])->toBe('Retirement refused without changing the source.');
+    })->with(['instance.migrate_retire_failed', 'instance.migrate_retirement_blocked', 'instance.migrate_unpushed_commits', 'instance.migrate_stashes_present']);
+
+    it('records and exposes retained Git after retirement, including when a later retirement fails', function (bool $failed): void {
+        $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        expect(InstanceData::fromModel($default)->toArray())->toMatchArray(['retained_git_path' => null, 'retained_git_at' => null]);
+        $operation = migrateStart($default);
+        $path = '/home/orbit/apps/tool/default.orbit-retired-git';
+        $at = '2026-11-10T19:00:00+00:00';
+
+        migrateEnd($operation, $failed ? 'failed' : 'succeeded', [
+            'ready' => ! $failed, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40),
+            'retained_git_path' => $path, 'retained_git_at' => $at,
+            ...($failed ? ['failed_step' => 'retire', 'error_code' => 'instance.migrate_retire_failed'] : []),
+        ]);
+
+        expect($default->refresh()->retained_git_path)->toBe($path)
+            ->and($default->retained_git_at?->toIso8601String())->toBe($at)
+            ->and(InstanceData::fromModel($default)->toArray())->toMatchArray(['retained_git_path' => $path, 'retained_git_at' => $at]);
+    })->with(['completed retirement' => false, 'later retirement failed' => true]);
+
+    it('reverses the retained Git columns without touching Node data', function (): void {
+        $migration = require database_path('migrations/2027_02_04_000001_add_retained_git_to_instances.php');
+        $migration->down();
+        expect(Schema::hasColumn('instances', 'retained_git_path'))->toBeFalse()
+            ->and(Schema::hasColumn('instances', 'retained_git_at'))->toBeFalse();
+
+        $migration->up();
+        expect(Schema::hasColumn('instances', 'retained_git_path'))->toBeTrue()
+            ->and(Schema::hasColumn('instances', 'retained_git_at'))->toBeTrue();
     });
 
     it('refuses a succeeded run that does not prove the move', function (array $result): void {

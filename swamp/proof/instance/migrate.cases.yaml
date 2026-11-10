@@ -6,8 +6,11 @@
 # untracked files refuse before downtime; ignored files pass; linked and detached worktrees refuse and name their paths.
 # Process fixtures stop and disable host units before copying, install private Process environments in the container,
 # retire host files after cutover and restore recorded desired states only after removing a failed container.
-# Both lists are bounded to 20 entries with total counts. New changes or worktrees after preflight refuse final retirement,
-# keep every source intact, and leave the container serving. A retained checkout (retire: []) is not deleted or checked.
+# Unpushed local branches and detached HEADs refuse with every name and commit count; stashes refuse with their count.
+# Tag-only commits, an expired stash reflog, submodules/nested repositories and a worktree added after the final listing
+# retain their Git data after retirement. Retirement atomically moves the whole checkout and never deletes metadata.
+# Both path lists are bounded to 20 entries with total counts. New changes or worktrees after preflight refuse final retirement,
+# keep every source intact, and leave the container serving. Late additions after the final listing are retained. A retained checkout (retire: []) is not deleted or checked.
 command: instance:migrate
 chart: instance/migrate
 target: app-dev
@@ -16,6 +19,9 @@ baseline: [operations]
 
 uncovered:
   "code:instance.migrate_retirement_blocked": "The proof fleet lacks the Instance pool/image. Ansible fixtures cover dirty tracked and non-ignored untracked files, linked/detached and same-batch worktrees, bounded named errors, and blockers added after preflight. Live proof uses owned clean fixtures and separate blocker fixtures when the pool is available."
+
+  "code:instance.migrate_unpushed_commits": "Ansible fixtures cover every local branch and a detached HEAD, counts against all local remote-tracking refs, and source preservation. Live proof needs the Instance pool/image."
+  "code:instance.migrate_stashes_present": "Ansible fixtures cover multiple stash entries, their count and source preservation. Live proof needs the Instance pool/image."
 
 cases:
   - id: invalid-id
