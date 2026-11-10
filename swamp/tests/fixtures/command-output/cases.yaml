@@ -262,6 +262,45 @@ contexts:
       stdout_lines:
       - /var/lib/orbit/converge/software:abc123
       - /var/lib/orbit/converge/tools:def456
+  copy-units:
+    copy_read:
+      results:
+      - stdout: '["orbit-agent.service","ssh.service"]'
+      - stdout: '["orbit-process-1-keep.service","orbit-process-2-old.service"]'
+      - stdout: '["1","2"]'
+    container:
+      name: copy
+      processes:
+      - id: 1
+        name: orbit-process-1-keep.service
+    incus_project:
+    - incus
+    - --project
+    - orbit
+    copy_remove:
+    - /etc/systemd/system/orbit-process-2-old.service
+    foreign_units:
+    - orbit-process-2-old.service
+    foreign_folders:
+    - '2'
+    as_root:
+    - incus
+    - exec
+    - copy
+    - --
+    - runuser
+    - -u
+    - root
+    - --
+  getent-passwd:
+    plan:
+      cleanup:
+      - user: nobody
+        scope: fixture
+    cleanup_accounts:
+      results:
+      - item: nobody
+        stdout: nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
 cases:
 - file: ai-router-model-forwarder.yml
   task: Check that the forwarder's table dropped it
@@ -497,11 +536,51 @@ cases:
   expected:
     software: abc123
     tools: def456
-input_only:
+- file: tasks/instance-container-phase.yml
+  task: Name what the copy must not start or keep
+  field: ansible.builtin.set_fact.copy_remove
+  context: copy-units
+  expected:
+  - /etc/systemd/system/multi-user.target.wants/orbit-agent.service
+  - /etc/systemd/system/orbit-process-2-old.service
+  - /etc/orbit/processes/2
+- file: tasks/instance-container-phase.yml
+  task: Keep the default's units from starting in the copy
+  field: ansible.builtin.command.argv
+  context: copy-units
+  expected:
+  - incus
+  - --project
+  - orbit
+  - file
+  - delete
+  - --force
+  - copy/etc/systemd/system/orbit-process-2-old.service
+- file: tasks/instance-container-phase.yml
+  task: Remove the foreign units and folders
+  field: ansible.builtin.command.argv
+  context: copy-units
+  expected:
+  - incus
+  - exec
+  - copy
+  - --
+  - runuser
+  - -u
+  - root
+  - --
+  - rm
+  - -rf
+  - --
+  - /etc/systemd/system/orbit-process-2-old.service
+  - /etc/orbit/processes/2
 - file: route-withdraw.yml
   task: Remove the certificate folders
   field: vars.homes
-  reason: Transforms the getent passwd map returned by an Ansible module, not command output.
+  context: getent-passwd
+  expected:
+  - /nonexistent
+input_only:
 - file: route-withdraw.yml
   task: Remove the certificate folders
   field: vars.caddy_folders

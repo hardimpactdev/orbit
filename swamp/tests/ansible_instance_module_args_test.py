@@ -106,9 +106,9 @@ def calls(tasks):
         yield task.get('name', action), action, arguments
 
 
-
 class ModuleArgumentsTest(unittest.TestCase):
     maxDiff = None
+
     @classmethod
     def setUpClass(cls):
         init_plugin_loader()
