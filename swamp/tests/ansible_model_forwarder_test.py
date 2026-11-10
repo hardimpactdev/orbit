@@ -158,6 +158,28 @@ class ModelForwarderPlaybookTest(unittest.TestCase):
         relayed = self.check['Check that the Node\'s own processes cannot use the forwarder']['ansible.builtin.command']['argv']
         self.assertEqual(relayed[-1], '{{ intent.origin }}/v1/responses')
 
+    def test_temporary_probe_setup_and_cleanup_report_no_configuration_change(self):
+        command = shutil.which('ansible-playbook') or str(Path(sys.executable).parent / 'ansible-playbook')
+        checks = []
+        for name in ('Make the namespace and its veth on the bridge',
+                     'Remove the namespace, its veth and the return route'):
+            task = copy.deepcopy(self.check[name])
+            # Exercise the production task's reporting without creating host network resources.
+            task['loop'] = [['/usr/bin/true']]
+            checks.append(task)
+        with tempfile.TemporaryDirectory(prefix='forwarder-probe-reporting-') as folder:
+            playbook = Path(folder) / 'probe.yml'
+            playbook.write_text(yaml.safe_dump([{
+                'name': 'Check temporary probe reporting', 'hosts': 'localhost', 'gather_facts': False,
+                'tasks': checks,
+            }]))
+            result = subprocess.run([command, '-i', 'localhost,', '-c', 'local', str(playbook)],
+                                    check=False, capture_output=True, text=True, timeout=30,
+                                    env={**os.environ, 'ANSIBLE_STDOUT_CALLBACK': 'default',
+                                         'ANSIBLE_CALLBACKS_ENABLED': 'default', 'ANSIBLE_COLLECTIONS_PATH': folder})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertRegex(result.stdout, r'ok=2\s+changed=0\s+unreachable=0\s+failed=0')
+
 
 if __name__ == '__main__':
     unittest.main()

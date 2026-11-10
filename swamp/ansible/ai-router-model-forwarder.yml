@@ -221,7 +221,7 @@
             - [ip, -n, "{{ check_netns }}", route, add, "{{ intent.address }}", dev, ofchk1]
             - [ip, -n, "{{ check_netns }}", route, add, default, via, "{{ intent.address }}", dev, ofchk1, onlink]
             - [ip, route, add, "{{ probe }}/32", dev, "{{ intent.bridge }}"]
-          changed_when: true
+          changed_when: false
         # The bridge rule, the forwarder, the output rule for its user and the guard's admission, in one request: the guard answers
         # 401 only to a source it admits, so a no-key request through the forwarder proves it admits the Node and demands the key. A
         # source it refuses gets 403, and without its UFW allow the forwarder answers 502.
@@ -301,7 +301,7 @@
             - [ip, route, del, "{{ probe }}/32", dev, "{{ intent.bridge }}"]
             - [ip, link, del, ofchk0]
             - [ip, netns, del, "{{ check_netns }}"]
-          changed_when: true
+          changed_when: false
           failed_when: false
 
 - name: Remove the forwarder
