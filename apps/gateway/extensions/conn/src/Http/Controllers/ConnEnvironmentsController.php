@@ -30,7 +30,7 @@ final class ConnEnvironmentsController extends Controller
 
         return response()->json([
             'data' => $access->visible($caller, ConnEnvironment::query())
-                ->with(['node', 'instance.runtime'])
+                ->with(['node', 'instance.runtime', 'instance.project', 'instance.node', 'instance.routes'])
                 ->orderBy('label')
                 ->orderBy('id')
                 ->get()
