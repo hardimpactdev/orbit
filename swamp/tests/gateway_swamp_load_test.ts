@@ -108,7 +108,7 @@ Deno.test("a pin from another requirements.yml fails the check with the converge
 
 type Checkout = {
     name: string;
-    task: { inputs: { run: string } };
+    task: { inputs: { run: string; env: Record<string, string> } };
 };
 const checkout = ((workflow.jobs[0].steps as unknown) as Checkout[]).find((
     step,
@@ -214,4 +214,11 @@ Deno.test("the release passes its force flag to the load", async () => {
         step.name === "Load Swamp on Node 209"
     )!;
     assertEquals(load.task.inputs?.intent?.force, "${{ inputs.intent.force }}");
+});
+
+Deno.test("the checkout reads the release commit and the force flag from the load intent", () => {
+    assertEquals(checkout.task.inputs.env, {
+        RELEASE_SHA: "${{ inputs.intent.sha }}",
+        FORCE: "${{ string(inputs.intent.force) }}",
+    });
 });
