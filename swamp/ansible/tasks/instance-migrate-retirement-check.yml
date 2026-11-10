@@ -63,6 +63,7 @@
     - name: Explain a blocked retirement
       when: retirement_other_worktrees | length > 0 or retirement_changes | length > 0
       ansible.builtin.set_fact:
+        migrate_refusal_code: instance.migrate_retirement_blocked
         migrate_refusal_message: >-
           Cannot retire checkout {{ retired.path | to_json }}.
           Other worktrees ({{ retirement_other_worktrees | length }} total; first 20): {{ retirement_other_worktrees[:20] | to_json }}.
@@ -71,4 +72,60 @@
       ansible.builtin.assert:
         that: retirement_other_worktrees | length == 0 and retirement_changes | length == 0
         fail_msg: "{{ migrate_refusal_message | default('instance.migrate_retirement_blocked') }}"
+        quiet: true
+    - name: Read every local branch
+      ansible.builtin.command:
+        argv: "{{ retired_git + ['-C', retired.path, 'for-each-ref', '--format=%(refname)', 'refs/heads/'] }}"
+      register: retirement_branches
+      changed_when: false
+    - name: Read whether HEAD is detached
+      ansible.builtin.command:
+        argv: "{{ retired_git + ['-C', retired.path, 'symbolic-ref', '--quiet', 'HEAD'] }}"
+      register: retirement_head
+      changed_when: false
+      failed_when: retirement_head.rc not in [0, 1]
+    - name: Count commits unreachable from every remote-tracking ref
+      ansible.builtin.command:
+        argv: "{{ retired_git + ['-C', retired.path, 'rev-list', '--count', item, '--not', '--remotes'] }}"
+      loop: "{{ retirement_branches.stdout_lines + (['HEAD'] if retirement_head.rc == 1 else []) }}"
+      register: retirement_counts
+      changed_when: false
+    - name: Start the list of unpushed branches
+      ansible.builtin.set_fact:
+        retirement_unpushed: []
+    - name: Name each unpushed branch and its commit count
+      when: item.stdout | int > 0
+      ansible.builtin.set_fact:
+        retirement_unpushed: >-
+          {{ retirement_unpushed + [{'branch': 'detached HEAD' if item.item == 'HEAD' else item.item[11:], 'commits': item.stdout | int}] }}
+      loop: "{{ retirement_counts.results }}"
+      loop_control: { label: "{{ item.item }}" }
+    - name: Explain unpushed commits
+      when: retirement_unpushed | length > 0
+      ansible.builtin.set_fact:
+        migrate_refusal_code: instance.migrate_unpushed_commits
+        migrate_refusal_message: >-
+          Cannot retire checkout {{ retired.path | to_json }}.
+          Unpushed branches or detached HEAD ({{ retirement_unpushed | length }} total): {{ retirement_unpushed | to_json }}.
+    - name: Refuse unpushed commits
+      ansible.builtin.assert:
+        that: retirement_unpushed | length == 0
+        fail_msg: "{{ migrate_refusal_message | default('instance.migrate_unpushed_commits') }}"
+        quiet: true
+    - name: Read every stash entry
+      ansible.builtin.command:
+        argv: "{{ retired_git + ['-C', retired.path, 'stash', 'list', '--format=%H'] }}"
+      register: retirement_stashes
+      changed_when: false
+    - name: Explain stashes
+      when: retirement_stashes.stdout_lines | length > 0
+      ansible.builtin.set_fact:
+        migrate_refusal_code: instance.migrate_stashes_present
+        migrate_refusal_message: >-
+          Cannot retire checkout {{ retired.path | to_json }}.
+          Stashes: {{ retirement_stashes.stdout_lines | length }}.
+    - name: Refuse stashes
+      ansible.builtin.assert:
+        that: retirement_stashes.stdout_lines | length == 0
+        fail_msg: "{{ migrate_refusal_message | default('instance.migrate_stashes_present') }}"
         quiet: true

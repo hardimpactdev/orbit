@@ -70,10 +70,10 @@ export function migrateResult(
         ready: failed === undefined,
         moved,
         restored: !moved && phases.restore === "succeeded" && phases.restore_route !== "failed",
-        ...(failed?.[0] === "quiesce" && refusal === "instance.migrate_retirement_blocked" && written?.preflight_refused === true ? { preflight_refused: true } : {}),
+        ...(failed?.[0] === "quiesce" && refusal !== null && written?.preflight_refused === true ? { preflight_refused: true } : {}),
         ...(commit ? { commit } : {}),
         ...(moved && server ? { t3: JSON.parse(server) } : {}),
-        ...(refusal === "instance.migrate_retirement_blocked" && written?.error_message ? { error_message: written.error_message } : {}),
+        ...(refusal !== null && written?.error_message ? { error_message: written.error_message } : {}),
         ...(failed ? { failed_step: failed[0], error_code: refusal ?? "instance.migrate_" + failed[0] + "_failed" } : {}),
     };
     return { ready: failed === undefined, stdout: JSON.stringify(result) };

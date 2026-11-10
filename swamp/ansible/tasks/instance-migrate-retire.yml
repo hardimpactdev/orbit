@@ -1,28 +1,23 @@
 ---
 # Remove one checkout of a moved Instance, `retired.path`. A linked worktree goes with its entry in its repository. A repository
-# first leaves its local branches and every stash entry in the mirror `retired.mirror`, under `refs/migrated/`, so no commit is lost with
+# first leaves its local branches in the mirror `retired.mirror`, under `refs/migrated/`, so no commit is lost with
 # it. An entry with `common_of` is the default's old checkout: it goes only when the worktree that just went belonged to it.
-- name: Check retirement again before archiving or deleting
+- name: Check retirement before archiving
   ansible.builtin.include_tasks:
     file: instance-migrate-retirement-check.yml
     apply: { tags: [always] }
 
-- name: Keep the repository's branches and stash in the mirror
+- name: Keep the repository's branches in the mirror
   when: retired_repository | bool
   block:
     - name: Fetch the local branches into the mirror
       ansible.builtin.command:
         argv: "{{ retired_git + ['--git-dir', retired.mirror, 'fetch', '--quiet', '--no-tags', '--', retired.path, '+refs/heads/*:refs/migrated/heads/*'] }}"
       changed_when: true
-    - name: Read every stash entry
-      ansible.builtin.command: { argv: "{{ retired_git + ['-C', retired.path, 'stash', 'list', '--format=%H'] }}" }
-      register: retired_stashes
-      changed_when: false
-    - name: Fetch every stash entry into a durable mirror ref
-      ansible.builtin.command:
-        argv: "{{ retired_git + ['--git-dir', retired.mirror, 'fetch', '--quiet', '--no-tags', '--', retired.path, item ~ ':refs/migrated/stashes/' ~ item] }}"
-      loop: "{{ retired_stashes.stdout_lines | default([]) | unique | list }}"
-      changed_when: true
+- name: Check retirement again immediately before deleting
+  ansible.builtin.include_tasks:
+    file: instance-migrate-retirement-check.yml
+    apply: { tags: [always] }
 
 - name: Remove the checkout
   when: retired_worktree | bool or retired_repository | bool

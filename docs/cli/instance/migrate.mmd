@@ -38,6 +38,7 @@ sequenceDiagram
   SW->>N: Check and stop<br/>Ansible · tags quiesce
   %%> What it does:
   %%> - before any Node change, checks every planned retirement: no other worktree on its Git directory and no tracked or non-ignored untracked changes, else `instance.migrate_retirement_blocked`; the error names the checkout, blocking paths and total counts (first 20 per list)
+  %%> - refuses local branches or a detached HEAD with commits unreachable from every remote-tracking ref (`instance.migrate_unpushed_commits`, naming each branch or detached HEAD and its count), and stashes (`instance.migrate_stashes_present`, naming the count); reads local refs only and changes nothing to resolve a blocker
   %%> - checks that the checkout is on the recorded branch, else `instance.migrate_branch_changed`
   %%> - deletes a container that an earlier failed move left
   %%> - stops and disables the Instance's host Process units, then removes the awake marker so nothing writes the checkout or database during the move
@@ -67,9 +68,9 @@ sequenceDiagram
   alt all steps pass
     SW->>N: Remove the checkout<br/>Ansible · tags retire
     %%> What it does:
-    %%> - repeats the same retirement check before archiving or deleting any checkout; a new blocker leaves the container serving and the checkout intact
+    %%> - repeats the same retirement check immediately before deleting any checkout, after archiving branches; a new blocker leaves the container serving and the checkout intact
     %%> - removes the old host Process units and their environment folders, then removes the checkout and writes the awake marker; a default's checkout stays until its last worktree has moved
-    %%> - before a repository goes, its local branches and every stash entry are kept in the Node's mirror under `refs/migrated/`
+    %%> - before a repository goes, its local branches are kept in the Node's mirror under `refs/migrated/`
     %%> If it fails:
     %%> - the container stays the Instance; the run fails with `instance.migrate_retire_failed`, and the checkout is left to remove by hand
     SW-->>GW: Run succeeded<br/>terminal event

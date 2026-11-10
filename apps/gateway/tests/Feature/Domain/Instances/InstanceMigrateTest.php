@@ -571,25 +571,28 @@ describe('the end of a move', function (): void {
             ->and($feature->refresh()->checkout_path)->toBe(InstanceContainer::workspaceOnNode($feature));
     });
 
-    it('keeps an earlier reservation after a refused retirement preflight, and releases only a fresh one', function (bool $retry): void {
+    it('keeps an earlier reservation after a refused retirement preflight, and releases only a fresh one', function (bool $retry, string $code, string $message): void {
         $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
         if ($retry) {
             $previous = migrateStart($default);
             migrateEnd($previous, 'failed', ['ready' => false, 'moved' => false, 'restored' => false, 'failed_step' => 'files']);
         }
         $operation = migrateStart($default);
-        $message = 'Cannot retire checkout "/fixture". Other worktrees (1 total; first 20): ["/detached"]. Changed files (1 total; first 20): [" M index.php"].';
         $result = ['ready' => false, 'moved' => false, 'restored' => true, 'preflight_refused' => true,
-            'failed_step' => 'quiesce', 'error_code' => 'instance.migrate_retirement_blocked', 'error_message' => $message];
+            'failed_step' => 'quiesce', 'error_code' => $code, 'error_message' => $message];
 
         migrateEnd($operation, 'failed', $result);
 
         expect($operation->input['had_runtime_reservation'])->toBe($retry)
             ->and($default->runtime()->exists())->toBe($retry)
             ->and($default->refresh()->checkout_path)->toBe('/home/orbit/apps/tool/default')
-            ->and($operation->refresh()->error_code)->toBe('instance.migrate_retirement_blocked')
+            ->and($operation->refresh()->error_code)->toBe($code)
             ->and($operation->result['error_message'])->toBe($message);
-    })->with(['new move' => false, 'retry after failed restore' => true]);
+    })->with(['new move' => false, 'retry after failed restore' => true])->with([
+        'worktrees or changes' => ['instance.migrate_retirement_blocked', 'Cannot retire checkout "/fixture". Other worktrees (1 total; first 20): ["/detached"].'],
+        'unpushed commits' => ['instance.migrate_unpushed_commits', 'Cannot retire checkout "/fixture". Unpushed branches or detached HEAD (1 total): [{"branch": "spare", "commits": 2}].'],
+        'stashes' => ['instance.migrate_stashes_present', 'Cannot retire checkout "/fixture". Stashes: 2.'],
+    ]);
 
     it('leaves a checkout Instance as it was when the move failed and restored', function (): void {
         $node = containerDefaultNode();
@@ -646,18 +649,20 @@ describe('the end of a move', function (): void {
             ->and($default->runtime()->first()?->id)->toBe($reserved?->id);
     })->with(['first attempt' => false, 'failed restore retry' => true]);
 
-    it('keeps the Instance in its container when only the removal of the checkout failed', function (): void {
+    it('keeps the Instance in its container when only the removal of the checkout failed', function (string $code): void {
         $node = containerDefaultNode();
         $default = migrateCheckout(containerDefaultProject(), $node);
         $operation = migrateStart($default);
 
         migrateEnd($operation, 'failed', ['ready' => false, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40),
-            'failed_step' => 'retire', 'error_code' => 'instance.migrate_retire_failed']);
+            'failed_step' => 'retire', 'error_code' => $code, 'error_message' => 'Retirement refused without changing the source.']);
 
         expect($default->refresh()->checkout_path)->toBe(InstanceContainer::workspaceOnNode($default))
             ->and(InstanceRuntime::query()->where('instance_id', $default->id)->value('seed_commit'))->toBe(str_repeat('d', 40))
-            ->and($operation->refresh()->status->value)->toBe('failed');
-    });
+            ->and($operation->refresh()->status->value)->toBe('failed')
+            ->and($operation->error_code)->toBe($code)
+            ->and($operation->result['error_message'])->toBe('Retirement refused without changing the source.');
+    })->with(['instance.migrate_retire_failed', 'instance.migrate_retirement_blocked', 'instance.migrate_unpushed_commits', 'instance.migrate_stashes_present']);
 
     it('refuses a succeeded run that does not prove the move', function (array $result): void {
         $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());

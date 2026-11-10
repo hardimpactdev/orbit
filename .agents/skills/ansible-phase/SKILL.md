@@ -139,3 +139,5 @@ A proof candidate must install its own frozen observer pin after every base rest
 Instance container network ACLs live in Incus project `default`, even when the container lives in `orbit-instances`. Destroy removes the container first, then its ACL in the default project. Test both the project and a second removal with zero changes.
 
 A Process move disables the source units before copying. Render container units from a copy of their records and save the new paths only after cutover. A failed move removes the new container before restoring source units, so two runtimes never run the same writer.
+
+A repository path match proves which checkout is owned, not whether its Git directory is shared. Reuse the retirement guard immediately before recursive deletion, after branch archiving; test an unmanaged worktree created during that archive step.
