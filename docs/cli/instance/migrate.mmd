@@ -20,12 +20,13 @@ sequenceDiagram
   %%> - syntax: `<instance> [--force] [--idempotency-key=KEY] [--json]`
   Note over CLI: Confirm the downtime
   %%> What it asks:
-  %%> - the Instance goes down during the move, and its checkout is deleted after it; `--force` answers yes
+  %%> - the Instance goes down during the move, and its old checkout moves to retention after it; `--force` answers yes
   Note over GW: Validate, reserve runtime<br/>address · T3 port
   %%> Requirements:
   %%> - the Instance is an active checkout Instance on an `app-dev` Node of the build list, else `instance.migrate_unsupported`
   %%> - a non-default Instance needs its Project's default Instance in a container first, else `instance.default_not_migrated`
-  %%> - the Instance has only ordinary systemd Processes, no Node-bound presets, no unfinished deployment or Process operation/runtime cleanup and no Route beside its own; a non-default Instance needs Conn and the model router, as a clone does
+  %%> - the Instance has only ordinary systemd or supported `vp-dev` Processes, no unfinished deployment or Process operation/runtime cleanup and no Route beside its own; a non-default Instance needs Conn and the model router, as a clone does
+  %%> - `vp-dev` keeps its identity, assigned port and desired state; unsupported preset versions, custom commands, external paths and recorded container port conflicts refuse before downtime, naming the Process and reason
   %%> - a web-serving Project names its PHP version; a missing version refuses with `project.source_defaults_incomplete`, naming `orbit project:update PROJECT --source-access=github_app` to record it from source
   %%> - a database on a Database server has an IPv4 address and a port, else `instance.database_clone_unsupported`
   %%> Result:
@@ -38,6 +39,7 @@ sequenceDiagram
   SW->>N: Launch, probe container<br/>Ansible · tags container
   %%> What it does:
   %%> - before any Node change, checks the recorded branch and every planned retirement; a refusal leaves prior resources untouched
+  %%> - retirement preflight refuses unpushed local branches or detached HEAD and stashes, with their existing named errors; it reads local refs only
   %%> - deletes a container that an earlier failed move left, then creates and starts the new container through the shared container phase
   %%> - each attached target has an exact TCP allow in the NIC ACL; the bridge passes egress to that default-reject NIC policy
   %%> - probes every attached target from inside the container before downtime, else `instance.database_unreachable`
@@ -59,6 +61,7 @@ sequenceDiagram
   SW->>C: Start the container<br/>Processes · T3 · seed
   %%> What it does:
   %%> - starts FrankenPHP and the Instance's existing Processes as `orbit`, with the same ids and desired states; their environment files come through the vault
+  %%> - `vp-dev` uses the runtime folder’s `current/bin/vp`, workspace paths and its assigned port on `0.0.0.0`; only the Node can reach that port, and Caddy sends `/__orbit/vite` there
   %%> - a non-default Instance gets `/etc/orbit/instance`, the agent settings and its T3 server, registered as in create
   %%> - a default Instance gets its first `seed-<commit>` snapshot
   SW->>N: Move the Route<br/>child route-mutation-forward
@@ -67,11 +70,14 @@ sequenceDiagram
   alt all steps pass
     SW->>N: Remove the checkout<br/>Ansible · tags retire
     %%> What it does:
-    %%> - repeats the same retirement check before archiving or deleting any checkout; a new blocker leaves the container serving and the checkout intact
-    %%> - removes the old host Process units and their environment folders, then removes the checkout and writes the awake marker; a default's checkout stays until its last worktree has moved
-    %%> - before a repository goes, its local branches and every stash entry are kept in the Node's mirror under `refs/migrated/`
+    %%> - removes the old host Process units and their environment folders
+    %%> - repeats the same retirement preflight as an early warning; a new blocker leaves the container serving and the checkout intact
+    %%> - atomically moves each old checkout under `<checkout>.orbit-retired-git/<sha256 of original path>`; the retained root is beside the migrating Instance's checkout
+    %%> - keeps the whole tree, including Git objects, refs, reflogs, `.git/modules` and nested repositories; a late worktree cannot lose its Git metadata to retirement
+    %%> - records `retained_git_path` and `retained_git_at` on the Instance; `instance:show` and the Instance API expose them
+    %%> - writes the awake marker; a default's checkout stays until its last worktree has moved; retirement never deletes or prunes Git metadata
     %%> If it fails:
-    %%> - the container stays the Instance; the run fails with `instance.migrate_retire_failed`, and the checkout is left to remove by hand
+    %%> - the container stays the Instance; the run fails with `instance.migrate_retire_failed`, and the source or retained checkout stays on the Node
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record container runtime
     %%> Result:

@@ -68,7 +68,7 @@
           when: phase != 'restore'
           ansible.builtin.copy:
             content: >-
-              {{ ({'error_code': 'instance.migrate_retirement_blocked', 'error_message': migrate_refusal_message,
+              {{ ({'error_code': migrate_refusal_code, 'error_message': migrate_refusal_message,
                    'preflight_refused': phase == 'container' and not (migrate_preflight_passed | default(false))}
                   if migrate_refusal_message is defined else {'error_code': ansible_failed_result.msg
                   if (ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z0-9_]+$'))

@@ -23,6 +23,15 @@
     node_archive: "{{ container.mirror | dirname }}/migrate-{{ container.instance_id }}-{{ run_id }}"
     container_archive: "/srv/.orbit-migrate-{{ run_id }}"
 
+# Check every planned retirement before any Node change, and again before any checkout in the batch goes.
+- name: Check all planned retirements
+  when: phase in ['container', 'quiesce', 'retire']
+  ansible.builtin.include_tasks:
+    file: instance-migrate-retirement-check.yml
+    apply: { tags: [always] }
+  loop: "{{ migrate.retire }}"
+  loop_control: { loop_var: retired, label: "{{ retired.path }}" }
+
 # The move copies the files that differ from the commit of the recorded branch, so the checkout must be on it.
 - name: Check the checkout's branch
   when: phase in ['container', 'quiesce']
@@ -37,15 +46,6 @@
         that: checkout_branch.rc == 0 and checkout_branch.stdout | trim == migrate.branch
         fail_msg: instance.migrate_branch_changed
         quiet: true
-
-# Check every planned retirement before any Node change, and again before any checkout in the batch goes.
-- name: Check all planned retirements
-  when: phase in ['container', 'quiesce', 'retire']
-  ansible.builtin.include_tasks:
-    file: instance-migrate-retirement-check.yml
-    apply: { tags: [always] }
-  loop: "{{ migrate.retire }}"
-  loop_control: { loop_var: retired, label: "{{ retired.path }}" }
 
 # Nothing on the Node changed before this point. Restore preserves prior resources when these read-only checks refused.
 - name: Record that the container preflight passed

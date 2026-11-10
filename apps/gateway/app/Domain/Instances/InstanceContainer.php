@@ -186,6 +186,8 @@ final readonly class InstanceContainer
                     'destination_port' => (string) $target['port'], 'state' => 'enabled'], $access),
                 'ingress' => [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
                     'destination_port' => (string) self::WebPort, 'state' => 'enabled'],
+                    ...(($vitePort = app(ContainerProcesses::class)->vitePort($instance)) === null ? [] : [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
+                        'destination_port' => (string) $vitePort, 'state' => 'enabled']]),
                     ...($clone === null ? [] : [['action' => 'allow', 'protocol' => 'tcp', 'destination_port' => (string) InstanceHostIntent::T3Port, 'state' => 'enabled']]),
                     // An agent's development servers: only the Node's Caddy reaches them, and it serves them only on a private Route.
                     ...($this->servesDevPorts($instance, $runtime) ? [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',

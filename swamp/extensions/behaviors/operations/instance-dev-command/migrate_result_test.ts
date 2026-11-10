@@ -75,21 +75,44 @@ Deno.test("the code a phase wrote is read from the run folder", async () => {
     }
 });
 
-Deno.test("retirement refusals keep named paths in the public receipt at preflight and after cutover", async () => {
+for (const [error_code, error_message] of [
+    ["instance.migrate_retirement_blocked", 'Cannot retire checkout "/fixture". Other worktrees (1 total; first 20): ["/detached"].'],
+    ["instance.migrate_unpushed_commits", 'Cannot retire checkout "/fixture". Unpushed branches or detached HEAD (1 total): [{"branch": "spare", "commits": 2}].'],
+    ["instance.migrate_stashes_present", 'Cannot retire checkout "/fixture". Stashes: 2.'],
+]) {
+    Deno.test(`${error_code} keeps the public message and preflight marker before and after cutover`, async () => {
+        const folder = await Deno.makeTempDir();
+        try {
+            const failure = { error_code, error_message, preflight_refused: true };
+            await Deno.writeTextFile(`${folder}/result.json`, JSON.stringify(failure));
+            const phases = { ...moved, quiesce: "skipped", container: "failed", workspace: "skipped", files: "skipped", processes: "skipped", seed: "skipped", route: "skipped", retire: "skipped", restore: "succeeded" };
+            assertEquals(result(defaultIntent, phases, null, null, await writtenFailure(folder)), {
+                instance_id: 53, ready: false, moved: false, restored: true, preflight_refused: true,
+                failed_step: "container", error_code: failure.error_code, error_message,
+            });
+            const late = result(defaultIntent, { ...moved, retire: "failed" }, workspace, null, { ...failure, preflight_refused: false });
+            assertEquals([late.moved, late.restored, late.error_code, late.error_message], [true, false, failure.error_code, error_message]);
+            // A Route failure cannot reuse a message from a phase that did not fail.
+            assertEquals(result(defaultIntent, { ...moved, route: "failed", retire: "skipped" }, workspace, null, failure).error_message, undefined);
+        } finally {
+            await Deno.remove(folder, { recursive: true });
+        }
+    });
+}
+
+Deno.test("retained Git is recorded after success and after a later retirement failure", async () => {
     const folder = await Deno.makeTempDir();
-    const error_message = 'Cannot retire checkout "/fixture". Other worktrees (1 total; first 20): ["/detached"]. Changed files (1 total; first 20): [" M index.php"].';
+    const retained = { retained_git_path: "/checkout.orbit-retired-git", retained_git_at: "2026-11-10T19:00:00+00:00" };
     try {
-        const failure = { error_code: "instance.migrate_retirement_blocked", error_message, preflight_refused: true };
-        await Deno.writeTextFile(`${folder}/result.json`, JSON.stringify(failure));
-        const phases = { ...moved, quiesce: "skipped", container: "failed", workspace: "skipped", files: "skipped", processes: "skipped", seed: "skipped", route: "skipped", retire: "skipped", restore: "succeeded" };
-        assertEquals(result(defaultIntent, phases, null, null, await writtenFailure(folder)), {
-            instance_id: 53, ready: false, moved: false, restored: true, preflight_refused: true,
-            failed_step: "container", error_code: failure.error_code, error_message,
-        });
-        const late = result(defaultIntent, { ...moved, retire: "failed" }, workspace, null, { ...failure, preflight_refused: false });
-        assertEquals([late.moved, late.restored, late.error_code, late.error_message], [true, false, failure.error_code, error_message]);
-        // A Route failure cannot reuse a message from a phase that did not fail.
-        assertEquals(result(defaultIntent, { ...moved, route: "failed", retire: "skipped" }, workspace, null, failure).error_message, undefined);
+        await Deno.writeTextFile(`${folder}/retained-git.json`, JSON.stringify({ ...retained, changed: true }));
+        assertEquals(await writtenFailure(folder), retained);
+        const success = result(defaultIntent, moved, workspace, null, await writtenFailure(folder));
+        assertEquals([success.retained_git_path, success.retained_git_at], [retained.retained_git_path, retained.retained_git_at]);
+        await Deno.writeTextFile(`${folder}/result.json`, JSON.stringify({ error_code: "instance.migrate_retire_failed" }));
+        const failed = result(defaultIntent, { ...moved, retire: "failed" }, workspace, null, await writtenFailure(folder));
+        assertEquals([failed.error_code, failed.retained_git_path, failed.retained_git_at], ["instance.migrate_retire_failed", retained.retained_git_path, retained.retained_git_at]);
+        const beforeRetirement = result(defaultIntent, { ...moved, retire: "skipped", restore: "succeeded" }, workspace, null, await writtenFailure(folder));
+        assertEquals(beforeRetirement.retained_git_path, undefined);
     } finally {
         await Deno.remove(folder, { recursive: true });
     }

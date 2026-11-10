@@ -1,39 +1,71 @@
 ---
-# Remove one checkout of a moved Instance, `retired.path`. A linked worktree goes with its entry in its repository. A repository
-# first leaves its local branches and every stash entry in the mirror `retired.mirror`, under `refs/migrated/`, so no commit is lost with
-# it. An entry with `common_of` is the default's old checkout: it goes only when the worktree that just went belonged to it.
-- name: Check retirement again before archiving or deleting
+# Move the whole old checkout out of the live path. Never delete or prune any of its Git metadata: even a worktree created
+# after preflight, tag-only commits, submodule repositories and nested Git directories must remain recoverable.
+- name: Check retirement before retaining the checkout
   ansible.builtin.include_tasks:
     file: instance-migrate-retirement-check.yml
     apply: { tags: [always] }
 
-- name: Keep the repository's branches and stash in the mirror
-  when: retired_repository | bool
-  block:
-    - name: Fetch the local branches into the mirror
-      ansible.builtin.command:
-        argv: "{{ retired_git + ['--git-dir', retired.mirror, 'fetch', '--quiet', '--no-tags', '--', retired.path, '+refs/heads/*:refs/migrated/heads/*'] }}"
-      changed_when: true
-    - name: Read every stash entry
-      ansible.builtin.command: { argv: "{{ retired_git + ['-C', retired.path, 'stash', 'list', '--format=%H'] }}" }
-      register: retired_stashes
-      changed_when: false
-    - name: Fetch every stash entry into a durable mirror ref
-      ansible.builtin.command:
-        argv: "{{ retired_git + ['--git-dir', retired.mirror, 'fetch', '--quiet', '--no-tags', '--', retired.path, item ~ ':refs/migrated/stashes/' ~ item] }}"
-      loop: "{{ retired_stashes.stdout_lines | default([]) | unique | list }}"
-      changed_when: true
+- name: Prepare the retained Git path before moving any checkout
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import datetime
+        import json
+        import sys
+        from pathlib import Path
 
-- name: Remove the checkout
+        root = Path(sys.argv[1])
+        receipt = root / "retained.json"
+        changed = json.loads(sys.argv[2]) and not receipt.exists()
+        if changed:
+            root.mkdir(mode=0o700, parents=False, exist_ok=True)
+            receipt.write_text(json.dumps({
+                "retained_git_path": str(root),
+                "retained_git_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }))
+        result = json.loads(receipt.read_text()) if receipt.exists() else {}
+        print(json.dumps({**result, "changed": changed}))
+      - "{{ migrate.checkout }}.orbit-retired-git"
+      - "{{ (retired_worktree | bool or retired_repository | bool) | to_json }}"
+  register: retirement_retention
+  changed_when: (retirement_retention.stdout | from_json).changed
+
+# Persist the location on the worker BEFORE the rename. A manifest/copy failure leaves the source untouched; a failure
+# during or after renaming still exposes the retained location. The phase failure handler cannot overwrite this receipt.
+- name: Record retained Git data for the terminal result
+  when: (retirement_retention.stdout | from_json).retained_git_path is defined
+  ansible.builtin.copy:
+    content: "{{ retirement_retention.stdout }}"
+    dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/retained-git.json"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  vars:
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+- name: Retain the checkout without deleting any files
   when: retired_worktree | bool or retired_repository | bool
-  ansible.builtin.file: { path: "{{ retired.path }}", state: absent }
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import hashlib
+        import os
+        import sys
+        from pathlib import Path
 
-- name: Read whether the worktree's repository is still there
-  when: retired_worktree | bool
-  ansible.builtin.stat: { path: "{{ migrate_common }}" }
-  register: retired_common_stat
-
-- name: Prune the worktree's entry
-  when: retired_worktree | bool and retired_common_stat.stat.exists
-  ansible.builtin.command: { argv: "{{ retired_git + ['--git-dir', migrate_common, 'worktree', 'prune'] }}" }
+        source, root = Path(sys.argv[1]), Path(sys.argv[2])
+        destination = root / hashlib.sha256(os.fsencode(source)).hexdigest()
+        if destination.exists():
+            raise FileExistsError(f"Retained checkout already exists: {destination}")
+        # Same-filesystem rename only. Never copy-and-delete or traverse the checkout.
+        source.rename(destination)
+      - "{{ retired.path }}"
+      - "{{ migrate.checkout }}.orbit-retired-git"
   changed_when: true

@@ -135,6 +135,9 @@ final readonly class StartInstanceDestroyAction
         $container = app(ContainerInstanceDestroy::class)->capture($instance);
 
         return ['container_destroy' => $container,
+            ...($instance->retained_git_path === null ? [] : [
+                'retained_git_path' => $instance->retained_git_path, 'retained_git_at' => $instance->retained_git_at?->toIso8601String(),
+            ]),
             'instance_id' => $instance->id, 'node_id' => $instance->node_id, 'project_id' => $instance->project_id,
             'name' => $instance->name, 'force' => $force, 'removal_id' => (string) Str::uuid(),
             'inventory_digest' => hash('sha256', json_encode($snapshots, JSON_THROW_ON_ERROR)),

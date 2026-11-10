@@ -17,7 +17,13 @@ export const MigratePhases = z.object({
     restore_route: z.string(),
     restore: z.string(),
 });
-type WrittenFailure = { error_code: string; error_message?: string; preflight_refused?: boolean };
+type WrittenFailure = {
+    error_code?: string;
+    error_message?: string;
+    preflight_refused?: boolean;
+    retained_git_path?: string;
+    retained_git_at?: string;
+};
 type Phases = z.infer<typeof MigratePhases>;
 
 /** The workspace phase prints the commit it left checked out as one `orbit-commit=<sha>` line. */
@@ -61,31 +67,39 @@ export function migrateResult(
     ];
     const failed = outcomes.find(([, , failure]) => failure) ?? outcomes.find(([, finished]) => !finished);
     const moved = phases.retire !== "skipped";
-    const refusal = failed !== undefined && WRITES_RESULT.includes(failed[0]) && written !== null && CODE.test(written.error_code) &&
-            !written.error_code.startsWith("instance.container_")
-        ? written.error_code
+    const refusal = failed !== undefined && WRITES_RESULT.includes(failed[0]) && written !== null && CODE.test(written.error_code ?? "") &&
+            !written.error_code?.startsWith("instance.container_")
+        ? written.error_code ?? null
         : null;
     const result = {
         instance_id: intent.instance_id,
         ready: failed === undefined,
         moved,
         restored: !moved && phases.restore === "succeeded" && phases.restore_route !== "failed",
-        ...(failed?.[0] === "container" && written?.preflight_refused === true ? { preflight_refused: true } : {}),
+        ...(failed?.[0] === "container" && refusal !== null && written?.preflight_refused === true ? { preflight_refused: true } : {}),
         ...(commit ? { commit } : {}),
+        ...(moved && written?.retained_git_path && written?.retained_git_at ? { retained_git_path: written.retained_git_path, retained_git_at: written.retained_git_at } : {}),
         ...(moved && server ? { t3: JSON.parse(server) } : {}),
-        ...(refusal === "instance.migrate_retirement_blocked" && written?.error_message ? { error_message: written.error_message } : {}),
+        ...(refusal !== null && written?.error_message ? { error_message: written.error_message } : {}),
         ...(failed ? { failed_step: failed[0], error_code: refusal ?? "instance.migrate_" + failed[0] + "_failed" } : {}),
     };
     return { ready: failed === undefined, stdout: JSON.stringify(result) };
 }
 
-/** The public refusal that the last failed phase wrote, or null when it wrote none. */
+/** Read the public phase failure and the separate retention receipt, which survives a later retirement failure. */
 export async function writtenFailure(folder: string): Promise<WrittenFailure | null> {
+    let failure: WrittenFailure = {};
+    let retained: WrittenFailure = {};
     try {
         const value = JSON.parse(await Deno.readTextFile(`${folder}/result.json`));
         const parsed = z.object({ error_code: z.string().regex(CODE), error_message: z.string().optional(), preflight_refused: z.boolean().optional() }).safeParse(value);
-        return parsed.success ? parsed.data : null;
-    } catch {
-        return null;
-    }
+        if (parsed.success) failure = parsed.data;
+    } catch { /* A phase can fail before it writes a result. */ }
+    try {
+        const value = JSON.parse(await Deno.readTextFile(`${folder}/retained-git.json`));
+        const parsed = z.object({ retained_git_path: z.string().min(1), retained_git_at: z.iso.datetime({ offset: true }) }).safeParse(value);
+        if (parsed.success) retained = parsed.data;
+    } catch { /* No checkout was retained. */ }
+    const result = { ...failure, ...retained };
+    return Object.keys(result).length > 0 ? result : null;
 }

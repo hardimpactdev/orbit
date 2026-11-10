@@ -21,7 +21,7 @@ final class MigrateInstanceCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'instance:migrate
         {instance : Numeric Instance ID}
-        {--force : Confirm the downtime and the deletion of the checkout}
+        {--force : Confirm the downtime and the retention of the old checkout}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
@@ -40,7 +40,7 @@ HELP;
     protected function writeOperationResult(OperationResponse $operation): void
     {
         $message = $operation->result['error_message'] ?? null;
-        if ($operation->errorCode === 'instance.migrate_retirement_blocked' && is_string($message)) {
+        if (in_array($operation->errorCode, ['instance.migrate_retirement_blocked', 'instance.migrate_unpushed_commits', 'instance.migrate_stashes_present'], true) && is_string($message)) {
             $this->writeHumanMessage($message);
         }
     }
@@ -65,11 +65,11 @@ HELP;
             $instance = $this->sendWithProgress($connector, new ShowInstanceRequest($instanceId), InstanceResponse::class,
                 ['Resolve Instance', 'Loading Instance', 'Loaded Instance']);
             if (! $instance instanceof InstanceResponse || ! $this->confirmAction(
-                "Move Instance [{$instance->name}] (#{$instance->id}) into a container with downtime and deletion of its checkout?",
+                "Move Instance [{$instance->name}] (#{$instance->id}) into a container with downtime and retention of its old checkout?",
                 'Instance move cancelled.',
                 option: 'force',
                 requiredCode: 'instance.confirmation_required',
-                requiredMessage: 'Use --force to confirm the downtime of the move and the deletion of the checkout.',
+                requiredMessage: 'Use --force to confirm the downtime of the move and the retention of the old checkout.',
             )) {
                 return self::FAILURE;
             }

@@ -14,7 +14,7 @@ orbit instance:migrate <instance> [--force] [--json]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--force` | prompt | Confirm the downtime and the deletion of the checkout. Required without a terminal and with `--json`. |
+| `--force` | prompt | Confirm the downtime and the retirement of the checkout. Required without a terminal and with `--json`. |
 | `--idempotency-key=KEY` | none | Reuse a key to retry this operation start. |
 | `--json` | off | Print the final task as JSON, with every step, and nothing while it follows. |
 
@@ -25,13 +25,13 @@ orbit instance:migrate 12 --force --json > migrate.json
 
 The command moves one checkout Instance into an [Instance container](/reference/development-containers#migrate-a-checkout-instance) on the same Node. It is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.
 
-In a terminal, the CLI asks to confirm that the Instance goes down during the move and that its checkout is deleted after it, with No selected. Declining, Ctrl-C or end of input ends with `input.cancelled` and starts no move.
+In a terminal, the CLI asks to confirm that the Instance goes down during the move and that its checkout leaves the live path after it, with No selected. Declining, Ctrl-C or end of input ends with `input.cancelled` and starts no move.
 
 ## What moves
 
 | Part | What Orbit does |
 | --- | --- |
-| Branch | The checkout's current branch, with its commits that were never pushed. Orbit fetches it from the checkout on the Node |
+| Branch | The checkout's current branch. Orbit fetches it from the checkout on the Node; a retained checkout can carry commits that were never pushed |
 | Files | Every file that differs from the commit, every untracked file and every ignored file, such as `vendor`, `node_modules`, `storage` and `.env` |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace` |
 | Database on a Database server | It stays where it is. The container gets its own way to the port of each server the Instance uses. Orbit checks every target from inside before stopping the checkout |
@@ -39,7 +39,45 @@ In a terminal, the CLI asks to confirm that the Instance goes down during the mo
 | Route | The same domain and certificate. It points at FrankenPHP in the container, and the checkout's PHP-FPM pool goes |
 | T3 | A non-default Instance gets its T3 server, registered as a [new Instance's](/cli/instance/create) is. The default runs none |
 
-These do not move: the staging state of the index, stashes, and branches that no Instance has checked out. Before Orbit removes a repository, it keeps the repository's local branches and every stash entry in the Instance's mirror on the Node, under `refs/migrated/`.
+The container does not receive the index’s staging state, stashes, or branches that no Instance has checked out. Retirement moves the whole old checkout to a retained path, including all Git metadata and work-tree files. It deletes no Git data. A repository with stashes refuses preflight.
+
+## Retained Git data
+
+Retirement removes the checkout from its old live path by renaming the whole directory. The retained root is `<checkout>.orbit-retired-git`, beside the migrating Instance's checkout. Each retained checkout is a child named by the SHA-256 of its original absolute path. Its `.git`, objects, refs, reflogs, submodule repositories under `.git/modules`, nested repositories and work-tree files all stay there. Tag-only commits, stashes added after preflight and late worktrees remain recoverable because retirement deletes no files or Git metadata. The rename requires the same filesystem; Orbit has no copy-and-delete path. Worktree pointers may still name the old paths and need repair before use.
+
+Find the root and its retention time with `orbit instance:show INSTANCE --json`: the fields are `retained_git_path` and `retained_git_at`, also returned by `GET /api/v1/instances/{instance}`. `retained.json` inside that root records the same path and time. Both API fields are null until retirement prepares that root. The timestamp is when the root was prepared. A failed retirement can leave an empty or partly filled root; its path is recorded before any checkout moves.
+
+Destroying the migrated Instance keeps this directory. After destroy deletes the Instance record, its successful Operation result keeps `retained_git_path` and `retained_git_at`; read it with `orbit operation:show OPERATION --json`. See [instance:destroy](/cli/instance/destroy).
+
+### Recovery
+
+To inspect retained commits, use `git --git-dir=RETAINED_CHILD/.git show REF` on the Instance's Node. Repairing a linked worktree's pointers to the retained repository can make it usable again, but it still depends on that repository. Keep the retained root while any worktree depends on it.
+
+### Manual purge
+
+Orbit has no purge command yet. Before purging the retained root:
+
+- Save all needed data outside it, including refs, stashes, submodule repositories and nested repositories.
+- Make every surviving linked worktree independent, or move its shared repository outside the retained root and repair its worktrees against that new location. Repairing pointers back into retention does not meet this requirement.
+- Stop anyone from creating or changing worktrees until inspection and purge finish.
+
+Inspect the retained repositories' `worktrees/` entries, including those under `.git/modules` and nested repositories. On the Node, set `retained_root` to the exact recorded path. This read-only check prints each registration file followed by the path of its worktree's `.git` file:
+
+```sh
+retained_root='/exact/path/from/retained_git_path'
+find "$retained_root" -type f -path '*/worktrees/*/gitdir' -print -exec cat {} \;
+```
+
+For every listed target whose worktree survives, check the repository it now uses:
+
+```sh
+git -C /path/to/surviving-worktree rev-parse --path-format=absolute --git-common-dir
+realpath -- /common/git/directory/reported/above
+```
+
+Every resolved common Git directory must exist outside the retained root. A failed command, a path still inside retention, or an unaccounted-for missing target leaves the inspection incomplete: keep the retained root. Account for moved or removed worktrees explicitly; a broken old pointer does not prove independence. Repeat this inspection for every registration printed above.
+
+Only after all data is saved and no surviving worktree uses a retained Git directory, run `rm -rf -- RETAINED_ROOT` on that Node, replacing `RETAINED_ROOT` with the exact recorded path. This is an operator-performed purge; retirement neither performs it nor clears the recorded path and time afterward.
 
 ## Before you start
 
@@ -47,11 +85,15 @@ These do not move: the staging state of the index, stashes, and branches that no
 - **PHP version.** A web-serving Project needs its PHP version recorded before the move. A missing version refuses with `project.source_defaults_incomplete`. Set `require.php` in `composer.json` on the default branch, then run `orbit project:update PROJECT --source-access=github_app` to record it. This command also enables source access for a `gh_cli` Project.
 - **Branch.** The checkout is on the branch that Orbit records for the Instance.
 - **Deployments.** Wait for an unfinished deployment before starting the move.
-- **Processes.** Ordinary systemd Processes keep their ids and desired states. Docker Processes and Node-bound presets cannot move. Finish pending Process operations, removals and previous runtime cleanup first.
+- **Processes.** Ordinary systemd Processes keep their ids and desired states. The `vp-dev` preset also moves; Docker Processes and other presets cannot move. Finish pending Process operations, removals and previous runtime cleanup first.
 - **Routes.** The Instance has no Route beside its own.
-- **Retirement.** Every checkout scheduled for deletion is clean and has no other worktree registered on its Git directory. Orbit checks before downtime and again before removal. `instance.migrate_retirement_blocked` names the checkout, other worktree paths and changed files, with total counts and the first 20 entries of each list. Ignored files do not block. Resolve the worktrees and save the changes before retrying; Orbit never stashes or removes them for you.
+- **Retirement.** Every checkout scheduled for retirement is clean and has no other worktree registered on its Git directory. Orbit checks before downtime and again before moving the checkout to retention. `instance.migrate_retirement_blocked` names the checkout, other worktree paths and changed files, with total counts and the first 20 entries of each list. Ignored files do not block. Every local branch and a detached HEAD must have no commits unreachable from all remote-tracking refs, and the repository must have no stashes. `instance.migrate_unpushed_commits` names every affected branch (or detached HEAD) and its commit count; `instance.migrate_stashes_present` names the stash count. Orbit reads the local remote-tracking refs without fetching. Orbit never stashes, pushes, prunes or removes blockers for you.
 
-A default checkout that is retained can copy uncommitted files. A checkout scheduled for deletion must be clean.
+The `vp-dev` preset keeps its id, preset identity, assigned Vite port and running or stopped intent. It runs as `orbit` with the shared runtime’s `current/bin/vp`, binds `0.0.0.0`, and keeps `/__orbit/vite` on the same Route. Its checkout working directory, environment file and absolute environment paths must stay inside the checkout; Orbit maps them to `/srv/workspace`. Private environment values use the same protected delivery as other Processes.
+
+Orbit accepts the unversioned catalogue command, preset version `1`, and the surveyed Node command that unsets the two Vite certificate variables and runs the Node account’s Vite+ binary on the assigned port. A custom command beside the preset refuses. Missing, reserved or conflicting recorded ports, duplicate `vp-dev` Processes, unknown preset versions and external paths refuse before downtime, naming the Process and reason.
+
+A default checkout that is retained can copy uncommitted files. A checkout scheduled for retirement must pass every retirement check.
 
 Orbit prepares the container and probes every attached target before downtime. If a target is unreachable, the checkout keeps serving, its files stay untouched, and its host Processes keep their states.
 
@@ -61,7 +103,7 @@ Nobody works in the checkout during the move. Orbit shows the wake page on the R
 
 A Project's default Instance moves first. A non-default Instance before its default refuses with `instance.default_not_migrated`.
 
-A non-default checkout is a linked worktree of the default's repository. So the default keeps its checkout on the Node until the last other checkout Instance of the Project has moved. That last move can remove it only after the retirement checks pass. A linked checkout also sees the default in its worktree list; the worktrees must be separated before it can retire.
+A non-default checkout is a linked worktree of the default's repository. So the default keeps its checkout on the Node until the last other checkout Instance of the Project has moved. That last move can retain it only after the retirement checks pass. A linked checkout also sees the default in its worktree list; the worktrees must be separated before it can retire.
 
 After the default has moved, an Instance that is still a checkout keeps working until its own move.
 
@@ -71,7 +113,7 @@ A move that fails leaves the checkout Instance serving as before. Orbit puts the
 
 When the restore itself fails, the task names the failed step and Orbit keeps the reserved record, so no other Instance takes the address of a container that may be left. The Instance's site stays the checkout's. Its deployments refuse with `instance.lifecycle_busy` until the same command has run again.
 
-The removal of the checkout is the last step. When only that step fails, the Instance stays in its container, the task fails with `instance.migrate_retire_failed`, and the checkout is left on the Node to remove by hand. A retirement check that finds a new blocker reports `instance.migrate_retirement_blocked` with the same outcome.
+The retirement of the checkout is the last step. When only that step fails, the Instance stays in its container, the task fails with `instance.migrate_retire_failed`, and the source or retained checkout stays on the Node. A retirement check that finds a new blocker reports its refusal code with the same outcome, leaving the source untouched.
 
 The command starts a task and follows it until it ends, as [`instance:deploy`](/cli/instance/deploy) does. Ctrl-C stops following, not the move, and exits 130.
 
@@ -92,11 +134,17 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `instance.migrate_unsupported` | The Instance has a Route beside its own. |
 | `project.source_defaults_incomplete` | A web-serving Project has no recorded PHP version. Run `orbit project:update PROJECT --source-access=github_app` after setting `require.php` in its source. |
 | `operation.kind_unavailable` | A non-default Instance has no Conn layer or no model router. |
-| `process.target_unsupported` | The Instance has a Docker Process or a Node-bound preset such as `vp-dev`. |
+| `process.target_unsupported` | The Instance has a Docker Process. |
+| `process.container_preset_unsupported` | A named Process has an unknown preset or preset version, or unsupported preset options. |
+| `process.container_command_unsupported` | A named preset Process has a custom command. |
+| `process.container_path_unsupported` | A named preset Process has a working directory, environment file or absolute environment value outside its checkout, or a path with dot segments. |
+| `process.container_port_conflict` | A named preset Process has no valid assigned port, shares it with a recorded Process or reserved container service, or duplicates another preset. |
 | `instance.database_clone_unsupported` | The Instance's database server has no IPv4 address and port that a container can reach. |
 | `instance.host_unavailable` | The Node has no Instance bridge, the bridge is full, no T3 port is free, or the runtime folder lacks the Project's PHP build. |
 | `instance.migrate_branch_changed` | The checkout is not on the branch that Orbit records. Check out that branch, or record the new one with [`instance:rename`](/cli/instance/rename). |
-| `instance.migrate_retirement_blocked` | A checkout scheduled for deletion has other worktrees or uncommitted changes. The error names up to 20 paths per list and each total count. Before downtime the checkout keeps serving; at the final check the container keeps serving and the checkout stays. |
+| `instance.migrate_retirement_blocked` | A checkout scheduled for retirement has other worktrees or uncommitted changes. The error names up to 20 paths per list and each total count. Before downtime the checkout keeps serving; at the final check the container keeps serving and the checkout stays. |
+| `instance.migrate_unpushed_commits` | A planned retirement has local branches or a detached HEAD with commits unreachable from every local remote-tracking ref. The error names each branch or detached HEAD and its commit count. The source stays untouched. |
+| `instance.migrate_stashes_present` | A planned retirement has stashes. The error names the count and leaves the source untouched. |
 | `instance.database_unreachable` | The new container could not reach the database server's port. |
 | `instance.migrate_<step>_failed` | A step of the move failed, such as `instance.migrate_workspace_failed`. The checkout serves as before, except after `instance.migrate_retire_failed`. |
 | `http.404` | The Instance is unknown. |

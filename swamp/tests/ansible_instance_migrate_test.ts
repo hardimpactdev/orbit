@@ -1,7 +1,7 @@
 /**
  * Run the shipped playbook of a move (instance-migrate.yml) with the container phases it builds on (instance-container.yml)
  * against a stateful Incus boundary: a default with work that was never committed or pushed, a non-default worktree with the
- * default's old checkout, the restore after a failure and the two refusals. The Node is this machine: the run's connection is
+ * default's old checkout, the restore after a failure and the refusals. The Node is this machine: the run's connection is
  * local and nothing becomes root.
  */
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1";
@@ -127,6 +127,8 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     git(checkout, "add", "--all");
     git(checkout, "commit", "--quiet", "-m", "save changes before retirement");
   }
+  // Clean retirement fixtures have all commits reachable from a local remote-tracking ref.
+  if (!dirty) git(checkout, "update-ref", "refs/remotes/origin/main", "HEAD");
   const id = instance === "default" ? 7 : 8;
   const clone = instance === "default" ? null : {
     t3: { port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 2 },
@@ -190,6 +192,10 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     container,
     migrate,
     rootfs,
+    retained: () => {
+      const root = `${checkout}.orbit-retired-git`;
+      return `${root}/${[...Deno.readDirSync(root)].find((entry) => entry.isDirectory)!.name}`;
+    },
     write,
     run(phase: string, rawContainer = false) {
       const playbook = !rawContainer && ["container", "quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
@@ -232,13 +238,12 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
 }
 
 Deno.test({
-  name: "a default moves with its unpushed commit and its changed, staged, untracked, deleted and ignored files; then its checkout goes",
+  name: "a retained default copies its unpushed commit and changed, staged, untracked, deleted and ignored files",
   ignore: !hasAnsible,
   fn() {
     const f = fixture("default", true);
     try {
       // A retained default can copy its local files; its checkout is not scheduled for deletion yet.
-      const retirements = f.migrate.retire;
       f.migrate.retire = [];
       f.write();
       const head = git(f.checkout, "rev-parse", "HEAD");
@@ -274,25 +279,11 @@ Deno.test({
       assertEquals(git(f.checkout, "status", "--porcelain"), status);
       assertEquals(Deno.readTextFileSync(`${f.checkout}/.env`), `APP_KEY=base64:kept\nDB_DATABASE=${f.checkout}/database/database.sqlite\n`);
 
-      git(f.checkout, "branch", "spare");
-      git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
-      const olderStash = git(f.checkout, "rev-parse", "refs/stash");
-      Deno.writeTextFileSync(`${f.checkout}/new-stash.txt`, "newer stash\n");
-      git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
-      const newerStash = git(f.checkout, "rev-parse", "refs/stash");
-      f.migrate.retire = retirements;
-      f.write();
       const retire = f.run("retire");
       assert(retire.ok, retire.output);
-      assert(!exists(f.checkout));
+      assert(exists(f.checkout));
+      assertEquals(git(f.checkout, "status", "--porcelain"), status);
       assert(exists(f.migrate.awake.path));
-      // No commit went with the repository: its local branches and its stash are in the mirror.
-      assertEquals(git(f.container.mirror, "rev-parse", "refs/migrated/heads/main"), head);
-      assertEquals(git(f.container.mirror, "rev-parse", "refs/migrated/heads/spare"), head);
-      assertEquals(git(f.container.mirror, "rev-parse", `refs/migrated/stashes/${olderStash}`), olderStash);
-      assertEquals(git(f.container.mirror, "rev-parse", `refs/migrated/stashes/${newerStash}`), newerStash);
-      assertEquals(git(f.container.mirror, "show", `${olderStash}^3:note.txt`), "untracked");
-      assertEquals(git(f.container.mirror, "show", `${newerStash}^3:new-stash.txt`), "newer stash");
       assertEquals(f.state().containers["instance-7"].status, "Running");
       const again = f.run("retire");
       assert(again.ok, again.output);
@@ -433,7 +424,7 @@ Deno.test({
       // Nothing listens on this port.
       f.migrate.databases.push({ host: "127.0.0.1", port: 1 });
       f.write();
-      const processes = migrationProcesses(f);
+      const processes = migrationProcesses(f, "running");
       const processBefore = processes();
       const markerBefore = Deno.statSync(f.migrate.awake.path).mtime?.getTime();
       const files = f.run("container");
@@ -561,7 +552,7 @@ Deno.test({
   },
 });
 
-for (const blocker of ["changes", "worktree"] as const) {
+for (const blocker of ["changes", "worktree", "commits", "stashes"] as const) {
   Deno.test({
     name: `retirement rechecks ${blocker} created after preflight and leaves the container and source intact`,
     ignore: !hasAnsible,
@@ -571,16 +562,25 @@ for (const blocker of ["changes", "worktree"] as const) {
         f.build();
         const path = blocker === "changes" ? `${f.checkout}/late.txt` : `${f.apps}/late-worktree`;
         if (blocker === "changes") Deno.writeTextFileSync(path, "late edit\n");
-        else git(f.checkout, "worktree", "add", "--quiet", "--detach", path);
+        else if (blocker === "worktree") git(f.checkout, "worktree", "add", "--quiet", "--detach", path);
+        else if (blocker === "commits") git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "late commit");
+        else {
+          Deno.writeTextFileSync(`${f.checkout}/late-stash.txt`, "late stash\n");
+          git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
+        }
+        const refs = git(f.checkout, "show-ref");
         const state = f.state();
         const retire = f.run("retire");
         assert(!retire.ok, retire.output);
-        assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
-        assert(f.result().error_message.includes(blocker === "changes" ? "late.txt" : path));
+        const code = blocker === "commits" ? "instance.migrate_unpushed_commits" : blocker === "stashes" ? "instance.migrate_stashes_present" : "instance.migrate_retirement_blocked";
+        assertEquals(f.result().error_code, code);
+        const detail = blocker === "changes" ? "late.txt" : blocker === "worktree" ? path : blocker === "commits" ? '"commits": 1' : "Stashes: 1";
+        assert(f.result().error_message.includes(detail), f.result().error_message);
+        assertEquals(git(f.checkout, "show-ref"), refs);
         assertEquals(f.result().preflight_refused, false);
         assert(exists(f.migrate.awake.path), "The container Route must serve after a retirement refusal.");
         assert(exists(f.checkout));
-        assert(exists(path));
+        if (["changes", "worktree"].includes(blocker)) assert(exists(path));
         assertEquals(f.state(), state);
         assertEquals(f.state().containers["instance-7"].status, "Running");
       } finally {
@@ -590,12 +590,11 @@ for (const blocker of ["changes", "worktree"] as const) {
   });
 }
 
-
-function migrationProcesses(f: ReturnType<typeof fixture>) {
+function migrationProcesses(f: ReturnType<typeof fixture>, presetDesired: "running" | "stopped") {
   const states: Record<string, { state: string; enabled: boolean }> = {};
   const environments: Record<string, string> = {};
-  for (const [id, desired] of [[70, "running"], [71, "stopped"]] as const) {
-    const name = `orbit-process-${id}-worker.service`;
+  for (const [id, desired, preset] of [[70, "running", false], [71, "stopped", false], [72, presetDesired, true]] as const) {
+    const name = `orbit-process-${id}-${preset ? "vp-dev" : "worker"}.service`;
     const directory = `${f.folder}/host/${id}`;
     Deno.mkdirSync(directory, { recursive: true });
     const path = `${directory}/${name}`;
@@ -603,64 +602,366 @@ function migrationProcesses(f: ReturnType<typeof fixture>) {
     Deno.writeTextFileSync(`${directory}/old.env`, "OLD_TOKEN=kept\n");
     f.migrate.processes.push({ name, path, environment_directory: directory, desired });
     const environment = `/etc/orbit/processes/${id}/vars.env`;
-    f.container.processes.push({ id, name, content: "[Service]\nUser=orbit\n", environment, desired });
+    const content = preset
+      ? `[Service]\nUser=orbit\nWorkingDirectory=/srv/workspace\nEnvironmentFile=-/srv/workspace/.env\nEnvironmentFile=${environment}\nEnvironment=ORBIT_DEV_SERVER_PORT=5195\nExecStart=/opt/orbit-runtime/current/bin/vp dev --host=0.0.0.0 --port=5195 --strictPort --base=/__orbit/vite/\n`
+      : "[Service]\nUser=orbit\n";
+    f.container.processes.push({ id, name, content, environment, desired });
     environments[environment] = `QUEUE_TOKEN=process-secret-${id}\n`;
     states[name] = { state: desired === "running" ? "started" : "stopped", enabled: desired === "running" };
   }
+  const unrelated = `${f.folder}/host/unrelated`;
+  Deno.mkdirSync(unrelated, { recursive: true });
+  Deno.writeTextFileSync(`${unrelated}/orbit-process-999-other.service`, "unrelated unit\n");
+  Deno.writeTextFileSync(`${unrelated}/vars.env`, "OTHER_TOKEN=kept\n");
+  states["orbit-process-999-other.service"] = { state: "started", enabled: true };
   Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify(states));
   Deno.writeTextFileSync(`${f.folder}/process-environments.json`, JSON.stringify(environments));
   f.write();
   return () => JSON.parse(Deno.readTextFileSync(`${f.folder}/host-processes.json`));
 }
 
+for (const presetDesired of ["running", "stopped"] as const) {
+  Deno.test({
+    name: `Process migration carries a ${presetDesired} vp-dev through the shared units and retires only moved host files`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        const host = migrationProcesses(f, presetDesired);
+        const prepared = f.run("container");
+        assert(prepared.ok, prepared.output);
+        assertEquals(host()[f.migrate.processes[0].name], { state: "started", enabled: true });
+        const stopped = f.run("quiesce");
+        assert(stopped.ok, stopped.output);
+        assertEquals(host()[f.migrate.processes[0].name], { state: "stopped", enabled: false });
+        for (const phase of ["workspace", "files"]) {
+          const result = f.run(phase);
+          assert(result.ok, result.output);
+        }
+        const installed = f.run("processes");
+        assert(installed.ok, installed.output);
+        assert(!installed.output.includes("process-secret"));
+        for (const unit of f.container.processes) {
+          assertEquals(Deno.readTextFileSync(`${f.rootfs}/etc/systemd/system/${unit.name}`), unit.content);
+          assertEquals(Deno.readTextFileSync(`${f.rootfs}${unit.environment}`), `QUEUE_TOKEN=process-secret-${unit.id}\n`);
+          const enabled = exists(`${f.rootfs}/etc/systemd/system/multi-user.target.wants/${unit.name}`);
+          assertEquals(enabled, unit.desired === "running");
+          const starts = f.state().systemctl.filter((args: string[]) =>
+            ["start", "restart", "enable"].includes(args[0]) && args.includes(unit.name));
+          assertEquals(starts.length > 0, unit.desired === "running");
+        }
+        const retired = f.run("retire");
+        assert(retired.ok, retired.output);
+        for (const unit of f.migrate.processes) assert(!exists(unit.environment_directory));
+        assertEquals(host()[f.migrate.processes[0].name], { state: "stopped", enabled: false });
+        assertEquals(host()["orbit-process-999-other.service"], { state: "started", enabled: true });
+        assertEquals(Deno.readTextFileSync(`${f.folder}/host/unrelated/orbit-process-999-other.service`), "unrelated unit\n");
+        assertEquals(Deno.readTextFileSync(`${f.folder}/host/unrelated/vars.env`), "OTHER_TOKEN=kept\n");
+      } finally { f.cleanup(); }
+    },
+  });
+
+  Deno.test({
+    name: `Process migration restores a ${presetDesired} vp-dev only after removing its failed container`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        const host = migrationProcesses(f, presetDesired);
+        f.build();
+        const installed = f.run("processes");
+        assert(installed.ok, installed.output);
+        assertEquals(host()[f.migrate.processes[0].name], { state: "stopped", enabled: false });
+        const restored = f.run("restore");
+        assert(restored.ok, restored.output);
+        assertEquals(host()[f.migrate.processes[0].name], { state: "started", enabled: true });
+        assertEquals(host()[f.migrate.processes[1].name], { state: "stopped", enabled: false });
+        assertEquals(f.state().containers, {});
+        for (const unit of f.migrate.processes) {
+          assertEquals(Deno.readTextFileSync(unit.path), "old unit\n");
+          assertEquals(Deno.readTextFileSync(`${unit.environment_directory}/old.env`), "OLD_TOKEN=kept\n");
+          assertEquals(host()[unit.name], { state: unit.desired === "running" ? "started" : "stopped", enabled: unit.desired === "running" });
+        }
+        assertEquals(host()["orbit-process-999-other.service"], { state: "started", enabled: true });
+        assert(exists(f.checkout));
+      } finally { f.cleanup(); }
+    },
+  });
+}
+
 Deno.test({
-  name: "Process migration stops host writers before copying, installs the same units privately, then retires host files",
+  name: "preflight names every unpushed local branch with its count against all remote-tracking refs",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
-      const host = migrationProcesses(f);
-      const prepared = f.run("container");
-      assert(prepared.ok, prepared.output);
-      assertEquals(host()[f.migrate.processes[0].name], { state: "started", enabled: true });
-      const stopped = f.run("quiesce");
-      assert(stopped.ok, stopped.output);
-      assertEquals(host()[f.migrate.processes[0].name], { state: "stopped", enabled: false });
-      for (const phase of ["workspace", "files"]) {
-        const result = f.run(phase);
-        assert(result.ok, result.output);
+      const pushed = git(f.checkout, "rev-parse", "HEAD");
+      // None of these branches needs an upstream. Remote-only commits count as pushed on any remote.
+      git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "remote-only");
+      git(f.checkout, "update-ref", "refs/remotes/second/shared", "HEAD");
+      git(f.checkout, "branch", "remote-only");
+      git(f.checkout, "checkout", "--quiet", "-b", "spare", pushed);
+      git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "one unpushed commit");
+      git(f.checkout, "branch", "another");
+      git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "two unpushed commits");
+      git(f.checkout, "checkout", "--quiet", "main");
+      const refs = git(f.checkout, "show-ref");
+      const status = git(f.checkout, "status", "--porcelain");
+      const quiesce = f.run("container");
+      assert(!quiesce.ok, quiesce.output);
+      const receipt = f.result();
+      assertEquals(receipt.error_code, "instance.migrate_unpushed_commits");
+      assert(receipt.error_message.includes(f.checkout));
+      assert(receipt.error_message.includes('"branch": "another", "commits": 1'), receipt.error_message);
+      assert(receipt.error_message.includes('"branch": "spare", "commits": 2'), receipt.error_message);
+      assert(!receipt.error_message.includes('"branch": "main"'));
+      assert(!receipt.error_message.includes('"branch": "remote-only"'));
+      assertEquals(receipt.preflight_refused, true);
+      assert(exists(f.migrate.awake.path));
+      assertEquals(f.state().containers ?? {}, {});
+      assert(f.run("restore").ok);
+      assertEquals(git(f.checkout, "show-ref"), refs);
+      assertEquals(git(f.checkout, "status", "--porcelain"), status);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+for (const detached of [false, true]) {
+  Deno.test({
+    name: detached ? "preflight refuses and counts an unpushed detached HEAD" : "preflight refuses and counts every commit when no remote-tracking refs exist",
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        if (detached) {
+          git(f.checkout, "checkout", "--quiet", "--detach");
+          git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "detached local commit");
+        } else git(f.checkout, "update-ref", "-d", "refs/remotes/origin/main");
+        const head = git(f.checkout, "rev-parse", "HEAD");
+        const refs = git(f.checkout, "show-ref");
+        const quiesce = f.run("container");
+        assert(!quiesce.ok, quiesce.output);
+        assertEquals(f.result().error_code, "instance.migrate_unpushed_commits");
+        const expected = detached ? '"branch": "detached HEAD", "commits": 1' : '"branch": "main", "commits": 3';
+        assert(f.result().error_message.includes(expected), f.result().error_message);
+        assert(exists(f.migrate.awake.path));
+        assertEquals(f.state().containers ?? {}, {});
+        assertEquals(git(f.checkout, "rev-parse", "HEAD"), head);
+        assertEquals(git(f.checkout, "show-ref"), refs);
+      } finally {
+        f.cleanup();
       }
-      const installed = f.run("processes");
-      assert(installed.ok, installed.output);
-      assert(!installed.output.includes("process-secret"));
-      for (const unit of f.container.processes) {
-        assertEquals(Deno.readTextFileSync(`${f.rootfs}/etc/systemd/system/${unit.name}`), unit.content);
-        assertEquals(Deno.readTextFileSync(`${f.rootfs}${unit.environment}`), `QUEUE_TOKEN=process-secret-${unit.id}\n`);
+    },
+  });
+}
+
+Deno.test({
+  name: "preflight refuses stashes with the full count and preserves every entry and earlier move resource",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      for (const name of ["first", "second"]) {
+        Deno.writeTextFileSync(`${f.checkout}/${name}.txt`, name);
+        git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
       }
-      const retired = f.run("retire");
-      assert(retired.ok, retired.output);
-      for (const unit of f.migrate.processes) assert(!exists(unit.environment_directory));
-      assertEquals(host()[f.migrate.processes[0].name], { state: "stopped", enabled: false });
-    } finally { f.cleanup(); }
+      const stashes = git(f.checkout, "stash", "list", "--format=%H");
+      const refs = git(f.checkout, "show-ref");
+      assert(f.run("container", true).ok);
+      const state = f.state();
+      const quiesce = f.run("container");
+      assert(!quiesce.ok, quiesce.output);
+      assertEquals(f.result().error_code, "instance.migrate_stashes_present");
+      assert(f.result().error_message.includes("Stashes: 2"));
+      assert(f.result().error_message.includes(f.checkout));
+      assertEquals(f.result().preflight_refused, true);
+      assert(exists(f.migrate.awake.path));
+      assertEquals(f.state(), state);
+      assert(f.run("restore").ok);
+      assertEquals(f.state(), state);
+      assertEquals(git(f.checkout, "show-ref"), refs);
+      assertEquals(git(f.checkout, "stash", "list", "--format=%H"), stashes);
+      for (const [index, name] of [[0, "second"], [1, "first"]] as const) {
+        assertEquals(git(f.checkout, "show", `stash@{${index}}^3:${name}.txt`), name);
+      }
+      assertEquals(git(f.checkout, "status", "--porcelain"), "");
+    } finally {
+      f.cleanup();
+    }
   },
 });
 
 Deno.test({
-  name: "Process migration restores the host desired states only after removing a failed container",
+  name: "a clean default with pushed commits and no stash retains all Git metadata and repeats without changes",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
-      const host = migrationProcesses(f);
+      git(f.checkout, "branch", "spare");
+      const head = git(f.checkout, "rev-parse", "HEAD");
       f.build();
-      assertEquals(host()[f.migrate.processes[0].name], { state: "stopped", enabled: false });
-      const restored = f.run("restore");
-      assert(restored.ok, restored.output);
-      assertEquals(host()[f.migrate.processes[0].name], { state: "started", enabled: true });
-      assertEquals(host()[f.migrate.processes[1].name], { state: "stopped", enabled: false });
-      assertEquals(f.state().containers, {});
-      for (const unit of f.migrate.processes) assert(exists(unit.path));
-      assert(exists(f.checkout));
-    } finally { f.cleanup(); }
+      const retire = f.run("retire");
+      assert(retire.ok, retire.output);
+      assert(!exists(f.checkout));
+      assert(exists(f.migrate.awake.path));
+      assertEquals(git(f.retained(), "rev-parse", "refs/heads/main"), head);
+      assertEquals(git(f.retained(), "rev-parse", "refs/heads/spare"), head);
+      const again = f.run("retire");
+      assert(again.ok, again.output);
+      assertMatch(again.output, /changed=0\s/);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+for (const common of [false, true]) {
+  Deno.test({
+    name: `a ${common ? "common_of" : "direct"} repository refuses a worktree created before its final preflight`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        f.build();
+        if (common) {
+          // The linked checkout has gone; its common Git directory identifies this retirement candidate by equality.
+          f.migrate.retire[0].common_of = `${f.apps}/already-retired`;
+          f.write();
+          const playbook = `${f.folder}/instance-migrate.yml`;
+          const plays = parse(Deno.readTextFileSync(playbook)) as Task[];
+          for (const play of plays) {
+            if (play.hosts === "migrate_node") (play.vars as Task).migrate_common = `${f.checkout}/.git`;
+          }
+          Deno.writeTextFileSync(playbook, stringify(plays));
+        }
+        const late = `${f.apps}/unmanaged-late`;
+        const file = `${f.folder}/tasks/instance-migrate-retire.yml`;
+        const tasks = parse(Deno.readTextFileSync(file)) as Task[];
+        // The batch check has passed; the shared per-checkout preflight still refuses this blocker.
+        tasks.unshift({
+          name: "Fixture creates an unmanaged worktree before final preflight",
+          "ansible.builtin.command": { argv: ["git", "-C", f.checkout, "worktree", "add", "--quiet", "--detach", late] },
+          changed_when: true,
+        });
+        Deno.writeTextFileSync(file, stringify(tasks));
+        const head = git(f.checkout, "rev-parse", "HEAD");
+        const state = f.state();
+        const retire = f.run("retire");
+        assert(!retire.ok, retire.output);
+        assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
+        assert(f.result().error_message.includes(late), f.result().error_message);
+        assertEquals(f.result().preflight_refused, false);
+        assert(exists(`${f.checkout}/.git`));
+        assert(exists(late));
+        assertEquals(git(late, "rev-parse", "HEAD"), head);
+        assertEquals(git(f.checkout, "rev-parse", "HEAD"), head);
+        assertEquals(f.state(), state);
+        assert(exists(f.migrate.awake.path));
+      } finally {
+        f.cleanup();
+      }
+    },
+  });
+}
+
+Deno.test({
+  name: "a worktree created after the final listing keeps all its Git data after retirement",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.build();
+      const late = `${f.apps}/after-final-listing`;
+      const file = `${f.folder}/tasks/instance-migrate-retire.yml`;
+      const tasks = parse(Deno.readTextFileSync(file)) as Task[];
+      const retain = tasks.findIndex((task) => task.name === "Retain the checkout without deleting any files");
+      tasks.splice(retain, 0, {
+        name: "Fixture adds a late worktree after the final preflight listing",
+        "ansible.builtin.command": { argv: ["git", "-C", f.checkout, "worktree", "add", "--quiet", "--detach", late] },
+        changed_when: true,
+      });
+      Deno.writeTextFileSync(file, stringify(tasks));
+      const head = git(f.checkout, "rev-parse", "HEAD");
+      const retire = f.run("retire");
+      assert(retire.ok, retire.output);
+      assert(!exists(f.checkout));
+      const retained = f.retained();
+      assert(exists(`${retained}/.git/worktrees/after-final-listing/HEAD`));
+      assertEquals(git(retained, "cat-file", "-t", head), "commit");
+      assertEquals(Deno.readTextFileSync(`${late}/.git`).trim(), `gitdir: ${f.checkout}/.git/worktrees/after-final-listing`);
+      assert(exists(`${late}/index.php`));
+      const receipt = JSON.parse(Deno.readTextFileSync(`${f.folder}/run/retained-git.json`));
+      assertEquals(receipt.retained_git_path, `${f.checkout}.orbit-retired-git`);
+      assertMatch(receipt.retained_git_at, /^\d{4}-\d{2}-\d{2}T/);
+      assert(exists(f.migrate.awake.path));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a stash ref with an expired reflog still refuses before downtime",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      Deno.writeTextFileSync(`${f.checkout}/expired-stash.txt`, "kept stash data\n");
+      git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
+      const stash = git(f.checkout, "rev-parse", "refs/stash");
+      git(f.checkout, "reflog", "expire", "--expire=all", "refs/stash");
+      assertEquals(git(f.checkout, "stash", "list"), "");
+      const quiesce = f.run("container");
+      assert(!quiesce.ok, quiesce.output);
+      assertEquals(f.result().error_code, "instance.migrate_stashes_present");
+      assert(f.result().error_message.includes("Stashes: 1"));
+      assertEquals(git(f.checkout, "rev-parse", "refs/stash"), stash);
+      assertEquals(git(f.checkout, "show", `${stash}^3:expired-stash.txt`), "kept stash data");
+      assert(exists(f.migrate.awake.path));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test("retention keeps real Git edge cases intact", () => {
+  const done = new Deno.Command("python3", {
+    args: ["-I", new URL("fixtures/instance-migrate-retention.py", import.meta.url).pathname],
+  }).outputSync();
+  assert(done.success, new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr));
+});
+
+Deno.test({
+  name: "a worker receipt failure leaves the source untouched and a retry reuses the prepared retention time",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.build();
+      const file = `${f.folder}/tasks/instance-migrate-retire.yml`;
+      const original = Deno.readTextFileSync(file);
+      const tasks = parse(original) as Task[];
+      const record = tasks.find((task) => task.name === "Record retained Git data for the terminal result")!;
+      (record["ansible.builtin.copy"] as Task).dest = `${f.folder}/missing-parent/retained-git.json`;
+      Deno.writeTextFileSync(file, stringify(tasks));
+      const head = git(f.checkout, "rev-parse", "HEAD");
+      const failed = f.run("retire");
+      assert(!failed.ok, failed.output);
+      assert(exists(`${f.checkout}/.git`));
+      assertEquals(git(f.checkout, "rev-parse", "HEAD"), head);
+      assert(!exists(`${f.folder}/run/retained-git.json`));
+      const prepared = JSON.parse(Deno.readTextFileSync(`${f.checkout}.orbit-retired-git/retained.json`));
+      Deno.writeTextFileSync(file, original);
+      const retry = f.run("retire");
+      assert(retry.ok, retry.output);
+      const recorded = JSON.parse(Deno.readTextFileSync(`${f.folder}/run/retained-git.json`));
+      assertEquals(recorded.retained_git_at, prepared.retained_git_at);
+      assertEquals(git(f.retained(), "rev-parse", "HEAD"), head);
+      assert(!exists(f.checkout));
+    } finally {
+      f.cleanup();
+    }
   },
 });
