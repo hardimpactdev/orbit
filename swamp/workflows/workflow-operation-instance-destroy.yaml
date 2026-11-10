@@ -492,7 +492,7 @@ jobs:
     - step: Delete the container
       condition:
         type: always
-  - name: Clean container removal files
+  - name: Clean container files
     labels: *id004
     task:
       type: behavior

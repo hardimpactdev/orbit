@@ -7,6 +7,7 @@ sequenceDiagram
   %% Decided by the orchestrator, for Nick's review (2026-11-06): an Instance without a Route skips the Route withdrawal and the DNS records (a bare destroy spent 33 s and 11 s there on nothing), and a destroyed name waits no DNS grace (it has no new target to move to; the 31 s wait was 27% of a 116 s destroy).
   %% Decided by the orchestrator, for Nick's review (2026-11-06): a destroy applies each published state once. Without the grace, the prepared, withdrawn and live Caddyfiles and the prepared and final DNS records are identical, so the Route mutation publishes each once (two of three Caddy publications and two of three DNS publications were repeats); the separate DNS step of the Instance, which repeated the mutation, is gone.
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Route withdrawal is one Ansible read, one composition and one Ansible apply per Node, the Nodes in parallel, in place of about 30 serial dispatches of the Route mutation (34 s of a 46 s destroy). The pool and Caddyfile composition is unchanged; it runs once against what the Node holds, and the captured states keep their revision checks. DNS records leave in the same phase as the Caddy site of another Node, not after it.
+  %% Container clones follow the forced cleanup branch; defaults remain unavailable.
   %% status: draft
   %% command: instance:destroy
   %% kind: instance.destroy
@@ -96,6 +97,12 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
+  opt container clone
+    Note over SW: Prepare container removal
+    %%> What it does:
+    %%> - writes the saved intent and playbook assets to the run folder
+    %%> - container defaults refuse; clones require --force and skip source checks and Project teardown
+  end
   SW->>N: Write the git credential<br/>@swamp/cfgmgmt/file · 0600
   %%> What it does:
   %%> - writes the vault token as a 0600 credential file, so the token never enters argv
@@ -135,6 +142,7 @@ sequenceDiagram
   %%> Keeps:
   %%> - every other site, pool and certificate on Node 12
   end
+  opt checkout Instance
   SW->>N: Stop, remove Processes<br/>@swamp/cfgmgmt/systemd absent
   %%> What it does:
   %%> - removes each Process of Instance 42 as a `forEach`: `@swamp/cfgmgmt/systemd` or `docker_container` with `ensure: absent`, as `process:destroy` does
@@ -155,6 +163,7 @@ sequenceDiagram
     %%> - deletes the SQLite files that Instance 42 owns, by their recorded paths
     %%> - runs beside the database step; neither needs the other
   end
+  end
   opt owned databases
     SW->>N: Drop owned databases<br/>docker exec -i · SQL on stdin
     %%> What it does:
@@ -164,6 +173,7 @@ sequenceDiagram
     %%> Not included:
     %%> - registered external databases; their records go with the Instance, nothing on their host changes
   end
+  opt checkout Instance
   SW->>N: Remove hibernation files<br/>@swamp/cfgmgmt/file absent
   %%> Why:
   %%> - the awake and cold markers and the Caddy access log outlive the Instance otherwise
@@ -178,6 +188,19 @@ sequenceDiagram
   %%> - the `check` of the directory, file, systemd and `docker_container` behaviors with `ensure: absent`: checkout, units and containers are gone
   %%> Why:
   %%> - Instance 42 only counts as removed when the Node shows it; this is the one end check
+  end
+  opt container clone
+    SW->>N: Delete the container<br/>Ansible · tags remove
+    %%> What it does:
+    %%> - removes the container, volume, snapshots, Processes, T3, proxy, owned ACL, firewall rules and mirror
+    %%> - requires successful Route withdrawal and owned database removal; other Instances stay
+    Note over SW: Read container removal
+    %%> Failure:
+    %%> - a skipped deletion has no result and cannot report success
+    Note over SW: Clean container files
+    %%> When:
+    %%> - after every user of the run folder settles, also after a failure
+  end
   alt all steps pass
     N-->>SW: Instance 42 absent
     %%> Returns:
@@ -189,6 +212,7 @@ sequenceDiagram
     %%> Result:
     %%> - Instance 42 is deleted, with its Processes, Schedules and Route records
     %%> - owned database records are deleted
+    %%> - a container clone also loses its execution copies and Conn records, even while Conn is disabled; its runtime row frees the address and T3 port
     %%> - closed transfer history stays, without its Instance link
     %%> - task #5132 succeeds
   else a step fails
