@@ -4,17 +4,19 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use App\Domain\NodeFacts\NodeAgentLiveness;
+use App\Domain\NodeFacts\NodeAgentState;
+use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
-use Throwable;
+use App\Models\NodeFact;
 
-/** The home of a Process's non-root account on its Node, through the agent's `account.lookup`. */
+/** The home of a Process's non-root account, from its Node's current accounts fact. */
 final readonly class SshProcessUserResolver
 {
     public function __construct(
-        private AgentCommandRunner $agents,
+        private NodeAgentLiveness $liveness,
     ) {}
 
     public function home(Node $node, string $user): string
@@ -28,12 +30,14 @@ final readonly class SshProcessUserResolver
             $this->unavailable();
         }
 
-        try {
-            $account = $this->agents->run($node, 'account.lookup', ['user' => $user]);
-        } catch (Throwable) {
+        $fact = NodeFact::query()->where('node_id', $node->id)->where('kind', NodeFactKind::Accounts)
+            ->where('subject', '')->first();
+
+        if ($fact === null || $this->liveness->for($node)?->state !== NodeAgentState::Online) {
             $this->unavailable();
         }
 
+        $account = $this->observedAccount($fact, $user);
         $home = $account['home'] ?? null;
         if (
             ($account['user'] ?? null) !== $user
@@ -46,6 +50,19 @@ final readonly class SshProcessUserResolver
         }
 
         return $home;
+    }
+
+    /** @return array<string, mixed> */
+    private function observedAccount(NodeFact $fact, string $user): array
+    {
+        $accounts = $fact->data['accounts'] ?? null;
+        foreach (is_array($accounts) ? $accounts : [] as $account) {
+            if (is_array($account) && ($account['user'] ?? null) === $user) {
+                return $account;
+            }
+        }
+
+        $this->unavailable();
     }
 
     private function validHome(string $home): bool
