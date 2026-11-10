@@ -13,6 +13,7 @@ use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\InstanceMigration\InstanceMigrationRoute;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
+use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
@@ -287,33 +288,37 @@ describe('the PHP version of a web-serving Project', function (): void {
         });
     }
 
-    it('is read from composer.json at admission when the Project has none recorded', function (): void {
+    it('refuses without reading source when the Project has no recorded PHP version', function (): void {
         $node = containerDefaultNode();
         $project = containerDefaultProject(ProjectType::LaravelApp);
-        migrateSource(['require' => ['php' => '^8.5', 'laravel/framework' => '^13.0']]);
+        app()->instance(ProjectSourceReader::class, new class implements ProjectSourceReader
+        {
+            public function read(string $repositoryUrl, ProjectSourceAccess $access, string $branch, array $paths): array
+            {
+                throw new RuntimeException('Migration must not infer the PHP version.');
+            }
+        });
         $default = migrateCheckout($project, $node);
 
-        // The version is recorded; the refusal that is left is the runtime folder's, which has no build for it in this test.
-        $code = containerRefusal(fn () => migrateStart($default));
-
-        expect($project->refresh()->php_version)->toBe('8.5')
-            ->and($code)->not->toBe('project.source_defaults_incomplete');
+        expect(containerRefusal(fn () => migrateStart($default)))->toBe('project.source_defaults_incomplete')
+            ->and($project->refresh()->php_version)->toBeNull()
+            ->and(InstanceRuntime::query()->count())->toBe(0);
     });
 
-    it('refuses with the fix when composer.json names no PHP version', function (): void {
+    it('names the command that records the PHP version from source', function (): void {
         $node = containerDefaultNode();
         $project = containerDefaultProject(ProjectType::LaravelApp);
         migrateSource(null);
         $default = migrateCheckout($project, $node);
 
-        expect(fn () => migrateStart($default))->toThrow(function (ResourceOperationException $exception): void {
+        expect(fn () => migrateStart($default))->toThrow(function (ResourceOperationException $exception) use ($project): void {
             expect($exception->errorCode)->toBe('project.source_defaults_incomplete')
-                ->and($exception->getMessage())->toContain('`require.php` in `composer.json` on the branch [main]')->toContain('run this command again');
+                ->and($exception->getMessage())->toContain("orbit project:update {$project->id} --source-access=github_app");
         });
         expect(InstanceRuntime::query()->count())->toBe(0);
     });
 
-    it('names the source access as the fix for a gh_cli Project, whose source Orbit cannot read', function (): void {
+    it('names the same source refresh command for a gh_cli Project', function (): void {
         $node = containerDefaultNode();
         $project = containerDefaultProject(ProjectType::LaravelApp);
         $project->forceFill(['source_access' => ProjectSourceAccess::GhCli])->save();
@@ -443,6 +448,19 @@ describe('the databases of a move', function (): void {
         expect($plan?->server?->id)->toBe($server->id)
             ->and($plan?->connection->id)->toBe($database->id)
             ->and($plan?->source->id)->toBe($default->id);
+
+        // This fixture confirms vault calls, but leaves native run starts unconfirmed.
+        try {
+            containerCreate($project, $node, 'feature');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe('swamp.start_uncertain');
+        }
+        $clone = Operation::query()->where('kind', 'instance.create')->latest('id')->firstOrFail();
+        $input = app(DevelopmentInstanceCreateProjection::class)->input($clone);
+        $fill = $input['intent']['server_database']['fill'];
+
+        expect($fill)->toContain('CREATE DATABASE "tool_feature" TEMPLATE "tool_default" OWNER "tool_feature"')
+            ->and($fill)->toContain('ALTER DATABASE "tool_default" ALLOW_CONNECTIONS true');
     });
 
     it('drops the record of a SQLite file that moved with the files, and points the stored .env at the workspace', function (): void {

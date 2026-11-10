@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
-use App\Actions\Projects\CaptureProjectSourceFactsAction;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\InstanceMigration\InstanceMigration;
@@ -16,7 +15,6 @@ use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
@@ -51,13 +49,6 @@ final readonly class StartInstanceMigrateAction
     {
         if (($replay = $this->idempotency->replay(InstanceMigration::Kind)) !== null) {
             return $replay;
-        }
-
-        // FrankenPHP needs the Project's PHP version, a fact of its source. A Project that has none recorded gets it read now, from
-        // `composer.json` on its default branch, outside the admission transaction.
-        $project = Project::query()->findOrFail($instance->project_id);
-        if ($project->php_version === null && $project->type->isWebServing() && $project->source_access !== ProjectSourceAccess::GhCli) {
-            app(CaptureProjectSourceFactsAction::class)->execute($project);
         }
 
         try {
@@ -175,9 +166,8 @@ final readonly class StartInstanceMigrateAction
     private function assertPhp(Project $project): void
     {
         if ($project->type->isWebServing() && $project->php_version === null) {
-            throw new ResourceOperationException('project.source_defaults_incomplete', $project->source_access === ProjectSourceAccess::GhCli
-                ? "App [{$project->slug}] has no PHP version, and Orbit cannot read the source of a `gh_cli` Project. Run `orbit project:update {$project->id} --source-access=github_app`, then this command again."
-                : "App [{$project->slug}] has no PHP version. Orbit reads it from `require.php` in `composer.json` on the branch [{$project->default_branch}]: set it there, then run this command again.", 422);
+            throw new ResourceOperationException('project.source_defaults_incomplete',
+                "Project [{$project->slug}] has no PHP version. Set `require.php` in `composer.json` on [{$project->default_branch}], then run `orbit project:update {$project->id} --source-access=github_app` to record it before migrating.", 422);
         }
         $this->containers->assertPhp($project);
     }

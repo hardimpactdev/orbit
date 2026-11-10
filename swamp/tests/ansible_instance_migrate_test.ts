@@ -4,7 +4,7 @@
  * default's old checkout, the restore after a failure and the two refusals. The Node is this machine: the run's connection is
  * local and nothing becomes root.
  */
-import { assert, assertEquals } from "jsr:@std/assert@1";
+import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
 
 const has = (program: string) => new Deno.Command("sh", { args: ["-c", `command -v ${program}`] }).outputSync().success;
@@ -339,6 +339,7 @@ Deno.test({
       assertEquals(f.result(), { commit: head });
       const again = f.run("restore");
       assert(again.ok, again.output);
+      assertMatch(again.output, /changed=0\s/);
       // The same command moves the Instance again, from a new container.
       f.build();
       assertEquals(f.workspace("rev-parse", "HEAD"), head);
@@ -391,6 +392,7 @@ Deno.test({
   fn() {
     const f = fixture();
     try {
+      const status = git(f.checkout, "status", "--porcelain");
       // Nothing listens on this port.
       f.migrate.databases.push({ host: "127.0.0.1", port: 1 });
       f.write();
@@ -400,6 +402,14 @@ Deno.test({
       assertEquals(f.result(), { error_code: "instance.database_unreachable" });
       assertEquals([...Deno.readDirSync(`${f.rootfs}/srv`)].map((entry) => entry.name), ["workspace"]);
       assertEquals([...Deno.readDirSync(`${f.folder}/mirror`)].map((entry) => entry.name), ["7.git"]);
+      const restore = f.run("restore");
+      assert(restore.ok, restore.output);
+      assertEquals(f.state().containers, {});
+      assertEquals(f.state()["network-acls"], []);
+      assertEquals(f.ufw(), []);
+      assert(exists(f.migrate.awake.path));
+      assertEquals(git(f.checkout, "status", "--porcelain"), status);
+      assertEquals(f.result(), { error_code: "instance.database_unreachable" });
     } finally {
       f.cleanup();
     }

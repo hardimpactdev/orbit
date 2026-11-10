@@ -46,7 +46,7 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 | One default per Project | A Project has one `default` Instance in the whole fleet. The Node that holds it is where every clone of the Project is made |
 | Git | Orbit fetches and pushes from the Node |
 | History | T3 history is deleted with its Instance. Swamp records the transcript of each task turn, so task transcripts outlive a clone |
-| Migration | Existing checkout Instances move into containers with their code and database |
+| Migration | Existing checkout Instances move their code into containers; server databases stay in place with access for the container, and SQLite files move with the workspace |
 | Databases | The database family clones every database: a template copy on the same server, a dump and restore across Nodes. Remote database servers are allowed |
 | Pairing token | The pairing token that `t3 serve` prints to its journal is accepted |
 | Project files | MCP servers come from the project's own files. The agents use their own subagents only |
@@ -113,7 +113,7 @@ Beast and Shark take the dev path beside their task VMs. A task VM host on the b
 | 12 | Switch task work | |
 | 13 | Sleep and wake | |
 | 14 | Start a thread in an Orbit Project (Conn) | Open, [#3308](https://github.com/hardimpactdev/orbit/pull/3308) |
-| 15 | Migrate checkout Instances | Built, with Processes left to wire after PR 4b |
+| 15 | Migrate checkout Instances | Open, [#3315](https://github.com/hardimpactdev/orbit/pull/3315): code and fixtures built; live check waits for the container host. Processes refuse until PR 4b is wired |
 | 16 | Switch every `app-dev` Node | |
 | 17 | Remove task VMs, the Pi server and the task container setting | |
 | 18–22 | [Production Instances](#production-instances) | |
@@ -583,7 +583,7 @@ The spec commit adds [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/m
 - **Template copy.** A clone of a moved default still copies the default's database with the template copy of PR 5. The default's connection record does not change.
 - **Reuse.** The phases of `instance-container.yml` make the container, unchanged. The Node's mirror fetches the branch from the checkout itself, so the move needs no token.
 - **Chart.** The chart is `docs/cli/instance/migrate.mmd`, not under `container/`. The kind is new and has no checkout chart to wait for.
-- **PHP version.** Most Projects had no recorded PHP version. The admission reads it from `composer.json`, and its refusal names the fix.
+- **PHP version.** A Project without a recorded PHP version refuses. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it.
 - **Processes.** An Instance with Processes refuses with `operation.kind_unavailable` until the move uses the container Process step of PR 4b.
 
 An Instance with a Route beside its own refuses. The cases file holds the refusals that the proof fleet can run today; the cases that move an Instance wait for a proof Node with the Instance pool, as PR 4 says.

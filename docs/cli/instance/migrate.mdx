@@ -44,8 +44,7 @@ These do not move: the staging state of the index, stashes, and branches that no
 ## Before you start
 
 - **Node.** The Instance's Node is on the [build list](/reference/development-containers#the-build-list).
-- **PHP version.** A web-serving Project needs its PHP version. Orbit reads it from `require.php` in `composer.json` on the default branch when the Project has none recorded, so most Projects need nothing. A Project whose `composer.json` names none is refused with `project.source_defaults_incomplete`: add it there and run the command again.
-- **Source access.** Orbit cannot read the source of a `gh_cli` Project. Run `orbit project:update PROJECT --source-access=github_app` first.
+- **PHP version.** A web-serving Project needs its PHP version recorded before the move. A missing version refuses with `project.source_defaults_incomplete`. Set `require.php` in `composer.json` on the default branch, then run `orbit project:update PROJECT --source-access=github_app` to record it. This command also enables source access for a `gh_cli` Project.
 - **Branch.** The checkout is on the branch that Orbit records for the Instance.
 - **Processes.** An Instance with Processes cannot move yet.
 - **Routes.** The Instance has no Route beside its own.
@@ -85,7 +84,7 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `instance.default_not_migrated` | The Project's default Instance is still a checkout, or its move has not ended. Move it first. |
 | `instance.lifecycle_busy` | A transfer, a removal or another move of the Instance is unfinished. |
 | `instance.migrate_unsupported` | The Instance has a Route beside its own. |
-| `project.source_defaults_incomplete` | A web-serving Project has no PHP version, and `composer.json` on its default branch names none. The message names the fix. |
+| `project.source_defaults_incomplete` | A web-serving Project has no recorded PHP version. Run `orbit project:update PROJECT --source-access=github_app` after setting `require.php` in its source. |
 | `operation.kind_unavailable` | The Instance has Processes, which reach a container in a later part of the runtime; or a non-default Instance has no Conn layer or no model router. |
 | `instance.database_clone_unsupported` | The Instance's database server has no IPv4 address and port that a container can reach. |
 | `instance.host_unavailable` | The Node has no Instance bridge, the bridge is full, no T3 port is free, or the runtime folder lacks the Project's PHP build. |

@@ -457,7 +457,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | --- | --- |
 | Admission | An active checkout Instance on a Node of the build list, with no Route beside its own. Otherwise `instance.migrate_unsupported` |
 | Default first | A non-default Instance needs its default in a container, active and with a seed snapshot |
-| PHP version | The admission reads it from `composer.json` when a web-serving Project has none recorded. A file that names none refuses with `project.source_defaults_incomplete` |
+| PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
 | Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the lowest free T3 port. It names no clone source |
 | While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
 | Branch | The mirror fetches the recorded branch from the checkout itself. Commits that were never pushed come along, and the move needs no token |
