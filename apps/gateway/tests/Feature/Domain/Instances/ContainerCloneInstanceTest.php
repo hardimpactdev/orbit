@@ -97,6 +97,21 @@ describe('a clone of the container default', function (): void {
         }
     });
 
+    it('keeps the Project display name on one safe metadata line and titles its T3 project', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $name = "Nick's \"App\" \$HOME\\next\nline";
+        $default->project->update(['name' => $name]);
+        $container = containerIntentOf(containerCreate($default->project->fresh(), $node, 'named'));
+        $metadata = $container['clone']['files'][0]['content'];
+        $values = \Dotenv\Dotenv::parse($metadata);
+        expect($container['clone']['t3']['title'])->toBe($name)
+            ->and($values['ORBIT_PROJECT_ID'])->toBe((string) $default->project_id)
+            ->and($values['ORBIT_PROJECT_NAME'])->toBe(str_replace(["\r", "\n"], ' ', $name))
+            ->and($values['ORBIT_NODE'])->toBe($node->name)
+            ->and(substr_count($metadata, "\n"))->toBe(8);
+    });
+
     it('takes the next address, the lowest free T3 port and the default as its clone source', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
@@ -145,9 +160,9 @@ describe('a clone of the container default', function (): void {
             ->and($clone['snapshot'])->toBe('seed-'.str_repeat('c', 40))
             ->and($clone['source_mirror'])->toBe('/var/lib/orbit/instance-repositories/'.$default->id.'.git')
             ->and($clone['t3'])->toMatchArray(['port' => 3800, 'listen' => '10.44.0.7', 'device' => 't3', 'internal_port' => 3773,
-                'url' => 'http://10.44.0.7:3800', 'label' => 'tool / feature'])
+                'url' => 'http://10.44.0.7:3800', 'label' => 'tool / feature', 'title' => 'tool'])
             ->and(collect($clone['files'])->pluck('path')->all())->toBe(['/etc/orbit/instance', '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json'])
-            ->and($clone['files'][0]['content'])->toBe("# Managed by Orbit.\nORBIT_INSTANCE_ID={$id}\nORBIT_INSTANCE=feature\nORBIT_PROJECT=tool\nORBIT_URL=\n")
+            ->and($clone['files'][0]['content'])->toBe("# Managed by Orbit.\nORBIT_INSTANCE_ID={$id}\nORBIT_INSTANCE=feature\nORBIT_PROJECT=tool\nORBIT_PROJECT_ID={$default->project_id}\nORBIT_PROJECT_NAME=\"tool\"\nORBIT_NODE={$node->name}\nORBIT_URL=\n")
             ->and($clone['files'][1]['content'])->toContain('base_url = "http://10.253.0.1:8319/v1"')
             ->and($clone['files'][2])->toBe(['path' => '/home/agent/.claude.json', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]])
             ->and($clone['files'][3])->toBe(['path' => '/home/agent/.t3/userdata/settings.json', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true]])
