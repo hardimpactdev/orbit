@@ -89,7 +89,7 @@ The `instances` object pins the two shared folders of an [Instance container hos
 
 | Folder | Parts |
 | --- | --- |
-| `runtime` | `node` and `bun`, from the recipe's tools; `composer`, the release phar; `ripgrep`; `vite-plus`, the recipe's `vp-cli` release, whose `vp` runs from the folder's [Vite+ home](#the-vite-home). Each published [static PHP build](#static-php-build) adds `php/<version>` |
+| `runtime` | `node`, `bun` and `deno`, from the recipe's tools; `composer`, the release phar; `ripgrep`; `vite-plus`, the recipe's `vp-cli` release, whose `vp` runs from the folder's [Vite+ home](#the-vite-home). Each published [static PHP build](#static-php-build) adds `php/<version>` |
 | `agent` | `t3`, the release tarball; `claude-code` and `codex`, the npm packages of the Linux x64 builds |
 
 #### The Vite+ home
