@@ -145,7 +145,7 @@ Each Project type has one note in the agent folder, at `notes/<note>.md`. The no
 | `monorepo` | `monorepo` |
 | `laravel-package`, `node-package` | `package` |
 
-When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says how previews work and how an agent views its own server. It says that there is no sudo and no direct internet, and how Git leaves the container. It gives no instructions about the work. Instructions, skills and MCP servers come from the project's own files.
+When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are. It says how previews work and how an agent views its own server. It says that there is no sudo and no direct internet, and how Git leaves the container. It gives no instructions about the work. Instructions, skills and MCP servers come from the project's own files.
 
 ## Model access
 
