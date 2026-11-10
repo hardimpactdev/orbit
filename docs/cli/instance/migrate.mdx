@@ -47,7 +47,7 @@ These do not move: the staging state of the index, stashes, and branches that no
 - **PHP version.** A web-serving Project needs its PHP version recorded before the move. A missing version refuses with `project.source_defaults_incomplete`. Set `require.php` in `composer.json` on the default branch, then run `orbit project:update PROJECT --source-access=github_app` to record it. This command also enables source access for a `gh_cli` Project.
 - **Branch.** The checkout is on the branch that Orbit records for the Instance.
 - **Deployments.** Wait for an unfinished deployment before starting the move.
-- **Processes.** An Instance with Processes cannot move yet.
+- **Processes.** Systemd Processes keep their ids and desired states. Docker Processes cannot move. Wait for an unfinished Process operation.
 - **Routes.** The Instance has no Route beside its own.
 - **Retirement.** Every checkout scheduled for deletion is clean and has no other worktree registered on its Git directory. Orbit checks before downtime and again before removal. `instance.migrate_retirement_blocked` names the checkout, other worktree paths and changed files, with total counts and the first 20 entries of each list. Ignored files do not block. Resolve the worktrees and save the changes before retrying; Orbit never stashes or removes them for you.
 
@@ -89,7 +89,8 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `instance.lifecycle_busy` | A deployment, transfer, removal or another move of the Instance is unfinished. |
 | `instance.migrate_unsupported` | The Instance has a Route beside its own. |
 | `project.source_defaults_incomplete` | A web-serving Project has no recorded PHP version. Run `orbit project:update PROJECT --source-access=github_app` after setting `require.php` in its source. |
-| `operation.kind_unavailable` | The Instance has Processes, which reach a container in a later part of the runtime; or a non-default Instance has no Conn layer or no model router. |
+| `operation.kind_unavailable` | A non-default Instance has no Conn layer or no model router. |
+| `process.target_unsupported` | The Instance has a Docker Process. |
 | `instance.database_clone_unsupported` | The Instance's database server has no IPv4 address and port that a container can reach. |
 | `instance.host_unavailable` | The Node has no Instance bridge, the bridge is full, no T3 port is free, or the runtime folder lacks the Project's PHP build. |
 | `instance.migrate_branch_changed` | The checkout is not on the branch that Orbit records. Check out that branch, or record the new one with [`instance:rename`](/cli/instance/rename). |

@@ -18,6 +18,10 @@ function transform(task: Task): Task {
   for (const part of ["block", "always", "rescue"]) {
     if (Array.isArray(task[part])) task[part] = (task[part] as Task[]).map(transform);
   }
+  if (task["ansible.builtin.systemd_service"]) {
+    task["orbit_migrate_systemd"] = task["ansible.builtin.systemd_service"];
+    delete task["ansible.builtin.systemd_service"];
+  }
   const ufw = task["community.general.ufw"] as Record<string, unknown> | undefined;
   if (ufw) {
     delete task["community.general.ufw"];
@@ -62,6 +66,10 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   const folder = Deno.makeTempDirSync();
   const apps = Deno.makeTempDirSync({ dir: "/var/tmp" });
   for (const path of ["bin", "tasks", "home", "run", "markers"]) Deno.mkdirSync(`${folder}/${path}`);
+  Deno.mkdirSync(`${folder}/library`);
+  Deno.copyFileSync(new URL("fixtures/instance-migrate-systemd.py", import.meta.url), `${folder}/library/orbit_migrate_systemd.py`);
+  Deno.writeTextFileSync(`${folder}/host-processes.json`, "{}");
+  Deno.writeTextFileSync(`${folder}/process-environments.json`, "{}");
   Deno.writeTextFileSync(`${folder}/state.json`, "{}");
   Deno.writeTextFileSync(
     `${folder}/bin/incus`,
@@ -78,6 +86,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
       const plays = parse(source) as Task[];
       for (const play of plays) {
         if (Array.isArray(play.tasks)) play.tasks = (play.tasks as Task[]).map(transform);
+        if (Array.isArray(play.handlers)) play.handlers = (play.handlers as Task[]).map(transform);
       }
       Deno.writeTextFileSync(`${folder}/${name}`, stringify(plays));
     } else Deno.writeTextFileSync(`${folder}/${name}`, source);
@@ -151,6 +160,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     environment_file: "/srv/workspace/.env",
     units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=orbit\n" }],
     php: null,
+    processes: [] as { id: number; name: string; content: string; environment: string | null; desired: string }[],
     clone,
   };
   const migrate = {
@@ -160,6 +170,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     application: checkout,
     awake: { directory: `${folder}/markers`, path: `${folder}/markers/app-instance-${id}.awake` },
     databases: [] as { host: string; port: number }[],
+    processes: [] as { name: string; path: string; environment_directory: string; desired: string }[],
     firewall_prefix: `orbit:instance-${id}-`,
     retire: [{ path: checkout, mirror: `${folder}/mirror/${id}.git` }] as { path: string; mirror: string; common_of?: string }[],
   };
@@ -187,6 +198,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
           "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/${playbook}`],
         env: {
           HOST_FIXTURE: folder,
+          ORBIT_PROCESS_ENVIRONMENTS: Deno.readTextFileSync(`${folder}/process-environments.json`),
           PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
           ANSIBLE_NOCOLOR: "1",
           ANSIBLE_HOME: `${folder}/ansible`,
@@ -569,3 +581,75 @@ for (const blocker of ["changes", "worktree"] as const) {
     },
   });
 }
+
+
+function migrationProcesses(f: ReturnType<typeof fixture>) {
+  const states: Record<string, { state: string; enabled: boolean }> = {};
+  const environments: Record<string, string> = {};
+  for (const [id, desired] of [[70, "running"], [71, "stopped"]] as const) {
+    const name = `orbit-process-${id}-worker.service`;
+    const directory = `${f.folder}/host/${id}`;
+    Deno.mkdirSync(directory, { recursive: true });
+    const path = `${directory}/${name}`;
+    Deno.writeTextFileSync(path, "old unit\n");
+    Deno.writeTextFileSync(`${directory}/old.env`, "OLD_TOKEN=kept\n");
+    f.migrate.processes.push({ name, path, environment_directory: directory, desired });
+    const environment = `/etc/orbit/processes/${id}/vars.env`;
+    f.container.processes.push({ id, name, content: "[Service]\nUser=orbit\n", environment, desired });
+    environments[environment] = `QUEUE_TOKEN=process-secret-${id}\n`;
+    states[name] = { state: desired === "running" ? "started" : "stopped", enabled: desired === "running" };
+  }
+  Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify(states));
+  Deno.writeTextFileSync(`${f.folder}/process-environments.json`, JSON.stringify(environments));
+  f.write();
+  return () => JSON.parse(Deno.readTextFileSync(`${f.folder}/host-processes.json`));
+}
+
+Deno.test({
+  name: "Process migration stops host writers before copying, installs the same units privately, then retires host files",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const host = migrationProcesses(f);
+      const stopped = f.run("quiesce");
+      assert(stopped.ok, stopped.output);
+      assertEquals(host()[f.migrate.processes[0].name], { state: "stopped", enabled: false });
+      for (const phase of ["container", "workspace", "files"]) {
+        const result = f.run(phase);
+        assert(result.ok, result.output);
+      }
+      const installed = f.run("processes");
+      assert(installed.ok, installed.output);
+      assert(!installed.output.includes("process-secret"));
+      for (const unit of f.container.processes) {
+        assertEquals(Deno.readTextFileSync(`${f.rootfs}/etc/systemd/system/${unit.name}`), unit.content);
+        assertEquals(Deno.readTextFileSync(`${f.rootfs}${unit.environment}`), `QUEUE_TOKEN=process-secret-${unit.id}\n`);
+      }
+      const retired = f.run("retire");
+      assert(retired.ok, retired.output);
+      for (const unit of f.migrate.processes) assert(!exists(unit.environment_directory));
+      assertEquals(host()[f.migrate.processes[0].name], { state: "stopped", enabled: false });
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "Process migration restores the host desired states only after removing a failed container",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const host = migrationProcesses(f);
+      f.build();
+      assertEquals(host()[f.migrate.processes[0].name], { state: "stopped", enabled: false });
+      const restored = f.run("restore");
+      assert(restored.ok, restored.output);
+      assertEquals(host()[f.migrate.processes[0].name], { state: "started", enabled: true });
+      assertEquals(host()[f.migrate.processes[1].name], { state: "stopped", enabled: false });
+      assertEquals(f.state().containers, {});
+      for (const unit of f.migrate.processes) assert(exists(unit.path));
+      assert(exists(f.checkout));
+    } finally { f.cleanup(); }
+  },
+});

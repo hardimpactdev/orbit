@@ -586,7 +586,7 @@ The spec commit adds [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/m
 - **Reuse.** The phases of `instance-container.yml` make the container, unchanged. The Node's mirror fetches the branch from the checkout itself, so the move needs no token.
 - **Chart.** The chart is `docs/cli/instance/migrate.mmd`, not under `container/`. The kind is new and has no checkout chart to wait for.
 - **PHP version.** A Project without a recorded PHP version refuses. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it.
-- **Processes.** An Instance with Processes refuses with `operation.kind_unavailable` until the move uses the container Process step of PR 4b.
+- **Processes.** The move uses the shared container Process rendering, environment vault copy and installation phase. It retains Process ids and desired states, stops the old host units before the copy, restores them after failure and retires their files after cutover.
 
 An Instance with a Route beside its own refuses. The cases file holds the refusals that the proof fleet can run today; the cases that move an Instance wait for a proof Node with the Instance pool, as PR 4 says.
 

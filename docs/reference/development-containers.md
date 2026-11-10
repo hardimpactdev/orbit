@@ -484,11 +484,9 @@ The end of the move and its failure:
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
 | After a failed restore | The site stays the checkout's, and a deployment refuses with `instance.lifecycle_busy` until the move has run again |
 
-The code changed two points of the first design.
-
 The database is not cloned. An Instance's database name, owner and connection come from its Project and its name. So a second database for the same Instance has no name to take, and a clone would end with a drop of the old one. Leaving it in place cannot lose data. A clone of a moved default still copies the default's database with the template copy of [Clone the database](#clone-the-database): the default's connection record is the one it had.
 
-An Instance with Processes refuses with `operation.kind_unavailable`. Its Processes move through the container Process step of the [plan](/solutions/development-container-runtime#pr-15-migrate-checkout-instances).
+The move keeps each systemd Process and its desired state. It stops and disables the host units before copying files, installs the same Processes in the container with their private environment files, and removes the host units and environment folders after the Route moves. A failed move removes the container before restoring the host units to their recorded desired states. An unfinished Process operation blocks migration, and Process changes wait until migration settles. Docker Processes still refuse with `process.target_unsupported`, as for a new container.
 
 ## T3 registration and pairing
 

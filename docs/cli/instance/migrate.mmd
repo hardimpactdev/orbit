@@ -25,7 +25,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - the Instance is an active checkout Instance on an `app-dev` Node of the build list, else `instance.migrate_unsupported`
   %%> - a non-default Instance needs its Project's default Instance in a container first, else `instance.default_not_migrated`
-  %%> - the Instance has no unfinished deployment, no Processes and no Route beside its own; a non-default Instance needs Conn and the model router, as a clone does
+  %%> - the Instance has only systemd Processes, no unfinished deployment or Process operation and no Route beside its own; a non-default Instance needs Conn and the model router, as a clone does
   %%> - a web-serving Project names its PHP version; a missing version refuses with `project.source_defaults_incomplete`, naming `orbit project:update PROJECT --source-access=github_app` to record it from source
   %%> - a database on a Database server has an IPv4 address and a port, else `instance.database_clone_unsupported`
   %%> Result:
@@ -40,7 +40,7 @@ sequenceDiagram
   %%> - before any Node change, checks every planned retirement: no other worktree on its Git directory and no tracked or non-ignored untracked changes, else `instance.migrate_retirement_blocked`; the error names the checkout, blocking paths and total counts (first 20 per list)
   %%> - checks that the checkout is on the recorded branch, else `instance.migrate_branch_changed`
   %%> - deletes a container that an earlier failed move left
-  %%> - removes the awake marker, so the Route shows the wake page and nothing writes the checkout or the database during the move
+  %%> - stops and disables the Instance's host Process units, then removes the awake marker so nothing writes the checkout or database during the move
   SW->>N: Launch the container<br/>Ansible · tags container
   %%> What it does:
   %%> - creates the container from the image with its bridge address and ACL, and starts it
@@ -58,7 +58,7 @@ sequenceDiagram
   %%> - a non-default Instance gets the proxy device that publishes its T3 port
   SW->>C: Start the container<br/>Processes · T3 · seed
   %%> What it does:
-  %%> - starts FrankenPHP as `orbit`
+  %%> - starts FrankenPHP and the Instance's existing Processes as `orbit`, with the same ids and desired states; their environment files come through the vault
   %%> - a non-default Instance gets `/etc/orbit/instance`, the agent settings and its T3 server, registered as in create
   %%> - a default Instance gets its first `seed-<commit>` snapshot
   SW->>N: Move the Route<br/>child route-mutation-forward
@@ -68,7 +68,7 @@ sequenceDiagram
     SW->>N: Remove the checkout<br/>Ansible · tags retire
     %%> What it does:
     %%> - repeats the same retirement check before archiving or deleting any checkout; a new blocker leaves the container serving and the checkout intact
-    %%> - removes the checkout and writes the awake marker; a default's checkout stays until its last worktree has moved
+    %%> - removes the old host Process units and their environment folders, then removes the checkout and writes the awake marker; a default's checkout stays until its last worktree has moved
     %%> - before a repository goes, its local branches and every stash entry are kept in the Node's mirror under `refs/migrated/`
     %%> If it fails:
     %%> - the container stays the Instance; the run fails with `instance.migrate_retire_failed`, and the checkout is left to remove by hand
@@ -83,7 +83,7 @@ sequenceDiagram
     %%> What it does:
     %%> - puts the Route back on the checkout when the run had moved it
     %%> - deletes the new container, its ACL, its firewall rules and its mirror, and writes the awake marker
-    %%> - the checkout and its database are untouched, so the Instance serves as before
+    %%> - restores the host Process units to their recorded desired states; the checkout and database remain in place
     SW--xGW: Run failed<br/>failed step, error_code
     Note over GW: Drop the reserved runtime
     %%> Retry:

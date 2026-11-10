@@ -4,6 +4,8 @@
 # the Pest, Deno and Ansible fixture tests cover the move, and the live check on a build-list Node proves it.
 # Retirement fixture coverage (ansible_instance_migrate_test.ts): dirty tracked/staged/deleted/renamed files and non-ignored
 # untracked files refuse before downtime; ignored files pass; linked and detached worktrees refuse and name their paths.
+# Process fixtures stop and disable host units before copying, install private Process environments in the container,
+# retire host files after cutover and restore recorded desired states only after removing a failed container.
 # Both lists are bounded to 20 entries with total counts. New changes or worktrees after preflight refuse final retirement,
 # keep every source intact, and leave the container serving. A retained checkout (retire: []) is not deleted or checked.
 command: instance:migrate

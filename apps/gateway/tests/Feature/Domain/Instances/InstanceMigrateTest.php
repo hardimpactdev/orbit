@@ -22,9 +22,11 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\RoutePublicationHolds;
+use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -214,7 +216,7 @@ describe('the admission of a move', function (): void {
             ->and($operation->input['migrate'])->toBe(['checkout' => '/home/orbit/apps/tool/default', 'branch' => 'main', 'default' => true,
                 'application' => '/home/orbit/apps/tool/default',
                 'awake' => ['directory' => '/dev/shm/orbit/hibernation', 'path' => '/dev/shm/orbit/hibernation/app-instance-'.$default->id.'.awake'],
-                'databases' => [], 'firewall_prefix' => 'orbit:instance-'.$default->id.'-',
+                'databases' => [], 'processes' => [], 'firewall_prefix' => 'orbit:instance-'.$default->id.'-',
                 'retire' => [['path' => '/home/orbit/apps/tool/default', 'mirror' => '/var/lib/orbit/instance-repositories/'.$default->id.'.git']]])
             ->and($operation->node_id)->toBe($node->id);
     });
@@ -244,12 +246,6 @@ describe('the admission of a move', function (): void {
 
             return $instance;
         }, 'instance.migrate_unsupported'],
-        'an Instance with Processes' => [function (Node $node): Instance {
-            $instance = migrateCheckout(containerDefaultProject(), $node);
-            Process::query()->forceCreate(['owner_type' => 'instance', 'owner_id' => $instance->id, 'name' => 'queue', 'runtime' => 'systemd', 'runtime_config' => [], 'status' => 'active']);
-
-            return $instance;
-        }, 'operation.kind_unavailable'],
         'a database server that a container cannot reach by address' => [function (Node $node): Instance {
             $instance = migrateCheckout(containerDefaultProject(), $node);
             migrateServerDatabase($instance, migrateDatabaseServer($node, 'pg', DatabaseDriver::Pgsql, 5432))->forceFill(['host' => 'db.example.test'])->save();
@@ -752,7 +748,7 @@ it('starts the run with the container, the checkout and the model key in the vau
     $run = app(InstanceMigrateProjection::class)->input($operation);
 
     $put = collect($vault->puts)->firstWhere('key', 'instance-migrate-model-'.$operation->id);
-    expect($run['execution_secrets'])->toBe(['model_environment' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-model-'.$operation->id]])
+    expect($run['execution_secrets'])->toBe(['process_environments' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-processes-'.$operation->id], 'model_environment' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-model-'.$operation->id]])
         ->and($put['value'])->toContain("ORBIT_MODEL_KEY=placeholder-model-key\n")
         ->and(json_encode($run['intent']))->not->toContain('placeholder-model-key')
         ->and(array_keys($run['intent']))->toBe(['instance_id', 'instance_name', 'ssh_execution', 'container', 'migrate', 'route_mutations'])
@@ -804,4 +800,91 @@ it('publishes the checkout\'s site before the move and the container\'s after it
         ->and($mutations['restore']['publications'])->toHaveCount(count($mutations['forward']['publications']))
         ->and($capture['execution_secrets'])->toBe([])
         ->and($publication['serves_routes'])->toBeTrue();
+});
+
+function migrationWorker(Instance $instance, string $name = 'worker', string $desired = 'running'): Process
+{
+    return Process::query()->forceCreate(['owner_type' => 'instance', 'owner_id' => $instance->id, 'name' => $name,
+        'runtime' => 'systemd', 'working_directory' => $instance->checkout_path, 'status' => 'active', 'desired_state' => $desired, 'systemd_activation_hash' => 'old-host-hash',
+        'runtime_config' => ['command' => ['/usr/bin/env', 'node', 'worker.js'], 'environment_file' => $instance->checkout_path.'/.env', 'restart_policy' => 'always',
+            'environment' => ['QUEUE_TOKEN' => 'migration-process-secret']]]);
+}
+
+describe('Processes moving into the container', function (): void {
+    it('keeps existing Process ids and desired states, rendering their workspace and delivering values only through the vault', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $running = migrationWorker($instance);
+        $stopped = migrationWorker($instance, 'stopped', 'stopped');
+        $stopped->update(['working_directory' => $instance->checkout_path.'/nested', 'runtime_config' => [
+            'command' => ['/usr/bin/env', 'node', $instance->checkout_path.'/nested/worker.js']]]);
+        $vault = migrateVault();
+
+        $operation = migrateStart($instance);
+        $run = app(InstanceMigrateProjection::class)->input($operation);
+        $units = $run['intent']['container']['processes'];
+
+        expect(array_column($units, 'id'))->toBe([$running->id, $stopped->id])
+            ->and(array_column($units, 'desired'))->toBe(['running', 'stopped'])
+            ->and($units[0]['content'])->toContain("WorkingDirectory=/srv/workspace\n")
+            ->and(json_encode($run['intent']))->not->toContain('migration-process-secret')
+            ->and($run['execution_secrets']['process_environments']['key'])->toBe('instance-migrate-processes-'.$operation->id)
+            ->and(collect($vault->puts)->firstWhere('key', 'instance-migrate-processes-'.$operation->id)['value'])->toContain('migration-process-secret')
+            ->and($operation->input['migrate']['processes'][0])->toMatchArray(['name' => $units[0]['name'],
+                'path' => '/etc/systemd/system/'.$units[0]['name'], 'environment_directory' => '/etc/orbit/processes/'.$running->id, 'desired' => 'running']);
+
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+
+        expect($running->refresh()->status)->toBe(LifecycleStatus::Active)
+            ->and($running->systemd_activation_hash)->toBe(hash('sha256', $units[0]['content']))
+            ->and($running->working_directory)->toBe('/srv/workspace')
+            ->and($running->runtime_config['environment_file'])->toBe('/srv/workspace/.env')
+            ->and($stopped->refresh()->desired_state->value)->toBe('stopped')
+            ->and($stopped->working_directory)->toBe('/srv/workspace/nested')
+            ->and($stopped->runtime_config['command'][2])->toBe('/srv/workspace/nested/worker.js')
+            ->and(Process::query()->where('owner_id', $instance->id)->count())->toBe(2);
+    });
+
+    it('keeps the host activation record after a restored failure', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $worker = migrationWorker($instance);
+        $operation = migrateStart($instance);
+
+        migrateEnd($operation, 'failed', ['ready' => false, 'moved' => false, 'restored' => true,
+            'failed_step' => 'processes', 'error_code' => 'instance.migrate_processes_failed']);
+
+        expect($worker->refresh()->systemd_activation_hash)->toBe('old-host-hash')
+            ->and($worker->status)->toBe(LifecycleStatus::Active)
+            ->and($instance->runtime()->exists())->toBeFalse();
+    });
+
+    it('refuses migration while an owned Process operation or removal is unfinished', function (bool $removing): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $worker = migrationWorker($instance);
+        if ($removing) {
+            $worker->update(['status' => LifecycleStatus::Removing]);
+        } else {
+            Operation::query()->forceCreate(['kind' => 'process.restart', 'target_type' => 'process', 'target_id' => $worker->id,
+                'node_id' => $instance->node_id, 'status' => 'running', 'input' => []]);
+        }
+
+        expect(containerRefusal(fn () => migrateStart($instance)))->toBe('instance.lifecycle_busy')
+            ->and($instance->runtime()->exists())->toBeFalse();
+    })->with(['operation' => false, 'removal' => true]);
+
+    it('refuses Process changes while migration owns the Instance', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $worker = migrationWorker($instance);
+        migrateStart($instance);
+
+        expect(containerRefusal(fn () => app(ProcessOperationAdmission::class)->inputFor($worker, 'restart')))->toBe('instance.lifecycle_busy');
+    });
+
+    it('keeps Docker Processes outside the supported container runtime', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        Process::query()->forceCreate(['owner_type' => 'instance', 'owner_id' => $instance->id, 'name' => 'redis',
+            'runtime' => 'docker', 'runtime_config' => ['image' => 'redis:7', 'command' => ['redis-server']], 'status' => 'active']);
+
+        expect(containerRefusal(fn () => migrateStart($instance)))->toBe('process.target_unsupported')
+            ->and($instance->runtime()->exists())->toBeFalse();
+    });
 });
