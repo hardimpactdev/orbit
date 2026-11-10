@@ -80,3 +80,36 @@ it('names retirement blockers in human and JSON migration failures', function (b
         expect(str_replace(["\n", "\r"], '', $output))->toContain('/fixture', '/detached', 'index.php', 'instance.migrate_retirement_blocked');
     }
 })->with(['human' => false, 'json' => true]);
+
+it('renders every final clone warning once for humans and retains the JSON list', function (bool $json): void {
+    $warnings = ['REDIS_HOST: Review with env:update, then env:sync.', 'ASSET_URL: Review with env:update, then env:sync.'];
+    $queued = ['id' => 901, 'kind' => 'instance.clone', 'target_type' => 'instance', 'target_id' => 501,
+        'status' => 'queued', 'sequence' => 1, 'poll_after_seconds' => 0];
+    $result = ['instance_id' => 501, 'ready' => true, 'branch' => 'main', 'commit' => str_repeat('a', 40),
+        'php_version' => '8.5', 'laravel' => true, 'candidate_commit' => str_repeat('a', 40),
+        'environment_keys' => ['REDIS_HOST', 'ASSET_URL'], 'warnings' => $warnings];
+    $final = [...$queued, 'status' => 'succeeded', 'sequence' => 8, 'poll_after_seconds' => null, 'result' => $result];
+    $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+    $mock = MockClient::global([
+        CloneInstanceRequest::class => MockResponse::make(['data' => $queued, 'meta' => ['request_id' => $requestId]], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final, 'meta' => ['request_id' => $requestId]]),
+    ]);
+
+    expect(Artisan::call('instance:clone', ['candidate' => 501, 'node' => 10, 'name' => 'prod',
+        '--preview-name' => 'preview', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+    $output = Artisan::output();
+
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
+        expect($output)->not->toContain('Warning:');
+    } else {
+        expect($output)->toContain('Warning: '.$warnings[0]."\n".'Warning: '.$warnings[1]."\n".'Operation: 901');
+        foreach ($warnings as $warning) {
+            expect(substr_count($output, $warning))->toBe(1);
+        }
+        expect($output)->toContain('Request ID: '.$requestId);
+    }
+    $mock->assertSentCount(1, CloneInstanceRequest::class);
+    $mock->assertSentCount($json ? 2 : 1, ShowOperationRequest::class);
+})->with(['human' => false, 'json' => true]);
