@@ -330,12 +330,10 @@ def main():
         finally:
             credential.unlink(missing_ok=True)
     elif phase == "workspace":
-        # Native secret strings permit concatenation, not size/encoding. The run UUID separates two private values.
-        run_id = folder.name.removeprefix(
-            "orbit-clone-" + str(container["instance_id"]) + "-"
-        )
-        environment, process_json = secret.split("\n--orbit-" + run_id + "--\n")
-        processes = json.loads(process_json)
+        # Admission frames both private values in one vault copy for native SSH stdin.
+        workspace = json.loads(secret)
+        environment = workspace["environment"]
+        processes = workspace["processes"]
         git = [
             "git",
             "-c",

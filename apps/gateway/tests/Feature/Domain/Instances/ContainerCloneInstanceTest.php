@@ -27,6 +27,7 @@ use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\ProjectDevelopmentDeployStep;
 use App\Support\ValidatedData;
+use Dotenv\Dotenv;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -104,7 +105,7 @@ describe('a clone of the container default', function (): void {
         $default->project->update(['name' => $name]);
         $container = containerIntentOf(containerCreate($default->project->fresh(), $node, 'named'));
         $metadata = $container['clone']['files'][0]['content'];
-        $values = \Dotenv\Dotenv::parse($metadata);
+        $values = Dotenv::parse($metadata);
         expect($container['clone']['t3']['title'])->toBe($name)
             ->and($values['ORBIT_PROJECT_ID'])->toBe((string) $default->project_id)
             ->and($values['ORBIT_PROJECT_NAME'])->toBe(str_replace(["\r", "\n"], ' ', $name))
@@ -138,8 +139,16 @@ describe('a clone of the container default', function (): void {
 
         $operation = containerCreate($project, $node, 'feature');
 
+        $vault = vaultReadingSocket([]);
+        $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+        $workspace = json_decode(collect($vault->puts)->firstWhere('key', 'instance-create-processes-'.$operation->id)['value'], true, 512, JSON_THROW_ON_ERROR);
+        $environment = collect($vault->puts)->firstWhere('key', 'instance-create-environment-input-'.$operation->id)['value'];
         $own = Process::query()->where('owner_id', $operation->target_id)->sole();
-        $units = ValidatedData::object(containerIntentOf($operation))['processes'];
+        $units = $run['intent']['container']['processes'];
+        expect($workspace['environment'])->toBe($environment)
+            ->and(array_keys($workspace['processes']))->toBe([$units[0]['environment']])
+            ->and(Dotenv::parse($workspace['processes'][$units[0]['environment']])['QUEUE'])->toBe('high')
+            ->and(json_encode($run['intent']))->not->toContain('QUEUE=high');
         expect($own->id)->not->toBe(Process::query()->where('owner_id', $default->id)->sole()->id)
             ->and(array_column($units, 'name'))->toBe(["orbit-process-{$own->id}-worker.service"])
             ->and($units[0]['environment'])->toStartWith("/etc/orbit/processes/{$own->id}/");

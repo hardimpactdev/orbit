@@ -1,5 +1,6 @@
 """One container phase, entered once through incus exec. Never log private input."""
 
+import http.client
 import json
 import os
 import pathlib
@@ -7,7 +8,7 @@ import stat
 import subprocess
 import sys
 import time
-import urllib.request
+from contextlib import closing
 
 
 def phase_main(phase, raw):
@@ -279,12 +280,20 @@ def phase_main(phase, raw):
                     agent=True,
                 ).stdout.strip()
             )
-            req = urllib.request.Request(
-                url + "/api/auth/session", headers={"Authorization": "Bearer " + token}
-            )
-            with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(
-                req, timeout=5
-            ) as response:
+            # This is the clone's T3 server, reached directly over loopback without a proxy.
+            with closing(
+                http.client.HTTPConnection("127.0.0.1", t["internal_port"], timeout=5)
+            ) as connection:
+                connection.request(
+                    "GET",
+                    "/api/auth/session",
+                    headers={"Authorization": "Bearer " + token},
+                )
+                response = connection.getresponse()
+                if response.status >= 400:
+                    raise RuntimeError(
+                        "instance.t3_session_http_" + str(response.status)
+                    )
                 body = json.load(response)
                 assert body["authenticated"] and {
                     "access:read",
