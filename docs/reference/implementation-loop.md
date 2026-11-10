@@ -45,6 +45,8 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 Orbit CI runs builds and static checks. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same gate.
 
+The Swamp shape job has a temporary 30-minute limit so its serial fixtures can finish on a loaded runner.
+
 | Check | Work |
 | --- | --- |
 | PHP syntax and Composer | Check frozen agent command references, validate every tracked Composer manifest and run `php -l` on changed PHP files, with at most four workers |
