@@ -125,7 +125,7 @@ Write endpoints return HTTP 202 with an Operation. List and show return `id`, `s
 
 The server's Process is an ordinary Docker Node Process: read its logs, stop it, start it, or restart it with the [`process`](/cli/process) commands. `process:destroy` refuses it with `process.required_by_database_server`; remove the server instead. MySQL Process updates keep the ordinary partial-update contract.
 
-Replacement of any Database server's Process keeps the server's Docker health check. Creation, replacement and repair use the same health-check settings, so a later repair can wait for the replacement container to become healthy. MySQL replacements previously lost this health check; they now retain the `mysqladmin` probe.
+Replacement of any Database server's Process keeps the server's Docker health check. Creation, replacement and repair use the same health-check settings, so a later repair can wait for the replacement container to become healthy. Before this fix, MySQL replacements lost this health check; they retain the `mysqladmin` probe with the fix.
 
 ### Update a Valkey server's image
 
