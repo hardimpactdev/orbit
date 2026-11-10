@@ -1,0 +1,31 @@
+---
+- name: Read the Node's current interface addresses
+  ansible.builtin.setup:
+    gather_subset: ['!all', '!min', network]
+    filter: [ansible_all_ipv4_addresses, ansible_all_ipv6_addresses]
+  register: migrate_network
+
+# Parsing stays on the Node: private .env values never enter Ansible facts, arguments or output.
+- name: Inspect service hosts in every copied app environment
+  orbit_migrate_env:
+    checkout: "{{ migrate.checkout }}"
+    targets: "{{ migrate.environment.targets }}"
+    node_addresses: >-
+      {{ migrate.environment.node_addresses
+         + migrate_network.ansible_facts.ansible_all_ipv4_addresses | default([])
+         + migrate_network.ansible_facts.ansible_all_ipv6_addresses | default([]) }}
+    fleet_addresses: "{{ migrate.environment.fleet_addresses }}"
+    wireguard_ranges: "{{ migrate.environment.wireguard_ranges }}"
+  register: migrate_env_check
+
+- name: Explain unsupported service endpoints
+  when: migrate_env_check.refusals | length > 0
+  ansible.builtin.set_fact:
+    migrate_refusal_code: instance.migrate_env_service_unreachable
+    migrate_refusal_message: "{{ migrate_env_check.refusals | join('\n') }}"
+
+- name: Refuse unsupported service endpoints before stopping anything
+  ansible.builtin.assert:
+    that: migrate_env_check.refusals | length == 0
+    fail_msg: "{{ migrate_refusal_message | default('instance.migrate_env_service_unreachable') }}"
+    quiet: true

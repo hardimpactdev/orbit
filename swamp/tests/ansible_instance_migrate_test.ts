@@ -78,6 +78,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   }
   Deno.mkdirSync(`${folder}/library`);
   Deno.copyFileSync(new URL("fixtures/instance-migrate-systemd.py", import.meta.url), `${folder}/library/orbit_migrate_systemd.py`);
+  Deno.copyFileSync(new URL("library/orbit_migrate_env.py", root), `${folder}/library/orbit_migrate_env.py`);
   Deno.writeTextFileSync(`${folder}/host-processes.json`, "{}");
   Deno.writeTextFileSync(`${folder}/process-environments.json`, "{}");
   Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({"network-acls": [{name: "orbitinst0-egress", egress: [], ingress: []}]}));
@@ -87,7 +88,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   );
   Deno.chmodSync(`${folder}/bin/incus`, 0o755);
   Deno.copyFileSync(new URL("instance_migrate_links.py", root), `${folder}/instance_migrate_links.py`);
-  for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-link-result.yml"]) {
+  for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-link-result.yml", "instance-migrate-env-check.yml"]) {
     const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => transform(structuredClone(task)));
     Deno.writeTextFileSync(`${folder}/tasks/${name}`, stringify(tasks));
   }
@@ -188,6 +189,12 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     default: instance === "default",
     application: checkout,
     awake: { directory: `${folder}/markers`, path: `${folder}/markers/app-instance-${id}.awake` },
+    environment: {
+      targets: [] as { host: string; port: number }[],
+      node_addresses: ["10.44.0.7"],
+      fleet_addresses: ["10.44.0.7"],
+      wireguard_ranges: ["10.44.0.0/24"],
+    },
     databases: [] as { host: string; port: number }[],
     processes: [] as { name: string; path: string; environment_directory: string; desired: string }[],
     firewall_prefix: `orbit:instance-${id}-`,
@@ -1352,3 +1359,53 @@ for (const phase of ["quiesce", "workspace", "files", "processes", "seed"]) {
   });
 }
 
+
+Deno.test({
+  name: "an unsafe copied app service refuses before downtime and restore changes nothing",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      Deno.mkdirSync(`${f.checkout}/apps/mail`, { recursive: true });
+      git(f.checkout, "config", "core.excludesFile", "/dev/null");
+      Deno.writeTextFileSync(`${f.checkout}/.env`, "DB_CONNECTION=mysql\nDB_HOST=' 127.0.0.1 '\nDB_PORT=3308\nDB_PASSWORD=private-db-password\n");
+      Deno.writeTextFileSync(`${f.checkout}/apps/mail/.env`, "MAIL_MAILER=smtp\nMAIL_HOST=10.6.0.7\nMAIL_PORT=1025\nMAIL_PASSWORD=private-mail-password\n");
+      git(f.checkout, "add", "--force", "apps/mail/.env");
+      git(f.checkout, "commit", "--quiet", "-m", "nested app");
+      git(f.checkout, "update-ref", "refs/remotes/origin/main", "HEAD");
+      const sourceUnit = `${f.folder}/source.service`;
+      Deno.writeTextFileSync(sourceUnit, "[Service]\nExecStart=/bin/true\n");
+      f.migrate.processes.push({ name: "writer.service", path: sourceUnit, environment_directory: `${f.folder}/source-env`, desired: "running" });
+      Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify({ "writer.service": { state: "running", enabled: true } }));
+      const before = Deno.readTextFileSync(`${f.folder}/host-processes.json`);
+      f.write();
+
+      const refused = f.run("quiesce");
+
+      assert(!refused.ok, refused.output);
+      assertEquals(f.result().error_code, "instance.migrate_env_service_unreachable");
+      assertEquals(f.result().preflight_refused, true);
+      assert(f.result().error_message.includes("DB_HOST=127.0.0.1:3308"));
+      assert(f.result().error_message.includes("apps/mail/.env: MAIL_HOST=10.6.0.7:1025"));
+      const output = refused.output + JSON.stringify(f.result());
+      assert(!output.includes("private-db-password"));
+      assert(!output.includes("private-mail-password"));
+      assert(exists(f.migrate.awake.path));
+      assertEquals(Deno.readTextFileSync(`${f.folder}/host-processes.json`), before);
+      assertEquals(f.state(), {});
+      const restore = f.run("restore");
+      assert(restore.ok, restore.output);
+      assert(exists(f.migrate.awake.path));
+      assertEquals(Deno.readTextFileSync(`${f.folder}/host-processes.json`), before);
+      assertEquals(f.state(), {});
+
+      f.migrate.environment.targets.push({ host: "127.0.0.1", port: 3308 }, { host: "10.6.0.7", port: 1025 });
+      f.write();
+      const allowed = f.run("quiesce");
+      assert(allowed.ok, allowed.output);
+      assert(!exists(f.migrate.awake.path));
+    } finally {
+      f.cleanup();
+    }
+  },
+});

@@ -23,6 +23,7 @@ sources: [gateway]
 baseline: [operations]
 
 uncovered:
+  "code:instance.migrate_env_service_unreachable": "Environment policy fixtures cover loopback, stale addresses, exact attached targets, driver skips, prefixes, IPv6, quoted values, nested files and redaction. Ansible fixtures prove refusal before Process stop or marker removal; live migration requires the Instance pool/image."
   "code:process.container_preset_unsupported": "Pest covers unknown presets, versions and options before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
   "code:process.container_command_unsupported": "Pest covers custom commands beside the preset, including the bypass regression before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
   "code:process.container_path_unsupported": "Pest covers external cwd, environment files and absolute environment values, including traversal before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."

@@ -72,9 +72,10 @@ it('names blockers in human and JSON migration failures', function (bool $json, 
     $exit = Artisan::call('instance:migrate', ['instance' => 501, '--force' => true, '--json' => $json, '--no-interaction' => true]);
     $output = trim(Artisan::output());
 
-    expect($exit)->toBe(1);
+    expect($exit)->toBe(1)->and($output)->not->toContain('DB_PASSWORD', 'secret-password');
     if ($json) {
-        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result']['error_message'])->toBe($message);
+        $data = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+        expect($data['result']['error_message'])->toBe($message)->and($data['error_code'])->toBe($code);
     } else {
         expect(str_replace(["\n", "\r"], '', $output))->toContain('/fixture', $code);
         expect(preg_replace('/\s+/', '', $output))->toContain(preg_replace('/\s+/', '', $message));
@@ -84,6 +85,7 @@ it('names blockers in human and JSON migration failures', function (bool $json, 
     'unpushed commits' => ['instance.migrate_unpushed_commits', 'Cannot retire checkout "/fixture". Branch spare has 2 unpushed commits.'],
     'stashes' => ['instance.migrate_stashes_present', 'Cannot retire checkout "/fixture". Stashes: 2.'],
     'symlinks' => ['instance.migrate_symlink_unsupported', 'Cannot migrate checkout "/fixture". Unsupported symlinks: [{"path":"public/storage","target":"/missing/storage","reason":"broken"},{"path":"local-package","target":"/shared/package","reason":"outside checkout"}].'],
+    'service hosts' => ['instance.migrate_env_service_unreachable', 'Cannot migrate /fixture/.env: DB_HOST=127.0.0.1:3308 is not reachable from the container. Attach the target, correct the .env, or use a non-network driver.'],
 ]);
 
 it('renders every final clone warning once for humans and retains the JSON list', function (bool $json): void {

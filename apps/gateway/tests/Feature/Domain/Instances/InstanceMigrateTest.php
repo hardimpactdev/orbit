@@ -38,6 +38,7 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -233,6 +234,8 @@ describe('the admission of a move', function (): void {
             ->and($operation->input['migrate'])->toBe(['checkout' => '/home/orbit/apps/tool/default', 'branch' => 'main', 'default' => true,
                 'application' => '/home/orbit/apps/tool/default',
                 'awake' => ['directory' => '/dev/shm/orbit/hibernation', 'path' => '/dev/shm/orbit/hibernation/app-instance-'.$default->id.'.awake'],
+                'environment' => ['targets' => [], 'node_addresses' => ['10.44.0.7', '10.44.0.7'],
+                    'fleet_addresses' => ['10.44.0.209', '10.44.0.7'], 'wireguard_ranges' => ['10.44.0.0/24']],
                 'databases' => [], 'processes' => [], 'firewall_prefix' => 'orbit:instance-'.$default->id.'-',
                 'retire' => [['path' => '/home/orbit/apps/tool/default', 'mirror' => '/var/lib/orbit/instance-repositories/'.$default->id.'.git']]])
             ->and($operation->node_id)->toBe($node->id);
@@ -570,8 +573,29 @@ describe('the databases of a move', function (): void {
             ->and(array_column($shownTargets, 'id'))->toBe([$database->id, $valkey->id, $catalog->id])
             ->and(array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port']], $shownTargets))
             ->toBe($operation->input['migrate']['databases'])
+            ->and($operation->input['migrate']['environment']['targets'])->toBe($operation->input['migrate']['databases'])
             // No second database: the Instance keeps the one it has.
             ->and(DatabaseConnection::query()->where('owner_instance_id', $default->id)->pluck('id')->all())->toEqualCanonicalizing([$valkey->id, $database->id, $catalog->id]);
+    });
+
+    it('uses attached target network selection and configured fleet addresses without copying credentials', function (): void {
+        $node = containerDefaultNode();
+        $node->update(['lan_ip' => '192.168.50.7']);
+        $default = migrateCheckout(containerDefaultProject(), $node);
+        $database = migrateServerDatabase($default, migrateDatabaseServer($node, 'catalog', DatabaseDriver::Mysql, 3308), 'FOOD_CATALOG_DB');
+        $default->databaseConnectionTargets()->update(['network' => 'lan']);
+        app(VpnSettings::class)->configure('10.77.0.0/24');
+
+        $operation = migrateStart($default);
+
+        expect($operation->input['migrate']['environment'])->toBe([
+            'targets' => [['host' => '192.168.50.7', 'port' => 3308]],
+            'node_addresses' => ['10.44.0.7', '192.168.50.7', '10.44.0.7'],
+            'fleet_addresses' => ['10.44.0.209', '10.44.0.7', '192.168.50.7'],
+            'wireguard_ranges' => ['10.77.0.0/24'],
+        ]);
+        expect(json_encode($operation->input['migrate']['environment'], JSON_THROW_ON_ERROR))
+            ->not->toContain($database->password, 'root-secret', 'username', 'password');
     });
 
     it('still lets a clone of the moved default copy its database with a template copy on the same server', function (): void {
@@ -659,7 +683,7 @@ describe('the end of a move', function (): void {
             ->and($feature->refresh()->checkout_path)->toBe(InstanceContainer::workspaceOnNode($feature));
     });
 
-    it('keeps an earlier reservation after a refused retirement preflight, and releases only a fresh one', function (bool $retry, string $code, string $message): void {
+    it('keeps an earlier reservation after a refused preflight, and releases only a fresh one', function (bool $retry, string $code, string $message): void {
         $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
         if ($retry) {
             $previous = migrateStart($default);
@@ -680,6 +704,7 @@ describe('the end of a move', function (): void {
         'worktrees or changes' => ['instance.migrate_retirement_blocked', 'Cannot retire checkout "/fixture". Other worktrees (1 total; first 20): ["/detached"].'],
         'unpushed commits' => ['instance.migrate_unpushed_commits', 'Cannot retire checkout "/fixture". Unpushed branches or detached HEAD (1 total): [{"branch": "spare", "commits": 2}].'],
         'stashes' => ['instance.migrate_stashes_present', 'Cannot retire checkout "/fixture". Stashes: 2.'],
+        'service host' => ['instance.migrate_env_service_unreachable', '.env: DB_HOST=127.0.0.1:3308. Attach the exact target, correct the .env, or use a non-network driver.'],
     ]);
 
     it('records a named symlink preflight refusal without changing checkout state or choosing a repair', function (string $reason, string $target): void {
