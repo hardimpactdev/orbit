@@ -81,6 +81,9 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
             $operation->refresh();
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
             [$code, $result] = $this->outcome($data);
+            if ($data['status'] === 'succeeded') {
+                $result = [...$result, ...Arr::only($operation->input, ['retained_git_path', 'retained_git_at'])];
+            }
             $data = [...$data, 'error_code' => $code];
             if (! $operation->status->terminal()) {
                 if ($data['status'] === 'succeeded') {

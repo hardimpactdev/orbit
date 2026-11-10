@@ -56,6 +56,8 @@ final readonly class DevelopmentSite
          * development listener, at the port the client names (docs/reference/development-containers.md#agent-development-servers).
          */
         public ?string $devUpstream = null,
+        /** A container's preset Vite server; checkout development servers use `vitePort` on loopback. */
+        public ?string $viteUpstream = null,
     ) {}
 
     public function withWebSocket(string $key, string $websocketAppId): self

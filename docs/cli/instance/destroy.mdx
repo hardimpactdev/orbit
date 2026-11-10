@@ -39,7 +39,9 @@ A failed removal rolls nothing back. The Route is already withdrawn, so its site
 
 An Instance without a Route can be removed only when its Project does not serve the web, or when the Instance never got past source resolution or failed during creation. Those skip the teardown and the push check. Any other Instance without one removable Route is refused with `instance.remove_refused`.
 
-Container clone cleanup requires `--force` until guarded removal is built. It withdraws the Route, drops owned databases and stops and deletes the container with its Processes, T3 sessions, history, Incus storage, ACL and firewall rules. It removes Conn records and execution copies, then frees the T3 port. Container defaults remain unavailable. See [clone removal](/reference/development-containers#destroy).
+A non-default container Instance, cloned or migrated, requires `--force` until guarded removal is built. It withdraws the Route, drops owned databases and stops and deletes the container with its Processes, T3 sessions, history, Incus storage, ACL and firewall rules. It removes Conn records and execution copies, then frees the T3 port. Container defaults remain unavailable. See [clone removal](/reference/development-containers#destroy).
+
+A migrated Instance's [retained Git directory](/cli/instance/migrate#retained-git-data), `<old-checkout>.orbit-retired-git/`, survives destroy. It is purged only by hand under the [manual purge prerequisites](/cli/instance/migrate#manual-purge). After the Instance record is deleted, find its retained path and time in the successful destroy Operation: `orbit operation:show OPERATION --json` or `GET /api/v1/operations/{operation}` returns `result.retained_git_path` and `result.retained_git_at`.
 
 ## How it works
 
@@ -55,7 +57,7 @@ The [container destroy chart](https://github.com/hardimpactdev/orbit/blob/main/d
 | `input.confirmation_required` | The call cannot prompt and has no `--yes`. |
 | `input.cancelled` | You declined, pressed Ctrl-C, or the input ended. |
 | `instance.remove_refused` | The Instance is not active, its environment or its Route cannot be removed, it has no removable Route, its source layout is not removable, the source has dirty or unpublished work or linked worktrees and `--force` is absent, or removing the source failed. |
-| `instance.container_destroy_force_required` | Container clone cleanup requires `--force` until guarded removal is built. |
+| `instance.container_destroy_force_required` | A non-default container Instance, cloned or migrated, requires `--force` until guarded removal is built. |
 | `instance.checkout_path_unsafe` | The checkout path is not safe to delete. |
 | `instance.clone_in_progress` | The Instance is the candidate of an incomplete clone. |
 | `instance.removal_conflict` | The Instance belongs to a different removal request, or `--force` was added or dropped on a rerun against the rules above. |

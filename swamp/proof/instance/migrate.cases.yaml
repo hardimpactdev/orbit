@@ -1,0 +1,61 @@
+# Format: docs/reference/verification-cases.
+# These cases run on the proof fleet as it is. The cases that move an Instance need a proof Node with the Instance pool and the
+# container image, which the proof fleet does not build yet (docs/solutions/development-container-runtime.md, PR 4). Until then
+# the Pest, Deno and Ansible fixture tests cover the move, and the live check on a build-list Node proves it.
+# Retirement fixture coverage (ansible_instance_migrate_test.ts): dirty tracked/staged/deleted/renamed files and non-ignored
+# untracked files refuse before downtime; ignored files pass; linked and detached worktrees refuse and name their paths.
+# Process fixtures stop and disable host units before copying, install private Process environments in the container,
+# retire host files after cutover and restore recorded desired states only after removing a failed container.
+# Preset fixture coverage: running/stopped vp-dev uses the same Process phases; rollback restores the host only after
+# container removal. Pest covers preset identity/path/port projection, pre-downtime refusals, scoped ingress, deployment
+# re-rendering and post-move controls. Live vp execution, HTTP/HMR and container networking remain unproved here.
+# Unpushed local branches and detached HEADs refuse with every name and commit count; stashes refuse with their count.
+# Tag-only commits, an expired stash reflog, submodules/nested repositories and a worktree added after the final listing
+# retain their Git data after retirement. Retirement atomically moves the whole checkout and never deletes metadata.
+# Both path lists are bounded to 20 entries with total counts. New changes or worktrees after preflight refuse final retirement,
+# keep every source intact, and leave the container serving. Late additions after the final listing are retained. A retained checkout (retire: []) is not deleted or checked.
+command: instance:migrate
+chart: instance/migrate
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+
+uncovered:
+  "code:process.container_preset_unsupported": "Pest covers unknown presets, versions and options before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
+  "code:process.container_command_unsupported": "Pest covers custom commands beside the preset, including the bypass regression before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
+  "code:process.container_path_unsupported": "Pest covers external cwd, environment files and absolute environment values, including traversal before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
+  "code:process.container_port_conflict": "Pest covers missing/reserved ports, duplicate presets and recorded Process port conflicts before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
+  "code:instance.migrate_symlink_unsupported": "The proof fleet lacks the Instance pool/image. Python and Ansible fixtures cover absolute in-checkout rewrites, exact relative-link preservation, dependency package links, unchanged installed package contents, non-UTF-8 names and targets, and named external/broken-link refusals before downtime and after archive-time changes without changing the source."
+  "code:instance.migrate_retirement_blocked": "The proof fleet lacks the Instance pool/image. Ansible fixtures cover dirty tracked and non-ignored untracked files, linked/detached and same-batch worktrees, bounded named errors, and blockers added after preflight. Live proof uses owned clean fixtures and separate blocker fixtures when the pool is available."
+
+  "code:instance.migrate_unpushed_commits": "Ansible fixtures cover every local branch and a detached HEAD, counts against all local remote-tracking refs, and source preservation. Live proof needs the Instance pool/image."
+  "code:instance.migrate_stashes_present": "Ansible fixtures cover multiple stash entries, their count and source preservation. Live proof needs the Instance pool/image."
+
+cases:
+  - id: invalid-id
+    batch: fresh-fleet
+    covers: []
+    summary: A nonpositive or noninteger Instance ID is refused locally, before any request.
+    variants:
+      - {name: zero, value: "0"}
+      - {name: name, value: default}
+      - {name: fractional, value: "1.5"}
+    act:
+      - cli:
+          run: [instance:migrate, "${value}", --force]
+          forms: [json, human]
+          expect: {exit: 1, code: instance.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: unknown-instance
+    batch: fresh-fleet
+    covers: []
+    summary: An unknown Instance ID is refused without creating an Operation.
+    act:
+      - cli:
+          run: [instance:migrate, "2147483647", --force]
+          forms: [json, human]
+          expect: {exit: 1, code: http.404, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}

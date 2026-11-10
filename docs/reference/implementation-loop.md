@@ -43,14 +43,15 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 ## CI
 
-Orbit CI runs builds and static checks. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same gate.
+Orbit CI runs builds, static checks and the full default Gateway Pest suite when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same gate.
 
 The Swamp shape job has a temporary 30-minute limit so its serial fixtures can finish on a loaded runner.
 
 | Check | Work |
 | --- | --- |
 | PHP syntax and Composer | Check frozen agent command references, validate every tracked Composer manifest and run `php -l` on changed PHP files, with at most four workers |
-| Gateway static analysis | Run the complete Gateway PHPStan configuration, collect all Gateway tests and run the two privileged kernel cases whenever a PR changes any file under `apps/gateway/`, including tests |
+| Gateway static analysis | Run the complete Gateway PHPStan configuration and collect all Gateway tests whenever a PR changes any file under `apps/gateway/`, including tests |
+| Gateway Pest suite | Run the complete default Gateway suite on `ubuntu-26.04`: four workers, 1 GiB per PHP process and a five-second default per-test limit |
 | CLI build | Build the existing Linux and macOS CLI binaries through the reusable Orbit CLI Binary workflow |
 | CLI static analysis, PHP SDK static analysis, E2E static analysis | Run PHPStan for `apps/cli`, `packages/php-sdk` or `apps/e2e` when a PR changes any file of that project, `composer.lock` included. The SDK also selects the CLI analysis |
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint; run `bin/check-flows` on the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) |
@@ -59,8 +60,20 @@ The Swamp shape job has a temporary 30-minute limit so its serial fixtures can f
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and every night, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Only for changes under `swamp/proof/` or shared CI inputs: run the case runner unit tests and lint the proof programs with `ruff` |
-| CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. The blocking switches control whether its result gates Required checks; see [CI time budget](#ci-time-budget) |
-| Required checks | Require every selected build and static check to succeed. Require shape and PR proof according to the blocking switches. Only an explicitly untouched required job may skip |
+| CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. The blocking switches control whether its result gates Required checks, including the outside proof for a fork; see [CI time budget](#ci-time-budget) and [the proof run job](#the-proof-run-job) |
+| Required checks | Require every selected build, static check and Gateway Pest suite to succeed. Require shape and PR proof according to the blocking switches. Only an explicitly untouched required job may skip |
+
+The Gateway Pest job installs Gateway and CLI dev Composer dependencies and regenerates both autoloaders with `composer install --no-scripts`. It then runs `bin/build-api` so tests read the current OpenAPI and MCP contracts; these generated outputs are not cached. NodeMetrics runs the CLI's PHP consent fixture. Separate vendor caches use each project's manifest and lockfile, PHP 8.5, the runner OS and SDK Composer metadata; they never restore the runtime-only Gateway cache.
+
+The job downloads the recipe's Deno 2.9.8 artifact and checks its SHA-256 before extraction. It caches the archive and JSR/npm downloads and warms the firewall test imports before Pest. It downloads the recipe's Caddy 2.11.7 artifact, checks its SHA-512 before extraction and requires the executable and version before running tests. Missing Caddy fails setup. The real Caddy fixtures wait for every listener in the chain before sending their assertions; the echo server uses an ephemeral loopback admin port. SQLite stays in memory; no database or Redis service is started. The two privileged kernel cases remain in Gateway static analysis.
+
+The CI policy tests run actionlint on the complete CI workflow to check Actions syntax, types and context availability. The checker downloads pinned actionlint 1.7.12 and verifies its archive's SHA-256 before extraction, including cache hits. Its runner-label catalog predates `ubuntu-26.04`, so the actionlint configuration adds that label explicitly.
+
+Gateway bootstrap tests supply a fixed RSA key at the process boundary. The key has 4096 bits and is only for tests. Random prime search cannot consume the test deadline before the database's lazy migrations. Certificate signing, SSH-key generation and migration execution remain real; the tests check the requested key size and that a second bootstrap generates no new CA key.
+
+All Gateway paths select Pest, including tests, configuration and Composer inputs. CLI and SDK paths also select it, as do Swamp workflows, Ansible, operation behaviors and shared behavior helpers, operation metadata and proof inputs read by the suite. CLI flow charts select it because the proof tests inspect operation metadata derived from charts. Shared CI and bootstrap inputs select it too. Unrelated Docs and Web changes leave Pest unselected.
+
+The job depends on input selection; only an explicit false selection skips it. Required checks has a static dependency on the job and validates the exact selection keys and boolean values before accepting the results. A selected failure, cancellation or unexpected skip fails the gate independently of `ORBIT_SLOW_CHECKS_BLOCKING`.
 
 The Swamp gate production-lints the observer preparation play. Its fixture tests install the candidate pin on all three nested Nodes and reject checksum and download failures. Gateway tests require new presence versions and host facts after a controlled restart. Runner tests require preparation before every batch and direct case, including old workflow calls without setup, and give preparation and batch setup separate bounded budgets.
 
@@ -151,7 +164,7 @@ The job holds no secret. The runner's CLI acts as its enrolled Node from its Wir
 
 `bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. A change under `apps/gateway/resources/agent/` also selects that job: it downloads the pinned Linux agent, verifies its checksum, and checks that its `contract` output exactly matches the frozen command file. Shared workflow, script and tooling changes select all builds.
 
-Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. A run whose token the Gateway writes to a vault key, such as `task:sync` with `task-sync-token-<uuid>`, adds its key pattern there. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp). The CI run on `main` selects builds the same way.
+Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds; inputs read by Gateway tests also select Gateway Pest. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. A run whose token the Gateway writes to a vault key, such as `task:sync` with `task-sync-token-<uuid>`, adds its key pattern there. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp). The CI run on `main` selects builds the same way.
 
 The Swamp shape job runs `bin/swamp-shape-gate --only shape`. The script runs the gate, Python analyzer, frozen-base policy and validation CI regression tests through Deno. It also runs pinned `ansible-lint` against the Node enrollment, role, development create, Route and task VM playbooks and checks the private Ansible input builder, the enrollment playbook contract and the waits of a nested fleet against a stub `incus`. The firewall regression test evaluates changed shapes, rule order and unchanged state through the pinned Ansible engine. The artifact tests cover candidate order, transport-only fallback, checksum rejection, cache reuse and staging cleanup.
 
@@ -231,11 +244,11 @@ The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PH
 
 ### Gateway shards
 
-Gateway test shards and the former separate privileged, E2E, SDK, CLI, remote-program and web test jobs, including the native package boundary checks, do not run in CI. Gateway static analysis does run the two privileged kernel cases. Their test files and local commands remain available. CI does not use the former project selection tool.
+Gateway Pest runs in one hosted job with four workers and no shards. Gateway static analysis also runs the two privileged kernel cases. E2E, SDK, CLI, remote-program and web unit test jobs remain local checks; their test files and commands remain available.
 
 ### Runner policy during the Swamp migration
 
-During the Swamp migration, Orbit CI runs builds and static checks, plus the selected Pi and Rust tests. Gateway Pest and web unit tests stay out until the full pipeline runs end to end. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
+During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway Pest, Pi and Rust tests. Web unit tests stay local. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
 
 Sabre and Shark run CI runners in unprivileged Incus containers. With Nick's approval, both hosts also run temporary Swamp migration workers. They may share capacity during the migration; restore their CI capacity when that work ends. Task VMs run only on Beast and Shark through Incus.
 
@@ -285,7 +298,7 @@ Each project requires stock `pestphp/pest` from its lock file. Stock Pest includ
 
 Root `bin/test` queues the five project suites through the same weighted lane allocator as the candidate gate. The total of concurrent Pest workers stays within the [available process budget](#parallel-processes), including when the budget is smaller than the number of suites. Each finished suite frees its share for the remaining suites.
 
-The E2E tests for gate selection build one Git repository per file, with two commits. Each test gets an independent copy. Cases that need a different history change only their copy. The gate-selection fixtures make Pest fail if the local gate tries to run a test suite; handoff suites run in CI.
+The E2E tests for gate selection build one Git repository per file, with two commits. Each test gets an independent copy. Cases that need a different history change only their copy. The gate-selection fixtures make Pest fail if the local gate tries to run a test suite; selected Gateway Pest runs in CI.
 
 Gateway feature tests use Laravel's `LazilyRefreshDatabase`: the first query or transaction triggers the same real migrations and transaction setup. A test that inspects its ambient transaction level first issues a query to establish the test transaction. Guidance rendering does not use a database, so it pays no migration cost.
 
@@ -314,13 +327,13 @@ Rector keeps its cache in `vendor/rector/cache` of each project.
 
 Gateway's `RunScheduledCommand` keeps an explicit default for its command arguments so jobs queued before that property existed can still deserialize. Its Rector configuration excludes that class from constructor promotion, which would lose the property default on those payloads. A queue regression test covers this deployment boundary.
 
-The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it contains no allocation rule. The candidate gate and `bin/test` use `tools/check_budget.py` to split the resource-derived budget between their lanes and suites with the internal `ORBIT_CHECK_PROCESSES` variable. A positive integer lane share is used verbatim, and an invalid share fails the check. Do not set it on a Project or in an operator shell. CI test commands bypass this local gate budget. Stock ParaTest detects all runner CPUs, as [Gateway shards](#gateway-shards) describes. CI quality tools still use this helper.
+The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it contains no allocation rule. The candidate gate and `bin/test` use `tools/check_budget.py` to split the resource-derived budget between their lanes and suites with the internal `ORBIT_CHECK_PROCESSES` variable. A positive integer lane share is used verbatim, and an invalid share fails the check. Do not set it on a Project or in an operator shell. CI test commands bypass this local gate budget. The hosted Gateway Pest job explicitly uses four workers, as [Gateway shards](#gateway-shards) describes. CI quality tools still use this helper.
 
 ### The candidate gate
 
 Root `composer check` builds OpenAPI, navigation, flow data and the documentation context index, then runs `bin/review-check`, the candidate gate. This refreshes ignored outputs from the current checkout before the impact and freshness checks read them.
 
-The Orbit Project uses it as its task check, so it runs in the task VM at every subtask handoff. CI's Project check job runs the same gate on every commit, so a green `main` is green for tasks too. The gate runs only fast checks and no test suite. The full suite of each handoff runs in CI on the exact handoff commit, as [Tasks: Handoff CI](/reference/tasks#handoff-ci) describes. A merge still needs the full suite on the final head.
+The Orbit Project uses it as its task check, so it runs in the task VM at every subtask handoff. The gate runs only fast checks and no test suite. CI omits the Project check and runs the selected jobs in [CI](#ci), including Gateway Pest when its inputs change. Required checks must pass on the final head before merge.
 
 The gate checks the working tree as it is, including uncommitted and untracked files. It runs these checks.
 
@@ -502,7 +515,7 @@ A failure on main is a `Required checks` check run on a `main` commit that did n
 
 ### CI runs the task gate
 
-CI and the task check once disagreed on green: CI skipped the e2e guidance suite and the fixture check, so `main` went red for tasks while CI stayed green. The Project check job removes that gap: it runs the same `bin/review-check`. Its three shards split the gate's lanes by weight with `--shard I/N`, and shard 1 also runs the repository checks. `--base` compares with the event's base: a pull request's base, or a main push's previous head. Keeping two lists of checks in step is a rejected alternative, because they drift.
+The task gate and CI serve different scopes. The task gate runs `bin/review-check`; CI omits that Project check and runs the selected builds, static checks and Gateway Pest. A passing Required checks result therefore does not certify every local Project check.
 
 ### Every project passes the gate at each handoff
 
@@ -538,19 +551,19 @@ The CI workflow produces no quality caches. A deployment never runs a test suite
 
 Running the checks on a development machine to fill a cache is a rejected alternative. It repeated the work of CI, competed with other agents for the processors, and inside a deployment it exceeded the deployment's deadline. Its results also depended on the host: a test that passes in CI failed on a host with other file ACLs, and that failure held merges as a correctness failure on main. Publishing the caches of a clean bootstrap on `main` is rejected for the same reason, and because two producers would race.
 
-### Main runs record full suites
+### Gateway Pest gates selected changes
 
-CI runs builds, static checks and the selected tests listed in [CI](#ci), without the full Gateway Pest suite. Keeping test files preserves the intended behavior as a local reference while command families move to Swamp in parallel.
+The Gateway default suite runs in one hosted job. Four workers keep setup costs low; there are no shards or quarantined files. Other PHP suites remain local checks.
 
 ### Full suites gate merges
 
-The check name remains `Required checks` so branch protection, task handoff CI and Gateway auto-release continue to resolve it. The name now represents the builds and static checks in [CI](#ci). A green result covers the selected checks; it does not claim that the full Gateway Pest suite ran. No ruleset change is needed for Orbit.
+The check name remains `Required checks` so branch protection, task handoff CI and Gateway auto-release continue to resolve it. The name represents the selected builds, static checks and Gateway Pest suite in [CI](#ci). A green result requires the selected Pest job to pass. No ruleset change is needed for Orbit.
 
 ### Gateway test time limits
 
 Gateway uses stock PHPUnit per-test limits: `enforceTimeLimit="true"`, `defaultTimeLimit="2"`, `failOnRisky="true"`, and `stopOnRisky="true"` in `apps/gateway/phpunit.xml`. The default is two seconds locally. Tests remain unsized except for reviewed cases whose real deadline or kernel age is the behaviour under test.
 
-CI invokes the two privileged Gateway cases with a default limit of five seconds per test. The default suite stays local and uses the stock two-second limit.
+CI passes `--default-time-limit=5` to the Gateway suite and its privileged cases. Local Gateway runs keep the two-second default. Both retain failure and stop-on-risky behavior. Fixtures for large row limits insert batches that fit SQLite's parameter limit while still storing every row up to the production limit.
 
 An exception uses a dedicated native PHPUnit class with class-level `#[Large]` and a one-line justification beside the attribute. Each case needs review; the class contains only the approved real-deadline cases, never unrelated tests. The approved classes are `DocumentTransportDeadlineTest`, with the native Guzzle connection and total-request deadlines, `LinuxHostCtimeTest`, with real kernel-ctime aging through GNU `find`, and `TaskCheckDeadlineTest`, with the retained Tasks checker’s real setup deadlines, TERM grace, and output-drain bound. They use stock PHPUnit `timeoutForLargeTests`, without an override. Installed PHPUnit supports sizes only on classes, and installed Pest cannot declare sizes. Do not substitute size-named groups or add custom timeout or sizing machinery.
 

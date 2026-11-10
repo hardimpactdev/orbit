@@ -51,144 +51,9 @@ export function automaticDeploy(
     gateway?: LiveGateway,
     clock = () => new Date().toISOString(),
 ) {
-    const execute = async (
-        input: { instances?: number[] },
-        context: Context,
-        scope: "production" | "development",
-    ) => {
-        const { instances } = TickArguments.parse(input);
-        const client = gateway ??
-            new GatewayClient(
-                gatewayHttp(
-                    context.globalArgs.gatewayUrl,
-                    context.globalArgs.caFile,
-                    context.signal,
-                ),
-            );
-        const handles = new Map<string, { name: string }>();
-        const failures: { instance: number; error: unknown }[] = [];
-        const events: {
-            instance: number;
-            key: string;
-            body: PolicyEvent;
-        }[] = [];
-        const emit: Emit = (instance, key, body) =>
-            events.push({ instance, key, body });
-        for (
-            const instance of scope === "production"
-                ? await client.discover(instances)
-                : []
-        ) {
-            try {
-                const name = `state-${instance}`;
-                const previous = StateSchema.parse(
-                    await context.readResource(name) ?? {},
-                );
-                let observed: Observation | undefined;
-                const save = async (state: State) => {
-                    if (
-                        JSON.stringify(state) ===
-                            JSON.stringify(
-                                await context.readResource(name),
-                            )
-                    ) return;
-                    handles.set(
-                        name,
-                        await context.writeResource(
-                            "state",
-                            name,
-                            state,
-                        ),
-                    );
-                };
-                const raised = new Set(
-                    previous.events.map((e) => e.key),
-                );
-                const decision = await tick(
-                    instance,
-                    previous,
-                    client,
-                    save,
-                    clock(),
-                    async (observation) => {
-                        observed = observation;
-                        // Guard before saving state or admitting a deploy.
-                        await client.guard(instance, observation);
-                    },
-                );
-                if (!decision || !observed) continue;
-                for (const event of decision.state.events) {
-                    if (!raised.has(event.key)) {
-                        emit(instance, event.key, event.body);
-                    }
-                }
-                try {
-                    await client.publish(
-                        instance,
-                        decision.projection,
-                        observed,
-                    );
-                } catch (error) {
-                    // Admission may already have added history. Keep its durable receipt;
-                    // the next tick reads the newer history instead of publishing stale state.
-                    if (
-                        !(error instanceof PolicyError) ||
-                        error.code !==
-                            "instance.auto_deploy_observation_changed"
-                    ) throw error;
-                }
-                if (decision.state.result === "failed") {
-                    throw new PolicyError(
-                        decision.state.error_code ??
-                            "deployment.automatic_failed",
-                        decision.state.message ??
-                            "Automatic deployment failed.",
-                    );
-                }
-            } catch (error) {
-                if (isPolicyRefusal(error)) continue;
-                failures.push({ instance, error });
-            }
-        }
-        for (
-            const handle of scope === "development"
-                ? await client.development(
-                    context,
-                    clock(),
-                    instances,
-                    emit,
-                )
-                : []
-        ) {
-            handles.set(handle.name, handle);
-        }
-        // The Gateway records events and failures from the fire's terminal result; no step calls it for them.
-        // A failed Instance no longer stops the tick, so the other events still arrive; the assert step fails the run.
-        handles.set(
-            "fire",
-            await context.writeResource("fire", "fire", {
-                fire_json: JSON.stringify({
-                    events,
-                    failures: failures.map((
-                        { instance, error },
-                    ) => ({
-                        instance,
-                        error_code: error instanceof PolicyError
-                            ? error.code
-                            : "automatic.tick_failed",
-                        message: (error instanceof Error
-                            ? error.message
-                            : String(error)).slice(0, 4096),
-                    })),
-                }),
-                failure_count: failures.length,
-            }),
-        );
-        return { dataHandles: [...handles.values()] };
-    };
     return {
         type: "@nckrtl/automatic-deploy",
-        version: "2026.11.10.1",
+        version: "2026.11.02.1",
         globalArguments: z.object({
             gatewayUrl: z.string().url().default("https://gateway.orbit"),
             caFile: z.string().default(
@@ -222,25 +87,138 @@ export function automaticDeploy(
             },
         },
         methods: {
-            development: {
-                description:
-                    "Run development policy only for defaults selected by the Gateway precheck.",
-                arguments: z.object({
-                    instances: z.array(z.number().int().positive()).min(1),
-                }),
-                execute: (input: { instances: number[] }, context: Context) => {
-                    const selected = z.object({
-                        instances: z.array(z.number().int().positive()).min(1),
-                    }).parse(input);
-                    return execute(selected, context, "development");
-                },
-            },
             tick: {
                 description:
-                    "Discover production Instances and run production policy after Gateway ownership admission.",
+                    "Discover production and default development Instances and run native policy after Gateway ownership admission.",
                 arguments: TickArguments,
-                execute: (input: { instances?: number[] }, context: Context) =>
-                    execute(input, context, "production"),
+                execute: async (
+                    input: { instances?: number[] },
+                    context: Context,
+                ) => {
+                    const { instances } = TickArguments.parse(input);
+                    const client = gateway ??
+                        new GatewayClient(
+                            gatewayHttp(
+                                context.globalArgs.gatewayUrl,
+                                context.globalArgs.caFile,
+                                context.signal,
+                            ),
+                        );
+                    const handles = new Map<string, { name: string }>();
+                    const failures: { instance: number; error: unknown }[] = [];
+                    const events: {
+                        instance: number;
+                        key: string;
+                        body: PolicyEvent;
+                    }[] = [];
+                    const emit: Emit = (instance, key, body) =>
+                        events.push({ instance, key, body });
+                    for (const instance of await client.discover(instances)) {
+                        try {
+                            const name = `state-${instance}`;
+                            const previous = StateSchema.parse(
+                                await context.readResource(name) ?? {},
+                            );
+                            let observed: Observation | undefined;
+                            const save = async (state: State) => {
+                                if (
+                                    JSON.stringify(state) ===
+                                        JSON.stringify(
+                                            await context.readResource(name),
+                                        )
+                                ) return;
+                                handles.set(
+                                    name,
+                                    await context.writeResource(
+                                        "state",
+                                        name,
+                                        state,
+                                    ),
+                                );
+                            };
+                            const raised = new Set(
+                                previous.events.map((e) => e.key),
+                            );
+                            const decision = await tick(
+                                instance,
+                                previous,
+                                client,
+                                save,
+                                clock(),
+                                async (observation) => {
+                                    observed = observation;
+                                    // Guard before saving state or admitting a deploy.
+                                    await client.guard(instance, observation);
+                                },
+                            );
+                            if (!decision || !observed) continue;
+                            for (const event of decision.state.events) {
+                                if (!raised.has(event.key)) {
+                                    emit(instance, event.key, event.body);
+                                }
+                            }
+                            try {
+                                await client.publish(
+                                    instance,
+                                    decision.projection,
+                                    observed,
+                                );
+                            } catch (error) {
+                                // Admission may already have added history. Keep its durable receipt;
+                                // the next tick reads the newer history instead of publishing stale state.
+                                if (
+                                    !(error instanceof PolicyError) ||
+                                    error.code !==
+                                        "instance.auto_deploy_observation_changed"
+                                ) throw error;
+                            }
+                            if (decision.state.result === "failed") {
+                                throw new PolicyError(
+                                    decision.state.error_code ??
+                                        "deployment.automatic_failed",
+                                    decision.state.message ??
+                                        "Automatic deployment failed.",
+                                );
+                            }
+                        } catch (error) {
+                            if (isPolicyRefusal(error)) continue;
+                            failures.push({ instance, error });
+                        }
+                    }
+                    for (
+                        const handle of await client.development(
+                            context,
+                            clock(),
+                            instances,
+                            emit,
+                        )
+                    ) {
+                        handles.set(handle.name, handle);
+                    }
+                    // The Gateway records events and failures from the fire's terminal result; no step calls it for them.
+                    // A failed Instance no longer stops the tick, so the other events still arrive; the assert step fails the run.
+                    handles.set(
+                        "fire",
+                        await context.writeResource("fire", "fire", {
+                            fire_json: JSON.stringify({
+                                events,
+                                failures: failures.map((
+                                    { instance, error },
+                                ) => ({
+                                    instance,
+                                    error_code: error instanceof PolicyError
+                                        ? error.code
+                                        : "automatic.tick_failed",
+                                    message: (error instanceof Error
+                                        ? error.message
+                                        : String(error)).slice(0, 4096),
+                                })),
+                            }),
+                            failure_count: failures.length,
+                        }),
+                    );
+                    return { dataHandles: [...handles.values()] };
+                },
             },
         },
     };

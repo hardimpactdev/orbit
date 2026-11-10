@@ -16,11 +16,11 @@ final readonly class ContainerInstanceDestroy
         if ($runtime === null) {
             return;
         }
-        if ($runtime->clone_source_instance_id === null) {
+        if ($instance->name === 'default') {
             throw new ResourceOperationException('operation.kind_unavailable', 'Container default destruction is not available yet.', 503);
         }
         if (! $force) {
-            throw new ResourceOperationException('instance.container_destroy_force_required', 'Container clone removal currently requires --force. Guarded removal follows separately.', 409);
+            throw new ResourceOperationException('instance.container_destroy_force_required', 'Non-default container removal currently requires --force. Guarded removal follows separately.', 409);
         }
     }
 

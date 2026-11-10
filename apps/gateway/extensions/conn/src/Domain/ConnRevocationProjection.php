@@ -39,8 +39,7 @@ final readonly class ConnRevocationProjection implements DirectOperationProjecti
             if (! is_array($intent['pairings'])) {
                 throw new LogicException('Conn revocation requires its admitted pairings.');
             }
-            $delivered = array_filter($intent['pairings'], fn (mixed $pairing): bool => (ValidatedData::object($pairing)['delivered'] ?? false) === true);
-            if ($status === OperationStatus::Succeeded && $delivered !== [] && ($sessions['revoked'] ?? 0) === 0) {
+            if ($status === OperationStatus::Succeeded && ($sessions['revoked'] ?? 0) === 0) {
                 $unmatched = true;
             }
             if ($unmatched) {
