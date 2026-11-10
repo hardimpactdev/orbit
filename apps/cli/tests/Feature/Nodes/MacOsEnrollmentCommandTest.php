@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
@@ -43,14 +44,18 @@ it('sends macOS enrollment fields and leaves policy to the gateway', function (a
         ]),
     ]);
 
-    $this->artisan('node:add', [
+    $exit = Artisan::call('node:add', [
         'name' => 'mini',
         'host' => '192.0.2.40',
         '--platform' => 'macos',
         '--host-key-fingerprint' => macos_fingerprint(),
         ...$options,
         '--json' => true,
-    ])->assertExitCode(0);
+    ]);
+
+    expect($exit)->toBe(0)
+        ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['result'])
+        ->toBe(['id' => 2, 'enrolled' => true]);
 
     $request = $mockClient->getRecordedResponses()[0]->getPendingRequest()->getRequest();
 
@@ -228,5 +233,5 @@ function macos_request_id(): string
 function macos_enrollment_operation(): array
 {
     return ['id' => 42, 'kind' => 'node.add', 'target_type' => 'node', 'target_id' => 2,
-        'status' => 'succeeded', 'sequence' => 3, 'input' => [], 'result' => ['enrolled' => true]];
+        'status' => 'succeeded', 'sequence' => 3, 'input' => [], 'result' => ['id' => 2, 'enrolled' => true]];
 }

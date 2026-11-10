@@ -56,7 +56,7 @@ A provider retirement needs its full resource inventory. An empty task VM sweep 
 
 Receipt redaction tests must inspect the persisted response. A numeric mask can also occur legitimately in an identity, digest or timestamp; searching the whole receipt creates clock-dependent false failures.
 
-When updating CLI fixtures from resource replies to Operations, preserve product result assertions as well as the transport envelope. Check human warnings against the current command chart; a generic Operation success line does not prove them.
+When updating CLI fixtures from resource replies to Operations, preserve product result assertions as well as the transport envelope. Use the complete terminal result from its writer and an independently specified exact expectation. Check human warnings against the current command chart; a generic Operation success line does not prove them.
 
 Run a combined Unit and Feature test collection when adding global test constants or helpers. Separate focused runs do not catch duplicate names across files.
 

@@ -24,11 +24,19 @@ function node_firewall_reply(string $class, array $data, int $status = 200): arr
         'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']]];
 }
 
-function node_firewall_consent_case(string $family, bool $purge = false): array
+function node_firewall_consent_case(string $family, bool $purge = false, bool $offline = false): array
 {
-    $node = ['id' => 7, 'name' => 'worker', 'status' => 'active', 'roles' => []];
+    $node = ['id' => 7, 'name' => 'worker', 'status' => 'active', 'roles' => $family === 'node' ? ['database'] : []];
     $operation = ['id' => 42, 'kind' => 'firewall.remove', 'target_type' => 'node_firewall', 'target_id' => 7,
         'input' => ['port' => '8080', 'protocol' => 'tcp'], 'status' => 'succeeded', 'sequence' => 5, 'result' => ['backend' => 'absent']];
+    $removal = [...$operation, 'kind' => 'node.remove', 'target_type' => 'node', 'input' => [], 'result' => [
+        'schema_version' => 1, 'node_id' => 7, 'name' => 'worker', 'removed' => true, 'offline' => $offline, 'roles_shed' => ['database'],
+        'retained_on_node' => ['User account, installed packages, application data, role release data and volumes, and host-side WireGuard configuration',
+            ...($offline ? ['Metrics node exporter package, its Orbit systemd drop-in and its firewall rule for port 9100',
+                'Node agent, its systemd unit, binary, and /etc/orbit/agent configuration',
+                'Swamp worker unit, credentials and cache', 'Orbit management SSH keys'] : [])],
+        'follow_up' => $offline ? 'Discard the Node or clear the reported retained artifacts when it is reachable.' : null,
+    ]];
 
     return match ($family) {
         'node' => [
@@ -36,11 +44,11 @@ function node_firewall_consent_case(string $family, bool $purge = false): array
             'prompt' => 'Remove Node [worker] (#7) from the Gateway?',
             'reads' => 1,
             'mutation' => RemoveNodeRequest::class,
-            'mutation_body' => ['force' => true, 'offline' => false],
+            'mutation_body' => ['force' => true, 'offline' => $offline],
             'replies' => [node_firewall_reply(ShowNodeRequest::class, $node),
-                node_firewall_reply(RemoveNodeRequest::class, [...$operation, 'kind' => 'node.remove', 'target_type' => 'node', 'input' => [], 'result' => ['removed' => true, 'name' => 'worker']], 202),
+                node_firewall_reply(RemoveNodeRequest::class, $removal, 202),
                 ['class' => ShowRealtimeRequest::class, 'status' => 503, 'body' => []],
-                node_firewall_reply(ShowOperationRequest::class, [...$operation, 'kind' => 'node.remove', 'target_type' => 'node', 'input' => [], 'result' => ['removed' => true, 'name' => 'worker']])],
+                node_firewall_reply(ShowOperationRequest::class, $removal)],
         ],
         'access' => [
             'arguments' => ['node:access:remove', '7', '8'],
@@ -238,7 +246,7 @@ it('reports authorization and missing-rule refusals of a consented firewall remo
 it('keeps offline and purge independent of interactive consent and the read-only preview', function (
     string $family, bool $offline, bool $purge, bool $accepted,
 ): void {
-    $case = node_firewall_consent_case($family, $purge);
+    $case = node_firewall_consent_case($family, $purge, $offline);
     $case['arguments'] = [...$case['arguments'], '--no-ansi', ...($offline ? ['--offline'] : [])];
     $case['mutation_body']['offline'] = $offline;
     if ($family === 'role') {
@@ -258,6 +266,43 @@ it('keeps offline and purge independent of interactive consent and the read-only
 })->with([
     ['node', true, false], ['role', false, false], ['role', false, true], ['role', true, true],
 ])->with([false, true]);
+
+it('preserves complete Node removal metadata and renders retained artifacts', function (bool $offline, bool $json): void {
+    $preserved = 'User account, installed packages, application data, role release data and volumes, and host-side WireGuard configuration';
+    $case = node_firewall_consent_case('node', offline: $offline);
+    $case['arguments'] = [...$case['arguments'], '--force', ...($offline ? ['--offline'] : []), ...($json ? ['--json'] : [])];
+    $result = run_node_firewall_fixture($case, [], pty: false);
+
+    expect($result['status'])->toBe(0)->and($result['stderr'])->toBe('')
+        ->and($result['requests'])->toHaveCount($json ? 4 : 3);
+    if ($json) {
+        expect(json_decode($result['output'], true, flags: JSON_THROW_ON_ERROR)['result'])->toBe([
+            'schema_version' => 1, 'node_id' => 7, 'name' => 'worker', 'removed' => true,
+            'offline' => $offline, 'roles_shed' => ['database'],
+            'retained_on_node' => [$preserved,
+                ...($offline ? ['Metrics node exporter package, its Orbit systemd drop-in and its firewall rule for port 9100',
+                    'Node agent, its systemd unit, binary, and /etc/orbit/agent configuration',
+                    'Swamp worker unit, credentials and cache', 'Orbit management SSH keys'] : [])],
+            'follow_up' => $offline ? 'Discard the Node or clear the reported retained artifacts when it is reachable.' : null,
+        ]);
+    } else {
+        $text = preg_replace('/\s+/', ' ', $result['output']);
+        expect($text)->toContain('Node removal succeeded.', 'Left on the node:');
+        expect(preg_replace('/\s+/', '', $result['output']))->toContain(preg_replace('/\s+/', '', $preserved));
+        if ($offline) {
+            expect($text)->toContain('Warning: Node [worker] was unreachable. Orbit removed only the state it owns.',
+                'Roles shed:', 'database',
+                'Swamp worker unit, credentials and cache', 'Orbit management SSH keys',
+                'Discard the Node or clear the reported retained artifacts when it is reachable.');
+            foreach (['Metrics node exporter package, its Orbit systemd drop-in and its firewall rule for port 9100',
+                'Node agent, its systemd unit, binary, and /etc/orbit/agent configuration'] as $retained) {
+                expect(preg_replace('/\s+/', '', $result['output']))->toContain(preg_replace('/\s+/', '', $retained));
+            }
+        } else {
+            expect($text)->not->toContain('was unreachable', 'Discard the Node');
+        }
+    }
+})->with(['online' => false, 'offline' => true])->with(['human' => false, 'json' => true]);
 
 it('wraps the self-lockout warning within a narrow terminal', function (): void {
     $case = node_firewall_consent_case('access');

@@ -287,7 +287,8 @@ describe('vault:destroy', function (): void {
         [$exit, $output] = vault_cli_display('vault:destroy', [...$options, '--yes' => true, '--json' => true]);
 
         expect($exit)->toBe(0)
-            ->and(json_decode($output, true)['kind'])->toBe('vault.teardown');
+            ->and(json_decode($output, true)['kind'])->toBe('vault.teardown')
+            ->and(json_decode($output, true)['result'])->toBe(['outcome' => 'succeeded', 'data' => ['backend' => 'absent']]);
         $mock->assertSent(fn ($request): bool => $request instanceof DestroyVaultRequest && $request->body()->all() === ['keep_items' => $keepItems]);
     })->with([
         'delete items' => [[], false],
@@ -465,7 +466,8 @@ function vault_cli_request_id(): string
 /** @return array<string, mixed> */
 function vault_cli_destroy_payload(): array
 {
-    return ['id' => 12, 'kind' => 'vault.teardown', 'target_type' => 'vault', 'target_id' => 7, 'input' => [], 'status' => 'succeeded', 'sequence' => 1];
+    return ['id' => 12, 'kind' => 'vault.teardown', 'target_type' => 'vault', 'target_id' => 7, 'input' => [], 'status' => 'succeeded', 'sequence' => 1,
+        'result' => ['outcome' => 'succeeded', 'data' => ['backend' => 'absent']]];
 }
 
 function vault_cli_destroy_response(): MockResponse
@@ -479,7 +481,13 @@ function vault_cli_operation_payload(string $kind, bool $failed = false): array
     return ['id' => 12, 'kind' => $kind, 'target_type' => 'vault', 'target_id' => 7,
         'input' => [], 'status' => $failed ? 'failed' : 'succeeded', 'sequence' => 3,
         'error_code' => $failed ? 'vault.unreachable' : null,
-        'result' => $failed ? null : ['outcome' => 'succeeded', 'data' => ['backend' => $kind === 'vault.setup' ? 'configured' : 'synced']]];
+        'result' => $failed ? null : ['outcome' => 'succeeded', 'data' => match ($kind) {
+            'vault.setup' => ['backend' => 'configured', 'email' => 'gateway@orbit.test',
+                'organization_id' => 'org-1', 'organization_name' => 'Orbit',
+                'collection_id' => 'col-1', 'collection_name' => 'Databases'],
+            'vault.sync' => ['backend' => 'synced', 'sources' => ['database-user:4'], 'cipher_ids' => ['cipher-4'],
+                'revisions' => ['2026-10-11T12:00:00Z'], 'fingerprints' => [str_repeat('a', 64)]],
+        }]];
 }
 
 /** @param class-string $request */
@@ -511,7 +519,13 @@ function vault_cli_operation_json(string $kind): array
         'failed_step' => null,
         'error_code' => null,
         'error' => null,
-        'result' => ['outcome' => 'succeeded', 'data' => ['backend' => $kind === 'vault.setup' ? 'configured' : 'synced']],
+        'result' => ['outcome' => 'succeeded', 'data' => match ($kind) {
+            'vault.setup' => ['backend' => 'configured', 'email' => 'gateway@orbit.test',
+                'organization_id' => 'org-1', 'organization_name' => 'Orbit',
+                'collection_id' => 'col-1', 'collection_name' => 'Databases'],
+            'vault.sync' => ['backend' => 'synced', 'sources' => ['database-user:4'], 'cipher_ids' => ['cipher-4'],
+                'revisions' => ['2026-10-11T12:00:00Z'], 'fingerprints' => [str_repeat('a', 64)]],
+        }],
         'cancel_requested' => false,
         'attempts' => 0,
         'triggered_by' => null,
