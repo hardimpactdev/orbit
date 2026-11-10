@@ -178,7 +178,7 @@ Deno.test("${
             args: ["test", "-A", ...files],
             env: {
                 DENO_JOBS: "1",
-                ORBIT_INSTANCE_HOST_DEADLINE_MS: "1000000720000",
+                ORBIT_INSTANCE_HOST_DEADLINE_MS: "1000000600000",
             },
         }).outputSync();
         const decoder = new TextDecoder();
