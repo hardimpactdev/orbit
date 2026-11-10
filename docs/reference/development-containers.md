@@ -3,17 +3,17 @@ title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
   - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress}.php
   - apps/gateway/app/Domain/Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php
   - apps/gateway/database/migrations/2027_02_04_000000_add_seed_commit_to_instance_runtimes.php
   - swamp/ansible/{instance-container.yml,tasks/instance-container-phase.yml}
   - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/notes/**}
-  - swamp/ansible/tasks/{instance-host,instance-folder,instance-image}.yml
+  - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress}.yml
 ---
 
 # Instance containers
 
-**Not built, except the [records](#records), the [Node preparation](#prepare-a-node) and the [default Instance](#the-default-instance).** This page specifies steps 3, 4, 5 and 8 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order). It describes the target, and the production basics of step 10. The parity gate of step 6 lives in the plan. The PRs in [Container runtime](/solutions/development-container-runtime) build it, one part at a time, and move each part into its owning page. Until then, development Instances run from checkouts on their Node, as [Applications](/domains/applications) describes, and task groups run on [task VMs](/reference/compute-drivers#task-vms).
+**Not built, except the [records](#records), the [Node preparation](#prepare-a-node), [egress and DNS](#egress-and-dns) and the [default Instance](#the-default-instance).** This page specifies steps 3, 4, 5 and 8 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order). It describes the target, and the production basics of step 10. The parity gate of step 6 lives in the plan. The PRs in [Container runtime](/solutions/development-container-runtime) build it, one part at a time, and move each part into its owning page. Until then, development Instances run from checkouts on their Node, as [Applications](/domains/applications) describes, and task groups run on [task VMs](/reference/compute-drivers#task-vms).
 
 Every development Instance runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
 
@@ -41,7 +41,7 @@ The container flows keep the kinds of today's Instance flows. Their charts sit o
 
 Every `app-dev` Node runs its Instances in containers. There is no setting to opt in. A task VM keeps its checkout workspace until step 9 of ADR 0250 removes task VMs.
 
-The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the pool of a real Node is ZFS; only a nested proof Node uses a directory pool, where a copy is a full copy.
+The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the [egress proxy](#egress-and-dns), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the pool of a real Node is ZFS; only a nested proof Node uses a directory pool, where a copy is a full copy.
 
 ### Prepare a Node
 
@@ -51,12 +51,14 @@ This part is built. The `app-dev` role converge of a Node on the [build list](#t
 - **Pool.** The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge chooses no disk itself.
 - **Missing pool.** A Node without the pool is refused with `instance.host_unavailable`.
 - **Project.** Containers of `orbit-instances` must set an isolated ID map. They mount only the two shared folders, may have proxy devices, and cannot be VMs.
+- **Profile.** The default profile sets the [proxy settings](#egress-and-dns) as `environment.*` keys, so every `incus exec` that keeps its environment has them.
 - **Bridge.** `orbitinst0` has NAT and no IPv6. DHCP leaves the last address free for the image build.
-- **Bridge ACL.** A container reaches only the model forwarder, at port 8319 of the bridge address. Each Instance's own paths come with its create flow.
-- **Input rules.** The Node admits DHCP and DNS from the bridge, under `orbit:instances-dhcp`, `orbit:instances-dns-tcp` and `orbit:instances-dns-udp`.
+- **Bridge ACL.** A container reaches only two ports of the bridge address: the model forwarder at 8319 and the egress proxy at 3128. Each Instance's own paths come with its create flow.
+- **Input rules.** The Node admits DHCP from the bridge under `orbit:instances-dhcp`, and the egress proxy under `orbit:instances-egress`. It admits no DNS from the bridge.
 
 The converge then installs what the containers run:
 
+- **Egress proxy.** It runs the [egress proxy](#egress-and-dns) and its nftables table.
 - **Image.** The converge builds the [container image](#inside-a-container) once per definition and names it with the stable alias `orbit-instance`.
 - **Folders.** It installs both [shared folders](#shared-folders).
 
@@ -81,6 +83,7 @@ Every development container has the same layout. The image and the create set it
 | Part | Setting |
 | --- | --- |
 | Image | Ubuntu 26.04 with the OS packages the runtime needs, the users, `nftables`, `acl` and `hidepid`. No PHP, no Node, no agent software |
+| Egress | The [proxy settings](#egress-and-dns) for every unit, login shell and apt, and no DNS server |
 | `orbit` | uid 1000, home `/home/orbit` mode 0750, password locked. Runs the app and every Orbit Process |
 | `agent` | uid 2750, home `/home/agent` mode 0700, password locked. Runs T3, Claude Code, Codex and their shell commands. Owns the T3 state, the agent settings and the placeholder key |
 | `work` | gid 2760, members `agent` and `orbit` |
@@ -100,7 +103,7 @@ A container mounts no host checkout and no Incus socket. Root work, such as unit
 
 The Gateway renders the image: its packages, the setup script, its files and the units it enables. The script turns cloud-init off, so a new container never makes the stock `ubuntu` user and its sudo grant again. The image's alias is `orbit-instance-` with the first 12 hex digits of a digest of that definition, so a changed definition is a new image. A build container from the stock Ubuntu image runs the definition and is published under that alias. The stable alias `orbit-instance` then moves to it, and the older images go; a container keeps what it was made from.
 
-The build container is the only container that reaches the internet. It takes the bridge's last address, which no Instance gets. Its own ACL drops private ranges, and a route rule lets it out until the build removes the rule again.
+The build container reaches the internet as every container does, through the [egress proxy](#egress-and-dns): the profile gives its `incus exec` the proxy settings, and apt follows them. It takes the bridge's last address, which no Instance gets.
 
 ### Who runs what
 
@@ -151,7 +154,9 @@ Each Project type has one note in the agent folder, at `notes/<note>.md`. The no
 | `monorepo` | `monorepo` |
 | `laravel-package`, `node-package` | `package` |
 
-When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are. It says how previews work and how an agent views its own server. It says that there is no sudo and no direct internet, and how Git leaves the container. It gives no instructions about the work. Instructions, skills and MCP servers come from the project's own files.
+When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are. It says how previews work and how an agent views its own server. It says that there is no sudo and no direct internet, how the egress proxy works, and how Git leaves the container.
+
+A note gives no instructions about the work. Instructions, skills and MCP servers come from the project's own files.
 
 ## Model access
 
@@ -168,11 +173,77 @@ A container reaches only what this table lists. Everything else is dropped at it
 | Preview | The Instance's Route on the Node's Caddy proxies to FrankenPHP in the container, at its bridge address |
 | Database | The Instance's own database server and port, on the Node or over WireGuard. A rule on the container's NIC, from the create flow. The server admits the Instance's role only |
 | Models | The forwarder at the bridge's gateway address |
-| Egress proxy | Only for a container with a [nested fleet](#egress-of-the-nested-fleet), and only from its nested Nodes |
-| DNS | The bridge's DNS |
-| Everything else | Dropped, including the Gateway and GitHub |
+| Internet | The [egress proxy](#egress-and-dns) at port 3128 of the bridge's gateway address: every public host and port, over HTTP and `CONNECT` |
+| DNS | None. The proxy resolves every name |
+| Everything else | Dropped, including the Gateway, WireGuard peers and other Nodes' private services |
 
-A container cannot reach the Gateway: its traffic would leave as its Node's WireGuard address, with the Node's Gateway access. Dependency installs go through the egress model of [step 2c of the ADR 0250 rollout](/solutions/agent-runtime-and-manual-mode).
+A container cannot reach the Gateway: its traffic would leave as its Node's WireGuard address, with the Node's Gateway access. The proxy refuses that path too.
+
+## Egress and DNS
+
+This part is built. A container has full outbound access to the public internet, and all of it goes through one forward proxy on its Node. The proxy is the one place where a rule can narrow that access later, with no change to the containers. Step 2c of the [ADR 0250 rollout](/solutions/agent-runtime-and-manual-mode) decided it. The `app-dev` converge of a [prepared Node](#prepare-a-node) installs it, in `tasks/instance-egress.yml`.
+
+### The proxy
+
+Each prepared Node runs one proxy for all its containers.
+
+- **Program.** Squid from Ubuntu runs as the system user `proxy`, on port 3128 of the Instance bridge's gateway address. Its unit is `orbit-instance-egress.service`.
+- **Configuration.** `/etc/squid/orbit-instance-egress.conf`. Squid's AppArmor profile lets it read only `/etc/squid`.
+- **Checked first.** The converge parses a new configuration beside the live one, and only a configuration that parses replaces it.
+- **No stock Squid.** The converge masks the package's own `squid.service` before the package installs. So the stock configuration, which listens on every address, never runs.
+What it serves:
+
+- **Scope.** A forward proxy with `CONNECT`, open to every public host and port.
+- **Nothing kept.** It keeps no cache and no files. It sends no `Via` or `X-Forwarded-For` header.
+- **No cache manager.** It refuses requests for its own cache manager, so a container cannot read what other containers fetch.
+- **Who.** Every container on the bridge uses it, `orbit` and `agent` alike, and so does the image build container.
+- **Admission.** Only the bridge reaches the port. The bridge ACL and the Node's rule `orbit:instances-egress` admit it there. The proxy's table resets a connection to the port from anywhere else.
+- **Health.** The converge ends by checking that the proxy and its table run. Otherwise it fails with `instance.host_unavailable`.
+
+Names and the record:
+
+- **Names.** Containers have no resolver. The proxy resolves each name through the Node's stub resolver, `127.0.0.53`.
+- **Private names.** The proxy refuses a name in the fleet's private routing domains before any lookup. So such a lookup does not reach the VPN's DNS.
+- **Private domains.** `orbit`, the VPN domain, the Cluster and Node domains, and the private Route names. Each converge renews the list.
+- **A new domain.** A domain added after the last converge is looked up. The table still refuses its address.
+- **Record.** Squid writes one journal line per request. It holds the container's bridge address, the request, the status and the server address.
+- **Not reported.** The Node's agent does not report these lines yet.
+
+### The proxy's table
+
+The nftables table `orbit_instance_egress` keeps the proxy on the public internet:
+
+- **Refused.** It rejects every new connection of `proxy` to the Node's own addresses and the WireGuard interface `orbit`.
+- **Also refused.** Every private or special IPv4 address, and all of IPv6.
+- **IPv4 ranges.** `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.0.0.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `224.0.0.0/4` and `240.0.0.0/4`.
+- **No IPv6.** A LAN often uses global IPv6 addresses, which no fixed range tells from the internet. So the proxy uses IPv4 only.
+- **Admitted.** Only the stub resolver, on port 53.
+What that means:
+
+- **Effect.** The rule holds whatever a name resolves to. The proxy answers 503.
+- **Out of reach.** The Gateway, WireGuard peers, other Nodes' private services and the Node's LAN.
+- **Order.** The table's unit, `orbit-instance-egress-table.service`, loads early at boot.
+- **Bound.** The proxy's unit binds to the table's unit (`BindsTo`). Each start first checks that the table is loaded.
+
+### Proxy settings in a container
+
+Orbit sets the proxy for everything that runs in a container. Tools read the upper-case or the lower-case names, so both are set:
+
+- `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy` and `https_proxy` are `http://<bridge gateway>:3128`.
+- `NO_PROXY` and `no_proxy` are `localhost,127.0.0.1,::1,<bridge gateway>`, so the model forwarder stays off the proxy.
+- `NODE_USE_ENV_PROXY=1` makes Node's own `fetch` use the proxy.
+
+| Where | File |
+| --- | --- |
+| Every unit: T3, FrankenPHP and each Process. Claude Code, Codex and their commands inherit it from T3 | `DefaultEnvironment` in `/etc/systemd/system.conf.d/90-orbit-runtime.conf`, beside the runtime folder's variables |
+| `incus exec`: the Node's patch run and the image build | The profile's `environment.*` keys |
+| Deploy steps of a default Instance, which run under `env -i` | The intent's `environment` list: `HOME`, `USER`, `LOGNAME`, `PATH` and the container environment |
+| Login shells | `/etc/profile.d/90-orbit-runtime.sh` |
+| apt | `/etc/apt/apt.conf.d/90orbit-egress` |
+
+A container takes no DNS server from DHCP (`/etc/netplan/90-orbit-no-dns.yaml`), and its resolver has no fallback (`/etc/systemd/resolved.conf.d/90-orbit-no-dns.conf`). So a name lookup in a container fails at once.
+
+So Composer, npm, Bun, Vite+, Git over HTTPS, curl, apt, Guzzle and Node's `fetch` use the proxy without further settings. A tool that ignores the variables fails at its name lookup, such as PHP's `file_get_contents` on a URL or a headless browser. An Instance's own HTTP services, such as a private Reverb host, are not in `NO_PROXY` yet. UDP, so also QUIC, and other protocols get no route out. Git over SSH does not work. The container holds no GitHub credentials, so [Git in and out](#git-in-and-out) still goes through the Node.
 
 ## Lifecycle
 
@@ -197,13 +268,13 @@ The first default Instance and its deployments are built for the Nodes of the [b
 | Git | The Node fetches with the read token into its mirror `/var/lib/orbit/instance-repositories/<id>.git`. A bundle carries the branch into the container, and `orbit` checks it out in `/srv/workspace` |
 | Checkout path | The workspace's path on the Node, inside the container's root file system. It keeps the path unique on the Node; Orbit never works in it from the Node |
 | `.env` | In the workspace's application directory, for `orbit` with group `work`, mode 0640 |
-| Deploy steps | Each runs as `orbit` at `/srv/workspace`, from its own vault copy. Its environment holds only `HOME`, `USER`, `LOGNAME`, `PATH`, and the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1` |
+| Deploy steps | Each runs as `orbit` at `/srv/workspace`, from its own vault copy. Its environment holds only `HOME`, `USER`, `LOGNAME`, `PATH`, the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, and the [proxy settings](#proxy-settings-in-a-container) |
 | `PATH` | The Project's PHP build, then the runtime folder's `bin`, then the system folders |
 | FrankenPHP | The unit `orbit-frankenphp.service` runs `frankenphp php-server` as `orbit` on port 8080 of the bridge address. The Route proxies to it; the Node runs no PHP pool for it |
 | Seed | After the first build and each deployment that passes, Orbit stops the units, takes `seed-<commit>` and starts them again. It deletes older seeds, and the runtime row records the commit |
 | Deployment | The variant `container` starts a stopped container and fetches the commit on the Node. It refuses `deployment.checkout_dirty`, `deployment.commit_not_on_branch` and `deployment.branch_diverged` as a checkout does |
 
-A container default cannot reach a Database server yet, so it uses the database its Project names in the workspace; `--database-server` refuses with `operation.kind_unavailable`. A Project with development Process definitions refuses the same way. Dependency installs in the deploy steps need the container egress path of [step 2c of the rollout](/solutions/agent-runtime-and-manual-mode).
+A container default cannot reach a Database server yet, so it uses the database its Project names in the workspace; `--database-server` refuses with `operation.kind_unavailable`. A Project with development Process definitions refuses the same way. Dependency installs in the deploy steps reach the internet through the [egress proxy](#egress-and-dns).
 
 A web-serving Project without a PHP version refuses with `project.source_defaults_incomplete`, and one whose PHP build the runtime folder lacks with `instance.host_unavailable`. Destroy, setup, `env:sync`, `env:import`, transfer, rename and clone refuse a container Instance with `operation.kind_unavailable`: they work on a checkout from the Node. Another Instance of the Project refuses with `instance.default_missing` on any Node but the default's, and with `operation.kind_unavailable` on that Node until clones are built.
 
@@ -459,22 +530,15 @@ The agent reaches its fleet as on a task VM, with its own tunnel.
 
 ### Egress of the nested fleet
 
-The nested test Nodes have full access to the public internet, always through an Orbit egress proxy. The proxy is the one place where a rule can narrow that access, with no change to the containers.
+The nested test Nodes reach the public internet through the Node's [egress proxy](#egress-and-dns), as the container itself does.
 
 | Part | Rule |
 | --- | --- |
-| Where it sits | An Orbit Process on the Instance's Node, on its own port of the Instance bridge's gateway address, beside the model forwarder |
 | Bridge | A nested-fleet container sits on the same bridge `orbitinst0`, with port isolation |
-| Path | A nested Node sends through `oe-nested` and the outer container's NAT to the Node's bridge |
-| Admission | The container's bridge ACL admits the proxy's port, and an input rule on the Node admits it from the bridge. Nothing else outside the Node is reachable |
-| Public only | The proxy resolves each name itself. After that it refuses private, loopback, link-local, CGNAT, fleet, WireGuard and Node addresses |
-| Orbit names | The proxy refuses `.orbit` names, so a nested Node never reaches the Gateway or the fleet through the Node |
-| Scope | A forward proxy with `CONNECT`, open to every public host and port |
-| Other traffic | UDP, so also QUIC, and other protocols get no route out. Git over SSH does not work. DNS comes from the bridge |
-| Settings | The fleet build sets `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` for the nested Nodes, their package managers and their Docker daemons. Fleet and `.orbit` names stay off the proxy |
-| Record | The proxy logs each connection. The Node's agent reports those lines as egress facts of the Instance, by its bridge address, so `task:egress` shows them |
-
-Inside the outer container, a forward rule lets only traffic from `oe-nested` reach the proxy, and the output rule drops the proxy for `orbit`. `agent` drives the inner Incus, so it can reach the internet through a nested Node. That is accepted for a nested-fleet container; `orbit` cannot.
+| Path | A nested Node sends through `oe-nested` and the outer container's NAT to the proxy, so the proxy sees the container's bridge address |
+| DNS | The nested fleet's own names come from its own DNS. Outside names resolve at the proxy |
+| Settings | The fleet build sets `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` for the nested Nodes, their package managers and their Docker daemons. Fleet names stay off the proxy |
+| Record | The proxy's lines carry the container's bridge address, so they belong to the Instance. [PR 10](/solutions/development-container-runtime#pr-10-the-nested-fleet) has the Node's agent report them as egress facts, so `task:egress` shows them |
 
 ### Take and restore `base`
 
@@ -482,7 +546,7 @@ A proof restores each nested container to its `base` snapshot. On a directory po
 
 ## Git in and out
 
-A container cannot reach GitHub. Orbit moves branches from the Node, as it does for [task VMs](/reference/compute-drivers#git-on-a-task-vm): it fetches with a minted read token and pushes the branch into the container's repository. Publishing a branch is an Orbit operation: Swamp reads the branch out of the container and pushes it with a minted write token. The tokens never enter the container.
+A container holds no GitHub credentials. It can read public repositories through the [egress proxy](#egress-and-dns), but it cannot push. Orbit moves the Instance's branches from the Node, as it does for [task VMs](/reference/compute-drivers#git-on-a-task-vm): it fetches with a minted read token and pushes the branch into the container's repository. Publishing a branch is an Orbit operation: Swamp reads the branch out of the container and pushes it with a minted write token. The tokens never enter the container.
 
 ## Production Instances
 
@@ -560,7 +624,7 @@ T3's changed-files view, terminals and browser work on its own disk. From outsid
 
 ### Two users, no wrapper
 
-The boundary that matters is the preview URL, which reaches only `orbit`. A switch for agent commands adds little. The container holds only its Project's `.env`, and its traffic goes through Orbit. Codex also has no documented setting for its shell.
+The boundary that matters is the preview URL, which reaches only `orbit`. A switch for agent commands adds little. The container holds only its Project's `.env`, and its traffic goes through Orbit's egress proxy. Codex also has no documented setting for its shell.
 
 ### Clones of a default that never runs T3
 
@@ -569,6 +633,10 @@ A clone of a container that ran T3 serves the same environment id. It also accep
 ### Shared folders per Node
 
 One update reaches every container, and the image keeps only what rarely changes. An idmapped mount keeps one gid valid in every container.
+
+### One proxy for all egress
+
+A container gets full outbound access, but only through one proxy on its Node, so a later rule can narrow it in one place. Without the proxy, a container's packets would leave through the Node, and a packet to a fleet address would leave as the Node's WireGuard address, with the Node's access. The table of the proxy's user stops that whatever a name resolves to. DNS also goes through the proxy: a resolver in the container would be a second way out and would send lookups of fleet names to the VPN's DNS.
 
 ### Registration from the result
 

@@ -7,7 +7,7 @@ namespace App\Domain\Instances;
 /**
  * The container image of a development Instance (docs/reference/development-containers.md#inside-a-container): the stock Ubuntu image
  * with the OS packages the runtime needs, the users `agent` and `orbit` in the group `work`, no sudo, the firewall of the model route
- * and T3's port, `hidepid`, and the T3 unit, which starts only once the create flow writes `/etc/orbit/instance`. No PHP, Node or agent
+ * and T3's port, the egress proxy for everything and no DNS, `hidepid`, and the T3 unit, which starts only once the create flow writes `/etc/orbit/instance`. No PHP, Node or agent
  * software: those come from the shared folders. The host builds it once per alias, a digest of this whole definition.
  */
 final readonly class InstanceImage
@@ -47,13 +47,14 @@ final readonly class InstanceImage
                 ['path' => '/etc/nftables.conf', 'content' => self::firewall($gateway), 'uid' => 0, 'gid' => 0, 'mode' => '0640'],
                 ['path' => '/etc/systemd/system/t3.service', 'content' => self::t3Unit(), 'uid' => 0, 'gid' => 0, 'mode' => '0640'],
                 ['path' => '/etc/sysctl.d/90-orbit-no-userns.conf', 'content' => "# Managed by Orbit.\nuser.max_user_namespaces = 0\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                ...self::egress($gateway),
                 ['path' => '/home/orbit/.gitconfig', 'content' => "[safe]\n\tdirectory = ".InstanceHostIntent::Workspace."\n",
                     'uid' => InstanceHostIntent::OrbitUid, 'gid' => InstanceHostIntent::OrbitUid, 'mode' => '0640'],
-                // The runtime environment for units (T3, its agents and every Orbit Process) and login shells; the Instance profile
+                // The container environment for units (T3, its agents and every Orbit Process) and login shells; the Instance profile
                 // gives it to `incus exec` sessions.
-                ['path' => '/etc/systemd/system.conf.d/90-orbit-runtime.conf', 'content' => "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=".self::assignments(self::Path)."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                ['path' => '/etc/systemd/system.conf.d/90-orbit-runtime.conf', 'content' => "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=".self::assignments(self::Path, $gateway)."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
                 // A login shell keeps the PATH it inherits, such as the agent folder that T3's unit gives `agent`.
-                ['path' => '/etc/profile.d/90-orbit-runtime.sh', 'content' => "# Managed by Orbit.\nexport ".self::assignments(self::ShellPath)."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                ['path' => '/etc/profile.d/90-orbit-runtime.sh', 'content' => "# Managed by Orbit.\nexport ".self::assignments(self::ShellPath, $gateway)."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
                 // Codex reads its update check only from its own configuration; the create flow adds the model provider.
                 ['path' => '/home/agent/.codex/config.toml', 'content' => "check_for_update_on_startup = false\n",
                     'uid' => InstanceHostIntent::AgentUid, 'gid' => InstanceHostIntent::AgentUid, 'mode' => '0600'],
@@ -68,12 +69,21 @@ final readonly class InstanceImage
         return ['alias' => self::StableAlias.'-'.substr(hash('sha256', json_encode($image, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)), 0, 12), ...$image];
     }
 
-    private static function assignments(string $path): string
+    /**
+     * The environment of every process in a container beside its PATH: the runtime folder's and the egress proxy's.
+     *
+     * @return array<string, string>
+     */
+    public static function environment(string $gateway): array
     {
-        $environment = ['PATH' => $path, ...self::RuntimeEnvironment];
+        return [...self::RuntimeEnvironment, ...InstanceEgress::environment($gateway)];
+    }
 
-        return implode(' ', array_map(static fn (string $name, string $value): string => "{$name}={$value}",
-            array_keys($environment), $environment));
+    private static function assignments(string $path, string $gateway): string
+    {
+        $environment = ['PATH' => $path, ...self::environment($gateway)];
+
+        return implode(' ', array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment));
     }
 
     private static function prepare(): string
@@ -128,6 +138,26 @@ final readonly class InstanceImage
             }
 
             NFT;
+    }
+
+    /**
+     * The egress model inside a container (docs/reference/development-containers.md#egress-and-dns), beyond the environment: apt reads
+     * its own proxy setting. The network takes no DNS server from DHCP and the resolver has no fallback, so a name lookup fails at once
+     * instead of waiting for a server the Node does not answer for.
+     *
+     * @return list<array{path: string, content: string, uid: int, gid: int, mode: string}>
+     */
+    private static function egress(string $gateway): array
+    {
+        $origin = InstanceEgress::origin($gateway);
+        $file = static fn (string $path, string $content, string $mode = '0644', string $comment = '#'): array => ['path' => $path,
+            'content' => $comment." Managed by Orbit.\n".$content, 'uid' => 0, 'gid' => 0, 'mode' => $mode];
+
+        return [
+            $file('/etc/apt/apt.conf.d/90orbit-egress', "Acquire::http::Proxy \"{$origin}\";\nAcquire::https::Proxy \"{$origin}\";\n", comment: '//'),
+            $file('/etc/netplan/90-orbit-no-dns.yaml', "network:\n  version: 2\n  ethernets:\n    eth0:\n      dhcp4: true\n      dhcp4-overrides:\n        use-dns: false\n        use-domains: false\n", '0600'),
+            $file('/etc/systemd/resolved.conf.d/90-orbit-no-dns.conf', "[Resolve]\nDNS=\nFallbackDNS=\n"),
+        ];
     }
 
     /** T3 runs as `agent` from the agent folder, and only in an Instance the create flow has named; the default Instance has none. */

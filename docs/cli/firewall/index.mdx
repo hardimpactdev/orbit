@@ -20,6 +20,8 @@ orbit-agent will be the only collector of live UFW facts, with `observed_at`, an
 
 Task VM hosts also own three input rules: `orbit:task-vms-dhcp`, `orbit:task-vms-dns-tcp` and `orbit:task-vms-dns-udp`. A host with task containers owns three more for its container bridge: `orbit:task-containers-dhcp`, `orbit:task-containers-dns-tcp` and `orbit:task-containers-dns-udp`. They appear with `--managed`, apply during the base refresh, and withdraw before host settings removal, before a change of their bridge, or during reachable Node removal. The live comparison includes the DHCP source port.
 
+An `app-dev` Node on the [container build list](/reference/development-containers#the-build-list) owns two input rules for its Instance bridge: `orbit:instances-dhcp` and `orbit:instances-egress`, which admits the [egress proxy](/reference/development-containers#egress-and-dns). It owns no DNS rule: its containers get no DNS. Both appear with `--managed` and apply with the role converge.
+
 Task VM ingress rules apply to the Incus guest Nodes. Provider-side cloud firewall rules are not part of this family.
 
 ## Commands

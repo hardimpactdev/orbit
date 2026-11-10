@@ -40,6 +40,8 @@ These decisions are settled. Later steps build on them without asking again.
 | 2026-11-09 | T3 creates its identity on the first start of each clone. |
 | 2026-11-09 | T3 history is deleted with its Instance. An archive comes later. |
 | 2026-11-09 | MCP servers come from the project's own files. The agents use their own subagents only. |
+| 2026-11-10 | Containers get full outbound access, all of it through one proxy on the Node that a rule can narrow later. |
+| 2026-11-10 | Containers hold no secrets beyond `.env`. They reach neither the Gateway, WireGuard peers nor other Nodes' private services. |
 
 The earlier decision that T3 threads live on the always-on Mac mini and drive an agent in a container from outside is replaced by the T3 server inside the container.
 
@@ -80,7 +82,7 @@ Track A replaces task VMs and the Project VM with containers, in the order ADR 0
 | 1 | Put ADR 0250 and this plan up for review. | In review |
 | 2a | Reboot all managed Nodes into current kernels. | Done: 7.0.0-43 on 9 November |
 | 2b | Block SCTP on every Node through node converge. | In progress in the reboot-fixes PR; set by hand on Beast, Shark and Sabre |
-| 2c | Define the container egress and DNS model on Beast. | Open |
+| 2c | Define the container egress and DNS model on Beast. | In review: a Squid proxy on each Instance container host, no DNS in containers ([Egress and DNS](/reference/development-containers#egress-and-dns)) |
 | 2d | Keep secrets off agent hosts. | Open |
 | 2e | Patch kernels automatically, with planned reboots. | In progress |
 | 3 | Run Instances in containers on the Nodes of a build list, with T3 inside. | Specified in [Instance containers](/reference/development-containers); plan in [Container runtime](/solutions/development-container-runtime) |

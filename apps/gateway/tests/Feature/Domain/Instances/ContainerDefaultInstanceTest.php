@@ -144,7 +144,9 @@ describe('the first default Instance of a Project on a build-list Node', functio
             'mirror' => '/var/lib/orbit/instance-repositories/'.$operation->target_id.'.git', 'repository' => 'https://github.com/nckrtl/tool.git',
             'branch' => 'main', 'commit' => null, 'workspace' => '/srv/workspace', 'environment_file' => '/srv/workspace/.env', 'units' => [],
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin',
-                'VP_HOME=/opt/orbit-runtime/current/vite-plus-home', 'VP_NO_UPDATE_CHECK=1'],
+                'VP_HOME=/opt/orbit-runtime/current/vite-plus-home', 'VP_NO_UPDATE_CHECK=1', 'HTTP_PROXY=http://10.253.0.1:3128',
+                'HTTPS_PROXY=http://10.253.0.1:3128', 'NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1', 'http_proxy=http://10.253.0.1:3128',
+                'https_proxy=http://10.253.0.1:3128', 'no_proxy=localhost,127.0.0.1,::1,10.253.0.1', 'NODE_USE_ENV_PROXY=1'],
             'steps' => [['name' => 'install', 'phase' => 'before_activation', 'required' => true, 'timeout_seconds' => 300, 'command_digest' => hash('sha256', 'bun install')]],
             // A Project without a PHP version links no `php`.
             'php' => null,

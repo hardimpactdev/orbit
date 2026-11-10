@@ -1096,10 +1096,10 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 | Project, bridge | `containers.project`, `containers.network` | `orbit-instances`, `orbitinst0` at the first address of the Node's bridge |
 | Kernel modules, sysctl files | `orbit-task-containers` | None; `60-orbit-instances.conf` |
 | Subordinate IDs | 101,000,000 per place and the base | 65,536 for each of 201 containers, plus the task container need on a host that has both |
-| ACL egress | The VM bridge's rules | Only the model forwarder, port 8319 of the bridge address |
-| Profile | Root disk and `eth0` | Also the folders `/opt/orbit-runtime` and `/opt/orbit-agent`, read-only and idmapped |
+| ACL egress | The VM bridge's rules | Only the model forwarder and the egress proxy, ports 8319 and 3128 of the bridge address |
+| Profile | Root disk and `eth0` | Also the folders `/opt/orbit-runtime` and `/opt/orbit-agent`, read-only and idmapped, and the proxy settings as `environment.*` keys |
 | Restrictions | Nesting, interception, low-level keys | Isolated ID maps, host disks only at the two folders, proxy devices |
-| Input rules | `orbit:task-containers-*` | `orbit:instances-*` |
+| Input rules | `orbit:task-containers-*`: DHCP and DNS | `orbit:instances-*`: DHCP and the egress proxy, no DNS |
 | Clone probe | Always | On a ZFS pool only; a directory pool makes full copies |
 | Error code | `task_vm.setup_failed` | `instance.host_unavailable` |
 
@@ -1109,6 +1109,7 @@ The branch then:
 1. requires the pool, and on a ZFS pool applies the ARC cap that the system part sized, in `/etc/modprobe.d/orbit-instances-zfs.conf`;
 1. installs each shared folder (`tasks/instance-folder.yml`);
 1. prepares the bridge, project and profile;
+1. runs the [egress proxy](/reference/development-containers#egress-and-dns) and its nftables table (`tasks/instance-egress.yml`);
 1. builds the image (`tasks/instance-image.yml`).
 
 A task VM host keeps the ARC cap of its [task side](#prepare-an-incus-host), or none. The intent's `arc` is false there, so the branch writes no cap.
@@ -1119,11 +1120,11 @@ Each artifact is fetched by its digest into `/var/cache/orbit/instance-folders`.
 
 The runtime folder is readable by everyone. The agent folder's `agent/` is `root:2750` and closed to others; its notes stay public. Then `current` flips to the version. When it flips from an earlier version, a mark `.restart` stays until each running container restarts `t3.service` for the agent folder, or every `orbit-*.service` for the runtime folder, one after another, so a failed run restarts them again next time. A version that no process on the Node maps goes.
 
-The image's alias is a digest of the definition that the Gateway sends. A Node without that alias builds it in the container `orbit-instance-build`, from the stock alias, at the bridge's last address. Its NIC uses the ACL `orbitinst0-build`, which drops private ranges, and the route rule `orbit:instances-build` lets it out.
+The image's alias is a digest of the definition that the Gateway sends. A Node without that alias builds it in the container `orbit-instance-build`, from the stock alias, at the bridge's last address. It has the bridge's ACL and reaches the internet through the egress proxy, which the profile names for its `incus exec`.
 
 The build waits for cloud-init's first boot to finish. The build container sets an isolated ID map, as the project requires. The build installs the packages, runs the setup script, writes the files with their owners and modes, enables the units and cleans the package lists.
 
-The build refuses an image with a sudo path: an `ubuntu` user, a file in `sudoers.d` but its README, or a member of `sudo` or `admin`. Then it publishes the container. The build container and the route rule go in every case. The stable alias `orbit-instance` then moves to the new image, and older images whose aliases are only digest aliases go.
+The build refuses an image with a sudo path: an `ubuntu` user, a file in `sudoers.d` but its README, or a member of `sudo` or `admin`. Then it publishes the container. The build container goes in every case. The stable alias `orbit-instance` then moves to the new image, and older images whose aliases are only digest aliases go.
 
 ### The base VM and its snapshot
 

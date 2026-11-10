@@ -6,6 +6,7 @@ use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Actions\Nodes\UpdateNodeAction;
 use App\Data\Nodes\NodeSettingsData;
 use App\Data\Nodes\NodeTaskVmsData;
+use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceFolderPlan;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceImage;
@@ -27,6 +28,7 @@ use App\Infrastructure\MachineSoftware\StaticPhpBuild;
 use App\Infrastructure\MachineSoftware\VitePlusHome;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
@@ -89,17 +91,20 @@ describe('the container branch of the app-dev converge', function (): void {
 
         $intent = app(InstanceHostIntent::class)->for($node);
 
-        expect(array_diff_key($intent, array_flip(['incus', 'image', 'folders'])))->toBe([
+        expect(array_diff_key($intent, array_flip(['incus', 'image', 'folders', 'egress', 'profile_config'])))->toBe([
             'project' => 'orbit-instances', 'network' => 'orbitinst0', 'pool' => 'orbit-instances', 'cidr' => '10.253.0.0/24',
             'address' => '10.253.0.1/24', 'build_address' => '10.253.0.254', 'dhcp_range' => '10.253.0.2-10.253.0.253', 'stock' => 'ubuntu-26.04-instance-stock',
             'forwarder_port' => 8319, 'ids' => 201 * 65536, 'arc' => true,
-            // `incus exec` sessions, which neither systemd nor a login shell starts, get it from the profile.
-            'profile_config' => ['environment.PATH' => '/opt/orbit-runtime/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-                'environment.VP_HOME' => '/opt/orbit-runtime/current/vite-plus-home', 'environment.VP_NO_UPDATE_CHECK' => '1'],
         ])
             ->and($intent['incus'])->toBe($recipe->incus('amd64'))
             ->and($intent['image'])->toBe(InstanceImage::for('10.253.0.1'))
-            ->and($intent['folders'])->toBe(InstanceFolderPlan::for($recipe->instances));
+            ->and($intent['folders'])->toBe(InstanceFolderPlan::for($recipe->instances))
+            ->and($intent['egress'])->toBe(InstanceEgress::for('orbitinst0', '10.253.0.1', '10.253.0.0/24', app(PeerDnsPolicy::class)->domains()))
+            // `incus exec` sessions, which neither systemd nor a login shell starts, get the container environment from the profile.
+            ->and($intent['profile_config'])->toMatchArray(['environment.PATH' => '/opt/orbit-runtime/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+                'environment.VP_HOME' => '/opt/orbit-runtime/current/vite-plus-home', 'environment.VP_NO_UPDATE_CHECK' => '1',
+                'environment.HTTPS_PROXY' => 'http://10.253.0.1:3128', 'environment.no_proxy' => 'localhost,127.0.0.1,::1,10.253.0.1'])
+            ->and($intent['profile_config'])->toHaveCount(count(InstanceImage::environment('10.253.0.1')) + 1);
     });
 
     it('needs the ID ranges of a host\'s task containers too, which share root\'s one range', function (): void {
@@ -151,7 +156,7 @@ describe('the container branch of the app-dev converge', function (): void {
             ->and($other->refresh()->instance_bridge)->toBeNull();
     });
 
-    it('lists the bridge\'s DHCP and DNS input rules under their own names for a build-list Node with a bridge', function (): void {
+    it('lists the bridge\'s DHCP and egress proxy input rules, and no DNS, for a build-list Node with a bridge', function (): void {
         $node = instanceHostNode();
         expect(app(NodeFirewallRuleCatalog::class)->instanceHostInput($node))->toBe([]);
         config(['instances.container_nodes' => [$node->id]]);
@@ -160,7 +165,9 @@ describe('the container branch of the app-dev converge', function (): void {
         $rules = app(NodeFirewallRuleCatalog::class)->instanceHostInput($node->refresh());
 
         expect(array_map(static fn ($rule): string => $rule->shape->comment, $rules))->toBe(NodeFirewallRuleCatalog::InstanceInputComments)
-            ->and($rules[1]->arguments)->toBe(['sudo', 'ufw', 'allow', 'in', 'on', 'orbitinst0', 'proto', 'tcp', 'from', 'any', 'to', '10.253.0.1', 'port', '53', 'comment', 'orbit:instances-dns-tcp'])
+            ->and($rules[0]->arguments)->toBe(['sudo', 'ufw', 'allow', 'in', 'on', 'orbitinst0', 'proto', 'udp', 'from', 'any', 'port', '68', 'to', 'any', 'port', '67', 'comment', 'orbit:instances-dhcp'])
+            ->and($rules[1]->arguments)->toBe(['sudo', 'ufw', 'allow', 'in', 'on', 'orbitinst0', 'proto', 'tcp', 'from', 'any', 'to', '10.253.0.1', 'port', '3128', 'comment', 'orbit:instances-egress'])
+            ->and(array_filter($rules, static fn ($rule): bool => $rule->shape->port === '53'))->toBe([])
             ->and(array_map(static fn ($row): string => $row->shape->comment, app(NodeFirewallDesiredRules::class)->forNode($node)))
             ->toContain(...NodeFirewallRuleCatalog::InstanceInputComments);
     });
@@ -190,10 +197,10 @@ describe('the Instance image', function (): void {
         $path = '/opt/orbit-runtime/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
 
         expect($files['/etc/systemd/system.conf.d/90-orbit-runtime.conf']['content'])
-            ->toBe("# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PATH={$path} VP_HOME=/opt/orbit-runtime/current/vite-plus-home VP_NO_UPDATE_CHECK=1\n")
+            ->toStartWith("# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PATH={$path} VP_HOME=/opt/orbit-runtime/current/vite-plus-home VP_NO_UPDATE_CHECK=1 ")
             // A login shell keeps what it inherits, such as the agent folder from T3's unit.
             ->and($files['/etc/profile.d/90-orbit-runtime.sh']['content'])
-            ->toBe("# Managed by Orbit.\nexport PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:\$PATH VP_HOME=/opt/orbit-runtime/current/vite-plus-home VP_NO_UPDATE_CHECK=1\n")
+            ->toStartWith("# Managed by Orbit.\nexport PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:\$PATH VP_HOME=/opt/orbit-runtime/current/vite-plus-home VP_NO_UPDATE_CHECK=1 ")
             ->and($files['/etc/profile.d/90-orbit-runtime.sh']['mode'])->toBe('0644');
     });
 
@@ -226,6 +233,18 @@ describe('the Instance image', function (): void {
             ->and($files['/etc/systemd/system/t3.service']['mode'])->toBe('0640')
             ->and($files['/home/agent/.codex/config.toml'])->toMatchArray(['content' => "check_for_update_on_startup = false\n", 'uid' => 2750, 'mode' => '0600'])
             ->and($files['/home/orbit/.gitconfig']['content'])->toBe("[safe]\n\tdirectory = /srv/workspace\n");
+    });
+
+    it('gives every unit, login shell and apt the egress proxy, and takes no DNS server', function (): void {
+        $files = array_column(InstanceImage::for('10.253.0.1')['files'], 'content', 'path');
+
+        expect($files['/etc/systemd/system.conf.d/90-orbit-runtime.conf'])->toContain(
+            ' HTTPS_PROXY=http://10.253.0.1:3128 ', ' https_proxy=http://10.253.0.1:3128 ', ' NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1 ', " NODE_USE_ENV_PROXY=1\n",
+        )
+            ->and($files['/etc/profile.d/90-orbit-runtime.sh'])->toContain(' HTTP_PROXY=http://10.253.0.1:3128 ', ' no_proxy=localhost,127.0.0.1,::1,10.253.0.1 ')
+            ->and($files['/etc/apt/apt.conf.d/90orbit-egress'])->toContain("Acquire::https::Proxy \"http://10.253.0.1:3128\";\n")
+            ->and($files['/etc/netplan/90-orbit-no-dns.yaml'])->toContain("use-dns: false\n")
+            ->and($files['/etc/systemd/resolved.conf.d/90-orbit-no-dns.conf'])->toContain("DNS=\nFallbackDNS=\n");
     });
 
     it('names each definition by its digest, so a change builds a new image', function (): void {

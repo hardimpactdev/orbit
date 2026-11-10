@@ -104,6 +104,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes nftables
           vendor/bin/pest --default-time-limit=5 --group privileged tests/Feature/Extensions/AiRouter/AiRouterModelForwarderTest.php --filter 'on a real kernel'
+      # The same for the Instance egress proxy's table. It runs after the forwarder's step, which installed nftables.
+      - name: Prove the Instance egress proxy's nftables table on a real kernel
+        if: steps.scope.outputs.selected == 'true'
+        working-directory: apps/gateway
+        env:
+          APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ':memory:'
+          ORBIT_REAL_KERNEL_TESTS: '1'
+        run: vendor/bin/pest --default-time-limit=5 --group privileged tests/Feature/Domain/Instances/InstanceEgressTest.php --filter 'on a real kernel'
 
   cli:
     name: CLI build

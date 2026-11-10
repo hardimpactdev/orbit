@@ -2,8 +2,8 @@
 # The Instance image (docs/reference/development-containers.md#inside-a-container). Its alias is a digest of the whole definition the
 # Gateway sends, so a host builds each definition once. A build container from the stock image installs the OS packages, sets up the
 # users, the workspace and the firewall, and is published under the alias; the stable alias `orbit-instance` then names it, and the
-# images it replaced go. Only the build container reaches the internet: it takes the bridge's last address, which no Instance gets,
-# through its own ACL and a route rule that the build removes again.
+# images it replaced go. The build container reaches the internet as every container does, through the egress proxy that the profile
+# names for `incus exec` (tasks/instance-egress.yml), and it takes the bridge's last address, which no Instance gets.
 - name: Read the Instance images
   ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", image, list, --format, json] }
   register: image_list
@@ -13,35 +13,8 @@
   when: instances.image.alias not in (image_list.stdout | from_json | map(attribute='aliases') | flatten | map(attribute='name') | list)
   vars:
     build: orbit-instance-build
-    build_acl: "{{ instances.network }}-build"
     in_build: [incus, exec, --project, "{{ instances.project }}", orbit-instance-build, --env, DEBIAN_FRONTEND=noninteractive, --]
-    build_acl_rules:
-      description: Orbit Instance image build
-      egress:
-        - { action: drop, destination: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,100.64.0.0/10,224.0.0.0/4,240.0.0.0/4", state: enabled }
-        - { action: allow, state: enabled }
-      ingress: []
   block:
-    - name: Read the build ACL
-      ansible.builtin.command: { argv: [incus, query, "--", "/1.0/network-acls?project=default&recursion=1"] }
-      register: image_acls
-      changed_when: false
-    - name: Create the build ACL
-      when: build_acl not in (image_acls.stdout | from_json | map(attribute='name') | list)
-      ansible.builtin.command: { argv: [incus, network, acl, create, "{{ build_acl }}", --project, default] }
-      changed_when: true
-    - name: Converge the build ACL
-      ansible.builtin.command:
-        argv: [incus, network, acl, edit, "{{ build_acl }}", --project, default]
-        stdin: "{{ build_acl_rules | to_json }}"
-      changed_when: true
-    - name: Let the build container out through the Node
-      community.general.ufw:
-        rule: allow
-        route: true
-        interface_in: "{{ instances.network }}"
-        from_ip: "{{ instances.build_address }}"
-        comment: orbit:instances-build
     - name: Remove a build container a failed run left
       ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", delete, --force, "--", "{{ build }}"] }
       register: image_leftover
@@ -51,8 +24,7 @@
       ansible.builtin.command: { argv: "{{ ['incus', '--project', instances.project] + item }}" }
       loop:
         # The project allows only isolated ID maps, and Incus refuses a container that does not set it.
-        - [init, "{{ instances.stock }}", "{{ build }}", --config, security.idmap.isolated=true, --device, "eth0,ipv4.address={{ instances.build_address }}",
-           --device, "eth0,security.acls={{ build_acl }}"]
+        - [init, "{{ instances.stock }}", "{{ build }}", --config, security.idmap.isolated=true, --device, "eth0,ipv4.address={{ instances.build_address }}"]
         - [start, "{{ build }}"]
       changed_when: true
     # Cloud-init's first boot makes the stock `ubuntu` user and its sudo grant; the setup script removes them only after it.
@@ -64,7 +36,7 @@
       register: image_cloud_init
       changed_when: false
       failed_when: image_cloud_init.rc not in [0, 2]
-    # The stock image starts its network a moment after the container.
+    # The stock image starts its network a moment after the container. apt goes through the proxy, which resolves the names.
     - name: Read the package index
       ansible.builtin.command: { argv: "{{ in_build + ['apt-get', 'update'] }}" }
       register: image_index
@@ -120,14 +92,6 @@
       register: image_removed
       changed_when: false
       failed_when: image_removed.rc != 0 and 'not found' not in image_removed.stderr
-    - name: Close the build container's way out
-      community.general.ufw:
-        rule: allow
-        route: true
-        interface_in: "{{ instances.network }}"
-        from_ip: "{{ instances.build_address }}"
-        comment: orbit:instances-build
-        delete: true
 
 - name: Read the Instance images after the build
   ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", image, list, --format, json] }

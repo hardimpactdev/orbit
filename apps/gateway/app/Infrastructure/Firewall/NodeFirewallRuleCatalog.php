@@ -12,14 +12,15 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressPolicy;
 use App\Domain\Instances\ContainerNodes;
+use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Nodes\RoleName;
-use App\Domain\WireGuard\LanAddress;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Domain\WireGuard\LanAddress;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Infrastructure\TaskVms\TaskVmHubPolicy;
@@ -35,8 +36,11 @@ final readonly class NodeFirewallRuleCatalog
     /** The same rules for the bridge of a host's task containers. Each bridge has its own names: a withdrawal deletes rules by comment. */
     public const array TaskContainerInputComments = ['orbit:task-containers-dhcp', 'orbit:task-containers-dns-tcp', 'orbit:task-containers-dns-udp'];
 
-    /** The same rules for the Instance bridge of a Node on the build list (docs/reference/development-containers.md#network). */
-    public const array InstanceInputComments = ['orbit:instances-dhcp', 'orbit:instances-dns-tcp', 'orbit:instances-dns-udp'];
+    /**
+     * DHCP and the egress proxy for the Instance bridge of a Node on the build list, and no DNS: the proxy resolves every name
+     * (docs/reference/development-containers.md#egress-and-dns).
+     */
+    public const array InstanceInputComments = ['orbit:instances-dhcp', InstanceEgress::Comment];
 
     /** @return list<UfwManagedRule> */
     public function instanceHostInput(Node $node): array
@@ -44,8 +48,12 @@ final readonly class NodeFirewallRuleCatalog
         if ($node->instance_bridge === null || ! app(ContainerNodes::class)->includes($node)) {
             return [];
         }
+        [$gateway] = Ipv4Subnet::from($node->instance_bridge)->usableRange();
 
-        return $this->bridgeInput(InstanceHostIntent::Network, $node->instance_bridge, self::InstanceInputComments);
+        return [
+            $this->dhcpInput(InstanceHostIntent::Network, self::InstanceInputComments[0]),
+            InstanceEgress::rule(InstanceHostIntent::Network, $gateway),
+        ];
     }
 
     /** @return list<UfwManagedRule> */
@@ -72,20 +80,24 @@ final readonly class NodeFirewallRuleCatalog
     private function bridgeInput(string $network, string $cidr, array $comments): array
     {
         [$bridge] = Ipv4Subnet::from($cidr)->usableRange();
-        $rules = [];
-        foreach (array_combine(['dhcp', 'tcp', 'udp'], $comments) as $kind => $comment) {
-            $dhcp = $kind === 'dhcp';
-            $protocol = $kind === 'tcp' ? 'tcp' : 'udp';
-            $destination = $dhcp ? 'any' : $bridge;
-            $port = $dhcp ? '67' : '53';
+        $rules = [$this->dhcpInput($network, $comments[0])];
+        foreach (['tcp' => $comments[1], 'udp' => $comments[2]] as $protocol => $comment) {
             $rules[] = new UfwManagedRule(
-                new UfwRuleShape($comment, 'allow', 'in', 'any', $destination, $port, $protocol, $network, null, 'v4', $dhcp ? '68' : 'any'),
-                ['sudo', 'ufw', 'allow', 'in', 'on', $network, 'proto', $protocol, 'from', 'any',
-                    ...($dhcp ? ['port', '68'] : []), 'to', $destination, 'port', $port, 'comment', $comment],
+                new UfwRuleShape($comment, 'allow', 'in', 'any', $bridge, '53', $protocol, $network, null, 'v4'),
+                ['sudo', 'ufw', 'allow', 'in', 'on', $network, 'proto', $protocol, 'from', 'any', 'to', $bridge, 'port', '53', 'comment', $comment],
             );
         }
 
         return $rules;
+    }
+
+    /** DHCP from the bridge, under `$comment`. */
+    private function dhcpInput(string $network, string $comment): UfwManagedRule
+    {
+        return new UfwManagedRule(
+            new UfwRuleShape($comment, 'allow', 'in', 'any', 'any', '67', 'udp', $network, null, 'v4', '68'),
+            ['sudo', 'ufw', 'allow', 'in', 'on', $network, 'proto', 'udp', 'from', 'any', 'port', '68', 'to', 'any', 'port', '67', 'comment', $comment],
+        );
     }
 
     public function __construct(

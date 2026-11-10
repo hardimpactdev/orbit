@@ -132,6 +132,7 @@
     comment: "orbit:{{ container_host.kind }}-dhcp"
 
 - name: Allow container DNS to the bridge address
+  when: container_dns | default(true)
   community.general.ufw:
     rule: allow
     interface_in: "{{ container_host.network }}"
@@ -139,6 +140,19 @@
     to_ip: "{{ container_host.address.split('/')[0] }}"
     to_port: '53'
     comment: "orbit:{{ container_host.kind }}-dns-{{ item }}"
+  loop: [udp, tcp]
+
+# An Instance host sets `container_dns` to false: its containers get no DNS, and the egress proxy resolves every name.
+- name: Remove container DNS to the bridge address
+  when: not (container_dns | default(true))
+  community.general.ufw:
+    rule: allow
+    interface_in: "{{ container_host.network }}"
+    proto: "{{ item }}"
+    to_ip: "{{ container_host.address.split('/')[0] }}"
+    to_port: '53'
+    comment: "orbit:{{ container_host.kind }}-dns-{{ item }}"
+    delete: true
   loop: [udp, tcp]
 
 # On a ZFS pool, a copy must be a clone that Incus never shifts: without idmapped mounts it would rewrite every file of a copy at its
