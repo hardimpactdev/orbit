@@ -19,7 +19,7 @@ sequenceDiagram
     %%> - the flag defaults on when a new container default becomes ready; enable and disable change that one flag for one Instance
     %%> - a data migration enables existing ready defaults once; checkout Instances and production settings remain unchanged
     %%> - never selects checkout Instances: they are the user's working trees, not managed seed containers
-    %%> - runs the unique scan on the existing tasks queue, not the single-worker operations queue
+    %%> - runs the unique scan on the existing tasks queue, not the single-worker operations queue; an execution lock prevents overlap even after delayed queue delivery
     %%> - reads each eligible Project's default branch once through the cached source reader, with the existing 60-second Git read limit; no environment-template refresh
     alt seed matches branch head
       Note over GW: Nothing to deploy<br/>no Swamp run
@@ -27,6 +27,8 @@ sequenceDiagram
       GW->>SW: Run development policy<br/>only the selected Instance IDs
       %%> What it does:
       %%> - shares the retained behavior identity and development state; keeps pending admissions, backoff and retry limits
+      %%> - reads a retained pending Operation by ID; succeeded or failed Operations settle for their admitted commit, never the newer head
+      %%> - an old terminal checkpoint or failure cannot block a newer green head after an Instance moves into a container
       %%> - never discovers or admits production work; its paused production schedule stays unchanged
       Note over SW: Check the moved head<br/>Project merge_check
       %%> What it does:

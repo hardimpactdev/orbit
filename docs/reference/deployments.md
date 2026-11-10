@@ -304,7 +304,7 @@ After that reload, a rollback reloads or restarts the same active, opted-in Inst
 
 Production policy keeps its independent Swamp schedule at second 30 (`30 * * * * *`) and its existing pause. Development uses an enabled Gateway scheduler job each minute.
 
-The unique development scan runs on the existing `tasks` queue, away from operation starts and reconciliation on `operations`. Each repository's Git read retains its 60-second limit.
+The unique development scan runs on the existing `tasks` queue, away from operation starts and reconciliation on `operations`. An execution lock prevents overlapping scans even after delayed queue delivery. The lock expires after 1,680 seconds, beyond the job's 1,620-second timeout. Each repository's Git read retains its 60-second limit.
 
 The scan selects only active container defaults with a seed snapshot, `auto_deploy` on and active `app-dev` placement, using the same ready-default rule as [`conn:project:list`](/reference/conn#threads-in-an-orbit-project). It reads each eligible Project default branch once and compares it with the runtime's snapshot seed commit. A matching default starts no Swamp run and makes no policy HTTP requests or vault reads. Only container defaults behind their branch enter a development-only Swamp policy run.
 
@@ -419,7 +419,9 @@ The commits and checks reads require the Project's GitHub App access. They retur
 
 Instance list/show and broadcasts expose `auto_deploy.policy_owner`, `auto_deploy.resumed_after`, `auto_deploy.blocked`, and `auto_deploy.history_version`. The cursor is set only by `instance:auto-deploy:enable`. The block list combines durable rollback blocks and retained rolled-away history without waiting for a tick. When automatic deployment is off, the block list is empty and the history version is null; these reads make no policy-history query. Swamp keeps its retry and gate state itself. Deployment list/show expose `kind` (`deploy` or `rollback`); origin is recorded in `triggered_by`, with the authorized automatic caller in `caller_node_id`.
 
-A found automatic receipt is the original operation, including its bound caller in `input.caller_node_id`, status, result, and error. Follow that operation and read fresh deployment history before deciding what happened. A missing receipt means only that no admission is recorded at the read: an earlier request might still be in flight. It never authorizes a retry. A worker-lost outcome or a terminal operation without required effect evidence stays unresolved. Keyed operations are retained. Neither lookup nor outcome resolution starts work.
+A found automatic receipt is the original operation, including its bound caller in `input.caller_node_id`, status, result, and error. Follow that operation and read fresh deployment history before deciding what happened. A missing receipt means only that no admission is recorded at the read: an earlier request might still be in flight. It never authorizes a retry. Keyed operations are retained. Neither lookup nor outcome resolution starts work.
+
+Development settles a succeeded or failed Operation for its admitted commit even if history is absent. A failed Operation without history backs off that same commit for ten minutes. A newer green head can proceed. An incomplete cancellation or loss of a worker still needs evidence of its effects or reconciliation. Production keeps its existing terminal-evidence requirements.
 
 ### Clear an unresolved admission hold
 
@@ -429,7 +431,7 @@ Use `POST /api/v1/instances/{instance}/deploy/automatic/resolve` (MCP `instance-
 
 If admission is absent, this writes a retained cancelled operation with `operation.admission_fenced`, zero attempts, no target lock, and no deployment. Its unique request identity fences a delayed admission: every later POST with that key returns the cancelled receipt. Swamp may resolve its own stale keys automatically. No operator action is needed for normal lost-response recovery. Repeating resolution returns the same receipt. A different caller, Instance, or commit conflicts.
 
-If admission already exists, resolution returns its receipt without cancelling or rewriting it. Follow an active operation until it ends. Swamp clears its intent on the zero-attempt fenced receipt and may use a fresh key on its next tick. Other holds clear only from terminal effect evidence; resolution never starts a replacement deploy.
+If admission already exists, resolution returns its receipt without cancelling or rewriting it. Follow an active operation until it ends. Swamp clears its intent on the zero-attempt fenced receipt and may use a fresh key on its next tick. Other holds clear from the terminal outcome rules above; resolution never starts a replacement deploy.
 
 A terminal worker-lost receipt without effect evidence still needs investigation: stop the old host writer, inspect the live release, then reconcile through a manual deploy or rollback before resuming. Do not clear Swamp storage by hand. After reconciliation, resume with `orbit instance:auto-deploy:enable <instance>`; the rollback block remains. A missing receipt alone never permits resume or a new request key.
 
@@ -637,7 +639,9 @@ When a development deploy runs, it leaves Process definitions, Route publication
 
 A development start explicitly refused by Swamp or unavailable before sending does not create deployment history. This includes a failed execution-copy vault synchronization with zero attempts and no result, which happens before workflow submission. The next scheduled policy observation releases that failed pending admission and may admit a fresh automatic deployment on a later tick. An uncertain start retains its pending intent until its outcome is known.
 
-Policy checkpoints stay durable before and after keyed admission. When one tick writes a state resource several times, its native output contains only the last handle for that resource name. Earlier checkpoint handles are not duplicate method outputs.
+Policy checkpoints stay durable before and after keyed admission. A retained pending intent with an Operation ID reads that Operation from the Gateway. A succeeded or failed Operation settles for the intent's commit, not the current head. A newer green head can then deploy, including after a checkout Instance moves into a container. Old `failed` or `commit_failed` results do not block a different commit; deployment retry counts come from that commit's history.
+
+When one tick writes a state resource several times, its native output contains only the last handle for that resource name. Earlier checkpoint handles are not duplicate method outputs.
 
 The Gateway precheck owns development discovery and the seed/head comparison. Swamp owns backoff, retry limits and admission.
 

@@ -9,6 +9,7 @@ use App\Domain\Instances\Deployment\DevelopmentDeployPrecheck;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 
 final class CheckDevelopmentDeployments implements ShouldBeUnique, ShouldQueue
 {
@@ -23,6 +24,12 @@ final class CheckDevelopmentDeployments implements ShouldBeUnique, ShouldQueue
     public function __construct()
     {
         $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Tasks->value);
+    }
+
+    /** @return list<WithoutOverlapping> */
+    public function middleware(): array
+    {
+        return [(new WithoutOverlapping)->dontRelease()->expireAfter($this->uniqueFor)];
     }
 
     public function handle(DevelopmentDeployPrecheck $precheck): void

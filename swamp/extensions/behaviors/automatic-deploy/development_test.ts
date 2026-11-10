@@ -37,6 +37,7 @@ function fixture() {
         }[] = [];
     const history: Row[] = [], starts: string[] = [], checks: Check[] = [];
     const writes: { name: string; version: number }[] = [];
+    const operationReads: number[] = [];
     const source = { head: B };
     let holder = false,
         lost = false,
@@ -103,8 +104,9 @@ function fixture() {
         resolve: () => {
             throw new Error("An existing receipt must not be fenced");
         },
-        operation: (id: number) =>
-            Promise.resolve(
+        operation: (id: number) => {
+            operationReads.push(id);
+            return Promise.resolve(
                 id === 200
                     ? {
                         ...operation,
@@ -113,7 +115,8 @@ function fixture() {
                         status: repairStatus,
                     }
                     : structuredClone(operation),
-            ),
+            );
+        },
     };
     const ctx = {
         readResource: (name: string) =>
@@ -151,6 +154,7 @@ function fixture() {
         starts,
         writes,
         operation,
+        operationReads,
         run,
         emitted,
         busy: () => {
@@ -339,18 +343,119 @@ Deno.test("a lost admission response follows its receipt without a second start"
     assertEquals(f.receiptReads(), 1);
     assertEquals(f.memory.get("development-7")?.result, "deploying");
 });
-Deno.test("terminal work without history cannot authorize a new effect", async () => {
+for (const status of ["succeeded", "failed"] as const) {
+    for (const historyVisible of [false, true]) {
+        Deno.test(`retained ${status} Operation settles its old commit before a newer green head deploys (history ${historyVisible})`, async () => {
+            const f = fixture();
+            f.instance.auto_deploy.gate = "Required checks";
+            f.checks.push({
+                name: "Required checks",
+                head_sha: B,
+                app: "github-actions",
+                status: "completed",
+                conclusion: "success",
+            });
+            f.memory.set("development-7", {
+                sequence: 4,
+                pending: {
+                    commit: A,
+                    key: "old-checkout-key",
+                    operation_id: 100,
+                    manual_after: 0,
+                },
+                result: "deploying",
+                commit: A,
+            });
+            Object.assign(f.operation, {
+                status,
+                input: { commit: A },
+                result: historyVisible ? { deployment_id: 1 } : null,
+                attempts: 1,
+            });
+            if (historyVisible) {
+                f.history.push({ ...failed(1), status, commit: A });
+            }
+
+            await f.run();
+
+            assertEquals(f.operationReads, [100]);
+            assertEquals(f.receiptReads(), 0);
+            const publications = f.requests.filter((r) => r.method === "PUT")
+                .map((r) =>
+                    r.body as { result: string; commit: string; head: string }
+                );
+            assertEquals(publications[0].commit, A);
+            assertEquals(publications[0].head, B);
+            assertEquals(
+                publications[0].result,
+                status === "succeeded" ? "up_to_date" : "failed",
+            );
+            // The next fresh tick must not trust the retained ended Operation as a holder.
+            if (!f.starts.length) await f.run("2026-10-31T05:01:00.000Z");
+            assertEquals(f.starts.length, 1);
+            assertEquals(f.starts[0].endsWith(B), true);
+            assertEquals(f.memory.get("development-7")?.result, "started");
+        });
+    }
+}
+for (const result of ["commit_failed", "failed", "up_to_date"]) {
+    Deno.test(`retained ${result} for an old checkout commit cannot block a newer green container head`, async () => {
+        const f = fixture();
+        f.instance.auto_deploy.gate = "Required checks";
+        f.checks.push({
+            name: "Required checks",
+            head_sha: B,
+            app: "github-actions",
+            status: "completed",
+            conclusion: "success",
+        });
+        f.memory.set("development-7", {
+            sequence: 4,
+            result,
+            commit: A,
+            pending: null,
+            retry_after: "2026-10-31T06:00:00.000Z",
+        });
+        for (let id = 1; id <= 3; id++) {
+            f.history.push({ ...failed(id), commit: A });
+        }
+        await f.run();
+        assertEquals(f.starts.length, 1);
+        assertEquals(f.starts[0].endsWith(B), true);
+    });
+}
+Deno.test("waiting for green does not reassign an old commit's retry timer to the new head", async () => {
+    const f = fixture();
+    f.instance.auto_deploy.gate = "Required checks";
+    f.checks.push({
+        name: "Required checks",
+        head_sha: B,
+        app: "github-actions",
+        status: "in_progress",
+        conclusion: null,
+    });
+    f.memory.set("development-7", {
+        result: "failed",
+        commit: A,
+        retry_after: "2026-10-31T06:00:00.000Z",
+    });
+    await f.run();
+    assertEquals(f.starts, []);
+    assertEquals(f.memory.get("development-7")?.result, "gate_pending");
+    f.checks[0].status = "completed";
+    f.checks[0].conclusion = "success";
+    await f.run("2026-10-31T05:01:00.000Z");
+    assertEquals(f.starts.length, 1);
+});
+Deno.test("a failed ended Operation without history settles and backs off the same head", async () => {
     const f = fixture();
     await f.run();
     f.operation.status = "failed";
     await f.run();
     await f.run();
     assertEquals(f.starts.length, 1);
-    assertEquals(
-        (f.memory.get("development-7")?.pending as { operation_id: number })
-            .operation_id,
-        100,
-    );
+    assertEquals(f.memory.get("development-7")?.pending, null);
+    assertEquals(f.memory.get("development-7")?.result, "backing_off");
 });
 Deno.test("interrupted development deploys settle, back off and re-admit the head", async () => {
     const f = fixture();
@@ -392,11 +497,11 @@ Deno.test("interrupted development deploy without evidence backs off once then a
         assertEquals(f.memory.get("development-7")?.pending, null);
         assertEquals(f.memory.get("development-7")?.result, "failed");
         assertEquals(f.history[0].status, "running");
-        f.source.head = "c".repeat(40);
         await f.run("2026-10-31T05:09:59.000Z");
         assertEquals(f.memory.get("development-7")?.result, "backing_off");
         assertEquals(f.starts.length, 1);
         // Use a fresh policy invocation with persisted state, not an in-memory timer.
+        f.source.head = "c".repeat(40);
         f.operation.status = "queued";
         await f.run("2026-10-31T05:10:00.000Z");
         assertEquals(f.starts.length, 2);
@@ -440,7 +545,7 @@ Deno.test("a definite start failure releases pending intent for the next schedul
     }
 });
 
-Deno.test("an uncertain or executed failure without history retains pending intent", async () => {
+Deno.test("ended failures settle while incomplete interrupted or cancelled receipts retain their hold", async () => {
     for (
         const receipt of [
             {
@@ -504,11 +609,17 @@ Deno.test("an uncertain or executed failure without history retains pending inte
         await f.run();
         await f.run();
         assertEquals(f.starts.length, 1);
-        assertEquals(
-            (f.memory.get("development-7")?.pending as { operation_id: number })
-                .operation_id,
-            100,
-        );
+        if (receipt.status === "failed") {
+            assertEquals(f.memory.get("development-7")?.pending, null);
+            assertEquals(f.memory.get("development-7")?.result, "backing_off");
+        } else {
+            assertEquals(
+                (f.memory.get("development-7")?.pending as {
+                    operation_id: number;
+                }).operation_id,
+                100,
+            );
+        }
     }
 });
 

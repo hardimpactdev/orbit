@@ -24,6 +24,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -303,6 +304,31 @@ it('runs the unique development scan on the background tasks queue', function ()
 
     expect($job->connection)->toBe('gateway')->and($job->queue)->toBe('tasks')
         ->and($job)->toBeInstanceOf(ShouldBeUnique::class);
+});
+
+it('prevents overlapping development scans after enqueue uniqueness expires', function (): void {
+    $first = new CheckDevelopmentDeployments;
+    $second = new CheckDevelopmentDeployments;
+    $runs = 0;
+    $unique = app(UniqueLock::class);
+    expect($unique->acquire($first))->toBeTrue();
+    $this->travel($first->uniqueFor + 1)->seconds();
+    expect($unique->acquire($second))->toBeTrue();
+
+    $first->middleware()[0]->handle($first, function () use ($second, &$runs): void {
+        $runs++;
+        $second->middleware()[0]->handle($second, function () use (&$runs): void {
+            $runs++;
+        });
+        expect($runs)->toBe(1);
+    });
+    $second->middleware()[0]->handle($second, function () use (&$runs): void {
+        $runs++;
+    });
+
+    expect($runs)->toBe(2);
+    $unique->release($second);
+    $this->travelBack();
 });
 
 it('registers an independent enabled minute tick', function (): void {

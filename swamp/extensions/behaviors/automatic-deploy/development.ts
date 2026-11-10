@@ -157,9 +157,10 @@ export async function tickDevelopment(
                 result: string,
                 operationId: number | null = null,
                 routeOperationId: number | null = null,
+                commit = head,
             ) => {
                 const changed = state.result !== result ||
-                    state.commit !== head;
+                    state.commit !== commit;
                 if (changed) state.since = now;
                 const activity = changed &&
                     !["up_to_date", "deploying", "gate_pending"].includes(
@@ -167,7 +168,7 @@ export async function tickDevelopment(
                     );
                 if (activity) state.sequence++;
                 state.result = result;
-                state.commit = head;
+                state.commit = commit;
                 await save();
                 await request(
                     "PUT",
@@ -180,7 +181,7 @@ export async function tickDevelopment(
                         ),
                         history_version: instance.auto_deploy.history_version,
                         result,
-                        commit: head,
+                        commit,
                         head,
                         since: state.since ?? now,
                         error_code: result === "failed"
@@ -197,7 +198,7 @@ export async function tickDevelopment(
                     emit(id, `dev.policy.${id}.${state.sequence}`, {
                         event: "activity",
                         result,
-                        commit: head,
+                        commit,
                         operation_id: operationId,
                         error_code: result === "failed"
                             ? "deployment.automatic_failed"
@@ -242,6 +243,7 @@ export async function tickDevelopment(
                     operation.status === "interrupted" &&
                     typeof operation.result?.deployment_id !== "number";
                 if (
+                    !["succeeded", "failed"].includes(operation.status) &&
                     !historyVisible &&
                     !startFailed &&
                     !interruptedWithoutDeployment &&
@@ -251,18 +253,28 @@ export async function tickDevelopment(
                     await publish("failed", operation.id);
                     continue;
                 }
-                if (interruptedWithoutDeployment) {
+                if (
+                    interruptedWithoutDeployment ||
+                    operation.status === "failed" && !historyVisible &&
+                        !startFailed
+                ) {
                     state.retry_after = new Date(Date.parse(now) + 600000)
                         .toISOString();
                 }
                 state.pending = null;
                 await save();
-                // Observe again before another decision; interrupted attempts may lack history.
                 await publish(
                     operation.status === "succeeded" ? "up_to_date" : "failed",
                     operation.id,
+                    null,
+                    intent.commit,
                 );
-                continue;
+                // A settled older commit cannot hold the current head. Same-head retries observe again first.
+                if (intent.commit === head) continue;
+            }
+            if (state.retry_after !== null && state.commit !== head) {
+                state.retry_after = null;
+                await save();
             }
             let holder: Operation | undefined;
             for (const status of ["queued", "running", "waiting"]) {
