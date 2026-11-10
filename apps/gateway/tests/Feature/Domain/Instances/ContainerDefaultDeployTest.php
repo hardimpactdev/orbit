@@ -95,7 +95,7 @@ function deployDefault(bool $container): Instance
         'default_branch' => 'main', 'root' => '.']);
     ProjectDevelopmentDeployStep::query()->create(['project_id' => $project->id, 'name' => 'npm-build', 'position' => 1, 'command' => 'npm run build', 'required' => true, 'timeout_seconds' => 300]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/srv/tool/default',
-        'status' => InstanceState::Active]);
+        'status' => InstanceState::Active, 'auto_deploy' => $container]);
     if ($container) {
         InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => 'orbit-instances',
             'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2', 'runtime_version' => 'r', 'agent_version' => 'a',
@@ -236,6 +236,19 @@ it('rechecks old automatic checkout work at execution input construction but per
     'bound automatic caller' => [null, true],
     'manual checkout operation' => ['operator', false],
 ]);
+
+it('refuses queued automatic container execution after the operator turns its flag off', function (): void {
+    $instance = deployDefault(container: true);
+    $instance->runtime()->update(['seed_commit' => str_repeat('a', 40)]);
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Queued, 'triggered_by' => 'swamp:auto-deploy', 'input' => ['platform' => 'linux', 'architecture' => 'x86_64',
+            'deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance),
+            'development_runtime' => app(DevelopmentDeployInput::class)->capture($instance, false)]]);
+    $instance->update(['auto_deploy' => false]);
+
+    expect(fn () => app(DevelopmentDeployInput::class)->workflowInput($operation))
+        ->toThrow(ResourceOperationException::class, 'Automatic deployment is not enabled for this active Instance.');
+});
 
 it('holds the Instance while a container default deploys, so a second deployment is refused', function (): void {
     Queue::fake();

@@ -8,6 +8,7 @@ use App\Data\Instances\InstanceData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\AutomaticDeployState;
 use App\Domain\Instances\Deployment\SharedPaths;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
@@ -26,8 +27,8 @@ final readonly class UpdateInstanceAction
     ) {}
 
     /**
-     * Sets the deployment branch, the shared paths, automatic deployment, or several of them, of a production
-     * Instance. Setting `auto_deploy` to true also resumes automatic deployment after a rollback paused it
+     * Sets production deployment configuration or the automatic flag of a ready development container default.
+     * Setting `auto_deploy` to true also resumes automatic deployment after a rollback paused it
      * ([Automatic deployments](/reference/deployments#automatic-deployments)).
      *
      * @param  list<string>|null  $sharedPaths
@@ -39,7 +40,11 @@ final readonly class UpdateInstanceAction
     {
         $result = $this->operations->run([$instance->id], function () use ($instance, $branch, $sharedPaths, $sharedPathsProvided, $autoDeploy): Instance {
             $locked = Instance::query()->lockForUpdate()->findOrFail($instance->id);
-            $this->resolver->assertAvailable($locked);
+            if ($autoDeploy !== null && $branch === null && ! $sharedPathsProvided && $locked->placedOnAppDev()) {
+                app(AutomaticDeployPolicyWriter::class)->assertDevelopmentConfigurable($locked);
+            } else {
+                $this->resolver->assertAvailable($locked);
+            }
             if ($branch !== null) {
                 $locked->deployment_branch = $branch;
             }

@@ -306,7 +306,7 @@ Production policy keeps its independent Swamp schedule at second 30 (`30 * * * *
 
 The unique development scan runs on the existing `tasks` queue, away from operation starts and reconciliation on `operations`. Each repository's Git read retains its 60-second limit.
 
-The scan selects only active container defaults with a seed snapshot on active `app-dev` placement, using the same ready-default rule as [`conn:project:list`](/reference/conn#threads-in-an-orbit-project). It reads each eligible Project default branch once and compares it with the runtime's snapshot seed commit. A matching default starts no Swamp run and makes no policy HTTP requests or vault reads. Only container defaults behind their branch enter a development-only Swamp policy run.
+The scan selects only active container defaults with a seed snapshot, `auto_deploy` on and active `app-dev` placement, using the same ready-default rule as [`conn:project:list`](/reference/conn#threads-in-an-orbit-project). It reads each eligible Project default branch once and compares it with the runtime's snapshot seed commit. A matching default starts no Swamp run and makes no policy HTTP requests or vault reads. Only container defaults behind their branch enter a development-only Swamp policy run.
 
 Checkout Instances are the user's working trees and are never auto-deployed, even when named `default` or recorded with `auto_deploy=true`. The Gateway rechecks the same policy when building automatic execution input, so an old queued checkout deployment cannot run after a release. Manual checkout deployment remains allowed. A container without a seed must first deploy by hand. The Gateway retains admission, locks, authorization and history.
 
@@ -325,7 +325,11 @@ A head the Gateway cannot read fails the tick for that Instance with `source.hea
 
 ### Automatic development defaults
 
-A seeded container default deploys its default branch's head. Its deployed commit is its runtime's `seed_commit`. A failed commit retries as the [failure rules](#failures-of-automatic-deployments) describe; for a default every failure is retryable. A new commit deploys at once.
+A seeded container default follows its Project's default branch. Its deployed commit is its runtime's `seed_commit`. A failed commit retries as the [failure rules](#failures-of-automatic-deployments) describe; for a default every failure is retryable.
+
+The `auto_deploy` flag has the same meaning for development and production: on permits automatic deployment; off excludes selection and admission. A new container default starts with it on when creation succeeds and records its first seed. An expand-only data migration enables existing ready container defaults; it changes neither checkout Instances nor production settings.
+
+Turn automatic deployment off for one ready container default with `orbit instance:auto-deploy:disable <instance>`. Turn it back on with `orbit instance:auto-deploy:enable <instance>`. Disabling does not cancel a deployment already running, but queued automatic work rechecks the flag before execution. Manual deployment remains available. Both commands refuse a checkout Instance with `instance.auto_deploy_container_default_required`: a user's working tree is never an automatic deployment target.
 
 ### Production Instances
 
@@ -442,7 +446,7 @@ An inactive or absent `app-prod` role refuses admission with `instance.auto_depl
 
  There is no environment flag or runtime switch.
 
-The cutover release removes the PHP production policy loop. The development cutover removes the PHP retry loop; a Gateway scheduler now filters changed defaults before entering Swamp policy. The Gateway selects only active container defaults with a seed snapshot on app-dev Nodes from its records, without requiring the production auto-deploy flag. Deploy Swamp first: it stays idle until the Gateway reports Swamp ownership. Finish or cancel in-flight PHP work through its current owner before activating the Gateway release; existing `operation.target_busy` holds serialize admissions. Swamp reconstructs policy and retries from the public projection and Gateway history.
+The cutover release removes the PHP production policy loop. The development cutover removes the PHP retry loop; a Gateway scheduler now filters changed defaults before entering Swamp policy. The Gateway selects only active container defaults with a seed snapshot on app-dev Nodes from its records, requiring the same `auto_deploy` flag as production. Deploy Swamp first: it stays idle until the Gateway reports Swamp ownership. Finish or cancel in-flight PHP work through its current owner before activating the Gateway release; existing `operation.target_busy` holds serialize admissions. Swamp reconstructs policy and retries from the public projection and Gateway history.
 
  Alert deduplication starts in Swamp: the owner accepts one possible repeat alert at cutover. Orbit exposes no stored alert-key contract.
 

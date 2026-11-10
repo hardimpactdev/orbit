@@ -237,7 +237,8 @@ it('records a created container default as running at its first seed commit', fu
     $runtime = InstanceRuntime::query()->where('instance_id', $operation->target_id)->firstOrFail();
     expect(Instance::query()->findOrFail($operation->target_id)->status)->toBe(InstanceState::Active)
         ->and($runtime->power_state)->toBe(InstanceRuntimePowerState::Running)
-        ->and($runtime->seed_commit)->toBe($commit);
+        ->and($runtime->seed_commit)->toBe($commit)
+        ->and(Instance::query()->findOrFail($operation->target_id)->auto_deploy)->toBeTrue();
 });
 
 it('keeps a failed container default stopped, with the .env keys it wrote once its deploy steps ran', function (): void {

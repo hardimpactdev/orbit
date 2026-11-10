@@ -15,7 +15,9 @@ sequenceDiagram
   loop every minute
     Note over GW: Check eligible defaults<br/>recorded placement and seed
     %%> What it does:
-    %%> - selects only active container defaults with a seed snapshot and active app-dev placement, using the same ready-default rule as conn:project:list
+    %%> - selects only active container defaults with a seed snapshot, auto_deploy on and active app-dev placement, using the same ready-default rule as conn:project:list
+    %%> - the flag defaults on when a new container default becomes ready; enable and disable change that one flag for one Instance
+    %%> - a data migration enables existing ready defaults once; checkout Instances and production settings remain unchanged
     %%> - never selects checkout Instances: they are the user's working trees, not managed seed containers
     %%> - runs the unique scan on the existing tasks queue, not the single-worker operations queue
     %%> - reads each eligible Project's default branch once through the cached source reader, with the existing 60-second Git read limit; no environment-template refresh

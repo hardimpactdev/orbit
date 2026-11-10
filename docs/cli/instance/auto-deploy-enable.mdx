@@ -1,7 +1,7 @@
 ---
 title: "orbit instance:auto-deploy:enable"
 sidebarTitle: "instance:auto-deploy:enable"
-description: "Deploy each new commit of a production Instance's branch that passed the Project's merge check automatically."
+description: "Enable automatic deployment for a production Instance or a ready development container default."
 ---
 
 ```bash
@@ -10,7 +10,7 @@ orbit instance:auto-deploy:enable <instance> [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `instance` | yes | Numeric Instance ID of an active production Instance. |
+| `instance` | yes | Numeric Instance ID of a production Instance or a ready development container default. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
@@ -24,9 +24,11 @@ In a terminal, an omitted Instance is chosen from an interactive list. A noninte
 
 The command turns automatic deployment on and resumes it after a manual deployment or a rollback paused it. It deploys nothing now and changes nothing on a Node: the Gateway records the setting, and a check of the branch runs for the Instance every minute. When the first-parent history of the branch holds a commit newer than the live one whose `merge_check` passed, the check deploys the newest such commit, which can be older than the branch head, with the same steps as [`instance:deploy`](/cli/instance/deploy). A red or pending commit never deploys. A failure before any deploy step ran is retried on the first check at least 10 minutes after the first failure and at least 20 after the second, and the third failure blocks the commit; any other failure blocks the commit at once. Automatic deployment keeps acting by itself after the command returns, so it is an `enable` and `disable` pair, not an `instance:update` option. See [Automatic deployments](/reference/deployments#automatic-deployments).
 
-Automatic deployment needs an active production Instance and, when the Project has a `merge_check`, a check the Gateway GitHub App can read. Before the Instance's first succeeded deployment the check reports `not_deployed` and deploys nothing. A development `default` Instance deploys automatically with no setting, so this command refuses it with `deployment_config.unavailable`. Without a `merge_check`, enabling succeeds and warns that every commit deploys without a check. Enabling an Instance that already has automatic deployment on succeeds and moves the resume point to the newest deployment, so it also clears a pause.
+Automatic deployment needs a production Instance or an active development container default with a seed snapshot. Before a production Instance's first succeeded deployment the check reports `not_deployed`. A new container default starts with automatic deployment on; use [`instance:auto-deploy:disable`](/cli/instance/auto-deploy-disable) to turn it off for that Instance. Enabling sets the same `auto_deploy` flag back on. Checkout Instances refuse with `instance.auto_deploy_container_default_required`: they are user working trees, never automatic deployment targets.
 
-A manual `instance:deploy` or `instance:rollback` pauses automatic deployment again, whether it succeeds or fails, and a rollback blocks the commit it moved away from. Enabling resumes from the commit that is live. The command starts no task.
+When the Project has a `merge_check`, the GitHub App must be able to read it. Without one, enabling succeeds and warns that every commit deploys without a check. Enabling an Instance that already has automatic deployment on succeeds and moves the resume point to the newest deployment, so it also clears a pause.
+
+For production, a manual `instance:deploy` or `instance:rollback` pauses automatic deployment again, whether it succeeds or fails, and a rollback blocks the commit it moved away from. Enabling resumes from the commit that is live. The command starts no task.
 
 The command prints a detail titled `Instance: <name>` with ID and the `Auto deploy` fields (`on, without a merge check` or `on, after <merge check> passes`, and the state, pause and error lines when there are any), the warning when there is one, and the request ID. With `--json`, stdout holds the Instance with `auto_deploy`. Use [`instance:show`](/cli/instance/show) to see the last automatic deployment.
 
@@ -40,7 +42,9 @@ The command prints a detail titled `Instance: <name>` with ID and the `Auto depl
 | --- | --- |
 | `instance.id_invalid` | The Instance is missing in a call that cannot prompt, or is not a positive integer. |
 | `input.cancelled` | You cancelled the Instance list. |
-| `deployment_config.unavailable` | The Instance is not a production Instance that is source-resolved or active with a valid branch. |
+| `deployment_config.unavailable` | Production deployment configuration is unavailable. |
+| `instance.auto_deploy_container_default_required` | Development automatic deployment requires an active container default with a seed snapshot, never a checkout working tree. |
+| `instance.auto_deploy_role_inactive` | The development Node or its app-dev role is inactive. |
 | `instance.auto_deploy_gate_unreadable` | The Project has a `merge_check` that the Gateway GitHub App cannot read: the Project reads through the GitHub CLI or is not on `github.com`. |
 | `http.404` | The Instance is unknown. |
 | `node_access.required` | The caller has no access grant to the Instance's Node. |

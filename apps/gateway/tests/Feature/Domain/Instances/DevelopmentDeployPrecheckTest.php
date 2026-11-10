@@ -79,7 +79,8 @@ function developmentTickDefault(string $name = 'default', RoleName $role = RoleN
     $project = Project::query()->create(['name' => 'tool', 'slug' => 'tool-'.bin2hex(random_bytes(4)), 'type' => 'node-package', 'repository_url' => 'https://github.com/example/tool-'.bin2hex(random_bytes(4)).'.git', 'default_branch' => '13.x']);
 
     $instance = Instance::withoutEvents(fn () => Instance::query()->create(['node_id' => $node->id, 'project_id' => $project->id,
-        'name' => $name, 'checkout_path' => '/srv/tool/'.$name, 'status' => InstanceState::Active, 'source_layout' => 'checkout', 'seed_commit' => str_repeat('a', 40)]));
+        'name' => $name, 'checkout_path' => '/srv/tool/'.$name, 'status' => InstanceState::Active, 'source_layout' => 'checkout', 'seed_commit' => str_repeat('a', 40),
+        'auto_deploy' => $container && $role === RoleName::AppDev]));
     if ($container) {
         $node->forceFill(['instance_bridge' => '10.253.'.$node->id.'.0/24'])->save();
         InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id,
@@ -201,6 +202,87 @@ it('shares container eligibility across automatic admission discovery and Instan
     expect(InstanceData::fromModel($disabledProduction)->autoDeploy->eligible)->toBeFalse();
     $production->node->roles()->update(['status' => 'failed']);
     expect(AutomaticDeployPolicyWriter::Swamp->eligibilityRefusal($production->fresh()))->toBe(AutomaticDeployPolicyWriter::InactiveRole);
+});
+
+it('uses one flag for development selection admission output and operator control', function (): void {
+    $instance = developmentTickDefault();
+    Node::withoutEvents(fn () => $instance->node->update(['wireguard_ip' => '10.44.0.7']));
+    $instance->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.7']);
+    $heads = Mockery::mock(RemoteBranchHeads::class);
+    $heads->shouldReceive('head')->once()->andReturn(str_repeat('b', 40));
+    app()->instance(RemoteBranchHeads::class, $heads);
+    $socket = new DevelopmentTickSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/test-ca', 'swamp.run_token' => 'test-token']);
+    $path = '/api/v1/instances/'.$instance->id;
+
+    $this->postJson($path.'/auto-deploy/disable')->assertOk()->assertJsonPath('data.auto_deploy.enabled', false);
+    app(DevelopmentDeployPrecheck::class)->check();
+    expect($socket->frames)->toBe([])
+        ->and(app(ListInstancesAction::class)->handle($instance->node, automaticDeploy: true)->modelKeys())->toBe([])
+        ->and($instance->fresh()->auto_deploy)->toBeFalse();
+    $this->withHeader('Idempotency-Key', 'disabled.development')->postJson($path.'/deploy/automatic/development', ['commit' => str_repeat('b', 40)])
+        ->assertConflict()->assertJsonPath('error.code', 'deployment.paused');
+    expect(Operation::query()->count())->toBe(0)->and($instance->deployments()->count())->toBe(0);
+
+    $this->postJson($path.'/auto-deploy/enable')->assertOk()->assertJsonPath('data.auto_deploy.enabled', true);
+    expect($instance->fresh()->auto_deploy)->toBeTrue();
+    AutomaticDeployPolicyWriter::Swamp->assertSwamp($instance->fresh(), development: true);
+    app(DevelopmentDeployPrecheck::class)->check();
+    expect($socket->frames)->toHaveCount(1)
+        ->and($socket->frames[0]['payload']['inputs'])->toBe(['instances' => [$instance->id]]);
+});
+
+it('keeps the production automatic switch contract unchanged', function (): void {
+    $instance = developmentTickDefault(role: RoleName::AppProd, container: false);
+    $instance->update(['branch' => '13.x']);
+    Node::withoutEvents(fn () => $instance->node->update(['wireguard_ip' => '10.44.0.7']));
+    $instance->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.7']);
+    $path = '/api/v1/instances/'.$instance->id.'/auto-deploy/';
+
+    $this->postJson($path.'enable')->assertOk()->assertJsonPath('data.auto_deploy.enabled', true);
+    $this->postJson($path.'disable')->assertOk()->assertJsonPath('data.auto_deploy.enabled', false);
+    expect($instance->fresh()->auto_deploy)->toBeFalse();
+});
+
+it('refuses operator automatic controls for checkout and unseeded development defaults', function (bool $container, string $command): void {
+    $instance = developmentTickDefault(container: $container);
+    $instance->runtime()->update(['seed_commit' => null]);
+    Node::withoutEvents(fn () => $instance->node->update(['wireguard_ip' => '10.44.0.7']));
+    $instance->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.7']);
+
+    $this->postJson('/api/v1/instances/'.$instance->id.'/auto-deploy/'.$command)->assertConflict()
+        ->assertJsonPath('error.code', AutomaticDeployPolicyWriter::ContainerDefaultRequired)
+        ->assertJsonPath('error.message', 'Automatic development deployment requires an active container default with a seed snapshot. Checkout Instances are working trees and are never auto-deployed.');
+})->with(['checkout' => false, 'unseeded container' => true])->with(['enable', 'disable']);
+
+it('enables only existing ready development container defaults in an expand-only repeatable migration', function (): void {
+    $ready = developmentTickDefault();
+    $ready->update(['auto_deploy' => false]);
+    $checkout = developmentTickDefault(container: false);
+    $unseeded = developmentTickDefault();
+    $unseeded->runtime()->update(['seed_commit' => null]);
+    $other = developmentTickDefault('copy');
+    $inactive = developmentTickDefault();
+    $inactive->node->roles()->update(['status' => 'failed']);
+    $production = developmentTickDefault(role: RoleName::AppProd);
+    $instances = [$checkout, $unseeded, $other, $inactive, $production];
+    foreach ($instances as $instance) {
+        $instance->update(['auto_deploy' => false]);
+    }
+    $migration = require database_path('migrations/2027_02_04_000001_enable_ready_development_auto_deploy.php');
+
+    $migration->up();
+    $migration->up();
+    $migration->down();
+
+    expect($ready->fresh()->auto_deploy)->toBeTrue();
+    foreach ($instances as $instance) {
+        expect($instance->fresh()->auto_deploy)->toBeFalse();
+    }
 });
 
 it('runs the unique development scan on the background tasks queue', function (): void {

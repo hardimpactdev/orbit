@@ -19,7 +19,9 @@ sequenceDiagram
   %%> - `orbit instance:auto-deploy:enable 42`
   %%> - syntax: `<instance>`; `instance:auto-deploy:disable <instance>` turns it off
   %%> What it does:
-  %%> - turns automatic deployment on for production Instance 42
+  %%> - turns the one auto_deploy flag on for production Instance 42 or a ready development container default
+  %%> - development configuration checks the shared ready-container policy without requiring the flag already on; checkout Instances refuse with instance.auto_deploy_container_default_required
+  %%> - the development scheduler and admission require the flag on; disable turns it off for that Instance without changing the production schedule
   %%> - also resumes an Instance that a manual deploy or rollback paused
   %%> Not included:
   %%> - deploys nothing now and changes nothing on the Node

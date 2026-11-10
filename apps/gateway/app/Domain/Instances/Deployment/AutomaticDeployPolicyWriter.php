@@ -27,7 +27,17 @@ enum AutomaticDeployPolicyWriter: string
         if ($this !== self::Swamp) {
             throw new ResourceOperationException('instance.auto_deploy_policy_owner', 'The Gateway PHP runner owns automatic deployment.', 409);
         }
-        $refusal = $development ? $this->developmentEligibilityRefusal($instance) : $this->eligibilityRefusal($instance);
+        $this->assertEligible($development ? $this->developmentEligibilityRefusal($instance) : $this->eligibilityRefusal($instance));
+    }
+
+    /** Operator controls need the same placement and readiness, even when the flag is currently off. */
+    public function assertDevelopmentConfigurable(Instance $instance): void
+    {
+        $this->assertEligible($this->developmentEligibilityRefusal($instance, requireEnabled: false));
+    }
+
+    private function assertEligible(?string $refusal): void
+    {
         if ($refusal !== null) {
             throw new ResourceOperationException($refusal, match ($refusal) {
                 self::InactiveRole => 'Automatic deployment requires eligible active app-dev or app-prod placement.',
@@ -38,15 +48,18 @@ enum AutomaticDeployPolicyWriter: string
     }
 
     /** The development policy must never inherit production's ungated eligibility. */
-    public function developmentEligibilityRefusal(Instance $instance): ?string
+    public function developmentEligibilityRefusal(Instance $instance, bool $requireEnabled = true): ?string
     {
         if (! $instance->placedOnAppDev() || ! ReadyContainerDefault::query()->whereKey($instance->id)->exists()) {
             return self::ContainerDefaultRequired;
         }
 
-        return $instance->node->status === LifecycleStatus::Active
-            && $instance->node->roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::AppDev && $role->status === LifecycleStatus::Active)
-                ? null : self::InactiveRole;
+        if ($instance->node->status !== LifecycleStatus::Active
+            || ! $instance->node->roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::AppDev && $role->status === LifecycleStatus::Active)) {
+            return self::InactiveRole;
+        }
+
+        return ! $requireEnabled || $instance->auto_deploy ? null : AutomaticDeployHistory::Paused;
     }
 
     /** Shared by discovery, admission, and the worker. Ownership is checked separately for cutover probing. */
