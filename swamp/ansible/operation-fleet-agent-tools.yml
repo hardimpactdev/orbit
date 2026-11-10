@@ -118,7 +118,8 @@
       rescue:
         - name: Record the failed Vite+ update
           ansible.builtin.set_fact:
-            tools: "{{ tools + [{'name': 'vite-plus', 'method': 'vite-plus', 'outcome': 'failed', 'error': (ansible_failed_result.msg | default('failed'))[:300]}] }}"
+            tools: "{{ tools + [{'name': 'vite-plus', 'method': 'vite-plus',
+              'outcome': 'failed', 'error': (ansible_failed_result.msg | default('failed'))[:300]}] }}"
 
     # Grok's own install updates itself.
     - name: Update Grok's own install
@@ -141,11 +142,13 @@
             before: "{{ grok_before.stdout | regex_search('[0-9]+\\.[0-9]+\\.[0-9]+') }}"
             after: "{{ grok_after.stdout | regex_search('[0-9]+\\.[0-9]+\\.[0-9]+') }}"
           ansible.builtin.set_fact:
-            tools: "{{ tools + [{'name': 'grok', 'method': 'grok-update', 'before': before, 'after': after, 'outcome': 'updated' if before != after else 'current'}] }}"
+            tools: "{{ tools + [{'name': 'grok', 'method': 'grok-update', 'before': before, 'after': after,
+              'outcome': 'updated' if before != after else 'current'}] }}"
       rescue:
         - name: Record the failed Grok update
           ansible.builtin.set_fact:
-            tools: "{{ tools + [{'name': 'grok', 'method': 'grok-update', 'outcome': 'failed', 'error': (ansible_failed_result.msg | default('failed'))[:300]}] }}"
+            tools: "{{ tools + [{'name': 'grok', 'method': 'grok-update',
+              'outcome': 'failed', 'error': (ansible_failed_result.msg | default('failed'))[:300]}] }}"
 
     # Cursor's installer installs the latest version beside the others and moves the `cursor-agent` link to it.
     - name: Update the Cursor agent
@@ -176,7 +179,8 @@
       rescue:
         - name: Record the failed Cursor update
           ansible.builtin.set_fact:
-            tools: "{{ tools + [{'name': 'cursor-agent', 'method': 'cursor-install', 'outcome': 'failed', 'error': (ansible_failed_result.msg | default('failed'))[:300]}] }}"
+            tools: "{{ tools + [{'name': 'cursor-agent', 'method': 'cursor-install',
+              'outcome': 'failed', 'error': (ansible_failed_result.msg | default('failed'))[:300]}] }}"
       always:
         - name: Remove the installer
           ansible.builtin.file: { path: "{{ cursor_folder.path }}", state: absent }
@@ -213,7 +217,8 @@
       rescue:
         - name: Record the failed Antigravity update
           ansible.builtin.set_fact:
-            tools: "{{ tools + [{'name': 'antigravity-cli', 'method': 'homebrew-cask', 'outcome': 'failed', 'error': (ansible_failed_result.msg | default('failed'))[:300]}] }}"
+            tools: "{{ tools + [{'name': 'antigravity-cli', 'method': 'homebrew-cask',
+              'outcome': 'failed', 'error': (ansible_failed_result.msg | default('failed'))[:300]}] }}"
 
     # `-i localhost,` makes localhost an inventory host, so a task delegated to it needs the local connection.
     - name: Write the host's record
@@ -391,7 +396,7 @@
         - name: Remove the releases past the newest others
           ansible.builtin.file: { path: "{{ router.folder }}/releases/{{ item }}", state: absent }
           loop: "{{ (releases.files | map(attribute='path') | map('basename') | reject('eq', staged.latest)
-            | community.general.version_sort | reverse | list)[router.keep:] }}"
+            | community.general.version_sort | reverse | list)[router.keep :] }}"
           register: pruned
         - name: Record the updated router
           vars: *check_local
