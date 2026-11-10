@@ -7,7 +7,7 @@ namespace App\Infrastructure\Swamp;
 use App\Domain\Shared\ResourceOperationException;
 use Throwable;
 
-/** Serve could not be read (connection, rate limit or no reply). The terminal projection retries; a mismatch never does. */
+/** Serve could not be read (connection, rate limit, no reply, or a succeeded terminal step's output). The terminal projection retries; a mismatch never does. */
 final class SwampTerminalReadUnavailable extends ResourceOperationException
 {
     public function __construct(?Throwable $previous = null)

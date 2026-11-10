@@ -572,6 +572,9 @@ final readonly class SwampCommandStep
             }
         } elseif ($run['status'] === 'succeeded') {
             throw $this->unavailable();
+        } elseif ($selected === 'succeeded' && isset($selector['data'])) {
+            // A reporting step that succeeded wrote its output, also in a failed run. A read that misses it is read again.
+            throw new SwampTerminalReadUnavailable;
         }
 
         foreach ($selector['captures'] ?? [] as $name => $capture) {
