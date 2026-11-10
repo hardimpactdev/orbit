@@ -572,9 +572,10 @@ The spec commit adds [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/m
 
 - The command moves one checkout Instance into a container: its branch, its changed, untracked and ignored files, and its Route.
 - A default Instance moves before the other Instances of its Project, and keeps its checkout until its last worktree has moved.
-- A non-default checkout is a linked worktree, so the move builds a standalone repository from the Node and copies only the uncommitted and ignored files.
+- The container gets a standalone repository from the Node. The checkout's `.git` is never copied.
 - A non-default Instance before its default refuses with `instance.default_not_migrated`.
-- A failure leaves the checkout Instance running as before.
+- Every planned retirement refuses other registered worktrees and uncommitted changes before downtime, and repeats the check before removal. Another path in the same batch still blocks.
+- A failure before cutover leaves the checkout Instance running as before. A retirement failure keeps the container serving and the checkout intact.
 
 [Migrate a checkout Instance](/reference/development-containers#migrate-a-checkout-instance) has what is built. The code changed these points of this plan:
 
@@ -589,10 +590,10 @@ The spec commit adds [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/m
 
 An Instance with a Route beside its own refuses. The cases file holds the refusals that the proof fleet can run today; the cases that move an Instance wait for a proof Node with the Instance pool, as PR 4 says.
 
-Tests: Pest for the admission, the default-first rule, the PHP version, the databases, the Route publication and the projection. Deno for the receipt. An Ansible fixture test runs the move's phases with the container phases against the Incus stand-in: a default and a worktree with work that was never committed or pushed, the removal, the restore and both refusals. Live:
+Tests: Pest for the admission, the default-first rule, the PHP version, the databases, the Route publication and the projection. Deno for the receipt. Ansible fixtures cover clean standalone retirement, a retained default's local files, linked and detached worktree refusals, changed-file refusals, bounded errors, final rechecks and restoration. Live:
 
-1. On Beast, a checkout default and one checkout feature with uncommitted files move.
-2. Both answer on their Routes, with the uncommitted files and the same data.
+1. On Beast, owned clean checkout fixtures move, default first, after their worktree links are resolved. Dirty and extra-worktree fixtures refuse and name the blockers.
+2. Both moved Instances answer on their Routes, with the same files and data.
 3. After the default has moved, a feature still on its checkout keeps working until its own move.
 4. A migration that fails at the check of the database server's port leaves the checkout Instance serving, with the access that the move added removed.
 5. On every `app-dev` Node, each checkout Instance moves, default first, in a window agreed with the people who use them.

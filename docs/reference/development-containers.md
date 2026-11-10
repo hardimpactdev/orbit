@@ -439,7 +439,7 @@ The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/c
 [`orbit instance:migrate INSTANCE`](/cli/instance/migrate) moves one existing checkout Instance into a container on its Node, with its code. A default Instance moves first, and a non-default Instance before its default refuses with `instance.default_not_migrated`. The command is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.
 
 - **Stop.** Orbit removes the Instance's awake marker, and its Route shows the wake page. The Gateway starts no wake during the move.
-- **Repository.** A non-default checkout is a linked worktree of the default's repository. Orbit builds a standalone repository in the container.
+- **Repository.** Orbit builds a standalone repository in the container; the checkout's `.git` is never copied.
 - **Branch.** The Node's mirror fetches the Instance's branch from the checkout, and Orbit pushes it in.
 - **Files.** Orbit copies the changed, untracked and ignored files into the workspace, never the checkout's `.git`.
 - **Database.** A database on a Database server stays where it is, and the container gets its own way to it. A SQLite file in the checkout moves with the files.

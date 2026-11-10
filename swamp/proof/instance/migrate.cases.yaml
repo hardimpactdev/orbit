@@ -12,6 +12,9 @@ target: app-dev
 sources: [gateway]
 baseline: [operations]
 
+uncovered:
+  "code:instance.migrate_retirement_blocked": "The proof fleet lacks the Instance pool/image. Ansible fixtures cover dirty tracked and non-ignored untracked files, linked/detached and same-batch worktrees, bounded named errors, and blockers added after preflight. Live proof uses owned clean fixtures and separate blocker fixtures when the pool is available."
+
 cases:
   - id: invalid-id
     batch: fresh-fleet
