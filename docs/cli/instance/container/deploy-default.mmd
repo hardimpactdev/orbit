@@ -24,8 +24,6 @@ sequenceDiagram
       %%> What it does:
       %%> - shares the retained behavior identity and development state; keeps pending admissions, backoff and retry limits
       %%> - never discovers or admits production work; its paused production schedule stays unchanged
-    end
-  end
   SW->>GW: Admit the deployment<br/>instance:deploy-automatic
   %%> What it does:
   %%> - the Gateway admits `instance.deploy` for that exact commit, with the Instance lock and a repository read token in the vault
@@ -64,4 +62,6 @@ sequenceDiagram
     SW--xGW: Run failed<br/>failed step
     %%> Result:
     %%> - no new seed snapshot is taken, so clones keep starting at the last commit that deployed; Swamp's policy retries after its backoff
+  end
+  end
   end
