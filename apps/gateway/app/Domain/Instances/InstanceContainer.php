@@ -235,12 +235,13 @@ final readonly class InstanceContainer
 
         return [
             'source' => $source->container_name, 'snapshot' => 'seed-'.$seed, 'seed_commit' => $seed,
-            'default_branch' => ValidatedData::string($project->default_branch),
+            // The default's mirror on the Node holds the seed's commit: a new branch starts there, without the network.
+            'source_mirror' => self::mirror(Instance::query()->findOrFail($source->instance_id)),
             't3' => ['port' => $runtime->t3_port, 'listen' => ValidatedData::string($node->wireguard_ip), 'device' => self::T3Device,
                 'unit' => self::T3Unit, 'internal_port' => InstanceHostIntent::T3Port, 'ready_seconds' => 30,
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
-                't3' => InstanceHostIntent::AgentFolder.'/current/agent/bin/t3'],
-            'model_environment' => self::ModelEnvironment,
+                't3' => InstanceHostIntent::AgentFolder.'/current/agent/bin/t3', 'project_mark' => '/home/agent/.config/orbit/t3-project'],
+            'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600'],
             'files' => [
                 ['path' => self::InstanceFile, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => "# Managed by Orbit.\n"
                     ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\nORBIT_URL=".($url ?? '')."\n"],

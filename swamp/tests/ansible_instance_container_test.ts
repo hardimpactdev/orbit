@@ -308,10 +308,11 @@ Deno.test({
           { ...route, rule: "allow", from_ip: "any", comment: "orbit:instance-8-t3" },
         ],
         clone: {
-          source: "instance-7", snapshot: `seed-${seed}`, seed_commit: seed, default_branch: "main",
+          source: "instance-7", snapshot: `seed-${seed}`, seed_commit: seed, source_mirror: `${f.folder}/mirror/7.git`,
           t3: { port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 3,
-            url: "http://10.44.0.7:3800", label: "tool / feature", t3: "/opt/orbit-agent/current/agent/bin/t3" },
-          model_environment: "/home/agent/.config/orbit/model.env",
+            url: "http://10.44.0.7:3800", label: "tool / feature", t3: "/opt/orbit-agent/current/agent/bin/t3",
+            project_mark: "/home/agent/.config/orbit/t3-project" },
+          model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" },
           files: [
             { path: "/etc/orbit/instance", uid: 0, gid: 0, mode: "0644", content: "ORBIT_INSTANCE_ID=8\n" },
             { path: "/home/agent/.codex/config.toml", uid: 2750, gid: 2750, mode: "0600", content: "model_provider = \"orbit\"\n" },
@@ -367,7 +368,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a clone whose T3 does not answer fails with instance.t3_unready",
+  name: "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -376,10 +377,16 @@ Deno.test({
       const seed = git(f.source, "rev-parse", "HEAD");
       Object.assign(f.container, {
         name: "instance-8", address: "10.253.0.3", acl: "instance-8", mirror: `${f.folder}/mirror/8.git`, branch: "main", firewall: [],
-        clone: { source: "instance-7", snapshot: `seed-${seed}`, seed_commit: seed, default_branch: "main",
-          t3: { port: 3800, listen: "10.44.0.7", device: "t3", unit: "other.service", internal_port: 3773, ready_seconds: 1, t3: "/t3" },
-          model_environment: "/home/agent/.config/orbit/model.env", files: [], links: [] },
+        clone: { source: "instance-7", snapshot: "seed-gone", seed_commit: seed, source_mirror: `${f.folder}/mirror/7.git`,
+          t3: { port: 3800, listen: "10.44.0.7", device: "t3", unit: "other.service", internal_port: 3773, ready_seconds: 1, t3: "/t3",
+            project_mark: "/home/agent/.config/orbit/t3-project" },
+          model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" }, files: [], links: [] },
       });
+      f.write();
+      // A deployment of the default replaced the admitted seed before the copy.
+      assert(!f.run("clone").ok);
+      assertEquals(f.result(), { error_code: "instance.default_seed_moved" });
+      (f.container as unknown as { clone: { snapshot: string } }).clone.snapshot = `seed-${seed}`;
       f.write();
       assert(f.run("clone").ok);
       const unready = f.run("t3");

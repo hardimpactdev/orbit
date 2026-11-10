@@ -66,6 +66,19 @@
 - name: Copy the default's seed snapshot
   when: phase == 'clone'
   block:
+    - name: Read the default's seed snapshots
+      when: container_read.rc != 0
+      ansible.builtin.command:
+        argv: [incus, query, "--", "/1.0/instances/{{ container.clone.source }}/snapshots?project={{ container.project }}&recursion=1"]
+      register: source_snapshots
+      changed_when: false
+    # A deployment of the default between this create's admission and its copy took a newer seed and deleted the admitted one.
+    - name: Refuse a seed that a deployment replaced
+      when: container_read.rc != 0
+      ansible.builtin.assert:
+        that: container.clone.snapshot in (source_snapshots.stdout | from_json | map(attribute='name') | list)
+        fail_msg: instance.default_seed_moved
+        quiet: true
     - name: Copy the snapshot
       when: container_read.rc != 0
       ansible.builtin.command:
@@ -189,12 +202,11 @@
       ansible.builtin.command:
         argv: "{{ remote_git + ['fetch', '--quiet', '--no-tags', '--', container.repository, '+refs/heads/' ~ container.branch ~ ':refs/heads/' ~ container.branch] }}"
       changed_when: false
-    - name: Fetch the default branch, which holds the seed's commit
+    # The default's mirror on this Node holds the seed's commit, whichever branch the default follows.
+    - name: Fetch the seed's commit from the default's mirror
       when: phase == 'clone' and clone_remote.stdout | trim == '' and mirror_before.rc != 0
       ansible.builtin.command:
-        argv: >-
-          {{ remote_git + ['fetch', '--quiet', '--no-tags', '--', container.repository,
-              '+refs/heads/' ~ container.clone.default_branch ~ ':refs/heads/' ~ container.clone.default_branch] }}
+        argv: "{{ mirror_git + ['fetch', '--quiet', '--no-tags', '--', container.clone.source_mirror, '+refs/heads/*:refs/seed/*'] }}"
       changed_when: false
     - name: Create the branch at the seed's commit
       when: phase == 'clone' and clone_remote.stdout | trim == '' and mirror_before.rc != 0
@@ -411,8 +423,7 @@
   when: phase == 'agent'
   vars:
     agent_files: >-
-      {{ container.clone.files + [{'path': container.clone.model_environment, 'uid': 2750, 'gid': 2750, 'mode': '0600',
-          'content': lookup('ansible.builtin.env', 'ORBIT_MODEL_ENVIRONMENT')}] }}
+      {{ container.clone.files + [container.clone.model_environment | combine({'content': lookup('ansible.builtin.env', 'ORBIT_MODEL_ENVIRONMENT')})] }}
   block:
     - name: Make the agent's Claude Code folder
       ansible.builtin.command: { argv: "{{ as_agent + ['mkdir', '-p', '-m', '0700', '/home/agent/.claude'] }}" }
@@ -455,7 +466,7 @@
 - name: Start T3
   when: phase == 't3'
   vars:
-    t3_project_mark: /home/agent/.config/orbit/t3-project
+    t3_project_mark: "{{ container.clone.t3.project_mark }}"
   block:
     - name: Start the T3 unit
       ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'start', '--', container.clone.t3.unit] }}" }
@@ -573,7 +584,8 @@
           when: units | length > 0
           ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'start', '--'] + units }}" }
           changed_when: false
-    # Clones come later; until then no older seed has a user.
+    # A clone made from an older seed does not need it: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them. A
+    # clone admitted for an older seed and not copied yet refuses with instance.default_seed_moved, and its next create takes the new one.
     - name: Delete the older seeds
       ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'delete', container.name, item] }}" }
       loop: "{{ seed_names | reject('equalto', seed_name) | list }}"

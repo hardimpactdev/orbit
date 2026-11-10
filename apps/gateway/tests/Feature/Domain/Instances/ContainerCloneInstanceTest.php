@@ -6,6 +6,7 @@ use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
+use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
@@ -104,12 +105,13 @@ describe('a clone of the container default', function (): void {
             ->and($container['branch'])->toBe('feature')
             ->and($clone['source'])->toBe('instance-'.$default->id)
             ->and($clone['snapshot'])->toBe('seed-'.str_repeat('c', 40))
-            ->and($clone['default_branch'])->toBe('main')
+            ->and($clone['source_mirror'])->toBe('/var/lib/orbit/instance-repositories/'.$default->id.'.git')
             ->and($clone['t3'])->toMatchArray(['port' => 3800, 'listen' => '10.44.0.7', 'device' => 't3', 'internal_port' => 3773,
                 'url' => 'http://10.44.0.7:3800', 'label' => 'tool / feature'])
             ->and(collect($clone['files'])->pluck('path')->all())->toBe(['/etc/orbit/instance', '/home/agent/.codex/config.toml', '/home/agent/.claude.json'])
             ->and($clone['files'][0]['content'])->toBe("# Managed by Orbit.\nORBIT_INSTANCE_ID={$id}\nORBIT_INSTANCE=feature\nORBIT_PROJECT=tool\nORBIT_URL=\n")
             ->and($clone['files'][1]['content'])->toContain('base_url = "http://10.253.0.1:8319/v1"')
+            ->and($clone['model_environment'])->toBe(['path' => '/home/agent/.config/orbit/model.env', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600'])
             ->and($clone['links'][0])->toBe(['path' => '/home/agent/.claude/CLAUDE.md', 'target' => '/opt/orbit-agent/current/notes/package.md'])
             // WireGuard peers reach T3, the task VM range first refused.
             ->and($container['firewall'])->toBe([
@@ -120,6 +122,16 @@ describe('a clone of the container default', function (): void {
             ])
             ->and($container['acl_rules']['ingress'][1])->toBe(['action' => 'allow', 'protocol' => 'tcp', 'destination_port' => '3773', 'state' => 'enabled'])
             ->and(json_encode($operation->input))->not->toContain('placeholder-model-key');
+    });
+
+    it('keeps the default\'s APP_KEY, because the cloned data is encrypted with it', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        app(InstanceEnvironmentStore::class)->seedForCreate($default, ['APP_KEY' => 'base64:default-key']);
+
+        $operation = containerCreate($default->project, $node, 'feature');
+
+        expect(app(InstanceEnvironmentStore::class)->values(Instance::query()->findOrFail($operation->target_id))['APP_KEY'] ?? null)->toBe('base64:default-key');
     });
 
     it('is refused while its default runs elsewhere, has no seed yet, or Conn or the model router is off', function (Closure $arrange, string $code): void {
@@ -201,7 +213,9 @@ describe('the template copy of a clone\'s PostgreSQL database', function (): voi
     });
 
     it('refuses a name that is not a plain identifier', function (): void {
-        expect(fn () => DatabaseStatements::template('c', 'postgres', 'a"; DROP', 'o', 't', 'u'))->toThrow(ResourceOperationException::class);
+        expect(fn () => DatabaseStatements::template('c', 'postgres', 'a"; DROP', 'o', 't', 'u'))->toThrow(ResourceOperationException::class)
+            // An owner is named as '<name>'::regrole, which folds case.
+            ->and(fn () => DatabaseStatements::template('c', 'postgres', 'tool', 'Tool_Owner', 't', 'u'))->toThrow(ResourceOperationException::class);
     });
 });
 

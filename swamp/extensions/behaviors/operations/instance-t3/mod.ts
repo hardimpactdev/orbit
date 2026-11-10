@@ -45,15 +45,11 @@ type Context = {
 const GATEWAY_SCOPES = ["access:read", "access:write"];
 
 function check(session: z.infer<typeof Session>): z.infer<typeof Authenticated> {
-    if (session.status === 401) throw new Error("conn.session_rejected");
+    if (session.status < 200 || session.status >= 300) throw new Error("conn.session_rejected");
     try {
         return Authenticated.parse(JSON.parse(session.body));
     } catch {
-        throw new Error(
-            session.status >= 200 && session.status < 300
-                ? "conn.response_invalid"
-                : "conn.session_rejected",
-        );
+        throw new Error("conn.response_invalid");
     }
 }
 

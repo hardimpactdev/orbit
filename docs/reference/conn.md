@@ -163,7 +163,8 @@ A clone of a container default runs its own T3 server. Its create flow registers
 
 - The record names the Instance and its Node, with the URL `http://<Node WireGuard address>:<T3 port>` and the label `<project> / <instance>`.
 - The Gateway reads the session from the vault key the result names. It does not call T3 again: the run made the checks above in the container.
-- A new server holds no earlier `Orbit Gateway` session, so its cleanup starts done. Recording a server again bumps the cleanup revision and starts the cleanup.
+- A new record starts with its cleanup done. Recording a server again bumps the cleanup revision and starts the cleanup.
+- A resumed create can leave the sessions of its failed run valid in T3, until a later renewal cleans them.
 - The bumped revision also stops a Node's registration of the same id that read the row before the record: that registration compares the revision again in its lock and fails with `conn.environment_changed`.
 - While Conn is off, a clone is refused with `operation.kind_unavailable`: nothing would record its server.
 - A create admitted before Conn went off still records its server.

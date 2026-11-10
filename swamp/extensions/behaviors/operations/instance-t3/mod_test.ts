@@ -63,6 +63,7 @@ Deno.test("each failed check refuses with the code of POST /conn/environments an
         [{ environment, gateway: { token: "g", status: 401, body: "" }, swamp: { token: "s", ...session([]) } }, "conn.session_rejected"],
         [{ environment, gateway: { token: "g", ...session(["access:read", "access:write"]) }, swamp: { token: "s", status: 403, body: "no" } }, "conn.session_rejected"],
         [{ environment: "<html>", gateway: { token: "g", ...session(["access:read", "access:write"]) }, swamp: { token: "s", ...session([]) } }, "conn.response_invalid"],
+        [{ environment, gateway: { token: "g", ...session(["access:read", "access:write"], 403) }, swamp: { token: "s", ...session([]) } }, "conn.session_rejected"],
         [{ environment, gateway: { token: "same", ...session(["access:read", "access:write"]) }, swamp: { token: "same", ...session([]) } }, "conn.response_invalid"],
     ];
     for (const [reply, code] of cases) {

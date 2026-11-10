@@ -50,7 +50,7 @@ sequenceDiagram
     %%> - reads the session from the vault into its encrypted record; the vault copy stays, as a pairing's credential does
     %%> Result:
     %%> - the server's Node is the container's Node; the record names the Instance
-    %%> - cleanup of earlier `Orbit Gateway` and `Orbit Swamp` sessions starts
+    %%> - a recorded server that is recorded again starts the cleanup of earlier `Orbit Gateway` sessions; the cleanup of `Orbit Swamp` sessions comes with the renewal (PR 13)
   else a check fails
     SW--xGW: Run failed<br/>check's error code
     %%> Result:

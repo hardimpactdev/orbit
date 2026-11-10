@@ -278,8 +278,9 @@ final readonly class DatabaseStatements
      */
     public static function template(string $container, string $admin, string $source, string $sourceOwner, string $target, string $targetOwner): array
     {
+        // Lower case only: the owners are named as `'<name>'::regrole`, which folds case.
         foreach ([$admin, $source, $sourceOwner, $target, $targetOwner] as $name) {
-            if (preg_match(self::NAME, $name) !== 1) {
+            if (preg_match('/\A[a-z0-9_]{1,63}\z/D', $name) !== 1) {
                 throw new ResourceOperationException('database.server_admin_invalid', 'A database or user name is not a plain identifier.', 422);
             }
         }

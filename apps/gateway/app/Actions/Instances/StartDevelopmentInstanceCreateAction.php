@@ -193,7 +193,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 if (! $container) {
                     app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
                 }
-                $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? $server['connection'] ?? null);
+                $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? $server['connection'] ?? null, $source);
                 // A rerun after a failed create checks the Processes its first run already started.
                 $input['members'] = $container ? [] : app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions', includeActive: true)['members'];
             }
@@ -373,7 +373,8 @@ final readonly class StartDevelopmentInstanceCreateAction
     {
         $containers = app(InstanceContainer::class);
 
-        return [...$containers->intent($instance, $containers->reserve($instance, $node, $source), $database, $branch,
+        // The default stays on the Project's default branch, which its deployments follow; a clone takes its own branch.
+        return [...$containers->intent($instance, $containers->reserve($instance, $node, $source), $database, $source instanceof Instance ? $branch : '',
             $domain === null ? null : 'https://'.$domain), 'steps' => $steps];
     }
 
