@@ -63,7 +63,7 @@ return [
     'instance.destroy' => ['workflow' => 'operation-instance-destroy', 'workflow_inputs' => true,
         'projection' => DevelopmentInstanceDestroyProjection::class,
         // The Route child allows its own step failures; its ready result says whether the withdrawal held.
-        'terminal_result' => ['job' => 'destroy', 'step' => 'Check it is gone', 'native' => true,
+        'terminal_result' => ['job' => 'destroy', 'step' => 'Check it is gone', 'alternatives' => ['Read container removal'], 'native' => true,
             'captures' => ['withdrawal' => ['job' => 'destroy', 'step' => 'Withdraw the Route', 'field' => 'result']]],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-git-(?:operation|credential)-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'], DatabaseDestroyRun::OWNED_EXECUTION_COPY]],
     'instance.deploy' => [

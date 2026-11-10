@@ -9,6 +9,8 @@ covers:
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
   - swamp/workflows/workflow-operation-instance-destroy.yaml
+  - swamp/ansible/instance-container-destroy.yml
+  - apps/gateway/app/Domain/Instances/{ContainerInstanceDestroy,ContainerDestroyExecutionCopies,DirectInstanceDestroyIntent}.php
 ---
 
 # Instance removal
@@ -45,7 +47,7 @@ The Route child allows its own steps to fail, so destroy reads its ready result.
 
 Publication captures include the full site catalogs so unrelated Routes, PHP pools and DNS records remain present. Each native action has its own run and iteration identity. The Gateway does not supply an execution lock or recapture publication intent during the run.
 
-`instance:destroy` refuses a container Instance with `operation.kind_unavailable` until the container destroy flow exists. See [the default Instance](/reference/development-containers#the-default-instance).
+A container Instance follows the [container destroy flow](/reference/development-containers#destroy). This clone-only slice requires `--force`, skips work checks and teardown, and deletes the container with its Processes and owned network state. Container defaults stay unavailable. Conn removes its environment and pairing records after the T3 server is gone. The runtime row stays until success, so its address and port stay reserved during a failed removal.
 
 ## Retry and ownership
 

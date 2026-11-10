@@ -6,6 +6,7 @@ namespace App\Actions\Instances;
 
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceLifecycleInput;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -70,7 +71,12 @@ final readonly class ProjectDirectInstanceDestroyAction
                     'source_finalized_at' => now(), 'finalization_receipt' => 'native:'.$removal->id,
                     'runtime_cleaned_at' => now()]);
                 InstanceTransfer::query()->where('instance_id', $member->instance_id)->closed()->update(['instance_id' => null]);
-                Instance::query()->whereKey($member->instance_id)->delete();
+                $instance = Instance::query()->findOrFail($member->instance_id);
+                if (($saved['container_destroy'] ?? null) !== null) {
+                    app(InstanceLifecycleContributions::class)->projectDestroy($instance);
+                    $instance->runtime()->delete();
+                }
+                $instance->delete();
                 $member->update(['row_deleted_at' => now()]);
                 $this->deleted(RecordEventType::InstanceDeleted, $member->instance_id);
             }
