@@ -127,6 +127,8 @@ final readonly class StartInstanceMigrateAction
             throw $this->unsupported('Only a development checkout Instance on a Node of the build list moves into a container.');
         }
         if ($instance->status === InstanceState::Removing || $instance->removalMember()->exists() || InstanceMigration::running($instance)
+            || Operation::query()->where('kind', 'instance.deploy')->where('target_type', 'instance')->where('target_id', $instance->id)
+                ->whereNotIn('status', OperationStatus::terminalValues())->exists()
             || InstanceTransfer::query()->where('instance_id', $instance->id)->where('status', '!=', 'completed')->exists()
             || Instance::query()->where('clone_candidate_id', $instance->id)->whereNull('clone_completed_at')->exists()) {
             throw new ResourceOperationException('instance.lifecycle_busy', 'The Instance is busy with another lifecycle operation.', 409);
@@ -230,7 +232,7 @@ final readonly class StartInstanceMigrateAction
     private function retire(Instance $instance, ?Instance $default): array
     {
         $others = Instance::query()->where('project_id', $instance->project_id)->where('node_id', $instance->node_id)
-            ->whereKeyNot($instance->id)->whereDoesntHave('runtime')->exists();
+            ->whereKeyNot($instance->id)->get()->contains(static fn (Instance $other): bool => ! $other->runtime()->exists() || InstanceMigration::pending($other));
         if ($default === null) {
             return $others ? [] : [['path' => $instance->checkout_path, 'mirror' => InstanceContainer::mirror($instance)]];
         }

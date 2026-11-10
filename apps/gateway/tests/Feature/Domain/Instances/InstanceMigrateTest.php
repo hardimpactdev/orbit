@@ -255,6 +255,25 @@ describe('the admission of a move', function (): void {
         }, 'instance.database_clone_unsupported'],
     ]);
 
+    it('refuses while a checkout deployment is unfinished, before reserving a runtime', function (string $status): void {
+        $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $deploy = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $default->id,
+            'node_id' => $default->node_id, 'status' => $status, 'input' => []]);
+
+        expect(containerRefusal(fn () => migrateStart($default)))->toBe('instance.lifecycle_busy')
+            ->and($default->runtime()->exists())->toBeFalse()
+            ->and(Operation::query()->count())->toBe(1)
+            ->and($deploy->refresh()->status->value)->toBe($status);
+    })->with(['queued', 'running', 'waiting']);
+
+    it('permits the move after a checkout deployment has finished', function (): void {
+        $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $default->id,
+            'node_id' => $default->node_id, 'status' => 'succeeded', 'input' => []]);
+
+        expect(migrateStart($default)->kind)->toBe('instance.migrate');
+    });
+
     it('refuses a second move of an Instance while its first runs', function (): void {
         $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
         $first = migrateStart($default);
@@ -392,6 +411,26 @@ describe('the default-first rule', function (): void {
         expect($feature->runtime()->exists())->toBeFalse()
             ->and(InstanceMigration::running($feature))->toBeFalse();
         InstanceContainer::assertCheckout($feature);
+    });
+
+    it('keeps the default repository for a sibling whose failed restore retained a runtime reservation', function (): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        $default = migrateCheckout($project, $node);
+        $first = migrateCheckout($project, $node, 'first');
+        $last = migrateCheckout($project, $node, 'last');
+        migrateEnd(migrateStart($default), 'succeeded', ['ready' => true, 'moved' => true, 'commit' => str_repeat('d', 40)]);
+        migrateEnd(migrateStart($first), 'failed', ['ready' => false, 'moved' => false, 'restored' => false, 'failed_step' => 'route']);
+
+        $second = migrateStart($last);
+
+        expect($second->input['migrate']['retire'])->toBe([['path' => $last->checkout_path, 'mirror' => InstanceContainer::mirror($last)]]);
+        migrateEnd($second, 'succeeded', ['ready' => true, 'moved' => true, 'commit' => str_repeat('e', 40), 't3' => migrateServer($last)]);
+        // Once the other sibling has actually moved, retrying the failed move is the last checkout.
+        expect(migrateStart($first)->input['migrate']['retire'])->toBe([
+            ['path' => $first->checkout_path, 'mirror' => InstanceContainer::mirror($first)],
+            ['path' => '/home/orbit/apps/tool/default', 'mirror' => InstanceContainer::mirror($default), 'common_of' => $first->checkout_path],
+        ]);
     });
 
     it('removes the default\'s old checkout with the last checkout Instance of the Project, when the worktree belongs to it', function (): void {

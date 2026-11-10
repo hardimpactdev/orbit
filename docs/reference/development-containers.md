@@ -457,6 +457,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | --- | --- |
 | Admission | An active checkout Instance on a Node of the build list, with no Route beside its own. Otherwise `instance.migrate_unsupported` |
 | Default first | A non-default Instance needs its default in a container, active and with a seed snapshot |
+| Deployment | An unfinished deployment refuses the move with `instance.lifecycle_busy` |
 | PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
 | Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the lowest free T3 port. It names no clone source |
 | While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
@@ -474,9 +475,9 @@ The end of the move and its failure:
 | Seed | A default takes `seed-<commit>` with its units stopped. Its Project's other Instances can be clones from then on |
 | T3 | A non-default Instance gets the proxy device `t3`, the agent's files and its T3 server. The Conn layer records the server from the run's result |
 | Runtime | A Route that serves the container makes the container the Instance's runtime: the workspace becomes its checkout path |
-| Kept refs | Before a repository goes, its local branches and its stash go into the Instance's mirror under `refs/migrated/` |
+| Kept refs | Local branches go under `refs/migrated/heads/`, and every stash entry under `refs/migrated/stashes/<commit>`, in the Instance's mirror before its repository goes |
 | Removal | The checkout, and its worktree entry in the default's repository |
-| Last worktree | Its move also removes the default's old checkout, when the Node shows that the worktree belonged to it |
+| Last worktree | Its move removes the default's old checkout. A sibling with a failed, un-restored move still needs that checkout |
 | Failed removal | The container stays the Instance. The run fails with `instance.migrate_retire_failed`, and the checkout is left to remove by hand |
 | Failure | The Route's restore side runs when the run had started to move it. Then the container, its ACL, its firewall rules and its mirror go |
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |

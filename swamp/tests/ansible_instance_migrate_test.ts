@@ -235,6 +235,10 @@ Deno.test({
 
       git(f.checkout, "branch", "spare");
       git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
+      const olderStash = git(f.checkout, "rev-parse", "refs/stash");
+      Deno.writeTextFileSync(`${f.checkout}/new-stash.txt`, "newer stash\n");
+      git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
+      const newerStash = git(f.checkout, "rev-parse", "refs/stash");
       const retire = f.run("retire");
       assert(retire.ok, retire.output);
       assert(!exists(f.checkout));
@@ -242,7 +246,10 @@ Deno.test({
       // No commit went with the repository: its local branches and its stash are in the mirror.
       assertEquals(git(f.container.mirror, "rev-parse", "refs/migrated/heads/main"), head);
       assertEquals(git(f.container.mirror, "rev-parse", "refs/migrated/heads/spare"), head);
-      git(f.container.mirror, "rev-parse", "--verify", "refs/migrated/stash");
+      assertEquals(git(f.container.mirror, "rev-parse", `refs/migrated/stashes/${olderStash}`), olderStash);
+      assertEquals(git(f.container.mirror, "rev-parse", `refs/migrated/stashes/${newerStash}`), newerStash);
+      assertEquals(git(f.container.mirror, "show", `${olderStash}^3:note.txt`), "untracked");
+      assertEquals(git(f.container.mirror, "show", `${newerStash}^3:new-stash.txt`), "newer stash");
       assertEquals(f.state().containers["instance-7"].status, "Running");
     } finally {
       f.cleanup();

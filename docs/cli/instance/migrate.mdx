@@ -39,13 +39,14 @@ In a terminal, the CLI asks to confirm that the Instance goes down during the mo
 | Route | The same domain and certificate. It points at FrankenPHP in the container, and the checkout's PHP-FPM pool goes |
 | T3 | A non-default Instance gets its T3 server, registered as a [new Instance's](/cli/instance/create) is. The default runs none |
 
-These do not move: the staging state of the index, stashes, and branches that no Instance has checked out. Before Orbit removes a repository, it keeps the repository's local branches and its stash in the Instance's mirror on the Node, under `refs/migrated/`.
+These do not move: the staging state of the index, stashes, and branches that no Instance has checked out. Before Orbit removes a repository, it keeps the repository's local branches and every stash entry in the Instance's mirror on the Node, under `refs/migrated/`.
 
 ## Before you start
 
 - **Node.** The Instance's Node is on the [build list](/reference/development-containers#the-build-list).
 - **PHP version.** A web-serving Project needs its PHP version recorded before the move. A missing version refuses with `project.source_defaults_incomplete`. Set `require.php` in `composer.json` on the default branch, then run `orbit project:update PROJECT --source-access=github_app` to record it. This command also enables source access for a `gh_cli` Project.
 - **Branch.** The checkout is on the branch that Orbit records for the Instance.
+- **Deployments.** Wait for an unfinished deployment before starting the move.
 - **Processes.** An Instance with Processes cannot move yet.
 - **Routes.** The Instance has no Route beside its own.
 
@@ -82,7 +83,7 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `instance.confirmation_required` | The call cannot prompt and has no `--force`. |
 | `instance.migrate_unsupported` | The Instance already runs in a container, is not active, is a production Instance, or its Node is not on the [build list](/reference/development-containers#the-build-list). |
 | `instance.default_not_migrated` | The Project's default Instance is still a checkout, or its move has not ended. Move it first. |
-| `instance.lifecycle_busy` | A transfer, a removal or another move of the Instance is unfinished. |
+| `instance.lifecycle_busy` | A deployment, transfer, removal or another move of the Instance is unfinished. |
 | `instance.migrate_unsupported` | The Instance has a Route beside its own. |
 | `project.source_defaults_incomplete` | A web-serving Project has no recorded PHP version. Run `orbit project:update PROJECT --source-access=github_app` after setting `require.php` in its source. |
 | `operation.kind_unavailable` | The Instance has Processes, which reach a container in a later part of the runtime; or a non-default Instance has no Conn layer or no model router. |
