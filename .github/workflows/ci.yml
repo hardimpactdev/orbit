@@ -637,3 +637,18 @@ jobs:
           if failed:
               sys.exit(f'Builds or static checks failed: {failed}')
           PYTHON
+
+  cli-release:
+    name: Start the CLI release
+    # Orbit CLI Release also starts when the whole CI run succeeds. With slow checks non-blocking, start it as soon as
+    # Required checks passes on main, so a slow or failed non-blocking job does not hold the manifest back.
+    needs: required
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ORBIT_SLOW_CHECKS_BLOCKING == 'false'
+    runs-on: ubuntu-26.04
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch Orbit CLI Release for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run orbit-cli-release.yml --repo "$GITHUB_REPOSITORY" --ref main -f commit="$GITHUB_SHA"
