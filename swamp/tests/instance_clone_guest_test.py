@@ -26,6 +26,7 @@ class CloneGuestTest(unittest.TestCase):
             "workspace": "/srv/workspace",
             "branch": "feature",
             "expected_commit": "abc",
+            "php": None,
             "clone": {"t3": {"internal_port": 3773}},
             "units": [],
             "processes": [],
@@ -139,6 +140,164 @@ class CloneGuestTest(unittest.TestCase):
             ]
             self.assertEqual(delivered, [payload])
             self.assertNotIn("private", output.getvalue())
+
+    def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=False):
+        container = {
+            "workspace": "/srv/workspace",
+            "branch": "proof",
+            "expected_commit": "abc123",
+            "php": php,
+            "units": [],
+            "processes": [],
+            "clone": {
+                "seed_commit": "abc123",
+                "t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"},
+            },
+        }
+        commands = []
+
+        def command(argv, **_kwargs):
+            # The fake boundary rejects PHP exactly as a container without PHP does.
+            actual = argv[4:] if argv[0] == "runuser" else argv
+            commands.append(actual)
+            code, stdout = 0, ""
+            if actual[0] == "php":
+                code = 1 if php is None else 0
+            if actual[0] == fail:
+                code = 17
+            if actual[0] == "curl":
+                stdout = json.dumps(
+                    {"environmentId": "proof", "serverVersion": "0.1.7"}
+                )
+            if actual[0] == "git":
+                stdout = "proof\n" if "symbolic-ref" in actual else "abc123\n"
+            if actual[0] == "/opt/agent/bin/t3":
+                stdout = actual[actual.index("--label") + 1] + "-PRIVATE-TOKEN\n"
+            return subprocess.CompletedProcess(argv, code, stdout, "PRIVATE-STDERR")
+
+        sessions = {
+            key: {"token": key + "-PRIVATE-TOKEN"} for key in ["gateway", "swamp"]
+        }
+        response = io.BytesIO(
+            json.dumps(
+                {"authenticated": True, "scopes": ["access:read", "access:write"]}
+            ).encode()
+        )
+        response.status = 200
+
+        def opened():
+            response.seek(0)
+            return response
+
+        connection = MagicMock()
+        connection.getresponse.side_effect = opened
+
+        output, error = io.StringIO(), io.StringIO()
+        with (
+            patch.object(GUEST.subprocess, "run", command),
+            patch.object(
+                GUEST.sys,
+                "stdin",
+                io.StringIO(json.dumps(sessions) if existing else ""),
+            ),
+            patch.object(GUEST.http.client, "HTTPConnection", return_value=connection),
+            contextlib.redirect_stdout(output),
+            contextlib.redirect_stderr(error),
+        ):
+            if entrypoint:
+                with (
+                    patch("sys.argv", [str(SPEC.origin), phase, json.dumps(container)]),
+                    self.assertRaises(SystemExit) as exit_status,
+                ):
+                    runpy.run_path(SPEC.origin, run_name="__main__")
+                self.assertEqual(exit_status.exception.code, 1)
+            else:
+                GUEST.phase_main(phase, json.dumps(container))
+        self.assertNotIn("PRIVATE", error.getvalue())
+        return commands, output.getvalue(), error.getvalue()
+
+    def test_non_php_sessions_keep_both_authenticated_sessions_without_php(self):
+        for existing in [False, True]:
+            with self.subTest(existing=existing):
+                commands, output, _ = self.readiness("sessions", existing=existing)
+                result = json.loads(output)
+                self.assertEqual(result["phase"], "sessions")
+                self.assertEqual(result["private_reply"]["gateway"]["status"], 200)
+                self.assertEqual(result["private_reply"]["swamp"]["status"], 200)
+                self.assertEqual(
+                    result["changes"], [] if existing else ["sessions-issued"]
+                )
+                self.assertFalse(any(argv[0] == "php" for argv in commands))
+
+    def test_non_php_check_has_no_php_probe(self):
+        commands, _, _ = self.readiness("check")
+        self.assertFalse(any(argv[0] == "php" for argv in commands))
+
+    def test_php_readiness_still_checks_the_project_runtime(self):
+        for phase in ["sessions", "check"]:
+            with self.subTest(phase=phase):
+                commands, _, _ = self.readiness(
+                    phase, php="/opt/runtime/php/8.5/bin/php"
+                )
+                self.assertIn(["php", "-v"], commands)
+
+    def test_command_failure_names_command_and_exit_code_without_private_output(self):
+        _, output, error = self.readiness("sessions", fail="curl", entrypoint=True)
+        self.assertEqual(output, "")
+        self.assertEqual(
+            error, "instance.container_sessions_failed: command curl exited 17\n"
+        )
+
+    def test_broken_php_still_fails_readiness(self):
+        _, output, error = self.readiness(
+            "sessions",
+            php="/opt/runtime/php/8.5/bin/php",
+            fail="php",
+            entrypoint=True,
+        )
+        self.assertEqual(output, "")
+        self.assertEqual(
+            error, "instance.container_sessions_failed: command php exited 17\n"
+        )
+
+    def test_non_php_workspace_does_not_write_php_configuration(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            (base / "srv/workspace/.git").mkdir(parents=True)
+            env = base / "srv/workspace/.env"
+            env.write_text("PRIVATE-ENV")
+            container = {
+                "workspace": "/srv/workspace",
+                "branch": "proof",
+                "expected_commit": "abc123",
+                "bundle": "/tmp/proof.bundle",
+                "php": None,
+                "environment_file": "/srv/workspace/.env",
+                "units": [],
+                "processes": [],
+            }
+
+            def command(argv, **_kwargs):
+                value = "proof\n" if "symbolic-ref" in argv else "abc123\n"
+                return subprocess.CompletedProcess(argv, 0, value, "")
+
+            output = io.StringIO()
+            with (
+                patch.object(
+                    GUEST.pathlib, "Path", lambda p: base / str(p).lstrip("/")
+                ),
+                patch.object(GUEST.subprocess, "run", command),
+                patch.object(GUEST.os, "walk", return_value=[]),
+                patch.object(
+                    GUEST.sys,
+                    "stdin",
+                    io.StringIO(json.dumps({"environment": "PRIVATE-ENV"})),
+                ),
+                contextlib.redirect_stdout(output),
+            ):
+                GUEST.phase_main("workspace", json.dumps(container))
+            self.assertEqual(json.loads(output.getvalue())["changes"], [])
+            self.assertFalse((base / "etc/orbit/php").exists())
 
     def test_agent_preserves_unmanaged_json_and_identity_and_repairs_only_managed_keys(
         self,
