@@ -2,6 +2,10 @@
 # These cases run on the proof fleet as it is. The cases that move an Instance need a proof Node with the Instance pool and the
 # container image, which the proof fleet does not build yet (docs/solutions/development-container-runtime.md, PR 4). Until then
 # the Pest, Deno and Ansible fixture tests cover the move, and the live check on a build-list Node proves it.
+# Retirement fixture coverage (ansible_instance_migrate_test.ts): dirty tracked/staged/deleted/renamed files and non-ignored
+# untracked files refuse before downtime; ignored files pass; linked and detached worktrees refuse and name their paths.
+# Both lists are bounded to 20 entries with total counts. New changes or worktrees after preflight refuse final retirement,
+# keep every source intact, and leave the container serving. A retained checkout (retire: []) is not deleted or checked.
 command: instance:migrate
 chart: instance/migrate
 target: app-dev

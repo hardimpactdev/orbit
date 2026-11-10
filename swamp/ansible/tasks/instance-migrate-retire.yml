@@ -2,41 +2,10 @@
 # Remove one checkout of a moved Instance, `retired.path`. A linked worktree goes with its entry in its repository. A repository
 # first leaves its local branches and every stash entry in the mirror `retired.mirror`, under `refs/migrated/`, so no commit is lost with
 # it. An entry with `common_of` is the default's old checkout: it goes only when the worktree that just went belonged to it.
-- name: Name the Git command
-  ansible.builtin.set_fact:
-    retired_git: "{{ ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'safe.directory=*'] }}"
-
-- name: Read the checkout's Git folder
-  ansible.builtin.stat: { path: "{{ retired.path }}/.git" }
-  register: retired_dot_git
-
-# Git names the repository of the worktree that just went by its real path, so the candidate is asked the same way.
-- name: Read the repository's own Git folder
-  when: retired.common_of is defined and retired_dot_git.stat.exists and retired_dot_git.stat.isdir | default(false)
-  ansible.builtin.command:
-    argv: "{{ retired_git + ['-C', retired.path, 'rev-parse', '--path-format=absolute', '--git-common-dir'] }}"
-  register: retired_own
-  changed_when: false
-
-- name: Decide what goes
-  ansible.builtin.set_fact:
-    retired_worktree: "{{ retired_dot_git.stat.exists and retired_dot_git.stat.isreg | default(false) }}"
-    retired_repository: >-
-      {{ retired_dot_git.stat.exists and retired_dot_git.stat.isdir | default(false)
-         and (retired.common_of is not defined
-              or (migrate_common | default('') != '' and migrate_common | default('') == retired_own.stdout | default('') | trim)) }}
-
-- name: Read the worktree's repository
-  when: retired_worktree | bool
-  ansible.builtin.command:
-    argv: "{{ retired_git + ['-C', retired.path, 'rev-parse', '--path-format=absolute', '--git-common-dir'] }}"
-  register: retired_common
-  changed_when: false
-
-- name: Keep the worktree's repository
-  when: retired_worktree | bool
-  ansible.builtin.set_fact:
-    migrate_common: "{{ retired_common.stdout | trim }}"
+- name: Check retirement again before archiving or deleting
+  ansible.builtin.include_tasks:
+    file: instance-migrate-retirement-check.yml
+    apply: { tags: [always] }
 
 - name: Keep the repository's branches and stash in the mirror
   when: retired_repository | bool

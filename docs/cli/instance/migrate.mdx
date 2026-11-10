@@ -49,6 +49,7 @@ These do not move: the staging state of the index, stashes, and branches that no
 - **Deployments.** Wait for an unfinished deployment before starting the move.
 - **Processes.** An Instance with Processes cannot move yet.
 - **Routes.** The Instance has no Route beside its own.
+- **Retirement.** Every checkout scheduled for deletion is clean and has no other worktree registered on its Git directory. Orbit checks before downtime and again before removal. `instance.migrate_retirement_blocked` names the checkout, other worktree paths and changed files, with total counts and the first 20 entries of each list. Ignored files do not block. Resolve the worktrees and save the changes before retrying; Orbit never stashes or removes them for you.
 
 Nobody works in the checkout during the move. Orbit shows the wake page on the Route, and starts no deployment and no wake of the Instance until the move has ended.
 
@@ -56,7 +57,7 @@ Nobody works in the checkout during the move. Orbit shows the wake page on the R
 
 A Project's default Instance moves first. A non-default Instance before its default refuses with `instance.default_not_migrated`.
 
-A non-default checkout is a linked worktree of the default's repository. So the default keeps its checkout on the Node until the last other checkout Instance of the Project has moved. That last move removes it.
+A non-default checkout is a linked worktree of the default's repository. So the default keeps its checkout on the Node until the last other checkout Instance of the Project has moved. That last move can remove it only after the retirement checks pass. A linked checkout also sees the default in its worktree list; the worktrees must be separated before it can retire.
 
 After the default has moved, an Instance that is still a checkout keeps working until its own move.
 
@@ -66,7 +67,7 @@ A move that fails leaves the checkout Instance serving as before. Orbit puts the
 
 When the restore itself fails, the task names the failed step and Orbit keeps the reserved record, so no other Instance takes the address of a container that may be left. The Instance's site stays the checkout's. Its deployments refuse with `instance.lifecycle_busy` until the same command has run again.
 
-The removal of the checkout is the last step. When only that step fails, the Instance stays in its container, the task fails with `instance.migrate_retire_failed`, and the checkout is left on the Node to remove by hand.
+The removal of the checkout is the last step. When only that step fails, the Instance stays in its container, the task fails with `instance.migrate_retire_failed`, and the checkout is left on the Node to remove by hand. A retirement check that finds a new blocker reports `instance.migrate_retirement_blocked` with the same outcome.
 
 The command starts a task and follows it until it ends, as [`instance:deploy`](/cli/instance/deploy) does. Ctrl-C stops following, not the move, and exits 130.
 
@@ -90,6 +91,7 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `instance.database_clone_unsupported` | The Instance's database server has no IPv4 address and port that a container can reach. |
 | `instance.host_unavailable` | The Node has no Instance bridge, the bridge is full, no T3 port is free, or the runtime folder lacks the Project's PHP build. |
 | `instance.migrate_branch_changed` | The checkout is not on the branch that Orbit records. Check out that branch, or record the new one with [`instance:rename`](/cli/instance/rename). |
+| `instance.migrate_retirement_blocked` | A checkout scheduled for deletion has other worktrees or uncommitted changes. The error names up to 20 paths per list and each total count. Before downtime the checkout keeps serving; at the final check the container keeps serving and the checkout stays. |
 | `instance.database_unreachable` | The new container could not reach the database server's port. |
 | `instance.migrate_<step>_failed` | A step of the move failed, such as `instance.migrate_workspace_failed`. The checkout serves as before, except after `instance.migrate_retire_failed`. |
 | `http.404` | The Instance is unknown. |

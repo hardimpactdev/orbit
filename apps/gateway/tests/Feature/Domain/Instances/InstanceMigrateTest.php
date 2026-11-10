@@ -570,6 +570,26 @@ describe('the end of a move', function (): void {
             ->and($feature->refresh()->checkout_path)->toBe(InstanceContainer::workspaceOnNode($feature));
     });
 
+    it('keeps an earlier reservation after a refused retirement preflight, and releases only a fresh one', function (bool $retry): void {
+        $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        if ($retry) {
+            $previous = migrateStart($default);
+            migrateEnd($previous, 'failed', ['ready' => false, 'moved' => false, 'restored' => false, 'failed_step' => 'files']);
+        }
+        $operation = migrateStart($default);
+        $message = 'Cannot retire checkout "/fixture". Other worktrees (1 total; first 20): ["/detached"]. Changed files (1 total; first 20): [" M index.php"].';
+        $result = ['ready' => false, 'moved' => false, 'restored' => true, 'preflight_refused' => true,
+            'failed_step' => 'quiesce', 'error_code' => 'instance.migrate_retirement_blocked', 'error_message' => $message];
+
+        migrateEnd($operation, 'failed', $result);
+
+        expect($operation->input['had_runtime_reservation'])->toBe($retry)
+            ->and($default->runtime()->exists())->toBe($retry)
+            ->and($default->refresh()->checkout_path)->toBe('/home/orbit/apps/tool/default')
+            ->and($operation->refresh()->error_code)->toBe('instance.migrate_retirement_blocked')
+            ->and($operation->result['error_message'])->toBe($message);
+    })->with(['new move' => false, 'retry after failed restore' => true]);
+
     it('leaves a checkout Instance as it was when the move failed and restored', function (): void {
         $node = containerDefaultNode();
         $default = migrateCheckout(containerDefaultProject(), $node);

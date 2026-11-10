@@ -35,8 +35,9 @@ sequenceDiagram
   %%> - a non-default Instance's placeholder model key goes to the vault
   GW->>SW: Start run, full intent<br/>operation-instance-migrate
   GW-->>CLI: 202 Accepted<br/>task ID
-  SW->>N: Stop the Instance<br/>Ansible · tags quiesce
+  SW->>N: Check and stop<br/>Ansible · tags quiesce
   %%> What it does:
+  %%> - before any Node change, checks every planned retirement: no other worktree on its Git directory and no tracked or non-ignored untracked changes, else `instance.migrate_retirement_blocked`; the error names the checkout, blocking paths and total counts (first 20 per list)
   %%> - checks that the checkout is on the recorded branch, else `instance.migrate_branch_changed`
   %%> - deletes a container that an earlier failed move left
   %%> - removes the awake marker, so the Route shows the wake page and nothing writes the checkout or the database during the move
@@ -66,6 +67,7 @@ sequenceDiagram
   alt all steps pass
     SW->>N: Remove the checkout<br/>Ansible · tags retire
     %%> What it does:
+    %%> - repeats the same retirement check before archiving or deleting any checkout; a new blocker leaves the container serving and the checkout intact
     %%> - removes the checkout and writes the awake marker; a default's checkout stays until its last worktree has moved
     %%> - before a repository goes, its local branches and every stash entry are kept in the Node's mirror under `refs/migrated/`
     %%> If it fails:

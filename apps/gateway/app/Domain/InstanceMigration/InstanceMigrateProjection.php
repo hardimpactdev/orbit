@@ -80,7 +80,8 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                     if ($server !== null) {
                         app(InstanceLifecycleContributions::class)->projectCreate($instance, $server);
                     }
-                } elseif (in_array($data['status'], ['failed', 'cancelled', 'interrupted'], true) && ($result['restored'] ?? false) === true) {
+                } elseif (in_array($data['status'], ['failed', 'cancelled', 'interrupted'], true) && ($result['restored'] ?? false) === true
+                    && ! (($result['preflight_refused'] ?? false) === true && ($operation->input['had_runtime_reservation'] ?? false) === true)) {
                     // The run removed its container, so the address is free again. A restore that failed keeps the row and its address.
                     $runtime?->delete();
                 }

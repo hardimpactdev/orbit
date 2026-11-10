@@ -80,6 +80,7 @@ final readonly class StartInstanceMigrateAction
             // Keep a failed restore's reservation: its leftover container and firewall rules still use that address and T3 port.
             // The checkout's site, as it serves before the move.
             $before = $route === null ? null : $this->routes->before($route);
+            $hadReservation = $instance->runtime()->exists();
             $runtime = $this->containers->reserve($instance, $node);
             $branch = $instance->branch ?? ValidatedData::string($instance->project->default_branch);
             // The Node's mirror fetches the branch from the checkout itself: commits that were never pushed come along, and it needs no token.
@@ -105,7 +106,7 @@ final readonly class StartInstanceMigrateAction
                 'participant_node_ids' => array_values(array_unique([$node->id, ...($publication['participant_node_ids'] ?? [])])),
                 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($node),
                 'route_id' => $route?->id, 'route_publication' => $publication,
-                'sqlite_connection_ids' => $databases['sqlite'],
+                'sqlite_connection_ids' => $databases['sqlite'], 'had_runtime_reservation' => $hadReservation,
                 'migrate' => [
                     'checkout' => $instance->checkout_path, 'branch' => $branch, 'default' => $default === null,
                     'application' => ApplicationDirectory::resolve($instance->checkout_path, $instance->root ?? $instance->project->root),

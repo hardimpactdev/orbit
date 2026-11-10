@@ -58,3 +58,24 @@ it('follows lifecycle admission and emits only the final Operation in JSON', fun
     'migrate' => ['instance:migrate', MigrateInstanceRequest::class, ['instance' => 501, '--force' => true], []],
     'destroy' => ['instance:destroy', DestroyInstanceRequest::class, ['instance' => 501, '--yes' => true, '--force' => true], ['force' => true]],
 ]);
+
+it('names retirement blockers in human and JSON migration failures', function (bool $json): void {
+    $message = 'Cannot retire checkout "/fixture". Other worktrees (1 total; first 20): ["/detached"]. Changed files (1 total; first 20): [" M index.php"].';
+    $final = ['id' => 901, 'kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => 501,
+        'status' => 'failed', 'sequence' => 8, 'error_code' => 'instance.migrate_retirement_blocked',
+        'result' => ['instance_id' => 501, 'moved' => false, 'error_message' => $message]];
+    MockClient::global([
+        MigrateInstanceRequest::class => MockResponse::make(['data' => $final], 202),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final]),
+    ]);
+
+    $exit = Artisan::call('instance:migrate', ['instance' => 501, '--force' => true, '--json' => $json, '--no-interaction' => true]);
+    $output = trim(Artisan::output());
+
+    expect($exit)->toBe(1);
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result']['error_message'])->toBe($message);
+    } else {
+        expect($output)->toContain('/fixture', '/detached', 'index.php', 'instance.migrate_retirement_blocked');
+    }
+})->with(['human' => false, 'json' => true]);

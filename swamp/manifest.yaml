@@ -71,6 +71,7 @@ additionalFiles:
   - ansible/tasks/instance-migrate-phase.yml
   - ansible/tasks/instance-migrate-discard.yml
   - ansible/tasks/instance-migrate-retire.yml
+  - ansible/tasks/instance-migrate-retirement-check.yml
   - ansible/ai-router-task-guard.yml
   - ansible/ai-router-model-forwarder.yml
   - ansible/tasks/address-node.yml

@@ -38,6 +38,7 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 | Web server | FrankenPHP, in development now and in production once it has proved itself. PHP also works on the command line |
 | Nodes | No setting to opt in. Every `app-dev` and `app-prod` Node runs its Instances in containers, and the two roles change what they install |
 | Shared runtime | PHP, FrankenPHP, Composer, Node, Bun and the other runtime binaries live once per Node in a versioned read-only folder. Every container mounts it, as the agent folder |
+| Host disk paths | The Incus project `orbit-instances` has no `restricted.devices.disk.paths` limit beside its idmapped runtime and agent folders. This permits those mounts; the project does not restrict host disk source paths ([#3311](https://github.com/hardimpactdev/orbit/pull/3311)) |
 | Container contents | Containers install as little as possible |
 | Production | Production Instances move into containers too, after development containers work |
 | Sleep | A development container sleeps after one hour idle, never while a task runs in it. Development Instances have no Schedules. Production containers never sleep |

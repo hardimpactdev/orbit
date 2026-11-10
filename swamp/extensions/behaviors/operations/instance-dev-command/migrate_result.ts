@@ -17,6 +17,7 @@ export const MigratePhases = z.object({
     restore_route: z.string(),
     restore: z.string(),
 });
+type WrittenFailure = { error_code: string; error_message?: string; preflight_refused?: boolean };
 type Phases = z.infer<typeof MigratePhases>;
 
 /** The workspace phase prints the commit it left checked out as one `orbit-commit=<sha>` line. */
@@ -37,7 +38,7 @@ export function migrateResult(
     phases: Phases,
     workspace: z.infer<typeof Step> | null,
     server: string | null,
-    written: string | null,
+    written: WrittenFailure | null,
 ) {
     const clone = (intent.container as { clone?: unknown } | null)?.clone ?? null;
     const routed = intent.route_mutations != null;
@@ -60,27 +61,30 @@ export function migrateResult(
     ];
     const failed = outcomes.find(([, , failure]) => failure) ?? outcomes.find(([, finished]) => !finished);
     const moved = phases.retire !== "skipped";
-    const refusal = failed !== undefined && WRITES_RESULT.includes(failed[0]) && written !== null && CODE.test(written) &&
-            !written.startsWith("instance.container_")
-        ? written
+    const refusal = failed !== undefined && WRITES_RESULT.includes(failed[0]) && written !== null && CODE.test(written.error_code) &&
+            !written.error_code.startsWith("instance.container_")
+        ? written.error_code
         : null;
     const result = {
         instance_id: intent.instance_id,
         ready: failed === undefined,
         moved,
         restored: !moved && phases.restore === "succeeded" && phases.restore_route !== "failed",
+        ...(failed?.[0] === "quiesce" && refusal === "instance.migrate_retirement_blocked" && written?.preflight_refused === true ? { preflight_refused: true } : {}),
         ...(commit ? { commit } : {}),
         ...(moved && server ? { t3: JSON.parse(server) } : {}),
+        ...(refusal === "instance.migrate_retirement_blocked" && written?.error_message ? { error_message: written.error_message } : {}),
         ...(failed ? { failed_step: failed[0], error_code: refusal ?? "instance.migrate_" + failed[0] + "_failed" } : {}),
     };
     return { ready: failed === undefined, stdout: JSON.stringify(result) };
 }
 
 /** The error code that the last failed phase wrote into the run folder, or null when it wrote none. */
-export async function writtenCode(folder: string): Promise<string | null> {
+export async function writtenFailure(folder: string): Promise<WrittenFailure | null> {
     try {
-        const code = JSON.parse(await Deno.readTextFile(`${folder}/result.json`)).error_code;
-        return typeof code === "string" ? code : null;
+        const value = JSON.parse(await Deno.readTextFile(`${folder}/result.json`));
+        const parsed = z.object({ error_code: z.string().regex(CODE), error_message: z.string().optional(), preflight_refused: z.boolean().optional() }).safeParse(value);
+        return parsed.success ? parsed.data : null;
     } catch {
         return null;
     }

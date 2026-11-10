@@ -1,6 +1,14 @@
 ---
 # One phase of instance-migrate.yml, `phase`, on the Node. The checkout is `migrate.checkout`; the new container is `container`,
 # in `container.project`. Git reads the checkout as root, so each call names it as a safe directory. `incus` gets no stray input.
+# A refused preflight changed nothing. Do not discard an earlier failed move's resources or rewrite its awake marker.
+- name: Leave the Node unchanged after a refused preflight
+  when: >-
+    phase == 'restore' and
+    (lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/result.json', errors='ignore')
+     | default('{}', true) | from_json).get('preflight_refused', false)
+  ansible.builtin.meta: end_host
+
 - name: Name the commands
   ansible.builtin.set_fact:
     incus_project: [incus, --project, "{{ container.project }}"]
@@ -29,6 +37,15 @@
         that: checkout_branch.rc == 0 and checkout_branch.stdout | trim == migrate.branch
         fail_msg: instance.migrate_branch_changed
         quiet: true
+
+# Check every planned retirement before any Node change, and again before any checkout in the batch goes.
+- name: Check all planned retirements
+  when: phase in ['quiesce', 'retire']
+  ansible.builtin.include_tasks:
+    file: instance-migrate-retirement-check.yml
+    apply: { tags: [always] }
+  loop: "{{ migrate.retire }}"
+  loop_control: { loop_var: retired, label: "{{ retired.path }}" }
 
 # A container that an earlier failed move left is not the Instance's: this move starts with a new one. After a failure the new
 # container goes with what the move added on the Node, so the checkout Instance is as it was.

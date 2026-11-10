@@ -58,7 +58,7 @@ const exists = (path: string) => {
  * A Node with one Project's checkouts under `apps`: the default's repository, and with `feature` a linked worktree of it. The
  * checkouts live outside the folders that the Incus boundary maps into a container, so their paths reach it as they are.
  */
-function fixture(instance: "default" | "feature" = "default") {
+function fixture(instance: "default" | "feature" = "default", dirty = false, linked = true) {
   const folder = Deno.makeTempDirSync();
   const apps = Deno.makeTempDirSync({ dir: "/var/tmp" });
   for (const path of ["bin", "tasks", "home", "run", "markers"]) Deno.mkdirSync(`${folder}/${path}`);
@@ -68,7 +68,7 @@ function fixture(instance: "default" | "feature" = "default") {
     `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-migrate-incus.ts", import.meta.url).pathname}' "$@"\n`,
   );
   Deno.chmodSync(`${folder}/bin/incus`, 0o755);
-  for (const name of ["instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml"]) {
+  for (const name of ["instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml"]) {
     const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => transform(structuredClone(task)));
     Deno.writeTextFileSync(`${folder}/tasks/${name}`, stringify(tasks));
   }
@@ -84,7 +84,13 @@ function fixture(instance: "default" | "feature" = "default") {
   Deno.writeTextFileSync(`${main}/old.php`, "<?php // goes\n");
   git(main, "add", ".");
   git(main, "commit", "--quiet", "-m", "first");
-  if (instance === "feature") git(main, "worktree", "add", "--quiet", "-b", "feature", `${apps}/feature`);
+  if (instance === "feature") {
+    if (linked) git(main, "worktree", "add", "--quiet", "-b", "feature", `${apps}/feature`);
+    else {
+      git(main, "clone", "--quiet", "--no-hardlinks", main, `${apps}/feature`);
+      git(`${apps}/feature`, "checkout", "--quiet", "-b", "feature");
+    }
+  }
   const checkout = `${apps}/${instance}`;
   const branch = instance === "default" ? "main" : "feature";
   Deno.writeTextFileSync(`${checkout}/local.php`, "<?php // committed, never pushed\n");
@@ -101,6 +107,10 @@ function fixture(instance: "default" | "feature" = "default") {
   Deno.mkdirSync(`${checkout}/database`);
   Deno.writeTextFileSync(`${checkout}/database/database.sqlite`, "sqlite\n");
   Deno.writeTextFileSync(`${checkout}/.env`, `APP_KEY=base64:kept\nDB_DATABASE=${checkout}/database/database.sqlite\n`);
+  if (!dirty) {
+    git(checkout, "add", "--all");
+    git(checkout, "commit", "--quiet", "-m", "save changes before retirement");
+  }
   const id = instance === "default" ? 7 : 8;
   const clone = instance === "default" ? null : {
     t3: { port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 2 },
@@ -203,8 +213,12 @@ Deno.test({
   name: "a default moves with its unpushed commit and its changed, staged, untracked, deleted and ignored files; then its checkout goes",
   ignore: !hasAnsible,
   fn() {
-    const f = fixture();
+    const f = fixture("default", true);
     try {
+      // A retained default can copy its local files; its checkout is not scheduled for deletion yet.
+      const retirements = f.migrate.retire;
+      f.migrate.retire = [];
+      f.write();
       const head = git(f.checkout, "rev-parse", "HEAD");
       const status = git(f.checkout, "status", "--porcelain");
       f.build();
@@ -239,6 +253,8 @@ Deno.test({
       Deno.writeTextFileSync(`${f.checkout}/new-stash.txt`, "newer stash\n");
       git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
       const newerStash = git(f.checkout, "rev-parse", "refs/stash");
+      f.migrate.retire = retirements;
+      f.write();
       const retire = f.run("retire");
       assert(retire.ok, retire.output);
       assert(!exists(f.checkout));
@@ -258,46 +274,22 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a non-default worktree becomes a standalone repository with T3's port; the last one takes the default's old checkout with it",
+  name: "a linked checkout refuses retirement even when the default is in the same retirement batch",
   ignore: !hasAnsible,
   fn() {
     const f = fixture("feature");
     try {
-      const head = git(f.checkout, "rev-parse", "HEAD");
-      // The default moved before: its mirror is on the Node, and its checkout stayed for this worktree.
-      Deno.mkdirSync(`${f.folder}/mirror`);
-      git(f.folder, "init", "--quiet", "--bare", `${f.folder}/mirror/7.git`);
-      const other = `${f.apps}/unrelated`;
-      Deno.mkdirSync(other);
-      git(other, "init", "--quiet", "--initial-branch", "main");
       f.migrate.retire.push({ path: f.main, mirror: `${f.folder}/mirror/7.git`, common_of: f.checkout });
-      f.migrate.retire.push({ path: other, mirror: `${f.folder}/mirror/7.git`, common_of: f.checkout });
       f.write();
-      assert(Deno.statSync(`${f.checkout}/.git`).isFile);
-      f.build();
-      assertEquals(f.workspace("rev-parse", "HEAD"), head);
-      assertEquals(f.workspace("symbolic-ref", "--short", "HEAD"), "feature");
-      // The worktree's `.git` file never came: the workspace has its own repository.
-      assert(Deno.statSync(`${f.rootfs}/srv/workspace/.git`).isDirectory);
-      assertEquals(f.read("index.php"), "<?php echo 2;\n");
-      assertEquals(f.state().containers["instance-8"].added.t3, {
-        type: "proxy",
-        settings: ["listen=tcp:10.44.0.7:3800", "connect=tcp:10.253.0.8:3773", "nat=true"],
-      });
-      const again = f.run("files");
-      assert(again.ok, again.output);
-      assertEquals(Object.keys(f.state().containers["instance-8"].added), ["t3"]);
-
-      const main = git(f.main, "rev-parse", "main");
-      const retire = f.run("retire");
-      assert(retire.ok, retire.output);
-      assert(!exists(f.checkout));
-      // The default's old checkout was this worktree's repository, so it goes too, its branches kept in the default's mirror.
-      assert(!exists(f.main));
-      assertEquals(git(`${f.folder}/mirror/7.git`, "rev-parse", "refs/migrated/heads/main"), main);
-      assertEquals(git(`${f.folder}/mirror/7.git`, "rev-parse", "refs/migrated/heads/feature"), head);
-      // A repository that the worktree did not belong to stays.
-      assert(exists(`${other}/.git`));
+      const quiesce = f.run("quiesce");
+      assert(!quiesce.ok, quiesce.output);
+      assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
+      assert(f.result().error_message.includes(f.main));
+      assert(f.result().error_message.includes("Other worktrees (1 total; first 20)"));
+      assert(exists(f.checkout));
+      assert(exists(`${f.main}/.git`));
+      assert(exists(f.migrate.awake.path));
+      assertEquals(f.state().containers ?? {}, {});
     } finally {
       f.cleanup();
     }
@@ -305,18 +297,26 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a worktree that is not the last leaves the default's repository, with its own entry pruned",
+  name: "a clean standalone non-default checkout moves with T3 and leaves an unrelated default repository intact",
   ignore: !hasAnsible,
   fn() {
-    const f = fixture("feature");
+    const f = fixture("feature", false, false);
     try {
+      f.migrate.retire.push({ path: f.main, mirror: `${f.folder}/mirror/7.git`, common_of: f.checkout });
+      f.write();
+      const head = git(f.checkout, "rev-parse", "HEAD");
       f.build();
+      assertEquals(f.workspace("rev-parse", "HEAD"), head);
+      assertEquals(f.workspace("symbolic-ref", "--short", "HEAD"), "feature");
+      assert(Deno.statSync(`${f.rootfs}/srv/workspace/.git`).isDirectory);
+      assertEquals(f.state().containers["instance-8"].added.t3, {
+        type: "proxy", settings: ["listen=tcp:10.44.0.7:3800", "connect=tcp:10.253.0.8:3773", "nat=true"],
+      });
       const retire = f.run("retire");
       assert(retire.ok, retire.output);
       assert(!exists(f.checkout));
       assert(exists(`${f.main}/.git`));
-      assertEquals(git(f.main, "worktree", "list", "--porcelain").includes("feature"), false);
-      assertEquals(git(f.main, "rev-parse", "--verify", "feature"), git(`${f.folder}/mirror/8.git`, "rev-parse", "refs/heads/feature"));
+      assertEquals(f.state().containers["instance-8"].status, "Running");
     } finally {
       f.cleanup();
     }
@@ -451,3 +451,102 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name: "preflight names linked and detached worktrees and every tracked or untracked change before any Node change",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const linked = `${f.apps}/linked with spaces`;
+      const detached = `${f.apps}/detached`;
+      git(f.checkout, "worktree", "add", "--quiet", "-b", "extra", linked);
+      git(f.checkout, "worktree", "add", "--quiet", "--detach", detached);
+      Deno.writeTextFileSync(`${f.checkout}/index.php`, "changed\n");
+      Deno.writeTextFileSync(`${f.checkout}/staged.php`, "staged edit\n");
+      git(f.checkout, "add", "staged.php");
+      git(f.checkout, "mv", "note.txt", "renamed with spaces.txt");
+      Deno.removeSync(`${f.checkout}/local.php`);
+      Deno.writeTextFileSync(`${f.checkout}/untracked.txt`, "not ignored\n");
+      const before = git(f.checkout, "status", "--porcelain=v1", "--untracked-files=all");
+      // Retained resources from a previous failure must survive both preflight and its restore path.
+      assert(f.run("container").ok);
+      const state = f.state();
+      const rules = f.ufw();
+      const quiesce = f.run("quiesce");
+      assert(!quiesce.ok, quiesce.output);
+      const receipt = f.result();
+      assertEquals(receipt.error_code, "instance.migrate_retirement_blocked");
+      for (const path of [f.checkout, linked, detached, "index.php", "staged.php", "note.txt", "renamed with spaces.txt", "local.php", "untracked.txt"]) {
+        assert(receipt.error_message.includes(path), receipt.error_message);
+      }
+      assert(receipt.error_message.includes("Other worktrees (2 total; first 20)"));
+      assert(receipt.error_message.includes("Changed files (5 total; first 20)"));
+      assert(exists(f.migrate.awake.path));
+      assertEquals(f.state(), state);
+      const restore = f.run("restore");
+      assert(restore.ok, restore.output);
+      assertEquals(f.state(), state);
+      assertEquals(f.ufw(), rules);
+      assertEquals(git(f.checkout, "status", "--porcelain=v1", "--untracked-files=all"), before);
+      assertEquals(f.result(), receipt);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "retirement error lists stop at 20 entries with total counts",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      for (let i = 0; i < 22; i++) {
+        Deno.writeTextFileSync(`${f.checkout}/file-${String(i).padStart(2, "0")}.txt`, "new\n");
+        git(f.checkout, "worktree", "add", "--quiet", "--detach", `${f.apps}/worktree-${String(i).padStart(2, "0")}`);
+      }
+      const quiesce = f.run("quiesce");
+      assert(!quiesce.ok, quiesce.output);
+      const message = f.result().error_message;
+      assert(message.includes("Other worktrees (22 total; first 20)"));
+      assert(message.includes("Changed files (22 total; first 20)"));
+      assert(message.includes("file-19.txt"));
+      assert(message.includes("worktree-19"));
+      assert(!message.includes("file-20.txt"));
+      assert(!message.includes("worktree-20"));
+      assert(exists(f.migrate.awake.path));
+      assertEquals(f.state().containers ?? {}, {});
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+for (const blocker of ["changes", "worktree"] as const) {
+  Deno.test({
+    name: `retirement rechecks ${blocker} created after preflight and leaves the container and source intact`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        f.build();
+        const path = blocker === "changes" ? `${f.checkout}/late.txt` : `${f.apps}/late-worktree`;
+        if (blocker === "changes") Deno.writeTextFileSync(path, "late edit\n");
+        else git(f.checkout, "worktree", "add", "--quiet", "--detach", path);
+        const state = f.state();
+        const retire = f.run("retire");
+        assert(!retire.ok, retire.output);
+        assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
+        assert(f.result().error_message.includes(blocker === "changes" ? "late.txt" : path));
+        assertEquals(f.result().preflight_refused, false);
+        assert(exists(f.checkout));
+        assert(exists(path));
+        assertEquals(f.state(), state);
+        assertEquals(f.state().containers["instance-7"].status, "Running");
+      } finally {
+        f.cleanup();
+      }
+    },
+  });
+}

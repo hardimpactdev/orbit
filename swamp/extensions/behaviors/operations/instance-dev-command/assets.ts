@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { MigratePhases, migrateResult, writtenCode } from "./migrate_result.ts";
+import { MigratePhases, migrateResult, writtenFailure } from "./migrate_result.ts";
 import { createResult, Step } from "./result.ts";
 const ObjectValue = z.record(z.string(), z.unknown());
 type Context = {
@@ -82,7 +82,7 @@ export const behavior = {
                 },
                 ctx: Context,
             ) => {
-                const value = migrateResult(args.intent, args.phases, args.workspace, args.server ?? null, await writtenCode(args.folder));
+                const value = migrateResult(args.intent, args.phases, args.workspace, args.server ?? null, await writtenFailure(args.folder));
                 await ctx.writeResource("result", "migrate", value);
                 return value;
             },

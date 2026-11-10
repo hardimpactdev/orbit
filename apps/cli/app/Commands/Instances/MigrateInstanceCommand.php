@@ -37,6 +37,14 @@ A Project's default Instance moves first. A move that fails leaves the checkout 
 The command is temporary: it goes when the last checkout Instance has moved. --json disables prompts and requires --force.
 HELP;
 
+    protected function writeOperationResult(OperationResponse $operation): void
+    {
+        $message = $operation->result['error_message'] ?? null;
+        if ($operation->errorCode === 'instance.migrate_retirement_blocked' && is_string($message)) {
+            $this->writeHumanMessage($message);
+        }
+    }
+
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
