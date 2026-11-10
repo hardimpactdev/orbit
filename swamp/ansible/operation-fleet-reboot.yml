@@ -81,6 +81,9 @@
           become: false
           changed_when: false
           register: clock
+          vars:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
         # A task host that admission found busy waits for the next night. So does a Node that cannot finish its drain, its guest
         # stops and its reboot inside the window. An operator's pass is not bound to the window.
         - name: Decide whether the Node waits

@@ -84,6 +84,32 @@ Deno.test("a Node after a failed one halts from the records in the run folder", 
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
+Deno.test("a Node's play reads the clock and writes its record on the Swamp Node without SSH to localhost", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        // As in the pass: `-i localhost,` makes localhost a real inventory host, and a task delegated to it from the Node's play
+        // uses its connection, not the local one of the addressing play. SSH to the Swamp Node itself fails host key checking.
+        const clock = drainBlock.find((t) => t.name === "Read the time in the window's zone")!;
+        const path = `${folder}/play.json`;
+        await Deno.writeTextFile(path, JSON.stringify([
+            { hosts: "localhost", connection: "local", gather_facts: false, tasks: [{ name: "Address the Node", "ansible.builtin.add_host": {
+                name: "node", groups: ["reboot_node"], ansible_connection: "local", ansible_python_interpreter: "{{ ansible_playbook_python }}" } }] },
+            { hosts: "reboot_node", gather_facts: false,
+                vars: { intent: { window: { timezone: "Europe/Amsterdam" } }, target: { node_id: 18, name: "sabre" }, record_path: `${folder}/result-000-18.json` },
+                tasks: [{ ...clock, become: false },
+                    { name: "Record", "ansible.builtin.include_tasks": `${ansible}tasks/fleet-reboot-record.yml`, vars: { record_update: { node_id: 18, outcome: "not_due" } } }] },
+        ]));
+        const result = await new Deno.Command("ansible-playbook", {
+            args: ["-i", "localhost,", path], stdout: "piped", stderr: "piped",
+            env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_HOST_KEY_CHECKING: "True",
+                ANSIBLE_SSH_ARGS: "-o BatchMode=yes -o ConnectTimeout=3 -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/dev/null" },
+        }).output();
+        const output = new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr);
+        assertEquals(result.code, 0, output);
+        assertEquals(JSON.parse(await Deno.readTextFile(`${folder}/result-000-18.json`)), { node_id: 18, outcome: "not_due" });
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
 Deno.test("the check waits for the boot to finish before it reads the failed units", () => {
     const check = plays.find((p) => p.name === "Check the Node")!.tasks.find((t) => t.name === "Check the Node")!.block as Task[];
     const names = check.map((t) => t.name);
