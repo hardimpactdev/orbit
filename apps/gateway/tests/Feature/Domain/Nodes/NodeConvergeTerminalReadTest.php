@@ -22,7 +22,9 @@ function converge_failed_run(string $runId, Operation $operation, ?string $inlin
 {
     $phases = [];
     foreach (['input', 'agent', 'software', 'roles', 'tools', 'network', 'check'] as $name) {
-        $phases[] = ['name' => $name, 'status' => match ($name) { 'network' => 'failed', 'check' => 'skipped', default => 'succeeded' },
+        $phases[] = ['name' => $name, 'status' => match ($name) {
+            'network' => 'failed', 'check' => 'skipped', default => 'succeeded'
+        },
             'changed' => 0, 'elapsed_seconds' => $name === 'check' ? 0 : 1];
     }
     $report = ['name' => 'Report Node converge', 'status' => 'succeeded',
@@ -114,9 +116,9 @@ it('reads again when the report step succeeded but its output could not be read'
     expect($this->operation->refresh()->status)->toBe(OperationStatus::Running);
 });
 
-it('projects the failed phase once the report output is read', function (?bool $inline): void {
+it('projects the failed phase once the report output is read', function (bool $inline): void {
     $run = converge_failed_run($this->runId, $this->operation, null);
-    if ($inline === true) {
+    if ($inline) {
         $run = converge_failed_run($this->runId, $this->operation, json_encode($run['_result']));
     }
     app()->instance(WebSocketClient::class, converge_read_socket($run, true));
@@ -126,4 +128,4 @@ it('projects the failed phase once the report output is read', function (?bool $
     expect($operation->status)->toBe(OperationStatus::Failed)
         ->and($operation->error_code)->toBe('operation.native_failed')
         ->and($operation->result['failed_phase'] ?? null)->toBe('network');
-})->with(['inline output' => [true], 'output artifact' => [null]]);
+})->with(['inline output' => [true], 'output artifact' => [false]]);
