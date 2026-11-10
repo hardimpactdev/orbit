@@ -335,7 +335,7 @@ async function fixture(
     }' "$@"`,
     zfs: 'printf "%s\\n" 307200',
     ip: `cat '${folder}/ip-addr'`,
-    "dpkg-query": 'printf "%s" "ii 1:7.0.1-ubuntu26.04"',
+    "dpkg-query": 'printf "%s" "installed"',
     modprobe: 'printf "install /bin/false \\n"',
     sysctl: 'printf "16384\\n128\\n65536\\n200\\n20000\\n1048576\\n"',
     // No Node group holds gid 2750.

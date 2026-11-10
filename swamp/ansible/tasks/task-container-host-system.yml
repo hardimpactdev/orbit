@@ -4,16 +4,16 @@
 # error code, its Incus pins, the subordinate IDs it needs and the kernel modules its containers need. It never upgrades a running Incus
 # and never reboots the host: the full upgrade and the reboot before first use are the operator's. The caller applies the ARC cap that
 # it sizes (`container_arc_max`).
-# `ii ` is installed. A package removed with its config files left (`rc `) still has a version, so it counts as missing.
+# The package's state is independent of its selection: an installed package may be held. Config files left after removal do not count.
 - name: Read the installed Incus package
-  ansible.builtin.command: { argv: [dpkg-query, --show, --showformat, "${db:Status-Abbrev}${Version}", incus] }
+  ansible.builtin.command: { argv: [dpkg-query, --show, --showformat, "${db:Status-Status}", incus] }
   register: container_incus_package
   changed_when: false
   failed_when: container_incus_package.rc not in [0, 1]
 
 # Only a host without Incus gets it here, from the recipe's pinned packages (the mirror first, then upstream, checked by SHA-256).
 - name: Install Incus from the recipe
-  when: not container_incus_package.stdout.startswith('ii ')
+  when: container_incus_package.stdout != 'installed'
   vars:
     container_incus_debs: >-
       {{ container_host.incus.packages | map(attribute='name') | zip(container_host.incus.packages | map(attribute='sha256'))

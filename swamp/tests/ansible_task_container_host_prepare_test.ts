@@ -104,7 +104,7 @@ function fixture(
   {
     memory = 32 * GiB,
     written = "307200",
-    installed = "ii 1:7.0.1-ubuntu26.04",
+    installed = "installed",
     server = "7.0.1",
     subids = 1000000000,
     sctp = "install /bin/false ",
@@ -165,7 +165,7 @@ function fixture(
     }' "$@"`,
     zfs:
       'case "$*" in *written*) printf "%s\\n" "$WRITTEN" ;; *) printf "%s\\n" "$DATASETS" ;; esac',
-    // As dpkg-query prints `${db:Status-Abbrev}${Version}`: `ii ` is installed, `rc ` removed with its config files left.
+    // dpkg-query's db:Status-Status is independent of the package's hold selection.
     "dpkg-query": '[ -n "$INSTALLED" ] || exit 1; printf "%s" "$INSTALLED"',
     modprobe: 'printf "%s\\n" "$SCTP"',
     "apt-get": `printf "%s\\n" "$*" >> '${folder}/apt-get'`,
@@ -677,7 +677,7 @@ Deno.test({
     "an Incus package removed with its config files left counts as missing and is installed",
   ignore: !hasAnsible,
   fn() {
-    const f = fixture({ installed: "rc 1:7.0.1-ubuntu26.04" });
+    const f = fixture({ installed: "config-files" });
     try {
       const result = f.run();
       assert(result.ok, result.output);
