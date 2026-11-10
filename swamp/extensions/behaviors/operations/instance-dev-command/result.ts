@@ -11,6 +11,9 @@ type Phases = {
     route: string;
     /** The statuses of the Route's CSR and signing steps, which run beside the checkout. */
     certificates?: string[];
+    t3_observation?: string;
+    sessions_observation?: string;
+    route_observation?: Record<string, unknown>;
     /** A container default's phases, which run instead of the checkout, the database and the setup. */
     container?: Container | null;
 };
@@ -107,6 +110,28 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
             }
             : {}),
     };
+    if (phases.t3_observation || phases.sessions_observation) {
+        const observed = (raw: string | undefined, key: string): string | null => {
+            if (!raw) return null;
+            try {
+                const value = JSON.parse(raw)[key];
+                return typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
+            } catch { return null; }
+        };
+        const probeTimes: string[] = [];
+        const collect = (value: unknown): void => {
+            if (value === null || typeof value !== "object") return;
+            const row = value as Record<string, unknown>;
+            if (typeof row.finishedAt === "string" && Number.isFinite(Date.parse(row.finishedAt))) probeTimes.push(new Date(row.finishedAt).toISOString());
+            for (const nested of Object.values(row)) if (nested !== null && typeof nested === "object") collect(nested);
+        };
+        for (const [name, value] of Object.entries(phases.route_observation ?? {})) if (name.startsWith("Probe the site over TLS")) collect(value);
+        Object.assign(result, { readiness: {
+            t3_answers_at: observed(phases.t3_observation, "ready_at"),
+            sessions_checked_at: observed(phases.sessions_observation, "checked_at"),
+            route_ready_at: probeTimes.sort().at(-1) ?? null,
+        } });
+    }
     return { ready: failed === undefined, stdout: JSON.stringify(result) };
 }
 
@@ -132,6 +157,7 @@ function containerOutcomes(
     if (clone !== null) {
         return [
             ["clone", container.launch === "succeeded", container.launch === "failed"],
+            ["database", (intent.database == null && intent.server_database == null) || phases.database === "succeeded", phases.database === "failed"],
             ["workspace", commit !== null, container.workspace?.status === "failed"],
             ["agent", container.agent === "succeeded", container.agent === "failed"],
             ["processes", container.processes === "succeeded", container.processes === "failed"],

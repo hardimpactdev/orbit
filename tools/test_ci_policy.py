@@ -54,7 +54,7 @@ class RequiredGateTest(unittest.TestCase):
         self.assertNotIn('  native-tests:', SOURCE)
 
     def run_required(self, *, slow='true', proof_blocking='true', proof_required=False,
-                     fork=False, results=None, statuses=None, snapshots=None):
+                     fork=False, results=None, statuses=None, snapshots=None, selections=None):
         import json
         import os
         import subprocess
@@ -67,6 +67,11 @@ class RequiredGateTest(unittest.TestCase):
         needs = {job: {'result': 'success'} for job in jobs}
         selection = {job: True for job in jobs if job not in ('changes', 'gateway-release')}
         selection['swamp'] = True
+        for name, value in (selections or {}).items():
+            if value is None:
+                selection.pop(name, None)
+            else:
+                selection[name] = value
         needs['changes']['outputs'] = {'jobs': json.dumps(selection), 'gateway_release': 'false'}
         rows = {name: {'name': name, 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1} for name in (
             'Swamp / Swamp shape gate', 'Swamp / Swamp workflow validate', 'Swamp / Swamp Deno tests', 'CI proof')}
@@ -102,6 +107,7 @@ class RequiredGateTest(unittest.TestCase):
         block = caller.split('  required:\n', 1)[1]
         self.assertIn('    if: always()', block)
         jobs = block.split('needs: [', 1)[1].split(']', 1)[0].split(', ')
+        self.assertIn('gateway-tests', jobs)
         self.assertNotIn('swamp', jobs)
         self.assertNotIn('proof-run', jobs)
         self.assertIn('      actions: read', block)
@@ -109,12 +115,25 @@ class RequiredGateTest(unittest.TestCase):
         self.assertIn("PROOF_BLOCKING: ${{ vars.ORBIT_PROOF_BLOCKING != 'false' }}", block)
 
     def test_every_other_selected_failure_or_skip_still_blocks(self):
-        for component in ('pi', 'agent', 'php', 'Swamp / Swamp workflow validate', 'Swamp / Swamp Deno tests'):
+        for component in ('gateway-tests', 'pi', 'agent', 'php', 'Swamp / Swamp workflow validate', 'Swamp / Swamp Deno tests'):
             for slow in ('true', 'false'):
                 for result in ('failure', 'cancelled', 'skipped'):
                     with self.subTest(component=component, slow=slow, result=result):
                         error, _, _ = self.run_required(slow=slow, results={component: result})
                         self.assertIsNotNone(error)
+
+    def test_gateway_pest_skip_requires_explicit_false_and_complete_boolean_selection(self):
+        for slow in ('true', 'false'):
+            error, _, _ = self.run_required(slow=slow, results={'gateway-tests': 'skipped'},
+                                             selections={'gateway-tests': False})
+            self.assertIsNone(error)
+            for selections in ({'gateway-tests': None}, {'gateway-tests': 'false'},
+                               {'gateway-tests': 0}, {'unexpected-job': True}):
+                with self.subTest(slow=slow, selections=selections):
+                    error, _, _ = self.run_required(slow=slow, selections=selections)
+                    self.assertEqual(error, 'Incomplete build selections')
+        error, _, _ = self.run_required(results={'changes': 'failure'})
+        self.assertEqual(error, 'Build input selection failed')
 
     def test_non_blocking_slow_jobs_need_not_complete_on_main_or_a_pr(self):
         for proof_required in (False, True):
