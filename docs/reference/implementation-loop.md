@@ -111,7 +111,8 @@ These job measurements are from the CI timing sample collected on 2026-11-10. Th
 | Rust agent check and test | 107–124 s | None |
 | Proof harness | 34–43 s | None |
 | Swamp workflow validate / Deno tests | 33–45 s / 22–53 s | None |
-| Swamp shape gate | About 17–20 min in the slow sample; recent completed jobs took 13:28 and 21:47 | None; one self-hosted runner |
+| Gateway Pest suite | 47 s–1 min 13 s on 2026-11-10 pull requests | Select build inputs |
+| Swamp shape gate | About 17–20 min in the slow sample; recent completed jobs took 13:28 and 21:47 | None; the shared self-hosted pool |
 | CI proof, when selected | 3.6–49 min in the sample | Select build inputs, then proof capacity and execution |
 | Gateway release inputs | About 3 s | Select build inputs |
 | Required checks | About 3 s for aggregation, plus any API wait | Its required dependencies |
@@ -122,30 +123,10 @@ For source records, compare [CI run 42861369691](https://github.com/hardimpactde
 
 The target is **about six minutes from push to green Required checks**, including required shape coverage and a green Gateway Pest suite. It is a planning budget, not delivered behavior. Today's report-only shape path is already shorter. The measured shape work supports an estimate near six minutes with three available Shark slots after fixture splitting. Loaded Sabre needs a budget near seven minutes. Hosted Pest setup and the new shape layout need measurements before either estimate becomes a claim.
 
-### Gateway Pest measurement and dependencies
-
-The measured default Gateway suite contains **1,936 cases in 179 files**: 308 Unit cases and 1,628 Feature cases. One Beast run took **16.97 seconds with four workers**, excluding dependency setup. It used PHP 8.5.12, Pest 5.3.5 and PHPUnit 13.4.5 at revision `fde9907f9c12dc04a14cd8b32c5dc03c6958bb32`.
-
-The run passed 1,901 cases, failed 34 and errored on one; its exit code was 2. This is a complete failing-suite baseline, not a green hosted benchmark. A private configuration disabled `stopOnRisky` only for measurement. The two-second per-case limit and `failOnRisky` stayed enabled, and no risky case occurred. Four failures came from missing CLI dependencies. Other failures included stale expectations and a Caddy 502 with an unproved cause. Fix and measure a green suite before making it required.
-
-| Dependency | Requirement |
-| --- | --- |
-| PHP and Composer | PHP 8.5 with SQLite, PDO and pcntl. Install Gateway and CLI development dependencies from their lockfiles and regenerate autoloads. The measured run allowed 1 GiB per PHP process |
-| CLI fixture | All four datasets of `NodeMetricsTest`'s real CLI exit-path test need `apps/cli/vendor/autoload.php`. The checked-in fixture needs no compiled CLI or PHAR. Another job's vendor directory does not supply it |
-| Database and queues | The default suite uses SQLite `:memory:`, array cache/session/mail, null broadcast and local queue configuration. It needs no PostgreSQL, MySQL or Redis service. Keep the database guards |
-| Deno | Version 2.9.8 for `FirewallAllowNativeTest`, with its JSR imports available. Cold setup needs outbound network |
-| Caddy | Recipe version 2.11.7 for the real loopback tests in `AiRouterTaskGuardCaddyTest` and `AiRouterModelForwarderTest`. Verify the recipe checksum and binary before running; missing Caddy can otherwise skip cases |
-| Operating system | Linux, Bash, GNU tools, Git, Python, private temporary files and child processes. Loopback tests open local TCP listeners. Setup downloads need outbound network; the default suite needs no live fleet |
-| Privileged kernel cases | Two cases, excluded from the default suite: model-forwarder and Instance-egress nftables proofs. The hosted Gateway static analysis job runs them serially with sudo, nft/ip/iptables/nsenter/Python and `ORBIT_REAL_KERNEL_TESTS=1` |
-
-Main collects the default Gateway suite but does not execute it. The two hosted kernel cases already feed Required checks through Gateway static analysis. Keep their disposable networking off shared hosts. Installing the full Node recipe, starting extra database services or acquiring proof VMs is unnecessary for the default Pest suite.
-
 ### Next measurements and changes
 
 The following work needs separate changes and measurements.
 
-- Measure a green Gateway Pest suite on a hosted runner with all prerequisites. Start with one job; its measured test work does not justify sharding yet.
-- Let the early CLI release follow green Required checks independently of the slow-check switch.
 - Split long shape fixture scenarios, preserve their assertions, then measure three shards before restoring shape blocking.
 - Decide separately whether proof should remain report-only. Keep the current proof switch until that decision.
 - Reuse trusted complete PR checks on main only for equal trees. Retain main artifacts and result records.
