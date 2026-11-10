@@ -29,11 +29,12 @@ final readonly class CaptureProjectSourceFactsAction
         $application = ltrim(ApplicationDirectory::resolve('', $root), '/');
         $path = static fn (string $file): string => $application === '' ? $file : $application.'/'.$file;
         $entry = $type->frameworkEntryPoint();
-        $read = $this->reader->read($repositoryUrl, $access, $branch, [$path('.env.example'), $path('composer.json'), $path($entry)]);
+        $composerPath = $type === ProjectType::Monorepo ? 'composer.json' : $path('composer.json');
+        $read = $this->reader->read($repositoryUrl, $access, $branch, [$path('.env.example'), $composerPath, $path($entry)]);
         $files = $read['files'];
-        $composer = $files[$path('composer.json')];
+        $composer = $files[$composerPath];
         $profile = $error = null;
-        if ($type !== ProjectType::Monorepo && $composer !== null) {
+        if ($composer !== null) {
             $entryFile = $files[$path($entry)];
             $entryKind = $entryFile === null ? 'absent' : (in_array($entryFile['mode'], ['100644', '100755'], true) ? 'regular' : 'unsafe');
             try {

@@ -18,7 +18,7 @@ Managed PHP supports amd64 only, because [Linux Nodes are x86_64 only](/referenc
 
 ## Select the PHP version
 
-The Gateway reads the source's `composer.json` once, before it publishes the runtime or DNS. For a routed Laravel app, source inspection reads `composer.json` and `artisan` from the [application directory](/reference/projects#application-directory), not from an unrelated repository-root Composer project. It tries PHP 8.5, then PHP 8.4, and picks the first version that the `require.php` constraint allows.
+The Gateway reads the source's `composer.json` once, before it publishes the runtime or DNS. For a routed Laravel app, source inspection reads `composer.json` and `artisan` from the [application directory](/reference/projects#application-directory), not from an unrelated repository-root Composer project. It tries PHP 8.5, then PHP 8.4, and picks the first version that the `require.php` constraint allows. A monorepo uses the root Composer constraint with this same rule; it stays non-Laravel and needs no framework entry point.
 
 With root `apps/site/public`, the working directory for PHP-FPM is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in production; Caddy's document root remains the corresponding `apps/site/public`. Root `public` keeps the checkout or release root as the application working directory.
 
