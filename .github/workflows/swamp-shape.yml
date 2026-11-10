@@ -21,10 +21,11 @@ on:
 permissions:
   contents: read
 # No host selector exists for Shark. Bound all gate runs before runner placement.
-# GitHub retains one running and one pending run; a newer pending run replaces the old one.
+# Queue up to 100 pending gates instead of replacing another PR waiting for capacity.
 concurrency:
   group: swamp-shape-capacity
   cancel-in-progress: false
+  queue: max
 
 jobs:
   shape-plan:

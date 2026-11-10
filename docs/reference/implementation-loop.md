@@ -2,9 +2,8 @@
 title: "Feature delivery"
 description: "How a change reaches main: review evidence, CI, local checks, worktrees, and the shared main caches."
 covers:
-  - bin/ci-swamp-shape-result
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,test,ci-build-plan,ci-cache-ref,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
+  - bin/{review-check,test,ci-build-plan,ci-cache-ref,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate,ci-swamp-shape-result}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy}.py,swamp/bin/check-swamp-shape.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
@@ -109,7 +108,9 @@ The gate requires `passed`, `wouldStart` and the full grant-file count; a refusa
 
 Swamp check selection follows their inputs. Shape policy changes select the shape gate; baseline and analyser inputs also select the Operation tests that read them. Ansible changes also select Operation tests that read the playbooks. Workflows, grants, extension sources and shared runtime pins select shape, native validation and Operation tests. Swamp prose and skills select Docs only; shared CI or unclassified tooling changes keep the broad check set. New application, package or top-level source roots fail planning until their checks are declared.
 
-The shape gate has three file shards and one hosted control job. A hosted plan job selects the gate once and fixes its base and manifest identity. Every file runs in one shard; lint runs once. Each shard installs the pinned tools and collections, then runs at most three commands, each with one internal worker and a private temporary directory. The control job runs the four source ratchets once. The final `Swamp / Swamp shape gate` result requires successful control and all three shards, matching reports and complete coverage. A failed, cancelled or unexpectedly skipped job fails that result. Only an explicit unselected plan allows the children to skip.
+The shape gate has three file shards and one hosted control job. A hosted plan job selects the gate once and fixes its base and manifest identity. Every file runs in one shard; lint runs once. Each shard installs the pinned tools and collections, then runs at most three commands, each with one internal worker and a private temporary directory. The control job runs the four source ratchets once.
+
+The final `Swamp / Swamp shape gate` result requires successful control and all three shards, matching reports and complete coverage. A failed, cancelled or unexpectedly skipped job fails that result. Only an explicit unselected plan allows the children to skip.
 
 
 Unit tests run in one job with four Deno workers. Keeping one job avoids five separate waits for the shared runner pool.
@@ -288,11 +289,15 @@ The script installs the linters into a virtual environment under `~/.cache/orbit
 
 The local gate runs the full plan by default. Use `--only shape --shard=1/3` (or `2/3`, `3/3`) for one partition, and `--only shape --control-only` for the four source ratchets. Shards use the same canonical plan, permissions and pinned tools. Sabre timing weights determine the partition on every machine: sort by descending weight then path, and assign each unit to the lightest shard, breaking ties by shard number. A new file gets a one-second weight and still runs. Each report records the tested commit, base, manifest identity, selected units, timings and outcomes.
 
-Per host concurrency: the reusable workflow uses one repository-wide concurrency group with cancellation disabled, and its matrix permits two shard jobs at once. This permits at most two shape shard jobs on either host across these workflow runs, with three command workers each. It uses the installed `self-hosted,Linux,X64,hardimpact,orbit-shard` labels. No Shark-only label exists. GitHub does not guarantee host placement or reserve capacity against other workflows or task VMs. Its concurrency queue keeps one pending run; a newer pending run replaces the older pending run. These limits trade throughput across PRs for a bounded host load without runner changes.
+Per host concurrency: the reusable workflow uses one repository-wide concurrency group with cancellation disabled, and its matrix permits two shard jobs at once. This permits at most two shape shard jobs on either host across these workflow runs, with three command workers each. It uses the installed `self-hosted,Linux,X64,hardimpact,orbit-shard` labels. No Shark-only label exists.
+
+GitHub does not guarantee host placement or reserve capacity against other workflows or task VMs. Its [concurrency queue](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency) uses `queue: max`: up to one hundred pending runs can wait; additions beyond that fail. These limits trade throughput across PRs for a bounded host load without runner changes.
 
 Long fixture files are split at scenario boundaries. Each case retains its assertions, reruns and cleanup. Instance-host commands receive an explicit ten-minute deadline at launch, replacing an inherited deadline. The four-minute playbook guard is capped by the remaining command time. File isolates share that command deadline. A single file outside the gate also defaults to ten minutes. Cleanup and output collection take at most five more seconds.
 
-The timing data records recent Shark and Sabre measurements and distinguishes split estimates from observations. The failed Sabre job 130047950178 exhausted the old twelve-minute grouped allowance; failed or unstarted cases are not successful timing samples. Split files remove that serial floor. Three workers per shard target at most fifteen minutes on Sabre. A stalled Instance-host command has at most `600 + 5` seconds from its launch; with at most fifteen minutes of other shard work and setup, the estimate is `900 + 605 = 1505` seconds (25m05s), leaving 4m55s below the thirty-minute job limit. Queue time, cold setup and unrelated host saturation remain outside this forecast.
+The timing data records recent Shark and Sabre measurements and distinguishes split estimates from observations. The failed Sabre job 130047950178 exhausted the old twelve-minute grouped allowance; failed or unstarted cases are not successful timing samples. Split files remove that serial floor. Three workers per shard target at most fifteen minutes on Sabre.
+
+A stalled Instance-host command has at most `600 + 5` seconds from its launch; with at most fifteen minutes of other shard work and setup, the estimate is `900 + 605 = 1505` seconds (25m05s), leaving 4m55s below the thirty-minute job limit. Queue time, cold setup and unrelated host saturation remain outside this forecast.
 
 A Python child subreaper owns each playbook from launch. Detached workers and orphans reparent to it. On deadline it sends TERM to its children, waits one second, then repeatedly kills and reaps children, including those adopted during cleanup. Signals use pidfds. Output collection also has a deadline. A timeout fails the case with the captured output, including its last task.
 

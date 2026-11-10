@@ -17,6 +17,7 @@ class RunnerPolicyTest(unittest.TestCase):
         source = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
         self.assertIn('group: swamp-shape-capacity', source)
         self.assertIn('cancel-in-progress: false', source)
+        self.assertIn('queue: max', source)
         shards = job('swamp-shape.yml', 'shape-shards')
         self.assertIn('runs-on: [self-hosted, Linux, X64, hardimpact, orbit-shard]', shards)
         self.assertIn('max-parallel: 2', shards)
