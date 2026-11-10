@@ -26,7 +26,6 @@ use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
-use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\ProjectDevelopmentDeployStep;
 use App\Models\Route;
@@ -81,6 +80,7 @@ describe('the first default Instance of a Project on a build-list Node', functio
                 'ingress' => [['action' => 'allow', 'source' => '10.253.0.1/32', 'protocol' => 'tcp', 'destination_port' => '8080', 'state' => 'enabled']]],
             'mirror' => '/var/lib/orbit/instance-repositories/'.$operation->target_id.'.git', 'repository' => 'https://github.com/nckrtl/tool.git',
             'branch' => 'main', 'commit' => null, 'workspace' => '/srv/workspace', 'environment_file' => '/srv/workspace/.env', 'units' => [],
+            'processes' => [],
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin',
                 'VP_HOME=/var/lib/orbit/vite-plus-home', 'VP_NO_UPDATE_CHECK=1', 'HTTP_PROXY=http://10.253.0.1:3128',
                 'HTTPS_PROXY=http://10.253.0.1:3128', 'NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1', 'http_proxy=http://10.253.0.1:3128',
@@ -124,17 +124,8 @@ describe('the first default Instance of a Project on a build-list Node', functio
     it('refuses a PHP Project until the runtime folder holds its static PHP build', function (): void {
         $node = containerDefaultNode();
 
-        expect(containerRefusal(fn () => containerCreate(containerDefaultProject(ProjectType::LaravelApp, '8.5'), $node)))->toBe('instance.host_unavailable')
-            ->and(Instance::query()->count())->toBe(0);
-    });
-
-    it('refuses what a container cannot run yet: the Project\'s development Processes', function (): void {
-        $node = containerDefaultNode();
-        $project = containerDefaultProject();
-
-        ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'queue', 'environments' => ['development'],
-            'spec' => ['runtime' => 'systemd', 'command' => ['php', 'artisan', 'queue:work']]]);
-        expect(containerRefusal(fn () => containerCreate($project, $node)))->toBe('operation.kind_unavailable')
+        // The recipe pins only PHP 8.5's build.
+        expect(containerRefusal(fn () => containerCreate(containerDefaultProject(ProjectType::LaravelApp, '8.4'), $node)))->toBe('instance.host_unavailable')
             ->and(Instance::query()->count())->toBe(0);
     });
 });

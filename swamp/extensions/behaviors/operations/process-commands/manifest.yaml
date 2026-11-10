@@ -1,8 +1,8 @@
 manifestVersion: 1
 name: '@nckrtl/process-command-scripts'
-version: 2026.11.02.1
+version: 2026.11.10.1
 visibility: private
 license: MIT
-description: Public Process rendering and Docker argv.
+description: Public Process rendering, Docker argv and container Process reads.
 behaviors:
   - operations/process-commands/assets.ts

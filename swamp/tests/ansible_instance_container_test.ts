@@ -61,7 +61,7 @@ function fixture() {
     Deno.readTextFileSync(new URL("tasks/instance-container-phase.yml", root)),
   ) as Task[]).map((task) => transform(structuredClone(task)));
   Deno.writeTextFileSync(`${folder}/tasks/instance-container-phase.yml`, stringify(tasks));
-  for (const name of ["instance-container.yml", "tasks/address-node.yml"]) {
+  for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
   Deno.mkdirSync(`${folder}/run`);
@@ -94,6 +94,7 @@ function fixture() {
     environment_file: "/srv/workspace/.env",
     units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=orbit\n" }],
     php: "/opt/orbit-runtime/current/php/8.5/bin/php" as string | null,
+    processes: [] as { id: number; name: string; content: string; environment: string | null; desired: string }[],
   };
   const ssh_execution = {
     identity_file: "/dev/null",
@@ -104,15 +105,18 @@ function fixture() {
       host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"],
     },
   };
+  const control = { process_id: 41, name: "orbit-process-41-worker.service" };
+  const read = { action: "status", lines: 50, request: "6f1c4c1e-8a7d-4f11-9d0e-3b5a2c1d0e9f" };
   const write = () =>
-    Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({ ssh_execution, container }));
+    Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({ ssh_execution, container, control, read }));
   write();
   return {
     folder,
     source,
     container,
     write,
-    run(phase: string) {
+    read,
+    run(phase: string, extra: Record<string, string> = {}) {
       const done = new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
           "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/instance-container.yml`],
@@ -129,6 +133,8 @@ function fixture() {
           ORBIT_MODEL_ENVIRONMENT: "ORBIT_MODEL_KEY=placeholder\n",
           GIT_CONFIG_NOSYSTEM: "1",
           HOME: `${folder}/home`,
+          ORBIT_PROCESS_ENVIRONMENTS: "{}",
+          ...extra,
         },
       }).outputSync();
       const output = new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr);
@@ -392,6 +398,197 @@ Deno.test({
       const unready = f.run("t3");
       assert(!unready.ok);
       assertEquals(f.result(), { error_code: "instance.t3_unready" });
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+const worker = {
+  id: 41,
+  name: "orbit-process-41-worker.service",
+  content: "[Service]\nUser=orbit\nEnvironmentFile=/etc/orbit/processes/41/abc.env\nExecStart=php artisan queue:work\n",
+  environment: "/etc/orbit/processes/41/abc.env",
+  desired: "running",
+};
+const paused = {
+  id: 42,
+  name: "orbit-process-42-scheduler.service",
+  content: "[Service]\nUser=orbit\nExecStart=php artisan schedule:work\n",
+  environment: null,
+  desired: "stopped",
+};
+const environments = JSON.stringify({ "/etc/orbit/processes/41/abc.env": "# Orbit Process 41\nQUEUE=\"high\"\n" });
+const restarts = (state: { systemctl?: string[][] }) =>
+  (state.systemctl ?? []).filter((call) => call[0] === "restart").map((call) => call.slice(2));
+
+Deno.test({
+  name: "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.processes = [worker, paused];
+      f.write();
+      for (const phase of ["container", "workspace"]) assert(f.run(phase).ok);
+      const result = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: environments });
+      assert(result.ok, result.output);
+      const rootfs = `${f.folder}/containers/instance-7`;
+      assertEquals(Deno.readTextFileSync(`${rootfs}/etc/systemd/system/${worker.name}`), worker.content);
+      assertEquals(Deno.readTextFileSync(`${rootfs}/etc/systemd/system/${paused.name}`), paused.content);
+      // The values reach the container from the vault, root-only; they are never in the intent or the run's output.
+      assertEquals(Deno.readTextFileSync(`${rootfs}${worker.environment}`), "# Orbit Process 41\nQUEUE=\"high\"\n");
+      assertEquals(f.state().files[worker.environment], { uid: "0", gid: "0", mode: "0600" });
+      assert(!result.output.includes("QUEUE"), result.output);
+      // A Process whose desired state is stopped is installed, not started.
+      const enabled = f.state().systemctl.find((call: string[]) => call[0] === "enable" && call[1] === "--now");
+      assertEquals(enabled, ["enable", "--now", "--", "orbit-frankenphp.service", worker.name]);
+      // The seed stops and starts the running ones only.
+      assert(f.run("seed").ok);
+      assert(f.state().systemctl.some((call: string[]) => call.join(" ") === `stop -- orbit-frankenphp.service ${worker.name}`));
+
+      const again = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: environments });
+      assert(again.ok, again.output);
+      assertEquals(again.changed, 0, again.output);
+      assertEquals(restarts(f.state()), [["orbit-frankenphp.service", worker.name]]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.processes = [worker, paused];
+      f.write();
+      for (const phase of ["container", "workspace", "processes", "seed"]) {
+        assert(f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments }).ok);
+      }
+      Deno.writeTextFileSync(`${f.source}/index.php`, "<?php echo 2;\n");
+      git(f.source, "commit", "--quiet", "-am", "second");
+      const state = f.state();
+      state.systemctl = [];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+
+      for (const phase of ["start", "fetch", "checkout", "processes", "seed", "check"]) {
+        const result = f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments });
+        assert(result.ok, `${phase}: ${result.output}`);
+      }
+      // Nothing changed in the units, so only the seed stops and starts the running ones; the stopped scheduler stays stopped.
+      const calls = f.state().systemctl.map((call: string[]) => call.join(" "));
+      assertEquals(restarts(f.state()), []);
+      assert(calls.includes(`stop -- orbit-frankenphp.service ${worker.name}`), calls.join("\n"));
+      assert(calls.includes(`start -- orbit-frankenphp.service ${worker.name}`), calls.join("\n"));
+
+      // A changed value is a new environment file and a changed unit: the unit restarts and the former file goes.
+      const changed = { ...worker, environment: "/etc/orbit/processes/41/def.env", content: worker.content.replace("abc.env", "def.env") };
+      f.container.processes = [changed, paused];
+      f.write();
+      const rotated = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: JSON.stringify({ [changed.environment]: "# Orbit Process 41\nQUEUE=\"low\"\n" }) });
+      assert(rotated.ok, rotated.output);
+      const rootfs = `${f.folder}/containers/instance-7/etc/orbit/processes/41`;
+      assertEquals([...Deno.readDirSync(rootfs)].map((entry) => entry.name), ["def.env"]);
+      assertEquals(restarts(f.state()), [[worker.name]]);
+      assert(f.state().systemctl.some((call: string[]) => call[0] === "daemon-reload"));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a Process's start, stop and restart change its unit in the container; a read returns its state and journal",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.processes = [worker];
+      f.write();
+      for (const phase of ["container", "workspace", "processes"]) {
+        assert(f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments }).ok);
+      }
+      const calls = () => f.state().systemctl.map((call: string[]) => call.join(" "));
+
+      const stop = f.run("process", { ORBIT_PROCESS_ACTION: "stop" });
+      assert(stop.ok, stop.output);
+      assert(calls().includes(`disable --now -- ${worker.name}`));
+      assertEquals(f.result(), { state: "inactive", output: "" });
+
+      assert(f.run("process", { ORBIT_PROCESS_ACTION: "start" }).ok);
+      assert(calls().includes(`enable --now -- ${worker.name}`));
+      assertEquals(f.result(), { state: "active", output: "" });
+
+      assert(f.run("process", { ORBIT_PROCESS_ACTION: "restart" }).ok);
+      assert(calls().join("\n").includes(`enable -- ${worker.name}\nrestart -- ${worker.name}`));
+
+      const state = f.state();
+      state.journal = { [worker.name]: ["2026-11-10T08:00:00+00:00 worker[7]: first", "2026-11-10T08:00:01+00:00 worker[7]: second"] };
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const logs = f.run("process", { ORBIT_PROCESS_ACTION: "logs" });
+      assert(logs.ok, logs.output);
+      // Newest first, as the Node agent reads a journal; the lines stay out of the run's output.
+      assertEquals(f.result(), { state: "active", output: "2026-11-10T08:00:01+00:00 worker[7]: second\n2026-11-10T08:00:00+00:00 worker[7]: first" });
+      assert(!logs.output.includes("worker[7]"), logs.output);
+
+      // A unit that does not come up fails the start with the shared code.
+      const failing = f.state();
+      failing.failing = [worker.name];
+      failing.inactive = [worker.name];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(failing));
+      assert(!f.run("process", { ORBIT_PROCESS_ACTION: "start" }).ok);
+      assertEquals(f.result(), { error_code: "process.start_failed" });
+
+      // A stopped container has no unit to change.
+      assert(f.run("stop").ok);
+      assert(!f.run("process", { ORBIT_PROCESS_ACTION: "restart" }).ok);
+      assertEquals(f.result(), { error_code: "process.target_inactive" });
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a clone runs its own Process units: the default's units and folders from the seed go, and its own start",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.processes = [worker];
+      f.write();
+      for (const phase of ["container", "workspace", "processes", "seed"]) {
+        assert(f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments }).ok);
+      }
+      const seed = git(f.source, "rev-parse", "HEAD");
+      // The clone's own record of the same definition has its own id, unit and environment file.
+      const own = { ...worker, id: 51, name: "orbit-process-51-worker.service", environment: "/etc/orbit/processes/51/abc.env",
+        content: worker.content.replace("/41/", "/51/") };
+      Object.assign(f.container, {
+        instance_id: 8, name: "instance-8", address: "10.253.0.3", acl: "instance-8", mirror: `${f.folder}/mirror/8.git`, branch: "feature",
+        firewall: [], processes: [own],
+        clone: { source: "instance-7", snapshot: `seed-${seed}`, seed_commit: seed, source_mirror: `${f.folder}/mirror/7.git`,
+          t3: { port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 1, t3: "/t3",
+            project_mark: "/home/agent/.config/orbit/t3-project" },
+          model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" }, files: [], links: [] },
+      });
+      f.write();
+      const clone = `${f.folder}/containers/instance-8`;
+      for (const phase of ["clone", "workspace", "processes"]) {
+        const result = f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: JSON.stringify({ [own.environment]: "# Orbit Process 51\nQUEUE=\"high\"\n" }) });
+        assert(result.ok, `${phase}: ${result.output}`);
+      }
+      const units = [...Deno.readDirSync(`${clone}/etc/systemd/system`)].map((entry) => entry.name).filter((name) => name.startsWith("orbit-process-"));
+      assertEquals(units, [own.name]);
+      assertEquals([...Deno.readDirSync(`${clone}/etc/orbit/processes`)].map((entry) => entry.name), ["51"]);
+      const calls = f.state().systemctl.map((call: string[]) => call.join(" "));
+      assert(calls.includes(`disable --now -- ${worker.name}`), calls.join("\n"));
+      assert(calls.includes(`enable --now -- orbit-frankenphp.service ${own.name}`), calls.join("\n"));
+      // The default keeps its own unit.
+      assert(Deno.statSync(`${f.folder}/containers/instance-7/etc/systemd/system/${worker.name}`).isFile);
     } finally {
       f.cleanup();
     }

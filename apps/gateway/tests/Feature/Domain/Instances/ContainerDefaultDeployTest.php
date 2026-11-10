@@ -154,7 +154,8 @@ it('runs the deployment with the container it admitted and the pinned commit, ev
     $container = ValidatedData::object(ValidatedData::object($input['intent'])['container']);
     expect($container)->toBe([...ValidatedData::object($snapshot['container']), 'commit' => $commit])
         ->and($container['branch'])->toBe('main')
-        ->and(array_keys($input['execution_secrets']))->toBe(['step_0', 'credential']);
+        ->and(array_keys($input['execution_secrets']))->toBe(['step_0', 'credential', 'process_environments'])
+        ->and($input['execution_secrets']['process_environments']['key'])->toBe('development-deploy-operation-'.$operation->id.'-processes');
 });
 
 it('reads a container deployment\'s commit or refusal from the result file', function (): void {

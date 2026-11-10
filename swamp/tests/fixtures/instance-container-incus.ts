@@ -101,12 +101,15 @@ if (family === "init") {
     container.snapshots = container.snapshots.filter((s: string) => s !== snapshot);
   }
 } else if (family === "file" && args[1] === "push") {
+  const createDirs = args.indexOf("--create-dirs");
+  if (createDirs >= 0) args.splice(createDirs, 1);
   const uid = take("--uid");
   const gid = take("--gid");
   const mode = take("--mode")!;
   const [, , source, target] = args;
   const name = target.slice(0, target.indexOf("/"));
   const path = rootfs(name) + target.slice(name.length);
+  if (createDirs >= 0) Deno.mkdirSync(path.slice(0, path.lastIndexOf("/")), { recursive: true });
   const content = source === "-"
     ? new Uint8Array(await new Response(Deno.stdin.readable).arrayBuffer())
     : Deno.readFileSync(source);
@@ -125,12 +128,25 @@ if (family === "init") {
     state.systemctl ??= [];
     state.systemctl.push(command.slice(1));
     if (command[1] === "start" && command.includes("t3.service")) state.containers[name].t3 = true;
+    // A started unit runs and a stopped one does not, unless the test holds it in `failing`.
+    const units = command.slice(command.indexOf("--") + 1);
+    state.inactive ??= [];
+    if (["start", "restart"].includes(command[1]) || (command[1] === "enable" && command[2] === "--now")) {
+      state.inactive = state.inactive.filter((unit: string) => !units.includes(unit) || (state.failing ?? []).includes(unit));
+    } else if (command[1] === "stop" || (command[1] === "disable" && command[2] === "--now")) {
+      state.inactive = [...new Set([...state.inactive, ...units])];
+    }
     save();
     if (command[1] === "is-active") {
       const inactive = command.slice(3).filter((unit) => (state.inactive ?? []).includes(unit));
       for (const unit of command.slice(3)) console.log(inactive.includes(unit) ? "inactive" : "active");
       Deno.exit(inactive.length > 0 ? 3 : 0);
     }
+    Deno.exit(0);
+  }
+  if (command[0] === "journalctl") {
+    const unit = command[command.indexOf("--unit") + 1];
+    for (const line of (state.journal?.[unit] ?? []).slice().reverse()) console.log(line);
     Deno.exit(0);
   }
   // T3 in the container: its well-known document once started, sessions it issues and knows, and the project it adds.

@@ -54,6 +54,10 @@ final readonly class StartInstanceDeployAction
             // A checkout default serializes its deployments with the checkout lock on the Node; a container default holds the Instance.
             $development = $instance->placedOnAppDev();
             $members = $development ? null : app(InstanceRuntimeDefinitions::class)->capture($instance);
+            if ($instance->runtime()->exists()) {
+                // A container default installs the Project's changed and new development definitions with each deployment.
+                app(InstantiateProjectRuntimeDefinitionsAction::class)->refreshForContainer($instance);
+            }
             $deployment = $this->intent->snapshot($instance);
             if ($development && $deployment['projection_route_id'] !== null) {
                 throw new ResourceOperationException('deployment.projection_pending', 'The default Route projection must finish before deployment.', 409);

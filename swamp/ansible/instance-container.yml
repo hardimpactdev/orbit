@@ -4,7 +4,8 @@
 # a clone of the default's seed snapshot with T3. One tagged part per Swamp phase.
 #   create of the default: `container`, `workspace`, `processes`, `seed`, and `stop` after a failure.
 #   create of a clone: `clone`, `workspace`, `agent`, `processes`, `t3`, `register`, and `stop` after a failure.
-#   deploy: `start`, `fetch`, `checkout`, `seed`, `check`.
+#   deploy: `start`, `fetch`, `checkout`, `processes`, `seed`, `check`.
+#   process: `process`, for one Process's start, stop, restart, status or logs (ORBIT_PROCESS_ACTION).
 # The Project's deploy commands are not here: Swamp runs each one in the container from its vault copy, as `orbit`.
 # Git runs on the Node with a read token in a 0600 file; the container gets the branch as a bundle and never a token. The intent is
 # the Gateway's admitted intent in the run folder; `intent.container` names the container, its paths, its ACL and its units.
@@ -29,7 +30,7 @@
   hosts: container_node
   gather_facts: false
   become: true
-  tags: [container, clone, workspace, agent, processes, t3, register, seed, stop, start, fetch, checkout, check]
+  tags: [container, clone, workspace, agent, processes, t3, register, seed, stop, start, fetch, checkout, check, process]
   vars:
     intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
     container: "{{ intent.container }}"
@@ -40,15 +41,17 @@
         # Swamp runs one tag at a time; the included tasks run whatever their own tags, so `always` applies to them.
         - name: Run the phase's tasks
           ansible.builtin.include_tasks:
-            file: tasks/instance-container-phase.yml
+            file: "tasks/{{ 'instance-container-process.yml' if ansible_run_tags | first == 'process' else 'instance-container-phase.yml' }}"
             apply: { tags: [always] }
           vars:
             phase: "{{ ansible_run_tags | first }}"
+        # A Process read's result holds journal lines: it goes only to the run folder, never to the run's output.
         - name: Write the result
           ansible.builtin.copy:
-            content: "{{ {'commit': container_commit | default(none)} | to_json }}"
+            content: "{{ (process_result if process_result is defined else {'commit': container_commit | default(none)}) | to_json }}"
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
+          no_log: true
           delegate_to: localhost
           become: false
           # The result file lives in the run folder on the worker: no change to the Node.

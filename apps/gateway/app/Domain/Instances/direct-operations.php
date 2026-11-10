@@ -34,7 +34,7 @@ return [
     'instance.create' => ['workflow' => 'operation-instance-create', 'workflow_inputs' => true,
         'projection' => DevelopmentInstanceCreateProjection::class,
         'terminal_result' => ['job' => 'create', 'step' => 'finish'],
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(?:instance-git-(?:operation|credential)-[1-9][0-9]*|instance-create-environment-(?:input|testing)-[1-9][0-9]*)$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(?:instance-git-(?:operation|credential)-[1-9][0-9]*|instance-create-environment-(?:input|testing)-[1-9][0-9]*|instance-create-processes-[1-9][0-9]*)$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'],
             // A container default runs the Project's development deploy steps, each from its own copy.
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$'],
@@ -75,7 +75,7 @@ return [
         'workflow_inputs' => true,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$'],
-            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-credential$'],
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-(?:credential|processes)$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-deploy-operation-[1-9][0-9]*-credential$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-environment-(?:testing-)?[1-9][0-9]*$']],

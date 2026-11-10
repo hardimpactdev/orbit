@@ -23,6 +23,7 @@ use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
+use App\Models\ProcessDefinition;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -90,6 +91,25 @@ describe('a clone of the container default', function (): void {
             ['bridge_address' => '10.253.0.3', 't3_port' => 3800, 'clone_source_instance_id' => $default->id],
             ['bridge_address' => '10.253.0.4', 't3_port' => 3801, 'clone_source_instance_id' => $default->id],
         ]);
+    });
+
+    it('runs its own records of the Project\'s development Processes, not the default\'s units from the seed', function (): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'worker', 'environments' => ['development'],
+            'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'node', 'worker.js'], 'environment' => ['QUEUE' => 'high']]]);
+        $default = Instance::query()->findOrFail(containerCreate($project, $node)->target_id);
+        $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
+        InstanceRuntime::query()->where('instance_id', $default->id)->firstOrFail()
+            ->update(['seed_commit' => str_repeat('c', 40), 'power_state' => InstanceRuntimePowerState::Running]);
+
+        $operation = containerCreate($project, $node, 'feature');
+
+        $own = Process::query()->where('owner_id', $operation->target_id)->sole();
+        $units = ValidatedData::object(containerIntentOf($operation))['processes'];
+        expect($own->id)->not->toBe(Process::query()->where('owner_id', $default->id)->sole()->id)
+            ->and(array_column($units, 'name'))->toBe(["orbit-process-{$own->id}-worker.service"])
+            ->and($units[0]['environment'])->toStartWith("/etc/orbit/processes/{$own->id}/");
     });
 
     it('hands the run the seed snapshot, T3\'s port and files, its firewall rules and no deploy step', function (): void {

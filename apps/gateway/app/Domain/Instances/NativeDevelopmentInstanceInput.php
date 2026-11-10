@@ -71,6 +71,9 @@ final readonly class NativeDevelopmentInstanceInput
                 // A clone's placeholder model key and model origin, for T3's unit.
                 ...(($container === null ? null : ValidatedData::object($container)['clone'] ?? null) === null ? [] : ['model_environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-model-'.$operation->id,
                     app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), app(TaskVmModelRoute::class)->key()))]),
+                // The container's Process environment files, which only the processes phase reads.
+                ...($container === null ? [] : ['process_environments' => $vault->executionCopy('orbit-control-inputs', 'instance-create-processes-'.$operation->id,
+                    app(ContainerProcesses::class)->environments($instance, ValidatedData::object($container)['processes']))]),
                 'git_credential' => InstanceGitHubReadTokens::credentialReference($operation),
                 'environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-input-'.$operation->id, $environment->content($instance)),
                 ...($testing === null ? [] : ['environment_testing' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-testing-'.$operation->id, $testing)]),

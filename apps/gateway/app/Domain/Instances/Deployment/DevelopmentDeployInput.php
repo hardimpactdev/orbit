@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
+use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceGitHubReadTokens;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -51,6 +53,11 @@ final readonly class DevelopmentDeployInput
         $user = $instance->node->user;
         $container = $intent['variant'] === 'container'
             ? [...ValidatedData::object($intent['container']), 'commit' => InstanceDeploymentIntent::commit($operation)] : null;
+        if ($container !== null) {
+            // The Processes' environment files, made from the records only while they still render the admitted units.
+            $copies['process_environments'] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
+                'development-deploy-operation-'.$operation->id.'-processes', app(ContainerProcesses::class)->environments($instance, $container['processes'] ?? null));
+        }
 
         return ['intent' => [...$input, ...$runtime, 'container' => $container, 'application' => ValidatedData::object($input['deployment'])['home'],
             'account_home' => $user === 'root' ? '/root' : '/home/'.$user],

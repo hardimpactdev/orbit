@@ -119,7 +119,10 @@ final class ProcessesController extends Controller
 
     private function synchronous(Process $process): bool
     {
-        return $this->safety->requiresSynchronous($this->targets->forInspection($process)->node);
+        $target = $this->targets->forInspection($process);
+
+        // A container's units are reached only through Swamp, never through the Node agent.
+        return $target->container === null && $this->safety->requiresSynchronous($target->node);
     }
 
     private function processResponse(Request $request, #[SensitiveParameter] Process $process, int $status = 200): JsonResponse

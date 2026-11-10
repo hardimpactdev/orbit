@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Domain\Processes;
 
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
@@ -179,6 +181,22 @@ final readonly class ProcessTargetResolver
     private function instanceContext(Instance $instance, bool $allowRemovingRole = false): ProcessTarget
     {
         $this->ensureLinux($instance->node);
+
+        // An Instance in a container runs its Processes as `orbit` units in the container, with the workspace's .env
+        // (docs/reference/development-containers.md#processes).
+        $runtime = $instance->runtime()->first();
+        if ($runtime instanceof InstanceRuntime) {
+            $directory = InstanceContainer::application($instance);
+
+            return new ProcessTarget(
+                node: $instance->node,
+                user: 'orbit',
+                checkoutPath: $directory,
+                instance: $instance,
+                environmentFile: "{$directory}/.env",
+                container: ['instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name],
+            );
+        }
 
         $appDevPlacement = $instance->placedOnAppDev()
             || ($allowRemovingRole && $instance->node->roles()

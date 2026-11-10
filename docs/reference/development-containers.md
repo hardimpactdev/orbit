@@ -330,8 +330,31 @@ The first default Instance and its deployments are built for the Nodes of the [b
 | FrankenPHP | The unit `orbit-frankenphp.service` runs `frankenphp php-server` as `orbit` on port 8080 of the bridge address. The Route proxies to it; the Node runs no PHP pool for it |
 | Seed | After the first build and each deployment that passes, Orbit stops the units, takes `seed-<commit>` and starts them again. It deletes older seeds, and the runtime row records the commit |
 | Deployment | The variant `container` starts a stopped container and fetches the commit on the Node. It refuses `deployment.checkout_dirty`, `deployment.commit_not_on_branch` and `deployment.branch_diverged` as a checkout does |
+| Processes | The Project's development Process definitions run as `orbit-*` units in the container. [Processes](#processes) has the details |
 
-A container default without `--database-server` uses the database its Project names in the workspace, such as SQLite. With `--database-server`, the database family creates its database on that server, and the container reaches it by its own [database rules](#network). A Project with development Process definitions refuses with `operation.kind_unavailable`. Dependency installs in the deploy steps reach the internet through the [egress proxy](#egress-and-dns).
+#### Processes
+
+A container Instance's Processes come from the Project's development Process definitions. Each one is a Process record and an `orbit-process-<id>-<name>.service` unit in the container, as the [Process lifecycle](/reference/processes-and-schedules) renders it for a Node, with these differences:
+
+| Part | In a container |
+| --- | --- |
+| User | `orbit`, group `orbit`, `UMask=0007`, `HOME=/home/orbit` |
+| Directory | The workspace's application directory, `/srv/workspace` or the Project root in it |
+| `PATH` | The Project's PHP build, then the runtime folder's `bin`, then the system folders. A definition's command is an absolute path, such as `/opt/orbit-runtime/current/php/8.5/bin/php` |
+| Environment | The workspace's `.env`, then the definition's own values in `/etc/orbit/processes/<id>/<sha256>.env`, root only, mode 0600. The values come only from the run's vault copy |
+| Runtime | systemd only. A Docker definition or a preset refuses with `process.target_unsupported` |
+
+The create run installs and starts the units after the deploy steps. A unit whose desired state is stopped is installed, not started.
+
+A clone records its own Processes from the same definitions, with its own ids, units and environment files. Its seed holds the default's units, so the clone's `processes` phase stops and removes every `orbit-process-*` unit and `/etc/orbit/processes/<id>` folder it does not own before it starts its own.
+
+A deployment first records the Project's new definitions and changes the records of changed ones. Then it writes the changed units and new environment files, removes the former ones, and restarts the changed units. Its new seed stops every running unit and starts it again, so each running Process, such as a queue worker, runs the new commit. A container ignores a Process's restart-on-deploy setting. A definition the Project removed keeps its record and unit until a later part of the runtime removes them.
+
+`process:start`, `process:stop` and `process:restart` run `operation-process-container` as a child of their own workflow: Ansible on the Node changes the unit through `incus exec` and checks its state. `process:logs` runs the same workflow and waits for it; the journal lines go only to the vault, and the Gateway reads and redacts them. A Process list answers from the state of the last read: neither Prometheus nor the Node agent sees a container's units, so a Process without a state from the last 30 seconds shows `unknown` while the operation `process.inspect` reads it ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/process/inspect.mmd)). A change to a Process of a stopped container fails; the container's next deployment starts it.
+
+`process:create`, `process:update` and `process:destroy` refuse a container Instance's Process with `operation.kind_unavailable`: the Project's definitions and a deployment change them.
+
+A container default without `--database-server` uses the database its Project names in the workspace, such as SQLite. With `--database-server`, the database family creates its database on that server, and the container reaches it by its own [database rules](#network). Dependency installs in the deploy steps reach the internet through the [egress proxy](#egress-and-dns).
 
 A web-serving Project without a PHP version refuses with `project.source_defaults_incomplete`, and one whose PHP build the runtime folder lacks with `instance.host_unavailable`. Destroy, setup, `env:sync`, `env:import`, transfer, rename and clone refuse a container Instance with `operation.kind_unavailable`: they work on a checkout from the Node. Another Instance of the Project refuses with `instance.default_missing` on any Node but the default's, and on that Node until the default is active with a seed snapshot. Every other Instance is a [clone](#create).
 
@@ -713,6 +736,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.host_unavailable` | 409 | A build-list Node cannot be prepared: it lacks the pool `orbit-instances` or enough subordinate IDs, or the recipe has no pin for it |
 | `instance.host_unavailable` | 409 | A container default cannot be placed: the Node has no bridge, the bridge is full, or the runtime folder lacks the Project's PHP build |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
+| `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |
+| `process.target_unavailable` | 503 | `process:logs` could not read a container Process's journal through Swamp |
 | `instance.container_<phase>_failed` | 502 | A phase of a container default's create or deployment failed without a refusal, such as `instance.container_start_failed` |
 
 ## Why it works this way

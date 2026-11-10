@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
+use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Operations\DirectOperation;
@@ -103,6 +104,8 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 $runtime = $instance->runtime()->firstOrFail();
                 $runtime->update([...($payload['started'] ?? false) === true ? ['power_state' => InstanceRuntimePowerState::Running] : [],
                     ...$status === 'succeeded' ? ['seed_commit' => $facts['commit']] : []]);
+                app(ContainerProcesses::class)->complete($instance, ValidatedData::object($admitted['container'])['processes'] ?? [],
+                    $status === 'succeeded', ValidatedData::nullableString($data['error_code'] ?? null));
             } elseif ($variant === 'development' && $status === 'succeeded') {
                 $instance->update(['seed_path' => $admitted['home'], 'seed_repository' => $admitted['home'], 'seed_commit' => $facts['commit']]);
             } elseif (! InstanceDeploymentIntent::development($variant) && $facts['selected_release'] !== null && ($payload['selection_confirmed'] ?? false) === true) {
