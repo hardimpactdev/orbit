@@ -5,7 +5,7 @@ description: "Install one systemd service or Docker container, stopped or starte
 ---
 
 ```bash
-orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --project=ID --for=production) [--idempotency-key=KEY] [options]
+orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --project=ID --for=ENVIRONMENTS) [--idempotency-key=KEY] [options]
 ```
 
 | Argument | Required | Meaning |
@@ -18,7 +18,7 @@ orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --pro
 | `--node=ID-or-name` | none | Node ID or registered Node name. The CLI resolves a name through the Node list. |
 | `--user=NAME` | managed user | Systemd account for a Node Process. One letter or underscore, then at most 31 letters, digits, underscores, or hyphens. |
 | `--project=ID` | none | Numeric Project ID for a definition. |
-| `--for=production` | none | Definition environments. Required with `--project`. Only definitions for `production` are copied. |
+| `--for` | none | Definition environments, `production`, `development` or both, comma separated. Required with `--project`. Production Instances copy the `production` definitions; development Instances record the `development` ones as their Processes. |
 | `--preset=PRESET` | none | Configure a development Instance Process. The supported value is `vp-dev`. Refused with `--project`. |
 | `--runtime=RUNTIME` | `systemd` | `systemd` or `docker`. |
 | `--command=ARG` | none | One argument. Repeat it for each argument, at most 64 of 4,096 bytes each. A systemd command starts with an absolute executable. |

@@ -92,7 +92,7 @@ jobs:
       methodName: inspection
       inputs:
         directory: '${{ "/tmp/orbit-ansible-" + run.id }}'
-        request: '${{ inputs.intent.read.request }}'
+        request: '${{ has(inputs.intent.read) ? inputs.intent.read.request : "" }}'
   - name: cleanup
     labels: {role: swamp}
     writes: true

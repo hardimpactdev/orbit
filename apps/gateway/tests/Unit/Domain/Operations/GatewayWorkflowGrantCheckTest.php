@@ -17,6 +17,14 @@ describe('Gateway workflow grant intent', function (): void {
         expect($count)->toBeGreaterThan(0);
     });
 
+    it('declares and grants every vault key that a container create writes: environment, Process environments and a clone\'s model key', function (string $key): void {
+        $declared = app(DirectOperation::class)->definition('instance.create')['execution_copies'] ?? [];
+        $matches = static fn (array $copies): bool => array_any($copies, static fn (array $copy): bool => preg_match('~'.$copy['key_pattern'].'~D', $key) === 1);
+
+        expect($matches($declared))->toBeTrue()
+            ->and($matches($this->policy['vaults']))->toBeTrue();
+    })->with(['instance-create-environment-input-12', 'instance-create-processes-12', 'instance-create-model-12']);
+
     it('refuses intent missing the Node converge verifier copy', function (): void {
         $this->policy['vaults'] = array_values(array_filter($this->policy['vaults'], static fn (array $copy): bool => preg_match('~'.$copy['key_pattern'].'~D', 'node-converge-operation-17-agent-verifier') !== 1));
 

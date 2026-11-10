@@ -104,6 +104,43 @@
               'connect=tcp:' ~ container.address ~ ':' ~ container.clone.t3.internal_port, 'nat=true'] }}
       changed_when: true
 
+# The copy is the default's machine until it is prepared, so it is prepared while it is stopped, before its first start: its own
+# machine-id, and no `orbit-*` unit that starts at boot. The seed keeps the default's units enabled, and at boot they would run with
+# the default's settings: FrankenPHP on the default's address, a queue worker on the default's database. Each later phase of the
+# clone enables the units it sets up. The default's Process units and environment folders go; the `processes` phase checks again.
+- name: Prepare the copy before its first start
+  when: phase == 'clone' and (container_read.rc != 0 or (container_read.stdout | from_json).status != 'Running')
+  vars:
+    files_route: "/1.0/instances/{{ container.name }}/files?project={{ container.project }}&path="
+  block:
+    - name: Read the units that start at boot, the Process units and the Process folders
+      ansible.builtin.command: { argv: [incus, query, "--", "{{ files_route }}{{ item }}"] }
+      loop: [/etc/systemd/system/multi-user.target.wants, /etc/systemd/system, /etc/orbit/processes]
+      register: copy_read
+      changed_when: false
+      failed_when: copy_read.rc != 0 and 'not found' not in (copy_read.stderr | lower)
+    - name: Name what the copy must not start or keep
+      ansible.builtin.set_fact:
+        copy_remove: >-
+          {{ ((copy_read.results[0].stdout | default('[]', true) | from_json) | select('match', '^orbit-.*[.]service$')
+               | map('regex_replace', '^', '/etc/systemd/system/multi-user.target.wants/') | list)
+             + ((copy_read.results[1].stdout | default('[]', true) | from_json) | select('match', '^orbit-process-[0-9]+-.*[.]service$')
+               | reject('in', container.processes | default([]) | map(attribute='name') | list)
+               | map('regex_replace', '^', '/etc/systemd/system/') | list)
+             + ((copy_read.results[2].stdout | default('[]', true) | from_json)
+               | reject('in', container.processes | default([]) | map(attribute='id') | map('string') | list)
+               | map('regex_replace', '^', '/etc/orbit/processes/') | list) }}
+    - name: Keep the default's units from starting in the copy
+      when: copy_remove | length > 0
+      ansible.builtin.command: { argv: "{{ incus_project + ['file', 'delete', '--force'] + (copy_remove | map('regex_replace', '^', container.name) | list) }}" }
+      changed_when: true
+    # Incus's own id of the copy, without dashes, the form systemd writes.
+    - name: Give the copy its own machine-id
+      ansible.builtin.command:
+        argv: "{{ incus_project + ['file', 'push', '--uid', '0', '--gid', '0', '--mode', '0444', '-', container.name ~ '/etc/machine-id'] }}"
+        stdin: "{{ (clone_read.stdout | from_json).config['volatile.uuid'] | replace('-', '') }}"
+      changed_when: true
+
 # UFW on the Node, each rule under the Instance's comment prefix: T3's route rules, the task VM range's deny first, and the way to
 # the database server.
 - name: Admit the container's own paths on the Node
@@ -386,6 +423,18 @@
     - name: Remove the bundle in the container
       ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_bundle] }}" }
       changed_when: false
+
+# `orbit` and `agent` share the workspace through the group `work`. A tool that asks for 0755 folders, such as Bun in `node_modules`,
+# caps their ACL mask, so the other user cannot write there. Before the deploy steps (`checkout`) and after them (`processes`) root
+# gives the group back what the owner has; only entries that lack it change.
+- name: Keep the workspace writable for its group
+  when: phase in ['checkout', 'processes']
+  ansible.builtin.command:
+    argv: >-
+      {{ as_root + ['find', container.workspace, '(', '(', '-type', 'd', '!', '-perm', '-g=rwx', ')', '-o',
+          '(', '-type', 'f', '!', '-perm', '-g=rw', ')', ')', '-print', '-exec', 'chmod', 'g+rwX', '{}', '+'] }}
+  register: workspace_modes
+  changed_when: workspace_modes.stdout != ''
 
 # A Process unit or folder that is not this Instance's goes: a clone starts with its default's units in the seed, and a definition the
 # Project removed leaves its unit behind.

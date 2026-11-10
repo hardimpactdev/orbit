@@ -196,7 +196,7 @@ jobs:
               ANSIBLE_FORCE_COLOR: '0'
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               # The Processes' environment files, path to content, which the phase pushes into the container.
-              ORBIT_PROCESS_ENVIRONMENTS: '${{ vault.get(inputs.execution_secrets.process_environments.vault, inputs.execution_secrets.process_environments.key) }}'
+              ORBIT_PROCESS_ENVIRONMENTS: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.container != null ? inputs.execution_secrets.process_environments.key : inputs.execution_secrets.environment.key) }}'
       # Database: the default Instance's SQLite file, copied with the same children as instance:clone (ADR 0191).
       - name: database-snapshot
         labels: {role: swamp}
