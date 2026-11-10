@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
+from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -248,6 +249,22 @@ class FleetCliTest(unittest.TestCase):
         self.assertEqual(run.call_args_list[0].args[0][:2], ['php', str(Path(fleet_module.__file__).resolve().parents[3] / 'apps/cli/orbit')])
         self.assertEqual(run.call_args.kwargs['env']['COLUMNS'], '240')
 
+    def test_operation_list_filters_on_the_api_with_the_pinned_nested_ca(self):
+        with patch.object(fleet_module.subprocess, 'run', return_value=completed(out='{"data":[{"id":8}]}')) as call:
+            result = fleet_module.Fleet({}).operations('firewall.allow', 'node_firewall', 211)
+        argv = call.call_args.args[0]
+        url = urlparse(argv[-1])
+        self.assertEqual((url.scheme, url.netloc, url.path), ('https', '10.45.0.1', '/api/v1/operations'))
+        self.assertEqual(parse_qs(url.query), {'kind': ['firewall.allow'], 'target_type': ['node_firewall'], 'target_id': ['211']})
+        self.assertIn('--fail-with-body', argv)
+        self.assertEqual(argv[argv.index('--cacert') + 1], fleet_module.OUTER_CA)
+        self.assertEqual(result['json'], {'data': [{'id': 8}]})
+
+    def test_an_unfiltered_operation_audit_sends_no_filter_values(self):
+        with patch.object(fleet_module.subprocess, 'run', return_value=completed(out='{"data":[]}')) as call:
+            fleet_module.Fleet({}).operations()
+        self.assertEqual(urlparse(call.call_args.args[0][-1]).query, '')
+
 
 class NodeCliTest(unittest.TestCase):
     """The real Fleet runs the tested CLI on a Node: Nothing installs an `orbit` binary on a nested Node, so a bare `orbit` ended in exit 127."""
@@ -283,12 +300,13 @@ class NodeCliTest(unittest.TestCase):
 
     def test_a_node_that_is_ready_gets_no_mount_and_no_profile(self):
         with patch.object(fleet_module.subprocess, 'run', self.script()):
-            self.fleet.cli(['firewall:list'], node='app-prod')
+            self.fleet.prepare_node_cli('app-prod')
         words = [' '.join(call) for call in self.calls]
         self.assertFalse(any('device add' in line or 'file push' in line or 'gateway:add' in line for line in words))
 
     def test_a_fresh_node_gets_the_checkout_the_nested_ca_and_a_profile_before_the_call(self):
         with patch.object(fleet_module.subprocess, 'run', self.script(mounted=False, profile=False)):
+            self.fleet.prepare_node_cli('app-prod')
             self.fleet.cli(['firewall:list'], node='app-prod')
         words = [' '.join(call) for call in self.calls]
         mount = next(number for number, line in enumerate(words) if 'device add nested-app-prod checkout disk' in line)
@@ -306,7 +324,7 @@ class NodeCliTest(unittest.TestCase):
                               ('cannot add the profile nested', {'profile': False, 'failing': 'gateway:add'})):
             with self.subTest(what), patch.object(fleet_module.subprocess, 'run', self.script(**options)):
                 with self.assertRaises(fleet_module.FleetError) as caught:
-                    self.fleet.cli(['firewall:list'], node='app-prod')
+                    self.fleet.prepare_node_cli('app-prod')
             self.assertIn(what, str(caught.exception))
             self.assertIn('app-prod', str(caught.exception))
 

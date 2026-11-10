@@ -217,8 +217,25 @@ def probe(run, args):
     return [f"probe{' ' + args['id'] if args.get('id') else ''}: {args['from']} to {args['port']}/{args.get('proto', 'tcp')}{' (v6)' if family == 6 else ''} {observed}, expected {args['expect']}"]
 
 
-def operation_ids(run):
-    return {item.get('id') for item in (run.cli(['operation:list'])['json'] or {}).get('operations', [])}
+def operation_ids(run, cli_args=None):
+    """Audit the calls' actual write scopes. Unknown or cross-Node calls are exclusive and use an unfiltered audit."""
+    calls = [cli_args] if cli_args is not None else [step.args for step in run.cli_steps]
+    scopes = [spec.cli_scope(args, run.fleet.nodes) for args in calls]
+    queries = {(kind, target_type, run.fleet.nodes[node]['node_id']) for kind, target_type, node in scopes} if all(scopes) else set()
+    case_scopes = [spec.cli_scope(step.args) for step in run.cli_steps]
+    if not scopes or any(scope is None or scope[2] != run.target for scope in scopes + case_scopes):
+        queries = {(None, None, None)}
+    ids = set()
+    for query in sorted(queries):
+        result = run.keep(run.fleet.operations(*query), 'json')
+        document = result['json']
+        if result['rc'] or not isinstance(document, dict) or not isinstance(document.get('data'), list):
+            raise Infra('operation:list failed or returned no Operations list')
+        rows = document['data']
+        if any(not isinstance(row, dict) or type(row.get('id')) is not int or row['id'] < 1 for row in rows):
+            raise Infra('operation:list returned an invalid Operation ID')
+        ids.update(row['id'] for row in rows)
+    return ids
 
 
 def skip_reasons(node):
@@ -264,7 +281,7 @@ def cli(run, args):
         raise Infra(f'cli as {caller}: not a Node of the fleet')
     if caller and script is not None:
         raise NotBuilt('cli as with tty is not built')
-    before = operation_ids(run) if 'request' in expect else None
+    before = max(operation_ids(run, args), default=0) if 'request' in expect else None
     failures = []
     for form in forms:
         label = f'cli {argv[0]}' + ('' if len(forms) == 1 and script is None else f' ({"tty" if script is not None else form})')
@@ -279,7 +296,7 @@ def cli(run, args):
         if form == 'json':
             for path, name in (args.get('save') or {}).items():
                 run.names[name] = json_value(result['json'], path)
-    if before is not None and (created := operation_ids(run) - before):
+    if before is not None and (created := {number for number in operation_ids(run, args) if number > before}):
         failures.append(f'cli {argv[0]}: created Operation {sorted(created)}, expected no request')
     return failures
 
@@ -639,8 +656,8 @@ def snapshot(run, provider):
         return [line.split()[-2] for line in run.fleet.sh(node, 'ss -Htlun').stdout.splitlines() if len(line.split()) > 3]
     if provider == 'node_records':
         return [json.dumps(recorded_guest(run, {'mode': 'snapshot'}), sort_keys=True)]
-    result = run.cli(['operation:list'])
-    return [str(item.get('id')) for item in (result['json'] or {}).get('operations', [])]
+    # Operations are append-only. The newest matching ID detects additions even when older rows leave the newest page.
+    return [str(max(operation_ids(run), default=0))]
 
 
 def without_port(provider, entries, port):
