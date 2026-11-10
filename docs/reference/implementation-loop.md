@@ -76,15 +76,13 @@ Runner containers are unprivileged. Install or repair their toolchain with `tool
 
 Measure CI wall time from workflow creation to completion of `Required checks`. Include queueing, input selection and the final gate. Independent jobs overlap, so use the longest required path rather than adding every job's duration. The full workflow can continue after Required checks passes.
 
-The repository variables currently set both slow checks and proof to report-only. Each switch defaults to blocking when unset. Proof blocks only when both switches permit it.
+The repository variables below show today's observed values. Their meaning and defaults are owned by [Capacity: ideal state](/reference/command-development-pipeline#capacity-ideal-state).
 
-| Switch or job | Current value or condition | Effect |
-| --- | --- | --- |
-| `ORBIT_SLOW_CHECKS_BLOCKING` | `false` | Required checks does not wait for shape or CI proof. Swamp workflow validation and Deno tests stay required |
-| `ORBIT_PROOF_BLOCKING` | `false` | Proof stays report-only even if slow checks become blocking. Proof blocks only when neither variable is `false` |
-| `Start the CLI release` | Main push, successful Required checks, and `ORBIT_SLOW_CHECKS_BLOCKING == 'false'` | Dispatches the CLI release for that commit before the full CI run ends. Release admission and duplicate-publish protection still apply |
-
-Required checks first waits for its declared build, static-check, selection, Pi and Rust dependencies. It then reads the latest job attempts through the Actions API for Swamp validation and Deno tests. It includes shape and selected PR proof only when the switches require them. A selected failed, cancelled or unexpectedly skipped required job fails the result. Report-only shape or proof does not extend this path.
+| Switch or job | Observed today |
+| --- | --- |
+| `ORBIT_SLOW_CHECKS_BLOCKING` | `false` |
+| `ORBIT_PROOF_BLOCKING` | `false` |
+| `Start the CLI release` | Runs on main; [CLI binaries](/reference/cli-binaries) owns its condition |
 
 These job measurements are from the CI timing sample collected on 2026-11-10. They exclude queueing unless stated. A job with no selected work usually ends in about eight seconds. These are observed times, not time limits or guarantees.
 
@@ -105,7 +103,7 @@ These job measurements are from the CI timing sample collected on 2026-11-10. Th
 | Gateway release inputs | About 3 s | Select build inputs |
 | Required checks | About 3 s for aggregation, plus any API wait | Its required dependencies |
 
-The short jobs take about two minutes or less; the Rust sample reaches 2:04. Shape is the main obstacle to restoring full required coverage within about six minutes. Its 30-minute timeout lets the current serial fixtures finish on a loaded runner. Proof has a separate capacity and execution path.
+The short jobs take about two minutes or less; the Rust sample reaches 2:04. Shape is the main obstacle to restoring full required coverage within about six minutes. Proof has a separate capacity and execution path.
 
 For source records, compare [CI run 42861369691](https://github.com/hardimpactdev/orbit/actions/runs/42861369691) and [CI run 42868182599](https://github.com/hardimpactdev/orbit/actions/runs/42868182599). Their shape jobs took 13:28 on Shark and 21:47 on Sabre. They used different revisions and loads. The second run failed Deno tests; a successful shape job does not establish a green Required result.
 
@@ -213,7 +211,7 @@ Rust CI caches the Cargo registry, Git dependencies and `apps/agent/target`. An 
 
 Run `bin/check-operation-kinds` to repeat the registry check locally. It uses the real Gateway container, loads every family declaration and resolves its PHP executor or Swamp completion and execution handlers plus its named transports. Any loading or resolution failure exits nonzero. CI supplies a public fixture encryption key and requires no Gateway database. Constructor dependencies defer resource reads until their first use. The check runs no Operation, reads no resource records and contacts no Node. Families register a kind only after the Gateway enforces its required contracts.
 
-The proof CI reports within the same CI run; [the proof CI](/reference/feature-flow#the-proof-ci) describes its execution. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies include the selected Pi and Rust checks. With slow checks non-blocking, `Start the CLI release` dispatches after that result passes on main; it does not wait for the complete run.
+The proof CI reports within the same CI run; [the proof CI](/reference/feature-flow#the-proof-ci) describes its execution. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies include the selected Pi and Rust checks.
 
 Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 
