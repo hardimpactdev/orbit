@@ -7,14 +7,17 @@ namespace Orbit\Extensions\Conn\Domain;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceLifecycleContribution;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampScheduleWorkflows;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Orbit\Extensions\Conn\Actions\AdmitConnCleanupAction;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Orbit\Extensions\Conn\Models\ConnPairing;
 
 /**
  * Records a clone's T3 server from its create flow's result ([Instance servers](/reference/conn#instance-servers)). The run checked the
@@ -29,6 +32,21 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
     {
         if (! $this->extensions->enabled('conn')) {
             throw new ResourceOperationException('operation.kind_unavailable', 'A clone needs Conn enabled: Conn records its T3 server.', 503);
+        }
+    }
+
+    public function projectDestroy(Instance $instance): void
+    {
+        $environments = ConnEnvironment::query()->where('instance_id', $instance->id)->lockForUpdate()->get();
+        foreach ($environments as $environment) {
+            foreach (Operation::query()->where('input->conn_environment_id', $environment->id)->get() as $operation) {
+                foreach (ValidatedData::object($operation->input['execution_secrets'] ?? []) as $rawCopy) {
+                    $copy = ValidatedData::object($rawCopy);
+                    app(SwampScheduleWorkflows::class)->deleteSecret(ValidatedData::string($copy['vault']), ValidatedData::string($copy['key']));
+                }
+            }
+            ConnPairing::query()->where('conn_environment_id', $environment->id)->delete();
+            $environment->delete();
         }
     }
 
