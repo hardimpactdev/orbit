@@ -26,9 +26,9 @@ sequenceDiagram
   %%> Result:
   %%> - the default Instance is reserved with its runtime record and Route; it gets no T3 port
   %%> - `.env` is rendered from the Project's env template; a repository read token goes to the vault
-  Note over GW: Commit admission, push copies<br/>queue start · answer 202
+  Note over GW: Commit, push copies<br/>queue start · answer 202
   GW-->>CLI: 202 Accepted<br/>task ID
-  GW->>SW: Queued job starts run, full intent<br/>operation-instance-create
+  GW->>SW: Start run from queue<br/>operation-instance-create
   SW->>N: Launch the container<br/>Ansible · tags container
   %%> What it does:
   %%> - `incus init` from the Node's image `orbit-instance` with the reserved bridge address, then `incus start`; the project's profile gives `security.port_isolation` and the idmapped, read-only shared folders

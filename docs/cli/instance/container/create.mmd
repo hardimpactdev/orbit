@@ -28,9 +28,9 @@ sequenceDiagram
   %%> - the Instance is reserved with its runtime record: container name, bridge address, the lowest free T3 port from 3800 and the default as clone source
   %%> - `.env` is rendered from the Project's env template; it, the placeholder model key and a repository read token go to the vault
   %%> - a task is recorded with the full intent and `container.clone`
-  Note over GW: Commit admission, push copies<br/>queue start · answer 202
+  Note over GW: Commit, push copies<br/>queue start · answer 202
   GW-->>CLI: 202 Accepted<br/>task ID
-  GW->>SW: Queued job starts run, full intent<br/>operation-instance-create
+  GW->>SW: Start run from queue<br/>operation-instance-create
   SW->>N: Clone default container<br/>Ansible · tags clone
   %%> What it does:
   %%> - `incus copy` of the default container's snapshot `seed-<commit>`, a ZFS clone; a stopped default needs no start
