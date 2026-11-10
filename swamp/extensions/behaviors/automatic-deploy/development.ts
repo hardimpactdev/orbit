@@ -51,9 +51,6 @@ type Admissions = {
 const Instance = z.object({
     id: z.number().int().positive(),
     node_id: z.number().int().positive(),
-    name: z.string(),
-    status: z.string(),
-    source_layout: z.string(),
     seed_commit: sha.nullable(),
     development_projection_route_id: z.number().int().positive().nullable(),
     auto_deploy: z.object({
@@ -73,7 +70,7 @@ export async function tickDevelopment(
     admissions: Admissions,
     now: string,
     emit: Emit,
-    filter: number[] = [],
+    filter: number[],
 ) {
     const request = async (
         method: "GET" | "POST" | "PUT" | "PATCH",
@@ -100,9 +97,6 @@ export async function tickDevelopment(
     const discovery = Instance.pick({
         id: true,
         node_id: true,
-        name: true,
-        status: true,
-        source_layout: true,
     }).extend({
         auto_deploy: z.object({
             policy_owner: z.string(),
@@ -116,23 +110,21 @@ export async function tickDevelopment(
     const failures: string[] = [];
     for (const listed of records) {
         if (
-            !listed.auto_deploy.eligible || listed.name !== "default" ||
-            listed.source_layout !== "checkout" || listed.status !== "active" ||
-            listed.auto_deploy.policy_owner !== "swamp" ||
-            filter.length && !filter.includes(listed.id)
+            !filter.includes(listed.id) || !listed.auto_deploy.eligible ||
+            listed.auto_deploy.policy_owner !== "swamp"
         ) continue;
         try {
-            const instance = Instance.parse(
-                await request("GET", `/api/v1/instances/${listed.id}`),
+            const record = await request(
+                "GET",
+                `/api/v1/instances/${listed.id}`,
             );
+            const current = discovery.parse(record);
             if (
-                !instance.auto_deploy.eligible || instance.id !== listed.id ||
-                instance.name !== "default" ||
-                instance.source_layout !== "checkout" ||
-                instance.node_id !== listed.node_id ||
-                instance.status !== "active" ||
-                instance.auto_deploy.policy_owner !== "swamp"
+                !current.auto_deploy.eligible || current.id !== listed.id ||
+                current.node_id !== listed.node_id ||
+                current.auto_deploy.policy_owner !== "swamp"
             ) continue;
+            const instance = Instance.parse(record);
             const id = instance.id, name = `development-${id}`;
             const state = DevelopmentState.parse(
                 await ctx.readResource(name) ?? {},

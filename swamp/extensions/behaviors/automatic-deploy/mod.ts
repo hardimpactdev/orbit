@@ -224,7 +224,7 @@ export function automaticDeploy(
         methods: {
             development: {
                 description:
-                    "Run development policy only for defaults selected by the Gateway precheck.",
+                    "Run development policy only for seeded container defaults selected by the Gateway precheck.",
                 arguments: z.object({
                     instances: z.array(z.number().int().positive()).min(1),
                 }),

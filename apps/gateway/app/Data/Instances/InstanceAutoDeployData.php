@@ -14,7 +14,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 
 /**
  * Automatic deployment of an Instance ([Automatic deployments](/reference/deployments#automatic-deployments)):
- * whether it is on, the merge check that gates it, and what the last tick saw. A development default always deploys
+ * whether it is on, the merge check that gates it, and what the last tick saw. A ready development container default deploys
  * automatically, without a gate. `warning` names a production Instance that deploys every commit without a check.
  */
 #[MapOutputName(SnakeCaseMapper::class)]
@@ -44,7 +44,8 @@ final class InstanceAutoDeployData extends Data
         $automatic = AutomaticDeployState::of($instance);
         $state = $automatic->toArray();
         $placement = $instance->placementEnvironment();
-        $developmentDefault = $placement === 'development' && $instance->name === 'default';
+        $eligible = app(AutomaticDeployPolicyWriter::class)->eligibilityRefusal($instance) === null;
+        $developmentDefault = $placement === 'development' && $eligible;
         $enabled = $developmentDefault || ($placement === 'production' && $instance->auto_deploy);
         $history = $enabled ? new AutomaticDeployHistory($instance)->snapshot() : null;
         $gate = $developmentDefault ? null : $instance->project->mergeCheckName();
@@ -52,7 +53,7 @@ final class InstanceAutoDeployData extends Data
         $active = $pause !== null && $pause['deployment_id'] > $instance->auto_deploy_resumed_after;
 
         return new self(
-            eligible: app(AutomaticDeployPolicyWriter::class)->eligibilityRefusal($instance) === null,
+            eligible: $eligible,
             resumedAfter: $instance->auto_deploy_resumed_after,
             blocked: $history === null ? [] : array_values(array_unique([...$automatic->blocked(), ...$history->rolledAway])),
             historyVersion: $history?->version,

@@ -22,7 +22,7 @@ function fixture() {
             policy_owner: "swamp",
             eligible: true,
             resumed_after: 0,
-            history_version: "f".repeat(64),
+            history_version: "f".repeat(64) as string | null,
         },
     };
     const listed: unknown[] = [instance];
@@ -123,13 +123,14 @@ function fixture() {
             return Promise.resolve(handle);
         },
     };
-    const run = (at = now) =>
+    const run = (at = now, filter = [7]) =>
         tickDevelopment(
             http,
             ctx,
             admissions,
             at,
             (instance, key, body) => emitted.push({ instance, key, body }),
+            filter,
         );
     return {
         instance,
@@ -519,6 +520,28 @@ Deno.test("native-first deployment skips the old Gateway dev owner before readin
         f.requests.some((r) => r.path === "/api/v1/instances/7"),
         false,
     );
+});
+
+Deno.test("development policy never discovers work outside the Gateway selection", async () => {
+    const f = fixture();
+    await f.run(now, []);
+    assertEquals(f.starts, []);
+    assertEquals(f.memory.size, 0);
+    assertEquals(f.requests.map((r) => r.path), ["/api/v1/instances"]);
+});
+
+Deno.test("fresh Gateway refusal stops a selected default before history or head reads", async () => {
+    const f = fixture();
+    f.listed.splice(0, 1, structuredClone(f.instance));
+    f.instance.auto_deploy.eligible = false;
+    f.instance.auto_deploy.history_version = null;
+    await f.run();
+    assertEquals(f.starts, []);
+    assertEquals(f.memory.size, 0);
+    assertEquals(f.requests.map((r) => r.path), [
+        "/api/v1/instances",
+        "/api/v1/instances/7",
+    ]);
 });
 
 Deno.test("canonical Gateway refusal skips ambiguous app-dev plus app-prod placement", async () => {

@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Production policy only. Development uses the independent Gateway precheck in container/deploy-default.mmd; this schedule and its persisted pause are never changed by that tick.
+  %% Production policy only. Development uses the independent Gateway precheck for active container defaults with a seed in container/deploy-default.mmd; checkout working trees are never auto-deployed. This schedule and its persisted pause are never changed by that tick.
   %% Target design: DECISIONS 3 (automatic deploy = Gateway-published native schedule, no POST back), R1-R2, ADR 0244, behavior names by target. Replaces instance.policy_event. docs/reference/deployments.md#automatic-deployments.
   %% Tightened: flow-tighten 2026-11-02, rules 3, 5 (no per-minute Node read: the schedule inputs carry the deployed commit, and the Gateway republishes them on each deploy).
   %% status: reviewed

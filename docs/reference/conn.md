@@ -177,7 +177,7 @@ Destroy keeps this contribution available while Conn is disabled. Admission capt
 
 Conn starts a thread in an Orbit Project in a new clone of the Project's default Instance ([Threads](/reference/development-containers#threads)). The [thread chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/thread.mmd) has the steps.
 
-`GET /projects` lists the Projects a thread can start in. Each one has a `default` Instance that runs in a container, is active and has a seed snapshot. That default runs on a Node the caller has node access to, and the entry names that Node.
+`GET /projects` lists the Projects a thread can start in. Each one has a `default` Instance that runs in a container, is active and has a seed snapshot. That default runs on a Node the caller has node access to, and the entry names that Node. [Automatic development deployment](/reference/deployments#automatic-deployments) uses the same rule to find containers that are ready. Checkout working trees qualify for neither.
 
 `POST /projects/{id}/instances` with `{"name"}` creates the thread's clone:
 

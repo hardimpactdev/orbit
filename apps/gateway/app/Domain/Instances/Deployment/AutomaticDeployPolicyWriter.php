@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
-use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ReadyContainerDefault;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -20,6 +20,8 @@ enum AutomaticDeployPolicyWriter: string
 
     public const string InactiveRole = 'instance.auto_deploy_role_inactive';
 
+    public const string ContainerDefaultRequired = 'instance.auto_deploy_container_default_required';
+
     public function assertSwamp(Instance $instance): void
     {
         if ($this !== self::Swamp) {
@@ -27,9 +29,11 @@ enum AutomaticDeployPolicyWriter: string
         }
         $refusal = $this->eligibilityRefusal($instance);
         if ($refusal !== null) {
-            throw new ResourceOperationException($refusal, $refusal === self::InactiveRole
-                ? 'Automatic deployment requires eligible active app-dev or app-prod placement.'
-                : 'Automatic deployment is not enabled for this active Instance.', 409);
+            throw new ResourceOperationException($refusal, match ($refusal) {
+                self::InactiveRole => 'Automatic deployment requires eligible active app-dev or app-prod placement.',
+                self::ContainerDefaultRequired => 'Automatic development deployment requires an active container default with a seed snapshot. Checkout Instances are working trees and are never auto-deployed.',
+                default => 'Automatic deployment is not enabled for this active Instance.',
+            }, 409);
         }
     }
 
@@ -37,8 +41,11 @@ enum AutomaticDeployPolicyWriter: string
     public function eligibilityRefusal(Instance $instance): ?string
     {
         if ($instance->placedOnAppDev()) {
-            return $instance->name === 'default' && $instance->status === InstanceState::Active
-                && $instance->source_layout === InstanceSourceLayout::Checkout->value
+            if (! ReadyContainerDefault::query()->whereKey($instance->id)->exists()) {
+                return self::ContainerDefaultRequired;
+            }
+
+            return $instance->node->status === LifecycleStatus::Active
                 && $instance->node->roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::AppDev && $role->status === LifecycleStatus::Active)
                     ? null : self::InactiveRole;
         }

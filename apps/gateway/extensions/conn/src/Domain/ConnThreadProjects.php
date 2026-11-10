@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Domain;
 
 use App\Domain\Instances\DefaultInstanceName;
-use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ReadyContainerDefault;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
@@ -27,7 +26,7 @@ final readonly class ConnThreadProjects
     /** @return Collection<int, Instance> the ready defaults the caller reaches, by Project slug */
     public function defaults(Node $caller): Collection
     {
-        $query = $this->ready()->with(['project', 'node']);
+        $query = ReadyContainerDefault::query()->with(['project', 'node']);
         if (! $this->access->hasGatewayAuthority($caller)) {
             $query->whereIn('node_id', $this->access->accessibleNodeIds($caller));
         }
@@ -48,7 +47,7 @@ final readonly class ConnThreadProjects
                 'serving_node' => ['id' => $default->node->id, 'name' => $default->node->name],
             ]);
         }
-        if (! $default instanceof Instance || ! $this->ready()->whereKey($default->id)->exists()) {
+        if (! $default instanceof Instance || ! ReadyContainerDefault::query()->whereKey($default->id)->exists()) {
             throw new ResourceOperationException('instance.default_missing',
                 "Project [{$project->slug}] has no default Instance in a container that is active and has a seed snapshot.", 409);
         }
@@ -67,12 +66,5 @@ final readonly class ConnThreadProjects
             ->where('target_id', $existing)->where('triggered_by', 'node:'.$caller->id)->exists()) {
             throw new ResourceOperationException('instance.name_taken', "Project [{$project->slug}] already has an Instance named [{$name}].", 409);
         }
-    }
-
-    /** @return Builder<Instance> */
-    private function ready(): Builder
-    {
-        return Instance::query()->where('name', DefaultInstanceName::Name)->where('status', InstanceState::Active)
-            ->whereHas('runtime', static fn (Builder $runtime): Builder => $runtime->whereNotNull('seed_commit'));
     }
 }

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
+use App\Domain\Instances\ReadyContainerDefault;
 use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Infrastructure\Swamp\StartSwampRun;
-use App\Models\Instance;
 use Throwable;
 
 /** The minute trigger filters unchanged defaults before paying for a Swamp policy run. */
@@ -18,7 +18,7 @@ final readonly class DevelopmentDeployPrecheck
     {
         $changed = [];
         $heads = [];
-        $defaults = Instance::query()->where('name', 'default')->with(['project', 'node.roles', 'runtime'])->orderBy('id')->get();
+        $defaults = ReadyContainerDefault::query()->with(['project', 'node.roles', 'runtime'])->orderBy('id')->get();
         foreach ($defaults as $instance) {
             if (! $instance->placedOnAppDev() || AutomaticDeployPolicyWriter::Swamp->eligibilityRefusal($instance) !== null) {
                 continue;

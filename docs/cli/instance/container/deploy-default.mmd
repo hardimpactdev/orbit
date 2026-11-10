@@ -15,7 +15,8 @@ sequenceDiagram
   loop every minute
     Note over GW: Check eligible defaults<br/>recorded placement and seed
     %%> What it does:
-    %%> - selects only active default checkouts with active app-dev placement, using the automatic admission eligibility rule
+    %%> - selects only active container defaults with a seed snapshot and active app-dev placement, using the same ready-default rule as conn:project:list
+    %%> - never selects checkout Instances: they are the user's working trees, not managed seed containers
     %%> - reads each eligible Project's default branch once through the cached source reader; no environment-template refresh
     alt seed matches branch head
       Note over GW: Nothing to deploy<br/>no Swamp run

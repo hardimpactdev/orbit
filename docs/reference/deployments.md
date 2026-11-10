@@ -2,7 +2,7 @@
 title: "Instance releases"
 description: "How production Instances build releases and select current code, and how development defaults deploy in their checkout."
 covers:
-  - apps/gateway/app/Domain/{Instances/Deployment/**,Projects/*DeployStep*.php}
+  - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/ReadyContainerDefault.php,Projects/*DeployStep*.php}
   - apps/gateway/app/Actions/Instances/{StartInstanceDeployAction,StartInstanceRollbackAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
   - apps/gateway/app/Infrastructure/Instances/{DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram}.php
   - apps/agent/src/commands/{production,production_tests,production_home,production_home_tests,deploy_step,dev_deploy,dev_deploy_tests}.rs
@@ -76,9 +76,9 @@ Prune removes the links with their releases and never follows them into the shar
 
 ## Development defaults
 
-A `default` Instance on an `app-dev` Node is a plain Git checkout that Orbit keeps at the newest commit of the Project's default branch. Other development Instances on the Node start from it. `orbit instance:deploy ID`, the deployment API (`POST /api/v1/instances/{instance}/deploy` with `{}`), and the MCP tool `instance-deploy` can deploy a default by hand. Each starts an [operation](#deploy-through-the-api). The Project's default branch supplies the target commit; production branch overrides do not apply.
+A `default` Instance on an `app-dev` Node supplies the starting code for other development Instances. A [container default](/reference/development-containers#the-default-instance) with a seed snapshot follows the Project's default branch automatically. A checkout default is a user's working tree and changes only by an explicit deployment. `orbit instance:deploy ID`, the deployment API (`POST /api/v1/instances/{instance}/deploy` with `{}`), and the MCP tool `instance-deploy` can deploy a default by hand. Each starts an [operation](#deploy-through-the-api). The Project's default branch supplies the target commit; production branch overrides do not apply.
 
-The [automatic deployment tick](#automatic-deployments) deploys a default each time its default branch has a new commit. Only one deployment runs per Instance, including manual requests.
+The [automatic deployment tick](#automatic-deployments) deploys only seeded container defaults when their default branch has a new commit. Only one deployment runs per Instance, including manual requests. The checkout deployment below runs only on request.
 
 A deployment runs in the checkout itself, in two phases.
 
@@ -95,11 +95,11 @@ The exception is a directory that the old commit has and the new commit removes,
 When every required step passes, Orbit records the commit as the default's `seed_commit`. When a required step fails, the later steps do not run and the deployment fails.
 
 - The checkout stays at the new commit with the files the steps left. Orbit does not roll it back.
-- The seed keeps the last commit that deployed. So the automatic deployment tick deploys the commit again after a backoff and reruns the steps, at most three times.
+- The seed keeps the last commit that deployed. A checkout default needs another explicit deployment to rerun the steps.
 
 A failed best-effort step (`required: false`) does not stop the deployment; the later steps run.
 
-A step and Orbit's checkout take the lock that [setup and teardown steps](/reference/instance-setup) hold on the checkout: a `flock` on the checkout directory. While a setup or teardown step runs there, the deployment fails with `instance.lifecycle_busy` and the tick retries after a backoff. A step's processes do not inherit the lock, so a process that a step leaves running cannot hold up the next step. Steps must not change tracked files: the next deployment would refuse the checkout as dirty.
+A step and Orbit's checkout take the lock that [setup and teardown steps](/reference/instance-setup) hold on the checkout: a `flock` on the checkout directory. While a setup or teardown step runs there, the deployment fails with `instance.lifecycle_busy`. A step's processes do not inherit the lock, so a process that a step leaves running cannot hold up the next step. Steps must not change tracked files: the next deployment would refuse the checkout as dirty.
 
 Explicit environment synchronization writes the checkout's `.env` files, so the application sees new values at once. A Route's web root serves files from the checkout, and a deployment does not change the Route.
 
@@ -184,7 +184,7 @@ Swamp executes each deployment and rollback as an [operation](/reference/operati
 
 `instance:deploy --commit=SHA` sends `{"commit":"SHA"}` to the existing deploy endpoint. Omit `commit` to keep the manual branch-head behavior. SHA is exactly 40 or 64 lowercase hexadecimal characters. The Gateway checks Instance eligibility and the Project's recorded repository identity before admission. The queued source-preparation step checks the managed repository binding and requires the commit on the deployment branch's first-parent chain before environment sync, user steps or activation. Invalid membership ends the operation with `deployment.commit_not_on_branch`; a moved head either still contains the pinned commit or fails. It never substitutes the new head. Development defaults use the Project default branch.
 
-`POST /api/v1/instances/{instance}/deploy/automatic` and MCP `instance-deploy-automatic` start the same `instance.deploy` operation with automatic origin. They require a commit, an `Idempotency-Key`, an eligible production Instance with automatic deployment enabled, and Gateway Node access.
+`POST /api/v1/instances/{instance}/deploy/automatic` and MCP `instance-deploy-automatic` start the same `instance.deploy` operation with automatic origin. They require a commit, an `Idempotency-Key`, an eligible production Instance with automatic deployment enabled or a ready development container default, and Gateway Node access.
 
 This service contract has no CLI command. Swamp invokes it with its Gateway-peer authority; operator deploys use `instance:deploy --commit=SHA` and keep manual identity and pause behavior. The normal deploy endpoint always keeps the authenticated caller's manual identity, including when the caller has Gateway access. Both reject unknown body fields, including `triggered_by`, `automatic` and `caller_node_id`.
 
@@ -196,7 +196,7 @@ Under the Instance lock, the automatic operation rechecks enablement, manual pau
 
 A manual deploy or rollback row pauses it regardless of whether that attempt is running, failed or succeeded. A rollback records its rolled-away block when its outcome is recorded, before history pruning, so resume and history pruning cannot lose it while Swamp is idle. `auto_deploy=true` resumes after the newest manual row and keeps the block. A paused operation ends with `deployment.paused`; a rolled-away commit ends with `deployment.commit_blocked`. A manual action that has already started and still holds the Instance makes a new start busy. A rollback may supersede an unclaimed queued deploy under the existing rules.
 
-These primitives retain the existing operation receipt, history, output, recovery, target exclusion and cooperative cancellation. Swamp owns automatic policy for production and default development checkouts, and executes their deployment Operations. Both policies use the same keyed Gateway admission and receipt contracts. The policy runs on a Swamp worker on Node 209 and calls the Gateway API directly over HTTPS, trusting the Orbit root CA.
+These primitives retain the existing operation receipt, history, output, recovery, target exclusion and cooperative cancellation. Swamp owns automatic policy for production and seeded development container defaults, and executes their deployment Operations. Both policies use the same keyed Gateway admission and receipt contracts. The policy runs on a Swamp worker on Node 209 and calls the Gateway API directly over HTTPS, trusting the Orbit root CA.
 
 ### The deploy operation
 
@@ -302,7 +302,9 @@ After that reload, a rollback reloads or restarts the same active, opted-in Inst
 
 ## Automatic deployments
 
-Production policy keeps its independent Swamp schedule at second 30 (`30 * * * * *`) and its existing pause. Development uses an enabled Gateway scheduler job each minute. It selects active default checkouts on active `app-dev` placement through the shared admission eligibility rule, reads each eligible Project default branch once, and compares it with the recorded seed commit. Container Instances use their runtime's snapshot seed; checkout Instances use their Instance seed. A matching default starts no Swamp run and makes no policy HTTP requests or vault reads. Only defaults behind their branch enter a development-only Swamp policy run. The Gateway retains admission, locks, authorization and history.
+Production policy keeps its independent Swamp schedule at second 30 (`30 * * * * *`) and its existing pause. Development uses an enabled Gateway scheduler job each minute. It selects only active container defaults with a seed snapshot on active `app-dev` placement, using the same ready-default rule as [`conn:project:list`](/reference/conn#threads-in-an-orbit-project). It reads each eligible Project default branch once and compares it with the runtime's snapshot seed commit. A matching default starts no Swamp run and makes no policy HTTP requests or vault reads. Only container defaults behind their branch enter a development-only Swamp policy run.
+
+Checkout Instances are the user's working trees and are never auto-deployed, even when named `default` or recorded with `auto_deploy=true`. A container without a seed must first deploy by hand. The Gateway retains admission, locks, authorization and history.
 
 The native end assertion fails when the policy producer records a failure. The Gateway captures the full event receipt from that producer in its existing terminal history read, including events from a failed fire; no reporting step prints it.
 
@@ -319,7 +321,7 @@ A head the Gateway cannot read fails the tick for that Instance with `source.hea
 
 ### Automatic development defaults
 
-A default deploys its default branch's head. Its deployed commit is its `seed_commit`. A failed commit retries as the [failure rules](#failures-of-automatic-deployments) describe; for a default every failure is retryable. A new commit deploys at once.
+A seeded container default deploys its default branch's head. Its deployed commit is its runtime's `seed_commit`. A failed commit retries as the [failure rules](#failures-of-automatic-deployments) describe; for a default every failure is retryable. A new commit deploys at once.
 
 ### Production Instances
 
@@ -428,11 +430,13 @@ To switch policy back:
 
 ### One policy writer during the trial
 
-Swamp decides production and default development automatic deployments. The code-owned writer is `swamp`; Instance list/show exposes it as `auto_deploy.policy_owner`. Swamp discovers eligible Instances with `GET /api/v1/instances?auto_deploy=true` and does nothing when the owner is `gateway`. The filter uses the same eligibility rule as automatic admission: enabled active production Instances with active `app-prod` placement, or active default development checkouts with active `app-dev` placement. An inactive or absent `app-prod` role refuses admission with `instance.auto_deploy_role_inactive`. The worker checks this rule again before effects. Unfiltered Instance listing still includes ineligible Instances. Automatic admission, publication, and event admission refuse with `instance.auto_deploy_policy_owner` under PHP ownership. The deploy and event workers check ownership again before effects.
+Swamp decides production and default development automatic deployments. The code-owned writer is `swamp`; Instance list/show exposes it as `auto_deploy.policy_owner`. Swamp discovers eligible Instances with `GET /api/v1/instances?auto_deploy=true` and does nothing when the owner is `gateway`. The filter uses the same eligibility rule as automatic admission: enabled active production Instances with active `app-prod` placement, or active container defaults with a seed snapshot and active `app-dev` placement. Checkout defaults refuse with `instance.auto_deploy_container_default_required`: automatic development deployment requires a ready container default, never a user's working tree.
+
+An inactive or absent `app-prod` role refuses admission with `instance.auto_deploy_role_inactive`. The worker checks this rule again before effects. Unfiltered Instance listing still includes ineligible Instances. Automatic admission, publication, and event admission refuse with `instance.auto_deploy_policy_owner` under PHP ownership. The deploy and event workers check ownership again before effects.
 
  There is no environment flag or runtime switch.
 
-The cutover release removes the PHP production policy loop. The development cutover removes the PHP retry loop; a Gateway scheduler now filters changed defaults before entering Swamp policy. The Gateway selects active default checkouts on app-dev Nodes from its records, without requiring the production auto-deploy flag. Deploy Swamp first: it stays idle until the Gateway reports Swamp ownership. Finish or cancel in-flight PHP work through its current owner before activating the Gateway release; existing `operation.target_busy` holds serialize admissions. Swamp reconstructs policy and retries from the public projection and Gateway history.
+The cutover release removes the PHP production policy loop. The development cutover removes the PHP retry loop; a Gateway scheduler now filters changed defaults before entering Swamp policy. The Gateway selects only active container defaults with a seed snapshot on app-dev Nodes from its records, without requiring the production auto-deploy flag. Deploy Swamp first: it stays idle until the Gateway reports Swamp ownership. Finish or cancel in-flight PHP work through its current owner before activating the Gateway release; existing `operation.target_busy` holds serialize admissions. Swamp reconstructs policy and retries from the public projection and Gateway history.
 
  Alert deduplication starts in Swamp: the owner accepts one possible repeat alert at cutover. Orbit exposes no stored alert-key contract.
 
@@ -511,11 +515,15 @@ Cleanup removes only the releases that the deployment history retained before th
 
 These reasons explain the design. Check them before you propose a change.
 
-### A development default is a plain checkout
+### Automatic development deployment owns only seed containers
+
+A container default is managed starting state for new clones. A checkout Instance is a user's working tree, even when its name is `default`. Moving its branch or running installs and builds after a merge interrupts that work. Automatic discovery and admission therefore share the ready-container rule used by Conn's Project list. Turning on automatic deployment for production does not change this boundary.
+
+### A checkout default updates in place
 
 A default serves development, so it updates in place like any working checkout: fetch, check out, and run the steps. Releases, a `current` link, snapshots, and pruning are what make a production switch atomic and reversible. A development default needs neither, and that machinery cost disk space, broke when a release lost its Git link, and served a stale checkout to Processes and Schedules that ran outside the release. Release layouts stay where something is served to users: the Gateway's own releases and production homes.
 
-A failed step leaves the new commit checked out instead of rolling back. A rollback would need the old dependencies too, and the automatic deployment tick reruns the steps, so a passing retry repairs the checkout. Refusing uncommitted tracked changes keeps someone's edit from being discarded; untracked files carry the dependencies, so the checkout keeps them.
+A failed step leaves the new commit checked out instead of rolling back. A rollback would need the old dependencies too. Another explicit deployment reruns the steps, so a passing retry repairs the checkout. Refusing uncommitted tracked changes keeps someone's edit from being discarded; untracked files carry the dependencies, so the checkout keeps them.
 
 Seeds name the checkout, not a frozen copy. Setup always runs locked installs after it copies, so a copy taken during a deployment only costs install time. Leases that kept frozen releases alive for other Instances are a rejected alternative: they grew without bound and blocked cleanup.
 
