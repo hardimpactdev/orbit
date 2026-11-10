@@ -30,6 +30,7 @@ sequenceDiagram
   %%> - checks that the address belongs to the bridge
   %%> - makes the forwarder's system user and loads its nftables table from a oneshot unit that starts early at boot, before WireGuard, Docker and Incus: forwarded packets to the guard are dropped ahead of Docker and UFW, and only the forwarder's user may connect to the guard from the Node
   %%> - runs its own Caddy, `orbit-ai-router-forwarder.service`, on the bridge address at port 8319, only while the table's unit is up: its own user, no admin endpoint, no saved config, no key
+  %%> - waits for a listening socket on the bridge address at port 8319 without connecting from the Node, whose traffic enters over lo and is rejected
   %%> - allows port 8319 in on the bridge only
   SW->>R: Apply the guard<br/>Ansible
   %%> What it does:

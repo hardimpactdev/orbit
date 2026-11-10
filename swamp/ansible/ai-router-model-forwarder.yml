@@ -155,8 +155,16 @@
         daemon_reload: "{{ unit.changed }}"
         enabled: true
         state: "{{ 'restarted' if (unit.changed or caddyfile.changed) else 'started' }}"
+    # A host connection to the bridge address enters over lo, which the table rejects. Inspect the exact listener instead;
+    # the check phase proves the request path from the bridge after the guard admits the Node.
     - name: Wait for the forwarder
-      ansible.builtin.wait_for: { host: "{{ intent.address }}", port: "{{ intent.origin | urlsplit('port') }}", timeout: 15 }
+      ansible.builtin.command:
+        argv: [ss, -H, -ltn4, src, "{{ intent.address }}", sport, "=", ":{{ intent.origin | urlsplit('port') }}"]
+      register: forwarder_listener
+      changed_when: false
+      until: forwarder_listener.stdout | length > 0
+      retries: 15
+      delay: 1
     - name: Place the UFW rules
       ansible.builtin.import_tasks: tasks/firewall.yml
       vars:

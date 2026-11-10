@@ -1,4 +1,12 @@
 """Pin what keeps the container model forwarder fail-closed: the playbook's units, its reload, its order, and its end checks."""
+import copy
+import os
+import select
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -43,6 +51,51 @@ class ModelForwarderPlaybookTest(unittest.TestCase):
     def test_table_comes_before_the_forwarder(self):
         names = list(self.apply)
         self.assertLess(names.index('Load the table'), names.index('Run the forwarder'))
+
+    def readiness(self, address, port):
+        """Run the production readiness task against real sockets without changing the host."""
+        command = shutil.which('ansible-playbook') or str(Path(sys.executable).parent / 'ansible-playbook')
+        task = copy.deepcopy(self.apply['Wait for the forwarder'])
+        # Keep negative cases bounded, without waiting for a service to start.
+        if 'ansible.builtin.wait_for' in task:
+            task['ansible.builtin.wait_for']['timeout'] = 1
+        else:
+            task.update(retries=1, delay=0)
+        with tempfile.TemporaryDirectory(prefix='forwarder-readiness-') as folder:
+            playbook = Path(folder) / 'probe.yml'
+            playbook.write_text(yaml.safe_dump([{
+                'name': 'Observe the listener', 'hosts': 'localhost', 'gather_facts': False,
+                'vars': {'intent': {'address': address, 'origin': f'http://{address}:{port}'}}, 'tasks': [task],
+            }]))
+            return subprocess.run([command, '-i', 'localhost,', '-c', 'local', str(playbook)],
+                                  check=False, capture_output=True, text=True, timeout=30,
+                                  env={**os.environ, 'ANSIBLE_STDOUT_CALLBACK': 'default',
+                                       'ANSIBLE_CALLBACKS_ENABLED': 'default', 'ANSIBLE_COLLECTIONS_PATH': folder})
+
+    def test_readiness_observes_the_listener_without_a_connection(self):
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            result = self.readiness(*listener.getsockname())
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('changed=0', result.stdout)
+            self.assertFalse(select.select([listener], [], [], 0)[0],
+                             'Host TCP readiness enters over lo, which the forwarder table rejects')
+
+    def test_readiness_refuses_a_listener_on_another_address(self):
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            result = self.readiness('127.0.0.2', listener.getsockname()[1])
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_readiness_refuses_a_bound_port_that_is_not_listening(self):
+        with socket.socket() as bound, socket.socket() as other:
+            bound.bind(('127.0.0.1', 0))
+            other.bind(('127.0.0.1', 0))
+            other.listen()
+            result = self.readiness(*bound.getsockname())
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_checks_cover_every_path(self):
         for name in ('Check that the guard answers a container through the forwarder', 'Check that the forwarder\'s table dropped it',
