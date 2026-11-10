@@ -140,8 +140,9 @@ final readonly class InstanceContainer
             'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])),
             'branch' => ValidatedData::string($project->default_branch), 'commit' => null,
             'workspace' => $workspace, 'environment_file' => $application.'/.env',
-            // The deploy commands' whole environment: `orbit`'s home and the runtime folder, the Project's PHP first.
-            'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.$this->path($project), InstanceImage::RuntimeEnvironment],
+            // The deploy commands' whole environment: `orbit`'s home and the runtime folder, the Project's PHP first, and the Vite+ home.
+            'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.$this->path($project),
+                ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys(InstanceImage::RuntimeEnvironment), InstanceImage::RuntimeEnvironment)],
             'units' => $this->units($instance, $runtime, $application),
         ];
     }

@@ -143,7 +143,8 @@ describe('the first default Instance of a Project on a build-list Node', functio
                 'ingress' => [['action' => 'allow', 'source' => '10.253.0.1/32', 'protocol' => 'tcp', 'destination_port' => '8080', 'state' => 'enabled']]],
             'mirror' => '/var/lib/orbit/instance-repositories/'.$operation->target_id.'.git', 'repository' => 'https://github.com/nckrtl/tool.git',
             'branch' => 'main', 'commit' => null, 'workspace' => '/srv/workspace', 'environment_file' => '/srv/workspace/.env', 'units' => [],
-            'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin', 'VP_NO_UPDATE_CHECK=1'],
+            'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin',
+                'VP_HOME=/opt/orbit-runtime/current/vite-plus-home', 'VP_NO_UPDATE_CHECK=1'],
             'steps' => [['name' => 'install', 'phase' => 'before_activation', 'required' => true, 'timeout_seconds' => 300, 'command_digest' => hash('sha256', 'bun install')]],
         ])->and($operation->input['run_budget_seconds'])->toBe(2100);
     });
