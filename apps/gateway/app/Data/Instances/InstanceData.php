@@ -7,6 +7,7 @@ namespace App\Data\Instances;
 use App\Data\Nodes\NodeIdentityData;
 use App\Data\Projects\ProjectIdentityData;
 use App\Data\Routes\RouteData;
+use App\Domain\Instances\Deployment\DevelopmentSeed;
 use App\Domain\Instances\Deployment\InstanceDeployStepStore;
 use App\Domain\Instances\Deployment\SharedPaths;
 use App\Models\Instance;
@@ -80,7 +81,7 @@ final class InstanceData extends Data
             vitePort: $instance->vite_port,
             ssrPort: $instance->ssr_port,
             seedPath: $instance->seed_path,
-            seedCommit: $instance->developmentSeedCommit(),
+            seedCommit: DevelopmentSeed::commit($instance),
             name: $instance->name,
             sourceLayout: $instance->source_layout,
             checkoutPath: $instance->checkout_path,

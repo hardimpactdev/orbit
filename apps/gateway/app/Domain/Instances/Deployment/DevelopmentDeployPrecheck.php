@@ -25,7 +25,7 @@ final readonly class DevelopmentDeployPrecheck
             }
             try {
                 $head = $heads[$instance->project_id] ??= $this->heads->head($instance->project, (string) $instance->project->default_branch);
-                if ($head !== $instance->developmentSeedCommit()) {
+                if ($head !== DevelopmentSeed::commit($instance)) {
                     $changed[] = $instance->id;
                 }
             } catch (Throwable $exception) {
