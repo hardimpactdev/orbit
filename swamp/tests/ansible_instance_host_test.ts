@@ -212,6 +212,8 @@ function gatewayImage() {
     orbit: "1000",
     work: "2760",
     workspace: "/srv/workspace",
+    vite: "/var/lib/orbit/vite-plus-home",
+    sharedVite: "/opt/orbit-runtime/current/vite-plus-home",
   };
   const prepare = source.match(/return <<<SH\n([\s\S]*?\n)\s*SH;/)![1]
     .split("\n").map((line) => line.trim()).join("\n")
@@ -420,7 +422,7 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
     },
     ids: 201 * 65536,
     profile_config: {
-      "environment.VP_HOME": "/opt/orbit-runtime/current/vite-plus-home",
+      "environment.VP_HOME": "/var/lib/orbit/vite-plus-home",
       "environment.VP_NO_UPDATE_CHECK": "1",
       "environment.HTTPS_PROXY": "http://10.253.0.1:3128",
     },
@@ -534,7 +536,7 @@ Deno.test({
       });
       // Every process in a container, `incus exec` sessions too, gets the runtime folder's environment and the egress proxy.
       assertEquals(state.profiles["orbit-instances"].config, {
-        "environment.VP_HOME": "/opt/orbit-runtime/current/vite-plus-home",
+        "environment.VP_HOME": "/var/lib/orbit/vite-plus-home",
         "environment.VP_NO_UPDATE_CHECK": "1",
         "environment.HTTPS_PROXY": "http://10.253.0.1:3128",
       });
@@ -772,8 +774,9 @@ Deno.test({
       // A Node prepared before these rules, as Beast was: the bridge's dnsmasq answers DNS, and the ACL rejects all that goes to
       // a container. The next converge gives the existing bridge and ACL both.
       const old = f.state();
-      delete old.networks.find((n: { name: string }) => n.name === "orbitinst0")
-        .config["raw.dnsmasq"];
+      delete old.networks.find((n: { name: string }) =>
+        n.name === "orbitinst0"
+      ).config["raw.dnsmasq"];
       old["network-acls"].find((a: { name: string }) =>
         a.name === "orbitinst0-egress"
       ).ingress = [];

@@ -18,10 +18,10 @@ final readonly class InstanceImage
     public const array Packages = ['acl', 'git', 'nftables'];
 
     /**
-     * The environment of every program from the runtime folder: Vite+ runs from the folder's prepared home (InstanceFolderPlan) and
-     * never updates its pinned, read-only copy.
+     * The environment of every program from the runtime folder: Vite+ links the prepared runtime from its writable home,
+     * where it can install the Project's package manager without changing the pinned runtime.
      */
-    public const array RuntimeEnvironment = ['VP_HOME' => InstanceHostIntent::RuntimeFolder.'/current/vite-plus-home', 'VP_NO_UPDATE_CHECK' => '1'];
+    public const array RuntimeEnvironment = ['VP_HOME' => '/var/lib/orbit/vite-plus-home', 'VP_NO_UPDATE_CHECK' => '1'];
 
     /**
      * The `PATH` of units, login shells and `incus exec` sessions: the runtime folder's programs, such as `composer`, before the
@@ -99,6 +99,8 @@ final readonly class InstanceImage
         $orbit = InstanceHostIntent::OrbitUid;
         $work = InstanceHostIntent::WorkGid;
         $workspace = InstanceHostIntent::Workspace;
+        $vite = self::RuntimeEnvironment['VP_HOME'];
+        $sharedVite = InstanceHostIntent::RuntimeFolder.'/current/vite-plus-home';
 
         return <<<SH
             set -eu
@@ -121,6 +123,12 @@ final readonly class InstanceImage
             install -d -o root -g root -m 0755 /etc/orbit
             install -d -o agent -g work -m 2770 {$workspace}
             setfacl -m g:work:rwX -m d:u::rwX,d:g::rwX,d:g:work:rwX,d:o::--- {$workspace}
+            install -d -o agent -g work -m 2770 {$vite}
+            setfacl -m g:work:rwX -m d:u::rwX,d:g::rwX,d:g:work:rwX,d:o::--- {$vite}
+            install -d -o agent -g work -m 2770 {$vite}/cache
+            for part in bin js_runtime node_modules recipe config.json; do
+                ln -s {$sharedVite}/\$part {$vite}/\$part
+            done
             echo 'proc /proc proc defaults,hidepid=invisible 0 0' >> /etc/fstab
 
             SH;

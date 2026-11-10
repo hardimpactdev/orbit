@@ -104,7 +104,7 @@ describe('the container branch of the app-dev converge', function (): void {
             ->and($intent['egress'])->toBe(InstanceEgress::for('orbitinst0', '10.253.0.1', '10.253.0.0/24', app(PeerDnsPolicy::class)->domains()))
             // `incus exec` sessions, which neither systemd nor a login shell starts, get the container environment from the profile.
             ->and($intent['profile_config'])->toMatchArray(['environment.PATH' => '/opt/orbit-runtime/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-                'environment.VP_HOME' => '/opt/orbit-runtime/current/vite-plus-home', 'environment.VP_NO_UPDATE_CHECK' => '1',
+                'environment.VP_HOME' => '/var/lib/orbit/vite-plus-home', 'environment.VP_NO_UPDATE_CHECK' => '1',
                 'environment.HTTPS_PROXY' => 'http://10.253.0.1:3128', 'environment.no_proxy' => 'localhost,127.0.0.1,::1,10.253.0.1'])
             ->and($intent['profile_config'])->toHaveCount(count(InstanceImage::environment('10.253.0.1')) + 1);
     });
@@ -211,16 +211,16 @@ describe('the Instance image', function (): void {
         );
     });
 
-    it('puts the runtime folder and /usr/local/bin, where the Project\'s php is, on the PATH of every unit and login shell, and runs Vite+ from the folder\'s home', function (): void {
+    it('puts the runtime folder and /usr/local/bin, where the Project\'s php is, on the PATH of every unit and login shell, runs Vite+ from its writable home', function (): void {
         $files = array_column(InstanceImage::for('10.253.0.1')['files'], null, 'path');
         // `composer` is in the runtime folder's bin; the container phase links the Project's `php` into /usr/local/bin.
         $path = '/opt/orbit-runtime/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
 
         expect($files['/etc/systemd/system.conf.d/90-orbit-runtime.conf']['content'])
-            ->toStartWith("# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PATH={$path} VP_HOME=/opt/orbit-runtime/current/vite-plus-home VP_NO_UPDATE_CHECK=1 ")
+            ->toStartWith("# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PATH={$path} VP_HOME=/var/lib/orbit/vite-plus-home VP_NO_UPDATE_CHECK=1 ")
             // A login shell keeps what it inherits, such as the agent folder from T3's unit.
             ->and($files['/etc/profile.d/90-orbit-runtime.sh']['content'])
-            ->toStartWith("# Managed by Orbit.\nexport PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:\$PATH VP_HOME=/opt/orbit-runtime/current/vite-plus-home VP_NO_UPDATE_CHECK=1 ")
+            ->toStartWith("# Managed by Orbit.\nexport PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:\$PATH VP_HOME=/var/lib/orbit/vite-plus-home VP_NO_UPDATE_CHECK=1 ")
             ->and($files['/etc/profile.d/90-orbit-runtime.sh']['mode'])->toBe('0644');
     });
 
@@ -253,6 +253,19 @@ describe('the Instance image', function (): void {
             ->and($files['/etc/systemd/system/t3.service']['mode'])->toBe('0640')
             ->and($files['/home/agent/.codex/config.toml'])->toMatchArray(['content' => "check_for_update_on_startup = false\n", 'uid' => 2750, 'mode' => '0600'])
             ->and($files['/home/orbit/.gitconfig']['content'])->toBe("[safe]\n\tdirectory = /srv/workspace\n");
+    });
+
+    it('gives Vite+ a shared writable home for package managers while linking the pinned runtime', function (): void {
+        $script = InstanceImage::for('10.253.0.1')['prepare'];
+        $home = InstanceImage::RuntimeEnvironment['VP_HOME'];
+
+        expect($script)->toContain(
+            "install -d -o agent -g work -m 2770 {$home}\n",
+            "d:g:work:rwX,d:o::--- {$home}\n",
+            "install -d -o agent -g work -m 2770 {$home}/cache\n",
+            'for part in bin js_runtime node_modules recipe config.json; do',
+            'ln -s /opt/orbit-runtime/current/vite-plus-home/$part '.$home.'/$part',
+        );
     });
 
     it('removes cloud-init\'s group lxd, which holds the gid of orbit, before it makes the groups', function (): void {
