@@ -105,9 +105,18 @@ class BuildPlanTest(unittest.TestCase):
                 self.assertEqual({'docs'}, self.selected([path]))
                 self.assertEqual({'docs', 'web'}, self.selected([path], True))
         self.assertEqual({'proof'}, self.selected(['tools/swamp-proof-guest/terminal.py']))
-        self.assertEqual({'api-reference', 'web'}, self.selected(['bin/build-api']))
-        self.assertEqual({'docs', 'api-reference', 'web'}, self.selected(['bin/docs-navigation']))
+        for path in ('bin/build-api', 'bin/docs-openapi', 'bin/mcp-tools'):
+            with self.subTest(path=path):
+                self.assertEqual({'gateway-tests', 'api-reference', 'web'}, self.selected([path]))
+        self.assertEqual({'docs', 'gateway-tests', 'api-reference', 'web'}, self.selected(['bin/docs-navigation']))
         self.assertEqual(set(), self.selected(['tools/test_ci_build_plan.py']))
+
+    def test_gateway_pest_selects_navigation_inputs_read_by_contract_generation(self):
+        for path in ('docs/site.json', 'docs/navigation/reference.json'):
+            for main in (False, True):
+                with self.subTest(path=path, main=main):
+                    self.assertEqual({'docs', 'gateway-tests'} | ({'web'} if main else set()),
+                                     self.selected([path], main))
 
     def test_unknown_source_roots_fail_closed_even_for_docs_under_new_apps(self):
         for path in ('apps/new/src/main.ts', 'packages/new/src/lib.rs', 'apps/new/README.md',

@@ -173,10 +173,12 @@ def tooling_jobs(path):
     if path.startswith(('.agents/', '.codex/', '.githooks/')):
         return {'docs'}
     if path == 'bin/docs-navigation':
-        return {'docs', 'api-reference', 'web'}
+        return {'docs', 'gateway-tests', 'api-reference', 'web'}
+    if path in ('bin/build-api', 'bin/docs-openapi', 'bin/mcp-tools'):
+        return {'gateway-tests', 'api-reference', 'web'}
     if path.startswith(('bin/docs-', 'bin/check-flows')) and path != 'bin/docs-openapi':
         return {'docs'}
-    if path in ('bin/build-api', 'bin/docs-openapi', 'bin/mcp-tools', 'bin/api-fixtures', 'bin/check-operation-kinds'):
+    if path in ('bin/api-fixtures', 'bin/check-operation-kinds'):
         return {'api-reference', 'web'}
     if path == 'bin/swamp-shape-gate':
         return set()
@@ -208,7 +210,8 @@ def select(paths, main=False, selection=None):
                 or not path.endswith(PROSE) and path.startswith(('swamp/workflows/', 'swamp/ansible/', 'swamp/proof/', 'swamp/config/',
                              'swamp/extensions/behaviors/operations/', 'swamp/extensions/behaviors/_lib/'))
                 or path in ('swamp/deno.lock', 'swamp/deno.json', 'swamp/deno.jsonc', 'swamp/.swamp.yaml',
-                            'tools/swamp-proof-guest/ansible-recaps.php')
+                            'tools/swamp-proof-guest/ansible-recaps.php', 'docs/site.json')
+                or path.startswith('docs/navigation/') and path.endswith('.json')
                 or path.startswith('docs/cli/') and path.endswith('.mmd')):
             jobs['gateway-tests'] = True
         for name in swamp_inputs(path):

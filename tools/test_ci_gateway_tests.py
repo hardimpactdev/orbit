@@ -46,6 +46,12 @@ class GatewayTestsPolicyTest(unittest.TestCase):
         # A cache hit must still regenerate both autoloaders in this checkout.
         self.assertNotIn('cache-hit', JOB)
 
+    def test_api_contracts_are_built_from_current_sources_before_pest(self):
+        build = JOB.index('run: bin/build-api')
+        for project in ('gateway', 'cli'):
+            self.assertLess(JOB.index(f'composer install --working-dir=apps/{project} '), build)
+        self.assertLess(build, JOB.index('vendor/bin/pest '))
+
     def test_worker_memory_is_inherited_and_firewall_imports_are_warm_before_pest(self):
         self.assertIn('echo \'memory_limit=1G\' > "$RUNNER_TEMP/gateway-tests-php/memory.ini"', JOB)
         self.assertIn('PHP_INI_SCAN_DIR=${PHP_INI_SCAN_DIR:-}:$RUNNER_TEMP/gateway-tests-php', JOB)

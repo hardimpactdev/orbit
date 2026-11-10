@@ -150,6 +150,8 @@ jobs:
           cp apps/gateway/.env.example apps/gateway/.env
           composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-scripts
           composer install --working-dir=apps/cli --no-interaction --prefer-dist --no-scripts
+      - name: Build the test API contracts
+        run: bin/build-api
       - name: Cache pinned Deno download
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
