@@ -46,7 +46,7 @@ final readonly class InstanceDeploymentIntent
     {
         $instance->refresh()->loadMissing(['project', 'node']);
         // An Instance that moves into a container takes no deployment until the move has ended.
-        InstanceMigration::assertNotRunning($instance);
+        InstanceMigration::assertSettled($instance);
         if ($instance->placedOnAppDev() && ! $rollback) {
             $this->assertDevelopment($instance);
             $development = $this->development->ordered($instance->project);

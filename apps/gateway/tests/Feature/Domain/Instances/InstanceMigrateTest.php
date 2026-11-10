@@ -27,6 +27,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
@@ -69,6 +70,8 @@ beforeEach(function (): void {
             return 'placeholder-model-key';
         }
     });
+    // A Swamp that answers: the start of a run is then not refused, and its reserved row stays, as during a run.
+    migrateVault();
 });
 
 /** An active checkout Instance, as `instance:create` left it before containers: its checkout under the Node's apps path. */
@@ -85,7 +88,7 @@ function migrateStart(Instance $instance): Operation
     try {
         app(StartInstanceMigrateAction::class)->execute($instance, null, null);
     } catch (ResourceOperationException $exception) {
-        // With a vault socket in place the start gets as far as an answer it cannot read.
+        // The test's Swamp answers the start with a reply the Gateway cannot read.
         if (! str_starts_with($exception->errorCode, 'swamp.')) {
             throw $exception;
         }
@@ -549,6 +552,52 @@ describe('the end of a move', function (): void {
     ]);
 });
 
+describe('a reserved runtime row', function (): void {
+    /** The Instance's own Route, active, as its create left it. */
+    function migrateRoute(Instance $instance): Route
+    {
+        $route = Route::query()->create(['kind' => 'app', 'project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'provenance' => 'explicit',
+            'publication' => 'private', 'domain' => $instance->name.'.tool.test', 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+        $route->update(['status' => 'active', 'sites_published' => true]);
+
+        return $route;
+    }
+
+    it('does not turn the Instance\'s site: the checkout serves until the move has reached the container', function (): void {
+        $node = containerDefaultNode();
+        $default = migrateCheckout(containerDefaultProject(ProjectType::LaravelApp, '8.5'), $node);
+        $default->update(['selected_php_version' => '8.5', 'source_is_laravel' => true, 'root' => 'public']);
+        $route = migrateRoute($default);
+        $sites = app(DevelopmentSiteRepository::class);
+        $operation = Operation::query()->create(['kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => $default->id, 'node_id' => $node->id,
+            'status' => 'running', 'input' => []]);
+        app(InstanceContainer::class)->reserve($default, $node);
+
+        // While the move runs, and after a move that failed, whatever its restore did.
+        expect($sites->workloadSite($default->refresh(), $route)->localHttpUpstream)->toBeNull();
+        $operation->forceFill(['status' => 'failed', 'result' => ['moved' => false, 'restored' => false]])->save();
+        expect($sites->workloadSite($default->refresh(), $route)->phpVersion)->toBe('8.5')
+            ->and(containerRefusal(fn () => app(StartInstanceDeployAction::class)->execute($default, 'test', null)))->toBe('instance.lifecycle_busy');
+
+        // A move that reached the container, also one whose removal of the checkout failed.
+        $operation->forceFill(['status' => 'failed', 'result' => ['moved' => true]])->save();
+        expect($sites->workloadSite($default->refresh(), $route)->localHttpUpstream)->toBe('10.253.0.2:8080');
+    });
+
+    it('goes with a run that could not start, so the Instance is the checkout Instance it was', function (): void {
+        // No Swamp answers.
+        app()->forgetInstance(WebSocketClient::class);
+        config(['swamp.address' => null]);
+        $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+
+        expect(containerRefusal(fn () => app(StartInstanceMigrateAction::class)->execute($default, null, null)))->toBe('swamp.start_unavailable')
+            ->and(InstanceRuntime::query()->where('instance_id', $default->id)->exists())->toBeFalse()
+            ->and(Operation::query()->where('kind', 'instance.migrate')->where('target_id', $default->id)->value('status')->value)->toBe('failed');
+        InstanceContainer::assertCheckout($default);
+    });
+});
+
 describe('while a move runs', function (): void {
     it('starts no wake and takes no deployment, so nothing writes the checkout or the database', function (): void {
         $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
@@ -573,7 +622,7 @@ it('starts the run with the container, the checkout and the model key in the vau
     migrateMovedDefault($project, $node);
     $feature = migrateCheckout($project, $node, 'feature');
     $operation = migrateStart($feature);
-    $vault = migrateVault();
+    $vault = app(WebSocketClient::class);
 
     $run = app(InstanceMigrateProjection::class)->input($operation);
 
@@ -588,7 +637,7 @@ it('starts the run with the container, the checkout and the model key in the vau
 
 it('gives a default\'s run a model copy that holds no key', function (): void {
     $operation = migrateStart(migrateCheckout(containerDefaultProject(), containerDefaultNode()));
-    $vault = migrateVault();
+    $vault = app(WebSocketClient::class);
 
     app(InstanceMigrateProjection::class)->input($operation);
 

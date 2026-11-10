@@ -459,7 +459,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | Default first | A non-default Instance needs its default in a container, active and with a seed snapshot |
 | PHP version | The admission reads it from `composer.json` when a web-serving Project has none recorded. A file that names none refuses with `project.source_defaults_incomplete` |
 | Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the lowest free T3 port. It names no clone source |
-| While it runs | The Instance keeps its checkout path. The run holds the Route's Node as every Route write does, and the Instance takes no deployment and no wake |
+| While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
 | Branch | The mirror fetches the recorded branch from the checkout itself. Commits that were never pushed come along, and the move needs no token |
 | Files | One archive of the paths of `git diff HEAD` and `git ls-files --others`, extracted as `orbit`. Tracked files that the checkout deleted are removed |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace`, and the Gateway rewrites its stored values the same way |
@@ -479,7 +479,8 @@ The end of the move and its failure:
 | Last worktree | Its move also removes the default's old checkout, when the Node shows that the worktree belonged to it |
 | Failed removal | The container stays the Instance. The run fails with `instance.migrate_retire_failed`, and the checkout is left to remove by hand |
 | Failure | The Route's restore side runs when the run had started to move it. Then the container, its ACL, its firewall rules and its mirror go |
-| Reserved row | The Gateway drops it after a restore. A restore that failed keeps the row and its address until the same command runs again |
+| Reserved row | The Gateway drops it after a restore, and when the run could not start. A restore that failed keeps the row and its address until the same command runs again |
+| After a failed restore | The site stays the checkout's, and a deployment refuses with `instance.lifecycle_busy` until the move has run again |
 
 The code changed two points of the first design.
 

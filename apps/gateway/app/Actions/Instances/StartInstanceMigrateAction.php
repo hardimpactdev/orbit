@@ -60,6 +60,19 @@ final readonly class StartInstanceMigrateAction
             app(CaptureProjectSourceFactsAction::class)->execute($project);
         }
 
+        try {
+            return $this->admit($instance, $caller, $requestId);
+        } catch (ResourceOperationException $exception) {
+            // A run that could not start changed nothing on the Node, so its reserved row goes with it.
+            if ($exception->errorCode === 'swamp.start_unavailable' && ! InstanceMigration::running($instance) && InstanceMigration::pending($instance)) {
+                $instance->runtime()->delete();
+            }
+            throw $exception;
+        }
+    }
+
+    private function admit(Instance $instance, ?string $caller, ?string $requestId): Operation
+    {
         return DB::transaction(function () use ($instance, $caller, $requestId): Operation {
             $instance = Instance::query()->with(['project', 'node'])->lockForUpdate()->findOrFail($instance->id);
             $node = $instance->node;
@@ -72,9 +85,9 @@ final readonly class StartInstanceMigrateAction
             $this->assertPhp($instance->project);
             $route = $this->route($instance);
             $databases = $this->databases($instance);
-            // The checkout's site, read before the runtime row turns it into the container's.
             // A move whose restore failed kept its reserved row, so no other Instance took its address; this run reserves anew.
             $instance->runtime()->delete();
+            // The checkout's site, as it serves before the move.
             $before = $route === null ? null : $this->routes->before($route);
             $runtime = $this->containers->reserve($instance, $node);
             $branch = $instance->branch ?? ValidatedData::string($instance->project->default_branch);
@@ -98,7 +111,7 @@ final readonly class StartInstanceMigrateAction
 
             return $this->operations->execute(InstanceMigration::Kind, 'instance', $instance->id, $node->id, [
                 'instance_id' => $instance->id, 'project_id' => $instance->project_id, 'node_id' => $node->id,
-                'participant_node_ids' => $publication['participant_node_ids'] ?? [$node->id],
+                'participant_node_ids' => array_values(array_unique([$node->id, ...($publication['participant_node_ids'] ?? [])])),
                 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($node),
                 'route_id' => $route?->id, 'route_publication' => $publication,
                 'sqlite_connection_ids' => $databases['sqlite'],
@@ -116,7 +129,7 @@ final readonly class StartInstanceMigrateAction
 
     private function assertCheckout(Instance $instance, Node $node): void
     {
-        if ($instance->runtime()->exists() && $instance->checkout_path === InstanceContainer::workspaceOnNode($instance)) {
+        if ($instance->runtime()->exists() && ! InstanceMigration::pending($instance)) {
             throw $this->unsupported("Instance [{$instance->name}] already runs in a container.");
         }
         if (! $instance->placedOnAppDev() || ! app(ContainerNodes::class)->includes($node)) {
@@ -140,9 +153,9 @@ final readonly class StartInstanceMigrateAction
     {
         $default = Instance::query()->where('project_id', $instance->project_id)->where('name', 'default')->first();
         $runtime = $default?->runtime()->first();
-        // A default whose own move still runs has a reserved row, but no seed and its checkout path.
+        // A default whose own move has not reached its container has a reserved row, but no seed.
         if (! $default instanceof Instance || $runtime === null || $default->status !== InstanceState::Active || $runtime->seed_commit === null
-            || $default->checkout_path !== InstanceContainer::workspaceOnNode($default)) {
+            || InstanceMigration::pending($default)) {
             throw new ResourceOperationException('instance.default_not_migrated', 'Move the Project\'s default Instance into a container first.', 409);
         }
         if ($default->node_id !== $instance->node_id) {

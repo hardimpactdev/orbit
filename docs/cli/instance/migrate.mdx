@@ -64,6 +64,8 @@ After the default has moved, an Instance that is still a checkout keeps working 
 
 A move that fails leaves the checkout Instance serving as before. Orbit puts the Route back when the run had started to move it, deletes the new container with its ACL, its firewall rules and its mirror, and drops the reserved runtime record. So the access to the database server that the move added goes too. The checkout and the database are never changed before the Route serves the container. Run the same command again to retry.
 
+When the restore itself fails, the task names the failed step and Orbit keeps the reserved record, so no other Instance takes the address of a container that may be left. The Instance's site stays the checkout's. Its deployments refuse with `instance.lifecycle_busy` until the same command has run again.
+
 The removal of the checkout is the last step. When only that step fails, the Instance stays in its container, the task fails with `instance.migrate_retire_failed`, and the checkout is left on the Node to remove by hand.
 
 The command starts a task and follows it until it ends, as [`instance:deploy`](/cli/instance/deploy) does. Ctrl-C stops following, not the move, and exits 130.
