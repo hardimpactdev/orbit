@@ -114,7 +114,7 @@ class WireGuardHubLanTest(unittest.TestCase):
             calls = (folder / 'calls.log').read_text() if (folder / 'calls.log').exists() else ''
             # What the run left behind, for the tests that read files after a failed playbook.
             self.left = {str(path.relative_to(folder)): path.read_text() for path in folder.rglob('*')
-                         if path.is_file() and path.parts[len(folder.parts)] in ('wg', 'etc', 'loaded.log')}
+                         if path.is_file() and path.parts[len(folder.parts)] in ('wg', 'etc', 'loaded.log', 'rules.txt')}
             return result.returncode, result.stdout + result.stderr, calls
 
     def prove(self, route, keys, fingerprints):
@@ -261,14 +261,26 @@ class WireGuardHubLanTest(unittest.TestCase):
           '  "syncconf orbit "*) cat "$3" >> "$STUB_DIR/loaded.log"; echo --- >> "$STUB_DIR/loaded.log" ;;\n'
           '  "show orbit latest-handshakes") printf "HUBKEY\\t%s\\n" "$(cat "$STUB_DIR/handshake.txt")" ;;\n'
           '  "show orbit endpoints") printf "HUBKEY\\t%s\\n" "$(cat "$STUB_DIR/endpoint.txt")" ;;\n'
+          '  "show orbit listen-port") echo 39975 ;;\n'
           'esac\n')
+    # Keeps the INPUT rules in rules.txt, one spec per line, and lists them as `iptables -n -L --line-numbers` does, with the
+    # comment as /* comment */; a rule is deleted by its number. iptables.fail makes an insert fail.
+    IPTABLES = ('#!/bin/sh\necho "iptables $*" >> "$STUB_DIR/calls.log"\n[ "$1" != -w ] || shift\ntouch "$STUB_DIR/rules.txt"\n'
+                'case "$1" in\n'
+                '  -n) echo "Chain INPUT (policy DROP)"; echo "num  target prot opt source destination"\n'
+                "      awk '{ c = $0; sub(/.*--comment /, \"\", c); sub(/ .*/, \"\", c); print NR \"    DROP udp -- 0.0.0.0/0 0.0.0.0/0 /* \" c \" */\" }' \"$STUB_DIR/rules.txt\" ;;\n"
+                '  -I) [ ! -f "$STUB_DIR/iptables.fail" ] || exit 1; shift 3; { echo "$*"; cat "$STUB_DIR/rules.txt"; } > "$STUB_DIR/rules.new"\n'
+                '      mv "$STUB_DIR/rules.new" "$STUB_DIR/rules.txt" ;;\n'
+                '  -D) awk -v n="$3" \'NR != n\' "$STUB_DIR/rules.txt" > "$STUB_DIR/rules.new"; mv "$STUB_DIR/rules.new" "$STUB_DIR/rules.txt" ;;\n'
+                'esac\n')
+    PIN = 'iptables -w -I INPUT 1 -p udp --dport 39975 ! -s 10.0.0.2 -m comment --comment orbit-hub-move -j DROP'
 
-    def move(self, handshake, **extra):
+    def move(self, handshake, endpoint=LAN, **extra):
         """Move a tunnel from the public to the LAN endpoint with a stand-in `wg` whose hub handshake is `handshake`."""
-        files = {'bin/wg': self.WG, 'bin/ping': '#!/bin/sh\nexit 0\n', 'handshake.txt': str(handshake), 'endpoint.txt': self.LAN,
+        files = {'bin/wg': self.WG, 'bin/iptables': self.IPTABLES, 'bin/ping': '#!/bin/sh\nexit 0\n', 'handshake.txt': str(handshake), 'endpoint.txt': self.LAN,
                  'wg/orbit.key': 'KEY\n', 'wg/orbit.conf': 'old conf\n', 'wg/orbit.peers': self.PEERS.format(self.PUBLIC),
                  'wg/orbit.conf.next': 'new conf\n', 'wg/orbit.peers.next': self.PEERS.format(self.LAN), **extra}
-        variables = {'hub_move': {'dir': '@DIR@/wg', 'key': 'HUBKEY', 'endpoint': self.LAN, 'probe_ip': '10.44.0.1', 'interval': 0}}
+        variables = {'hub_move': {'dir': '@DIR@/wg', 'key': 'HUBKEY', 'endpoint': endpoint, 'probe_ip': '10.44.0.1', 'interval': 0}}
         files = {name: body for name, body in files.items() if body is not None}
         return self.run_tasks('node-converge-hub-move.yml', variables, files)
 
@@ -320,6 +332,37 @@ class WireGuardHubLanTest(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertNotIn('setconf', calls)
         self.assertTrue(self.left['loaded.log'].rstrip().endswith(f'Endpoint = {self.PUBLIC}\nAllowedIPs = 10.44.0.0/24\nPersistentKeepalive = 25\n---'))
+
+    def test_the_node_takes_wireguard_only_from_the_new_endpoint_while_it_moves(self):
+        # Operation 15254: the hub, still sending to the Node's public address, started a handshake there; the Node roamed back.
+        for handshake, moved in ((9_999_999_999, True), (1, False)):
+            with self.subTest(handshake=handshake):
+                code, output, calls = self.move(handshake)
+                self.assertEqual(code == 0, moved, output)
+                self.assertLess(calls.index(self.PIN), calls.index('wg set orbit peer HUBKEY remove'), output)
+                self.assertEqual(self.left['rules.txt'], '')
+
+    def test_a_pin_that_a_killed_move_left_is_removed_first(self):
+        # Two stale pins and a rule that is not Orbit's: the pins go, last first, and the other rule stays.
+        rules = ('-p udp --dport 39975 ! -s 10.0.0.9 -m comment --comment orbit-hub-move -j DROP\n'
+                 '-p tcp --dport 22 -m comment --comment other -j ACCEPT\n'
+                 '-p udp --dport 39975 ! -s 10.0.0.8 -m comment --comment orbit-hub-move -j DROP\n')
+        code, output, calls = self.move(9_999_999_999, **{'rules.txt': rules})
+        self.assertEqual(code, 0, output)
+        self.assertLess(calls.index('iptables -w -D INPUT 3\niptables -w -D INPUT 1\n'), calls.index(self.PIN))
+        self.assertEqual(self.left['rules.txt'], '-p tcp --dport 22 -m comment --comment other -j ACCEPT\n')
+
+    def test_a_move_that_cannot_pin_changes_nothing(self):
+        code, output, calls = self.move(9_999_999_999, **{'iptables.fail': ''})
+        self.assertNotEqual(code, 0)
+        self.assertIn('node.hub_switch_unpinned', output)
+        self.assertNotIn('wg set', calls)
+        self.assertEqual((self.left['wg/orbit.conf'], self.left['wg/orbit.peers.next']), ('old conf\n', self.PEERS.format(self.LAN)))
+
+    def test_a_hostname_endpoint_pins_nothing(self):
+        code, output, calls = self.move(9_999_999_999, endpoint='vpn.example.com:51820')
+        self.assertEqual(code, 0, output)
+        self.assertNotIn('iptables -w -I', calls)
 
     def test_the_new_peers_are_loaded_without_the_interface_section_node_add_wrote(self):
         code, output, _ = self.move(9_999_999_999, **{'wg/orbit.peers.next': '[Interface]\nPrivateKey = OLD\n' + self.PEERS.format(self.LAN)})
