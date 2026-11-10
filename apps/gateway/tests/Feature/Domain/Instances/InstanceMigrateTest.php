@@ -394,8 +394,10 @@ describe('the default-first rule', function (): void {
             ->toBe(['bridge_address' => '10.253.0.3', 't3_port' => 3800, 'clone_source_instance_id' => null])
             // Nothing is copied from the default: the container comes from the image.
             ->and(array_keys($clone))->toBe(['t3', 'model_environment', 'files', 'links'])
-            ->and($clone['t3'])->toMatchArray(['port' => 3800, 'listen' => '10.44.0.7', 'url' => 'http://10.44.0.7:3800', 'label' => 'tool / feature'])
-            ->and($clone['files'][0]['content'])->toContain("ORBIT_INSTANCE=feature\n")
+            ->and($clone['t3'])->toMatchArray(['port' => 3800, 'listen' => '10.44.0.7', 'url' => 'http://10.44.0.7:3800', 'label' => 'tool / feature', 'title' => 'tool'])
+            ->and($clone['files'][0]['content'])->toContain("ORBIT_INSTANCE=feature\n", "ORBIT_PROJECT_ID={$project->id}\n", "ORBIT_PROJECT_NAME=\"tool\"\n", "ORBIT_NODE=beast\n")
+            ->and($operation->input['container'])->toMatchArray(['config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096'],
+                'root_disk_pool' => 'orbit-instances', 'root_disk_size' => '40GiB'])
             ->and(array_column($operation->input['container']['firewall'], 'comment'))->toBe(["orbit:instance-{$feature->id}-t3-task-vms", "orbit:instance-{$feature->id}-t3"])
             ->and($operation->input['container']['branch'])->toBe('feature')
             ->and($operation->input['migrate']['default'])->toBeFalse();

@@ -80,3 +80,5 @@ Released proof workflows run the runner from each PR head. Check its help for su
 A PTY key driver must acknowledge consumed input, not rendered output. With color off, moving a selector highlight can produce no new bytes. Wait for the complete key to enter the stopped reader’s terminal queue, then for consumption before sending the next key. Start on a marker unique to the prompt, not a progress label.
 
 After adding an API input, regenerate OpenAPI and the MCP manifest and exercise the generated tool through admission. Ignored generated outputs are release artifacts; source support alone does not prove the deployed tool exposes the input.
+
+A migrated Instance has no clone source. Test lifecycle consumers against migrated non-defaults too; identify the default by its name, and retire migration execution copies during destroy.
