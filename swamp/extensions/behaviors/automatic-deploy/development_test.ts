@@ -414,7 +414,13 @@ for (const result of ["commit_failed", "failed", "up_to_date"]) {
             result,
             commit: A,
             pending: null,
-            retry_after: "2026-10-31T06:00:00.000Z",
+            unrecorded_failures: [{
+                key: "old-attempt",
+                commit: A,
+                deployment_id: null,
+                manual_after: 0,
+                finished_at: now,
+            }],
         });
         for (let id = 1; id <= 3; id++) {
             f.history.push({ ...failed(id), commit: A });
@@ -424,7 +430,7 @@ for (const result of ["commit_failed", "failed", "up_to_date"]) {
         assertEquals(f.starts[0].endsWith(B), true);
     });
 }
-Deno.test("waiting for green does not reassign an old commit's retry timer to the new head", async () => {
+Deno.test("waiting for green does not reassign an old commit's failed attempts to the new head", async () => {
     const f = fixture();
     f.instance.auto_deploy.gate = "Required checks";
     f.checks.push({
@@ -437,7 +443,13 @@ Deno.test("waiting for green does not reassign an old commit's retry timer to th
     f.memory.set("development-7", {
         result: "failed",
         commit: A,
-        retry_after: "2026-10-31T06:00:00.000Z",
+        unrecorded_failures: [{
+            key: "old-attempt",
+            commit: A,
+            deployment_id: null,
+            manual_after: 0,
+            finished_at: now,
+        }],
     });
     await f.run();
     assertEquals(f.starts, []);
@@ -447,7 +459,7 @@ Deno.test("waiting for green does not reassign an old commit's retry timer to th
     await f.run("2026-10-31T05:01:00.000Z");
     assertEquals(f.starts.length, 1);
 });
-Deno.test("a failed ended Operation without history settles and backs off the same head", async () => {
+Deno.test("an ended failed Operation without history never authorizes an immediate same-head effect", async () => {
     const f = fixture();
     await f.run();
     f.operation.status = "failed";
@@ -513,7 +525,7 @@ Deno.test("interrupted development deploy without evidence backs off once then a
     }
 });
 
-Deno.test("a definite start failure releases pending intent for the next scheduled admission", async () => {
+Deno.test("a definite start failure without history uses the same retry backoff", async () => {
     for (
         const code of [
             "swamp.start_refused",
@@ -538,6 +550,12 @@ Deno.test("a definite start failure releases pending intent for the next schedul
             // End the lost-response fixture without another synthetic transport failure.
             if (!lost) {
                 await f.run();
+                assertEquals(f.starts.length, 1);
+                assertEquals(
+                    f.memory.get("development-7")?.result,
+                    "backing_off",
+                );
+                await f.run("2026-10-31T05:10:00.000Z");
                 assertEquals(f.starts.length, 2);
                 assertEquals(f.starts[0] === f.starts[1], false);
             }
@@ -758,7 +776,13 @@ Deno.test("Gateway development admissions and lost-response recovery use only de
             }
             paths.push(path);
             const base = "/api/v1/instances/7/deploy/automatic/development";
-            if (path === base) throw new Error("Lost admission reply");
+            if (path === base) {
+                if (paths.length === 1) throw new Error("Lost admission reply");
+                return Promise.resolve({
+                    status: 202,
+                    body: { data: operation },
+                });
+            }
             const requestKey =
                 (f.memory.get("development-7")?.pending as { key: string }).key;
             if (path.startsWith(base + "/receipt?")) {
@@ -792,10 +816,25 @@ Deno.test("Gateway development admissions and lost-response recovery use only de
                 },
             });
         });
-        const run = () => client.development(f.ctx, now, [7], () => {});
-        await assertRejects(run);
+        const run = (at = now) => client.development(f.ctx, at, [7], () => {});
+        await assertRejects(() => run());
+        assertEquals(
+            (f.memory.get("development-7")?.pending as {
+                operation_id: number | null;
+            }).operation_id,
+            null,
+        );
         await run();
         assertEquals(paths.length, found ? 2 : 3);
+        if (!found) {
+            assertEquals(f.memory.get("development-7")?.pending, null);
+            await run("2026-10-31T05:09:59.000Z");
+            assertEquals(paths.length, 3);
+            assertEquals(f.memory.get("development-7")?.result, "backing_off");
+            await run("2026-10-31T05:10:00.000Z");
+            assertEquals(paths.length, 4);
+            assertEquals(f.memory.get("development-7")?.result, "started");
+        }
         assertEquals(
             paths.every((path) => path.includes("/automatic/development")),
             true,
@@ -863,3 +902,115 @@ Deno.test("canonical Gateway refusal skips ambiguous app-dev plus app-prod place
     assertEquals(f.starts, []);
     assertEquals(f.memory.size, 0);
 });
+
+Deno.test("three no-history failures escalate to twenty minutes and stop the head; a newer green head deploys", async () => {
+    const f = fixture();
+    f.instance.auto_deploy.gate = "Required checks";
+    f.checks.push({
+        name: "Required checks",
+        head_sha: B,
+        app: "github-actions",
+        status: "completed",
+        conclusion: "success",
+    });
+    for (
+        const [index, at] of [
+            now,
+            "2026-10-31T05:10:00.000Z",
+            "2026-10-31T05:30:00.000Z",
+        ].entries()
+    ) {
+        f.operation.id = 100 + index;
+        f.operation.status = "queued";
+        await f.run(at);
+        assertEquals(f.starts.length, index + 1);
+        f.operation.status = "failed";
+        await f.run(at);
+        await f.run(at);
+        assertEquals(f.starts.length, index + 1);
+        assertEquals(
+            f.memory.get("development-7")?.result,
+            index === 2 ? "commit_failed" : "backing_off",
+        );
+        if (index === 1) {
+            await f.run("2026-10-31T05:29:59.000Z");
+            assertEquals(f.starts.length, 2);
+        }
+    }
+    for (const at of ["2026-10-31T06:00:00.000Z", "2026-11-01T05:00:00.000Z"]) {
+        await f.run(at);
+    }
+    assertEquals(f.starts.length, 3);
+    assertEquals(f.history, []);
+    f.source.head = "c".repeat(40);
+    f.checks[0].head_sha = f.source.head;
+    f.operation.status = "queued";
+    await f.run("2026-11-01T05:01:00.000Z");
+    assertEquals(f.starts.length, 4);
+    assertEquals(f.starts[3].endsWith(f.source.head), true);
+});
+Deno.test("recorded and no-history failures share one ordinal and manual reset", async () => {
+    const f = fixture();
+    await f.run();
+    f.operation.status = "failed";
+    await f.run();
+    f.history.push(failed(1));
+    await f.run("2026-10-31T05:19:59.000Z");
+    assertEquals(f.starts.length, 1);
+    assertEquals(f.memory.get("development-7")?.result, "backing_off");
+    await f.run("2026-10-31T05:20:00.000Z");
+    assertEquals(f.starts.length, 2);
+    f.operation.status = "failed";
+    await f.run("2026-10-31T05:20:00.000Z");
+    await f.run("2026-10-31T05:21:00.000Z");
+    assertEquals(f.starts.length, 2);
+    assertEquals(f.memory.get("development-7")?.result, "commit_failed");
+    f.history.push(failed(2, true));
+    await f.run("2026-10-31T05:22:00.000Z");
+    assertEquals(f.starts.length, 3);
+});
+Deno.test("late history replaces no-history failure evidence without double counting", async () => {
+    const f = fixture();
+    await f.run();
+    f.operation.status = "failed";
+    f.operation.result = { deployment_id: 1 };
+    await f.run();
+    f.history.push(failed(1));
+    await f.run("2026-10-31T05:10:00.000Z");
+    assertEquals(f.starts.length, 2);
+    assertEquals(f.memory.get("development-7")?.unrecorded_failures, []);
+});
+for (const green of [true, false]) {
+    Deno.test(`old checkout success cannot declare a different container seed up to date (green ${green})`, async () => {
+        const f = fixture();
+        f.instance.auto_deploy.gate = "Required checks";
+        f.checks.push({
+            name: "Required checks",
+            head_sha: B,
+            app: "github-actions",
+            status: "completed",
+            conclusion: green ? "success" : "failure",
+        });
+        f.memory.set("development-7", {
+            pending: {
+                commit: B,
+                key: "old-checkout",
+                operation_id: 100,
+                manual_after: 0,
+            },
+        });
+        f.operation.status = "succeeded";
+        await f.run();
+        assertEquals(
+            f.requests.filter((r) => r.method === "PUT").some((r) =>
+                (r.body as { result: string }).result === "up_to_date"
+            ),
+            false,
+        );
+        assertEquals(
+            f.memory.get("development-7")?.result,
+            green ? "started" : "gate_failed",
+        );
+        assertEquals(f.starts.length, green ? 1 : 0);
+    });
+}

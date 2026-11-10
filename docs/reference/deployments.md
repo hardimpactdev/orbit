@@ -327,7 +327,7 @@ A head the Gateway cannot read fails the tick for that Instance with `source.hea
 
 A seeded container default follows its Project's default branch. Its deployed commit is its runtime's `seed_commit`. A moved head deploys only when green: the Gateway reads the head commit's check runs for the Project's configured `merge_check` (for example, `Required checks`). Development and production share the same verdict: all matching runs must come from GitHub Actions, name exactly that SHA, and finish with `success`. Missing or running checks wait; failed checks do not deploy.
 
-Development tests only the current head, not older green ancestors. Each later tick reads the checks again, so a head that turns green deploys then. With no Project `merge_check`, it follows production's existing rule and deploys a moved head without checking; the Instance output warns about this. A failed deployment retries as the [failure rules](#failures-of-automatic-deployments) describe; for a default every failure is retryable.
+Development tests only the current head, not older green ancestors. Each later tick reads the checks again, so a head that turns green deploys then. With automatic deployment on and no Project merge check configured, every moved head deploys until a check is set. The Instance output names the Project and warns about this. A failed deployment retries as the [failure rules](#failures-of-automatic-deployments) describe; for a default every failure is retryable within the three-attempt limit.
 
 The `auto_deploy` flag has the same meaning for development and production: on permits automatic deployment; off excludes selection and admission. A new container default starts with it on when creation succeeds and records its first seed. An expand-only data migration enables existing ready container defaults; it changes neither checkout Instances nor production settings.
 
@@ -400,6 +400,10 @@ A rollback or manual deployment can also end between the tick's read of the hist
 ## Swamp policy contracts
 
 The Gateway exposes policy evidence to Swamp. Swamp never reads GitHub, the database, or a notifier directly. These contracts require Gateway Node access. Policy starts stay on API/MCP; receipt resolution also has an operator CLI command.
+
+Development retries count ended failed Operations even without a deployment history row, together with recorded deployment failures: ten minutes after the first failure, twenty after the second, then no further attempt on that commit after the third. An ended failed Operation never permits an immediate retry of the same head. A newer green head can deploy. A succeeded retained Operation reports `up_to_date` only if the current runtime seed matches its commit; otherwise policy settles it and checks the moved head normally.
+
+A lost admission response can leave a retained intent without an Operation ID. On the next tick, development receipt lookup recovers the Operation by its exact key, or resolution fences a missing admission before policy abandons the intent and applies the same retry rules. Only intents admitted by the old generic automatic command conflict with development lookup; an operator removes those retained intents once at cutover.
 
 Development policy checks `auto_deploy.development_eligible` in both list and fresh detail responses. It uses `POST /api/v1/instances/{instance}/deploy/automatic/development` with `commit`; admission rechecks development placement and the shared ready-container rule under the Instance lock. Enabled production Instances do not qualify. Its receipt and resolution paths append `/receipt` and `/resolve` to that development path and bind the development command. Production keeps its existing admission and receipt paths.
 

@@ -1,7 +1,5 @@
 sequenceDiagram
-  %% Production policy only. Development uses the independent Gateway precheck for active container defaults with a seed in container/deploy-default.mmd; checkout working trees are never auto-deployed. This schedule and its persisted pause are never changed by that tick.
-  %% Target design: DECISIONS 3 (automatic deploy = Gateway-published native schedule, no POST back), R1-R2, ADR 0244, behavior names by target. Replaces instance.policy_event. docs/reference/deployments.md#automatic-deployments.
-  %% Tightened: flow-tighten 2026-11-02, rules 3, 5 (no per-minute Node read: the schedule inputs carry the deployed commit, and the Gateway republishes them on each deploy).
+  %% Development uses the Gateway precheck in container/deploy-default.mmd. Production uses one shared native schedule; an Instance flag never changes its trigger or persisted pause.
   %% status: reviewed
   %% command: instance:auto-deploy:enable · Automatic deploys
   %% kind: instance.auto_deploy
@@ -9,89 +7,47 @@ sequenceDiagram
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
-  %% lane N icon=server pill=target tone=amber
-  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant CLI as Caller<br/>CLI · MCP · API
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>serve on Node 209
-  participant N as app-prod Node<br/>Node 12 over ssh
-  CLI->>GW: auto-deploy:enable 42<br/>orbit instance:auto-deploy:enable
-  %%> Command:
-  %%> - `orbit instance:auto-deploy:enable 42`
-  %%> - syntax: `<instance>`; `instance:auto-deploy:disable <instance>` turns it off
-  %%> What it does:
-  %%> - turns the one auto_deploy flag on for production Instance 42 or a ready development container default
-  %%> - development configuration checks the shared ready-container policy without requiring the flag already on; checkout Instances refuse with instance.auto_deploy_container_default_required
-  %%> - the development scheduler and admission require the flag on; disable turns it off for that Instance without changing the production schedule
-  %%> - also resumes an Instance that a manual deploy or rollback paused
-  %%> Not included:
-  %%> - deploys nothing now and changes nothing on the Node
-  %%> Typical use:
-  %%> - a production Instance follows `main`: merge a PR, CI turns green, the next fire deploys it
-  Note over GW: Check, record auto-deploy<br/>Instance 42 · on, unpaused
+  participant SW as Swamp<br/>policy · execution
+  CLI->>GW: Enable auto-deploy<br/>instance:auto-deploy:enable
+  Note over GW: Check placement<br/>record the flag
   %%> Requirements:
-  %%> - your Node has an access grant to Node 12
-  %%> - Instance 42 is an active production Instance; before its first succeeded deployment the check reports `not_deployed`
-  %%> - when the Project has a `merge_check`, the GitHub App can read its check runs
+  %%> - an active production Instance or a ready development container default; checkout working trees refuse
+  %%> - a configured Project merge_check must be readable through the GitHub App
   %%> Result:
-  %%> - auto-deploy recorded as on and unpaused
-  GW->>SW: Publish the schedule<br/>auto-deploy-42 · every minute
-  %%> What it does:
-  %%> - publishes one native Swamp schedule for Instance 42
-  %%> Inputs:
-  %%> - branch, `merge_check`, blocked commits, retry times
-  %%> - the deployed commit; the Gateway republishes the inputs after each deploy or rollback
-  %%> - vault key names for the read token; the Gateway keeps the token fresh in the vault
-  %%> Why:
-  %%> - the run has everything it needs; it never calls the Gateway
-  GW-->>CLI: Enabled<br/>auto_deploy: on
-  %%> What you get:
-  %%> - the Instance with auto-deploy on, at once
-  %%> - no task: publishing the schedule is part of the command
+  %%> - sets the Instance's auto_deploy flag and resume point; starts no deployment
+  %%> - warns with the Project name when no merge check is configured: every moved head deploys until one is set
+  GW-->>CLI: Enabled Instance
   loop every minute, second 30
-    Note over SW: tick
-    %%> Native policy producer:
-    %%> - the retained fleet policy selects work and produces the complete event receipt
-    SW->>SW: Find newest green commit<br/>ls-remote · merge_check passed
+    Note over SW: Shared production schedule<br/>automatic-production-deploy
     %%> What it does:
-    %%> - reads the branch head with `git ls-remote`
-    %%> - walks first-parent history to the newest commit whose `merge_check` passed
-    %%> - skips blocked commits and commits whose retry isn't due
-    %%> Not included:
-    %%> - never deploys a red or pending commit
-    %%> - compares with the deployed commit from the inputs; no SSH to the production Node each minute
-    alt a newer green commit
-      SW->>N: Deploy the pinned commit<br/>deploy-42 · prepare … check
+    %%> - the single native schedule discovers enabled production Instances from the Gateway
+    %%> - keeps its persisted pause; enabling or disabling one Instance does not change this schedule
+    SW->>GW: Read policy evidence<br/>Instance · history · checks
+    %%> What it does:
+    %%> - reads the current deployed commit, target holder, resume point and Project merge_check
+    %%> - finds the newest eligible green commit on the first-parent chain; a red or pending head can have an older green ancestor
+    %%> - without a merge check, permits each moved head
+    alt an eligible commit is due
+      SW->>GW: Admit the pinned commit<br/>instance:deploy:automatic
       %%> What it does:
-      %%> - the same steps as `instance:deploy`, pinned to the commit
-      %%> - behavior `deploy-42`: one lock per Instance, so a manual deploy and a fire never overlap
-      SW-->>GW: Fire ended<br/>result, commit, deployment
-      %%> Returns:
-      %%> - the result (`started`, `failed`, `gate_failed`, …), the commit and the deployment outputs
-      Note over GW: Record the result<br/>history row · Activity · alert
+      %%> - saves a keyed intent before admission; the normal Gateway Instance lock excludes manual and automatic work
+      GW->>SW: Run the deployment<br/>instance-deploy-direct
+      %%> What it does:
+      %%> - follows instance:deploy with the pinned commit and full admitted intent
+      SW-->>GW: Deployment ended<br/>native terminal history
       %%> Result:
-      %%> - a deployment history row with origin `automatic`
-      %%> - one Activity entry `auto_deploy.<result>` when the result changes
-      %%> - a release alert for a failed deploy, a stalled commit or a pause
-      %%> On failure:
-      %%> - the commit is blocked, or gets a retry time (10, then 20 minutes)
-      %%> - the Gateway republishes the schedule with the new inputs
-    else nothing to deploy
-      SW-->>GW: Fire ended<br/>up_to_date or gate_pending
-      %%> Result:
-      %%> - the Gateway updates the last result shown by `instance:show`
-      %%> - no history row, no Activity entry
+      %%> - records deployment history; failed attempts use the production retry and blocked-commit rules
     end
+    SW->>GW: Publish the observation
+    SW-->>GW: Policy fire ended<br/>captured event receipt
+    %%> Result:
+    %%> - records changed Activity and release alerts through the shared terminal reader
   end
-  Note over SW: failures
-  %%> Native end check:
-  %%> - the policy producer records zero failures on success
-  %%> - the Gateway captures its full fire_json in the same terminal history read, including events from a failed fire
-  %%> - no reporting shell forwards or prints the receipt
-  Note over GW,SW: Pause<br/>manual deploy or rollback
-  %%> What it does:
-  %%> - a manual `instance:deploy` or `instance:rollback` pauses auto-deploy
-  %%> - the Gateway removes the schedule's trigger; no fire runs
-  %%> Resume:
-  %%> - `orbit instance:auto-deploy:enable 42` publishes it again
-  %%> Disable:
-  %%> - `orbit instance:auto-deploy:disable 42` removes the schedule
+  CLI->>GW: Disable auto-deploy<br/>instance:auto-deploy:disable
+  Note over GW: Record the flag off
+  %%> Result:
+  %%> - skips this Instance on later scans and refuses automatic admission and queued execution
+  %%> - a running deployment continues; manual deployment remains available
+  GW-->>CLI: Disabled Instance

@@ -214,7 +214,7 @@ it('exposes the same configured merge check and ungated warning for development 
         expect($automatic->gate)->toBe('Required checks')->and($automatic->warning)->toBeNull();
         $instance->project->update(['merge_check' => null]);
         expect(InstanceData::fromModel($instance)->autoDeploy->warning)
-            ->toBe('The Project has no merge_check, so every new commit on the branch deploys without a check.');
+            ->toBe('Project '.$instance->project->name.' has no merge check configured; every moved head deploys until one is set.');
     }
 });
 

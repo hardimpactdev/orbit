@@ -25,7 +25,14 @@ export const DevelopmentState = z.object({
         key: z.string(),
         operation_id: z.number().int().positive().nullable(),
     }).nullable().default(null),
-    retry_after: z.string().datetime({ offset: true }).nullable().default(null),
+    // Evidence absent from deployment history, not a separate retry counter.
+    unrecorded_failures: z.array(z.object({
+        key: z.string(),
+        commit: sha,
+        deployment_id: z.number().int().positive().nullable(),
+        manual_after: z.number().int().nonnegative(),
+        finished_at: z.string().datetime({ offset: true }),
+    })).default([]),
     result: z.string().nullable().default(null),
     commit: sha.nullable().default(null),
     since: z.string().nullable().default(null),
@@ -208,6 +215,35 @@ export async function tickDevelopment(
                 }
                 return operationId;
             };
+            const manual = Math.max(
+                instance.auto_deploy.resumed_after,
+                ...history.filter((r) =>
+                    r.kind === "deploy" && !isAutomaticDeployment(r)
+                ).map((r) => r.id),
+            );
+            // A history row replaces its retained evidence; manual work resets both sources.
+            state.unrecorded_failures = state.unrecorded_failures.filter((f) =>
+                f.manual_after >= manual &&
+                !history.some((r) =>
+                    r.id === f.deployment_id && r.status !== "running"
+                )
+            );
+            const recordFailure = (
+                intent: NonNullable<typeof state.pending>,
+                deploymentId: number | null,
+            ) => {
+                if (
+                    !state.unrecorded_failures.some((f) => f.key === intent.key)
+                ) {
+                    state.unrecorded_failures.push({
+                        key: intent.key,
+                        commit: intent.commit,
+                        deployment_id: deploymentId,
+                        manual_after: intent.manual_after,
+                        finished_at: now,
+                    });
+                }
+            };
             if (state.pending) {
                 const intent = state.pending;
                 const operation = intent.operation_id === null
@@ -218,7 +254,7 @@ export async function tickDevelopment(
                     await publish("deploying", operation.id);
                     continue;
                 }
-                const manual = Math.max(
+                const succeededManual = Math.max(
                     0,
                     ...history.filter((r) =>
                         r.kind === "deploy" && r.status === "succeeded" &&
@@ -228,53 +264,50 @@ export async function tickDevelopment(
                 const historyVisible =
                     typeof operation.result?.deployment_id === "number" &&
                     history.some((r) =>
-                        r.id === operation.result?.deployment_id
+                        r.id === operation.result?.deployment_id &&
+                        r.status !== "running"
                     );
-                const startFailed = operation.status === "failed" &&
-                    [
-                        "swamp.start_refused",
-                        "swamp.start_unavailable",
-                        "swamp.vault_sync_unavailable",
-                    ].includes(
-                        operation.error_code ?? "",
-                    ) &&
-                    operation.attempts === 0 && operation.result === null;
                 const interruptedWithoutDeployment =
                     operation.status === "interrupted" &&
                     typeof operation.result?.deployment_id !== "number";
                 if (
                     !["succeeded", "failed"].includes(operation.status) &&
                     !historyVisible &&
-                    !startFailed &&
                     !interruptedWithoutDeployment &&
                     !isAdmissionFence(operation) &&
-                    manual <= intent.manual_after
+                    succeededManual <= intent.manual_after
                 ) {
                     await publish("failed", operation.id);
                     continue;
                 }
                 if (
-                    interruptedWithoutDeployment ||
-                    operation.status === "failed" && !historyVisible &&
-                        !startFailed
+                    !historyVisible &&
+                    operation.error_code !== "deployment.paused" &&
+                    (operation.status === "failed" ||
+                        interruptedWithoutDeployment ||
+                        isAdmissionFence(operation))
                 ) {
-                    state.retry_after = new Date(Date.parse(now) + 600000)
-                        .toISOString();
+                    recordFailure(
+                        intent,
+                        operation.result?.deployment_id ?? null,
+                    );
                 }
                 state.pending = null;
                 await save();
-                await publish(
-                    operation.status === "succeeded" ? "up_to_date" : "failed",
-                    operation.id,
-                    null,
-                    intent.commit,
-                );
-                // A settled older commit cannot hold the current head. Same-head retries observe again first.
-                if (intent.commit === head) continue;
-            }
-            if (state.retry_after !== null && state.commit !== head) {
-                state.retry_after = null;
-                await save();
+                if (operation.status !== "succeeded") {
+                    await publish("failed", operation.id, null, intent.commit);
+                    // Ended failure never permits an immediate same-head effect.
+                    if (intent.commit === head) continue;
+                } else if (instance.seed_commit === intent.commit) {
+                    await publish(
+                        "up_to_date",
+                        operation.id,
+                        null,
+                        intent.commit,
+                    );
+                    if (intent.commit === head) continue;
+                }
+                // A stale success cannot prove the current container's seed; observe normally.
             }
             let holder: Operation | undefined;
             for (const status of ["queued", "running", "waiting"]) {
@@ -368,36 +401,26 @@ export async function tickDevelopment(
                     continue;
                 }
             }
-            if (state.retry_after !== null) {
-                if (Date.parse(now) < Date.parse(state.retry_after)) {
-                    await publish("backing_off");
-                    continue;
-                }
-                state.retry_after = null;
-                await save();
-            }
-            const manual = Math.max(
-                0,
+            const failures = [
                 ...history.filter((r) =>
-                    r.kind === "deploy" && !isAutomaticDeployment(r)
-                )
-                    .map((r) => r.id),
-            );
-            const failures = history.filter((r) =>
-                r.id > manual && r.kind === "deploy" &&
-                isAutomaticDeployment(r) &&
-                r.commit === head && r.status === "failed" &&
-                r.error_code !== "deployment.paused"
-            );
+                    r.id > manual && r.kind === "deploy" &&
+                    isAutomaticDeployment(r) &&
+                    r.commit === head && r.status === "failed" &&
+                    r.error_code !== "deployment.paused"
+                ).map((r) => ({ finished_at: r.finished_at ?? r.started_at })),
+                ...state.unrecorded_failures.filter((f) => f.commit === head),
+            ];
             if (failures.length >= 3) {
                 await publish("commit_failed");
                 continue;
             }
-            const last = failures.sort((a, b) => b.id - a.id)[0];
+            const last = failures.sort((a, b) =>
+                Date.parse(b.finished_at) - Date.parse(a.finished_at)
+            )[0];
             if (
                 last &&
                 Date.parse(now) -
-                            Date.parse(last.finished_at ?? last.started_at) <
+                            Date.parse(last.finished_at) <
                     600000 * 2 ** (failures.length - 1)
             ) {
                 await publish("backing_off");

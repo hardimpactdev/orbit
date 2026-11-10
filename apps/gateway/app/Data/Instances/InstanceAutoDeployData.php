@@ -63,7 +63,7 @@ final class InstanceAutoDeployData extends Data
             policyOwner: app(AutomaticDeployPolicyWriter::class)->value,
             gate: $gate,
             warning: $enabled && $gate === null
-                ? 'The Project has no merge_check, so every new commit on the branch deploys without a check.'
+                ? 'Project '.$instance->project->name.' has no merge check configured; every moved head deploys until one is set.'
                 : null,
             result: $enabled ? self::string($state['result'] ?? null) : null,
             commit: $enabled ? self::string($state['commit'] ?? null) : null,

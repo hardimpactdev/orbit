@@ -123,7 +123,7 @@ it('refuses an ineligible Instance at the development automatic API before recor
     Queue::assertNothingPushed();
 })->with(['enabled production' => 'production', 'checkout working tree' => 'checkout', 'unseeded container' => 'unseeded']);
 
-it('admits a ready container through the development API and binds its receipt and fence to that command', function (): void {
+it('recovers a lost development admission response by its command-bound key without starting another operation', function (): void {
     Queue::fake();
     deployVault();
     $instance = deployDefault(container: true);
@@ -138,11 +138,52 @@ it('admits a ready container through the development API and binds its receipt a
     expect(Operation::query()->findOrFail($id)->triggered_by)->toBe('swamp:auto-deploy');
     $this->getJson($path.'/receipt?request_key=development.start&commit='.$commit)->assertOk()
         ->assertJsonPath('data.found', true)->assertJsonPath('data.operation.id', $id);
+    $this->postJson($path.'/resolve', ['request_key' => 'development.start', 'commit' => $commit])->assertOk()
+        ->assertJsonPath('data.found', true)->assertJsonPath('data.operation.id', $id);
+    expect(Operation::query()->count())->toBe(1);
     $this->getJson('/api/v1/instances/'.$instance->id.'/deploy/automatic/receipt?request_key=development.start&commit='.$commit)
         ->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
+});
+
+it('fences a development key with no admission and makes the fence readable by that same command', function (): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $instance->runtime()->update(['seed_commit' => str_repeat('a', 40)]);
+    $instance->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
+    $path = '/api/v1/instances/'.$instance->id.'/deploy/automatic/development';
+    $commit = str_repeat('b', 40);
+
+    $this->getJson($path.'/receipt?request_key=development.absent&commit='.$commit)->assertOk()
+        ->assertJsonPath('data.found', false)->assertJsonPath('data.operation', null);
     $fenced = $this->postJson($path.'/resolve', ['request_key' => 'development.absent', 'commit' => $commit])->assertOk()->json('data.operation.id');
+    $this->getJson($path.'/receipt?request_key=development.absent&commit='.$commit)->assertOk()
+        ->assertJsonPath('data.found', true)->assertJsonPath('data.operation.id', $fenced)
+        ->assertJsonPath('data.operation.status', 'cancelled')->assertJsonPath('data.operation.attempts', 0)
+        ->assertJsonPath('data.operation.error_code', 'operation.admission_fenced')
+        ->assertJsonPath('data.operation.result.admission_fenced', true);
     $this->withHeader('Idempotency-Key', 'development.absent')->postJson($path, ['commit' => $commit])->assertAccepted()
         ->assertJsonPath('data.id', $fenced)->assertJsonPath('data.status', 'cancelled');
+    expect(Operation::query()->count())->toBe(1)->and($instance->deployments()->count())->toBe(0);
+    Queue::assertNothingPushed();
+});
+
+it('keeps an old generic admission incompatible with development receipt lookup and resolution', function (): void {
+    Queue::fake();
+    deployVault();
+    $instance = deployDefault(container: true);
+    $instance->runtime()->update(['seed_commit' => str_repeat('a', 40)]);
+    $instance->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
+    $path = '/api/v1/instances/'.$instance->id.'/deploy/automatic';
+    $commit = str_repeat('b', 40);
+
+    $this->withHeader('Idempotency-Key', 'development.old-generic')->postJson($path, ['commit' => $commit])->assertAccepted();
+    $this->getJson($path.'/development/receipt?request_key=development.old-generic&commit='.$commit)
+        ->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
+    $this->postJson($path.'/development/resolve', ['request_key' => 'development.old-generic', 'commit' => $commit])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
+    expect(Operation::query()->count())->toBe(1);
 });
 
 it('allows manual deployment after the create projector publishes the authoritative Route', function (): void {

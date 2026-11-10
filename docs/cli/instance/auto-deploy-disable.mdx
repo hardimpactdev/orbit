@@ -26,6 +26,8 @@ The command turns automatic deployment off, so no check deploys. It changes noth
 
 Development container defaults start with automatic deployment on. This command turns the same `auto_deploy` flag off for just the selected Instance. The minute scan skips it, and admission and queued execution refuse automatic deployment while it is off. Explicit manual deployment still works. Checkout Instances refuse this command with `instance.auto_deploy_container_default_required` because they are user working trees, not automatic deployment targets.
 
+With automatic deployment on and no Project merge check configured, every moved head deploys until a check is set.
+
 The command prints a detail titled `Instance: <name>` with ID, `Auto deploy: off` and the request ID. With `--json`, stdout holds the Instance with `auto_deploy`.
 
 ## Errors

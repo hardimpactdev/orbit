@@ -27,7 +27,9 @@ sequenceDiagram
       GW->>SW: Run development policy<br/>only the selected Instance IDs
       %%> What it does:
       %%> - shares the retained behavior identity and development state; keeps pending admissions, backoff and retry limits
-      %%> - reads a retained pending Operation by ID; succeeded or failed Operations settle for their admitted commit, never the newer head
+      %%> - reads a retained pending Operation by ID; ended Operations settle for their admitted commit; success reports up_to_date only when the current runtime seed matches
+      %%> - failed Operations without history and failed history rows share one per-commit retry accounting: ten minutes, twenty minutes, then stop after three failures
+      %%> - a lost admission response follows the development receipt by key; an absent admission is fenced before abandoning the intent and applying the same retry accounting
       %%> - an old terminal checkpoint or failure cannot block a newer green head after an Instance moves into a container
       %%> - never discovers or admits production work; its paused production schedule stays unchanged
       Note over SW: Check the moved head<br/>Project merge_check
