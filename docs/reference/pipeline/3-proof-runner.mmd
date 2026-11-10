@@ -48,7 +48,7 @@ sequenceDiagram
     %%> - the cases run several at a time (the `parallel` key of the cases file, 4 by default), on the Nodes of the cases file's `spread`
     %%> - cases that change nothing are readers: several may read one Node together; a writer, including a fault or a held lock, is the only case on its Node until it ends
     %%> - resolve every CLI call's write kind and target before granting locks; a cross-Node or unresolved target, or a command without a known write scope, runs alone with an unfiltered Operation audit
-    %%> - `request: none` audits the actual CLI call; `operations` compares every CLI step's scope, with filters before the newest-50 limit and newest IDs detecting added Operations
+    %%> - `request: none` audits the actual CLI call; `operations` compares every CLI step's scope, with filters before selecting the newest page and newest IDs detecting added Operations
     %%> - cases that change the shared fleet (`agent_report`, `node_down`, `node_access_remove`, `ipv6_addresses`, `node_fixture`, `recorded_request`), read every Node, work on another Node or set `exclusive: true` run alone, after the others
     %%> - no restore after a failed case: cases use their own resources, undo nothing, and the next batch restores anyway
     %%> Result:
@@ -56,6 +56,8 @@ sequenceDiagram
     VM->>NT: Apply Gateway<br/>prerequisites
     VM->>NT: Prepare the observers<br/>one Ansible run
     %%> The batch always prepares independently, even if setup succeeded or an older workflow skipped setup. A preparation failure prints infrastructure failures and starts no case. Direct runner case calls require the same preparation.
+    VM->>NT: Prepare CLI callers<br/>once before scheduling
+    %%> Mounts the checkout and prepares the CLI home, CA and profile on each Node required by cli.as. No caller preparation writes occur during cases. Direct runner case calls prepare their caller too. A preparation failure starts no case.
     loop each case, several at a time
       VM->>NT: Set up the case<br/>listener · ufw_rule · probe
       %%> What it does:
@@ -74,7 +76,7 @@ sequenceDiagram
     VM-->>SW: Verdicts<br/>one JSON line a case
     %%> Returns:
     %%> - the case id, `passed`, `failed` (cause `assertion` or `infrastructure`) or `unrun` (cause `precondition`), the failed checks and the seconds
-    %%> - Swamp cuts a step's output at 4096 bytes: the runner prints the lines that did not pass first, and counts the lines it had to leave out; a case without a line is reported as having printed no verdict
+    %%> - keeps every verdict line in the full result artifact, with those that did not pass first; the separate 4 KiB history tail is not the report
   end
   alt every case passed
     SW-->>GW: Run succeeded<br/>verdicts + receipt

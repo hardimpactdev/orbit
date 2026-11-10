@@ -231,6 +231,7 @@ def command_case(args):
     discovered = time.time()
     try:
         fleet = fleet_module.from_environment()
+        fleet.prepare_cli_callers(spec_module.case_steps(case))
     except fleet_module.FleetError as error:
         result = {'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [str(error)]}
         print(verdict_line(result))
@@ -288,6 +289,7 @@ def command_batch(args):
     discovered = time.time()
     try:
         fleet = fleet_module.from_environment()
+        fleet.prepare_cli_callers([step for case in cases for step in spec_module.case_steps(case)])
     except fleet_module.FleetError as error:
         print('\n'.join(verdict_lines([{'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [str(error)]} for case in cases])))
         return 1
@@ -315,7 +317,9 @@ def command_setup(args):
     root = Path(args.evidence or fleet_module.evidence_root())
     try:
         items = spec_module.expand_steps(spec.batches[args.batch].get('setup') or [], 'setup', f'batch {args.batch} setup', {}, {}, {})
-        run = Run(fleet_module.prepare(), spec, root / ('batch-' + args.batch))
+        fleet = fleet_module.prepare()
+        fleet.prepare_cli_callers(items)
+        run = Run(fleet, spec, root / ('batch-' + args.batch))
         run_steps(run, items, 'setup', failures, time.time() + 120)
     except steps.Unrun as error:
         failures.append(str(error))

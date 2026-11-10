@@ -162,6 +162,9 @@ class FakeFleet:
         return 124
 
     # ---- CLI
+    def prepare_cli_callers(self, items):
+        pass   # No guest CLI files in the in-memory fleet.
+
     def cli(self, args, timeout=240, form='json', node=None):
         self.cli_calls.append(args)
         self.callers.append(node)
@@ -198,7 +201,7 @@ class FakeFleet:
         self.operation_queries.append((kind, target_type, target_id))
         rows = [row for row in self.operation_rows if all(value is None or row[key] == value
                 for key, value in zip(('kind', 'target_type', 'target_id'), (kind, target_type, target_id)))]
-        document = {'data': sorted(rows, key=lambda row: row['id'], reverse=True)[:50]}
+        document = {'data': sorted(rows, key=lambda row: row['id'], reverse=True)[:20]}
         return {'rc': 0, 'json': document, 'stdout': json.dumps(document), 'stderr': ''}
 
     def human(self, args, text):
