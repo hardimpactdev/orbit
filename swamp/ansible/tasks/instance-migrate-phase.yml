@@ -1,0 +1,217 @@
+---
+# One phase of instance-migrate.yml, `phase`, on the Node. The checkout is `migrate.checkout`; the new container is `container`,
+# in `container.project`. Git reads the checkout as root, so each call names it as a safe directory. `incus` gets no stray input.
+# A refused preflight changed nothing. Do not discard an earlier failed move's resources or rewrite its awake marker.
+- name: Leave the Node unchanged after a refused preflight
+  when: >-
+    phase == 'restore' and
+    (lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/result.json', errors='ignore')
+     | default('{}', true) | from_json).get('preflight_refused', false)
+  ansible.builtin.meta: end_host
+
+- name: Name the commands
+  ansible.builtin.set_fact:
+    incus_project: [incus, --project, "{{ container.project }}"]
+    as_orbit: >-
+      {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/orbit', container.name,
+          '--', 'runuser', '-u', 'orbit', '--'] }}
+    as_root: "{{ ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
+    checkout_git: >-
+      {{ ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false',
+          '-c', 'safe.directory=' ~ migrate.checkout, '-C', migrate.checkout] }}
+    # Beside the mirror, on the Node's disk and readable by root only; the container's copy sits beside the workspace.
+    node_archive: "{{ container.mirror | dirname }}/migrate-{{ container.instance_id }}-{{ run_id }}"
+    container_archive: "/srv/.orbit-migrate-{{ run_id }}"
+
+# The move copies the files that differ from the commit of the recorded branch, so the checkout must be on it.
+- name: Check the checkout's branch
+  when: phase == 'quiesce'
+  block:
+    - name: Read the checkout's branch
+      ansible.builtin.command: { argv: "{{ checkout_git + ['symbolic-ref', '--quiet', '--short', 'HEAD'] }}" }
+      register: checkout_branch
+      changed_when: false
+      failed_when: false
+    - name: Refuse another branch
+      ansible.builtin.assert:
+        that: checkout_branch.rc == 0 and checkout_branch.stdout | trim == migrate.branch
+        fail_msg: instance.migrate_branch_changed
+        quiet: true
+
+# Check every planned retirement before any Node change, and again before any checkout in the batch goes.
+- name: Check all planned retirements
+  when: phase in ['quiesce', 'retire']
+  ansible.builtin.include_tasks:
+    file: instance-migrate-retirement-check.yml
+    apply: { tags: [always] }
+  loop: "{{ migrate.retire }}"
+  loop_control: { loop_var: retired, label: "{{ retired.path }}" }
+
+# The same Process ids are about to run in the container. Disable host boot links before copying, so a Node reboot cannot start
+# a second writer. A failed move restores desired state only after its container is gone. A recorded but uninstalled unit skips.
+- name: Read the old Process unit files
+  when: phase in ['quiesce', 'restore']
+  ansible.builtin.stat: { path: "{{ item.path }}" }
+  loop: "{{ migrate.processes }}"
+  loop_control: { label: "{{ item.name }}" }
+  register: source_process_files
+
+- name: Stop the old Process units before copying
+  when: phase == 'quiesce' and item.stat.exists
+  ansible.builtin.systemd_service: { name: "{{ item.item.name }}", state: stopped, enabled: false }
+  loop: "{{ source_process_files.results | default([]) }}"
+  loop_control: { label: "{{ item.item.name }}" }
+
+# A container that an earlier failed move left is not the Instance's: this move starts with a new one. After a failure the new
+# container goes with what the move added on the Node, so the checkout Instance is as it was.
+- name: Remove the move's container
+  when: phase in ['quiesce', 'restore']
+  ansible.builtin.include_tasks:
+    file: instance-migrate-discard.yml
+    apply: { tags: [always] }
+
+- name: Restore the old Process units after removing the failed container
+  when: phase == 'restore' and item.stat.exists
+  ansible.builtin.systemd_service:
+    name: "{{ item.item.name }}"
+    state: "{{ 'started' if item.item.desired == 'running' else 'stopped' }}"
+    enabled: "{{ item.item.desired == 'running' }}"
+  loop: "{{ source_process_files.results | default([]) }}"
+  loop_control: { label: "{{ item.item.name }}" }
+
+# The container already serves at retire, even if checkout removal later refuses. Retire only this Instance's disabled units.
+- name: Remove the old Process units and environment folders
+  when: phase == 'retire'
+  ansible.builtin.file: { path: "{{ item }}", state: absent }
+  loop: "{{ (migrate.processes | map(attribute='path') | list) + (migrate.processes | map(attribute='environment_directory') | list) }}"
+  notify: Reload the retired Process units
+
+- name: Finish retiring the Process units
+  when: phase == 'retire'
+  ansible.builtin.meta: flush_handlers
+
+# Without its awake marker the Route shows the wake page, and the Gateway starts no wake while the move runs. So nothing writes
+# the checkout or the database between the copy and the Route's move.
+- name: Remove the awake marker
+  when: phase == 'quiesce'
+  ansible.builtin.file: { path: "{{ migrate.awake.path }}", state: absent }
+
+# A non-default Instance runs T3, published on the Node's WireGuard address in NAT mode, as a clone's is.
+- name: Publish T3 on the Node's WireGuard address
+  when: phase == 'files' and container.clone | default(none) is not none
+  block:
+    - name: Read the container's devices
+      ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
+      register: migrate_devices
+      changed_when: false
+    - name: Add the proxy device
+      when: container.clone.t3.device not in ((migrate_devices.stdout | from_json).devices | default({}))
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['config', 'device', 'add', container.name, container.clone.t3.device, 'proxy',
+              'listen=tcp:' ~ container.clone.t3.listen ~ ':' ~ container.clone.t3.port,
+              'connect=tcp:' ~ container.address ~ ':' ~ container.clone.t3.internal_port, 'nat=true'] }}
+      changed_when: true
+
+# The workspace holds the branch's commit. On top come the files that differ from it, staged or not, the untracked files and
+# the ignored ones, such as `vendor`, `storage` and `.env`: one archive, pushed in and extracted as `orbit`. Never the checkout's
+# `.git`: a non-default checkout is a linked worktree.
+- name: Copy the checkout's files into the workspace
+  when: phase == 'files'
+  block:
+    - name: List the files to copy and the files the checkout deleted
+      ansible.builtin.shell:
+        cmd: >-
+          { {{ git }} diff --name-only -z --diff-filter=d HEAD && {{ git }} ls-files -z --others; } > "$ORBIT_LIST"
+          && {{ git }} diff --name-only -z --diff-filter=D HEAD > "$ORBIT_DELETED"
+          && tar -C "$ORBIT_CHECKOUT" --null --files-from "$ORBIT_LIST" -cf "$ORBIT_ARCHIVE"
+        executable: /bin/sh
+      vars:
+        git: "{{ checkout_git | map('quote') | join(' ') }}"
+      environment:
+        ORBIT_LIST: "{{ node_archive }}.list"
+        ORBIT_DELETED: "{{ node_archive }}.deleted"
+        ORBIT_ARCHIVE: "{{ node_archive }}.tar"
+        ORBIT_CHECKOUT: "{{ migrate.checkout }}"
+      changed_when: true
+    - name: Push the archive and the deleted files into the container
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['file', 'push', '--uid', '1000', '--gid', '2760', '--mode', '0640',
+              node_archive ~ item, container.name ~ container_archive ~ item] }}
+      loop: [".tar", ".deleted"]
+      changed_when: true
+    - name: Extract the archive in the workspace
+      ansible.builtin.command:
+        argv: "{{ as_orbit + ['tar', '-xf', container_archive ~ '.tar', '--no-same-owner', '-C', container.workspace] }}"
+      changed_when: true
+    - name: Remove the files the checkout deleted
+      ansible.builtin.command:
+        argv: "{{ as_orbit + ['sh', '-c', 'xargs -0 rm -f -- < \"$1\"', 'sh', container_archive ~ '.deleted'] }}"
+      changed_when: true
+    # Both users edit every file: the group `work` reads and writes, others get nothing.
+    - name: Give the group the copied files
+      ansible.builtin.command: { argv: "{{ as_root + ['chmod', '-R', 'g+rwX,o-rwx', container.workspace] }}" }
+      changed_when: true
+  always:
+    - name: Remove the archive on the Node
+      ansible.builtin.file: { path: "{{ node_archive }}{{ item }}", state: absent }
+      loop: [".tar", ".list", ".deleted"]
+    - name: Remove the archive in the container
+      ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_archive ~ '.tar', container_archive ~ '.deleted'] }}" }
+      changed_when: false
+      failed_when: false
+
+# `.env` came as it was. A path in it that points into the checkout, such as a SQLite file's, points into the workspace now.
+- name: Point .env at the workspace
+  when: phase == 'files'
+  ansible.builtin.command:
+    argv: >-
+      {{ as_root + ['sh', '-c', 'test ! -f "$3" || { sed "s#$1#$2#g" "$3" > "$3.orbit" && cat "$3.orbit" > "$3"; rm -f -- "$3.orbit"; }',
+          'sh', migrate.checkout, container.workspace, container.environment_file] }}
+  changed_when: true
+
+# The database stays where it is. The container reaches its server through its own ACL rule and the Node's firewall rule, which
+# the container phase added; the move proves the path before the Route moves.
+- name: Check the way to each database server
+  when: phase == 'files'
+  block:
+    - name: Reach the server's port from the container
+      ansible.builtin.command:
+        argv: "{{ as_orbit + ['timeout', '5', 'bash', '-c', 'exec 3<>\"/dev/tcp/$1/$2\"', 'bash', item.host, item.port | string] }}"
+      loop: "{{ migrate.databases }}"
+      loop_control: { label: "{{ item.host }}:{{ item.port }}" }
+      register: migrate_reach
+      changed_when: false
+      failed_when: false
+    - name: Refuse a database server out of reach
+      ansible.builtin.assert:
+        that: migrate_reach.results | default([]) | rejectattr('rc', 'equalto', 0) | list | length == 0
+        fail_msg: instance.database_unreachable
+        quiet: true
+
+- name: Read the workspace's commit
+  when: phase == 'files'
+  block:
+    - name: Read the commit
+      ansible.builtin.command:
+        argv: "{{ as_orbit + ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', 'rev-parse', '--verify', 'HEAD^{commit}'] }}"
+      register: migrate_head
+      changed_when: false
+    - name: Keep the commit
+      ansible.builtin.set_fact:
+        migrate_commit: "{{ migrate_head.stdout | trim }}"
+
+# The Route serves the container now. The checkout goes; a default's stays while a worktree of its repository is left.
+- name: Remove the checkout
+  when: phase == 'retire'
+  ansible.builtin.include_tasks:
+    file: instance-migrate-retire.yml
+    apply: { tags: [always] }
+  loop: "{{ migrate.retire }}"
+  loop_control: { loop_var: retired, label: "{{ retired.path }}" }
+
+- name: Report the commit
+  when: migrate_commit is defined
+  ansible.builtin.debug:
+    msg: "orbit-commit={{ migrate_commit }}"

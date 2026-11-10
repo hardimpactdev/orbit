@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container clone cleanup, ADR 0250 PR 6. Default destruction and guarded clone removal follow separately.
+  %% Container non-default cleanup, ADR 0250 PR 6. Default destruction and guarded clone removal follow separately.
   %% status: draft
   %% command: instance:destroy
   %% kind: instance.destroy
@@ -16,7 +16,7 @@ sequenceDiagram
   %% path: main
   %%> Requirements:
   %%> - Node access to the Instance's Node and no other lifecycle Operation holds the Instance
-  %%> - this slice supports a container clone only; a container default remains unavailable
+  %%> - this slice supports a non-default container Instance, cloned or migrated; the Instance named `default` remains unavailable
   %%> - `--force` is required until guarded removal is built; no work or turn check runs
   alt container default
     %% path: default-unavailable

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
+use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\ClusterRouterTransition;
@@ -527,8 +528,11 @@ final readonly class DevelopmentSiteRepository
         bool $domainChange = false,
     ): DevelopmentSite {
         // A container Instance is served by FrankenPHP in its container; the Node's Caddy proxies to its bridge address.
-        $runtime = $instance->relationLoaded('runtime') ? $instance->runtime : $instance->runtime()->first();
-        if ($runtime instanceof InstanceRuntime) {
+        // A row that a move into a container only reserved serves nothing yet: the checkout's site stays. A caller that renders the
+        // container's site ahead of the move hands the runtime in.
+        $given = $instance->relationLoaded('runtime');
+        $runtime = $given ? $instance->runtime : $instance->runtime()->first();
+        if ($runtime instanceof InstanceRuntime && ($given || ! InstanceMigration::pending($instance))) {
             return new DevelopmentSite(
                 nodeId: $instance->node_id,
                 nodeAddress: app(RouteRenderContext::class)->wireguardIp($instance->node) ?? '',

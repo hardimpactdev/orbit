@@ -1,0 +1,74 @@
+---
+# Read-only retirement guard, shared by quiesce and retire. Never change or prune a worktree here.
+- name: Name the Git command
+  ansible.builtin.set_fact:
+    retired_git: "{{ ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'safe.directory=*'] }}"
+
+- name: Read the checkout's Git folder
+  ansible.builtin.stat: { path: "{{ retired.path }}/.git" }
+  register: retired_dot_git
+
+# Git names the repository of the worktree that just went by its real path, so the candidate is asked the same way.
+- name: Read the repository's own Git folder
+  when: retired.common_of is defined and retired_dot_git.stat.exists and retired_dot_git.stat.isdir | default(false)
+  ansible.builtin.command:
+    argv: "{{ retired_git + ['-C', retired.path, 'rev-parse', '--path-format=absolute', '--git-common-dir'] }}"
+  register: retired_own
+  changed_when: false
+
+- name: Decide what goes
+  ansible.builtin.set_fact:
+    retired_worktree: "{{ retired_dot_git.stat.exists and retired_dot_git.stat.isreg | default(false) }}"
+    retired_repository: >-
+      {{ retired_dot_git.stat.exists and retired_dot_git.stat.isdir | default(false)
+         and (retired.common_of is not defined
+              or (migrate_common | default('') != '' and migrate_common | default('') == retired_own.stdout | default('') | trim)) }}
+
+- name: Read the worktree's repository
+  when: retired_worktree | bool
+  ansible.builtin.command:
+    argv: "{{ retired_git + ['-C', retired.path, 'rev-parse', '--path-format=absolute', '--git-common-dir'] }}"
+  register: retired_common
+  changed_when: false
+
+- name: Keep the worktree's repository
+  when: retired_worktree | bool
+  ansible.builtin.set_fact:
+    migrate_common: "{{ retired_common.stdout | trim }}"
+
+- name: Check a checkout before retirement
+  when: retired_worktree | bool or retired_repository | bool
+  block:
+    - name: Read the checkout's canonical path
+      ansible.builtin.command:
+        argv: "{{ retired_git + ['-C', retired.path, 'rev-parse', '--show-toplevel'] }}"
+      register: retirement_checkout
+      changed_when: false
+    - name: Read every registered worktree
+      ansible.builtin.command:
+        argv: "{{ retired_git + ['-C', retired.path, 'worktree', 'list', '--porcelain', '-z'] }}"
+      register: retirement_worktrees
+      changed_when: false
+    - name: Read tracked and non-ignored untracked changes
+      ansible.builtin.command:
+        argv: "{{ retired_git + ['-C', retired.path, 'status', '--porcelain=v1', '--untracked-files=all'] }}"
+      environment: { GIT_OPTIONAL_LOCKS: "0" }
+      register: retirement_status
+      changed_when: false
+    - name: Name the blocking worktrees and files
+      ansible.builtin.set_fact:
+        retirement_other_worktrees: >-
+          {{ retirement_worktrees.stdout | regex_findall('(?:\A|\x00)worktree ([^\x00]+)') | reject('equalto', retirement_checkout.stdout | trim) | list }}
+        retirement_changes: "{{ retirement_status.stdout_lines }}"
+    - name: Explain a blocked retirement
+      when: retirement_other_worktrees | length > 0 or retirement_changes | length > 0
+      ansible.builtin.set_fact:
+        migrate_refusal_message: >-
+          Cannot retire checkout {{ retired.path | to_json }}.
+          Other worktrees ({{ retirement_other_worktrees | length }} total; first 20): {{ retirement_other_worktrees[:20] | to_json }}.
+          Changed files ({{ retirement_changes | length }} total; first 20): {{ retirement_changes[:20] | to_json }}.
+    - name: Refuse a checkout with other worktrees or uncommitted changes
+      ansible.builtin.assert:
+        that: retirement_other_worktrees | length == 0 and retirement_changes | length == 0
+        fail_msg: "{{ migrate_refusal_message | default('instance.migrate_retirement_blocked') }}"
+        quiet: true

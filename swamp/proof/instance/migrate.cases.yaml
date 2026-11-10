@@ -1,0 +1,47 @@
+# Format: docs/reference/verification-cases.
+# These cases run on the proof fleet as it is. The cases that move an Instance need a proof Node with the Instance pool and the
+# container image, which the proof fleet does not build yet (docs/solutions/development-container-runtime.md, PR 4). Until then
+# the Pest, Deno and Ansible fixture tests cover the move, and the live check on a build-list Node proves it.
+# Retirement fixture coverage (ansible_instance_migrate_test.ts): dirty tracked/staged/deleted/renamed files and non-ignored
+# untracked files refuse before downtime; ignored files pass; linked and detached worktrees refuse and name their paths.
+# Process fixtures stop and disable host units before copying, install private Process environments in the container,
+# retire host files after cutover and restore recorded desired states only after removing a failed container.
+# Both lists are bounded to 20 entries with total counts. New changes or worktrees after preflight refuse final retirement,
+# keep every source intact, and leave the container serving. A retained checkout (retire: []) is not deleted or checked.
+command: instance:migrate
+chart: instance/migrate
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+
+uncovered:
+  "code:instance.migrate_retirement_blocked": "The proof fleet lacks the Instance pool/image. Ansible fixtures cover dirty tracked and non-ignored untracked files, linked/detached and same-batch worktrees, bounded named errors, and blockers added after preflight. Live proof uses owned clean fixtures and separate blocker fixtures when the pool is available."
+
+cases:
+  - id: invalid-id
+    batch: fresh-fleet
+    covers: []
+    summary: A nonpositive or noninteger Instance ID is refused locally, before any request.
+    variants:
+      - {name: zero, value: "0"}
+      - {name: name, value: default}
+      - {name: fractional, value: "1.5"}
+    act:
+      - cli:
+          run: [instance:migrate, "${value}", --force]
+          forms: [json, human]
+          expect: {exit: 1, code: instance.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: unknown-instance
+    batch: fresh-fleet
+    covers: []
+    summary: An unknown Instance ID is refused without creating an Operation.
+    act:
+      - cli:
+          run: [instance:migrate, "2147483647", --force]
+          forms: [json, human]
+          expect: {exit: 1, code: http.404, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}

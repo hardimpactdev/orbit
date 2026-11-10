@@ -64,7 +64,7 @@ Run the sibling Deno unit tests for Orbit's Process and Schedule logic. Workflow
 
 An Instance Process serves one Instance. The Gateway derives its Node and systemd user and default working directory from the Instance. Docker keeps the image's working directory instead. [Instance removal](/reference/instance-removal) removes it.
 
-An Instance in a container runs its Processes as `orbit` units in the container, from the Project's development definitions only. Swamp reaches them through `incus exec` on the Node, never through the Node agent. [Instance containers](/reference/development-containers#processes) has the differences.
+An Instance in a container runs its Processes as `orbit` units in the container. New Instances use the Project's development definitions; [migration](/cli/instance/migrate) moves an existing Instance's systemd Processes with their ids and desired states. Swamp reaches them through `incus exec` on the Node, never through the Node agent. [Instance containers](/reference/development-containers#processes) has the differences.
 
 A Node Process serves the Node itself, for example a shared Docker database. A systemd Process runs as the Node's managed user, with `/home/{managed user}` as its default working directory, unless `user` names another account. A Docker Process keeps the image's working directory unless an explicit directory is supplied. A Node Process reads no Instance environment file.
 

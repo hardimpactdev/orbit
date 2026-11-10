@@ -672,6 +672,7 @@ SUMMARIES = {
     'proof:run': 'Prove the cases of a commit',
     'proof': 'Prove a command on the task VM',
     'instance:transfer': 'Transfer an Instance',
+    'instance:migrate': 'Move a checkout Instance into a container',
     'gateway:auto-release:status': 'Show automatic Gateway release status', 'gateway:auto-release:enable': 'Enable automatic Gateway releases', 'gateway:auto-release:disable': 'Disable automatic Gateway releases', 'gateway:auto-release:resume': 'Resume automatic Gateway releases',
     'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate', 'gateway:desired-fleet-state': 'Show the desired fleet state',
     'node:list': 'List Nodes', 'node:show': 'Show a Node', 'node:add': 'Add a Node', 'node:remove': 'Remove a Node', 'node:update': 'Update a Node',

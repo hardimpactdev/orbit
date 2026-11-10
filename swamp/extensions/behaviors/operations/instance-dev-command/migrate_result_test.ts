@@ -1,0 +1,96 @@
+import { assertEquals } from "jsr:@std/assert@1.0.19";
+import { migrateResult, writtenFailure } from "./migrate_result.ts";
+
+const commit = "b".repeat(40);
+const workspace = { status: "succeeded", outputs: { stdout: `ok: [node] => {\n    "msg": "orbit-commit=${commit}"\n}\n` } };
+const server = JSON.stringify({ environment_id: "env-1", gateway_session: { vault: "orbit-control-inputs", key: "k" } });
+// A default with a Route: no agent, no T3, a seed.
+const defaultIntent = { instance_id: 53, container: { clone: null }, route_mutations: { forward: {} } };
+const cloneIntent = { instance_id: 761, container: { clone: { t3: {} } }, route_mutations: { forward: {} } };
+const moved = {
+    quiesce: "succeeded", container: "succeeded", workspace: "succeeded", files: "succeeded", agent: "skipped",
+    processes: "succeeded", seed: "succeeded", t3: "skipped", register: "skipped", route: "succeeded", retire: "succeeded",
+    restore_route: "skipped", restore: "skipped",
+};
+const result = (...args: Parameters<typeof migrateResult>) => JSON.parse(migrateResult(...args).stdout);
+
+Deno.test("a default that moved reports its commit and no T3 server", () => {
+    assertEquals(result(defaultIntent, moved, workspace, null, null), { instance_id: 53, ready: true, moved: true, restored: false, commit });
+});
+
+Deno.test("a non-default Instance that moved reports its T3 server, and needs its registration", () => {
+    const phases = { ...moved, agent: "succeeded", seed: "skipped", t3: "succeeded", register: "succeeded" };
+    assertEquals(result(cloneIntent, phases, workspace, server, null), {
+        instance_id: 761, ready: true, moved: true, restored: false, commit, t3: JSON.parse(server),
+    });
+    assertEquals(result(cloneIntent, { ...phases, retire: "skipped", restore: "succeeded" }, workspace, null, null).failed_step, "register");
+});
+
+Deno.test("a move that failed and restored names the failed phase with its own refusal, and says restored", () => {
+    const phases = { ...moved, files: "failed", processes: "skipped", seed: "skipped", route: "skipped", retire: "skipped", restore: "succeeded" };
+    assertEquals(result(defaultIntent, phases, workspace, null, { error_code: "instance.database_unreachable" }), {
+        instance_id: 53, ready: false, moved: false, restored: true, commit, failed_step: "files", error_code: "instance.database_unreachable",
+    });
+    // A phase that failed without a refusal names itself; the container phases' own generic code is not passed on.
+    assertEquals(result(defaultIntent, phases, workspace, null, { error_code: "instance.container_workspace_failed" }).error_code, "instance.migrate_files_failed");
+    assertEquals(result(defaultIntent, phases, workspace, null, null).error_code, "instance.migrate_files_failed");
+});
+
+Deno.test("a Route that did not move fails the move, and a failed restore is not restored", () => {
+    const phases = { ...moved, route: "failed", retire: "skipped", restore_route: "succeeded", restore: "succeeded" };
+    // The Route child writes no result file: a code left by an earlier phase is not its code.
+    assertEquals(result(defaultIntent, phases, workspace, null, { error_code: "instance.database_unreachable" }), {
+        instance_id: 53, ready: false, moved: false, restored: true, commit, failed_step: "route", error_code: "instance.migrate_route_failed",
+    });
+    assertEquals(result(defaultIntent, { ...phases, restore_route: "failed" }, workspace, null, null).restored, false);
+    assertEquals(result(defaultIntent, { ...phases, restore: "failed" }, workspace, null, null).restored, false);
+});
+
+Deno.test("a failed removal after the Route moved keeps the Instance moved, and is no restore", () => {
+    const phases = { ...moved, retire: "failed" };
+    assertEquals(result(defaultIntent, phases, workspace, null, { error_code: "instance.migrate_retire_failed" }), {
+        instance_id: 53, ready: false, moved: true, restored: false, commit, failed_step: "retire", error_code: "instance.migrate_retire_failed",
+    });
+});
+
+Deno.test("an Instance without a Route needs no Route step, and a first phase that never ran is the failure", () => {
+    const intent = { instance_id: 9, container: { clone: null }, route_mutations: null };
+    assertEquals(result(intent, { ...moved, route: "skipped" }, workspace, null, null).ready, true);
+    const phases = { ...moved, quiesce: "failed", container: "skipped", workspace: "skipped", files: "skipped", processes: "skipped", seed: "skipped", route: "skipped", retire: "skipped", restore: "succeeded" };
+    assertEquals(result(intent, phases, null, null, { error_code: "instance.migrate_branch_changed" }), {
+        instance_id: 9, ready: false, moved: false, restored: true, failed_step: "quiesce", error_code: "instance.migrate_branch_changed",
+    });
+});
+
+Deno.test("the code a phase wrote is read from the run folder", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        assertEquals(await writtenFailure(folder), null);
+        await Deno.writeTextFile(`${folder}/result.json`, JSON.stringify({ commit: null }));
+        assertEquals(await writtenFailure(folder), null);
+        await Deno.writeTextFile(`${folder}/result.json`, JSON.stringify({ error_code: "instance.database_unreachable" }));
+        assertEquals(await writtenFailure(folder), { error_code: "instance.database_unreachable" });
+    } finally {
+        await Deno.remove(folder, { recursive: true });
+    }
+});
+
+Deno.test("retirement refusals keep named paths in the public receipt at preflight and after cutover", async () => {
+    const folder = await Deno.makeTempDir();
+    const error_message = 'Cannot retire checkout "/fixture". Other worktrees (1 total; first 20): ["/detached"]. Changed files (1 total; first 20): [" M index.php"].';
+    try {
+        const failure = { error_code: "instance.migrate_retirement_blocked", error_message, preflight_refused: true };
+        await Deno.writeTextFile(`${folder}/result.json`, JSON.stringify(failure));
+        const phases = { ...moved, quiesce: "failed", container: "skipped", workspace: "skipped", files: "skipped", processes: "skipped", seed: "skipped", route: "skipped", retire: "skipped", restore: "succeeded" };
+        assertEquals(result(defaultIntent, phases, null, null, await writtenFailure(folder)), {
+            instance_id: 53, ready: false, moved: false, restored: true, preflight_refused: true,
+            failed_step: "quiesce", error_code: failure.error_code, error_message,
+        });
+        const late = result(defaultIntent, { ...moved, retire: "failed" }, workspace, null, { ...failure, preflight_refused: false });
+        assertEquals([late.moved, late.restored, late.error_code, late.error_message], [true, false, failure.error_code, error_message]);
+        // A Route failure cannot reuse a message from a phase that did not fail.
+        assertEquals(result(defaultIntent, { ...moved, route: "failed", retire: "skipped" }, workspace, null, failure).error_message, undefined);
+    } finally {
+        await Deno.remove(folder, { recursive: true });
+    }
+});

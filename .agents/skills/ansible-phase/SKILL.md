@@ -89,6 +89,7 @@ A decision that is more than a `when` becomes a Jinja template, read with `looku
 - `community.general.ufw` runs `ufw status verbose`, a read of the user rules and `ufw --version` around every call, and detects `changed` from the rules, so an insert of an existing rule reports no change. `insert` takes the absolute row number of `ufw status numbered` (`insert_relative_to: zero`). A delete names the tuple and carries no comment.
 - The pinned `ansible-core` rejects a variable named `none`. Keep test fixtures in plain names.
 - Local Ansible fixtures use the built-in stdout callback and write registered results to temporary fixture files. Test core-only fixtures with an empty `ANSIBLE_COLLECTIONS_PATH`: a developer's installed callback must not hide a collection dependency from the gate.
+- Give each local fixture a unique `ORBIT_RUN_ID`, stable across its phases. Private run folders do not isolate Node-side `/tmp` filenames when several fixture Nodes run on localhost.
 - Name a host differently from every group. Ansible warns when both share a name (`node` as host and as group), and a play then reads ambiguous.
 - `wg syncconf` leaves a random `ListenPort` on a peer that sets none. To report a change only when the peers differ, hash `wg showconf` without its `ListenPort` line before and after.
 - The Gateway holds a placeholder for the host key of a Node it is enrolling. Pin the key the run observed for that Node, never the placeholder in the intent.
@@ -136,3 +137,5 @@ A proof candidate must install its own frozen observer pin after every base rest
 `incus copy` applies device overrides to the snapshot's local devices. A profile-only root needs a complete disk definition: pass type, path, pool and size as separate `--device root,key=value` arguments. A comma after the value stays in that value.
 
 Instance container network ACLs live in Incus project `default`, even when the container lives in `orbit-instances`. Destroy removes the container first, then its ACL in the default project. Test both the project and a second removal with zero changes.
+
+A Process move disables the source units before copying. Render container units from a copy of their records and save the new paths only after cutover. A failed move removes the new container before restoring source units, so two runtimes never run the same writer.
