@@ -48,24 +48,55 @@ final readonly class StartInstanceDeployAction
 
     public function execute(Instance $instance, string $triggeredBy, ?string $requestId, ?string $commit = null, ?int $callerNodeId = null): Operation
     {
+        return $this->start($instance, $triggeredBy, $requestId, $commit, $callerNodeId);
+    }
+
+    private function start(Instance $instance, string $triggeredBy, ?string $requestId, ?string $commit, ?int $callerNodeId, bool $automatic = false): Operation
+    {
         if ($commit !== null) {
             GitCommitSha::validate($commit);
         }
+        $instance = Instance::query()->with(['node.roles', 'project'])->findOrFail($instance->id);
+        if ($automatic) {
+            $this->writer->assertSwamp($instance);
+            $this->assertRepositoryIdentity($instance);
+        }
+        $configuration = $read = null;
+        if ($instance->runtime()->exists()) {
+            if (($existing = app(OperationIdempotency::class)->replay(OperationKinds::InstanceDeploy)) !== null) {
+                return $existing;
+            }
+            $this->intent->assertDevelopment($instance);
+            $configuration = $this->sourceConfiguration($instance);
+            $project = $instance->project;
+            $read = app(CaptureProjectSourceFactsAction::class)->read($project->repository_url, $project->source_access,
+                (string) $project->default_branch, $project->root, $project->type, $commit);
+        }
 
-        return DB::transaction(function () use ($instance, $triggeredBy, $requestId, $commit, $callerNodeId): Operation {
-            $instance = Instance::query()->with(['node', 'project'])->lockForUpdate()->findOrFail($instance->id);
-            // A checkout default serializes its deployments with the checkout lock on the Node; a container default holds the Instance.
-            $development = $instance->placedOnAppDev();
-            $members = $development ? null : app(InstanceRuntimeDefinitions::class)->capture($instance);
-            if ($instance->runtime()->exists()) {
+        return DB::transaction(function () use ($instance, $triggeredBy, $requestId, $commit, $callerNodeId, $automatic, $configuration, $read): Operation {
+            $instance = Instance::query()->with(['node.roles', 'project'])->lockForUpdate()->findOrFail($instance->id);
+            if ($automatic) {
+                $this->writer->assertSwamp($instance);
+            }
+            $container = $instance->runtime()->exists();
+            if ($container || $configuration !== null) {
                 if (($existing = app(OperationIdempotency::class)->replay(OperationKinds::InstanceDeploy)) !== null) {
                     return $existing;
                 }
+                if (! $container || $read === null || $configuration !== $this->sourceConfiguration($instance)) {
+                    throw new ResourceOperationException('deployment.source_changed', 'The source configuration changed during deployment source capture.', 409);
+                }
+            }
+            if ($automatic) {
+                $this->assertRepositoryIdentity($instance);
+            }
+            // A checkout default serializes its deployments with the checkout lock on the Node; a container default holds the Instance.
+            $development = $instance->placedOnAppDev();
+            $members = $development ? null : app(InstanceRuntimeDefinitions::class)->capture($instance);
+            if ($container) {
                 $this->intent->assertDevelopment($instance);
                 $facts = app(CaptureProjectSourceFactsAction::class);
                 $project = $instance->project;
-                $read = $facts->read($project->repository_url, $project->source_access, (string) $project->default_branch,
-                    $project->root, $project->type, $commit);
                 if ($read['facts']['source_profile_error'] !== null) {
                     throw new ResourceOperationException($read['facts']['source_profile_error'], 'The deployed source metadata is invalid or unsupported for a development Instance.', 422);
                 }
@@ -117,10 +148,7 @@ final readonly class StartInstanceDeployAction
     /** Public pins validate the recorded Project identity before admitting the existing operation. */
     public function pinned(Instance $instance, string $triggeredBy, ?string $requestId, string $commit, ?int $callerNodeId = null): Operation
     {
-        $project = $instance->project()->firstOrFail();
-        if ($project->repository_identity !== GitRepositoryIdentity::derive($project->repository_url)) {
-            throw new ResourceOperationException('deployment.repository_mismatch', 'The Project repository identity does not match its origin.', 409);
-        }
+        $this->assertRepositoryIdentity($instance);
 
         return $this->execute($instance, $triggeredBy, $requestId, $commit, $callerNodeId);
     }
@@ -128,11 +156,21 @@ final readonly class StartInstanceDeployAction
     /** The HTTP boundary requires Gateway Node access before admitting automatic origin. */
     public function automatic(Instance $instance, Node $caller, ?string $requestId, string $commit): Operation
     {
-        return DB::transaction(function () use ($instance, $caller, $requestId, $commit): Operation {
-            $instance = Instance::query()->lockForUpdate()->findOrFail($instance->id);
-            $this->writer->assertSwamp($instance);
+        return $this->start($instance, AutomaticDeployHistory::SwampTrigger, $requestId, $commit, $caller->id, automatic: true);
+    }
 
-            return $this->pinned($instance, AutomaticDeployHistory::SwampTrigger, $requestId, $commit, $caller->id);
-        });
+    private function assertRepositoryIdentity(Instance $instance): void
+    {
+        $project = $instance->project()->firstOrFail();
+        if ($project->repository_identity !== GitRepositoryIdentity::derive($project->repository_url)) {
+            throw new ResourceOperationException('deployment.repository_mismatch', 'The Project repository identity does not match its origin.', 409);
+        }
+    }
+
+    /** @return array<string, mixed> */
+    private function sourceConfiguration(Instance $instance): array
+    {
+        return ['instance' => $instance->only(['project_id', 'node_id', 'root']), 'runtime_id' => $instance->runtime()->value('id'),
+            'project' => $instance->project->only(['repository_url', 'repository_identity', 'source_access', 'default_branch', 'root', 'type'])];
     }
 }
