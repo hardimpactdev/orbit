@@ -15,6 +15,7 @@ orbit cluster:router:unset <cluster> [--force] [--json]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--force` | prompt | Confirm without prompting. Required without a terminal and with `--json`. |
+| `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the final Operation as JSON. |
 
 ```bash

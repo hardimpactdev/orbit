@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 return [
-    'actions' => ['allow', 'deny', 'inspect'],
+    'actions' => ['allow', 'deny'],
     'noun_endings' => [],
     'route_exceptions' => [],
 ];

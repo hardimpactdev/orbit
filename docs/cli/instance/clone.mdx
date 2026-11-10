@@ -19,6 +19,7 @@ orbit instance:clone <candidate> <node> <name> --preview-name=NAME [--branch=BRA
 | `--preview-name=NAME` | prompt | Preview name that Orbit combines with the destination Node's TLD: `shop.com` on a Node with the TLD `prod.orbit` becomes `shop.com.prod.orbit`. A non-web Project gets no Route but still needs the name. |
 | `--branch=BRANCH` | the candidate's branch | Target branch in the Project repository. A branch that does not exist fails the task at the fetch. |
 | `--sqlite-source-path=PATH` | none | Absolute path to one SQLite database on the candidate, to seed `database.sqlite`. |
+| `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the final task as JSON, with every step, and nothing while it follows. |
 
 ```bash

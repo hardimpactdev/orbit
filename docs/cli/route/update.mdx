@@ -17,6 +17,7 @@ orbit route:update <route> [--domain=DOMAIN] [--publication=INTENT] [--web-root=
 | `--domain=DOMAIN` | unchanged | The new domain. |
 | `--publication=INTENT` | unchanged | The new publication, `private` or `public`. |
 | `--web-root=PATH` | unchanged | The new web root. `--web-root=` clears it, so the Route serves the Instance's effective root. It cannot be combined with another option. |
+| `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the final Operation as JSON. |
 
 ```bash
