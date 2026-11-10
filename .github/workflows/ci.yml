@@ -414,6 +414,38 @@ jobs:
         if: steps.scope.outputs.selected == 'true'
         run: scripts/check-crates test --locked
 
+  egress:
+    name: Go egress proxy check and test
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/egress
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: egress
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: steps.scope.outputs.selected == 'true'
+        with:
+          go-version-file: apps/egress/go.mod
+          cache: false
+      - name: Require gofmt
+        if: steps.scope.outputs.selected == 'true'
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+        if: steps.scope.outputs.selected == 'true'
+      - run: go test -race -count=1 ./...
+        if: steps.scope.outputs.selected == 'true'
+      - name: Build the static Linux binary
+        if: steps.scope.outputs.selected == 'true'
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o "$RUNNER_TEMP/orbit-egress" ./cmd/orbit-egress
+
   changes:
     name: Select build inputs
     runs-on: ubuntu-26.04
@@ -543,7 +575,7 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [php, gateway-static, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, pi, agent, swamp, proof, proof-run, gateway-release, changes]
+    needs: [php, gateway-static, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, pi, agent, egress, swamp, proof, proof-run, gateway-release, changes]
     runs-on: ubuntu-26.04
     permissions:
       contents: read
