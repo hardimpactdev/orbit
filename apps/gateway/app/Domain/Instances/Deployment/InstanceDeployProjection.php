@@ -81,7 +81,7 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             $text = static fn (mixed $value, int $limit): ?string => $value === null ? null : mb_strcut(ValidatedData::string($value), 0, $limit, 'UTF-8');
             $facts = ['deployment_id' => $historyId, 'release' => $text(ValidatedData::object($payload['release'] ?? [])['name'] ?? null, 128),
                 'selected_release' => $text(ValidatedData::object($payload['selected_release'] ?? [])['name'] ?? null, 128),
-                'commit' => $text($payload['commit'] ?? null, 64), 'failed_step' => $text($payload['failed_step'] ?? null, 255)];
+                'commit' => $text($status === 'succeeded' ? ($payload['commit'] ?? null) : InstanceDeploymentIntent::commit($locked), 64), 'failed_step' => $text($payload['failed_step'] ?? null, 255)];
             if (isset($payload['warnings'])) {
                 $facts['warnings'] = ValidatedData::integer($payload['warnings']);
             }
@@ -144,17 +144,19 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
         if (! is_int($id)) {
             return;
         }
+        $operation->update(['result' => [...($operation->result ?? []), 'deployment_id' => $id]]);
         $this->history->recordNative(InstanceDeployment::query()->where('instance_id', $operation->target_id)->findOrFail($id), 'failed', $operation->error_code,
-            ['release' => null, 'selected_release' => null, 'commit' => null, 'failed_step' => 'admission']);
+            ['release' => null, 'selected_release' => null, 'commit' => InstanceDeploymentIntent::commit($operation), 'failed_step' => 'admission']);
     }
 
-    /** A production deployment recorded its running row at admission; the expired run leaves it failed. */
+    /** An expired run leaves any existing history row failed and names it in the receipt. */
     public function timedOut(Operation $operation): void
     {
         $id = $operation->state['deployment_id'] ?? null;
         if (! is_int($id)) {
             return;
         }
+        $operation->update(['result' => [...($operation->result ?? []), 'deployment_id' => $id]]);
         $this->history->recordNative(InstanceDeployment::query()->where('instance_id', $operation->target_id)->findOrFail($id), 'failed', 'operation.timed_out',
             ['release' => $this->development($operation) ? null : InstanceDeploymentIntent::releaseName($operation), 'selected_release' => null,
                 'commit' => InstanceDeploymentIntent::commit($operation), 'failed_step' => null]);

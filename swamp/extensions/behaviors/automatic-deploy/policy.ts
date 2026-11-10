@@ -22,7 +22,7 @@ export function isAutomaticDeployment(origin: DeploymentOrigin): boolean {
 export const RowSchema = z.object({
     id: z.number().int().positive(),
     kind: z.enum(["deploy", "rollback"]),
-    status: z.enum(["running", "succeeded", "failed"]),
+    status: z.enum(["running", "succeeded", "failed", "interrupted"]),
     commit: sha.nullable(),
     triggered_by: nullable,
     caller_node_id: CallerNodeIdSchema,
@@ -234,11 +234,29 @@ const lastingCodes = new Set([
     "deployment_config.unavailable",
 ]);
 export const transient = (r: Row) =>
-    ["operation", "preparation", "environment"].includes(r.failed_step ?? "") &&
+    (r.status === "interrupted" ||
+        ["operation", "preparation", "environment"].includes(
+            r.failed_step ?? "",
+        )) &&
     !lastingCodes.has(r.error_code ?? "");
-const eligibleFailure = (r: Row) =>
-    isAutomaticDeployment(r) && r.status === "failed" && r.commit !== null &&
+export const terminalOperation = (status: string) =>
+    ["succeeded", "failed", "cancelled", "interrupted"].includes(status);
+export const failureStatus = (status: string) =>
+    ["failed", "cancelled", "interrupted"].includes(status);
+export const eligibleFailure = (r: Row) =>
+    isAutomaticDeployment(r) && failureStatus(r.status) && r.commit !== null &&
     r.error_code !== "deployment.paused";
+/** One retry clock and limit for both environments; production can also block lasting failures. */
+export function automaticRetry(
+    attempts: number,
+    last: string,
+    now: string,
+): "commit_failed" | "backing_off" | null {
+    if (attempts >= 3) return "commit_failed";
+    return Date.parse(now) < Date.parse(last) + 600_000 * 2 ** (attempts - 1)
+        ? "backing_off"
+        : null;
+}
 const milliseconds = (t: string) => Date.parse(t);
 
 async function gateRead<T>(read: () => Promise<T>): Promise<T> {
@@ -388,9 +406,7 @@ export async function tick(
     }
     if (
         state.intent && receipt &&
-        ["succeeded", "failed", "cancelled", "interrupted"].includes(
-            receipt.status,
-        )
+        terminalOperation(receipt.status)
     ) {
         const intent = state.intent;
         const row = history.find((r) => r.id === receipt.result?.deployment_id);
@@ -527,7 +543,9 @@ export async function tick(
                         ...new Set([
                             ...state.blocked,
                             ...[...failures].filter(([, f]) =>
-                                f.lasting || f.attempts >= 3
+                                f.lasting ||
+                                automaticRetry(f.attempts, f.last, now) ===
+                                    "commit_failed"
                             )
                                 .map(([c]) => c),
                         ]),
@@ -649,9 +667,8 @@ export async function tick(
         const failure = failures.get(selected);
         if (
             failure &&
-            milliseconds(now) <
-                milliseconds(failure.last) +
-                    600_000 * 2 ** (failure.attempts - 1)
+            automaticRetry(failure.attempts, failure.last, now) ===
+                "backing_off"
         ) return "backing_off";
         // Ordinals never reset at a manual deploy; an old idempotency key must never be reused.
         const attempt = Math.max(

@@ -35,7 +35,9 @@ function fixture() {
             body: unknown;
             key?: string;
         }[] = [];
-    const history: Row[] = [], starts: string[] = [], checks: Check[] = [];
+    const history: (Omit<Row, "status"> & { status: string })[] = [],
+        starts: string[] = [],
+        checks: Check[] = [];
     const writes: { name: string; version: number }[] = [];
     const operationReads: number[] = [];
     const source = { head: B };
@@ -63,7 +65,7 @@ function fixture() {
         else if (path.includes("/deployment-source/checks?")) {
             data = { gate: instance.auto_deploy.gate, runs: checks };
         } else if (path.includes("/operations?")) {
-            data = holder && path.endsWith("queued")
+            data = holder && path.endsWith(operation.status)
                 ? [{ ...operation, target_type: "instance", target_id: 7 }]
                 : [];
         } else if (path === "/api/v1/routes/3" && method === "PATCH") {
@@ -144,6 +146,7 @@ function fixture() {
     return {
         http,
         ctx,
+        admissions,
         instance,
         listed,
         memory,
@@ -477,7 +480,13 @@ Deno.test("interrupted development deploys settle, back off and re-admit the hea
         error_code: "operation.native_failed",
         result: { deployment_id: 1 },
     });
-    f.history.push(failed(1));
+    f.history.push({
+        ...failed(1),
+        status: "interrupted",
+        commit: null,
+        failed_step: null,
+        error_code: "operation.native_failed",
+    });
     await f.run();
     assertEquals(f.memory.get("development-7")?.pending, null);
     assertEquals(f.memory.get("development-7")?.result, "failed");
@@ -563,7 +572,7 @@ Deno.test("a definite start failure without history uses the same retry backoff"
     }
 });
 
-Deno.test("ended failures settle while incomplete interrupted or cancelled receipts retain their hold", async () => {
+Deno.test("all ended failure receipts settle and share bounded accounting", async () => {
     for (
         const receipt of [
             {
@@ -627,17 +636,8 @@ Deno.test("ended failures settle while incomplete interrupted or cancelled recei
         await f.run();
         await f.run();
         assertEquals(f.starts.length, 1);
-        if (receipt.status === "failed") {
-            assertEquals(f.memory.get("development-7")?.pending, null);
-            assertEquals(f.memory.get("development-7")?.result, "backing_off");
-        } else {
-            assertEquals(
-                (f.memory.get("development-7")?.pending as {
-                    operation_id: number;
-                }).operation_id,
-                100,
-            );
-        }
+        assertEquals(f.memory.get("development-7")?.pending, null);
+        assertEquals(f.memory.get("development-7")?.result, "backing_off");
     }
 });
 
@@ -680,7 +680,7 @@ Deno.test("pending publication uses the normal Route root before dev deployment"
     assertEquals(f.requests.filter((r) => r.method === "PATCH").length, 1);
 });
 
-Deno.test("only a proven zero-effect admission fence clears a pending development intent", async () => {
+Deno.test("terminal cancellation settles even without admission-fence evidence", async () => {
     for (
         const receipt of [
             { attempts: 0, result: null },
@@ -699,12 +699,7 @@ Deno.test("only a proven zero-effect admission fence clears a pending developmen
             error_code: "operation.admission_fenced",
         });
         await f.run();
-        assertEquals(
-            f.memory.get("development-7")?.pending === null,
-            receipt.attempts === 0 &&
-                receipt.result?.admission_fenced === true &&
-                !("deployment_id" in receipt.result),
-        );
+        assertEquals(f.memory.get("development-7")?.pending, null);
         assertEquals(f.starts.length, 1);
     }
 });
@@ -954,28 +949,51 @@ Deno.test("recorded and no-history failures share one ordinal and manual reset",
     await f.run();
     f.operation.status = "failed";
     await f.run();
-    f.history.push(failed(1));
-    await f.run("2026-10-31T05:19:59.000Z");
+    await f.run("2026-10-31T05:09:59.000Z");
     assertEquals(f.starts.length, 1);
-    assertEquals(f.memory.get("development-7")?.result, "backing_off");
-    await f.run("2026-10-31T05:20:00.000Z");
+    f.operation.status = "queued";
+    await f.run("2026-10-31T05:10:00.000Z");
     assertEquals(f.starts.length, 2);
     f.operation.status = "failed";
-    await f.run("2026-10-31T05:20:00.000Z");
-    await f.run("2026-10-31T05:21:00.000Z");
+    f.operation.result = { deployment_id: 1 };
+    f.history.push({
+        ...failed(1),
+        commit: null,
+        started_at: "2026-10-31T05:10:00.000Z",
+        finished_at: "2026-10-31T05:10:00.000Z",
+    });
+    await f.run("2026-10-31T05:10:00.000Z");
+    await f.run("2026-10-31T05:29:59.000Z");
     assertEquals(f.starts.length, 2);
-    assertEquals(f.memory.get("development-7")?.result, "commit_failed");
-    f.history.push(failed(2, true));
-    await f.run("2026-10-31T05:22:00.000Z");
+    assertEquals(f.memory.get("development-7")?.result, "backing_off");
+    f.operation.status = "queued";
+    await f.run("2026-10-31T05:30:00.000Z");
     assertEquals(f.starts.length, 3);
+    f.operation.status = "failed";
+    f.operation.result = null;
+    await f.run("2026-10-31T05:30:00.000Z");
+    await f.run("2026-10-31T05:31:00.000Z");
+    assertEquals(f.starts.length, 3);
+    assertEquals(f.memory.get("development-7")?.result, "commit_failed");
+    f.history.push({ ...failed(2, true), commit: null });
+    await f.run("2026-10-31T05:32:00.000Z");
+    assertEquals(f.starts.length, 4);
 });
-Deno.test("late history replaces no-history failure evidence without double counting", async () => {
+Deno.test("late history replaces retained failure only once it carries the pinned SHA", async () => {
     const f = fixture();
     await f.run();
     f.operation.status = "failed";
     f.operation.result = { deployment_id: 1 };
     await f.run();
-    f.history.push(failed(1));
+    f.history.push({ ...failed(1), commit: null });
+    await f.run("2026-10-31T05:09:59.000Z");
+    assertEquals(f.starts.length, 1);
+    assertEquals(
+        (f.memory.get("development-7")?.unrecorded_failures as unknown[])
+            .length,
+        1,
+    );
+    f.history[0].commit = B;
     await f.run("2026-10-31T05:10:00.000Z");
     assertEquals(f.starts.length, 2);
     assertEquals(f.memory.get("development-7")?.unrecorded_failures, []);
@@ -1012,5 +1030,373 @@ for (const green of [true, false]) {
             green ? "started" : "gate_failed",
         );
         assertEquals(f.starts.length, green ? 1 : 0);
+    });
+}
+
+// InstanceDeployProjection -> InstanceDeploymentRecorder -> InstanceDeploymentData.
+// Null SHA variants are real retained container rows from before this fix.
+const matrixOutcomes = [
+    "success",
+    "failure",
+    "legacy-null-failure",
+    "start-refusal",
+    "queued-cancel",
+    "running-cancel",
+    "interruption",
+    "timeout",
+    "absent-admission",
+    "paused",
+    "replay",
+    "refused-before-admission",
+] as const;
+const matrixIntents = ["none", "id", "key", "stale-id", "stale-key"] as const;
+for (const outcome of matrixOutcomes) {
+    for (const intent of matrixIntents) {
+        if (
+            outcome === "refused-before-admission" &&
+            ["id", "stale-id"].includes(intent)
+        ) continue;
+        Deno.test(`matrix ${outcome} / ${intent}`, async () => {
+            const variants = ["timeout", "start-refusal"].includes(outcome)
+                ? ["none", "pinned"]
+                : ["interruption", "running-cancel"].includes(outcome)
+                ? ["null", "pinned"]
+                : [outcome === "legacy-null-failure" ? "null" : "pinned"];
+            for (const variant of variants) {
+                const f = fixture();
+                const stale = intent.startsWith("stale");
+                const noEffect = ["paused", "success"].includes(outcome);
+                const noRow = [
+                    "queued-cancel",
+                    "absent-admission",
+                    "refused-before-admission",
+                ].includes(outcome) ||
+                    ["timeout", "start-refusal"].includes(outcome) &&
+                        variant === "none";
+                const status = outcome === "success"
+                    ? "succeeded"
+                    : outcome === "interruption"
+                    ? "interrupted"
+                    : [
+                            "queued-cancel",
+                            "running-cancel",
+                            "absent-admission",
+                            "refused-before-admission",
+                        ].includes(outcome)
+                    ? "cancelled"
+                    : "failed";
+                const error = outcome === "paused"
+                    ? "deployment.paused"
+                    : outcome === "timeout"
+                    ? "operation.timed_out"
+                    : outcome === "start-refusal"
+                    ? "swamp.start_refused"
+                    : ["absent-admission", "refused-before-admission"].includes(
+                            outcome,
+                        )
+                    ? "operation.admission_fenced"
+                    : outcome === "queued-cancel" || outcome === "success"
+                    ? null
+                    : "operation.native_failed";
+                const settle = (index: number, at: string) => {
+                    const key = `${
+                        stale ? "old-checkout" : "dev.deploy"
+                    }.${index}`;
+                    const rowId = noRow ? null : index + 1;
+                    Object.assign(f.operation, {
+                        id: 100 + index,
+                        status,
+                        error_code: error,
+                        attempts: [
+                                "queued-cancel",
+                                "absent-admission",
+                                "refused-before-admission",
+                                "start-refusal",
+                            ].includes(outcome)
+                            ? 0
+                            : 1,
+                        result: error === "operation.admission_fenced"
+                            ? { admission_fenced: true }
+                            : rowId === null
+                            ? null
+                            : { deployment_id: rowId },
+                    });
+                    if (rowId !== null) {
+                        f.history.push({
+                            id: rowId,
+                            kind: "deploy",
+                            status: status === "cancelled" ? "failed" : status,
+                            commit: variant === "null" ? null : B,
+                            triggered_by: "swamp:auto-deploy",
+                            caller_node_id: 9,
+                            failed_step:
+                                ["failure", "legacy-null-failure", "replay"]
+                                        .includes(outcome)
+                                    ? "Check out in the container"
+                                    : null,
+                            error_code: outcome === "running-cancel"
+                                ? "deployment.cancelled"
+                                : error,
+                            started_at: at,
+                            finished_at: at,
+                        });
+                    }
+                    const state = f.memory.get("development-7") ?? {};
+                    state.pending = intent === "none" ? null : {
+                        commit: B,
+                        key,
+                        manual_after: 0,
+                        operation_id: intent.endsWith("id")
+                            ? f.operation.id
+                            : null,
+                    };
+                    // No pending means settlement already durably saved the admission pin.
+                    if (
+                        intent === "none" && !noEffect &&
+                        (noRow || variant === "null")
+                    ) {
+                        const retained =
+                            (state.unrecorded_failures ?? []) as unknown[];
+                        retained.push({
+                            key,
+                            commit: B,
+                            deployment_id: rowId,
+                            manual_after: 0,
+                            finished_at: at,
+                        });
+                        state.unrecorded_failures = retained;
+                    }
+                    f.memory.set("development-7", state);
+                };
+                if (outcome === "success" && !stale) f.instance.seed_commit = B;
+                const times = [
+                    now,
+                    "2026-10-31T05:10:00.000Z",
+                    "2026-10-31T05:30:00.000Z",
+                ];
+                if (
+                    outcome === "refused-before-admission" && intent === "none"
+                ) {
+                    await f.run();
+                    assertEquals(f.starts.length, 1);
+                } else if (noEffect) {
+                    settle(0, now);
+                    await f.run();
+                    assertEquals(
+                        f.memory.get("development-7")?.unrecorded_failures,
+                        [],
+                    );
+                    assertEquals(
+                        f.starts.length,
+                        outcome === "success" && !stale ? 0 : 1,
+                    );
+                } else {
+                    for (const [index, at] of times.entries()) {
+                        settle(index, at);
+                        await f.run(at);
+                        await f.run(at);
+                        assertEquals(
+                            f.memory.get("development-7")?.pending,
+                            null,
+                        );
+                        assertEquals(f.starts.length, index);
+                        assertEquals(
+                            f.memory.get("development-7")?.result,
+                            index === 2 ? "commit_failed" : "backing_off",
+                        );
+                        if (index < 2) {
+                            await f.run(
+                                new Date(Date.parse(times[index + 1]) - 1)
+                                    .toISOString(),
+                            );
+                            assertEquals(f.starts.length, index);
+                            f.operation.status = "queued";
+                            await f.run(times[index + 1]);
+                            assertEquals(f.starts.length, index + 1);
+                        }
+                    }
+                    await f.run("2026-11-01T05:00:00.000Z");
+                    assertEquals(f.starts.length, 2);
+                }
+                const before = f.starts.length;
+                f.source.head = "c".repeat(40);
+                f.instance.auto_deploy.gate = "Required checks";
+                f.checks.push({
+                    name: "Required checks",
+                    head_sha: f.source.head,
+                    app: "github-actions",
+                    status: "completed",
+                    conclusion: "success",
+                });
+                settle(3, "2026-11-01T05:01:00.000Z");
+                await f.run("2026-11-01T05:01:00.000Z");
+                assertEquals(f.starts.length, before + 1);
+                assertEquals(f.starts.at(-1)?.endsWith(f.source.head), true);
+            }
+        });
+    }
+}
+
+for (const intent of ["id", "key"]) {
+    Deno.test(`matrix reconciled-success / ${intent}`, async () => {
+        const f = fixture();
+        f.memory.set("development-7", {
+            pending: {
+                commit: B,
+                key: "existing",
+                operation_id: intent === "id" ? 100 : null,
+                manual_after: 0,
+            },
+        });
+        const reconcile = () => {
+            f.instance.seed_commit = B;
+            f.history.push({
+                ...failed(1),
+                status: "succeeded",
+                error_code: null,
+                failed_step: null,
+            });
+            return Promise.resolve({
+                ...f.operation,
+                status: "succeeded",
+                result: { deployment_id: 1 },
+            });
+        };
+        f.admissions.operation = reconcile;
+        f.admissions.receipt = reconcile;
+        await f.run();
+        assertEquals(f.starts, []);
+        assertEquals(f.memory.get("development-7")?.pending, null);
+        assertEquals(f.memory.get("development-7")?.result, "up_to_date");
+    });
+}
+for (
+    const status of ["succeeded", "failed", "cancelled", "interrupted"] as const
+) {
+    Deno.test(`matrix original-command ${status} / stale-key`, async () => {
+        const f = fixture();
+        f.memory.set("development-7", {
+            pending: {
+                commit: A,
+                key: "old-generic-key",
+                operation_id: null,
+                manual_after: 0,
+            },
+        });
+        const oldOperation = {
+            ...f.operation,
+            status,
+            attempts: status === "cancelled" ? 0 : 1,
+            input: { commit: A, caller_node_id: 9 },
+            target_type: "instance",
+            target_id: 7,
+            caller_node_id: 9,
+            error_code: status === "cancelled" || status === "succeeded"
+                ? null
+                : "operation.native_failed",
+            result: status === "cancelled" ? null : { deployment_id: 1 },
+        };
+        if (status !== "cancelled") {
+            f.history.push({
+                ...failed(1),
+                status,
+                commit: status === "succeeded" ? A : null,
+                error_code: oldOperation.error_code,
+                failed_step: null,
+            });
+        }
+        const paths: string[] = [];
+        const base = "/api/v1/instances/7/deploy/automatic";
+        const client = new GatewayClient((method, path, body, key) => {
+            if (!path.includes("/deploy/automatic")) {
+                return f.http(method, path, body, key);
+            }
+            paths.push(path);
+            if (method === "POST" && !path.endsWith("/resolve")) {
+                assertEquals(path, base + "/development");
+                return Promise.resolve({
+                    status: 202,
+                    body: {
+                        data: {
+                            ...oldOperation,
+                            id: 200,
+                            status: "queued",
+                            error_code: null,
+                            input: { commit: B, caller_node_id: 9 },
+                            result: null,
+                        },
+                    },
+                });
+            }
+            if (path.includes("/development/")) {
+                return Promise.resolve({
+                    status: 409,
+                    body: {
+                        error: {
+                            code: "operation.idempotency_conflict",
+                            message: "Original command differs",
+                        },
+                    },
+                });
+            }
+            assertEquals(
+                path,
+                base + `/receipt?request_key=old-generic-key&commit=${A}`,
+            );
+            return Promise.resolve({
+                status: 200,
+                body: {
+                    data: {
+                        found: true,
+                        request_key: "old-generic-key",
+                        operation: oldOperation,
+                        deployment: f.history[0] ?? null,
+                    },
+                },
+            });
+        });
+        await client.development(f.ctx, now, [7], () => {});
+        assertEquals(paths.length, 3);
+        assertEquals(f.memory.get("development-7")?.result, "started");
+        assertEquals(
+            (f.memory.get("development-7")?.pending as { commit: string })
+                .commit,
+            B,
+        );
+    });
+}
+
+for (const intent of matrixIntents) {
+    Deno.test(`matrix cancellation-request / ${intent}`, async () => {
+        const f = fixture();
+        f.operation.status = "running";
+        f.holder();
+        if (intent !== "none") {
+            f.memory.set("development-7", {
+                pending: {
+                    commit: B,
+                    key: "running-key",
+                    operation_id: intent.endsWith("id") ? 100 : null,
+                    manual_after: 0,
+                },
+            });
+        }
+        f.source.head = "c".repeat(40);
+        await f.run();
+        assertEquals(f.starts, []);
+        assertEquals(
+            f.memory.get("development-7")?.result,
+            intent === "none" ? "busy" : "deploying",
+        );
+        f.operation.status = "cancelled";
+        f.operation.result = { deployment_id: 1 };
+        f.history.push({
+            ...failed(1),
+            error_code: "deployment.cancelled",
+            failed_step: null,
+        });
+        await f.run();
+        assertEquals(f.starts.length, 1);
+        assertEquals(f.starts[0].endsWith(f.source.head), true);
     });
 }

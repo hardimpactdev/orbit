@@ -1,8 +1,10 @@
 import { z } from "npm:zod@4.4.3";
 import type { Http } from "./gateway.ts";
 import {
+    automaticRetry,
     type Check,
-    isAdmissionFence,
+    eligibleFailure,
+    failureStatus,
     isAutomaticDeployment,
     mergeCheckResult,
     type Operation,
@@ -10,6 +12,7 @@ import {
     type PolicyEvent,
     RowSchema,
     sha,
+    terminalOperation,
 } from "./policy.ts";
 
 export const DevelopmentState = z.object({
@@ -71,8 +74,6 @@ const Instance = z.object({
         history_version: z.string(),
     }),
 });
-const terminal = (status: string) =>
-    ["succeeded", "failed", "cancelled", "interrupted"].includes(status);
 
 /** Development policy uses public records and normal keyed admissions; it executes no Node action. */
 export async function tickDevelopment(
@@ -126,6 +127,26 @@ export async function tickDevelopment(
             listed.auto_deploy.policy_owner !== "swamp"
         ) continue;
         try {
+            const id = listed.id, name = `development-${id}`;
+            const state = DevelopmentState.parse(
+                await ctx.readResource(name) ?? {},
+            );
+            // Reading a receipt can reconcile a native terminal and change the seed/history.
+            // Observe the Instance only after that read, as production does.
+            const pendingOperation = state.pending
+                ? state.pending.operation_id === null
+                    ? await admissions.receipt(
+                        id,
+                        state.pending.commit,
+                        state.pending.key,
+                    ) ??
+                        await admissions.resolve(
+                            id,
+                            state.pending.commit,
+                            state.pending.key,
+                        )
+                    : await admissions.operation(state.pending.operation_id)
+                : null;
             const record = await request(
                 "GET",
                 `/api/v1/instances/${listed.id}`,
@@ -138,10 +159,6 @@ export async function tickDevelopment(
                 current.auto_deploy.policy_owner !== "swamp"
             ) continue;
             const instance = Instance.parse(record);
-            const id = instance.id, name = `development-${id}`;
-            const state = DevelopmentState.parse(
-                await ctx.readResource(name) ?? {},
-            );
             let saved = JSON.stringify(state);
             const save = async () => {
                 if (JSON.stringify(state) === saved) return;
@@ -221,11 +238,13 @@ export async function tickDevelopment(
                     r.kind === "deploy" && !isAutomaticDeployment(r)
                 ).map((r) => r.id),
             );
-            // A history row replaces its retained evidence; manual work resets both sources.
+            // Only history carrying the admission SHA replaces retained failure evidence.
+            // A terminal row with a null SHA cannot account for that commit.
             state.unrecorded_failures = state.unrecorded_failures.filter((f) =>
                 f.manual_after >= manual &&
                 !history.some((r) =>
-                    r.id === f.deployment_id && r.status !== "running"
+                    r.id === f.deployment_id && r.status !== "running" &&
+                    r.commit === f.commit && isAutomaticDeployment(r)
                 )
             );
             const recordFailure = (
@@ -246,46 +265,21 @@ export async function tickDevelopment(
             };
             if (state.pending) {
                 const intent = state.pending;
-                const operation = intent.operation_id === null
-                    ? await admissions.receipt(id, intent.commit, intent.key) ??
-                        await admissions.resolve(id, intent.commit, intent.key)
-                    : await admissions.operation(intent.operation_id);
-                if (!terminal(operation.status)) {
+                const operation = pendingOperation!;
+                intent.operation_id = operation.id;
+                if (!terminalOperation(operation.status)) {
                     await publish("deploying", operation.id);
                     continue;
                 }
-                const succeededManual = Math.max(
-                    0,
-                    ...history.filter((r) =>
-                        r.kind === "deploy" && r.status === "succeeded" &&
-                        !isAutomaticDeployment(r)
-                    ).map((r) => r.id),
+                const historyEvidence = history.some((r) =>
+                    r.id === operation.result?.deployment_id &&
+                    r.status !== "running" && r.commit === intent.commit &&
+                    isAutomaticDeployment(r)
                 );
-                const historyVisible =
-                    typeof operation.result?.deployment_id === "number" &&
-                    history.some((r) =>
-                        r.id === operation.result?.deployment_id &&
-                        r.status !== "running"
-                    );
-                const interruptedWithoutDeployment =
-                    operation.status === "interrupted" &&
-                    typeof operation.result?.deployment_id !== "number";
                 if (
-                    !["succeeded", "failed"].includes(operation.status) &&
-                    !historyVisible &&
-                    !interruptedWithoutDeployment &&
-                    !isAdmissionFence(operation) &&
-                    succeededManual <= intent.manual_after
-                ) {
-                    await publish("failed", operation.id);
-                    continue;
-                }
-                if (
-                    !historyVisible &&
+                    !historyEvidence && failureStatus(operation.status) &&
                     operation.error_code !== "deployment.paused" &&
-                    (operation.status === "failed" ||
-                        interruptedWithoutDeployment ||
-                        isAdmissionFence(operation))
+                    intent.manual_after >= manual
                 ) {
                     recordFailure(
                         intent,
@@ -297,7 +291,10 @@ export async function tickDevelopment(
                 if (operation.status !== "succeeded") {
                     await publish("failed", operation.id, null, intent.commit);
                     // Ended failure never permits an immediate same-head effect.
-                    if (intent.commit === head) continue;
+                    if (
+                        intent.commit === head &&
+                        operation.error_code !== "deployment.paused"
+                    ) continue;
                 } else if (instance.seed_commit === intent.commit) {
                     await publish(
                         "up_to_date",
@@ -370,10 +367,10 @@ export async function tickDevelopment(
                     await save();
                 } else {
                     await publish(
-                        terminal(operation.status) ? "failed" : "busy",
+                        terminalOperation(operation.status) ? "failed" : "busy",
                         operation.id,
                     );
-                    if (terminal(operation.status)) {
+                    if (terminalOperation(operation.status)) {
                         state.repair = null;
                         await save();
                     }
@@ -403,27 +400,17 @@ export async function tickDevelopment(
             }
             const failures = [
                 ...history.filter((r) =>
-                    r.id > manual && r.kind === "deploy" &&
-                    isAutomaticDeployment(r) &&
-                    r.commit === head && r.status === "failed" &&
-                    r.error_code !== "deployment.paused"
+                    r.id > manual && eligibleFailure(r) && r.commit === head
                 ).map((r) => ({ finished_at: r.finished_at ?? r.started_at })),
                 ...state.unrecorded_failures.filter((f) => f.commit === head),
             ];
-            if (failures.length >= 3) {
-                await publish("commit_failed");
-                continue;
-            }
             const last = failures.sort((a, b) =>
                 Date.parse(b.finished_at) - Date.parse(a.finished_at)
             )[0];
-            if (
-                last &&
-                Date.parse(now) -
-                            Date.parse(last.finished_at) <
-                    600000 * 2 ** (failures.length - 1)
-            ) {
-                await publish("backing_off");
+            const retry = last &&
+                automaticRetry(failures.length, last.finished_at, now);
+            if (retry) {
+                await publish(retry);
                 continue;
             }
             state.pending = {

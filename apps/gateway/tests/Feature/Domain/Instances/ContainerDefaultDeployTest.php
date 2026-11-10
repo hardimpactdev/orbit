@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Actions\Operations\CancelOperationAction;
+use App\Actions\Operations\ExpireOperationAction;
+use App\Actions\Operations\FailNativeOperationAction;
+use App\Domain\Instances\Deployment\AutomaticDeployAlerts;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
+use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
@@ -16,10 +21,15 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Releases\ReleaseAlert;
+use App\Domain\Releases\ReleaseAlertNotifier;
+use App\Domain\Releases\ReleaseAlertReceipt;
+use App\Domain\Releases\ReleaseAlertStep;
 use App\Domain\Routes\NativeRouteConvergenceProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -409,4 +419,141 @@ it('records the seed commit and a running container after a deployment passes, a
         ->and($instance->refresh()->seed_commit)->toBeNull()
         ->and($instance->auto_deploy_state['result'])->toBe('up_to_date')
         ->and($instance->deployments()->latest('id')->firstOrFail()->commit)->toBe($commit);
+});
+
+it('records the admitted SHA in terminal development failure history without changing the seed', function (string $status, bool $pinned, bool $container): void {
+    $instance = deployDefault(container: $container);
+    $instance->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $seed = str_repeat('a', 40);
+    $commit = str_repeat('b', 40);
+    if ($container) {
+        $instance->runtime()->update(['seed_commit' => $seed]);
+    } else {
+        $instance->update(['seed_commit' => $seed]);
+    }
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'triggered_by' => 'swamp:auto-deploy', 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance),
+            ...($pinned ? ['commit' => $commit] : [])], 'state' => ['swamp_run_id' => 'terminal-run']]);
+
+    if ($status === 'interrupted') {
+        app(FailNativeOperationAction::class)->execute($operation, 'terminal-run', OperationStatus::Interrupted);
+    } else {
+        app(InstanceDeployProjection::class)->apply($operation, ['status' => $status, 'run_id' => 'terminal-run',
+            'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => []]);
+    }
+
+    $row = $instance->deployments()->firstOrFail();
+    expect($row->status)->toBe($status === 'cancelled' ? 'failed' : $status)
+        ->and($row->commit)->toBe($pinned ? $commit : null)
+        ->and($row->error_code)->toBe($status === 'cancelled' ? 'deployment.cancelled' : 'operation.native_failed')
+        ->and($operation->refresh()->result['deployment_id'])->toBe($row->id)
+        ->and($container ? $instance->runtime()->firstOrFail()->seed_commit : $instance->fresh()->seed_commit)->toBe($seed);
+    $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip])
+        ->getJson('/api/v1/instances/'.$instance->id.'/deployments')->assertOk()
+        ->assertJsonPath('data.0.status', $row->status)->assertJsonPath('data.0.commit', $pinned ? $commit : null)
+        ->assertJsonPath('data.0.triggered_by', 'swamp:auto-deploy');
+})->with(['failed' => 'failed', 'cancelled' => 'cancelled', 'interrupted' => 'interrupted'])
+    ->with(['pinned' => true, 'unpinned' => false])->with(['container' => true, 'checkout' => false]);
+
+it('settles queued development cancellation without inventing deployment history', function (): void {
+    Queue::fake();
+    deployVault();
+    $instance = deployDefault(container: true);
+    $instance->runtime()->update(['seed_commit' => str_repeat('a', 40)]);
+    $instance->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
+    $path = '/api/v1/instances/'.$instance->id.'/deploy/automatic/development';
+    $commit = str_repeat('b', 40);
+    $id = $this->withHeader('Idempotency-Key', 'matrix.cancel')->postJson($path, ['commit' => $commit])->assertAccepted()->json('data.id');
+
+    $operation = app(CancelOperationAction::class)->execute(Operation::query()->findOrFail($id));
+
+    expect($operation->status)->toBe(OperationStatus::Cancelled)->and($operation->attempts)->toBe(0)
+        ->and($operation->result)->toBeNull()->and($operation->error_code)->toBeNull()->and($operation->lock_key)->toBeNull();
+    $this->getJson('/api/v1/instances/'.$instance->id.'/deployments')->assertOk()->assertJsonPath('data', []);
+    $this->withHeader('Idempotency-Key', 'matrix.cancel')->postJson($path, ['commit' => $commit])->assertAccepted()
+        ->assertJsonPath('data.id', $id)->assertJsonPath('data.status', 'cancelled');
+    expect(Operation::query()->count())->toBe(1);
+});
+
+it('keeps development terminal history and its receipt in one attempt', function (bool $started, bool $timeout): void {
+    $this->freezeTime();
+    $instance = deployDefault(container: true);
+    $instance->runtime()->update(['seed_commit' => str_repeat('a', 40)]);
+    $commit = str_repeat('b', 40);
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'started_at' => now()->subDay(), 'triggered_by' => 'swamp:auto-deploy',
+        'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance), 'commit' => $commit],
+        'state' => [], 'attempts' => 1, 'lock_key' => OperationStore::lockKey('instance', $instance->id)]);
+    if ($started) {
+        $row = app(InstanceDeploymentRecorder::class)->start($instance, 'swamp:auto-deploy');
+        $operation->update(['state' => ['deployment_id' => $row->id]]);
+    }
+
+    if ($timeout) {
+        $expired = app(ExpireOperationAction::class)->execute($operation->refresh());
+    } else {
+        app(StartSwampRun::class)->refuse($operation->refresh(), new ResourceOperationException('swamp.start_refused', 'Refused', 503));
+        $expired = $operation->refresh();
+    }
+
+    expect($expired->status)->toBe(OperationStatus::Failed)->and($expired->error_code)->toBe($timeout ? 'operation.timed_out' : 'swamp.start_refused');
+    if ($started) {
+        $row = $instance->deployments()->firstOrFail();
+        expect($row->status)->toBe('failed')->and($row->commit)->toBe($commit)->and($row->error_code)->toBe($timeout ? 'operation.timed_out' : 'swamp.start_refused')
+            ->and($expired->fresh()->result['deployment_id'] ?? null)->toBe($row->id);
+    } else {
+        expect($instance->deployments()->count())->toBe(0)->and($expired->result['deployment_id'] ?? null)->toBeNull();
+    }
+    if ($timeout) {
+        expect($expired->fresh()->lock_key)->not->toBeNull();
+        $this->travel(61)->minutes();
+        expect(app(ExpireOperationAction::class)->releaseStaleHolds())->toBe(1)
+            ->and($expired->fresh()->lock_key)->toBeNull();
+    }
+})->with(['before history' => false, 'with running history' => true])->with(['timeout' => true, 'start refusal' => false]);
+
+it('replays one development admission while queued, while running and after success', function (): void {
+    Queue::fake();
+    deployVault();
+    $instance = deployDefault(container: true);
+    $instance->runtime()->update(['seed_commit' => str_repeat('a', 40)]);
+    $instance->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip])->withHeader('Idempotency-Key', 'matrix.replay');
+    $path = '/api/v1/instances/'.$instance->id.'/deploy/automatic/development';
+    $commit = str_repeat('b', 40);
+    $id = $this->postJson($path, ['commit' => $commit])->assertAccepted()->json('data.id');
+    $this->postJson($path, ['commit' => $commit])->assertAccepted()->assertJsonPath('data.id', $id)->assertJsonPath('data.status', 'queued');
+    $operation = Operation::query()->findOrFail($id);
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'replay-run']]);
+    $this->postJson($path, ['commit' => $commit])->assertAccepted()->assertJsonPath('data.id', $id)->assertJsonPath('data.status', 'running');
+
+    app(InstanceDeployProjection::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'replay-run',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [
+            'steps' => [ContainerDeployOutcome::ResultStep => ['stdout' => json_encode(['commit' => $commit], JSON_THROW_ON_ERROR)]], 'summary' => ['failed_steps' => []]]]);
+
+    $this->postJson($path, ['commit' => $commit])->assertAccepted()->assertJsonPath('data.id', $id)->assertJsonPath('data.status', 'succeeded');
+    expect(Operation::query()->count())->toBe(1)->and($instance->deployments()->count())->toBe(1);
+});
+
+it('leaves retry classification to policy when alerting an interrupted deployment', function (): void {
+    $instance = deployDefault(container: false);
+    $deployment = $instance->deployments()->create(['kind' => 'deploy', 'status' => 'interrupted', 'commit' => str_repeat('b', 40),
+        'triggered_by' => 'swamp:auto-deploy', 'started_at' => now(), 'finished_at' => now(), 'error_code' => 'operation.native_failed']);
+    $notifier = new class implements ReleaseAlertNotifier
+    {
+        public ?string $summary = null;
+
+        public function alert(ReleaseAlert $alert): ReleaseAlertReceipt
+        {
+            $this->summary = $alert->summary;
+
+            return new ReleaseAlertReceipt('test', null, ReleaseAlertStep::done(), ReleaseAlertStep::done());
+        }
+    };
+
+    (new AutomaticDeployAlerts($notifier))->failed($instance, $deployment);
+
+    expect($notifier->summary)->toContain('Automatic retries follow the deployment retry policy.')
+        ->not->toContain('does not deploy automatically again');
 });

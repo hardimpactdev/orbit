@@ -174,15 +174,35 @@ export class GatewayClient implements Gateway {
                 checks: (id, commit, name) => this.checks(id, commit, name),
                 deploy: (id, commit, key) => this.deploy(id, commit, key, true),
                 receipt: (id, commit, key) =>
-                    this.receipt(id, commit, key, true),
+                    this.reconcileDevelopmentAdmission(
+                        (development) =>
+                            this.receipt(id, commit, key, development),
+                    ),
                 resolve: (id, commit, key) =>
-                    this.resolve(id, commit, key, true),
+                    this.reconcileDevelopmentAdmission(
+                        (development) =>
+                            this.resolve(id, commit, key, development),
+                    ),
                 operation: (id) => this.operation(id),
             },
             now,
             emit,
             filter,
         );
+    }
+    /** Recover an existing request under its original command identity; never start through it. */
+    private async reconcileDevelopmentAdmission<T>(
+        read: (development: boolean) => Promise<T>,
+    ): Promise<T> {
+        try {
+            return await read(true);
+        } catch (error) {
+            if (
+                !(error instanceof PolicyError) ||
+                error.code !== "operation.idempotency_conflict"
+            ) throw error;
+            return await read(false);
+        }
     }
     async discover(filter: number[] = []): Promise<number[]> {
         // Both list endpoints return complete arrays, without pagination.

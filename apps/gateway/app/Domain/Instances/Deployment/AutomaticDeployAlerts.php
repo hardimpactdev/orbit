@@ -70,9 +70,7 @@ final readonly class AutomaticDeployAlerts
             $instance->id,
             $deployment->failed_step ?? 'unknown',
             $deployment->error_code ?? 'unknown',
-            AutomaticDeployFailure::isTransient($deployment)
-                ? 'Automatic retries follow the deployment retry policy.'
-                : 'The commit does not deploy automatically again until a new commit or a manual deployment.',
+            'Automatic retries follow the deployment retry policy.',
         ));
     }
 

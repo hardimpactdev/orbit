@@ -538,8 +538,13 @@ Deno.test("development and production entry points never discover each other's t
     const resources = new Map<string, Record<string, unknown>>();
     const context = {
         globalArgs: { gatewayUrl: "https://gateway.test", caFile: "/tmp/ca" },
-        readResource: (name: string) => Promise.resolve(resources.get(name) ?? null),
-        writeResource: (_spec: string, name: string, value: Record<string, unknown>) => {
+        readResource: (name: string) =>
+            Promise.resolve(resources.get(name) ?? null),
+        writeResource: (
+            _spec: string,
+            name: string,
+            value: Record<string, unknown>,
+        ) => {
             resources.set(name, value);
             return Promise.resolve({ name });
         },
@@ -549,6 +554,45 @@ Deno.test("development and production entry points never discover each other's t
     assertEquals(requests, ["/api/v1/instances"]);
     requests.length = 0;
     await behavior.methods.tick.execute({}, context);
-    assertEquals(requests, ["/api/v1/nodes", "/api/v1/instances?auto_deploy=true"]);
-    await assertRejects(async () => await behavior.methods.development.execute({ instances: [] }, context));
+    assertEquals(requests, [
+        "/api/v1/nodes",
+        "/api/v1/instances?auto_deploy=true",
+    ]);
+    await assertRejects(async () =>
+        await behavior.methods.development.execute({ instances: [] }, context)
+    );
+});
+
+Deno.test("production interruption history uses the shared ten, twenty, three retry rule", async () => {
+    const f = new PolicyFixture();
+    f.gateway.observation.gate = null;
+    for (const count of [1, 2, 3]) {
+        f.gateway.row({
+            status: "interrupted",
+            commit: B,
+            triggered_by: "swamp:auto-deploy",
+            caller_node_id: 9,
+            failed_step: null,
+            error_code: "operation.native_failed",
+        });
+        assertEquals(
+            await f.tick(),
+            count === 3 ? "commit_failed" : "backing_off",
+        );
+        if (count < 3) {
+            f.advance(count === 1 ? 9 : 19);
+            assertEquals(await f.tick(), "backing_off");
+            f.advance(1);
+            assertEquals(await f.tick(), "started");
+            // The next fixture row is that admitted Operation's terminal history.
+            const op = f.gateway.observation.holder!;
+            op.status = "interrupted";
+            op.result = {
+                deployment_id: f.gateway.observation.history.at(-1)!.id + 1,
+            };
+            f.gateway.observation.holder = null;
+        }
+    }
+    f.gateway.chain([A, B, "c".repeat(40)]);
+    assertEquals(await f.tick(), "started");
 });

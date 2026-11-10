@@ -309,6 +309,8 @@ orbit gateway:release:rollback <id>
 
 Rollback needs the target commit's verified agent delivery and a valid web build. Migrations must use expand and contract so the retained code can use the current database. Rollback does not restore data. If you need to restore a snapshot, follow [Recover a failed update](#recover-a-failed-update). A successful rollback pauses automatic releases with reason `rollback`.
 
+Before a code rollback past the development eligibility fix, [stop development ticks](/reference/deployments#automatic-development-defaults) and drain queued work; the migration rollback alone does not restore the old eligibility.
+
 ### Roll back without Swamp
 
 When Swamp or the Gateway cannot run `gateway:release:rollback`, run the rollback script on the Gateway Node:
