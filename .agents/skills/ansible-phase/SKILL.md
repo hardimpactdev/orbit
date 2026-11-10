@@ -142,4 +142,4 @@ A Process move disables the source units before copying. Render container units 
 
 A retirement preflight is an early warning, not a deletion barrier. Retain the whole old checkout with a same-filesystem rename so tag-only commits, expired stash reflogs, nested repositories and worktrees added after the final listing keep their Git metadata. Never infer that recursive deletion is safe from a path match or a worktree listing.
 
-A migration overlay archive omits unchanged tracked symlinks: they arrive in the branch bundle. Plan links from the checkout before downtime and apply absolute-link rewrites after both sources reach the workspace. Never inspect dependency contents or change source links.
+A migration overlay archive omits unchanged tracked symlinks: they arrive in the branch bundle. Use the checkout scan only for early refusal. Derive and apply rewrites inside the container from the exact copied tree after the bundle and overlay, mapping old-checkout targets without reading the host. This also keeps non-UTF-8 names out of Incus JSON arguments. Check dependency package links without entering installed package trees; never change source links.
