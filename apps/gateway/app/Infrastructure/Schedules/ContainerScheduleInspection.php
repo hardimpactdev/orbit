@@ -74,8 +74,11 @@ final readonly class ContainerScheduleInspection
                     $value = ValidatedData::object(json_decode(app(SwampVaultExecutionCopy::class)->readSecret('orbit-control-inputs', $key), true, flags: JSON_THROW_ON_ERROR));
 
                     $output = ValidatedData::string($value['output']);
+                    if (strlen($output) > LogReadLimit::Bytes) {
+                        $this->unavailable();
+                    }
 
-                    return new ScheduleLogsData(LogReadLimit::journalInTimeOrder($output), strlen($output) >= LogReadLimit::Bytes);
+                    return new ScheduleLogsData($output, ($value['truncated'] ?? false) === true);
                 }
             }
             $this->unavailable();

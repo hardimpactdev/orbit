@@ -130,6 +130,9 @@ final readonly class MigrateSchedules
             $tokens[] = ValidatedData::string($token[1] ?? $token[2] ?? $token[3]);
         }
         $executable = $tokens[0] ?? '';
+        if (preg_match('/\A[A-Za-z_][A-Za-z0-9_]*=/', $executable) === 1) {
+            $this->refuse($schedule, 'command_unsupported', 'its command uses an assignment prefix rather than one executable');
+        }
         if (! str_contains($executable, '/') && ! in_array($executable, ['php', 'node', 'bun', 'vp', 'composer', 'git', 'true', 'false', 'echo', 'printf'], true)) {
             $this->refuse($schedule, 'command_unsupported', 'its bare executable is not supplied by the container runtime');
         }
@@ -145,15 +148,24 @@ final readonly class MigrateSchedules
                 $this->refuse($schedule, 'command_unsupported', 'its command uses inline evaluation or executable configuration');
             }
         }
+        $scriptIndex = null;
+        if (in_array($executable, ['php', 'node', 'bun'], true)) {
+            $scriptIndex = ($tokens[1] ?? null) === '--' ? 2 : 1;
+            $script = $tokens[$scriptIndex] ?? '';
+            if ($script === '' || str_starts_with($script, '-') || str_contains($script, '=')
+                || ($executable === 'bun' && ! str_contains($script, '/'))) {
+                $this->refuse($schedule, 'command_unsupported', 'its interpreter needs a direct script operand; options and ambiguous subcommands cannot be mapped');
+            }
+        }
         $paths = [];
-        foreach ($tokens as $token) {
-            $value = str_contains($token, '=') ? substr($token, strpos($token, '=') + 1) : $token;
+        foreach ($tokens as $index => $token) {
+            $value = $index !== 0 && str_contains($token, '=') ? substr($token, strpos($token, '=') + 1) : $token;
             if (str_contains($value, '/') && preg_match('~[:,=]~', $value) === 1) {
                 $this->refuse($schedule, 'command_unsupported', 'its command path must be one literal workspace path');
             }
             if (str_starts_with($value, '/')) {
                 $paths[] = $value;
-            } elseif (str_contains($value, '/') || $value === 'artisan' || preg_match('~^[^\s:]+\.(?:php|[cm]?js|ts|sh|py)$~', $value) === 1) {
+            } elseif ($index === $scriptIndex || str_contains($value, '/') || $value === 'artisan' || preg_match('~^[^\s:]+\.(?:php|[cm]?js|ts|sh|py)$~', $value) === 1) {
                 if (str_contains($value, ':') || ! $this->inside($directory.'/'.$value, $checkout)) {
                     $this->refuse($schedule, 'command_unsupported', 'its command path cannot be resolved inside the checkout');
                 }

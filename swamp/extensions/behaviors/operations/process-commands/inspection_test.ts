@@ -8,6 +8,7 @@ Deno.test("inspection publishes journal bytes only through native sensitive outp
     const value = JSON.stringify({
         state: "active",
         output: "private journal token",
+        truncated: true,
     });
     const writes: { spec: string; name: string; data: unknown }[] = [];
     try {

@@ -41,10 +41,12 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
 
     public function refused(Operation $operation): void
     {
+        Instance::query()->lockForUpdate()->findOrFail($operation->target_id);
         // A queued start that never reached Swamp owns no Node effects. A retry keeps an earlier failed restore's reservation.
         if (($operation->input['had_runtime_reservation'] ?? false) !== true) {
             Instance::query()->findOrFail($operation->target_id)->runtime()->where('operation_id', $operation->id)->delete();
         }
+        app(DeferredMigrationScheduleRuns::class)->release($operation);
     }
 
     public function input(Operation $operation): array
@@ -213,7 +215,12 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                 ]]]);
             }
 
-            return $this->direct->project($operation, $data, $result);
+            $projected = $this->direct->project($operation, $data, $result);
+            if ($projected->status->terminal()) {
+                app(DeferredMigrationScheduleRuns::class)->release($projected);
+            }
+
+            return $projected;
         });
     }
 

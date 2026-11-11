@@ -5,7 +5,8 @@ export const InspectionArgs = z.object({
     request: z.string().uuid(),
 }).strict();
 export const Inspection = z.object({
-    value: z.string().max(8 * 1024 * 1024).meta({
+    // A byte-bounded journal can expand sixfold inside its private JSON string.
+    value: z.string().max(6 * 4 * 1024 * 1024 + 1024).meta({
         sensitive: true,
         vaultName: "orbit-control-inputs",
     }),
@@ -33,7 +34,7 @@ export async function storeInspection(
 ) {
     const input = InspectionArgs.parse(args);
     const value = await Deno.readTextFile(input.directory + "/result.json");
-    const observed = z.object({ state: z.string().max(32), output: z.string() }).strict().parse(
+    const observed = z.object({ state: z.string().max(32), output: z.string(), truncated: z.boolean().optional() }).strict().parse(
         JSON.parse(value),
     );
     const spec = "inspection";

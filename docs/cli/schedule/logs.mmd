@@ -7,9 +7,8 @@ sequenceDiagram
   participant GW as Gateway
   participant SW as Swamp
   participant N as Node
-  alt --follow
-    Note over CLI,GW: Refuse Schedule follow<br/>Needs fixed Agent release
-    GW-->>CLI: Follow unavailable
+  alt CLI --follow
+    Note over CLI: Refuse Schedule follow<br/>schedule.follow_unavailable
   else bounded snapshot
     CLI->>GW: schedule:logs <schedule>
     alt migrated Instance Schedule

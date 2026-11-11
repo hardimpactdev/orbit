@@ -1216,7 +1216,7 @@ Deno.test({
   },
 });
 
-for (const pathKind of ["absolute-command-symlink", "relative-command-symlink", "directory-symlink", "missing-directory", "internal-command-symlink", "internal-directory-symlink"] as const) {
+for (const pathKind of ["absolute-command-symlink", "relative-command-symlink", "directory-symlink", "missing-directory", "internal-command-symlink", "internal-directory-symlink", "extensionless-command-symlink"] as const) {
   Deno.test({
     name: `Schedule preflight refuses a ${pathKind} that cannot move before downtime`,
     ignore: !hasAnsible,
@@ -1228,14 +1228,14 @@ for (const pathKind of ["absolute-command-symlink", "relative-command-symlink", 
         const external = `${f.folder}/external`;
         Deno.mkdirSync(external);
         Deno.writeTextFileSync(`${external}/command.php`, "<?php // external workspace\n");
-        const commandLink = `${f.checkout}/linked.php`;
+        const commandLink = `${f.checkout}/${pathKind === "extensionless-command-symlink" ? "worker" : "linked.php"}`;
         Deno.writeTextFileSync(`${f.checkout}/command.php`, "<?php // workspace command\n");
         Deno.symlinkSync(pathKind === "internal-command-symlink" ? `${f.checkout}/command.php` : `${external}/command.php`, commandLink);
         const directoryLink = `${f.checkout}/linked-directory`;
         Deno.mkdirSync(`${f.checkout}/jobs`);
         Deno.symlinkSync(pathKind === "internal-directory-symlink" ? `${f.checkout}/jobs` : external, directoryLink);
         const sourceDirectory = pathKind.endsWith("directory-symlink") ? directoryLink : pathKind === "missing-directory" ? `${f.checkout}/missing-directory` : f.checkout;
-        const command = (pathKind === "absolute-command-symlink" || pathKind === "internal-command-symlink") ? `php ${commandLink}` : pathKind === "relative-command-symlink" ? "php linked.php" : "php artisan schedule:run";
+        const command = (pathKind === "absolute-command-symlink" || pathKind === "internal-command-symlink") ? `php ${commandLink}` : pathKind === "relative-command-symlink" ? "php linked.php" : pathKind === "extensionless-command-symlink" ? "php worker" : "php artisan schedule:run";
         const schedules = migrationSchedules(f, "enabled", "agent", command, sourceDirectory);
         if (pathKind.endsWith("command-symlink")) schedules.schedule.source_command_paths = [commandLink];
         f.write();

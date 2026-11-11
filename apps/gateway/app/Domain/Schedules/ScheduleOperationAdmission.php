@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Schedules;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\InstanceMigration\DeferredMigrationScheduleRuns;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Instance;
 use App\Models\Node;
@@ -22,6 +23,9 @@ final readonly class ScheduleOperationAdmission
         return DB::transaction(function () use ($schedule, $verb, $cascade, $caller, $requestId, $created): Operation {
             if (Instance::isMorphType($schedule->target_type)) {
                 Instance::query()->whereKey($schedule->target_id)->lockForUpdate()->firstOrFail();
+                if ($verb === 'run' && ($deferred = app(DeferredMigrationScheduleRuns::class)->admit($schedule, $caller, $requestId)) !== null) {
+                    return $deferred;
+                }
             }
             $input = $this->inputFor($schedule, $verb, $cascade, $caller, $created);
             // UUID Schedules share their owner's target lock; Operation target IDs are integers.

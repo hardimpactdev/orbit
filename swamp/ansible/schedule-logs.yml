@@ -23,26 +23,15 @@
     intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
   tasks:
     - name: Read retained unit entries and command entries
-      ansible.builtin.command:
-        argv:
-          - /usr/bin/journalctl
-          - "_SYSTEMD_UNIT=orbit-schedule-{{ intent.schedule.id }}.service"
-          - +
-          - "SYSLOG_IDENTIFIER=orbit-schedule-{{ intent.schedule.id }}"
-          - --lines
-          - "{{ intent.read.lines | int | string }}"
-          - --reverse
-          - --output=short-iso
-          - --utc
-          - --no-pager
-          - --quiet
-        strip_empty_ends: false
+      orbit_schedule_journal:
+        schedule_id: "{{ intent.schedule.id }}"
+        lines: "{{ intent.read.lines | int }}"
       register: schedule_journal
       changed_when: false
       no_log: true
     - name: Keep the bounded read private
       ansible.builtin.copy:
-        content: "{{ {'state': 'active', 'output': schedule_journal.stdout[:4194304]} | to_json }}"
+        content: "{{ {'state': 'active', 'output': schedule_journal.output, 'truncated': schedule_journal.truncated} | to_json(ensure_ascii=false) }}"
         dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
         mode: "0600"
       delegate_to: localhost

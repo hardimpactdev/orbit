@@ -38,6 +38,7 @@
       loop_control: { label: "{{ item.id }}:{{ item.name }}" }
 
 # This include runs only after discard has removed the failed container. No unit file was changed before cutover.
+# A persistent fire before terminal projection is recorded as a waiting Operation and replayed when admission reopens.
 - name: Restore the source timers' captured activation states
   when: phase == 'restore'
   ansible.builtin.systemd_service:

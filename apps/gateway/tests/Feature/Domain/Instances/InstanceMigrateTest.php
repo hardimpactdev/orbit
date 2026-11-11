@@ -10,6 +10,7 @@ use App\Actions\Operations\ReadOperationAction;
 use App\Data\Instances\InstanceData;
 use App\Data\Operations\OperationData;
 use App\Actions\Schedules\CreateScheduleAction;
+use App\Actions\Schedules\RunScheduleAction;
 use App\Actions\Schedules\ShowScheduleLogsAction;
 use App\Data\Schedules\AddScheduleData;
 use App\Domain\Certificates\LeafCertificateSigner;
@@ -33,6 +34,8 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Logs\LogStreamTargetResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -1919,6 +1922,81 @@ describe('migrate registered Schedule timers', function (): void {
         expect($instance->runtime()->exists())->toBeFalse();
     })->with(['enabled', 'disabled']);
 
+    it('records a persistent timer fire during migration and replays it after admission reopens', function (bool $moved): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance, ['command' => 'php '.$instance->checkout_path.'/artisan schedule:run']);
+        $source = $instance->checkout_path;
+        $migration = migrateStart($instance);
+        $key = 'systemd-invocation-id';
+        $admit = fn (): Operation => app(OperationIdempotency::class)->under('schedule.run', $key, 'timer-fingerprint',
+            fn (): Operation => app(RunScheduleAction::class)->admit($schedule, $instance->node));
+
+        $fire = $admit();
+        expect($fire->status)->toBe(OperationStatus::Waiting)
+            ->and($fire->input)->toMatchArray(['id' => $schedule->id, 'deferred_instance_migration' => $migration->id]);
+        expect($admit()->id)->toBe($fire->id);
+        expect(Operation::query()->where('kind', 'schedule.run')->count())->toBe(1);
+        Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+
+        $this->travel(11)->minutes();
+        expect(app(ExpireOperationAction::class)->execute($fire)->status)->toBe(OperationStatus::Waiting);
+
+        migrateEnd($migration, $moved ? 'succeeded' : 'failed', $moved
+            ? ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]
+            : ['ready' => false, 'moved' => false, 'restored' => true, 'failed_step' => 'files', 'error_code' => 'instance.migrate_files_failed']);
+
+        $fire->refresh();
+        expect($fire->status)->toBe(OperationStatus::Queued)
+            ->and($fire->idempotency_key)->toBe($key)
+            ->and($fire->input['working_directory'])->toBe($moved ? '/srv/workspace' : $source)
+            ->and($fire->input['command_hash'])->toBe(hash('sha256', 'php '.($moved ? '/srv/workspace' : $source).'/artisan schedule:run'))
+            ->and(isset($fire->input['container']))->toBe($moved);
+        expect($fire->started_at?->toDateTimeString())->toBe(now()->toDateTimeString());
+        expect(InstanceMigration::running($instance))->toBeFalse();
+        Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+    })->with(['cutover' => true, 'rollback' => false]);
+
+    it('records the deferred fire failure if rollback leaves admission closed', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+
+        migrateEnd($migration, 'failed', ['ready' => false, 'moved' => false, 'restored' => false,
+            'failed_step' => 'restore', 'error_code' => 'instance.migrate_restore_failed']);
+
+        expect($fire->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($fire->error_code)->toBe('instance.lifecycle_busy')
+            ->and($schedule->refresh()->last_run_status->value)->toBe('error');
+        Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+    });
+
+    it('replays a deferred fire after a definite migration start refusal', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+
+        app(StartSwampRun::class)->refuse($migration, new ResourceOperationException('swamp.start_enqueue_failed', 'No run started.', 503));
+
+        expect($fire->refresh()->status)->toBe(OperationStatus::Queued)
+            ->and($fire->input['working_directory'])->toBe($instance->checkout_path);
+        Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+    });
+
+    it('records extensionless interpreter operands as paths for remote containment checks', function (string $command, string $path): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        migrationSchedule($instance, ['command' => $command]);
+
+        $plan = migrateStart($instance)->input['migrate']['schedules'][0];
+
+        expect($plan['source_command_paths'])->toBe([$instance->checkout_path.'/'.$path]);
+    })->with(['php worker' => ['php worker', 'worker'], 'node worker' => ['node worker', 'worker'],
+        'bun script path' => ['bun scripts/worker', 'scripts/worker']]);
+
     it('refuses unsupported Schedule intent before reserving a runtime', function (string $change, string $code, string $reason): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
         $account = match ($change) {
@@ -1942,6 +2020,9 @@ describe('migrate registered Schedule timers', function (): void {
             'nested relative traversal' => $schedule->update(['command' => 'php scripts/../../private/run.php']),
             'filesystem root' => $schedule->update(['command' => 'cd /; php script.php']),
             'dynamic command' => $schedule->update(['command' => 'php "$APP_ROOT/artisan" schedule:run']),
+            'assignment prefix' => $schedule->update(['command' => 'X='.$instance->checkout_path.' host-only-tool']),
+            'ambiguous interpreter' => $schedule->update(['command' => 'php -d auto_prepend_file=worker main']),
+            'ambiguous bun' => $schedule->update(['command' => 'bun run worker']),
             'unknown executable' => $schedule->update(['command' => 'my-host-only-command']),
             'compound command' => $schedule->update(['command' => 'true && php artisan schedule:run']),
             'pipeline' => $schedule->update(['command' => 'php artisan schedule:run | echo done']),
@@ -1983,6 +2064,9 @@ describe('migrate registered Schedule timers', function (): void {
         'nested traversal' => ['nested relative traversal', 'schedule.container_command_unsupported', 'dot-segment'],
         'filesystem root' => ['filesystem root', 'schedule.container_command_unsupported', 'absolute path'],
         'shell expansion' => ['dynamic command', 'schedule.container_command_unsupported', 'shell expansion'],
+        'assignment prefix' => ['assignment prefix', 'schedule.container_command_unsupported', 'assignment prefix'],
+        'interpreter options' => ['ambiguous interpreter', 'schedule.container_command_unsupported', 'direct script operand'],
+        'bun subcommand' => ['ambiguous bun', 'schedule.container_command_unsupported', 'direct script operand'],
         'unknown executable' => ['unknown executable', 'schedule.container_command_unsupported', 'bare executable'],
         'compound invocation' => ['compound command', 'schedule.container_command_unsupported', 'one literal invocation'],
         'pipeline' => ['pipeline', 'schedule.container_command_unsupported', 'one literal invocation'],
@@ -2159,7 +2243,7 @@ function migrationScheduleLogSocket(?string $fault = null): object
             if ($type === 'vault.read-secret') {
                 return [['id' => $message['id'], 'type' => $type, 'payload' => ['data' => [
                     'vaultName' => $message['payload']['vaultName'], 'secretKey' => $message['payload']['secretKey'], 'vaultType' => 'local_encryption',
-                    'value' => json_encode(['state' => 'active', 'output' => "new command schedule-secret-sentinel\nold service output\n"], JSON_THROW_ON_ERROR),
+                    'value' => json_encode(['state' => 'active', 'output' => $this->fault === 'oversized' ? str_repeat('é', 2097153) : "old service output\nnew command schedule-secret-sentinel\n", 'truncated' => $this->fault === 'truncated'], JSON_THROW_ON_ERROR),
                 ]]]];
             }
 
@@ -2198,6 +2282,24 @@ describe('migrated Schedule logs', function (): void {
         expect(array_column($socket->sent, 'type'))->toBe(['workflow.run', 'workflow.history.get', 'vault.read-secret']);
         expect(json_encode($socket->sent, JSON_THROW_ON_ERROR))->not->toContain('schedule-secret-sentinel');
     });
+
+    it('preserves the byte-bounded whole-entry truncation result from the Node', function (string $fault): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $instance->refresh()->update(['provisioning_step' => 'active']);
+        migrationScheduleLogSocket($fault);
+        if ($fault === 'oversized') {
+            expect(containerRefusal(fn () => app(ShowScheduleLogsAction::class)->execute($schedule->refresh(), 2)))->toBe('schedule.logs_failed');
+
+            return;
+        }
+
+        $logs = app(ShowScheduleLogsAction::class)->execute($schedule->refresh(), 2);
+
+        expect($logs->truncated)->toBeTrue()
+            ->and($logs->output)->toBe("old service output\nnew command schedule-secret-sentinel\n");
+    })->with(['truncated', 'oversized']);
 
     it('refuses a failed or mismatched migrated Schedule journal read', function (string $fault, string $code): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
