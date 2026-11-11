@@ -694,7 +694,19 @@ A task host with an open task Operation on one of its task VMs stays in the pass
 
 ### One Node of the pass
 
-The child `fleet-reboot-node` runs three Ansible phases of `swamp/ansible/operation-fleet-reboot.yml` from Node 209. Each phase reads and extends the Node's record in the pass's run folder. Once the record has an outcome, the later phases change nothing.
+The child `fleet-reboot-node` runs three Ansible phases of `swamp/ansible/operation-fleet-reboot.yml` from Node 209. Each phase reads and extends the Node's record in the pass's run folder. Once the record has an outcome, the later phases change nothing. The drain writes an initial record on the controller before its first SSH attempt, so collection can retain evidence of the visit if the run reaches its report step. The run folder is not durable Gateway evidence.
+
+Each phase keeps its Ansible JSON callback report private. Before the child ends, `Record the Node` reads those reports on the controller, including after an unreachable target bypasses Ansible rescue. When collection runs, it records a started phase without a terminal report or Node outcome as `failed` with `fleet.reboot_cut`.
+
+If the root run ends before reporting any Node records, the Gateway cannot tell which Nodes were attempted: every Node records `unknown` with `run_interrupted`. Missing records without an earlier recorded halt also stay unknown. Unknown outcomes make the pass fail and raise `reboot_halted` once. Without a recorded Node failure, its error code is `fleet.reboot_interrupted`. Only missing Nodes after a recorded halt use `skipped` with `not_reached`.
+
+An `unknown` Node reports uncertainty; it does not recover a drain the pass may have started. The Gateway has no record of what that Node stopped, so it does not mark its stopped task guests `parked`: their task VMs stay `ready` while the guests are down. CI runners stopped before an interrupted reboot can stay stopped. A swamp Node that scheduled its own reboot gets no 30-minute boot confirmation, because that check reads only `scheduled`. After an interrupted pass, an operator reconciles each `unknown` Node by hand: start its stopped task guests or mark them parked, start stopped runners, and check the swamp Node's boot.
+
+Only the initial boot-state reads before any Node change retry SSH connection failures (exit 255). They get seven retries after the first attempt, with a 10-second connect timeout and one OpenSSH connection attempt per try. Ansible supplies the pauses: 0, 1, 3, 7, 15, 30 and 30 seconds. Eight timed-out attempts take at most 166 seconds per SSH invocation before process overhead. This covers a two-minute uplink outage, stays within the existing 2,400-second drain phase and leaves room for the 900-second drain and six 75-second guest stops.
+
+The phase timeouts remain the hard bounds. The window check runs after the read, so connection retries cannot make a Node start draining after the window's cutoff.
+
+The drain, guest and runner stops, recovery and reboot use zero SSH retries. A disconnect after a command started can therefore fail the phase, but cannot replay that command through the SSH retry plugin.
 
 The `drain` phase decides first whether the Node goes on:
 
@@ -708,9 +720,9 @@ Then the phase drains the Node:
 
 On a CI runner host, the phase drains the runners every 20 seconds, for at most the drain budget. It freezes each runner container and reads the container's processes from the host. It stops a container that runs no `Runner.Worker` and records the runner with the time of its freeze. A runner with a job runs on, and so does a job on a runner of the host itself. When a job still runs at the end, the stopped runners start again, and the Node records `deferred` with `ci_busy`.
 
-On a task host, the phase stops each running task guest cleanly, within a minute, and records its name at once. The Gateway records those task VMs `parked`, and the next task call wakes them.
+On a task host, the phase stops each running task guest cleanly, within a minute, and records its name at once. When the pass reports that record, the Gateway records those task VMs `parked`, and the next task call wakes them.
 
-After the hold and window checks, the phase writes `drain_started` to the Node's run-folder record before the first CI, task guest or Gateway stop. Rescue runs undo only when this marker exists. If writing it fails, nothing has stopped yet and undo is skipped. Once a drain begins, failure keeps the existing recovery: start the Gateway scheduler and Horizon, and start every runner from the initial running inventory that is now stopped. Recovery does not depend on later record writes or on reading the stopped-runner list. Stopped task guests stay parked.
+After the hold and window checks, the phase writes `drain_started` to the Node's run-folder record before the first CI, task guest or Gateway stop. Rescue runs undo only when this marker exists. If writing it fails, nothing has stopped yet and undo is skipped. Once a drain begins, a failure that the Node's own rescue catches keeps the existing recovery: start the Gateway scheduler and Horizon, and start every runner from the initial running inventory that is now stopped. Recovery does not depend on later record writes or on reading the stopped-runner list. Stopped task guests stay parked.
 
 On the Gateway Node, the phase stops the scheduler. Then it stops Horizon, which drains on stop, within the drain budget. The reboot ends what is left.
 
@@ -726,7 +738,11 @@ A reboot of the hub also starts `systemd-networkd` again, so the networkd drop-i
 
 Then the Node records `rebooted` with its new kernel.
 
-A phase that fails records `failed` with its step and error code: the assert's own code, such as `fleet.reboot_old_kernel`, `fleet.reboot_units_failed` or `fleet.reboot_still_due`, or `fleet.reboot_drain_failed`, `fleet.reboot_lost` (no SSH after the reboot) or `fleet.reboot_check_failed`. The pass visits no Node after it, and the Gateway raises [`reboot_halted`](#release-alerts). A Node that never answers SSH needs its provider console. The next pass starts again at that Node, as it is the first due Node.
+A phase that fails records `failed` with its step and error code: the assert's own code, such as `fleet.reboot_old_kernel`, `fleet.reboot_units_failed` or `fleet.reboot_still_due`, or `fleet.reboot_drain_failed`, `fleet.reboot_lost` (no SSH after the reboot) or `fleet.reboot_check_failed`. The pass visits no Node after it, and the Gateway raises [`reboot_halted`](#release-alerts).
+
+An unreachable Node records `failed` with `fleet.node_unreachable`, its phase and `error_detail`: the SSH diagnostic, redacted by the shared command-output filter and bounded to 4 KiB before recording or printing. This also applies to a held Node: the hold prevents draining and rebooting, but a failed read of its due state still halts the pass. Later Nodes record `skipped` with `halted` without SSH. A Node that never answers SSH needs its provider console. The next pass starts again at that Node, as it is the first due Node.
+
+This change adds no intent key: load the workflow and its result reader together, then activate the Gateway projection in the same release. Runs admitted by the preceding Gateway can use the new workflow.
 
 ### CI jobs lost at the freeze
 
@@ -759,11 +775,11 @@ While serve is down, the Gateway's starts of new runs fail as they do for any se
 
 ### A cut Operation
 
-A reboot of the control path or of Node 209 can cut a Swamp run after the drain budget. The run ends `interrupted`, and the [reconciler](/reference/operations#read-an-operation) records its Operation `interrupted` with the failed step, as for any lost run. A terminal Operation never reopens: its caller starts a new one, such as the next rollout pass, the next automatic deploy, or the task orchestrator's repeat. Every machine phase is an idempotent playbook, so the new Operation repeats the cut phase safely.
+A reboot of the control path or of Node 209 can cut a Swamp run after the drain budget. The run ends `interrupted`, and the [reconciler](/reference/operations#read-an-operation) records its Operation `interrupted` with the failed step, as for any lost run. The `fleet.reboot` projection instead records a failed pass when Node evidence is [unknown](#one-node-of-the-pass). A terminal Operation never reopens: its caller starts a new one, such as the next rollout pass, the next automatic deploy, or the task orchestrator's repeat. Every machine phase is an idempotent playbook, so the new Operation repeats the cut phase safely.
 
 ### What is reported
 
-The Operation result lists each Node in pass order with its outcome: `rebooted`, `scheduled`, `not_due`, `deferred` with `operator_hold`, `window`, `tasks_busy` or `ci_busy`, `skipped` with `halted` or `not_reached`, or `failed`. It also holds the kernel before and after, since when the reboot was due, the parked task guests, any newly failed units, the stopped CI runners with their freeze times, and the CI runs it re-ran.
+The Operation result lists each Node in pass order with its outcome: `rebooted`, `scheduled`, `not_due`, `deferred` with `operator_hold`, `window`, `tasks_busy` or `ci_busy`, `skipped` with `halted` or `not_reached`, or `failed`. A missing Node record without a recorded halt is `unknown` with `run_interrupted`; when the root reports no Nodes, every Node has that outcome. It also holds the kernel before and after, since when the reboot was due, the parked task guests, any newly failed units, the stopped CI runners with their freeze times, and the CI runs it re-ran.
 
 Doctor reports `node.reboot_due` when the newest pass that read a Node found it due more than 3 days ago and did not reboot it. A record without a due time, such as `halted`, does not count; Doctor looks at the pass before it. A reboot hold does not suppress this warning or alert: the owner still needs to see overdue fixes. When a pass ends with such a Node, the Gateway raises [`reboot_overdue`](#release-alerts) once.
 

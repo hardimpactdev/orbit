@@ -30,7 +30,7 @@ jobs:
       behaviorName: '${{ "fleet-reboot-drain-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
-        run: timeout 2400 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags drain "$ORBIT_ANSIBLE/operation-fleet-reboot.yml"
+        run: timeout 2400 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags drain "$ORBIT_ANSIBLE/operation-fleet-reboot.yml" > "$ORBIT_RUN/drain-$ORBIT_NODE_ID.json" 2> "$ORBIT_RUN/drain-$ORBIT_NODE_ID.stderr"
         env: &phase
           ORBIT_RUN: '${{ inputs.run_folder }}'
           ORBIT_ANSIBLE: '${{ inputs.assets }}'
@@ -38,7 +38,11 @@ jobs:
           ORBIT_POSITION: '${{ string(inputs.position) }}'
           ANSIBLE_CONFIG: '${{ inputs.assets + "/ansible.cfg" }}'
           ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
-          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=" + inputs.run_folder + "/known_hosts" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o ConnectionAttempts=1 -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=" + inputs.run_folder + "/known_hosts" }}'
+          # A disconnect can follow execution: only the initial safe reads opt into retries in the playbook.
+          ANSIBLE_SSH_RETRIES: '0'
+          ANSIBLE_TIMEOUT: '10'
+          ANSIBLE_STDOUT_CALLBACK: ansible.posix.json
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
     # Reboot: reboot and wait up to 10 minutes for SSH; the swamp Node instead schedules its own reboot after the pass.
@@ -52,7 +56,7 @@ jobs:
       behaviorName: '${{ "fleet-reboot-reboot-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
-        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags reboot "$ORBIT_ANSIBLE/operation-fleet-reboot.yml"
+        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags reboot "$ORBIT_ANSIBLE/operation-fleet-reboot.yml" > "$ORBIT_RUN/reboot-$ORBIT_NODE_ID.json" 2> "$ORBIT_RUN/reboot-$ORBIT_NODE_ID.stderr"
         env: *phase
     # Check: a new boot into the newest kernel, nothing due, no unit that failed only in this boot, and the Node's own services.
   - name: 'check'
@@ -65,7 +69,7 @@ jobs:
       behaviorName: '${{ "fleet-reboot-check-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
-        run: timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags check "$ORBIT_ANSIBLE/operation-fleet-reboot.yml"
+        run: timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags check "$ORBIT_ANSIBLE/operation-fleet-reboot.yml" > "$ORBIT_RUN/check-$ORBIT_NODE_ID.json" 2> "$ORBIT_RUN/check-$ORBIT_NODE_ID.stderr"
         env: *phase
     # Mint: on a CI host, the pass's Actions write tokens, which the Gateway writes to the vault key of this Operation. Neither
     # this step nor the next fails the Node: the reboot is done, and a job that is not re-run shows in GitHub.
@@ -105,3 +109,23 @@ jobs:
           ANSIBLE_CONFIG: '${{ inputs.assets + "/ansible.cfg" }}'
           ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
           ANSIBLE_FORCE_COLOR: '0'
+    # A target can disappear without running rescue. Always shape its private callback reports on the controller before
+    # the next child starts; the next Node's existing halt check then sees the failed record. No machine action is retried here.
+  - name: 'Record the Node'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'drain', condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+    - {step: 'reboot', condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+    - {step: 'check', condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+    - {step: 'mint', condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+    - {step: 'rerun', condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: fleetRebootResult
+      inputs:
+        folder: '${{ inputs.run_folder }}'
+        node_id: '${{ inputs.node_id }}'
+        position: '${{ inputs.position }}'

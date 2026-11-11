@@ -54,8 +54,19 @@
         - name: End a Node after a failed one
           ansible.builtin.meta: end_host
           when: halted
+        # Write on the controller before the first SSH attempt. A cut before the child finalizer still leaves evidence of a visit.
+        - name: Record the attempted Node
+          ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
+          vars:
+            record_update:
+              node_id: "{{ target.node_id }}"
+              name: "{{ target.name }}"
+              reboot_hold: "{{ target.defer == 'operator_hold' }}"
         - name: Read the boot state
           ansible.builtin.import_tasks: tasks/fleet-reboot-read.yml
+          # The SSH plugin repeats the entire invocation after exit 255. Only these reads are safe to repeat.
+          vars:
+            ansible_ssh_retries: 7
         - name: Record a Node that needs no reboot
           ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
           vars:

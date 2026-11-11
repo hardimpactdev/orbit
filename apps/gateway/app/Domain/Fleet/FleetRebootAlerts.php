@@ -29,14 +29,17 @@ final readonly class FleetRebootAlerts
 
     public function __construct(private ReleaseAlertNotifier $notifier) {}
 
-    /** @param array<string, mixed> $node The failed Node's record. */
+    /** @param array<string, mixed> $node The first failed or unknown Node result. */
     public function halted(Operation $operation, array $node): void
     {
         $code = is_string($node['error_code'] ?? null) ? $node['error_code'] : 'fleet.reboot_failed';
         // The boot names the incident; a Node that failed before its read gets the pass instead, so each pass may alert once.
         $boot = is_string($node['boot_id_before'] ?? null) && $node['boot_id_before'] !== '' ? $node['boot_id_before'] : 'operation-'.$operation->id;
-        $this->raise(ReleaseAlertKind::RebootHalted, sprintf('Fleet reboot Operation %d stopped at node %s at step %s: %s', $operation->id,
-            self::name($node), is_string($node['step'] ?? null) ? $node['step'] : 'unknown', $code),
+        $summary = ($node['outcome'] ?? null) === 'unknown'
+            ? sprintf('Fleet reboot Operation %d ended without a complete Node report: %s', $operation->id, $code)
+            : sprintf('Fleet reboot Operation %d stopped at node %s at step %s: %s', $operation->id,
+                self::name($node), is_string($node['step'] ?? null) ? $node['step'] : 'unknown', $code);
+        $this->raise(ReleaseAlertKind::RebootHalted, $summary,
             new ReleaseIncident('fleet-node:'.ValidatedData::integer($node['node_id']), substr($boot, 0, 100), $code), 'operation-'.$operation->id);
     }
 
