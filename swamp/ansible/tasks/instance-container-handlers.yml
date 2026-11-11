@@ -1,0 +1,6 @@
+---
+# Shared by the container lifecycle and migration's container phase. The phase flushes this dispatch before readiness.
+- name: Restart the running Orbit units after changed PHP settings
+  ansible.builtin.command:
+    argv: "{{ as_root + ['timeout', '5', 'systemctl', 'try-restart', '--no-block', 'orbit-*.service'] }}"
+  changed_when: true

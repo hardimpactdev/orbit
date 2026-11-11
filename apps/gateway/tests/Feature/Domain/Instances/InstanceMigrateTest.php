@@ -62,6 +62,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -1484,7 +1485,7 @@ it('refuses restore once retirement began or the container owns the Instance', f
 it('admits the generated restore boolean through HTTP and replays its fresh idempotency key', function (): void {
     $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
     interruptedMigrate($instance);
-    $caller = \Tests\Support\SwampNodeFixture::ensure();
+    $caller = SwampNodeFixture::ensure();
     $caller->accessibleNodes()->syncWithoutDetaching([$instance->node_id]);
     $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
     $headers = ['Idempotency-Key' => 'restore-interrupted-move'];
@@ -1497,4 +1498,19 @@ it('admits the generated restore boolean through HTTP and replays its fresh idem
         ->assertAccepted()->assertJsonPath('data.id', $id);
     $this->postJson('/api/v1/instances/'.$instance->id.'/migrate', ['restore' => 'true'])
         ->assertUnprocessable();
+});
+
+it('keeps the original quiesce checkpoint when a restore worker is also lost', function (): void {
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $original = interruptedMigrate($instance);
+    $restore = app(StartInstanceMigrateAction::class)->execute($instance, null, null, restore: true);
+    $restore->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'second-lost-root']])->save();
+    app(InstanceMigrateProjection::class)->apply($restore, ['status' => 'interrupted', 'run_id' => 'second-lost-root',
+        'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'result' => [], 'step_outcomes' => []]);
+
+    $retry = app(StartInstanceMigrateAction::class)->execute($instance, null, null, restore: true);
+    expect($retry->input['restore_quiesced'])->toBeTrue()
+        ->and($retry->input['restore_operation_id'])->toBe($original->id)
+        ->and(app(InstanceMigrateProjection::class)->input($retry)['execution_secrets']['model_environment']['key'])
+        ->toBe('instance-migrate-model-'.$original->id);
 });

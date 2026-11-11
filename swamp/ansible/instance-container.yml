@@ -81,3 +81,7 @@
           tags: [always]
           ansible.builtin.fail:
             msg: "{{ ansible_failed_result.msg | default('The container phase failed.') }}"
+
+  handlers:
+    - name: Load the shared container handlers
+      ansible.builtin.import_tasks: tasks/instance-container-handlers.yml

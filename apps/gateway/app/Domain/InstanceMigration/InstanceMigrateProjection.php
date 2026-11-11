@@ -51,6 +51,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         $restoring = isset($input['restore_operation_id']);
         if ($restoring) {
             $restoreOperationId = ValidatedData::integer($input['restore_operation_id']);
+
             return ['intent' => [
                 'instance_id' => $instance->id, 'instance_name' => $instance->name, 'ssh_execution' => $input['ssh_execution'],
                 'container' => $container, 'migrate' => $input['migrate'], 'restore_only' => true,
@@ -90,7 +91,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                 && $step['name'] === $name && ($step['started_at'] !== null || ! in_array($step['status'], ['skipped', 'pending'], true)));
             $unsafe = $began('retire');
             $result = [...$result, 'ready' => false, 'moved' => null, 'restored' => null, 'native_finish_missing' => true,
-                'quiesced' => $began('quiesce'), 'retirement_started' => $unsafe,
+                'quiesced' => $began('quiesce') || ($operation->input['restore_quiesced'] ?? false) === true, 'retirement_started' => $unsafe,
                 ...($unsafe ? [] : ['recovery_command' => 'orbit instance:migrate '.$operation->target_id.' --restore --force'])];
         }
         // From the removal of the checkout on, the container is the Instance, whatever the removal itself did.
