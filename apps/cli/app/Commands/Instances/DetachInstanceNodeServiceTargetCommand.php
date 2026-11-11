@@ -6,12 +6,11 @@ namespace App\Commands\Instances;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\ConsoleWriter;
-use App\Support\Console\PromptAborted;
 use Illuminate\Support\Str;
-use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\Requests\Instances\DetachInstanceNodeServiceTargetRequest;
+use Orbit\Sdk\Requests\Instances\ListInstanceNodeServiceTargetsRequest;
+use Orbit\Sdk\Responses\Instances\InstanceNodeServiceTargetsResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class DetachInstanceNodeServiceTargetCommand extends NodeServiceTargetCommand
@@ -32,7 +31,7 @@ final class DetachInstanceNodeServiceTargetCommand extends NodeServiceTargetComm
         if ($this->argument('instance') !== null && $instance === null) {
             return self::FAILURE;
         }
-        $targetId = $this->argument('target') === null ? null : $this->positiveId('target', 'Node service target', 'instance.node_service_target_id_invalid');
+        $targetId = $this->argument('target') === null ? null : $this->suppliedTargetId();
         if ($this->argument('target') !== null && $targetId === null) {
             return self::FAILURE;
         }
@@ -40,7 +39,7 @@ final class DetachInstanceNodeServiceTargetCommand extends NodeServiceTargetComm
         if ($instance === null) {
             return self::FAILURE;
         }
-        $targetId ??= $this->promptTargetId();
+        $targetId ??= $this->selectTargetId($repository, $connectors, $instance);
         if ($targetId === null) {
             return self::FAILURE;
         }
@@ -70,26 +69,42 @@ final class DetachInstanceNodeServiceTargetCommand extends NodeServiceTargetComm
         return self::SUCCESS;
     }
 
-    private function promptTargetId(): ?int
+    private function suppliedTargetId(): ?int
+    {
+        $value = $this->argument('target');
+        $id = is_string($value) && preg_match('/\A[0-9]+\z/D', $value) === 1
+            ? filter_var(ltrim($value, '0'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) : false;
+        if (! is_int($id)) {
+            $this->renderGatewayFailure('instance.node_service_target_id_invalid', 'Node service target ID must be a positive integer written in ASCII digits.');
+
+            return null;
+        }
+
+        return $id;
+    }
+
+    private function selectTargetId(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors, int $instanceId): ?int
     {
         if (! $this->consoleMode()->mayPrompt) {
             $this->renderGatewayFailure('instance.node_service_target_id_invalid', 'Node service target ID is required.');
 
             return null;
         }
-        try {
-            $value = $this->commandPrompts()->run(fn (): TextPrompt => new TextPrompt(
-                'Node service target ID', required: true,
-                validate: static fn (string $id): ?string => filter_var($id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false
-                    ? 'Node service target ID must be a positive integer.' : null,
-                hint: 'Use the attachment ID from the attach result; no attachment list is available.',
-            ));
-
-            return is_string($value) ? (int) $value : null;
-        } catch (PromptAborted|ConsoleInterrupted) {
-            $this->renderGatewayFailure('input.cancelled', 'Node service target input cancelled.');
-
+        $connector = $this->gatewayConnector($repository, $connectors);
+        if ($connector === null) {
             return null;
         }
+        $response = $this->sendWithProgress($connector, new ListInstanceNodeServiceTargetsRequest($instanceId), InstanceNodeServiceTargetsResponse::class,
+            ['List Node service targets', 'Loading Node service targets', 'Loaded Node service targets']);
+        if (! $response instanceof InstanceNodeServiceTargetsResponse) {
+            return null;
+        }
+        $rows = [];
+        foreach ($response->targets as $target) {
+            $rows[$target->id] = [(string) $target->id, (string) $target->processId, $target->protocol, (string) $target->port,
+                $target->hostEnvKey, $target->portEnvKey];
+        }
+
+        return $this->selectRecord('Node service target', ['ID', 'Process', 'Protocol', 'Port', 'Host key', 'Port key'], $rows, 'instance.node_service_target_id_invalid');
     }
 }

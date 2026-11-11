@@ -42,6 +42,7 @@
             "cli/instance/database-add",
             "cli/instance/database-remove",
             "cli/instance/node-service-attach",
+            "cli/instance/node-service-list",
             "cli/instance/node-service-detach",
             "cli/instance/websocket-add",
             "cli/instance/websocket-remove",

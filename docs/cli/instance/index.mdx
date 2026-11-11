@@ -47,6 +47,7 @@ Placement commands create, adopt, inspect, and remove an Instance on one Node.
 | [`instance:transfer`](/cli/instance/transfer) | Move a development Instance to another Node. |
 | [`instance:migrate`](/cli/instance/migrate) | Move a development checkout Instance into an Instance container. Temporary: it goes when the last checkout has moved. |
 | [`instance:node-service:attach`](/cli/instance/node-service-attach) | Record an explicit standalone Node service target before migration, without network or environment changes. |
+| [`instance:node-service:list`](/cli/instance/node-service-list) | List the selected Instance's recorded Node service attachments, without environment values or credentials. |
 | [`instance:node-service:detach`](/cli/instance/node-service-detach) | Delete one attachment record, including after successful migration, and return a completed Operation without network, environment or runtime changes. |
 | [`instance:destroy`](/cli/instance/destroy) | Remove an Instance and its owned Processes, Schedules, and Route. |
 | [`instance:logs`](/cli/instance/logs) | Return the application log tail, or follow new lines. |

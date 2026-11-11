@@ -6,7 +6,10 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Instances\AttachInstanceNodeServiceTargetRequest;
 use Orbit\Sdk\Requests\Instances\DetachInstanceNodeServiceTargetRequest;
+use Orbit\Sdk\Requests\Instances\ListInstanceNodeServiceTargetsRequest;
+use Orbit\Sdk\Responses\Instances\InstanceNodeServiceTargetRecordResponse;
 use Orbit\Sdk\Responses\Instances\InstanceNodeServiceTargetResponse;
+use Orbit\Sdk\Responses\Instances\InstanceNodeServiceTargetsResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
@@ -14,6 +17,51 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 describe('Node service target transport', function (): void {
+    it('reads typed attachment records with no query or body and preserves an empty list', function (bool $empty): void {
+        $data = ['id' => 4, 'instance_id' => 12, 'node_id' => 9, 'process_id' => 221, 'protocol' => 'tcp', 'port' => 1025,
+            'host_env_key' => 'MAIL_HOST', 'port_env_key' => 'MAIL_PORT'];
+        $requestId = '11111111-1111-4111-8111-111111111111';
+        $request = new ListInstanceNodeServiceTargetsRequest(12);
+        $mock = new MockClient([ListInstanceNodeServiceTargetsRequest::class => MockResponse::make([
+            'data' => $empty ? [] : [[...$data, 'unknown_field' => 'not part of the record']], 'meta' => ['request_id' => $requestId],
+        ])]);
+        $connector = new GatewayConnector('https://10.44.0.1');
+        $connector->withMockClient($mock);
+
+        $response = $connector->send($request)->dto();
+
+        expect($request->getMethod())->toBe(Method::GET)
+            ->and($request->resolveEndpoint())->toBe('/api/v1/instances/12/node-service-targets')
+            ->and($request->query()->all())->toBe([])->and($request)->not->toBeInstanceOf(HasBody::class)
+            ->and($response)->toBeInstanceOf(InstanceNodeServiceTargetsResponse::class)
+            ->and($response->toArray())->toBe(['targets' => $empty ? [] : [$data], 'request_id' => $requestId]);
+        if (! $empty) {
+            expect($response->targets[0])->toBeInstanceOf(InstanceNodeServiceTargetRecordResponse::class)
+                ->and($response->targets[0]->port)->toBe(1025);
+        }
+        $mock->assertSentCount(1);
+    })->with([false, true]);
+
+    it('preserves the list authority refusal and request ID', function (): void {
+        $requestId = '11111111-1111-4111-8111-111111111111';
+        $connector = new GatewayConnector('https://10.44.0.1');
+        $connector->withMockClient(new MockClient([ListInstanceNodeServiceTargetsRequest::class => MockResponse::make([
+            'error' => ['code' => 'node_access.required', 'message' => 'Node access is required.', 'details' => []],
+        ], 403, ['X-Orbit-Request-Id' => $requestId])]));
+
+        try {
+            $connector->send(new ListInstanceNodeServiceTargetsRequest(12))->dto();
+            test()->fail('A list must preserve Node authority refusals.');
+        } catch (GatewayApiException $exception) {
+            expect($exception->errorCode())->toBe('node_access.required')->and($exception->requestId())->toBe($requestId);
+        }
+    });
+
+    it('rejects malformed attachment record fields without accepting a string identity', function (): void {
+        expect(fn () => InstanceNodeServiceTargetRecordResponse::fromGatewayData(['id' => '4']))
+            ->toThrow(InvalidArgumentException::class, 'Invalid Node service target record identity or port.');
+    });
+
     it('sends the explicit attachment contract and maps the bounded result', function (): void {
         $request = new AttachInstanceNodeServiceTargetRequest(12, 221, 'tcp', 1025, 'MAIL_HOST', 'MAIL_PORT');
         $requestId = '11111111-1111-4111-8111-111111111111';

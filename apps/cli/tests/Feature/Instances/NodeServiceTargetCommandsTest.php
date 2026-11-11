@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Instances\AttachInstanceNodeServiceTargetRequest;
 use Orbit\Sdk\Requests\Instances\DetachInstanceNodeServiceTargetRequest;
+use Orbit\Sdk\Requests\Instances\ListInstanceNodeServiceTargetsRequest;
 use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
@@ -35,7 +36,60 @@ function nodeServiceCliData(): array
         'host_env_key' => 'MAIL_HOST', 'port_env_key' => 'MAIL_PORT', 'changed' => true, 'reason_code' => null];
 }
 
+/** @return array<string, mixed> */
+function nodeServiceCliRecord(): array
+{
+    $data = nodeServiceCliData();
+    unset($data['changed'], $data['reason_code']);
+
+    return $data;
+}
+
 describe('Node service target commands', function (): void {
+    it('lists the selected Instances records or its empty state in human and JSON output', function (bool $empty, bool $json): void {
+        $targets = $empty ? [] : [nodeServiceCliRecord()];
+        $requestId = '11111111-1111-4111-8111-111111111111';
+        $mock = MockClient::global([ListInstanceNodeServiceTargetsRequest::class => MockResponse::make([
+            'data' => $targets, 'meta' => ['request_id' => $requestId],
+        ])]);
+
+        $exit = Artisan::call('instance:node-service:list', ['instance' => '12', '--json' => $json, '--no-interaction' => true]);
+        $output = Artisan::output();
+        expect($exit)->toBe(0);
+        if ($json) {
+            expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe(['targets' => $targets, 'request_id' => $requestId]);
+        } else {
+            expect($output)->toContain($empty ? 'No Node service targets attached.' : 'MAIL_HOST', 'Request ID: '.$requestId);
+        }
+        $mock->assertSentCount(1);
+        expect($mock->getLastRequest())->toBeInstanceOf(ListInstanceNodeServiceTargetsRequest::class)
+            ->and($mock->getLastRequest()?->resolveEndpoint())->toBe('/api/v1/instances/12/node-service-targets')
+            ->and($mock->getLastRequest()?->getMethod()->value)->toBe('GET');
+    })->with([[false, false], [false, true], [true, false], [true, true]]);
+
+    it('refuses missing or invalid list IDs before a request', function (?string $instance): void {
+        $mock = MockClient::global();
+        $exit = Artisan::call('instance:node-service:list', ['instance' => $instance, '--json' => true]);
+        expect($exit)->toBe(1)->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('instance.id_invalid');
+        $mock->assertNothingSent();
+    })->with([null, 'app.example.test']);
+
+    it('preserves list authority refusals in human and JSON output', function (bool $json): void {
+        $requestId = '11111111-1111-4111-8111-111111111111';
+        $mock = MockClient::global([ListInstanceNodeServiceTargetsRequest::class => MockResponse::make([
+            'error' => ['code' => 'node_access.required', 'message' => 'Node access is required.', 'details' => []],
+        ], 403, ['X-Orbit-Request-Id' => $requestId])]);
+        $exit = Artisan::call('instance:node-service:list', ['instance' => '12', '--json' => $json, '--no-interaction' => true]);
+        $output = Artisan::output();
+        expect($exit)->toBe(1)->and($output)->toContain($requestId);
+        if ($json) {
+            expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('node_access.required');
+        } else {
+            expect($output)->toContain('Code: node_access.required');
+        }
+        $mock->assertSentCount(1);
+    })->with([false, true]);
+
     it('prints exactly one complete JSON envelope when several inputs are invalid', function (string $command, array $input, string $code): void {
         $mock = MockClient::global();
         $exit = Artisan::call($command, [...$input, '--json' => true]);
@@ -151,6 +205,10 @@ describe('Node service target commands', function (): void {
     })->with([
         'domain' => [['instance' => 'app.example.test', 'target' => '4'], 'instance.id_invalid'],
         'target' => [['instance' => '12', 'target' => '0'], 'instance.node_service_target_id_invalid'],
+        'signed target' => [['instance' => '12', 'target' => '+4'], 'instance.node_service_target_id_invalid'],
+        'whitespace target' => [['instance' => '12', 'target' => ' 4 '], 'instance.node_service_target_id_invalid'],
+        'Unicode digits' => [['instance' => '12', 'target' => '４'], 'instance.node_service_target_id_invalid'],
+        'out of range target' => [['instance' => '12', 'target' => (string) PHP_INT_MAX.'0'], 'instance.node_service_target_id_invalid'],
     ]);
 
     it('reports an identical attach as skipped with its stable reason', function (bool $json): void {
@@ -278,30 +336,60 @@ it('requires terminal detach consent and never sends on decline or cancellation'
     'Ctrl-D' => [["\x04"], false],
 ]);
 
-it('prompts for an omitted detach ID, validates before consent and sends nothing on cancellation', function (array $keys, bool $consent, bool $invalid): void {
-    $replies = $consent ? [['class' => DetachInstanceNodeServiceTargetRequest::class, 'status' => 202,
-        'body' => ['data' => ['id' => 41, 'kind' => 'instance.node_service_detach', 'target_type' => 'instance', 'target_id' => 12,
-            'status' => 'succeeded', 'sequence' => 2, 'result' => [...nodeServiceCliData(), 'detached' => true]]]]] : [];
-    $result = nodeServiceTerminal($this->orbitHome.'/detach-id-terminal', ['instance:node-service:detach', '12'], $keys, $replies, 'Node service target ID');
+it('selects an omitted detach target from the Instance registry before consent', function (array $keys, bool $consent, int $id): void {
+    $records = [nodeServiceCliRecord(), [...nodeServiceCliRecord(), 'id' => 5, 'process_id' => 222, 'port' => 6380,
+        'host_env_key' => 'CACHE_HOST', 'port_env_key' => 'CACHE_PORT']];
+    $replies = [['class' => ListInstanceNodeServiceTargetsRequest::class, 'body' => ['data' => $records]]];
+    if ($consent) {
+        $replies[] = ['class' => DetachInstanceNodeServiceTargetRequest::class, 'status' => 202,
+            'body' => ['data' => ['id' => 41, 'kind' => 'instance.node_service_detach', 'target_type' => 'instance', 'target_id' => 12,
+                'status' => 'succeeded', 'sequence' => 2, 'result' => ['id' => $id, 'detached' => true]]]];
+    }
+    $result = nodeServiceTerminal($this->orbitHome.'/detach-picker', ['instance:node-service:detach', '12'], $keys, $replies, 'Node service target');
 
     expect($result['status'])->toBe($consent ? 0 : 1)
-        ->and($result['output'])->toContain('Use the attachment ID from the attach result; no attachment list is available.')
-        ->and($result['trace'])->toHaveCount($consent ? 1 : 0);
-    if ($invalid) {
-        expect($result['output'])->toContain('Node service target ID must be a positive integer.');
-    }
+        ->and($result['output'])->toContain('/ Search', 'MAIL_HOST', 'CACHE_HOST')
+        ->and($result['trace'])->toHaveCount($consent ? 2 : 1)
+        ->and($result['trace'][0]['method'])->toBe('GET')
+        ->and($result['trace'][0]['url'])->toEndWith('/api/v1/instances/12/node-service-targets');
     if ($consent) {
-        expect($result['output'])->toContain('Delete Node service target record [4] from Instance [12]?')
-            ->and($result['trace'][0]['method'])->toBe('DELETE')
-            ->and($result['trace'][0]['url'])->toEndWith('/api/v1/instances/12/node-service-targets/4');
+        expect($result['output'])->toContain("Delete Node service target record [{$id}] from Instance [12]?")
+            ->and($result['trace'][1]['method'])->toBe('DELETE')
+            ->and($result['trace'][1]['url'])->toEndWith("/api/v1/instances/12/node-service-targets/{$id}");
     } else {
         expect($result['output'])->toContain('Code: input.cancelled');
     }
 })->with([
-    'typed ID then Yes' => [['4', "\r", "\x1b[D", "\r"], true, false],
-    'invalid text then correction' => [[...str_split('bad'), "\r", "\x7f", "\x7f", "\x7f", '4', "\r", "\x1b[D", "\r"], true, true],
-    'zero then correction' => [['0', "\r", "\x7f", '4', "\r", "\x1b[D", "\r"], true, true],
-    'typed ID then No' => [['4', "\r", "\r"], false, false],
-    'Ctrl-C at ID prompt' => [["\x03"], false, false],
-    'Ctrl-D at ID prompt' => [["\x04"], false, false],
+    'second record then Yes' => [["\x1b[B", "\r", "\x1b[D", "\r"], true, 5],
+    'selection Ctrl-C' => [["\x03"], false, 4],
+    'selection Ctrl-D' => [["\x04"], false, 4],
+    'confirmation default No' => [["\r", "\r"], false, 4],
+    'confirmation Ctrl-C' => [["\r", "\x03"], false, 4],
+    'confirmation Ctrl-D' => [["\r", "\x04"], false, 4],
 ]);
+
+it('refuses an empty or denied detach registry before confirmation or deletion', function (bool $denied): void {
+    $replies = [['class' => ListInstanceNodeServiceTargetsRequest::class, 'status' => $denied ? 403 : 200,
+        'body' => $denied ? ['error' => ['code' => 'node_access.required', 'message' => 'Node access is required.', 'details' => []]] : ['data' => []]]];
+    $result = nodeServiceTerminal($this->orbitHome.'/detach-no-choices', ['instance:node-service:detach', '12'], [], $replies);
+
+    expect($result['status'])->toBe(1)->and($result['trace'])->toHaveCount(1)
+        ->and($result['trace'][0]['method'])->toBe('GET')
+        ->and($result['output'])->toContain('Code: '.($denied ? 'node_access.required' : 'instance.node_service_target_id_invalid'))
+        ->not->toContain('Delete Node service target record');
+})->with([false, true]);
+
+it('rejects a signed or spaced supplied target before reads or consent and accepts its correction', function (string $id): void {
+    $result = nodeServiceTerminal($this->orbitHome.'/detach-invalid-id', ['instance:node-service:detach', '12', $id], [], []);
+
+    expect($result['status'])->toBe(1)->and($result['trace'])->toBe([])
+        ->and($result['output'])->toContain('Code: instance.node_service_target_id_invalid')
+        ->not->toContain('Delete Node service target record');
+    $replies = [['class' => DetachInstanceNodeServiceTargetRequest::class, 'status' => 202,
+        'body' => ['data' => ['id' => 41, 'kind' => 'instance.node_service_detach', 'target_type' => 'instance', 'target_id' => 12,
+            'status' => 'succeeded', 'sequence' => 2, 'result' => ['id' => 4, 'detached' => true]]]]];
+    $corrected = nodeServiceTerminal($this->orbitHome.'/detach-corrected-id', ['instance:node-service:detach', '12', '4'], ["\x1b[D", "\r"], $replies);
+    expect($corrected['status'])->toBe(0)->and($corrected['trace'])->toHaveCount(1)
+        ->and($corrected['trace'][0]['method'])->toBe('DELETE')
+        ->and($corrected['trace'][0]['url'])->toEndWith('/api/v1/instances/12/node-service-targets/4');
+})->with(['+4', ' 4 ']);
