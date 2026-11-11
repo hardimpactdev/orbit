@@ -62,22 +62,27 @@ def configuration(path=TABLE):
         config = tomllib.load(source)
     budget = config['budget']
     if any(type(budget[key]) is not int or budget[key] <= 0 for key in
-           ('shard_seconds', 'shard_workers', 'unit_ceiling_seconds', 'slice_seconds', 'pr_shards', 'default_cost')):
+           ('shard_seconds', 'shard_workers', 'shard_deadline_seconds', 'unit_ceiling_seconds', 'slice_seconds', 'pr_shards', 'default_cost')):
         raise ValueError('Fixture budgets must be positive integers')
     if budget['slice_seconds'] > budget['shard_seconds']:
         raise ValueError('slice_seconds exceeds shard_seconds')
-    fixtures = {file: {'file': file, 'cost': budget['default_cost'], 'inputs': []} for file in fixture_steps()}
-    listed = set()
+    fixtures = {}
     for fixture in config.get('fixture', []):
         file = fixture['file']
-        if file in listed:
+        if file in fixtures:
             raise ValueError(f'Duplicate fixture: {file}')
-        listed.add(file)
         fixtures[file] = {'cost': budget['default_cost'], 'inputs': [], **fixture}
+    for file in fixture_steps():
+        fixtures.setdefault(file, {'file': file, 'cost': budget['default_cost'], 'inputs': []})
     for fixture in fixtures.values():
         file, cost = fixture['file'], fixture['cost']
         if not (ROOT / file).is_file() or type(cost) is not int or cost <= 0:
             raise ValueError(f'Invalid fixture file or cost: {file}')
+        excluded = fixture.get('after_merge_cases', [])
+        if not isinstance(excluded, list) or any(not isinstance(name, str) or name not in (ROOT / file).read_text() for name in excluded):
+            raise ValueError(f'{file}: every after_merge_cases name must occur in its source')
+        if excluded and not sliceable(fixture):
+            raise ValueError(f'{file}: after_merge_cases needs a Deno fixture')
         slices = fixture.get('slices', True)
         if type(slices) not in (int, bool) or type(slices) is int and slices < 1:
             raise ValueError(f'{file}: slices must be a positive count or a boolean')
@@ -128,21 +133,16 @@ def plan(paths, budget, fixtures, defaults):
         for file, fixture in fixtures.items():
             if not fixture.get('after_merge'):
                 selected.setdefault(file, (-1, 0, 0))
-    candidates, deferred = [], []
-    for file, priority in selected.items():
+    admitted, deferred = [], []
+    order = {file: index for index, file in enumerate(fixtures)}
+    # Admission is by directness, then table order. Size only decides packing.
+    for file in sorted(selected, key=lambda file: (tuple(-p for p in selected[file]), order[file])):
         fixture = fixtures[file]
-        units = units_for(fixture, budget)
-        if fixture.get('after_merge'):
-            deferred.extend(name for name, _ in units)
+        candidates = [(name, cost, selected[file]) for name, cost in units_for(fixture, budget)]
+        if fixture.get('after_merge') or pack([*admitted, *candidates], budget) is None:
+            deferred.extend(name for name, _, _ in candidates)
         else:
-            candidates.extend((name, cost, priority) for name, cost in units)
-    # Admit the closest matches first. Repack them largest-first after admission.
-    admitted = []
-    for candidate in sorted(candidates, key=lambda u: (tuple(-p for p in u[2]), -u[1], u[0])):
-        if pack([*admitted, candidate], budget) is None:
-            deferred.append(candidate[0])
-        else:
-            admitted.append(candidate)
+            admitted.extend(candidates)
     shards = pack(admitted, budget) or []
     return {'shards': shards, 'deferred': sorted(deferred), 'unmapped': sorted(set(unmapped))}
 
@@ -198,23 +198,29 @@ def unit_step(unit, fixtures, steps, collections):
         match = re.fullmatch(r'(\d+)/(\d+)', part)
         if not match or not sliceable(fixtures[file]) or not 0 <= int(match[1]) < int(match[2]):
             raise ValueError(f'Invalid slice: {unit}')
-        step.argv[2:2] = ['--preload', str(ROOT / PRELOAD)]
         step.env['ORBIT_TEST_SLICE'] = part
+    if separator or fixtures[file].get('after_merge_cases'):
+        step.argv[2:2] = ['--preload', str(ROOT / PRELOAD)]
+        step.env['ORBIT_TEST_SKIP'] = json.dumps(fixtures[file].get('after_merge_cases', []))
     if any(file.removeprefix('swamp/') in group for group in gate.INSTANCE_HOST_TEST_GROUPS):
         step.env['ORBIT_INSTANCE_HOST_DEADLINE_MS'] = str(int(time.time() * 1000) + 720_000)
     return step
 
 
-def supervise(ceiling, receipt, command):
+def supervise(ceiling, receipt, command, shard_deadline=None):
     """One supervisor per unit: subreaper ownership never crosses parallel units."""
     libc = ctypes.CDLL(None, use_errno=True)
     if libc.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
         raise OSError(ctypes.get_errno(), 'PR_SET_CHILD_SUBREAPER')
     started = time.monotonic()
+    timeout = min(ceiling, shard_deadline - started) if shard_deadline is not None else ceiling
+    if timeout <= 0:
+        receipt.write_text(json.dumps({'status': 'NOT RUN', 'seconds': 0}))
+        return
     try:
         process = subprocess.Popen(command, start_new_session=True)
         try:
-            code = process.wait(timeout=ceiling)
+            code = process.wait(timeout=timeout)
             outcome = 'passed' if code == 0 else 'FAILED'
         except subprocess.TimeoutExpired:
             try:
@@ -243,21 +249,32 @@ def supervise(ceiling, receipt, command):
     receipt.write_text(json.dumps({'status': outcome, 'seconds': round(time.monotonic() - started, 3)}))
 
 
-def run_unit(step, environment, ceiling):
+def run_unit(step, environment, ceiling, shard_deadline=None):
     started = time.monotonic()
+    if shard_deadline is not None and started >= shard_deadline:
+        with OUTPUT_LOCK:
+            print(f'==> {step.name}: NOT RUN (shard deadline reached)', flush=True)
+        return {'unit': step.name, 'status': 'NOT RUN', 'seconds': 0}
     with tempfile.TemporaryDirectory(prefix='orbit-shape-step-') as scratch, tempfile.TemporaryFile(mode='w+t') as output:
         env = {**environment, **step.env, 'TMPDIR': scratch, 'TMP': scratch, 'TEMP': scratch,
-               'DENO_JOBS': '1', 'ANSIBLE_FORKS': '1', 'PYTHON_CPU_COUNT': '1', 'RAYON_NUM_THREADS': '1'}
+               'DENO_JOBS': '1', 'ANSIBLE_FORKS': '1', 'PYTHON_CPU_COUNT': '1', 'RAYON_NUM_THREADS': '1',
+               'ORBIT_TEST_STARTED_AT_MS': str(time.time_ns() // 1_000_000),
+               'ORBIT_TEST_TIMING_FILE': str(Path(scratch) / 'startup.json')}
         receipt = Path(scratch) / 'unit-receipt.json'
-        code = subprocess.run([sys.executable, str(ROOT / 'bin/ci-units'), '--supervise', str(ceiling), str(receipt), *step.argv],
+        code = subprocess.run([sys.executable, str(ROOT / 'bin/ci-units'), '--supervise', str(ceiling), str(receipt), str(shard_deadline) if shard_deadline is not None else 'none', *step.argv],
                               cwd=gate.SWAMP, env=env, stdout=output, stderr=subprocess.STDOUT).returncode
         result = json.loads(receipt.read_text()) if code == 0 and receipt.exists() else {
             'status': 'FAILED', 'seconds': round(time.monotonic() - started, 3)}
+        startup = Path(scratch) / 'startup.json'
+        if startup.exists():
+            result.update(json.loads(startup.read_text()))
         output.seek(0)
         captured = output.read()
     outcome, seconds = result['status'], result['seconds']
     message = f'==> {step.name}: {outcome} ({seconds:.1f}s)'
-    if outcome == 'OVER BUDGET':
+    if outcome == 'OVER BUDGET' and shard_deadline is not None and time.monotonic() >= shard_deadline:
+        message += f'\nOVER BUDGET: {step.name} stopped at the shard deadline.'
+    elif outcome == 'OVER BUDGET':
         message += (f'\nOVER BUDGET: {step.name} ran {seconds:.1f} s, ceiling {ceiling:g} s. '
                     'Raise its cost in .github/ci/checks.toml (the plan adds a slice) or make it faster.')
     # One write per completion keeps parallel unit output together.
@@ -268,6 +285,7 @@ def run_unit(step, environment, ceiling):
 
 def run(units, budget, fixtures, times):
     os.umask(0o022)
+    shard_deadline = time.monotonic() + budget['shard_deadline_seconds']
     results = []
     times.write_text('[]\n')
     if units:
@@ -279,14 +297,14 @@ def run(units, budget, fixtures, times):
         steps = fixture_steps()
         with ThreadPoolExecutor(max_workers=budget['shard_workers']) as pool:
             futures = {pool.submit(run_unit, unit_step(unit, fixtures, steps, collections), environment,
-                                   budget['unit_ceiling_seconds']): unit for unit in units}
+                                   budget['unit_ceiling_seconds'], shard_deadline): unit for unit in units}
             for future in as_completed(futures):
                 results.append(future.result())
                 times.write_text(json.dumps(results, indent=2) + '\n')
         results.sort(key=lambda result: units.index(result['unit']))
     times.write_text(json.dumps(results, indent=2) + '\n')
-    table = '| Unit | Result | Seconds |\n| --- | --- | ---: |\n' + '\n'.join(
-        f"| `{r['unit']}` | {r['status']} | {r['seconds']:.1f} |" for r in results)
+    table = '| Unit | Result | Seconds | Startup seconds |\n| --- | --- | ---: | ---: |\n' + '\n'.join(
+        f"| `{r['unit']}` | {r['status']} | {r['seconds']:.1f} | {r.get('startup_seconds', '—')} |" for r in results)
     print(table)
     summary(table)
     return int(any(r['status'] != 'passed' for r in results))
@@ -322,6 +340,7 @@ def main():
 
 if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == '--supervise':
-        supervise(float(sys.argv[2]), Path(sys.argv[3]), sys.argv[4:])
+        supervise(float(sys.argv[2]), Path(sys.argv[3]), sys.argv[5:],
+                  None if sys.argv[4] == 'none' else float(sys.argv[4]))
     else:
         raise SystemExit(main())

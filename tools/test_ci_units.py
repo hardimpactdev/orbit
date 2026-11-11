@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = SourceFileLoader('ci_units', str(ROOT / 'bin/ci-units'))
 units = module_from_spec(spec_from_loader(loader.name, loader))
 loader.exec_module(units)
-BUDGET = dict(shard_seconds=100, shard_workers=4, unit_ceiling_seconds=180, slice_seconds=60, pr_shards=6, default_cost=30)
+BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, unit_ceiling_seconds=180, slice_seconds=60, pr_shards=6, default_cost=30)
 
 
 def fixture(file, cost=30, inputs=(), **options):
@@ -49,7 +49,7 @@ class PlanningTest(unittest.TestCase):
         self.assertTrue(all(len(shard['units']) == 4 for shard in result['shards']))
         self.assertEqual(result['deferred'], ['swamp/24.py'])
         # Mixed sizes require real lane packing, not just a 400-second total.
-        mixed = [fixture(f'swamp/{i}.py', 60, ['swamp/input']) for i in range(5)]
+        mixed = [fixture(f'swamp/{i}.py', 100, ['swamp/input']) for i in range(5)]
         self.assertEqual(len(planned(['swamp/input'], mixed)['shards']), 2)
 
     def test_deno_slices_use_ceil_cost_and_python_stays_whole(self):
@@ -70,6 +70,16 @@ class PlanningTest(unittest.TestCase):
         self.assertEqual(len(result['shards']), 2)
         self.assertIn('swamp/direct.py', names(result))
         self.assertEqual(result['deferred'], ['swamp/third.py'])
+
+    def test_admission_uses_table_order_and_defers_every_slice_of_a_file_together(self):
+        budget = {**BUDGET, 'pr_shards': 1, 'shard_workers': 1, 'shard_seconds': 100}
+        first, second = fixture('swamp/first.py', 40, ['swamp/input']), fixture('swamp/second.py', 70, ['swamp/input'])
+        self.assertEqual(names(planned(['swamp/input'], [first, second], budget=budget)), ['swamp/first.py'])
+        self.assertEqual(names(planned(['swamp/input'], [second, first], budget=budget)), ['swamp/second.py'])
+        sliced = fixture('swamp/sliced.ts', 121, ['swamp/input'], slices=5)
+        result = planned(['swamp/input'], [sliced, first], budget=budget)
+        self.assertEqual(names(result), ['swamp/first.py'])
+        self.assertEqual(set(result['deferred']), {f'swamp/sliced.ts#{k}/5' for k in range(5)})
 
     def test_after_merge_is_named_when_selected_and_never_runs_in_pr_shards(self):
         result = planned(['swamp/slow.ts'], [fixture('swamp/slow.ts', 233, slices=False, after_merge=True, reason='one long case')])
@@ -133,8 +143,17 @@ class TableTest(unittest.TestCase):
             with patch.object(units, 'fixture_steps', return_value=steps):
                 with self.assertRaisesRegex(ValueError, 'Invalid fixture file'):
                     units.configuration(path)
-            path.write_text(source.replace('cost = 15', 'cost = 101', 1))
+            path.write_text(source + '\n[[fixture]]\nfile = \"swamp/tests/_support/fixture_supervisor.py\"\ncost = 151\ninputs = []\n')
             with self.assertRaisesRegex(ValueError, 'unsliceable cost exceeds'):
+                units.configuration(path)
+
+    def test_case_exclusions_cannot_survive_a_test_rename(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            path = Path(scratch) / 'checks.toml'
+            source = (ROOT / '.github/ci/checks.toml').read_text()
+            source = source.replace('a build-list Node gets the Instance project, bridge, folders and image, then a rerun changes nothing', 'renamed case no longer in source')
+            path.write_text(source)
+            with self.assertRaisesRegex(ValueError, 'every after_merge_cases name must occur'):
                 units.configuration(path)
 
     def test_container_dependency_closure_selects_the_affected_files(self):
@@ -163,6 +182,14 @@ class ExecutionTest(unittest.TestCase):
         for invalid in ('#3/3', '#0/0', '#-1/3', '#x'):
             with self.assertRaisesRegex(ValueError, 'Invalid slice'):
                 units.unit_step(file + invalid, fixtures, steps, Path('/collections'))
+
+    def test_case_exclusions_reach_the_preload_even_without_slicing(self):
+        file = 'swamp/tests/ansible_instance_host_runtime_test.ts'
+        _, fixtures, _ = units.configuration()
+        step = units.unit_step(file, fixtures, units.fixture_steps(), Path('/collections'))
+        self.assertIn('--preload', step.argv)
+        self.assertEqual(json.loads(step.env['ORBIT_TEST_SKIP']), fixtures[file]['after_merge_cases'])
+        self.assertNotIn('ORBIT_TEST_SLICE', step.env)
 
     def test_each_step_has_its_own_temp_directory_and_gate_worker_environment(self):
         code = 'import json,os; print(json.dumps({k:os.environ[k] for k in ["TMPDIR","TMP","TEMP","DENO_JOBS","ANSIBLE_FORKS","PYTHON_CPU_COUNT","RAYON_NUM_THREADS","ANSIBLE_COLLECTIONS_PATH"]}))'
@@ -232,6 +259,23 @@ class ExecutionTest(unittest.TestCase):
             self.assertEqual([r['status'] for r in results], ['FAILED', 'passed'])
             self.assertIn('swamp/pass.py', summary.read_text())
 
+    def test_shard_deadline_names_stopped_and_never_started_units(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            steps = {f'swamp/{i}.py': units.gate.Step('shape', str(i), [sys.executable, '-c', 'import signal; signal.pause()']) for i in range(3)}
+            fixtures = {name: fixture(name) for name in steps}
+            setup = units.gate.Step('shape', 'setup', [sys.executable, '-c', ''])
+            budget = {**BUDGET, 'shard_workers': 1, 'shard_deadline_seconds': .5}
+            with patch.object(units.gate, 'tool_path', return_value=Path(sys.executable).parent), \
+                    patch.object(units.gate, 'plan', return_value=[setup]), \
+                    patch.object(units, 'fixture_steps', return_value=steps), \
+                    contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(units.run(list(steps), budget, fixtures, folder / 'times.json'), 1)
+            results = json.loads((folder / 'times.json').read_text())
+            self.assertEqual([r['status'] for r in results], ['OVER BUDGET', 'NOT RUN', 'NOT RUN'])
+            self.assertIn('shard deadline', output.getvalue())
+            self.assertLess(sum(r['seconds'] for r in results), 3)
+
     def test_four_units_run_together_with_separate_supervisors(self):
         with tempfile.TemporaryDirectory() as scratch:
             folder = Path(scratch)
@@ -254,14 +298,28 @@ class ExecutionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             file = Path(scratch) / 'slice_test.ts'
             file.write_text('Deno.test("zero", () => {}); Deno.test({name:"one", fn() {}}); Deno.test.ignore("two", () => {}); Deno.test("three", () => {});')
+            timing = Path(scratch) / 'startup.json'
             for k, expected in [(0, ('zero', 'two')), (1, ('one', 'three'))]:
                 result = subprocess.run(['deno', 'test', '-A', '--preload', str(ROOT / units.PRELOAD), str(file)],
-                                        env={**os.environ, 'ORBIT_TEST_SLICE': f'{k}/2', 'NO_COLOR': '1'}, capture_output=True, text=True, timeout=15)
+                                        env={**os.environ, 'ORBIT_TEST_SLICE': f'{k}/2', 'NO_COLOR': '1',
+                                             'ORBIT_TEST_TIMING_FILE': str(timing), 'ORBIT_TEST_STARTED_AT_MS': str(time.time_ns() // 1_000_000)}, capture_output=True, text=True, timeout=15)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertGreaterEqual(json.loads(timing.read_text())['startup_seconds'], 0)
+                self.assertLess(json.loads(timing.read_text())['startup_seconds'], 15)
                 for name in expected:
                     self.assertIn(name + ' ...', result.stdout)
                 for name in {'zero', 'one', 'two', 'three'} - set(expected):
                     self.assertNotIn(name + ' ...', result.stdout)
+            # Drop exact names before assigning slice indexes: after skipping zero,
+            # slice 0/2 contains one and three, while two belongs to slice 1/2.
+            result = subprocess.run(['deno', 'test', '-A', '--preload', str(ROOT / units.PRELOAD), str(file)],
+                                    env={**os.environ, 'ORBIT_TEST_SLICE': '0/2', 'ORBIT_TEST_SKIP': '["zero"]', 'NO_COLOR': '1'},
+                                    capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('one ...', result.stdout)
+            self.assertIn('three ...', result.stdout)
+            self.assertNotIn('zero ...', result.stdout)
+            self.assertNotIn('two ...', result.stdout)
             file.write_text('Deno.test.only("only-case", () => {}); Deno.test("ordinary", () => {});')
             result = subprocess.run(['deno', 'test', '-A', '--preload', str(ROOT / units.PRELOAD), str(file)],
                                     env={**os.environ, 'ORBIT_TEST_SLICE': '0/2', 'NO_COLOR': '1'}, capture_output=True, text=True, timeout=15)

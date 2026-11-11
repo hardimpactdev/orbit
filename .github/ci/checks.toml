@@ -3,7 +3,8 @@
 # The two primary fixture costs include censored lower bounds from the first hosted run.
 # Explicit slice counts are its registered case counts (52 migrate, 24 container).
 [budget]
-shard_seconds = 100
+shard_seconds = 150
+shard_deadline_seconds = 190
 shard_workers = 4
 unit_ceiling_seconds = 180
 slice_seconds = 60
@@ -12,6 +13,206 @@ default_cost = 30
 
 [fixtures]
 default = ["swamp/tests/ansible_inputs_test.py"]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_migrate_test.ts"
+cost = 1373
+slices = 52
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance-container.yml",
+  "swamp/ansible/instance-migrate.yml",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_migrate_links.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/ansible/tasks/instance-bridge-rules.yml",
+  "swamp/ansible/tasks/instance-container-*.yml",
+  "swamp/ansible/tasks/instance-migrate-*.yml",
+  "swamp/ansible/tasks/instance-network-nic-check.yml",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/instance-migrate*",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_container_test.ts"
+cost = 1415
+slices = 24
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance-container.yml",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/ansible/tasks/instance-bridge-rules.yml",
+  "swamp/ansible/tasks/instance-container-*.yml",
+  "swamp/ansible/tasks/instance-network-nic-check.yml",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/instance-container-incus.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_host_test.ts"
+# 180.032s, hosted four-worker run 43000765953 (unit cutoff; case unfinished).
+after_merge_cases = ["a build-list Node gets the Instance project, bridge, folders and image, then a rerun changes nothing"]
+cost = 145
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_host_image_test.ts"
+# 158s, hosted four-worker run 43000765953 (completed case; its slice later reached 180.033 seconds).
+after_merge_cases = ["a new image definition is built, takes the stable alias and replaces the old image"]
+cost = 147
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_host_runtime_test.ts"
+# 180.025s, hosted four-worker run 43000765953 (unit cutoff; case unfinished).
+after_merge_cases = ["the runtime folder builds its Vite+ home once, links vp and the home into each version, and drops a home no version links"]
+cost = 213
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "apps/gateway/resources/machine-software/recipe.json",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_host_updates_test.ts"
+# 159.349s, hosted four-worker run 43000765953 (completed unit).
+# 168.762s, hosted four-worker run 43000765953 (completed unit).
+after_merge_cases = ["a project that lists disk paths loses the list, so a container with the idmapped folders starts", "an old folder version that a process still maps stays; a restart that failed runs again on the next converge"]
+cost = 225
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_host_acl_test.ts"
+cost = 30
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
 
 [[fixture]]
 file = "swamp/bin/check-swamp-base-policy_test.ts"
@@ -56,7 +257,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/bin/lint-behavior-names_test.ts"
-cost = 1
+cost = 3
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -68,7 +269,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/bin/source_test.ts"
-cost = 1
+cost = 2
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/**",
@@ -83,7 +284,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/bin/swamp-liveness_test.ts"
-cost = 1
+cost = 3
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -116,7 +317,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/bin/validate-swamp-workflows_test.ts"
-cost = 1
+cost = 3
 inputs = [
   ".github/ci/checks.toml",
   ".github/workflows/ci.yml",
@@ -157,7 +358,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/automatic-deploy/development_test.ts"
-cost = 5
+cost = 4
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -171,7 +372,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/automatic-deploy/gateway_test.ts"
-cost = 5
+cost = 4
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -187,7 +388,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/automatic-deploy/mod_test.ts"
-cost = 5
+cost = 3
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -202,7 +403,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/composer-maintenance/mod_test.ts"
-cost = 5
+cost = 9
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -227,7 +428,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/js-maintenance/mod_test.ts"
-cost = 5
+cost = 8
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -253,7 +454,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/projects/horizon-new-dawn/gateway_test.ts"
-cost = 5
+cost = 3
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -272,7 +473,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts"
-cost = 5
+cost = 3
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -288,7 +489,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/projects/horizon-new-dawn/queue_test.ts"
-cost = 5
+cost = 2
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -332,7 +533,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_container_host_system_test.py"
-cost = 6
+cost = 7
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -344,7 +545,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_firewall_test.py"
-cost = 4
+cost = 5
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -356,7 +557,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_gateway_retired_settings_test.ts"
-cost = 2
+cost = 5
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -384,7 +585,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_hub_converge_peers_test.py"
-cost = 7
+cost = 12
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -399,7 +600,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_hub_prune_test.py"
-cost = 3
+cost = 4
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -437,7 +638,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_destroy_test.ts"
-cost = 7
+cost = 14
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -449,29 +650,8 @@ inputs = [
 ]
 
 [[fixture]]
-file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 872
-slices = 24
-inputs = [
-  "bin/swamp-shape-gate",
-  "swamp/ansible/ansible.cfg",
-  "swamp/ansible/instance-container.yml",
-  "swamp/ansible/instance_bridge.py",
-  "swamp/ansible/instance_network.py",
-  "swamp/ansible/requirements.txt",
-  "swamp/ansible/requirements.yml",
-  "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/ansible/tasks/address-node.yml",
-  "swamp/ansible/tasks/instance-bridge-rules.yml",
-  "swamp/ansible/tasks/instance-container-*.yml",
-  "swamp/ansible/tasks/instance-network-nic-check.yml",
-  "swamp/tests/fixtures/instance-bridge-curl.ts",
-  "swamp/tests/fixtures/instance-container-incus.ts",
-]
-
-[[fixture]]
 file = "swamp/tests/ansible_instance_egress_test.py"
-cost = 9
+cost = 11
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -480,152 +660,6 @@ inputs = [
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/instance-egress.yml",
   "swamp/ansible/tasks/instance-host.yml",
-]
-
-[[fixture]]
-file = "swamp/tests/ansible_instance_host_acl_test.ts"
-cost = 30
-inputs = [
-  "apps/gateway/app/Domain/Instances/InstanceImage.php",
-  "bin/swamp-shape-gate",
-  "swamp/ansible/ansible.cfg",
-  "swamp/ansible/instance_bridge.py",
-  "swamp/ansible/instance_network.py",
-  "swamp/ansible/library/**",
-  "swamp/ansible/requirements.txt",
-  "swamp/ansible/requirements.yml",
-  "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/ansible/tasks/instance-bridge-*.yml",
-  "swamp/ansible/tasks/instance-egress.yml",
-  "swamp/ansible/tasks/instance-folder.yml",
-  "swamp/ansible/tasks/instance-host.yml",
-  "swamp/ansible/tasks/instance-image.yml",
-  "swamp/ansible/tasks/instance-network-*.yml",
-  "swamp/ansible/tasks/instance-vite-plus-home.yml",
-  "swamp/ansible/tasks/task-container-host-prepare.yml",
-  "swamp/ansible/tasks/task-container-host-system.yml",
-  "swamp/ansible/transport-exit-codes.json",
-  "swamp/tests/_support/fixture_supervisor.py",
-  "swamp/tests/_support/instance_host.ts",
-  "swamp/tests/fixtures/instance-bridge-curl.ts",
-  "swamp/tests/fixtures/task-vm-host-incus.ts",
-]
-
-[[fixture]]
-file = "swamp/tests/ansible_instance_host_image_test.ts"
-cost = 147
-inputs = [
-  "apps/gateway/app/Domain/Instances/InstanceImage.php",
-  "bin/swamp-shape-gate",
-  "swamp/ansible/ansible.cfg",
-  "swamp/ansible/instance_bridge.py",
-  "swamp/ansible/instance_network.py",
-  "swamp/ansible/library/**",
-  "swamp/ansible/requirements.txt",
-  "swamp/ansible/requirements.yml",
-  "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/ansible/tasks/instance-bridge-*.yml",
-  "swamp/ansible/tasks/instance-egress.yml",
-  "swamp/ansible/tasks/instance-folder.yml",
-  "swamp/ansible/tasks/instance-host.yml",
-  "swamp/ansible/tasks/instance-image.yml",
-  "swamp/ansible/tasks/instance-network-*.yml",
-  "swamp/ansible/tasks/instance-vite-plus-home.yml",
-  "swamp/ansible/tasks/task-container-host-prepare.yml",
-  "swamp/ansible/tasks/task-container-host-system.yml",
-  "swamp/ansible/transport-exit-codes.json",
-  "swamp/tests/_support/fixture_supervisor.py",
-  "swamp/tests/_support/instance_host.ts",
-  "swamp/tests/fixtures/instance-bridge-curl.ts",
-  "swamp/tests/fixtures/task-vm-host-incus.ts",
-]
-
-[[fixture]]
-file = "swamp/tests/ansible_instance_host_runtime_test.ts"
-cost = 247
-inputs = [
-  "apps/gateway/app/Domain/Instances/InstanceImage.php",
-  "apps/gateway/resources/machine-software/recipe.json",
-  "bin/swamp-shape-gate",
-  "swamp/ansible/ansible.cfg",
-  "swamp/ansible/instance_bridge.py",
-  "swamp/ansible/instance_network.py",
-  "swamp/ansible/library/**",
-  "swamp/ansible/requirements.txt",
-  "swamp/ansible/requirements.yml",
-  "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/ansible/tasks/instance-bridge-*.yml",
-  "swamp/ansible/tasks/instance-egress.yml",
-  "swamp/ansible/tasks/instance-folder.yml",
-  "swamp/ansible/tasks/instance-host.yml",
-  "swamp/ansible/tasks/instance-image.yml",
-  "swamp/ansible/tasks/instance-network-*.yml",
-  "swamp/ansible/tasks/instance-vite-plus-home.yml",
-  "swamp/ansible/tasks/task-container-host-prepare.yml",
-  "swamp/ansible/tasks/task-container-host-system.yml",
-  "swamp/ansible/transport-exit-codes.json",
-  "swamp/tests/_support/fixture_supervisor.py",
-  "swamp/tests/_support/instance_host.ts",
-  "swamp/tests/fixtures/instance-bridge-curl.ts",
-  "swamp/tests/fixtures/task-vm-host-incus.ts",
-]
-
-[[fixture]]
-file = "swamp/tests/ansible_instance_host_test.ts"
-cost = 145
-inputs = [
-  "apps/gateway/app/Domain/Instances/InstanceImage.php",
-  "bin/swamp-shape-gate",
-  "swamp/ansible/ansible.cfg",
-  "swamp/ansible/instance_bridge.py",
-  "swamp/ansible/instance_network.py",
-  "swamp/ansible/library/**",
-  "swamp/ansible/requirements.txt",
-  "swamp/ansible/requirements.yml",
-  "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/ansible/tasks/instance-bridge-*.yml",
-  "swamp/ansible/tasks/instance-egress.yml",
-  "swamp/ansible/tasks/instance-folder.yml",
-  "swamp/ansible/tasks/instance-host.yml",
-  "swamp/ansible/tasks/instance-image.yml",
-  "swamp/ansible/tasks/instance-network-*.yml",
-  "swamp/ansible/tasks/instance-vite-plus-home.yml",
-  "swamp/ansible/tasks/task-container-host-prepare.yml",
-  "swamp/ansible/tasks/task-container-host-system.yml",
-  "swamp/ansible/transport-exit-codes.json",
-  "swamp/tests/_support/fixture_supervisor.py",
-  "swamp/tests/_support/instance_host.ts",
-  "swamp/tests/fixtures/instance-bridge-curl.ts",
-  "swamp/tests/fixtures/task-vm-host-incus.ts",
-]
-
-[[fixture]]
-file = "swamp/tests/ansible_instance_host_updates_test.ts"
-cost = 315
-inputs = [
-  "apps/gateway/app/Domain/Instances/InstanceImage.php",
-  "bin/swamp-shape-gate",
-  "swamp/ansible/ansible.cfg",
-  "swamp/ansible/instance_bridge.py",
-  "swamp/ansible/instance_network.py",
-  "swamp/ansible/library/**",
-  "swamp/ansible/requirements.txt",
-  "swamp/ansible/requirements.yml",
-  "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/ansible/tasks/instance-bridge-*.yml",
-  "swamp/ansible/tasks/instance-egress.yml",
-  "swamp/ansible/tasks/instance-folder.yml",
-  "swamp/ansible/tasks/instance-host.yml",
-  "swamp/ansible/tasks/instance-image.yml",
-  "swamp/ansible/tasks/instance-network-*.yml",
-  "swamp/ansible/tasks/instance-vite-plus-home.yml",
-  "swamp/ansible/tasks/task-container-host-prepare.yml",
-  "swamp/ansible/tasks/task-container-host-system.yml",
-  "swamp/ansible/transport-exit-codes.json",
-  "swamp/tests/_support/fixture_supervisor.py",
-  "swamp/tests/_support/instance_host.ts",
-  "swamp/tests/fixtures/instance-bridge-curl.ts",
-  "swamp/tests/fixtures/task-vm-host-incus.ts",
 ]
 
 [[fixture]]
@@ -641,32 +675,8 @@ inputs = [
 ]
 
 [[fixture]]
-file = "swamp/tests/ansible_instance_migrate_test.ts"
-cost = 1373
-slices = 52
-inputs = [
-  "bin/swamp-shape-gate",
-  "swamp/ansible/ansible.cfg",
-  "swamp/ansible/instance-container.yml",
-  "swamp/ansible/instance-migrate.yml",
-  "swamp/ansible/instance_bridge.py",
-  "swamp/ansible/instance_migrate_links.py",
-  "swamp/ansible/instance_network.py",
-  "swamp/ansible/requirements.txt",
-  "swamp/ansible/requirements.yml",
-  "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/ansible/tasks/address-node.yml",
-  "swamp/ansible/tasks/instance-bridge-rules.yml",
-  "swamp/ansible/tasks/instance-container-*.yml",
-  "swamp/ansible/tasks/instance-migrate-*.yml",
-  "swamp/ansible/tasks/instance-network-nic-check.yml",
-  "swamp/tests/fixtures/instance-bridge-curl.ts",
-  "swamp/tests/fixtures/instance-migrate*",
-]
-
-[[fixture]]
 file = "swamp/tests/ansible_instance_module_args_test.py"
-cost = 2
+cost = 4
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/**",
@@ -674,7 +684,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_model_forwarder_test.py"
-cost = 7
+cost = 14
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ai-router-model-forwarder.yml",
@@ -699,7 +709,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_shape_gate_tools_test.py"
-cost = 2
+cost = 4
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "apps/gateway/resources/machine-software/recipe.json",
@@ -753,7 +763,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_swamp_start_cache_test.ts"
-cost = 1
+cost = 3
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -767,7 +777,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_container_host_prepare_test.ts"
-cost = 320
+cost = 474
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -783,7 +793,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_host_firewall_remove_test.ts"
-cost = 6
+cost = 11
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -795,7 +805,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_apt_cache_test.ts"
-cost = 1
+cost = 2
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -813,7 +823,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_base_creation_test.ts"
-cost = 8
+cost = 14
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -825,7 +835,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_checkout_test.py"
-cost = 3
+cost = 5
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -837,7 +847,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_docker_boot_test.ts"
-cost = 1
+cost = 2
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -886,7 +896,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_host_clean_test.ts"
-cost = 52
+cost = 111
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -899,8 +909,6 @@ inputs = [
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_host_egress_test.py"
 cost = 117
-after_merge = true
-reason = "Python file costs 117 seconds and cannot be sliced."
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -912,7 +920,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_host_prepare_test.ts"
-cost = 57
+cost = 85
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -925,7 +933,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_identity_boot_test.ts"
-cost = 1
+cost = 2
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -937,7 +945,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_idle_save_test.py"
-cost = 9
+cost = 14
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -969,7 +977,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_uplink_test.ts"
-cost = 1
+cost = 2
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1002,7 +1010,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/apt_proxy_test.ts"
-cost = 3
+cost = 6
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1018,7 +1026,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/automatic_deploy_test.ts"
-cost = 1
+cost = 3
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1033,7 +1041,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/batch_maintenance_test.ts"
-cost = 5
+cost = 16
 php = true
 inputs = [
   "AGENTS.md",
@@ -1061,7 +1069,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/database_placement_test.ts"
-cost = 1
+cost = 3
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1374,7 +1382,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/node_converge_ansible_test.ts"
-cost = 43
+cost = 80
 inputs = [
   "apps/gateway/resources/machine-software/recipe.json",
   "bin/swamp-shape-gate",
@@ -1397,7 +1405,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/node_converge_cli_test.ts"
-cost = 6
+cost = 10
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1410,7 +1418,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/node_converge_lock_test.ts"
-cost = 27
+cost = 50
 inputs = [
   "apps/gateway/app/Infrastructure/Nodes/NodeAgentFootprint.php",
   "bin/swamp-shape-gate",
@@ -1629,7 +1637,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/proof_observers_test.ts"
-cost = 43
+cost = 79
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1830,7 +1838,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/writes_declared_test.ts"
-cost = 2
+cost = 4
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1848,7 +1856,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_env_test.py"
-cost = 2
+cost = 1
 inputs = ["swamp/ansible/library/orbit_migrate_env.py"]
 
 [[fixture]]
