@@ -25,7 +25,7 @@ The Node show response adds only `access` to `NodeData`; the Project show respon
 
 The `fleet` group holds rollout admission, CLI convergence, peer DNS and the fleet reboot. It has no rollout or reboot status or resume operation; a rollout is a `fleet.rollout` Operation and a reboot pass a `fleet.reboot` Operation.
 
-Optional lists keep their declared item schema. The Operation `steps` list references `OperationStep`, which exposes only native step names, jobs, statuses and timestamps. [Operations](/reference/operations#the-record) defines when that field is present.
+Optional lists keep their declared item schema. The Operation `steps` list references `OperationStep`, which exposes only native step names, jobs, statuses and timestamps. [Operations](/reference/operations#the-record) defines when that field is present. Conn Operation show uses this same step schema; its API and MCP descriptions state that `after_sequence` is accepted but currently does not filter steps. See the [Conn step contract](/reference/conn#threads-in-an-orbit-project).
 
 Run the generator from the repository root:
 

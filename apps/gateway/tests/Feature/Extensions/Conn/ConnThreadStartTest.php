@@ -6,6 +6,7 @@ use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Models\Instance;
@@ -206,6 +207,47 @@ describe("a thread's clone", function (): void {
             ->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
 
         expect(Operation::query()->where('kind', 'instance.create')->where('target_id', $first->target_id)->count())->toBe(1);
+    });
+});
+
+describe('clone Operation progress', function (): void {
+    it('returns ordered step names, states and safe metadata while running and after success or failure', function (OperationStatus $status, string $lastStatus, ?string $currentStep, ?string $failedStep): void {
+        $steps = [
+            ['name' => 'clone-container', 'job' => 'clone', 'status' => 'succeeded', 'started_at' => '2026-11-11T12:00:00Z', 'finished_at' => '2026-11-11T12:00:01Z'],
+            ['name' => 'clone-workspace', 'job' => 'clone', 'status' => 'succeeded', 'started_at' => '2026-11-11T12:00:01Z', 'finished_at' => '2026-11-11T12:00:02Z'],
+            ['name' => 'clone-t3', 'job' => 'clone', 'status' => 'succeeded', 'started_at' => '2026-11-11T12:00:02Z', 'finished_at' => '2026-11-11T12:00:03Z'],
+            ['name' => 'clone-register', 'job' => 'clone', 'status' => $lastStatus, 'started_at' => '2026-11-11T12:00:03Z', 'finished_at' => $status->terminal() ? '2026-11-11T12:00:04Z' : null],
+        ];
+        $recorded = [];
+        foreach ($steps as $step) {
+            $recorded['clone:'.$step['name']] = [...$step, 'stdout' => 'private-command-output', 'stderr' => 'private-command-error',
+                'secret' => 'private-secret', 'env' => ['TOKEN' => 'private-environment-value']];
+        }
+        $operation = Operation::query()->create([
+            'kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => 1, 'node_id' => $this->beast->id,
+            'input' => [], 'state' => ['native_progress' => ['steps' => $recorded]], 'status' => $status,
+            'sequence' => 8, 'attempts' => 1, 'triggered_by' => 'node:'.$this->phone->id,
+            'current_step' => $currentStep, 'failed_step' => $failedStep,
+        ]);
+
+        threadCall($this->phone, 'GET', "operations/{$operation->id}?after_sequence=8")->assertOk()
+            ->assertJsonPath('data.steps', $steps)
+            ->assertJsonPath('data.current_step', $currentStep)
+            ->assertJsonPath('data.failed_step', $failedStep);
+    })->with([
+        'running' => [OperationStatus::Running, 'running', 'clone-register', null],
+        'succeeded' => [OperationStatus::Succeeded, 'succeeded', null, null],
+        'failed' => [OperationStatus::Failed, 'failed', null, 'clone-register'],
+    ]);
+
+    it('returns 404 for a caller-owned kind outside the Conn allowlist', function (): void {
+        $operation = Operation::query()->create([
+            'kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => 1, 'node_id' => $this->beast->id,
+            'input' => ['caller_node_id' => $this->phone->id], 'state' => [], 'status' => OperationStatus::Running,
+            'sequence' => 1, 'attempts' => 1, 'triggered_by' => 'node:'.$this->phone->id,
+        ]);
+
+        threadCall($this->phone, 'GET', "operations/{$operation->id}")->assertNotFound();
     });
 });
 
