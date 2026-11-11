@@ -4,11 +4,15 @@ import { parse } from "jsr:@std/yaml@1.0.12";
 type Step = {
     name: string;
     guard?: string;
+    forEach?: { item: string; in: string };
     dependsOn?: {
         step: string;
         condition: { type: string; conditions?: { type: string }[] };
     }[];
-    task: { workflowIdOrName?: string; inputs?: { argv?: string[] } };
+    task: {
+        workflowIdOrName?: string;
+        inputs?: { argv?: string[]; timeoutSec?: number };
+    };
 };
 type Workflow = { jobs: { name: string; steps: Step[] }[] };
 const read = async (path: string) =>
@@ -53,6 +57,7 @@ Deno.test("restored fleets require checkout migration before every nested Gatewa
         "Read the container state",
         "Check the containers run",
         "Wait for cloud-init",
+        "Wait for systemd boot",
         "Apply the checkout",
     ];
     for (let i = 1; i < order.length; i++) {
@@ -106,13 +111,6 @@ Deno.test("renewed base snapshots check readiness only after the apply that migr
             ?.condition,
         succeededOrSkipped,
     );
-    // Initial, batch, replay and final restores all use the fixed child.
-    for (const name of ["proof-fleet-verify", "proof-fleet-verify-batch"]) {
-        const fleetRestores = stepsOf(await workflow(name)).filter((step) =>
-            step.task.workflowIdOrName === "proof-fleet-restore"
-        );
-        assert(fleetRestores.length > 0, name);
-    }
 });
 
 type Task = {
@@ -170,4 +168,181 @@ Deno.test("the first fleet build and image snapshots follow migration", async ()
     assert(
         role[1].tasks.some((task) => task.name === "Take the base snapshots"),
     );
+});
+
+for (
+    const [label, flow, job, call] of [
+        [
+            "initial",
+            "proof-fleet-verify",
+            "prepare",
+            "Restore the base snapshot",
+        ],
+        ["batch", "proof-fleet-verify-batch", "start", "restore"],
+        [
+            "replay",
+            "proof-fleet-verify",
+            "can-fail",
+            "Restore the base snapshot",
+        ],
+        ["final", "proof-fleet-verify", "finish", "Restore the clean fleet"],
+    ]
+) {
+    Deno.test(`${label} restore calls the shared proof-fleet-restore workflow`, async () => {
+        const parent = await workflow(flow);
+        const steps = parent.jobs.find((candidate) => candidate.name === job)
+            ?.steps;
+        assert(steps, `missing job: ${job}`);
+        assertEquals(
+            named(steps, call).task.workflowIdOrName,
+            "proof-fleet-restore",
+        );
+    });
+}
+
+Deno.test("systemd boot and every required state mount gate apply", async () => {
+    const restore = stepsOf(await workflow("proof-fleet-restore"));
+    const wait = named(restore, "Wait for systemd boot");
+    assert(requiresSuccess(restore, "Apply the checkout", wait.name));
+    assert(requiresSuccess(restore, wait.name, "Wait for cloud-init"));
+    assertEquals(wait.forEach, named(restore, "Wait for cloud-init").forEach);
+    const args = wait.task.inputs!.argv!;
+    assertEquals(args.slice(0, 4), ["timeout", "135", "incus", "exec"]);
+    assertEquals(wait.task.inputs!.timeoutSec, 145);
+    const apply = named(
+        stepsOf(await workflow("task-nested-apply")),
+        "Check the state",
+    ).task.inputs!.argv!;
+    assertEquals(
+        args.slice(11),
+        apply.slice(10),
+        "wait checks exactly the mounts apply needs",
+    );
+});
+
+// Execute only the guest shell with a fixture systemctl. No Incus or real systemd call runs.
+for (const role of ["gateway", "app-dev"]) {
+    Deno.test(`late ${role} state mounts pass after the boot wait and fail without it`, async () => {
+        const wait = named(
+            stepsOf(await workflow("proof-fleet-restore")),
+            "Wait for systemd boot",
+        ).task.inputs!.argv!;
+        const apply = named(
+            stepsOf(await workflow("task-nested-apply")),
+            "Check the state",
+        ).task.inputs!.argv!;
+        const dir = await Deno.makeTempDir();
+        let child: Deno.ChildProcess | undefined;
+        try {
+            await Deno.writeTextFile(
+                `${dir}/systemctl`,
+                `#!/bin/sh
+case "$1" in
+is-system-running)
+  echo waiting-for-boot >&2
+  IFS= read -r state || exit 1
+  printf '%s\n' "$state"
+  [ "$state" = running ] ;;
+is-active) test -f "$FIXTURE_MOUNTS/$3" ;;
+*) exit 2 ;;
+esac
+`,
+            );
+            await Deno.chmod(`${dir}/systemctl`, 0o755);
+            const env = {
+                PATH: `${dir}:${Deno.env.get("PATH")}`,
+                FIXTURE_MOUNTS: dir,
+            };
+            const check = () =>
+                new Deno.Command("sh", { args: apply.slice(7), env }).output();
+            child = new Deno.Command("sh", {
+                args: ["-c", wait[8], "sh", role, ...wait.slice(11)],
+                env,
+                stdin: "piped",
+                stdout: "piped",
+                stderr: "piped",
+            }).spawn();
+            const reader = child.stderr.getReader();
+            const signal = await reader.read();
+            reader.releaseLock();
+            assert(
+                new TextDecoder().decode(signal.value).includes(
+                    "waiting-for-boot",
+                ),
+            );
+            assertEquals(
+                (await check()).success,
+                false,
+                "one-shot apply fails while mounts are still starting",
+            );
+            for (const unit of wait.slice(11)) {
+                await Deno.writeTextFile(`${dir}/${unit}`, "active");
+            }
+            const writer = child.stdin.getWriter();
+            // A degraded boot is settled too, provided every required mount is active.
+            await writer.write(
+                new TextEncoder().encode(
+                    role === "gateway" ? "running\n" : "degraded\n",
+                ),
+            );
+            await writer.close();
+            const result = await child.output();
+            assert(result.success, new TextDecoder().decode(result.stderr));
+            assertEquals((await check()).success, true);
+        } finally {
+            try {
+                child?.kill("SIGKILL");
+            } catch { /* already exited */ }
+            await Deno.remove(dir, { recursive: true });
+        }
+    });
+}
+
+Deno.test("boot wait refuses an unsettled boot, a timeout and an inactive required mount", async () => {
+    const wait = named(
+        stepsOf(await workflow("proof-fleet-restore")),
+        "Wait for systemd boot",
+    ).task.inputs!.argv!;
+    const dir = await Deno.makeTempDir();
+    try {
+        await Deno.writeTextFile(
+            `${dir}/systemctl`,
+            '#!/bin/sh\nif [ "$1" = is-system-running ]; then echo "$FIXTURE_STATE"; [ "$FIXTURE_STATE" = running ]; else exit 1; fi\n',
+        );
+        await Deno.chmod(`${dir}/systemctl`, 0o755);
+        const check = (state: string) =>
+            new Deno.Command("sh", {
+                args: ["-c", wait[8], "sh", "gateway", ...wait.slice(11)],
+                env: {
+                    PATH: `${dir}:${Deno.env.get("PATH")}`,
+                    FIXTURE_STATE: state,
+                },
+            }).output();
+        const unsettled = await check("maintenance");
+        assert(!unsettled.success);
+        assert(
+            new TextDecoder().decode(unsettled.stderr).includes(
+                "state=maintenance",
+            ),
+        );
+        const missing = await check("running");
+        assert(!missing.success);
+        assert(
+            new TextDecoder().decode(missing.stderr).includes(
+                `Required state mount ${wait[11]} is not active`,
+            ),
+        );
+        // The timeout boundary returns its real status without waiting 120 seconds in this fixture.
+        await Deno.writeTextFile(`${dir}/timeout`, "#!/bin/sh\nexit 124\n");
+        await Deno.chmod(`${dir}/timeout`, 0o755);
+        const expired = await check("running");
+        assert(!expired.success);
+        assert(
+            new TextDecoder().decode(expired.stderr).includes(
+                "systemd boot did not settle within 120s (state=, exit=124)",
+            ),
+        );
+    } finally {
+        await Deno.remove(dir, { recursive: true });
+    }
 });
