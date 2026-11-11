@@ -1,6 +1,3 @@
-# Restore ownership is checked before any Route or container restore effect, including after a lost root.
-# Forced faults: phase failures/timeout/deadline/cancel retain native restored receipts. A killed pinned native root has no finish;
-# the restore-only admission reuses its frozen intent, restores host ownership and refuses after retirement starts.
 # Format: docs/reference/verification-cases.
 # These cases run on the proof fleet as it is. The cases that move an Instance need a proof Node with the Instance pool and the
 # container image, which the proof fleet does not build yet (docs/solutions/development-container-runtime.md, PR 4). Until then
@@ -26,8 +23,6 @@ sources: [gateway]
 baseline: [operations]
 
 uncovered:
-  "code:instance.migrate_restore_unavailable": "Pest covers latest-migrate and no-native-finish admission. The pinned lost-root fixture proves the missing automatic finish; Ansible fixtures prove the restore-only path."
-  "code:instance.migrate_restore_unsafe": "Pest covers retirement-started and container-owned refusals. Restore-only Ansible fixtures refuse before deleting a container if retirement began."
   "code:process.container_preset_unsupported": "Pest covers unknown presets, versions and options before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
   "code:process.container_command_unsupported": "Pest covers custom commands beside the preset, including the bypass regression before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
   "code:process.container_path_unsupported": "Pest covers external cwd, environment files and absolute environment values, including traversal before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."

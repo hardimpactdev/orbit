@@ -484,10 +484,6 @@ The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/c
 - **Route.** Orbit points the Route at FrankenPHP in the container.
 - **Retirement.** Orbit moves the whole old checkout to retention and records its path and time. It deletes no Git metadata. The default's checkout stays until its last worktree has moved.
 
-Restore and retirement take the same atomic ownership claim for the original move on the Node. Restore claims after its ownership check and before restoring the Route or removing the container; retirement claims before its checkpoint or checkout changes. A losing side refuses. Every restore of the same interrupted move uses one stable recovery identity, so a newly admitted restore continues after a lost restore worker. Retirement keeps the original run identity and remains fenced.
-
-The claim survives mirror cleanup, so native resume of the original move cannot retire a restored checkout. Interrupted roots are terminal and cannot be cancelled on the pinned runtime.
-
 A failed move leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) has the steps.
 
 #### Migration symlinks
@@ -537,7 +533,7 @@ The runtime reservation belongs to its admitting Operation. A late receipt canno
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
 | After a failed restore | The site stays the checkout's, and a deployment refuses with `instance.lifecycle_busy` until the move has run again |
 
-The whole-run budget is 5,100 seconds. A lower-bound test checks it against the declared phase and child timeouts, including restoration and cleanup, with 600 seconds of margin. A deadline or confirmed cancel still projects the native end state. A lost worker with no final result reports an unknown state and the [restore-only command](/cli/instance/migrate#failure); restoration refuses once retirement began.
+The whole-run budget is 5,100 seconds. A lower-bound test checks it against the declared phase and child timeouts, including restoration and cleanup, with 600 seconds of margin. A deadline or confirmed cancel still projects the native end state. A lost worker with no final result reports an unknown state and retains its reservation.
 
 Restore changes host Process states and the awake marker only when quiesce began. A target probe failure leaves both untouched.
 

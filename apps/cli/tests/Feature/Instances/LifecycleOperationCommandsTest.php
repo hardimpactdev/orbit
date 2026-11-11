@@ -56,7 +56,6 @@ it('follows lifecycle admission and emits only the final Operation in JSON', fun
         ['node_id' => 10, 'name' => 'prod', 'preview_name' => 'preview']],
     'transfer' => ['instance:transfer', TransferInstanceRequest::class, ['instance' => 501, 'node' => 10, '--force' => true], ['node_id' => 10]],
     'migrate' => ['instance:migrate', MigrateInstanceRequest::class, ['instance' => 501, '--force' => true], []],
-    'restore interrupted migrate' => ['instance:migrate', MigrateInstanceRequest::class, ['instance' => 501, '--restore' => true, '--force' => true], ['restore' => true]],
     'destroy' => ['instance:destroy', DestroyInstanceRequest::class, ['instance' => 501, '--yes' => true, '--force' => true], ['force' => true]],
 ]);
 

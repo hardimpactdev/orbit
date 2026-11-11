@@ -75,8 +75,6 @@ additionalFiles:
   - ansible/route-withdraw.yml
   - ansible/instance-migrate.yml
   - ansible/instance_migrate_links.py
-  - ansible/instance_migrate_claim.py
-  - ansible/tasks/instance-migrate-claim.yml
   - ansible/tasks/instance-migrate-link-result.yml
   - ansible/tasks/instance-migrate-phase.yml
   - ansible/tasks/instance-migrate-discard.yml

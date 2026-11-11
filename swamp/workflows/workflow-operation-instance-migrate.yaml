@@ -41,7 +41,6 @@ jobs:
       # Preflight, prepare the container with the shared create tasks, and probe every attached target before downtime.
       # The Node's mirror fetches from the checkout itself, so this phase gets no token.
       - name: container
-        guard: '${{ inputs.intent.restore_only }}'
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: input, condition: {type: succeeded}}]
@@ -229,31 +228,14 @@ jobs:
           inputs:
             run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags retire "$ORBIT_ANSIBLE/instance-migrate.yml"
             env: *phase
-      # Every restore effect, including the Route child, waits for the ownership check and permanent restore claim on the Node.
-      - name: restore-check
-        writes: true
-        labels: {role: swamp}
-        dependsOn:
-          - {step: input, condition: {type: succeeded}}
-          - {step: retire, condition: {type: always}}
-        guard: '${{ !inputs.intent.restore_only && "retire" in steps && steps.retire.status != "skipped" }}'
-        task:
-          type: behavior
-          behaviorType: command/shell
-          behaviorName: '${{ "im-restore-check-" + string(inputs.node_id) }}'
-          methodName: execute
-          inputs:
-            run: timeout 30 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags restore-check "$ORBIT_ANSIBLE/instance-migrate.yml"
-            env: *phase
       # Restore the Route: a move that failed after the Route child started puts the checkout's site and pool back.
       - name: restore-route
         labels: {role: swamp}
         writes: true
         dependsOn:
-          - {step: restore-check, condition: {type: succeeded}}
           - {step: route, condition: {type: always}}
           - {step: retire, condition: {type: always}}
-        guard: '${{ inputs.intent.route_mutations == null || (!inputs.intent.restore_only && (!("route" in steps) || steps.route.status == "skipped" || ("retire" in steps && steps.retire.status != "skipped"))) }}'
+        guard: '${{ inputs.intent.route_mutations == null || !("route" in steps) || steps.route.status == "skipped" || ("retire" in steps && steps.retire.status != "skipped") }}'
         allowFailure: true
         task:
           type: workflow
@@ -271,7 +253,6 @@ jobs:
         labels: {role: swamp}
         writes: true
         dependsOn:
-          - {step: restore-check, condition: {type: succeeded}}
           - {step: input, condition: {type: succeeded}}
           - {step: quiesce, condition: {type: always}}
           - {step: container, condition: {type: always}}
@@ -285,7 +266,7 @@ jobs:
           - {step: t3-register, condition: {type: always}}
           - {step: retire, condition: {type: always}}
           - {step: restore-route, condition: {type: always}}
-        guard: '${{ !inputs.intent.restore_only && "retire" in steps && steps.retire.status != "skipped" }}'
+        guard: '${{ "retire" in steps && steps.retire.status != "skipped" }}'
         task:
           type: behavior
           behaviorType: command/shell

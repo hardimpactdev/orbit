@@ -7,7 +7,7 @@ covers:
 ---
 
 ```bash
-orbit instance:migrate <instance> [--force] [--restore] [--json]
+orbit instance:migrate <instance> [--force] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -16,7 +16,6 @@ orbit instance:migrate <instance> [--force] [--restore] [--json]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--restore` | off | Restore the checkout after the latest move was interrupted without a final result. Refuses once retirement began or the container owns the Instance. |
 | `--force` | prompt | Confirm the downtime and the retirement of the checkout. Required without a terminal and with `--json`. |
 | `--idempotency-key=KEY` | none | Reuse a key to retry this operation start. |
 | `--json` | off | Print the final task as JSON, with every step, and nothing while it follows. |
@@ -118,9 +117,7 @@ After the default has moved, an Instance that is still a checkout keeps working 
 
 A move that fails leaves the checkout Instance serving as before. Orbit puts the Route back when the run had started to move it, deletes the new container with its ACL, its firewall rules and its mirror, and drops the reserved runtime record. So the access to the database server that the move added goes too. The checkout and the database are never changed before the Route serves the container. Run the same command again to retry.
 
-The task records whether the Instance moved, was restored and is ready. A deadline or cancellation still waits for the final state. A completed restore drops the container reservation, so Process commands reach the host again. An independent failed phase keeps its own error code. A deadline-triggered abort keeps `operation.timed_out`; a user abort stays cancelled. A run whose end cannot be read retains the provisional timeout until its native finish is known.
-
-A lost worker can leave the move interrupted before it records a final result. The task then reports an unknown end state and gives one recovery command: `orbit instance:migrate INSTANCE --restore --force`. This starts a new task from that move’s frozen intent and runs only restoration. It refuses with `instance.migrate_restore_unavailable` when the latest move has a final result, and with `instance.migrate_restore_unsafe` once retirement began or the container owns the Instance.
+The task records whether the Instance moved, was restored and is ready. After a deadline or confirmed cancellation, Orbit reads the native finish. An independent failed phase keeps its code; a deadline-triggered abort keeps `operation.timed_out`, while a user abort stays cancelled. A completed restore drops the container reservation only while this migrate still owns it. A lost worker without a native finish reports an unknown end state and retains its reservation.
 
 When the restore itself fails, the task names the failed step and Orbit keeps the reserved record, so no other Instance takes the address of a container that may be left. The Instance's site stays the checkout's. Its deployments refuse with `instance.lifecycle_busy` until the same command has run again.
 
@@ -136,10 +133,6 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 
 | Code | Meaning |
 | --- | --- |
-| `instance.migrate_restore_failed` | The restore-only task could not restore the Route or checkout. The reserved runtime stays for diagnosis. |
-| `instance.migrate_restore_unavailable` | The latest move is not interrupted without a final result. |
-| `instance.migrate_restore_unsafe` | Retirement began or owns the permanent claim, or the container owns the Instance. Restoration cannot discard it. |
-| `instance.migrate_superseded` | Restore owns the original move. Retirement refuses and keeps the checkout intact. |
 | `instance.id_invalid` | The Instance is missing in a call that cannot prompt, or is not a positive integer. |
 | `input.cancelled` | You declined, pressed Ctrl-C, or the input ended. |
 | `instance.confirmation_required` | The call cannot prompt and has no `--force`. |
