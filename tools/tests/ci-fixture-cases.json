@@ -737,9 +737,10 @@
     ]
   },
   "swamp/tests/ansible_instance_module_args_test.py": {
-    "source_sha256": "167748d56e02ff960ec4f0ed0f931b9d712f51da47907c517ed901fff6240bae",
+    "source_sha256": "89400c2f37fbf8ceb44f52e77dead3f472bf2c163ab7929e1158e3aa6c7e258e",
     "cases": [
       "test_every_module_call_passes_the_real_argument_spec",
+      "test_migration_pause_runs_as_a_controller_action",
       "test_the_check_refuses_what_the_real_module_refuses"
     ]
   },
