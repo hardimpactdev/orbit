@@ -103,7 +103,8 @@ class ShapeGateToolsTest(unittest.TestCase):
         self.assertIn('tests/ansible_instance_host_create_test.ts', planned)
         self.assertTrue(all(step.parallel for step in commands))
         instance = [step for step in commands if any('ansible_instance_host' in arg for arg in step.argv)]
-        self.assertEqual(len(instance), 14)
+        self.assertEqual({step.unit for step in instance},
+                         {file for file in files if file.startswith('tests/ansible_instance_host_')})
         self.assertTrue(all(len(step.argv[3:]) == 1 for step in instance))
         self.assertTrue(all(step.fixture_seconds == 720 for step in instance))
         self.assertTrue(all('--parallel' not in step.argv for step in instance))

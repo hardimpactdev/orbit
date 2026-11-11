@@ -251,7 +251,8 @@ class ShardPartitionTest(unittest.TestCase):
                 for file in ('tests/new/nested_test.ts', 'tests/nested/new_test.py', 'bin/new_test.ts'):
                     self.assertEqual(planned[file], 1)
                 self.assertEqual({s.unit for s in units if s.argv[0] not in ('deno', 'python3')}, {'ruff', 'ansible-lint'})
-                self.assertEqual(len([s for s in tests if 'ansible_instance_host_' in s.unit]), 15)
+                self.assertEqual({s.unit for s in tests if 'ansible_instance_host_' in s.unit},
+                                 {file for file in discovered if file.startswith('tests/ansible_instance_host_')})
                 self.assertTrue(all(len([arg for arg in s.argv if arg in discovered]) == 1 for s in tests))
                 control = gate['select_steps'](full, control_only=True)
                 self.assertEqual([s.name for s in control if s.name != 'ansible collections'],
