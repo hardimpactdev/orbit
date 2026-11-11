@@ -830,6 +830,24 @@ describe('ordered start checks for the client', function (): void {
 });
 
 describe('the compatible Project directory', function (): void {
+    it('orders both list forms by slug when display names disagree', function (string $query): void {
+        $alpha = threadDefault($this->beast, 'alpha');
+        $alpha->project->update(['name' => 'Zulu']);
+        $zulu = threadDefault($this->beast, 'zulu');
+        $zulu->project->update(['name' => 'Alpha']);
+
+        $rows = threadCall($this->phone, 'GET', 'projects'.$query)->assertOk()->json('data');
+
+        expect(array_column($rows, 'slug'))->toBe(['alpha', 'zulu']);
+    })->with(['default' => '', 'full directory' => '?include_unavailable=1']);
+
+    it('rejects unknown Project list query fields', function (string $query): void {
+        threadDefault($this->beast, 'ready');
+
+        threadCall($this->phone, 'GET', 'projects?'.$query)
+            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    })->with(['unexpected=1', 'include_unavailable=0&unexpected=1', 'include_unavailable=1&unexpected=1']);
+
     it('defaults to the pre-directory ready set and keeps the full directory opt-in', function (): void {
         $ready = threadDefault($this->beast, 'ready');
         foreach (['checkout' => 'default', 'missing' => 'feature'] as $slug => $name) {

@@ -55,7 +55,7 @@ final readonly class ConnThreadProjects
             $project->checks,
             // This check passes only after the four readiness checks: exactly the pre-directory scope.
             static fn (ConnProjectCheckData $check): bool => $check->key === 'node_access' && $check->status === ConnProjectCheckStatus::Pass,
-        ))->values();
+        ))->sortBy('slug')->values();
     }
 
     /** Readiness precedes access. Refusals never identify a hidden Node. */

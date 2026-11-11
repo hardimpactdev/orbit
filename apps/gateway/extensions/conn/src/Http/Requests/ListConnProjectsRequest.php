@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\ValidationException;
 
 final class ListConnProjectsRequest extends FormRequest
 {
@@ -19,6 +20,10 @@ final class ListConnProjectsRequest extends FormRequest
     {
         // Read the original query so input trimming cannot admit padded boolean strings.
         parse_str($this->server->getString('QUERY_STRING'), $query);
+        if (array_diff(array_keys($query), ['include_unavailable']) !== []) {
+            throw ValidationException::withMessages(['query' => ['Only the include_unavailable query field is allowed.']]);
+        }
+
         if (! array_key_exists('include_unavailable', $query)) {
             return [];
         }
