@@ -98,7 +98,7 @@ class PlanningTest(unittest.TestCase):
         for path in ('swamp/tests/a.ts', 'swamp/tests/_support/helper.ts', 'swamp/ansible/tasks/a-b.yml'):
             self.assertEqual(names(planned([path], fixtures)), ['swamp/tests/a.ts'])
         self.assertEqual(names(planned(['swamp/ansible/tasks/a-sub/file.yml'], fixtures)), [])
-        for path in ('.github/ci/checks.toml', 'bin/ci-units', units.PRELOAD):
+        for path in ('bin/ci-units', units.PRELOAD):
             result = planned([path], fixtures)
             self.assertEqual(set(names(result)), {'swamp/tests/a.ts', 'swamp/tests/b.py'})
             self.assertEqual(result['deferred'], ['swamp/tests/c.ts'])
@@ -184,6 +184,91 @@ class InventorySelectionTest(unittest.TestCase):
         ancestor = self.git('merge-base', main, topic)
         self.assertEqual(ancestor, self.base)
         self.assertEqual(self.changed(ancestor, topic), [self.a])
+
+
+class RegistrySelectionTest(unittest.TestCase):
+    def setUp(self):
+        self.scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(self.scratch.cleanup)
+        self.root = Path(self.scratch.name)
+        self.git('init', '-q')
+        self.git('config', 'user.name', 'CI test')
+        self.git('config', 'user.email', 'ci@example.test')
+        self.table = self.root / '.github/ci/checks.toml'
+        self.table.parent.mkdir(parents=True)
+        self.initial = ('[budget]\ndefault_cost = 30\n[fixtures]\ndefault = []\n'
+                        '[[fixture]]\nfile = "swamp/process.ts"\ncost = 40\n'
+                        '[[fixture]]\nfile = "swamp/egress.py"\ncost = 117\n')
+        self.base = self.commit(self.initial)
+
+    def git(self, *args):
+        return subprocess.check_output(['git', *args], cwd=self.root, text=True, stderr=subprocess.PIPE).strip()
+
+    def commit(self, text):
+        self.table.write_text(text)
+        self.git('add', '.')
+        self.git('commit', '-qm', 'table')
+        return self.git('rev-parse', 'HEAD')
+
+    def changes(self, text):
+        head = self.commit(text)
+        with patch.object(units, 'ROOT', self.root):
+            return units.registry_changes(self.base, head)
+
+    def test_fixture_cost_edit_selects_only_its_file_through_cli(self):
+        head = self.commit(self.initial.replace('cost = 40', 'cost = 45'))
+        fixtures = {file: fixture(file) for file in ('swamp/process.ts', 'swamp/egress.py')}
+        with patch.object(units, 'ROOT', self.root), \
+             patch.object(units, 'configuration', return_value=(BUDGET, fixtures, [])), \
+             patch.object(units.gate, 'resolve_base', return_value=self.base), \
+             patch.object(units.selection, 'changed_inputs', return_value=(self.base, ['.github/ci/checks.toml'])), \
+             patch.object(sys, 'argv', ['ci-units', 'plan', '--base', self.base, '--head', head]), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(units.main(), 0)
+        self.assertEqual(names(json.loads(output.getvalue())), ['swamp/process.ts'])
+
+    def test_formatting_and_check_edits_do_not_select_fixture_bodies(self):
+        self.assertEqual(self.changes(self.initial + '\n# comment\n[check.docs]\ncost = 40\n'), ([], False))
+
+    def test_shared_budget_defaults_and_order_select_all(self):
+        for text in (self.initial.replace('default_cost = 30', 'default_cost = 31'),
+                     self.initial.replace('default = []', 'default = ["swamp/egress.py"]'),
+                     self.initial.replace('file = "swamp/process.ts"', 'file = "TEMP"')
+                     .replace('file = "swamp/egress.py"', 'file = "swamp/process.ts"')
+                     .replace('file = "TEMP"', 'file = "swamp/egress.py"')):
+            with self.subTest(text=text):
+                changed, shared = self.changes(text)
+                self.assertTrue(shared)
+                fixtures = {file: fixture(file) for file in ('swamp/process.ts', 'swamp/egress.py')}
+                result = units.plan(['.github/ci/checks.toml'], BUDGET, fixtures, [],
+                                    registry_changed=changed, shared_registry=shared)
+                self.assertCountEqual(names(result), fixtures)
+
+    def test_added_and_removed_entries_do_not_select_unchanged_files(self):
+        changed, shared = self.changes(self.initial.replace('swamp/process.ts', 'swamp/new.ts'))
+        self.assertEqual(changed, ['swamp/new.ts', 'swamp/process.ts'])
+        self.assertFalse(shared)
+
+    def test_merge_base_excludes_main_only_table_edits(self):
+        self.git('checkout', '-qb', 'topic')
+        topic = self.commit(self.initial.replace('cost = 40', 'cost = 45'))
+        self.git('checkout', '-qb', 'base', self.base)
+        main = self.commit(self.initial.replace('cost = 117', 'cost = 118'))
+        with patch.object(units, 'ROOT', self.root):
+            self.assertEqual(units.registry_changes(self.git('merge-base', main, topic), topic),
+                             (['swamp/process.ts'], False))
+
+    def test_egress_role_is_narrow_and_known_slow_file_is_deferred(self):
+        budget, fixtures, defaults = units.configuration()
+        file = 'swamp/tests/ansible_task_vm_host_egress_test.py'
+        unrelated = units.plan(['swamp/ansible/tasks/instance-container-process.yml',
+                                'swamp/workflows/workflow-operation-process-container.yaml'], budget, fixtures, defaults)
+        self.assertNotIn(file, names(unrelated) + unrelated['deferred'])
+        for path in (file, 'swamp/ansible/task-vm-host.yml'):
+            result = units.plan([path], budget, fixtures, defaults)
+            self.assertNotIn(file, names(result))
+            self.assertIn(file, result['deferred'])
+            self.assertIn('43102509039', units.plan_summary(result, fixtures))
 
 
 class TableTest(unittest.TestCase):

@@ -58,6 +58,18 @@ class PlanningTest(unittest.TestCase):
         self.assertCountEqual(['swamp/migration.ts', 'swamp/host.py'], result['after_merge_files'])
         self.assertFalse(any(f.get('after_merge_cases') or f.get('after_merge') for f in result['fixtures'].values()))
 
+    def test_egress_budget_deferral_keeps_every_python_case_in_receiver(self):
+        file = 'swamp/tests/ansible_task_vm_host_egress_test.py'
+        _, configured, _ = self.api.configuration()
+        fixture = configured[file]
+        self.assertTrue(fixture['after_merge'])
+        cases = self.api.collect(file)['cases']
+        self.assertGreater(len(cases), 1)
+        result = self.plan([fixture], {file: cases})
+        self.assertEqual(result['after_merge_files'], [file])
+        self.assertCountEqual([case for unit in result['units'] for case in unit['cases']], cases)
+        self.assertFalse(result['fixtures'][file].get('after_merge'))
+
     def test_hosted_prerequisite_deferrals_reach_full_set_with_all_cases(self):
         files = ['swamp/tests/node_worker_systemd_cleanup_test.ts',
                  'swamp/tests/fleet_reboot_unreachable_test.ts']

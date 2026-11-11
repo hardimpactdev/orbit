@@ -1167,6 +1167,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_host_egress_test.py"
+after_merge = true
+reason = "Whole Python unit repeatedly reached the 180s PR ceiling (#3399 and #3418, run 43102509039 job 130797663832); full-set run 43026453109 also cut it. All cases run after merge pending measured case splitting. 117s is the old estimate, not a completed hosted measurement."
 cost = 117
 inputs = [
   "bin/swamp-shape-gate",
