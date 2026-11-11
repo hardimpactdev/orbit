@@ -98,7 +98,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "f0787511d26abd6a0356b3ebe4c4bdb54aafd0fc4ea526eaedb5305beeb60045",
+    "source_sha256": "e7610873e7c9a7db586061dd8816cc48c4dc0d4807da1097c7cfb68ba66fc20a",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
@@ -123,7 +123,10 @@
       "a copied seed with an unguarded extra local NIC refuses before the clone starts",
       "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read",
       "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish",
-      "a thirty-second Process stop succeeds"
+      "a thirty-second Process stop succeeds",
+      "withdrawal removes only selected access while stopped unrelated publications and newer admissions survive",
+      "withdrawal retains a shared service without resolving its stopped publication or withdrawing other grants",
+      "withdrawal failure reports its code after per-Instance withdrawal and an idempotent retry finishes cleanup"
     ]
   },
   "swamp/tests/ansible_instance_host_test.ts": {
