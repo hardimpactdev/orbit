@@ -64,6 +64,7 @@ MockClient::global(['*' => static function (PendingRequest $pending) use (&$repl
         'class' => $request::class,
         'method' => $pending->getMethod()->value,
         'url' => $pending->getUrl(),
+        'query' => $pending->query()->all(),
         'body' => method_exists($request, 'body') ? $request->body()->all() : [],
     ], JSON_THROW_ON_ERROR)."\n", FILE_APPEND);
     $reply = array_shift($replies);

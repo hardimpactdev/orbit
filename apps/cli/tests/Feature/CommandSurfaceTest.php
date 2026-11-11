@@ -1072,6 +1072,8 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'node:wireguard-key' => ['node', 'public-key'],
             'node:update', 'node:converge', 'node:metrics', 'node:show', 'node:role:list' => ['node'],
             'node:role:add' => ['node', 'role'],
+            'instance:node-service:attach' => ['instance'],
+            'instance:node-service:detach' => ['instance', 'target'],
             'firewall:allow' => ['port'],
             'proof' => ['orbit-command'],
             'proof:run' => ['commit'],

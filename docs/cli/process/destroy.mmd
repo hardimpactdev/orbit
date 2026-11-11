@@ -26,6 +26,12 @@ sequenceDiagram
   %%> - `--project` removes a Project definition only; it starts no run (R1)
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Check Process dependencies
+  alt attached Node service
+    GW--xCLI: Process required (409)<br/>No admission or runtime change
+    %%> On failure:
+    %%> - process.required_by_instance_node_service names every dependent Instance before recording an Operation; the Process, runtime and attachments remain.
+  else no attachment dependency
   Note over GW: Validate, record the task<br/>Process 417: removing · #5130
   %%> Requirements:
   %%> - your Node has an access grant to the Process's Node
@@ -103,4 +109,5 @@ sequenceDiagram
     GW-->>CLI: status + result
     %%> Returns:
     %%> - the current status, and the result once the task has ended
+  end
   end

@@ -15,6 +15,15 @@ sequenceDiagram
   participant N as Target Node<br/>gets the role
   participant M as Fleet Nodes<br/>role participants
   %% path: main
+  Note over CLI: Resolve command inputs
+  alt local input refused
+    CLI--xCLI: Invalid input<br/>No admission request
+    %%> On failure:
+    %%> - node.id_invalid refuses a non-positive Node ID or a missing noninteractive Node.
+    %%> - node_role.role_required refuses an omitted noninteractive role.
+    %%> - node_role.storage_process_required refuses invalid, missing noninteractive or unavailable Analytics storage selectors.
+    %%> - validation.failed refuses Analytics-only options for another role.
+  else local input available
   CLI->>GW: node:role:add NODE ROLE
   %%> Command:
   %%> - `orbit node:role:add NODE ROLE`
@@ -29,7 +38,13 @@ sequenceDiagram
     GW--xCLI: http.404
   else caller refused
     %% path: access-refused
-    GW--xCLI: node_access.required
+    GW--xCLI: Caller refused
+    %%> On failure:
+    %%> - peer.identity_unknown or node_access.required; no assignment or Operation changes.
+  else request key conflicts
+    GW--xCLI: Request key conflict
+    %%> On failure:
+    %%> - operation.idempotency_conflict refuses a key with another target or input, before admission.
   else database address missing
     %% path: database-address-missing
     GW--xCLI: Database address missing<br/>database.wireguard_ip_missing
@@ -45,22 +60,26 @@ sequenceDiagram
     %%> - the role is unknown or protected, conflicts with an assigned role, has another singleton holder, or violates the ingress Cluster rule
     %%> - an existing assignment needs explicit convergence, except an active ingress assignment
     %%> - Analytics storage options are refused for another role
-  else Analytics Process invalid
+  else Process preparation refused
     %% path: analytics-storage-refused
-    GW--xCLI: Process refused<br/>analytics.* or ownership conflict
-    %%> Result:
-    %%> - the storage error identifies the missing or unsuitable Process, port or credentials; no assignment is claimed
-    %%> - an attached collector or storage Process returns process.node_service_ownership_conflict and names every dependent Instance before owner state changes
+    GW--xCLI: Process refused<br/>No committed admission change
+    %%> On failure:
+    %%> - analytics.settings_missing, analytics.postgres_process_missing or analytics.clickhouse_process_missing refuses missing settings or records.
+    %%> - analytics.process_not_node, analytics.process_not_docker or analytics.process_not_database_node refuses the owner, runtime or placement.
+    %%> - analytics.postgres_unsupported, analytics.clickhouse_unsupported or analytics.version_invalid refuses the image or version.
+    %%> - analytics.storage_port_not_wireguard_bound, analytics.storage_credentials_missing or analytics.storage_port_missing refuses storage publication or credentials.
+    %%> - process.wireguard_ip_missing or process.name_taken refuses runtime preparation.
+    %%> - process.node_service_ownership_conflict names every dependent Instance before owner changes. Admission failures roll back assignment and Operation writes.
   else storage path refused
     %% path: storage-path-refused
-    GW--xCLI: Storage path refused<br/>node.settings_path_*
+    GW--xCLI: Storage path refused
     %%> When:
-    %%> - the effective application storage path is invalid, protected or inside a managed checkout
+    %%> - node.settings_path_invalid, node.settings_path_protected or node.settings_path_managed refuses an invalid, protected or managed-checkout storage path before changes.
   else Node held
     %% path: target-busy
     GW--xCLI: operation.target_busy
-    %%> Result:
-    %%> - no Operation or assignment change
+    %%> On failure:
+    %%> - No Operation or assignment change is committed.
   else convergence requested
     %% path: converge-requested
     opt --converge
@@ -75,8 +94,8 @@ sequenceDiagram
         Note over GW: Claim convergence
         %%> Requirements:
         %%> - accept an active role, a `converge:` failure, or provisioning at least 11 minutes old with no Operation holding the Node
-        %%> Result:
-        %%> - one Node Operation owns the convergence; freeze its full intent and vault key names
+        %%> Why:
+        %%> - Freeze intent while the Node lock prevents competing role changes.
         GW->>SW: Start convergence run<br/>node.role_converge
         %%> Next:
         %%> - execute the [node.role_converge chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/role-converge.mmd), not the add-only phases below
@@ -84,13 +103,13 @@ sequenceDiagram
         alt convergence succeeds
           %% path: converge-succeeded
           SW-->>GW: Convergence succeeded<br/>terminal event
-          %%> Result:
-          %%> - the shared terminal reader records the assignment active and clears earlier failure details
+          %%> When:
+          %%> - Clear earlier failure details only after the terminal result proves convergence.
         else convergence fails
           %% path: converge-failed
           SW--xGW: Convergence failed<br/>error_code, failed step
-          %%> Result:
-          %%> - the shared terminal reader records the failure; an already-active assignment stays active
+          %%> On failure:
+          %%> - The terminal reader records failure; an already-active assignment stays active.
         end
         loop every 2 s until terminal
           CLI->>GW: operation:show TASK
@@ -101,43 +120,40 @@ sequenceDiagram
   else addition admitted
     %% path: add
     Note over GW: Claim the role and Node
-    %%> Result:
-    %%> - one Node Operation owns the add; a new assignment is provisioning, and a repeated active ingress assignment stays active
-    %%> - capture full public intent and vault key names, never credential values
-    %%> - for gateway, record its grants to active vpn and metrics Nodes on other machines
+    %%> Why:
+    %%> - Freeze public intent and vault references under the Node lock before dispatch.
     GW->>SW: Start run, full intent<br/>operation-node-role-add
     GW-->>CLI: 202 Accepted<br/>Operation ID
     SW->>N: Apply prerequisites<br/>Ansible phase: prerequisites
-    %%> What it does:
-    %%> - require an admitted Ubuntu release before changing the host, then apply pinned repositories and packages
-    %%> - for the swamp role, bootstrap its pinned Ansible and collections before the remaining phases
+    %%> On failure:
+    %%> - An unsupported Ubuntu release refuses before host changes.
+    %%> When:
+    %%> - Bootstrap Swamp's pinned Ansible and collections before its remaining phases.
     %% path: tools
     SW->>N: Read Tool Manager accounts<br/>Ansible phase: tools-read
     SW->>SW: Compose tools resources
     SW->>SW: Write tool variables
     SW->>N: Set up Tool Managers<br/>Ansible phase: tools
-    %%> What it does:
-    %%> - apply only the admitted managers; rerun manager commands only when their pin or lock changes
+    %%> When:
+    %%> - Rerun manager commands only when their admitted pin or lock changes.
     SW->>N: Apply the role<br/>Ansible phase: node
-    %%> What it does:
-    %%> - apply the role's files, units and storage ownership
-    %%> - for swamp, repair ownership and mode 0644 of an existing `/tmp/deno-compile-swamp.cache`
+    %%> When:
+    %%> - For Swamp, repair an existing compile cache before service startup and checks.
     opt new Analytics assignment
       %% path: analytics
       SW->>M: Open Analytics storage<br/>Ansible phase: storage-firewall
       SW->>M: Apply Analytics runtime<br/>Ansible phase: analytics
-      %%> What it does:
-      %%> - initialize the database and apply the runtime
+      %%> When:
+      %%> - Initialize storage only for a new Analytics assignment.
       SW->>M: Wait for Analytics<br/>Ansible phase: readiness
-      %%> Result:
-      %%> - a completed runtime is retained and recorded even if a later publication fails
+      %%> On failure:
+      %%> - A later publication failure retains and records a completed Analytics runtime.
     end
     opt swamp role
       %% path: swamp
       SW->>N: Install Swamp<br/>Ansible phase: swamp
-      %%> What it does:
-      %%> - publish the binary beside the running one, then apply identity, serve and worker units
-      %%> - start all three permanent workers without restarting live processes; enable renewal to drain one at a time while two serve
+      %%> Why:
+      %%> - Publish beside the running binary and drain workers one at a time so active work can finish.
     end
     opt role needs certificates
       %% path: certificates
@@ -151,11 +167,11 @@ sequenceDiagram
       SW->>M: Publish PHP pools<br/>Ansible phase: php
     end
     SW->>M: Publish role sites<br/>Ansible phase: publication
-    %%> What it does:
-    %%> - apply each participant's admitted delta; validate Caddy before reloading
+    %%> On failure:
+    %%> - Invalid Caddy configuration refuses the reload.
     SW->>M: Open the firewall<br/>Ansible phase: firewall
-    %%> What it does:
-    %%> - repair owned rules, placing specific allows before isolation denies and broader peer trust; preserve unrelated rules
+    %%> Why:
+    %%> - Place specific allows before isolation denies and broader peer trust; preserve unrelated rules.
     opt role changes DNS
       %% path: dns
       SW->>M: Publish private DNS<br/>Ansible phase: dns
@@ -166,21 +182,21 @@ sequenceDiagram
       %% path: metrics
       SW->>N: Add the exporters<br/>Ansible phase: exporters
       SW->>M: Publish Prometheus<br/>Ansible phase: prometheus
-      %%> What it does:
-      %%> - publish membership after the target's exporters are ready
+      %%> When:
+      %%> - Publish membership only after the target's exporters are ready.
     end
     SW->>M: Check the role<br/>Ansible phase: check
-    %%> What it does:
-    %%> - prove the role's services, ports, sites and owned rules, including swamp cache readability
+    %%> Why:
+    %%> - Require end-state evidence before marking a new assignment active.
     alt every phase passes
       %% path: succeeded
       SW-->>GW: Run succeeded<br/>terminal event
-      %%> Result:
-      %%> - the shared terminal reader records the assignment active and clears earlier failure details
+      %%> When:
+      %%> - Clear earlier failure details only after the terminal result proves the role is ready.
     else a phase fails
       %% path: failed
       SW--xGW: Run failed<br/>error_code, failed step
-      %%> Result:
+      %%> On failure:
       %%> - a first add stays recorded as failed at `converge:STEP`; an already-active ingress assignment stays active
       %%> - retain the failed step and error code on the Operation and the failed assignment
       %%> - finished host changes remain, with no rollback; recover with `node:role:add NODE ROLE --converge`
@@ -192,10 +208,11 @@ sequenceDiagram
       %%> - condition: completed; best-effort cleanup on the admitted runtime Node
     end
     SW->>SW: Remove the run folder<br/>condition: completed
-    %%> Result:
-    %%> - remove private intent and credential files after role phases and init-container cleanup finish, on either result
+    %%> When:
+    %%> - Wait for role phases and init-container cleanup, then remove private intent and credential files on either result.
     loop every 2 s until terminal
       CLI->>GW: operation:show TASK
       GW-->>CLI: status + result
     end
+  end
   end

@@ -38,11 +38,11 @@ A repeat without `--converge` is refused with `validation.failed`, except for an
 <div className="flow-at" data-chart="node/role-add"></div>
 <div className="flow-at" data-chart="node/role-converge"></div>
 
-Orbit checks recorded preconditions before changing the Node and allows one add or convergence at a time on it. The final check must pass before a new assignment becomes `active`. Role work does not install the Node agent or Orbit CLI; [`node:converge`](/cli/node/converge) owns them.
+Orbit checks recorded preconditions before changing the Node and allows one add or convergence at a time on it. The final check must pass before a new assignment becomes `active`. A completed Analytics runtime remains recorded if a later publication fails. Initialization containers are cleaned up after completion; private intent and credential files are removed after the role phases and that cleanup, on success or failure. Role work does not install the Node agent or Orbit CLI; [`node:converge`](/cli/node/converge) owns them.
 
 Application roles apply the configured storage directory's owner and mode. Orbit refuses protected storage paths before changing the Node. Tool Manager setup reruns its commands only when the admitted pin or lock changes.
 
-For `swamp`, convergence keeps serve and active workers running. Its renewal timer drains one of three permanent workers at a time while two serve. It also repairs an existing compile cache's ownership and readability, then checks it without running a compilation.
+For `swamp`, convergence keeps serve and active workers running. Its renewal timer drains one of three permanent workers at a time while two serve. It also repairs an existing compile cache's ownership and mode 0644, then checks readability without running a compilation.
 
 For `gateway`, [Node provisioning](/reference/node-provisioning#add-a-node) lists the runtime this role owns. Converge it only with a release whose scheduler owns the automatic tick. Adding the role grants that Node access to active `vpn` and `metrics` Nodes on other machines.
 
@@ -53,6 +53,9 @@ A failed first add leaves the assignment `failed`, with its failed step and erro
 | Code | Meaning |
 | --- | --- |
 | `node.id_invalid` | The supplied Node selector is not a positive numeric ID. |
+| `node_role.role_required` | The role is omitted in JSON or noninteractive mode. |
+| `peer.identity_unknown` | The caller is not an active WireGuard peer. |
+| `operation.idempotency_conflict` | The request key belongs to another target or input. No assignment or Operation change is committed. |
 | `http.404` | The Node is not recorded. |
 | `node_access.required` | The shared Node authority rule refuses the caller. |
 | `validation.failed` | Invalid role, protected `vpn` or `router`, incompatible assignment, singleton or Cluster violation, ineligible convergence, a repeat that requires convergence, or Analytics options supplied for another role. |
@@ -60,7 +63,12 @@ A failed first add leaves the assignment `failed`, with its failed step and erro
 | `operation.target_busy` | Another Operation holds the Node; the refused call creates no Operation and changes no assignment. |
 | `database.wireguard_ip_missing` | `database` requires the Node's recorded WireGuard address. |
 | `node_role.storage_process_required`, `analytics.settings_missing` | An Analytics storage selector or setting is missing or invalid. |
-| `analytics.*`, `process.wireguard_ip_missing` | A storage Process does not meet the [Analytics requirements](/reference/analytics#assign-the-role). |
+| `analytics.postgres_process_missing`, `analytics.clickhouse_process_missing` | A selected storage Process is missing. |
+| `analytics.process_not_node`, `analytics.process_not_docker`, `analytics.process_not_database_node` | Storage has the wrong owner, runtime or Node role. |
+| `analytics.postgres_unsupported`, `analytics.clickhouse_unsupported`, `analytics.version_invalid` | The storage image or Analytics version is unsupported. |
+| `analytics.storage_port_not_wireguard_bound`, `analytics.storage_credentials_missing`, `analytics.storage_port_missing` | Storage publication or credentials do not meet the [Analytics requirements](/reference/analytics#assign-the-role). |
+| `process.wireguard_ip_missing`, `process.name_taken` | Recorded runtime preparation cannot use the Node address or Process name. |
+| `process.node_service_ownership_conflict` | An attached collector or storage Process names its dependent Instances and refuses ownership changes. |
 | `node.settings_path_invalid`, `node.settings_path_protected`, `node.settings_path_managed` | The configured storage path is invalid, protected, or overlaps a managed checkout. |
 | `role.os_unsupported` | The Node does not run an admitted Ubuntu release. |
 

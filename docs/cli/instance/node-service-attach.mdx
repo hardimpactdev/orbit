@@ -23,13 +23,13 @@ orbit instance:node-service:attach 12 --process=221 --port=1025 --host-env-key=M
 | --- | --- |
 | `instance` | Required positive numeric Instance ID. Route domains are not accepted. |
 | `--process=PROCESS` | Required positive ID of a registered standalone Node Process on the Instance's own Node. |
-| `--port=PORT` | Exact published TCP host port, from 1 through 65535. Omit it only when the Process publishes one TCP host port. |
+| `--port=PORT` | Exact published TCP host port, from 1 through 65535. Omit it only when the Process publishes one TCP host port; an explicitly empty value is refused. |
 | `--host-env-key=KEY` | Required environment key name for the service host. No value is written. |
 | `--port-env-key=KEY` | Required, different environment key name for the service port. No value is written. |
 | `--protocol=tcp` | Defaults to `tcp`; other protocols are refused. |
 | `--json` | Write the attachment result as one JSON object without prompts or progress. |
 
-Supply the required inputs explicitly; the command does not prompt for them. Environment keys start with a letter or underscore, contain only letters, digits and underscores, and have at most 255 characters. The Process must be active with desired state running and publish the selected port on `0.0.0.0` or the Node's Instance bridge address. An omitted Docker bind address means `0.0.0.0`. Orbit checks recorded publication intent here; it does not contact the Node. It refuses unpublished, private-only and infrastructure-reserved ports and never substitutes another port.
+In a human terminal, omitted Instance and Process IDs use registry data lists; the Process list is scoped to the selected Instance's Node, and final eligibility is checked on attach. Omitted key names use text prompts that reject malformed names and repeat until valid. JSON and noninteractive calls require the inputs explicitly. Cancelling a selection or text prompt ends before the attachment request. Environment keys start with a letter or underscore, contain only letters, digits and underscores, and have at most 255 characters. The Process must be active with desired state running and publish the selected port on `0.0.0.0` or the Node's Instance bridge address. An omitted Docker bind address means `0.0.0.0`. Orbit checks recorded publication intent here; it does not contact the Node. It refuses unpublished, private-only and infrastructure-reserved ports and never substitutes another port.
 
 Attach is available before the Instance has a container runtime. The Instance must be active, with no migration or detach running. The Node must have an Instance bridge configuration. The caller needs the same [Node authority](/cli/node/access-add) as database attachment. A Process owned by a registered service cannot be attached through this command. An attached Process refuses later removal or service ownership claims until its dependent records are detached.
 
@@ -45,10 +45,11 @@ The result has `id`, `instance_id`, `node_id`, `process_id`, `protocol`, `port`,
 
 | Code | Meaning |
 | --- | --- |
-| `instance.id_invalid` | The CLI Instance ID is not a positive integer. |
-| `instance.node_service_process_required` | The CLI call omits `--process`. |
-| `instance.node_service_host_key_required` | The CLI call omits `--host-env-key`. |
-| `instance.node_service_port_key_required` | The CLI call omits `--port-env-key`. |
+| `instance.id_invalid` | The CLI Instance ID is invalid, missing noninteractively, or no Instance is available to select. |
+| `input.cancelled` | A terminal selection or text prompt was cancelled; no attachment request was sent. |
+| `instance.node_service_process_required` | The noninteractive call omits `--process`, or no Node Process is available to select. |
+| `instance.node_service_host_key_required` | The noninteractive call omits `--host-env-key`. |
+| `instance.node_service_port_key_required` | The noninteractive call omits `--port-env-key`. |
 | `validation.failed` | A supplied Process ID or port is invalid, the keys are malformed or equal, or an API body is invalid. |
 | `peer.identity_unknown` | The caller is not an active WireGuard peer. |
 | `node_access.required` | The caller lacks authority for the Instance's Node. |

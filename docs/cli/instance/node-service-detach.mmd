@@ -8,49 +8,56 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   participant CALL as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  CALL->>GW: instance:node-service<br/>detach INSTANCE TARGET
-  %%> Command:
-  %%> - orbit instance:node-service:detach INSTANCE TARGET
-  %%> - syntax: instance:node-service:detach
-  %%> On failure:
-  %%> - Invalid numeric IDs refuse locally; the CLI requires confirmation before its delete request.
-  %%> - A JSON or noninteractive call without --yes returns instance.node_service_confirmation_required; declining or cancelling returns input.cancelled. Neither sends a request.
-  Note over GW: Check request and access
-  %%> On failure:
-  %%> - peer.identity_unknown or node_access.required (403): the caller lacks authority.
-  %%> - http.404 (404): the Instance cannot be resolved.
-  %%> - validation.failed (422) or operation.idempotency_conflict (409): the request key is invalid or conflicts.
-  %%> - Every refusal leaves state unchanged and creates no new receipt.
-  alt request or access refused
-    GW--xCALL: Request refused<br/>No changes or new receipt
-  else request admitted
-    Note over GW: Lock the Instance<br/>Begin one transaction
-    alt lifecycle busy
-      GW--xCALL: Lifecycle busy<br/>No changes or new receipt
-      %%> On failure:
-      %%> - instance.lifecycle_busy (409): the Instance is not active, migration is running or a detach is already running.
-    else failed move retains runtime
-      GW--xCALL: Runtime cleanup required<br/>No changes or new receipt
-      %%> On failure:
-      %%> - instance.node_service_runtime_cleanup_required (409): retry instance:migrate to finish or restore the move before detaching.
-    else target missing or foreign
-      GW--xCALL: Attachment missing (404)<br/>No changes or new receipt
-      %%> On failure:
-      %%> - instance.node_service_target_missing: the attachment must belong to the selected Instance.
-    else another Operation owns target
-      GW--xCALL: Target busy<br/>No changes or new receipt
-      %%> On failure:
-      %%> - operation.target_busy (409): the Instance's Operation lock is held.
-    else target admitted
-      Note over GW: Remove attachment<br/>Record succeeded Operation
-      %%> When:
-      %%> - The Instance uses its checkout or has completed migration successfully.
-      alt transaction fails
-        GW--xCALL: Transaction failed<br/>Both writes roll back
+  Note over CALL: Resolve input and consent
+  alt local input refused
+    CALL--xCALL: Refused or cancelled<br/>No delete request
+    %%> On failure:
+    %%> - instance.id_invalid and instance.node_service_target_id_invalid refuse invalid numeric IDs or missing noninteractive IDs.
+    %%> - instance.node_service_confirmation_required refuses a JSON or noninteractive call without --yes.
+    %%> - input.cancelled ends declined consent or a cancelled terminal selection before mutation.
+    %%> - State stays unchanged. Invalid supplied IDs, missing noninteractive IDs and missing noninteractive consent send no request. A terminal Instance selection can follow a registry read.
+  else inputs and consent ready
+    CALL->>GW: instance:node-service<br/>detach INSTANCE TARGET
+    %%> Command:
+    %%> - orbit instance:node-service:detach INSTANCE TARGET
+    %%> - syntax: instance:node-service:detach
+    Note over GW: Check request and access
+    %%> On failure:
+    %%> - peer.identity_unknown or node_access.required (403): the caller lacks authority.
+    %%> - http.404 (404): the Instance cannot be resolved.
+    %%> - validation.failed (422) or operation.idempotency_conflict (409): the request key is invalid or conflicts.
+    %%> - Every refusal leaves state unchanged and creates no new receipt.
+    alt request or access refused
+      GW--xCALL: Request refused<br/>No changes or new receipt
+    else request admitted
+      Note over GW: Lock the Instance<br/>Begin one transaction
+      alt lifecycle busy
+        GW--xCALL: Lifecycle busy<br/>No changes or new receipt
         %%> On failure:
-        %%> - The attachment remains and no new receipt is persisted, including no failed receipt.
-      else transaction commits
-        GW-->>CALL: Completed Operation
+        %%> - instance.lifecycle_busy (409): the Instance is not active, migration is running or a detach is already running.
+      else failed move retains runtime
+        GW--xCALL: Runtime cleanup required<br/>No changes or new receipt
+        %%> On failure:
+        %%> - instance.node_service_runtime_cleanup_required (409): retry instance:migrate to finish or restore the move before detaching.
+      else target missing or foreign
+        GW--xCALL: Attachment missing (404)<br/>No changes or new receipt
+        %%> On failure:
+        %%> - instance.node_service_target_missing: the attachment must belong to the selected Instance.
+      else another Operation owns target
+        GW--xCALL: Target busy<br/>No changes or new receipt
+        %%> On failure:
+        %%> - operation.target_busy (409): the Instance's Operation lock is held.
+      else target admitted
+        Note over GW: Remove attachment<br/>Record succeeded Operation
+        %%> When:
+        %%> - The Instance uses its checkout or has completed migration successfully.
+        alt transaction fails
+          GW--xCALL: Transaction failed<br/>Both writes roll back
+          %%> On failure:
+          %%> - The attachment remains and no new receipt is persisted, including no failed receipt.
+        else transaction commits
+          GW-->>CALL: Completed Operation
+        end
       end
     end
   end

@@ -8,49 +8,67 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  CLI->>GW: instance:node-service<br/>attach INSTANCE PROCESS
-  %%> Command:
-  %%> - orbit instance:node-service:attach INSTANCE --process=PROCESS --host-env-key=KEY --port-env-key=KEY
-  %%> - syntax: instance:node-service:attach
-  %%> On failure:
-  %%> - The CLI refuses missing required options or invalid numeric IDs and port ranges before sending.
-  Note over GW: Check request and access
-  %%> On failure:
-  %%> - peer.identity_unknown, node_access.required or http.404 refuses the caller or numeric Instance.
-  %%> - validation.failed refuses invalid body fields or environment keys.
-  alt request refused
-    GW--xCLI: Named refusal<br/>No attachment change
-  else request admitted
-    Note over GW: Lock and check Instance
-    alt busy or container runtime
-      GW--xCLI: Instance refused<br/>No attachment change
-      %%> On failure:
-      %%> - instance.lifecycle_busy refuses an inactive Instance, running migration or detach.
-      %%> - instance.node_service_runtime_unsupported refuses an existing container runtime.
-    else checkout available
-      Note over GW: Check standalone Process<br/>and TCP publication
-      %%> Why:
-      %%> - Admission uses recorded ownership, desired state and Docker publication; it contacts no Node.
-      alt Process or endpoint refused
-        GW--xCLI: Target refused<br/>No attachment change
+  Note over CLI: Resolve command inputs
+  alt local input refused
+    CLI--xCLI: Invalid input or cancelled<br/>No attach request
+    %%> On failure:
+    %%> - instance.id_invalid refuses a non-positive Instance ID or a missing noninteractive Instance.
+    %%> - instance.node_service_process_required, instance.node_service_host_key_required and instance.node_service_port_key_required refuse missing required inputs in JSON or noninteractive mode, or an empty registry selection.
+    %%> - validation.failed refuses an invalid supplied Process ID or port, including an explicitly empty port.
+    %%> - input.cancelled ends a cancelled terminal selection or text prompt before mutation.
+    %%> - State stays unchanged. Invalid supplied IDs or port and missing noninteractive inputs send no request. Terminal cancellation or empty choices can follow registry reads.
+  else local input available
+    opt human terminal needs input
+      CLI->>GW: Read registry choices
+      GW-->>CLI: Registry choices
+      Note over CLI: Select IDs and enter keys
+      %%> When:
+      %%> - Omitted IDs use registry data lists; omitted environment keys use validated text prompts. Reads may refuse without an attachment change.
+    end
+    CLI->>GW: instance:node-service<br/>attach INSTANCE --process=PROCESS
+    %%> Command:
+    %%> - orbit instance:node-service:attach INSTANCE --process=PROCESS --host-env-key=KEY --port-env-key=KEY
+    %%> - syntax: instance:node-service:attach
+    Note over GW: Check request and access
+    %%> On failure:
+    %%> - peer.identity_unknown, node_access.required or http.404 refuses the caller or numeric Instance.
+    %%> - validation.failed refuses invalid body fields or environment keys.
+    alt request refused
+      GW--xCLI: Named refusal<br/>No attachment change
+    else request admitted
+      Note over GW: Lock and check Instance
+      alt busy or container runtime
+        GW--xCLI: Instance refused<br/>No attachment change
         %%> On failure:
-        %%> - Missing, remote, service-owned or stopped Processes and non-TCP protocols return named refusals.
-        %%> - Ambiguous, unpublished, reserved or private-only ports and a missing bridge return named refusals.
-      else valid endpoint
-        alt identical attachment
-          GW-->>CLI: Already attached<br/>changed false, reason code
-          %%> Result:
-          %%> - instance.node_service_target_unchanged succeeds without a new record.
-        else environment key conflict
-          GW--xCLI: Key conflict<br/>No attachment change
+        %%> - instance.lifecycle_busy refuses an inactive Instance, running migration or detach.
+        %%> - instance.node_service_runtime_unsupported refuses an existing container runtime.
+      else checkout available
+        Note over GW: Check standalone Process<br/>and TCP publication
+        %%> Why:
+        %%> - Admission uses recorded ownership, desired state and Docker publication; it contacts no Node.
+        alt Process or endpoint refused
+          GW--xCLI: Target refused<br/>No attachment change
           %%> On failure:
-          %%> - instance.node_service_environment_conflict requires detaching the old record before a correction.
-        else unused keys
-          Note over GW: Record the attachment
-          alt transaction fails
-            GW--xCLI: Transaction failed<br/>Attachment write rolls back
-          else transaction commits
-            GW-->>CLI: Target result<br/>changed true, request ID
+          %%> - instance.node_service_process_missing, instance.node_service_remote_node and instance.node_service_process_owned refuse an unknown, non-Node, remote or service-owned Process.
+          %%> - instance.node_service_protocol_unsupported and instance.node_service_process_stopped refuse non-TCP or desired-stopped targets.
+          %%> - instance.node_service_port_required and instance.node_service_port_unpublished refuse an omitted choice among several ports or an unpublished TCP host port.
+          %%> - instance.node_service_port_reserved, instance.host_unavailable and instance.node_service_listener_private refuse infrastructure ports, a missing bridge or private-only binding.
+        else valid endpoint
+          alt identical attachment
+            GW-->>CLI: Already attached<br/>changed false, reason code
+            %%> When:
+            %%> - The Process, port and both keys match the existing record; its stable skip reason is instance.node_service_target_unchanged.
+          else environment key conflict
+            GW--xCLI: Key conflict<br/>No attachment change
+            %%> On failure:
+            %%> - instance.node_service_environment_conflict requires detaching the old record before a correction.
+          else unused keys
+            Note over GW: Record the attachment
+            alt transaction fails
+              GW--xCLI: Transaction failed<br/>Attachment write rolls back
+            else transaction commits
+              GW-->>CLI: Target result<br/>changed true, request ID
+            end
           end
         end
       end
