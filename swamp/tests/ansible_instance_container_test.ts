@@ -27,7 +27,7 @@ function transform(task: Task): Task {
       mode: "0600",
     };
   }
-  const args = task["ansible.builtin.file"] as Record<string, unknown> | undefined;
+  const args = (task["ansible.builtin.file"] ?? task["ansible.builtin.copy"]) as Record<string, unknown> | undefined;
   if (args) {
     delete args.owner;
     delete args.group;
@@ -50,10 +50,14 @@ function fixture() {
   const runId = crypto.randomUUID();
   Deno.mkdirSync(`${folder}/bin`);
   Deno.mkdirSync(`${folder}/tasks`);
-  Deno.mkdirSync(`${folder}/templates`);
-  Deno.copyFileSync(new URL("templates/instance-bridge-rules.j2", root), `${folder}/templates/instance-bridge-rules.j2`);
+  Deno.copyFileSync(new URL("instance_bridge.py", root), `${folder}/instance_bridge.py`);
+  Deno.writeTextFileSync(`${folder}/bin/curl`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-bridge-curl.ts", import.meta.url).pathname}' "$@"\n`);
+  Deno.chmodSync(`${folder}/bin/curl`, 0o755);
+  Deno.writeTextFileSync(`${folder}/nat.txt`, "");
+  Deno.writeTextFileSync(`${folder}/bin/iptables-save`, `#!/bin/sh\ncat '${folder}/nat.txt'\n`);
+  Deno.chmodSync(`${folder}/bin/iptables-save`, 0o755);
   for (const shared of ["instance-network-nic-check.yml", "instance-network-device-check.yml", "instance-bridge-rules.yml"]) {
-    Deno.copyFileSync(new URL(`tasks/${shared}`, root), `${folder}/tasks/${shared}`);
+    Deno.writeTextFileSync(`${folder}/tasks/${shared}`, stringify((parse(Deno.readTextFileSync(new URL(`tasks/${shared}`, root))) as Task[]).map(transform)).replaceAll("/usr/local/libexec", `${folder}/libexec`).replaceAll("/var/lib/orbit/instance-bridge", `${folder}/bridge-policy`));
   }
   Deno.mkdirSync(`${folder}/home`);
   Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({"network-acls": [{name: "orbitinst0-egress", egress: [], ingress: []}]}));
@@ -90,7 +94,7 @@ function fixture() {
     address: "10.253.0.2",
     network: "orbitinst0",
     bridge_cidr: "10.253.0.0/24",
-    bridge_endpoints: [] as {host: string; port: number}[],
+    bridge_endpoints: [] as {host: string; port: number; docker: boolean}[],
     acl: "instance-7",
     acl_rules: {
       description: "Orbit Instance 7",
@@ -977,6 +981,12 @@ Deno.test({
       assert(!result.ok, result.output);
       assertEquals(f.result(), {error_code: "instance.container_network_unsafe"}, result.output);
       assertEquals(f.state().containers["instance-7"].status, "Stopped");
+      // Even a guarded extra NIC is unexpected for an Instance and must refuse.
+      const guarded = f.state();
+      guarded.containers["instance-7"].devices.push("eth1,security.acls=instance-7", "eth1,security.acls.default.egress.action=reject");
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(guarded));
+      assert(!f.run("start").ok);
+      assertEquals(f.state().containers["instance-7"].status, "Stopped");
     } finally { f.cleanup(); }
   },
 });
@@ -987,20 +997,48 @@ Deno.test({
   fn() {
     const f = fixture();
     try {
-      f.container.bridge_endpoints = [{host: "10.44.0.7", port: 3306}];
+      f.container.bridge_endpoints = [{host: "10.44.0.7", port: 3306, docker: false}];
       f.write();
       const state = f.state();
       state.etagConflicts = 1;
+      const concurrent = {action: "allow", source: "10.253.0.0/24", destination: "10.44.0.3/32", protocol: "tcp", destination_port: "5434", state: "enabled"};
+      state.concurrentEndpoint = concurrent;
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
       let result = f.run("container");
       assert(result.ok, result.output);
       const bridge = f.state()["network-acls"].find((acl: {name: string}) => acl.name === "orbitinst0-egress");
-      assertEquals(bridge.egress, [{action: "allow", source: "10.253.0.0/24", destination: "10.44.0.7/32", protocol: "tcp", destination_port: "3306", state: "enabled"}]);
+      assertEquals(bridge.egress, [concurrent, {action: "allow", source: "10.253.0.0/24", destination: "10.44.0.7/32", protocol: "tcp", destination_port: "3306", state: "enabled"}]);
       result = f.run("container");
       assert(result.ok, result.output);
       assertEquals(result.changed, 0, result.output);
       const calls = Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[]);
-      assertEquals(calls.filter((call) => call.includes("rule") && call.includes("add")).length, 2);
+      assertEquals(calls.filter((call) => call[0] === "curl" && call.includes("PUT")).length, 2);
     } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "a copied seed with an unguarded extra local NIC refuses before the clone starts",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      for (const phase of ["container", "workspace", "processes", "seed"]) {
+        const prepared = f.run(phase);
+        assert(prepared.ok, prepared.output);
+      }
+      const state = f.state();
+      const source = state.containers["instance-7"];
+      source.devices.push("eth1,type=nic", "eth1,network=orbitinst0");
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      Object.assign(f.container, {instance_id: 8, name: "instance-8", address: "10.253.0.3", acl: "instance-8",
+        clone: {source: "instance-7", snapshot: source.snapshots[0], t3: {device: "t3", listen: "10.44.0.7", port: 3800, internal_port: 3773}}});
+      f.write();
+      const result = f.run("clone");
+      assert(!result.ok, result.output);
+      assertEquals(f.result(), {error_code: "instance.container_network_unsafe"}, result.output);
+      assertEquals(f.state().containers["instance-8"].status, "Stopped");
+      assert(f.state().containers["instance-8"].devices.includes("eth1,network=orbitinst0"));
+    } finally {f.cleanup();}
   },
 });

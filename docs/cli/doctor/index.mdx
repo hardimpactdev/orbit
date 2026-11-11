@@ -13,6 +13,8 @@ covers:
 
 Doctor compares current Node and runtime facts with the Gateway's recorded intent. It leaves out [container Processes](/reference/development-containers#processes), whose units belong to the container rather than the Node. It reports differences and never repairs them. Native provisioning, deployment, Route, Tool, Schedule and database operations own their configuration checks. Doctor reuses the native firewall comparison for operator rules, matched by port, protocol and source.
 
+On an Instance host, the Node family also reads the [bridge refresh health](/reference/development-containers#prepare-a-node) from the agent's host fact. `node.instance_bridge_unhealthy` names its error; Docker mapping repair remains the host timer's job.
+
 ## Commands
 
 | Command | Result |

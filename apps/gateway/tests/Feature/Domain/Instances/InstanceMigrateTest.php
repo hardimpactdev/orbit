@@ -20,6 +20,7 @@ use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
@@ -1232,10 +1233,10 @@ it('captures the Node endpoint union from the same attached targets as each NIC,
     migrateServerDatabase($second, $sql);
     migrateServerDatabase($second, migrateDatabaseServer($node, 'union-cache', DatabaseDriver::Redis, 6379), 'REDIS');
     migrateServerDatabase($other, migrateDatabaseServer($otherNode, 'other-sql', DatabaseDriver::Pgsql, 5434));
-    $want = [['host' => '10.44.0.7', 'port' => 5432], ['host' => '10.44.0.7', 'port' => 6379]];
+    $want = [['host' => '10.44.0.7', 'port' => 5432, 'docker' => true], ['host' => '10.44.0.7', 'port' => 6379, 'docker' => true]];
 
     expect($containers->nodeEndpoints($node))->toBe($want)
-        ->and(app(\App\Domain\Instances\InstanceHostIntent::class)->for($node)['bridge_endpoints'])->toBe($want);
+        ->and(app(InstanceHostIntent::class)->for($node)['bridge_endpoints'])->toBe($want);
     DatabaseConnectionTarget::query()->where('instance_id', $first->id)->delete();
     expect($containers->nodeEndpoints($node))->toBe($want);
     DatabaseConnectionTarget::query()->where('instance_id', $second->id)->delete();

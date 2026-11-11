@@ -119,8 +119,16 @@
     proxy_rules:
       description: Orbit Instance proxy boundary
       egress:
-        - { action: allow, destination: "{{ instances.address.split('/')[0] }}/32", protocol: tcp, destination_port: "{{ instances.forwarder_port | string }}", state: enabled }
-        - { action: allow, destination: "{{ instances.address.split('/')[0] }}/32", protocol: tcp, destination_port: "{{ instances.egress.port | string }}", state: enabled }
+        - action: allow
+          destination: "{{ instances.address.split('/')[0] }}/32"
+          protocol: tcp
+          destination_port: "{{ instances.forwarder_port | string }}"
+          state: enabled
+        - action: allow
+          destination: "{{ instances.address.split('/')[0] }}/32"
+          protocol: tcp
+          destination_port: "{{ instances.egress.port | string }}"
+          state: enabled
       ingress: "{{ instances.ingress }}"
     proxy_now: "{{ instance_proxy_acls.stdout | from_json | selectattr('name', 'equalto', instances.network ~ '-proxy') | first | default({}) }}"
   when: proxy_now.get('egress', []) != proxy_rules.egress or proxy_now.get('ingress', []) != proxy_rules.ingress
@@ -137,8 +145,7 @@
     container_dns: false
     # Endpoint mutations use ETags; never replace the existing shared list with an admission-time snapshot.
     container_acl_preserve: true
-    # This common ACL also lives on each NIC: the ways out are the model forwarder, which the image's nftables admits
-    # only for `agent`, and the egress proxy, both on the bridge's own address.
+    # Network-only baseline. Endpoint rules are merged below; NICs use the separate proxy ACL.
     container_acl_rules:
       description: Orbit Instance boundary
       egress:
@@ -207,9 +214,20 @@
     bridge_reconcile: true
     bridge_baseline:
       egress:
-        - { action: allow, destination: "{{ instances.address.split('/')[0] }}/32", protocol: tcp, destination_port: "{{ instances.forwarder_port | string }}", state: enabled }
-        - { action: allow, destination: "{{ instances.address.split('/')[0] }}/32", protocol: tcp, destination_port: "{{ instances.egress.port | string }}", state: enabled }
+        - action: allow
+          destination: "{{ instances.address.split('/')[0] }}/32"
+          protocol: tcp
+          destination_port: "{{ instances.forwarder_port | string }}"
+          state: enabled
+        - action: allow
+          destination: "{{ instances.address.split('/')[0] }}/32"
+          protocol: tcp
+          destination_port: "{{ instances.egress.port | string }}"
+          state: enabled
       ingress: "{{ instances.ingress }}"
+
+- name: Keep endpoint mappings current after Docker restarts
+  ansible.builtin.include_tasks: instance-bridge-refresh.yml
 
 - name: Run the egress proxy
   ansible.builtin.include_tasks: instance-egress.yml
@@ -289,4 +307,22 @@
       - (instance_network_check.stdout | from_json).config['security.acls.default.egress.action'] == 'reject'
       - (instance_network_check.stdout | from_json).config['security.acls.default.ingress.action'] == 'reject'
     fail_msg: instance.host_unavailable
+    quiet: true
+
+- name: Read the endpoint refresh timer and health
+  ansible.builtin.command: {argv: [systemctl, is-active, orbit-instance-bridge-refresh.timer]}
+  changed_when: false
+
+- name: Require the endpoint refresh timer at boot
+  ansible.builtin.command: {argv: [systemctl, is-enabled, orbit-instance-bridge-refresh.timer]}
+  changed_when: false
+
+- name: Read the bridge endpoint refresh health
+  ansible.builtin.slurp: {src: /var/lib/orbit/instance-bridge/health.json}
+  register: instance_bridge_health
+
+- name: Require a healthy bridge endpoint refresh
+  ansible.builtin.assert:
+    that: (instance_bridge_health.content | b64decode | from_json).error_code is none
+    fail_msg: instance.container_endpoint_unresolved
     quiet: true

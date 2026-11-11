@@ -144,18 +144,7 @@ if (family === "query") {
   row.devices[device] = {...before, ...Object.fromEntries(args.slice(5).map(pair))};
   if (!row.devices[device]["security.acls"] || row.devices[device]["security.acls.default.egress.action"] !== "reject") fail("NIC move opened its gate");
 } else if (family === "network" && action === "acl") {
-  if (name === "rule") {
-    if (state.etagConflicts > 0) {
-      state.etagConflicts--;
-      Deno.writeTextFileSync(file, JSON.stringify(state));
-      fail("412 Precondition Failed: ETag mismatch");
-    }
-    const [, , , action, aclName, direction, ...properties] = args;
-    const acl = state["network-acls"].find((acl: {name: string}) => acl.name === aclName);
-    const rule = Object.fromEntries(properties.map(pair));
-    if (action === "add") acl[direction].push(rule);
-    else acl[direction] = acl[direction].filter((value: Record<string, string>) => !Object.entries(rule).every(([key, want]) => value[key] === want));
-  } else if (name === "create") {
+  if (name === "create") {
     state["network-acls"].push({ name: args[3], config: {} });
   } else {
     Object.assign(

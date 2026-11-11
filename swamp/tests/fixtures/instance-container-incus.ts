@@ -73,23 +73,7 @@ if (args[0] === "query") {
 }
 if (args[0] === "network" && args[1] === "acl") {
   const project = take("--project");
-  if (args[2] === "rule") {
-    if (state.bridgeVethFailures > 0) {
-      state.bridgeVethFailures--;
-      save();
-      fail('Failed updating bridge NIC ACL: Unknown or missing host side veth device ""');
-    }
-    if (state.etagConflicts > 0) {
-      state.etagConflicts--;
-      save();
-      fail("412 Precondition Failed: ETag mismatch");
-    }
-    const [, , , action, name, direction, ...properties] = args;
-    const acl = state["network-acls"].find((acl: {name: string}) => acl.name === name);
-    const rule = Object.fromEntries(properties.map((value) => { const equal = value.indexOf("="); return [value.slice(0, equal), value.slice(equal + 1)]; }));
-    if (action === "add") acl[direction].push(rule);
-    else acl[direction] = acl[direction].filter((value: Record<string, string>) => !Object.entries(rule).every(([key, want]) => value[key] === want));
-  } else if (args[2] === "create") {
+  if (args[2] === "create") {
     state["network-acls"].push({ name: args[3], description: "", egress: [], ingress: [] });
   } else if (args[2] === "delete") {
     if (project !== "default") fail("ACLs must be removed from default");
@@ -152,7 +136,9 @@ if (family === "list") {
   }
   const config: string[] = [];
   for (let setting = take("--config"); setting !== null; setting = take("--config")) config.push(setting);
-  state.containers[name] = { project, source: from, status: "Stopped", devices, config, snapshots: [], uuid: uuid(name) };
+  state.containers[name] = { project, source: from, status: "Stopped",
+    devices: Object.entries(local).flatMap(([device, settings]) => Object.entries(settings).map(([key, value]) => `${device},${key}=${value}`)),
+    config, snapshots: [], uuid: uuid(name) };
 } else if (family === "config" && args[1] === "device" && args[2] === "add") {
   const [, , , name, device, type, ...settings] = args;
   state.containers[name].added ??= {};

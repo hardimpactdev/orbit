@@ -765,7 +765,7 @@ Deno.test({
         const f = await fixture({pool: "dir"});
         const endpoint = (host: string, port: string) => ({action: "allow", source: "10.253.0.0/24", destination: host + "/32", protocol: "tcp", destination_port: port, state: "enabled"});
         try {
-            f.instances.bridge_endpoints = [{host: "10.44.0.7", port: 3306}, {host: "10.44.0.3", port: 5434}];
+            f.instances.bridge_endpoints = [{host: "10.44.0.7", port: 3306, docker: false}, {host: "10.44.0.3", port: 5434, docker: false}];
             f.write(f.instances);
             let result = await f.run();
             assert(result.ok, result.output);
@@ -780,7 +780,7 @@ Deno.test({
             const state = f.state();
             const final = state["network-acls"].find((acl: {name: string}) => acl.name === "orbitinst0-egress");
             assert(final.egress.some((rule: unknown) => JSON.stringify(rule) === JSON.stringify(foreign)));
-            assertEquals(final.egress.filter((rule: {source?: string}) => rule.source === "10.253.0.0/24"), [endpoint("10.44.0.7", "3306"), endpoint("10.44.0.3", "5434")]);
+            assertEquals(final.egress.filter((rule: {source?: string}) => rule.source === "10.253.0.0/24"), [endpoint("10.44.0.3", "5434"), endpoint("10.44.0.7", "3306")]);
             assertEquals(state.instances.at(-1).devices.eth0["security.acls"], "orbitinst0-proxy,instance-legacy");
             assertEquals(state.instances.at(-1).devices.eth0["security.acls.default.egress.action"], "reject");
             assertEquals(state.profiles["orbit-instances"].devices.eth0["security.acls"], "orbitinst0-proxy");

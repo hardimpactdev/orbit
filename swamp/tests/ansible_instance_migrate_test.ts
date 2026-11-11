@@ -33,7 +33,7 @@ function transform(task: Task): Task {
       mode: "0600",
     };
   }
-  const args = task["ansible.builtin.file"] as Record<string, unknown> | undefined;
+  const args = (task["ansible.builtin.file"] ?? task["ansible.builtin.copy"]) as Record<string, unknown> | undefined;
   if (args) {
     delete args.owner;
     delete args.group;
@@ -66,10 +66,14 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   const folder = Deno.makeTempDirSync();
   const apps = Deno.makeTempDirSync({ dir: "/var/tmp" });
   for (const path of ["bin", "tasks", "home", "run", "markers"]) Deno.mkdirSync(`${folder}/${path}`);
-  Deno.mkdirSync(`${folder}/templates`);
-  Deno.copyFileSync(new URL("templates/instance-bridge-rules.j2", root), `${folder}/templates/instance-bridge-rules.j2`);
+  Deno.copyFileSync(new URL("instance_bridge.py", root), `${folder}/instance_bridge.py`);
+  Deno.writeTextFileSync(`${folder}/bin/curl`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-bridge-curl.ts", import.meta.url).pathname}' "$@"\n`);
+  Deno.chmodSync(`${folder}/bin/curl`, 0o755);
+  Deno.writeTextFileSync(`${folder}/nat.txt`, "");
+  Deno.writeTextFileSync(`${folder}/bin/iptables-save`, `#!/bin/sh\ncat '${folder}/nat.txt'\n`);
+  Deno.chmodSync(`${folder}/bin/iptables-save`, 0o755);
   for (const shared of ["instance-network-nic-check.yml", "instance-network-device-check.yml", "instance-bridge-rules.yml"]) {
-    Deno.copyFileSync(new URL(`tasks/${shared}`, root), `${folder}/tasks/${shared}`);
+    Deno.writeTextFileSync(`${folder}/tasks/${shared}`, stringify((parse(Deno.readTextFileSync(new URL(`tasks/${shared}`, root))) as Task[]).map(transform)).replaceAll("/usr/local/libexec", `${folder}/libexec`).replaceAll("/var/lib/orbit/instance-bridge", `${folder}/bridge-policy`));
   }
   Deno.mkdirSync(`${folder}/library`);
   Deno.copyFileSync(new URL("fixtures/instance-migrate-systemd.py", import.meta.url), `${folder}/library/orbit_migrate_systemd.py`);
@@ -154,7 +158,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     address: `10.253.0.${id}`,
     network: "orbitinst0",
     bridge_cidr: "10.253.0.0/24",
-    bridge_endpoints: [] as {host: string; port: number}[],
+    bridge_endpoints: [] as {host: string; port: number; docker: boolean}[],
     acl: `instance-${id}`,
     acl_rules: {
       description: `Orbit Instance ${id}`,
@@ -1251,7 +1255,8 @@ for (const failures of [1, 9]) {
       const f = fixture();
       try {
         f.migrate.retire = [];
-        f.container.bridge_endpoints = [{host: "10.44.0.7", port: 5432}];
+        f.container.bridge_endpoints = [{host: "10.44.0.7", port: 5432, docker: false}];
+        f.migrate.databases = [{host: "10.44.0.7", port: 5432}];
         f.write();
         const state = f.state();
         state.bridgeVethFailures = failures;
@@ -1263,12 +1268,38 @@ for (const failures of [1, 9]) {
         assert(!exists(`${f.folder}/run/quiesced`));
         assertEquals(Deno.readTextFileSync(`${f.checkout}/.env`), before);
         const calls = Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[]);
-        const writes = calls.filter((call) => call.includes("rule") && call.includes("add"));
+        const writes = calls.filter((call) => call[0] === "curl" && call.includes("PUT"));
         assertEquals(writes.length, failures === 1 ? 2 : 5);
-        const probe = calls.findIndex((call) => call.includes("exec 3<>\"/dev/tcp/$1/$2\""));
+        const probe = calls.findIndex((call) => call.some((arg) => arg.includes("/dev/tcp/$1/$2")));
         if (failures === 1) assert(probe > calls.findIndex((call) => call === writes.at(-1)));
         else assertEquals(probe, -1, "a failed bridge admission must not probe or quiesce");
       } finally { f.cleanup(); }
+    },
+  });
+}
+
+for (const mappings of [0, 2]) {
+  Deno.test({
+    name: `${mappings} local Docker DNAT mappings refuse migration before a probe or downtime with the named error`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        f.migrate.retire = [];
+        f.container.bridge_endpoints = [{host: "10.44.0.7", port: 3306, docker: true}];
+        f.migrate.databases = [{host: "10.44.0.7", port: 3306}];
+        f.write();
+        Deno.writeTextFileSync(`${f.folder}/nat.txt`, Array.from({length: mappings}, (_, i) => `-A DOCKER -d 10.44.0.7/32 ! -i docker0 -p tcp -m tcp --dport 3306 -j DNAT --to-destination 172.17.0.${i + 2}:3306`).join("\n"));
+        const result = f.run("container");
+        assert(!result.ok, result.output);
+        assertEquals(f.result().error_code, "instance.container_endpoint_unresolved", result.output);
+        assert(exists(f.migrate.awake.path));
+        assert(!exists(`${f.folder}/run/quiesced`));
+        const calls = Deno.readTextFileSync(`${f.folder}/calls`);
+        assert(!calls.includes('"PUT"'));
+        assert(!calls.includes('/dev/tcp/$1/$2'));
+        assertEquals(JSON.parse(Deno.readTextFileSync(`${f.folder}/bridge-policy/health.json`)).error_code, "instance.container_endpoint_unresolved");
+      } finally {f.cleanup();}
     },
   });
 }

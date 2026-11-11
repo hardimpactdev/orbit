@@ -6,6 +6,7 @@ namespace App\Domain\Instances;
 
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
+use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
@@ -180,7 +181,7 @@ final readonly class InstanceContainer
             'image' => self::Image, 'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
             'acl' => $runtime->container_name,
             'bridge_cidr' => ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')),
-            'bridge_endpoints' => array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port']], $access),
+            'bridge_endpoints' => array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port'], 'docker' => $target['docker']], $access),
             // The common NIC ACL keeps the ways to the model forwarder and egress proxy; this one lets the Node's Caddy reach
             // FrankenPHP, a clone's T3 clients reach T3, and the container reach each attached target.
             'acl_rules' => ['description' => 'Orbit Instance '.$instance->id,
@@ -304,7 +305,7 @@ final readonly class InstanceContainer
      * All attached server targets, regardless of driver or prefix. The primary create database may not have its target yet.
      * SQLite stays in the workspace. A repeated attachment of the same endpoint needs only one network path.
      *
-     * @return list<array{host: string, port: int, rule: array<string, string>}>
+     * @return list<array{host: string, port: int, docker: bool, rule: array<string, string>}>
      */
     private function databaseAccesses(Instance $instance, InstanceRuntime $runtime, ?DatabaseConnection $primary): array
     {
@@ -327,14 +328,14 @@ final readonly class InstanceContainer
 
     /** The Node's target union, using the same endpoint source as each container's NIC policy.
      *
-     * @return list<array{host: string, port: int}>
+     * @return list<array{host: string, port: int, docker: bool}>
      */
     public function nodeEndpoints(Node $node): array
     {
         $endpoints = [];
         foreach (InstanceRuntime::query()->where('node_id', $node->id)->with('instance')->orderBy('id')->get() as $runtime) {
             foreach ($this->databaseAccesses($runtime->instance, $runtime, null) as $access) {
-                $endpoints[$access['host'].':'.$access['port']] = ['host' => $access['host'], 'port' => $access['port']];
+                $endpoints[$access['host'].':'.$access['port']] = ['host' => $access['host'], 'port' => $access['port'], 'docker' => $access['docker']];
             }
         }
         ksort($endpoints);
@@ -348,7 +349,7 @@ final readonly class InstanceContainer
      *
      * `$name` ends the rule's comment, so an Instance with more than one server keeps a rule for each.
      *
-     * @return array{host: string, port: int, rule: array<string, string>}
+     * @return array{host: string, port: int, docker: bool, rule: array<string, string>}
      */
     private function databaseAccess(Instance $instance, InstanceRuntime $runtime, DatabaseConnection $database, string $name = 'database'): array
     {
@@ -362,7 +363,7 @@ final readonly class InstanceContainer
             'to_ip' => $host, 'to_port' => (string) $port, 'proto' => 'tcp', 'comment' => self::firewallPrefix($instance).$name,
             ...($local ? [] : ['route' => 'yes', 'interface_out' => self::WireGuardInterface])];
 
-        return ['host' => $host, 'port' => $port, 'rule' => $rule];
+        return ['host' => $host, 'port' => $port, 'docker' => $local && $database->server?->process?->runtime === ProcessRuntime::Docker, 'rule' => $rule];
     }
 
     /**

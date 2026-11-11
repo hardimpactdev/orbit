@@ -93,15 +93,54 @@ pub struct Filesystem {
     pub stale: bool,
 }
 
-pub fn host_data(os: &str, arch: &str, filesystems: &[Filesystem]) -> Value {
+pub fn host_data(os: &str, arch: &str, filesystems: &[Filesystem], bridge: Value) -> Value {
     json!({
         "os": os,
         "arch": arch,
+        "instance_bridge": bridge,
         "filesystems": filesystems
             .iter()
             .map(|fs| json!({"mount": fs.mount, "size": fs.size, "free": fs.free, "observed_at": fs.observed_at, "stale": fs.stale}))
             .collect::<Vec<_>>(),
     })
+}
+
+/// The refresh service writes only a public refusal code here. The observer reads no endpoint or credential data.
+pub const INSTANCE_BRIDGE_HEALTH: &str = "/var/lib/orbit/instance-bridge/health.json";
+
+pub fn instance_bridge_health(path: &std::path::Path) -> Value {
+    match std::fs::File::open(path) {
+        Ok(file) => {
+            let mut body = Vec::new();
+            if file.take(4097).read_to_end(&mut body).is_err() {
+                return json!({"error_code": "instance.container_bridge_health_unreadable"});
+            }
+            bridge_health_data(&body)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Value::Null,
+        Err(_) => json!({"error_code": "instance.container_bridge_health_unreadable"}),
+    }
+}
+
+fn bridge_health_data(body: &[u8]) -> Value {
+    if body.len() <= 4096 {
+        if let Ok(value) = serde_json::from_slice::<Value>(body) {
+            match value.get("error_code") {
+                Some(Value::Null) => return json!({"error_code": null}),
+                Some(Value::String(code))
+                    if matches!(
+                        code.as_str(),
+                        "instance.container_endpoint_unresolved"
+                            | "instance.container_bridge_write_failed"
+                    ) =>
+                {
+                    return json!({"error_code": code});
+                }
+                _ => {}
+            }
+        }
+    }
+    json!({"error_code": "instance.container_bridge_health_unreadable"})
 }
 
 /// The awake markers live here; the agent checks only watch-list paths below it.
@@ -969,6 +1008,27 @@ mod tests {
     }
 
     #[test]
+    fn bridge_health_reports_only_known_public_codes_and_refuses_damaged_state() {
+        assert_eq!(
+            bridge_health_data(br#"{"error_code":null}"#),
+            json!({"error_code":null})
+        );
+        assert_eq!(
+            bridge_health_data(br#"{"error_code":"instance.container_endpoint_unresolved"}"#),
+            json!({"error_code":"instance.container_endpoint_unresolved"})
+        );
+        for body in [
+            b"damaged".as_slice(),
+            br#"{"error_code":"secret data"}"#.as_slice(),
+        ] {
+            assert_eq!(
+                bridge_health_data(body),
+                json!({"error_code":"instance.container_bridge_health_unreadable"})
+            );
+        }
+    }
+
+    #[test]
     fn host_data_lists_each_filesystem() {
         let fs = [Filesystem {
             mount: "/".into(),
@@ -979,8 +1039,8 @@ mod tests {
         }];
 
         assert_eq!(
-            host_data("linux", "x86_64", &fs),
-            json!({"os": "linux", "arch": "x86_64", "filesystems": [{"mount": "/", "size": 100, "free": 40, "observed_at": "2026-11-09T00:00:00Z", "stale": true}]})
+            host_data("linux", "x86_64", &fs, Value::Null),
+            json!({"os": "linux", "arch": "x86_64", "instance_bridge": null, "filesystems": [{"mount": "/", "size": 100, "free": 40, "observed_at": "2026-11-09T00:00:00Z", "stale": true}]})
         );
     }
 
