@@ -121,7 +121,9 @@ A `proof.command` that older code admitted has no captured budget, for example o
 
 `instance.rollback` has a provisional 900 seconds, the legacy rollback deadline and its [chart](/cli/instance/rollback)'s budget. A first success replaces it with a p95.
 
-Otherwise, the Gateway uses the longest successful run of that kind completed in the last 14 days, multiplied by 1.5 and rounded up to a minute. It measures `started_at` to `finished_at` on succeeded Operations with a `swamp_run_id`. With no successful history, the budget is 30 minutes. The reconciler caches each kind’s history budget for one pass.
+Otherwise, the Gateway uses the longest successful run of that kind completed in the last 14 days, multiplied by 1.5 and rounded up to a minute, and at least 15 minutes. It measures `started_at` to `finished_at` on succeeded Operations with a `swamp_run_id`. With no successful history, the budget is 30 minutes.
+
+The 15-minute floor is a stop-gap. A quick first success otherwise sets a budget that cancels a later, larger run, as it did for `instance.migrate` at 120 seconds. A hang of such a kind holds one Swamp dispatch slot and its target lock for up to 15 minutes; the Swamp Node has 12 slots (three workers, one per CPU). The floor goes when each kind's budget comes from its workflow's declared step timeouts. The reconciler caches each kind’s history budget for one pass.
 
 An unbound admission with attempts `0` has a separate 600-second budget, matching Swamp’s default `queueTimeout`, regardless of its kind’s execution budget. It runs from `started_at`, or `created_at` when no start was recorded. The reconciler includes these rows, even when cancellation was already requested.
 
