@@ -72,6 +72,8 @@ Use the official workflow references to check guard, dependency and output seman
 
 ## Improve this skill
 
+For a missing-key CEL failure in a fixture, trace the admission and projection first. Keep explicit null keys and current phase names in the fixture when the live input already supplies them.
+
 Keep target identity outside optional lifecycle inputs. A ready task VM skips resume, but vault setup and terminal projection still need its VM id.
 
 After a landed behavior change, replace the affected rule in `docs/swamp/porting.md` the same hour. Keep Swamp mechanics in the official swamp skill, shared flow rules in flow-tighten and playbook rules in ansible-phase.

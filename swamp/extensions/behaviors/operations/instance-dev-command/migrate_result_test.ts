@@ -129,3 +129,15 @@ Deno.test("the migration prepares and probes the container before quiesce and bu
     assertEquals(steps.workspace.dependsOn?.map((edge) => edge.step), ["quiesce"]);
     assertEquals(steps.container.task.inputs?.run?.includes('--tags container "$ORBIT_ANSIBLE/instance-migrate.yml"'), true);
 });
+
+Deno.test("symlink refusals keep every path and target and the preflight flag in the public receipt", () => {
+    const error_message = 'Cannot migrate checkout "/fixture". Unsupported symlinks: [{"path":"public/storage","target":"/missing/storage","reason":"broken"},{"path":"local-package","target":"/shared/package","reason":"outside checkout"}].';
+    const failure = { error_code: "instance.migrate_symlink_unsupported", error_message, preflight_refused: true };
+    const phases = { ...moved, quiesce: "skipped", container: "failed", workspace: "skipped", files: "skipped", processes: "skipped", seed: "skipped", route: "skipped", retire: "skipped", restore: "succeeded" };
+    assertEquals(result(defaultIntent, phases, null, null, failure), {
+        instance_id: 53, ready: false, moved: false, restored: true, preflight_refused: true,
+        failed_step: "container", error_code: failure.error_code, error_message,
+    });
+    const late = result(defaultIntent, { ...moved, files: "failed", retire: "skipped", restore: "succeeded" }, workspace, null, { ...failure, preflight_refused: false });
+    assertEquals([late.error_code, late.error_message, late.preflight_refused], [failure.error_code, error_message, undefined]);
+});

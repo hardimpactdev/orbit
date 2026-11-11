@@ -39,6 +39,7 @@ sequenceDiagram
   SW->>N: Launch, probe container<br/>Ansible · tags container
   %%> What it does:
   %%> - before any Node change, checks the recorded branch and every planned retirement; a refusal leaves prior resources untouched
+  %%> - checks checkout symlinks and dependency package links before creating the container, skipping `.git` and installed package contents; broken links or targets outside the checkout refuse with `instance.migrate_symlink_unsupported`, naming every path and target
   %%> - retirement preflight refuses unpushed local branches or detached HEAD and stashes, with their existing named errors; it reads local refs only
   %%> - deletes a container that an earlier failed move left, then creates and starts the new container through the shared container phase
   %%> - each attached target has an exact TCP allow in the NIC ACL; the bridge passes egress to that default-reject NIC policy
@@ -46,7 +47,7 @@ sequenceDiagram
   %%> - fetches the branch from the checkout into the Node's mirror, including commits never pushed
   SW->>N: Check and stop<br/>Ansible · tags quiesce
   %%> What it does:
-  %%> - repeats the branch and retirement checks before stopping writers
+  %%> - repeats the branch, retirement and source symlink checks before stopping writers
   %%> - stops and disables the host Process units, then removes the awake marker
   %%> - records that quiesce began, so a failure before it never restarts host units or rewrites the awake marker
   SW->>C: Build the workspace<br/>Ansible · tags workspace
@@ -57,6 +58,7 @@ sequenceDiagram
   %%> What it does:
   %%> - copies every file that differs from the commit, every untracked file and every ignored file, `.env` among them
   %%> - removes the tracked files that the checkout deleted, and rewrites the checkout's path in `.env` to `/srv/workspace`
+  %%> - checks the exact copied tree inside the container, maps old-checkout targets into the workspace and rewrites absolute internal links there; broken or external links fail with the same code before any Process starts, relative links keep their targets, and source links never change
   %%> - a non-default Instance gets the proxy device that publishes its T3 port
   SW->>C: Start the container<br/>Processes · T3 · seed
   %%> What it does:

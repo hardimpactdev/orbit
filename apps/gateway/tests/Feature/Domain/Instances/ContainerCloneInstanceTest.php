@@ -17,6 +17,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
@@ -140,8 +141,16 @@ describe('a clone of the container default', function (): void {
 
         $operation = containerCreate($project, $node, 'feature');
 
+        $vault = vaultReadingSocket([]);
+        $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+        $workspace = json_decode(collect($vault->puts)->firstWhere('key', 'instance-create-processes-'.$operation->id)['value'], true, 512, JSON_THROW_ON_ERROR);
+        $environment = collect($vault->puts)->firstWhere('key', 'instance-create-environment-input-'.$operation->id)['value'];
         $own = Process::query()->where('owner_id', $operation->target_id)->sole();
-        $units = ValidatedData::object(containerIntentOf($operation))['processes'];
+        $units = $run['intent']['container']['processes'];
+        expect($workspace['environment'])->toBe($environment)
+            ->and(array_keys($workspace['processes']))->toBe([$units[0]['environment']])
+            ->and(Dotenv::parse($workspace['processes'][$units[0]['environment']])['QUEUE'])->toBe('high')
+            ->and(json_encode($run['intent']))->not->toContain('QUEUE=high');
         expect($own->id)->not->toBe(Process::query()->where('owner_id', $default->id)->sole()->id)
             ->and(array_column($units, 'name'))->toBe(["orbit-process-{$own->id}-worker.service"])
             ->and($units[0]['environment'])->toStartWith("/etc/orbit/processes/{$own->id}/");
@@ -293,6 +302,32 @@ describe('the template copy of a clone\'s PostgreSQL database', function (): voi
 });
 
 describe('the clone\'s create result', function (): void {
+    it('shows the failed clone command in the Operation error and keeps its stable code', function (): void {
+        $node = containerDefaultNode();
+        $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
+        $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']])->save();
+        $caller = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'reader', 'status' => 'active',
+            'platform' => 'linux', 'wireguard_ip' => '10.44.0.2', 'public_ssh_host' => '10.44.0.2', 'user' => 'orbit']));
+        $caller->accessibleNodes()->attach($node->id);
+        $diagnostic = 'instance.container_sessions_failed: command php exited 1';
+        $failure = app(NativeStepFailure::class)->fromRun(['status' => 'failed', 'jobs' => [['steps' => [[
+            'name' => 'clone-sessions', 'status' => 'failed',
+            'error' => 'exec failed on 1/1 host(s): target (exit 1: '.$diagnostic.')',
+        ]]]]], $operation);
+
+        app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
+            'status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+            'error_code' => 'instance.create_register_failed', 'failure' => $failure,
+            'result' => ['instance_id' => $operation->target_id, 'ready' => false, 'failed_step' => 'register'],
+        ]);
+
+        $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->getJson('/api/v1/operations/'.$operation->id)
+            ->assertOk()->assertJsonPath('data.error_code', 'instance.create_register_failed')
+            ->assertJsonPath('data.error.code', 'instance.create_register_failed')
+            ->assertJsonPath('data.error.detail', 'exec failed on 1/1 host(s): target (exit 1: '.$diagnostic.')')
+            ->assertJsonPath('data.failed_step', 'clone-sessions');
+    });
+
     it('records the T3 server from the run\'s result: its Node, its Instance and the Gateway session from the vault', function (): void {
         $node = containerDefaultNode();
         $operation = containerCreate(seededDefault($node)->project, $node, 'feature');

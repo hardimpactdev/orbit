@@ -146,7 +146,7 @@ Build jobs, including Swamp validation, shape and unit tests, start in parallel 
 
 The three Swamp subjobs read their own selections. `Required checks` reads their results through the Actions API so it can require validation and Deno tests without waiting for shape when [slow checks are non-blocking](/reference/command-development-pipeline#capacity-ideal-state).
 
-On a push to `main` while slow checks are non-blocking, the `Start the CLI release` job runs after `Required checks` passes and dispatches `Orbit CLI Release` for the commit, so the release does not wait for the rest of the run.
+On a push to `main`, the `Start the CLI release` job runs after `Required checks` passes and dispatches `Orbit CLI Release` for the commit, regardless of `ORBIT_SLOW_CHECKS_BLOCKING`. The release does not wait for the rest of the run. A later release run from CI completion changes nothing when the release already exists with the expected commit and assets. See [published releases](/reference/cli-binaries#published-releases).
 
 Known documentation, contract-generation and proof tools select only their consumers. The planner fixture job always runs. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 

@@ -1,5 +1,6 @@
 """One container phase, entered once through incus exec. Never log private input."""
 
+import http.client
 import json
 import os
 import pathlib
@@ -7,7 +8,10 @@ import stat
 import subprocess
 import sys
 import time
-import urllib.request
+from contextlib import closing
+
+# Mirrored by the Node boundary; the clone tests keep the two sets in sync.
+GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "systemctl", "t3")
 
 
 def phase_main(phase, raw):
@@ -18,6 +22,7 @@ def phase_main(phase, raw):
     private = sys.stdin.read()
 
     def run(argv, check=True, agent=False, orbit=False):
+        command = argv
         if agent or orbit:
             argv = ["runuser", "-u", "agent" if agent else "orbit", "--"] + argv
         r = subprocess.run(
@@ -33,7 +38,7 @@ def phase_main(phase, raw):
             timeout=40,
         )
         if check and r.returncode:
-            raise RuntimeError(str(argv[:3]) + ": " + r.stderr[-400:])
+            raise subprocess.CalledProcessError(r.returncode, command)
         return r
 
     def write(path, content, uid=0, gid=0, mode="0644"):
@@ -90,7 +95,8 @@ def phase_main(phase, raw):
         finally:
             root(c["bundle"]).unlink(missing_ok=True)
         inputs = json.loads(private)
-        write("/etc/orbit/php/conf.d/99-orbit-runtime.ini", "memory_limit = 1G\n")
+        if c["php"] is not None:
+            write("/etc/orbit/php/conf.d/99-orbit-runtime.ini", "memory_limit = 1G\n")
         env = (
             root(c["environment_file"]).read_text()
             if root(c["environment_file"]).exists()
@@ -279,12 +285,20 @@ def phase_main(phase, raw):
                     agent=True,
                 ).stdout.strip()
             )
-            req = urllib.request.Request(
-                url + "/api/auth/session", headers={"Authorization": "Bearer " + token}
-            )
-            with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(
-                req, timeout=5
-            ) as response:
+            # This is the clone's T3 server, reached directly over loopback without a proxy.
+            with closing(
+                http.client.HTTPConnection("127.0.0.1", t["internal_port"], timeout=5)
+            ) as connection:
+                connection.request(
+                    "GET",
+                    "/api/auth/session",
+                    headers={"Authorization": "Bearer " + token},
+                )
+                response = connection.getresponse()
+                if response.status >= 400:
+                    raise RuntimeError(
+                        "instance.t3_session_http_" + str(response.status)
+                    )
                 body = json.load(response)
                 assert body["authenticated"] and {
                     "access:read",
@@ -300,7 +314,8 @@ def phase_main(phase, raw):
         assert replies[0]["token"] != replies[1]["token"]
         assert git("symbolic-ref", "--short", "HEAD").stdout.strip() == c["branch"]
         assert git("rev-parse", "HEAD").stdout.strip() == c["expected_commit"]
-        run(["php", "-v"], agent=True)
+        if c["php"] is not None:
+            run(["php", "-v"], agent=True)
         for unit in c["units"] + c["processes"]:
             if unit.get("desired", "running") == "running":
                 assert (
@@ -333,7 +348,8 @@ def phase_main(phase, raw):
             "expected_commit", c["clone"]["seed_commit"]
         )
         assert git("config", "--global", "user.name", agent=True).stdout.strip()
-        run(["php", "-v"], agent=True)
+        if c["php"] is not None:
+            run(["php", "-v"], agent=True)
         for u in c["units"] + c["processes"]:
             assert (
                 run(["systemctl", "is-active", "--quiet", u["name"]], False).returncode
@@ -347,6 +363,20 @@ def phase_main(phase, raw):
 if __name__ == "__main__":
     try:
         phase_main(sys.argv[1], sys.argv[2])
+    except subprocess.CalledProcessError as error:
+        command = os.path.basename(error.cmd[0])
+        print(
+            "instance.container_"
+            + sys.argv[1]
+            + "_failed"
+            + (
+                ": command " + command + " exited " + str(error.returncode)
+                if command in GUEST_COMMANDS
+                else ""
+            ),
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
     except Exception:  # noqa: BLE001 - private tool output must never reach native run history.
         print("instance.container_" + sys.argv[1] + "_failed", file=sys.stderr)
         raise SystemExit(1)

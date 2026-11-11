@@ -14,7 +14,7 @@ inputs:
     # Names only: git_credential and environment, member_<Process id> for each development Process environment,
     # server_database_create and server_database_check for an owned server database, step_<index> for each development
     # deploy step of a container default, model_environment for a clone's placeholder model key, and process_environments for
-    # a container's Process environment files.
+    # a default's Process environment files or a clone's private workspace JSON (environment and processes).
     execution_secrets:
       type: object
       additionalProperties:
@@ -376,7 +376,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4) }}'
+          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
           methodName: exec
           inputs:
             hosts: name:target
@@ -385,7 +385,7 @@ jobs:
             stdin: ${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.execution_secrets.git_credential.key) }}
             timeoutSec: 310
           globalArgs:
-            name: ${{ "ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4) }}
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
             transport:
               kind: ssh
               user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -505,16 +505,16 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4) }}'
+          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
           methodName: exec
           inputs:
             hosts: name:target
             sudo: true
             argv: '${{ ["timeout", "120"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["workspace"] }}'
-            stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) + "\n--orbit-" + run.id + "--\n" + vault.get(inputs.execution_secrets.environment.vault, (inputs.intent.container == null ? inputs.execution_secrets.environment.key : inputs.execution_secrets.process_environments.key)) }}'
+            stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, (inputs.intent.container == null ? inputs.execution_secrets.environment.key : inputs.execution_secrets.process_environments.key)) }}'
             timeoutSec: 130
           globalArgs:
-            name: ${{ "ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4) }}
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
             transport:
               kind: ssh
               user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -532,7 +532,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4) }}'
+          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
           methodName: exec
           inputs:
             hosts: name:target
@@ -541,7 +541,7 @@ jobs:
             stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, (inputs.intent.container != null && inputs.intent.container.clone != null ? inputs.execution_secrets.model_environment.key : inputs.execution_secrets.environment.key)) }}'
             timeoutSec: 130
           globalArgs:
-            name: ${{ "ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4) }}
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
             transport:
               kind: ssh
               user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -559,7 +559,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4) }}'
+          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
           methodName: exec
           inputs:
             hosts: name:target
@@ -568,7 +568,7 @@ jobs:
             stdin: ''
             timeoutSec: 130
           globalArgs:
-            name: ${{ "ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4) }}
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
             transport:
               kind: ssh
               user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -586,10 +586,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: ${{ "ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4) }}
+          behaviorName: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
           methodName: exec
           globalArgs:
-            name: ${{ "ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4) }}
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
             transport:
               kind: ssh
               user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -613,10 +613,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: ${{ "ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4) }}
+          behaviorName: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
           methodName: copy
           globalArgs:
-            name: ${{ "ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4) }}
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
             transport:
               kind: ssh
               user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -741,10 +741,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: ${{ "ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4) }}
+          behaviorName: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
           methodName: exec
           globalArgs:
-            name: ${{ "ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4) }}
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
             transport:
               kind: ssh
               user: ${{ inputs.intent.ssh_execution.target.user }}

@@ -47,6 +47,20 @@
         fail_msg: instance.migrate_branch_changed
         quiet: true
 
+# This source scan is only an early refusal. The final rule runs on the exact copied tree inside the container.
+- name: Check checkout links before downtime
+  when: phase in ['container', 'quiesce']
+  block:
+    - name: Read checkout symlinks
+      ansible.builtin.command:
+        argv: [python3, "-", "{{ migrate.checkout }}"]
+        expand_argument_vars: false
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py') }}"
+      register: migrate_links_read
+      changed_when: false
+    - name: Check the source symlink result
+      ansible.builtin.include_tasks: instance-migrate-link-result.yml
+
 # Nothing on the Node changed before this point. Restore preserves prior resources when these read-only checks refused.
 - name: Record that the container preflight passed
   when: phase == 'container'
@@ -195,6 +209,18 @@
       ansible.builtin.command:
         argv: "{{ as_orbit + ['sh', '-c', 'xargs -0 rm -f -- < \"$1\"', 'sh', container_archive ~ '.deleted'] }}"
       changed_when: true
+    # Inspect and rewrite the actual copy, including bundle-only links. No link name or target crosses Incus's JSON argv.
+    - name: Check and rewrite links inside the copied workspace
+      ansible.builtin.command:
+        argv: "{{ as_orbit + ['python3', '-', container.workspace, '--old-checkout', migrate.checkout, '--rewrite'] }}"
+        expand_argument_vars: false
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py') }}"
+      register: migrate_links_read
+      changed_when: >-
+        migrate_links_read.rc == 0 and (migrate_links_read.stdout | from_json).refused | length == 0
+        and (migrate_links_read.stdout | from_json).rewrites | length > 0
+    - name: Check the copied symlink result before starting any Process
+      ansible.builtin.include_tasks: instance-migrate-link-result.yml
     # Both users edit every file: the group `work` reads and writes, others get nothing.
     - name: Give the group the copied files
       ansible.builtin.command: { argv: "{{ as_root + ['chmod', '-R', 'g+rwX,o-rwx', container.workspace] }}" }
