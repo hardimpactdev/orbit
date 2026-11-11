@@ -26,6 +26,8 @@ class ScopeActionTest(unittest.TestCase):
         self.git('rm', '-rf', '.')
         (self.root / 'bin').mkdir()
         shutil.copyfile(ROOT / 'bin/ci-build-plan', self.root / 'bin/ci-build-plan')
+        (self.root / '.github/ci').mkdir(parents=True)
+        shutil.copyfile(ROOT / '.github/ci/checks.toml', self.root / '.github/ci/checks.toml')
         (self.root / 'apps/gateway').mkdir(parents=True)
         (self.root / 'apps/gateway/example.php').write_text('<?php // base\n')
         self.commit('Orbit before import')

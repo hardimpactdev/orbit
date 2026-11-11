@@ -2,17 +2,15 @@
 """Select CI builds from changed inputs; every main commit is a Gateway release, which also loads Swamp."""
 import argparse
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
+import tomllib
+from functools import lru_cache
 
 JOBS = ('php', 'gateway-static', 'gateway-tests', 'cli', 'cli-static', 'cli-tests', 'sdk-static', 'e2e-static', 'docs', 'api-reference', 'web', 'pi', 'agent', 'swamp', 'proof')
 ROOT = Path(__file__).resolve().parent.parent
-# Gateway files that the Swamp gate and its Deno tests read: the grant renderer, the workflow definition that a Deno test parses, and the
-# frozen agent contract, whose check scans the Gateway and Swamp sources (the PHP job runs the same check for PHP files only).
-SWAMP_GATEWAY_INPUTS = ('apps/gateway/app/Infrastructure/GatewayReleases/SwampGrantRenderer.php', 'apps/gateway/app/Support/ValidatedData.php',
-                        'apps/gateway/bin/render-swamp-grants', 'apps/gateway/app/Domain/Tasks/direct-operations.php')
-FROZEN_SCANNED = ('.ts', '.js', '.py', '.yaml', '.yml')
 SELECTION = 'swamp/proof/selection.txt'
 SELECTION_COMMAND = re.compile(r'[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+')
 
@@ -118,170 +116,71 @@ def proof_cases(paths, selection, read, files):
     return sorted(result, key=lambda entry: entry['command'])
 
 
-# Known source roots are explicit even for the desktop app, whose checks remain paused.
-APPS = {'agent', 'cli', 'desktop', 'docs', 'e2e', 'gateway', 'pi-server', 'web'}
-SOURCE_ROOTS = {'docs', '.github', 'bin', 'tools', '.agents', '.codex', '.githooks', 'scripts', 'swamp'}
-ROOT_INPUTS = {'.editorconfig', '.gitattributes', '.gitignore', '.node-version', 'composer.json', 'composer.lock', 'vet.json', 'LICENSE'}
-PROSE = ('.md', '.mdx', '.mmd')
+TABLE = '.github/ci/checks.toml'
+SWAMP_CHECKS = ('shape', 'validate', 'tests')
+
+
+def input_rules(inputs):
+    """Compile includes and exclusions; exclusions always win."""
+    return ([selection_regex(glob) for glob in inputs if not glob.startswith('!')],
+            [selection_regex(glob[1:]) for glob in inputs if glob.startswith('!')])
+
+
+def matches(path, rules):
+    includes, excludes = rules
+    return any(regex.fullmatch(path) for regex in includes) and not any(regex.fullmatch(path) for regex in excludes)
+
+
+@lru_cache(maxsize=1)
+def check_table():
+    with (ROOT / TABLE).open('rb') as source:
+        table = tomllib.load(source)
+    checks = {name: input_rules(check['inputs']) for name, check in table['check'].items()}
+    roots = [(name, input_rules(root['inputs']), root['default']) for name, root in table['roots'].items()]
+    return table, checks, roots
 
 
 def check_source_roots(paths):
+    _, _, roots = check_table()
     for path in paths:
-        parts = path.split('/')
-        known = (parts[0] == 'apps' and len(parts) > 2 and parts[1] in APPS
-                 or parts[0] == 'packages' and len(parts) > 2 and parts[1] == 'php-sdk'
-                 or parts[0] in SOURCE_ROOTS and len(parts) > 1
-                 or len(parts) == 1 and (path in ROOT_INPUTS or path.endswith(PROSE)))
-        if not known:
-            raise ValueError(f'Unknown CI source root: {path}. Add its check inputs to bin/ci-build-plan.')
+        if not any(matches(path, rules) for _, rules, _ in roots):
+            raise ValueError(f'Unknown CI source root: {path}. Add [roots."{path.split("/")[0]}"] with inputs and default checks to {TABLE}.')
 
 
-def swamp_inputs(path):
-    """Check inputs, including the files read by fixtures. Prose is handled by Docs instead."""
-    checks = set()
-    if path.startswith('swamp/') and not path.endswith(PROSE):
-        checks.add('shape')
-        relative = path.removeprefix('swamp/')
-        if (relative.startswith(('workflows/', 'extensions/', 'models/'))
-                or relative.startswith('config/') and not relative.startswith('config/swamp-shape')
-                or relative.startswith(('bin/validate-swamp-workflows', 'bin/check-grant-patterns', 'bin/lint-workflow-placement'))
-                or relative == 'tests/node_add_bootstrap_test.ts'):
-            checks.add('validate')
-        # Operation tests parse workflows, grants, manifests and Ansible assets; they also import
-        # maintenance helpers, native test support and the YAML analyser. Keep those transitive inputs.
-        if relative.startswith(('workflows/', 'extensions/', 'models/', 'ansible/', 'scripts/', 'tests/',
-                                'bin/check-swamp-shape', 'bin/gate-test-support', 'bin/check-grant-patterns',
-                                'bin/bounded-phase-scripts.ts', 'bin/workflow-placement.ts', 'bin/swamp-shape-relocations.ts')):
-            checks.add('tests')
-        if relative.startswith('config/'):
-            checks.add('tests')
-        if '/' not in relative:
-            checks.update(('shape', 'validate', 'tests'))
-    if path in SWAMP_GATEWAY_INPUTS:
-        checks.update(('shape', 'tests'))
-        if path != 'apps/gateway/app/Domain/Tasks/direct-operations.php':
-            checks.add('validate')
-    if path.startswith('apps/gateway/resources/agent/'):
-        checks.update(('shape', 'tests'))
-    if path.startswith(('apps/gateway/app/', 'apps/gateway/extensions/')) and path.endswith(FROZEN_SCANNED):
-        checks.add('shape')
-    return checks
-
-
-def tooling_jobs(path):
-    """Narrow known tooling; shared configuration and unclassified tools keep the broad check set."""
-    if path.startswith(('.agents/', '.codex/', '.githooks/')):
-        return {'docs'}
-    if path == 'bin/docs-navigation':
-        return {'docs', 'gateway-tests', 'api-reference', 'web'}
-    if path in ('bin/build-api', 'bin/docs-openapi', 'bin/mcp-tools'):
-        return {'gateway-tests', 'api-reference', 'web'}
-    if path.startswith(('bin/docs-', 'bin/check-flows')) and path != 'bin/docs-openapi':
-        return {'docs'}
-    if path in ('bin/api-fixtures', 'bin/check-operation-kinds'):
-        return {'api-reference', 'web'}
-    if path == 'bin/swamp-shape-gate':
-        return set()
-    if path == 'bin/check-frozen-agent-commands':
-        return {'php'}
-    if path == 'bin/ci-proof-run' or path.startswith('tools/swamp-proof-guest/'):
-        return {'proof'}
-    if path.startswith(('tools/test_ci_', 'tools/test_swamp_import_base', 'tools/test_frozen_agent_commands')):
-        return set()  # Select build inputs always runs these fixtures.
-    if path.startswith('tools/phpstan/'):
-        return {'gateway-static', 'cli-static', 'sdk-static', 'e2e-static'}
-    if path in ('bin/orbit-build-cli-binary', 'bin/orbit-version', 'bin/orbit-cli-release-version', 'bin/orbit-cli-release-assets'):
-        return {'cli', 'cli-tests'}
-    return set(JOBS)
+def selected_checks(paths):
+    """Interpret only table data; return selected names and unclaimed paths for the summary."""
+    table, checks, roots = check_table()
+    shared = input_rules(table['all-checks']['inputs'])
+    ignored = input_rules(table['ignored']['inputs'])
+    selected, unclaimed = set(), []
+    for path in paths:
+        claimed = {name for name, rules in checks.items() if matches(path, rules)}
+        if matches(path, shared):
+            claimed.update(checks)
+        if not claimed and not matches(path, ignored):
+            for root, rules, default in roots:
+                if matches(path, rules):
+                    claimed.update(default)
+                    unclaimed.append((path, root, default))
+                    break
+        selected.update(claimed)
+    return selected, unclaimed
 
 
 def select(paths, main=False, selection=None):
-    """`selection` is the text of the selection list; omitted, the list of this checkout is read."""
+    """`selection` is the text of the proof list; omitted, read this checkout's list."""
     paths = [path for path in paths if path]
     check_source_roots(paths)
-    swamp_only = bool(paths) and all(path.startswith('swamp/') for path in paths)
-    jobs = dict.fromkeys(JOBS, False)
-    swamp_checks = dict.fromkeys(('shape', 'validate', 'tests'), False)
-    agent = False
-    for path in paths:
-        # Gateway tests invoke the CLI consent fixture and native firewall behavior, and read
-        # proof cases, operation schemas, workflow/Ansible contracts and chart-backed metadata.
-        if (path.startswith(('apps/gateway/', 'apps/cli/', 'packages/php-sdk/'))
-                or not path.endswith(PROSE) and path.startswith(('swamp/workflows/', 'swamp/ansible/', 'swamp/proof/', 'swamp/config/',
-                             'swamp/extensions/behaviors/operations/', 'swamp/extensions/behaviors/_lib/'))
-                or path in ('swamp/deno.lock', 'swamp/deno.json', 'swamp/deno.jsonc', 'swamp/.swamp.yaml',
-                            'tools/swamp-proof-guest/ansible-recaps.php', 'docs/site.json')
-                or path.startswith('docs/navigation/') and path.endswith('.json')
-                or path.startswith('docs/cli/') and path.endswith('.mmd')):
-            jobs['gateway-tests'] = True
-        # CLI tests replay SDK fixtures, audit command docs and Gateway route names, and
-        # exercise the release helpers. Select these before the prose/test-only shortcuts.
-        if (path.startswith(('apps/cli/', 'packages/php-sdk/'))
-                or path.startswith('docs/cli/') and path.endswith('.mdx')
-                or path == '.codex/config.toml'
-                or path == 'docs/reference/cli-command-vocabulary.md'
-                or path.startswith('apps/gateway/routes/api/') and path.endswith('.php')
-                or path == 'apps/agent/scripts/source-commit'):
-            jobs['cli-tests'] = True
-        for name in swamp_inputs(path):
-            swamp_checks[name] = True
-        # Skills and Swamp prose never install application or Swamp toolchains.
-        if path.startswith(('.agents/', '.codex/', '.githooks/')) or path.endswith(PROSE) and not path.startswith(('apps/', 'packages/')):
-            jobs['docs'] = True
-            if path.startswith('docs/cli/') and path.endswith('.mmd'):
-                jobs['api-reference'] = True
-            continue
-        if path.startswith('swamp/'):
-            if path.startswith('swamp/proof/'):
-                jobs['proof'] = True
-            if path == 'swamp/config/gateway-workflow-grants.json':
-                jobs['api-reference'] = True
-            if path.startswith('swamp/workflows/'):
-                jobs['docs'] = True
-            continue
-        if path.startswith(('.github/', 'bin/', 'tools/', 'scripts/')) or '/' not in path:
-            selected = tooling_jobs(path)
-            for name in selected:
-                jobs[name] = True
-            if 'swamp' in selected:
-                swamp_checks = dict.fromkeys(swamp_checks, True)
-            if path == 'bin/swamp-shape-gate':
-                swamp_checks['shape'] = swamp_checks['validate'] = True
-            if path == 'bin/check-frozen-agent-commands':
-                swamp_checks['shape'] = True
-        if path.startswith('apps/gateway/'):
-            jobs['gateway-static'] = True
-        if path.startswith(('apps/cli/', 'packages/php-sdk/')):
-            jobs['cli-static'] = True
-        if path.startswith('packages/php-sdk/'):
-            jobs['sdk-static'] = True
-        if path.startswith('apps/e2e/'):
-            jobs['e2e-static'] = True
-        # The PHP job verifies the pin against the published Linux binary's contract.
-        if path.startswith('apps/gateway/resources/agent/'):
-            jobs['php'] = True
-        if path.endswith('.php') or path.endswith(('composer.json', 'composer.lock')):
-            jobs['php'] = True
-        if path.startswith(('apps/cli/tests/', 'apps/gateway/tests/', 'packages/php-sdk/tests/')):
-            continue
-        if path.startswith(('apps/cli/', 'packages/php-sdk/')):
-            jobs['cli'] = jobs['api-reference'] = jobs['web'] = True
-        if path.startswith(('docs/', 'apps/docs/')):
-            jobs['docs'] = True
-        if path == 'docs/cli/flows-pending.txt':
-            jobs['api-reference'] = True
-        if path.startswith('apps/gateway/'):
-            jobs['api-reference'] = jobs['web'] = True
-        if path.startswith('apps/web/'):
-            jobs['web'] = True
-            if path.startswith(('apps/web/tools/api-types/', 'apps/web/fixtures/')):
-                jobs['api-reference'] = True
-        if path.startswith('apps/pi-server/') and not path.endswith(('.md', '.mdx')):
-            jobs['pi'] = True
-        if (path.startswith('apps/agent/') or re.match(r'apps/gateway/extensions/[^/]+/agent/', path)) and not path.endswith(('.md', '.mdx')):
-            agent = jobs['agent'] = True
+    selected, _ = selected_checks(paths)
+    jobs = {name: name in selected for name in JOBS}
+    swamp_checks = {name: 'swamp-' + name in selected for name in SWAMP_CHECKS}
     jobs['swamp'] = any(swamp_checks.values())
+    table, checks, _ = check_table()
+    delivery_excludes = input_rules(
+        table['all-checks']['inputs'] + table['check']['agent']['delivery_excludes'])
+    agent = any(matches(path, checks['agent']) and not matches(path, delivery_excludes) for path in paths)
     jobs['web'] |= main
+    swamp_only = bool(paths) and all(path.startswith('swamp/') for path in paths)
     if selection is None and (ROOT / SELECTION).is_file():
         selection = (ROOT / SELECTION).read_text()
     return {'jobs': jobs, 'swamp_checks': swamp_checks, 'agent': agent, 'gateway_release': main or not swamp_only,
@@ -314,6 +213,15 @@ def main():
     a = p.parse_args()
     paths = subprocess.check_output(['git', 'diff', '--name-only', '--no-renames', '-z', a.base, a.head], timeout=60).decode().rstrip('\0').split('\0')
     result = select(paths, a.main)
+    _, unclaimed = selected_checks([path for path in paths if path])
+    if unclaimed:
+        import sys
+        lines = [f'Unclaimed CI input: {path}; root {root} defaults: {", ".join(default) or "none"}'
+                 for path, root, default in unclaimed]
+        print('\n'.join(lines), file=sys.stderr)
+        if os.environ.get('GITHUB_STEP_SUMMARY'):
+            with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as summary:
+                summary.write('### Unclaimed CI inputs\n\n' + '\n'.join(f'- {line}' for line in lines) + '\n')
     # Build jobs may use a shallow checkout. Only the full-history changes job needs the case plan.
     if a.proof_cases:
         base = subprocess.check_output(['timeout', '60', 'git', 'merge-base', a.base, a.head], text=True).strip()
