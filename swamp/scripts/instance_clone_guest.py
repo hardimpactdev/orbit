@@ -95,8 +95,16 @@ def phase_main(phase, raw):
         finally:
             root(c["bundle"]).unlink(missing_ok=True)
         inputs = json.loads(private)
+        php_settings = len(changes)
         if c["php"] is not None:
-            write("/etc/orbit/php/conf.d/99-orbit-runtime.ini", "memory_limit = 1G\n")
+            # The same two settings as the container phase: the shared limit, and PHP Data Bridge from the runtime folder.
+            write(
+                "/etc/orbit/php/conf.d/99-orbit-runtime.ini",
+                "memory_limit = 1G\n"
+                "auto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php\n",
+            )
+        # A running unit read the old settings at its start.
+        php_settings_changed = len(changes) > php_settings
         env = (
             root(c["environment_file"]).read_text()
             if root(c["environment_file"]).exists()
@@ -164,7 +172,7 @@ def phase_main(phase, raw):
             active = (
                 run(["systemctl", "is-active", "--quiet", name], False).returncode == 0
             )
-            if name in changed_units or not active:
+            if name in changed_units or php_settings_changed or not active:
                 run(["systemctl", "restart" if active else "start", name])
                 changes.append("start:" + name)
     elif phase == "agent":
