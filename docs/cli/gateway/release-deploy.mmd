@@ -49,8 +49,11 @@ sequenceDiagram
   %%> - from here until the switch, the release pauses with the old release live
   %%> - the record's message ends with the migration's output
   SW->>GN: Wait for active Operations<br/>Gateway DB · at most 10 minutes
-  %%> What it does:
-  %%> - checks queued, running and waiting `instance.create`, `instance.deploy*`, `conn.*` and `process.*` Operations every 5 seconds
+  %%> When:
+  %%> - before Swamp load, while the old release and Horizon serve
+  %%> - every 5 seconds while queued, running or waiting Operations covered by the [release idle guard](/reference/gateway-recovery#release-idle-guard) remain
+  %%> Why:
+  %%> - admitted execution input can still depend on the running Gateway code
   %%> On failure:
   %%> - refuses with `gateway.release_busy` and the blocking Operation IDs; the old release and Horizon stay live, and automatic releases pause because migrations ran
   alt Operations still active after 10 minutes

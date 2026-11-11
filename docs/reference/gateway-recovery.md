@@ -131,7 +131,7 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 | Snapshot the database | Writes `backups/pre-<id>-<time>-<hex>.sqlite` with `VACUUM INTO`. The newest three stay, and the one a pause names. |
 | Migrate | Runs `artisan migrate --force --isolated` from the new release and prints the end of its output with its exit code. |
 | Check the migration | Fails the run when the migration's exit code is not 0. The paused record's message ends with the migration's output. |
-| Wait for active Operations | Checks the Gateway DB every 5 seconds for up to 600 seconds. Refuses with `gateway.release_busy` and the blocking Operation IDs if queued, running or waiting `instance.create`, `instance.deploy*`, `conn.*` or `process.*` Operations remain. |
+| Wait for active Operations | Checks the Gateway DB every 5 seconds for up to 600 seconds. Refuses with `gateway.release_busy` and the blocking Operation IDs if queued, running or waiting Operations covered by the [release idle guard](#release-idle-guard) remain. |
 | Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
 | Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed: Drain Horizon → Switch the release → Verify the Gateway → Start Horizon → Admit VM refreshes. |
 
@@ -162,6 +162,55 @@ While the run is active, every release path refuses with `gateway.release_in_pro
 Read release records with `orbit gateway:release:list` and `orbit gateway:release:show <id>`. The CLI follows an admitted release until it ends. Interrupting the CLI stops following; the Swamp run continues.
 
 After verification, pruning keeps the newest `ORBIT_GATEWAY_RELEASES_KEEP` sealed releases, plus the current and previous releases and the build served by `web/current`. The setting defaults to 3 and has a minimum of 2. Pruning also removes incomplete releases older than one hour and web builds with no retained release. A pruning failure leaves the release live; a later release retries.
+
+### Release idle guard
+
+A kind needs this guard when its execution input is built or its execution code is read after admission, so switching Gateway code can change the outcome of already admitted work. A whole execution plan captured at admission can continue independently. The guard currently covers these kinds:
+
+| Covered kind | Reason |
+| --- | --- |
+| `instance.create` | Builds container, environment and Process input at submission; this includes container clones. |
+| `instance.deploy*` | Builds deploy steps, environment and runtime input after admission; the prefix covers all deploy variants. |
+| `instance.migrate` | Rebuilds container Process input against admitted units; a changed renderer can refuse those units. |
+| `instance.clone` | Builds the clone's environment, Process and Schedule input at submission. |
+| `instance.destroy` | Reads teardown programs and builds removal input after admission. |
+| `conn.*` | Preserves the existing guard for checkout and session setup across a switch. |
+| `process.*` | Preserves the existing guard for Process unit, definition and control work, including `process.inspect`. |
+
+The three lifecycle kinds above are the current addition. Other qualifying kinds remain outside this guard pending a separate change:
+
+| Not covered yet | Reason it also qualifies |
+| --- | --- |
+| `instance.transfer` | Builds source and destination Process installations, environment and setup input at submission. |
+| `instance.register` | Builds setup and Process installation input after admission. |
+| `instance.rollback` | Builds release activation input after admission. |
+| `instance.sync_environment` | Re-renders files and checks their admitted hashes before submission. |
+| `instance.run_steps` | Resolves admitted setup scripts when building native input. |
+| `schedule.install_instance_definitions` | Reads admitted Instance Schedule members when building native input. |
+| `route.caddy_converge` | Renders Caddy publication input at submission. |
+
+The guard deliberately excludes `proof.*` (long runs pinned to an admitted commit and isolated fleet), `task_vm.*` (long lifecycle runs with a captured VM plan), and `vault.sync` (scheduled work with a captured vault plan). They do not rebuild admitted Instance units from the serving Gateway checkout. Other standalone resource Operations stay outside the guard. In particular:
+
+| Excluded kind | Captured plan or safe read |
+| --- | --- |
+| `instance.env_import` | Reads an existing environment into the vault without rendering or installing units. |
+| `route.create` | Captures the create plan at admission ([NativeRouteAdmission.php:30](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Routes/NativeRouteAdmission.php#L30)). |
+| `route.update` | Captures the replacement or publication plan ([NativeRouteUpdateInput.php:80](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Routes/NativeRouteUpdateInput.php#L80)). |
+| `route.target_set` | Captures the target switch plan ([NativeRouteTargetInput.php:133](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Routes/NativeRouteTargetInput.php#L133)). |
+| `route.destroy` | Captures the withdrawal inventory and removal plan ([NativeRouteRemovalAdmission.php:42](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Routes/NativeRouteRemovalAdmission.php#L42)). |
+| `schedule.create`, `schedule.destroy` | Captures the timer specification before starting the Operation ([ScheduleOperationAdmission.php:30](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Schedules/ScheduleOperationAdmission.php#L30)). Native Schedule changes finish before recording success. |
+| `schedule.enable`, `schedule.disable` | Changes the native trigger before recording success; Node timer enable uses its admitted identity ([ScheduleControlProjection.php:32](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Schedules/ScheduleControlProjection.php#L32)). |
+| `schedule.run` | Uses the captured command and target without re-rendering Instance units ([NativeSchedules.php:213](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Schedules/NativeSchedules.php#L213)). |
+
+`gateway.release` cannot wait for itself; release admission already serializes releases. Terminal Operations never hold the guard. `instance:rename` starts no Operation; it records the branch already reported by the Node agent.
+
+`process.inspect` remains covered by the existing `process.*` rule. It captures read-only input at admission and changes only the observation record: an in-flight read leaves the last completed observation visible, and an interrupted read reports `unknown` with a reason. Excluding these recurring reads can be considered separately; this guard change preserves their current treatment.
+
+Observed successful container migrates took 182–215 seconds, container clones (`instance.create`) 20–40 seconds, and container destroys 23–75 seconds. These are observations, not guarantees; the separate `instance.clone` kind has no recorded timing here.
+
+The wait remains 600 seconds, with a poll every 5 seconds. It is a release limit, not an Operation deadline. Migrate has a 5,100-second budget. Clone can include Project setup. Its history-based budget has a 900-second floor, or 1,800 seconds without successful history. Destroy captures 60 seconds for a checkout or 600 for a container, plus teardown, Routes and owned databases. Any of them can legitimately run longer than the release wait.
+
+On timeout, stderr names every remaining Operation ID with `gateway.release_busy`. The release fails, the old code stays live, and automatic releases pause because migrations already ran. The Operations continue. Wait for them to settle, inspect the failed release, then resume automatic releases. The guard never proceeds through busy work, cancels it, extends its budget or stops new admissions.
 
 ### Load Swamp
 
