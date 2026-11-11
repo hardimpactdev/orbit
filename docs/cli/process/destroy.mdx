@@ -2,6 +2,8 @@
 title: "orbit process:destroy"
 sidebarTitle: "process:destroy"
 description: "Stop and remove the unit or container of one Process, then delete its record. With `--project`, destroy one definition by name."
+covers:
+  - apps/gateway/app/Domain/Instances/InstanceNodeServiceProcessRemovalGuard.php
 ---
 
 ```bash
@@ -21,6 +23,8 @@ orbit process:destroy queue --project=1 --yes
 Destroying a definition leaves every existing Instance copy in place.
 
 For a systemd Process, Orbit clears a retained failure only after the unit file and boot link are absent and no running process, cgroup or pending job remains. It checks the state again before deleting the record. Destroy preserves the source environment file.
+
+A Node Process used by an attached Node service target refuses with `process.required_by_instance_node_service` before stopping or removing its runtime. The error names every dependent Instance. [Detach those records](/cli/instance/node-service-detach), including after a successful migration, before destroying the Process. Other attachments keep their dependencies.
 
 ## How it works
 

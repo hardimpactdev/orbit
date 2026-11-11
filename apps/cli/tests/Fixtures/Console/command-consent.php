@@ -60,10 +60,12 @@ if (isset($configuration['registration_facts'])) {
 $replies = $configuration['replies'];
 MockClient::global(['*' => static function (PendingRequest $pending) use (&$replies, $configuration): MockResponse {
     $request = $pending->getRequest();
+    $query = $pending->query()->all();
     file_put_contents($configuration['trace'], json_encode([
         'class' => $request::class,
         'method' => $pending->getMethod()->value,
         'url' => $pending->getUrl(),
+        ...($query === [] ? [] : ['query' => $query]),
         'body' => method_exists($request, 'body') ? $request->body()->all() : [],
     ], JSON_THROW_ON_ERROR)."\n", FILE_APPEND);
     $reply = array_shift($replies);
