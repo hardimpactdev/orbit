@@ -93,7 +93,7 @@ An orchestrator derives the key from its work item, stage, and cycle, such as `l
 
 A task group gains `orchestration`: `tick`, the default, or `external`. Create sets it, and it never changes. An operation takes the workspace lease for its step, as the operator's baseline retry does today. A busy lease keeps the step `waiting`; it is not a failure.
 
-In step 1, create refuses an `external` group with `422 tasks.orchestration_unsupported` in two cases: a subtask declares a [topology](/reference/compute-drivers#size-of-a-task-vm), or the Project uses [review and merge](/reference/tasks#review-and-merge). Each case needs its own amendment.
+In step 1, create refuses an `external` group with `422 tasks.orchestration_unsupported` in two cases: a subtask declares a [topology](/reference/compute-drivers#incus-provider), or the Project uses [review and merge](/reference/tasks#review-and-merge). Each case needs its own amendment.
 
 Each effect becomes an operation that wraps the code Tasks runs today:
 

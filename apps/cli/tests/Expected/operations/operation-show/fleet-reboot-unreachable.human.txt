@@ -1,0 +1,49 @@
+Loading operation...
+
+┌  Show operation
+│
+├  ● Loaded operation
+│
+└  Loaded operation.
+
+
+┌  Operation: 1
+│
+├  Kind               fleet.reboot
+│
+├  Target             fleet 1
+│
+├  Status             failed
+│
+├  Error code         operation.native_failed
+│
+├  Current step       —
+│
+├  Step started       —
+│
+├  Step observed      —
+│
+├  Failed step        —
+│
+├  Error detail       —
+│
+├  Result             {"nodes":[{"node_id":213,"name":"beast","outcome":"failed","step":"drain","error_code":"fleet.node_unreachable","error_detail":"Failed to connect to the host via ssh: ssh:
+│                     connect to host 192.0.2.9 port 22: Connection timed
+│                     out","reboot_hold":false},{"node_id":212,"outcome":"skipped","reason":"halted","reboot_hold":false},{"node_id":211,"outcome":"skipped","reason":"not_reached","reboot_hold":false}
+│                     ],"error_code":"fleet.node_unreachable"}
+│
+├  Cancel requested   —
+│
+├  Attempts           0
+│
+├  By                 —
+│
+├  Caller Node        —
+│
+├  Created            2026-11-11T02:10:00+00:00
+│
+├  Started            2026-11-11T02:10:00+00:00
+│
+└  Finished           2026-11-11T02:10:00+00:00
+
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

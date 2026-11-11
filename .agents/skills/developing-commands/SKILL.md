@@ -37,7 +37,7 @@ Whoever turns `main` red fixes it forward, first. Watch CI on `main` after every
 
 ## Release
 
-Nothing to do. The release ([stage 5](../../../docs/reference/pipeline/5-automatic-release.mmd)) and the per-host refresh ([stage 6](../../../docs/reference/pipeline/6-task-image-seed-refresh.mmd)) are automatic. If a step of the pipeline is missing, build its smallest form as part of the command that needs it.
+The release ([stage 5](../../../docs/reference/pipeline/5-automatic-release.mmd)) runs automatically only while enabled and unpaused. When automatic releases are off, use the manual [`gateway:release:deploy COMMIT`](../../../docs/cli/gateway/release-deploy.mdx) path. The release admits the per-host refresh ([stage 6](../../../docs/reference/pipeline/6-task-image-seed-refresh.mmd)) only after verification and Horizon start; it does not wait for refresh completion. If a step of the pipeline is missing, build its smallest form as part of the command that needs it.
 
 ## Lessons
 

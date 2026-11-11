@@ -385,7 +385,7 @@ The listener check runs once, right after the start. Legacy polled the listener 
 
 A failed listener check leaves the Process running with its traffic suspended. Legacy stopped it and refused with `vite.not_ready`. Run `process:stop`, or start the Process again once Vite is ready.
 
-Schedule enable, manual run and destroy use their [direct Schedule workflow](/reference/schedules#direct-swamp-control). The landed direct kinds have no polled discovery or executor registration.
+Schedule enable, manual run and destroy use their [direct Schedule workflow](/reference/schedules#the-schedule-workflow). The landed direct kinds have no polled discovery or executor registration.
 
 When you destroy a Process, the kind uses the direct default for every Node and existing owning admission. It has no Gateway runtime lease, target hold, polled removal descriptor or public PHP execution branch. Native removal receives the admitted unit or container identity and, for Vite, the exact Instance environment path. The Gateway deletes the record only after native success. A refused removal keeps the record with its error. Retained synchronous Instance and Analytics helpers stay until their owning callers convert.
 

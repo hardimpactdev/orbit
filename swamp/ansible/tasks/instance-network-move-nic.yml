@@ -10,7 +10,7 @@
       {{ ['incus', '--project', move_container.project, 'config', 'device',
           ('set' if item.key in (move_container.devices | default({})) else 'override'), move_container.name, item.key,
           'security.acls=' ~ (item.value['security.acls'].split(',') | map('trim')
-            | map('regex_replace', '^' ~ instances.network ~ '-egress$', instances.network ~ '-proxy') | join(',')),
+            | map('regex_replace', '^' ~ instances.network ~ '-egress$', instances.nic_acl) | join(',')),
           'security.acls.default.egress.action=reject', 'security.acls.default.ingress.action=reject'] }}
   loop: "{{ move_container.expanded_devices | dict2items }}"
   loop_control: { label: "{{ move_container.name }}/{{ item.key }}" }

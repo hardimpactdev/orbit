@@ -2,7 +2,7 @@ import { assert, assertEquals, assertThrows } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
 import { hasAnsible, root, Task, transform, git, fixture, worker, paused, environments, restarts } from "./_support/ansible_instance_container.ts";
 
-for (const damage of ["missing ACL", "permissive default"]) {
+for (const damage of ["missing ACL", "permissive default", "bridge union ACL"]) {
   Deno.test({
     name: `start refuses a NIC with ${damage} before starting the container`,
     ignore: !hasAnsible,
@@ -13,8 +13,8 @@ for (const damage of ["missing ACL", "permissive default"]) {
         assert(made.ok, made.output);
         assert(f.run("stop").ok);
         const state = f.state();
-        const key = damage === "missing ACL" ? "security.acls" : "security.acls.default.egress.action";
-        const value = damage === "missing ACL" ? "" : "allow";
+        const key = damage === "permissive default" ? "security.acls.default.egress.action" : "security.acls";
+        const value = damage === "missing ACL" ? "" : damage === "bridge union ACL" ? "orbitinst0-egress,instance-7" : "allow";
         state.containers["instance-7"].devices = state.containers["instance-7"].devices
           .filter((device: string) => !device.startsWith(`eth0,${key}=`));
         state.containers["instance-7"].devices.push(`eth0,${key}=${value}`);

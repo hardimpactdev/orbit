@@ -626,7 +626,7 @@ contexts:
     retirement_checkout:
       stdout: "/srv/tool/detached\ncheckout"
   instance-nic-local:
-    instances: {network: orbitinst0}
+    instances: {network: orbitinst0, nic_acl: orbitinst0-proxy}
     # A sanitized entry from `incus query /1.0/instances?all-projects=true&recursion=1`.
     move_container:
       name: instance-7
@@ -639,7 +639,7 @@ contexts:
       expanded_devices: {eth0: *local_nic}
     item: {key: eth0, value: *local_nic}
   instance-nic-inherited:
-    instances: {network: orbitinst0}
+    instances: {network: orbitinst0, nic_acl: orbitinst0-proxy}
     move_container:
       name: instance-8
       project: orbit-instances

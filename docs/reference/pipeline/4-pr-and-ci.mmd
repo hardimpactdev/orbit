@@ -62,7 +62,7 @@ sequenceDiagram
       %%> - the Gateway side, `proof:run` refusing an untrusted commit with `proof.commit_untrusted`
       %%> Decided by the orchestrator, for Nick's review:
       %%> - a workflow of its own, not a trigger on `ci.yml`: `pull_request_target` on `ci.yml` would run every job of the PR with the secrets and the write token of the base repository
-      %%> - the outside workflow publishes its proof status on the exact fork head; `Required checks` reads that status and fails unless it succeeded. After the outside proof succeeds, rerun the failed Required job. A new head needs its own proof status.
+      %%> - the outside workflow publishes its proof status on the exact fork head; `Required checks` requires that status to succeed only when both `ORBIT_SLOW_CHECKS_BLOCKING` and `ORBIT_PROOF_BLOCKING` are not `false`. After the outside proof succeeds, rerun the failed Required job. A new head needs its own proof status.
     end
     CI->>GW: Run the proof CI<br/>proof:run COMMIT
     %%> What it does:
@@ -78,7 +78,7 @@ sequenceDiagram
     %%> Built, not yet passed live:
     %%> - when the PR adds or changes a case with `fails_on_base: true`, the same proof VM then switches its checkout to the merge base with the head cases file and must see every selected flagged case fail with cause `assertion`; unflagged and unchanged cases never replay; see `Select replay cases` in the [stage 3 chart](/reference/command-development-pipeline#3-proof)
     %%> Built:
-    %%> - the proof CI is part of Required checks: the job `proof-run` calls `proof:run`, requires every selected case verdict and fails on a failed case or missing verdict; no selected command passes
+    %%> - the proof CI is part of Required checks only when both `ORBIT_SLOW_CHECKS_BLOCKING` and `ORBIT_PROOF_BLOCKING` are not `false`: the job `proof-run` calls `proof:run`, requires every selected case verdict and fails on a failed case or missing verdict; no selected command passes
     GW-->>CI: Verdict per case
     %%> Result:
     %%> - the job reads the operation until it ends; a missing result or a failed assertion fails the CI result

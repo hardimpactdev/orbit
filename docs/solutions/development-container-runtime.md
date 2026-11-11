@@ -43,7 +43,7 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 | Production | Production Instances move into containers too, after development containers work |
 | Sleep | A development container sleeps after one hour idle, never while a task runs in it. Development Instances have no Schedules. Production containers never sleep |
 | Setup | There are no development setup steps. Only a Project's first default Instance is built from scratch |
-| Default Instance | It deploys every merge to the default branch, so clones match it; a clone installs its own dependency changes. There is no separate source container |
+| Default Instance | Intended: deploy every merge. Delivered: clones use the [last successfully deployed seed](/reference/deployments#automatic-development-defaults); each clone installs its own dependency changes. There is no separate source container |
 | One default per Project | A Project has one `default` Instance in the whole fleet. The Node that holds it is where every clone of the Project is made |
 | Git | Orbit fetches and pushes from the Node |
 | History | T3 history is deleted with its Instance. Swamp records the transcript of each task turn, so task transcripts outlive a clone |
@@ -170,7 +170,8 @@ The host side reuses the container host tasks of the task containers (#3279):
 - The project, bridge, ACL, profile, stock image, input rules and clone probe.
 - The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge refuses a Node without it.
 - The profile mounts the two folders, read-only and idmapped. The project allows host disks and proxy devices for T3.
-- Every container gets an isolated ID map and a default-reject NIC ACL. It permits the model forwarder, egress proxy and attached targets. The bridge delegates egress to that NIC policy.
+- Every container gets an isolated ID map. Its NIC permits only the model forwarder, egress proxy and its own attached targets.
+- The bridge and NIC both reject egress by default. The bridge admits the Node-wide endpoint union; see [Network](/reference/development-containers#network).
 
 The image and the folders:
 
@@ -261,7 +262,7 @@ Its work:
 - FrankenPHP runs as the `orbit` unit `orbit-frankenphp.service` on port 8080 of the bridge address.
 - The container's own ACL lets only the Node's Caddy reach that port, and the Route proxies to it.
 - After the first build and each deployment, Orbit stops the units and takes the snapshot `seed-<commit>`. It deletes older seeds and records the commit on the runtime row.
-- The automatic development deployment of each merge runs in the default container as the variant `container`. It starts a stopped container first.
+- The container-default deployment path runs in the default container as the variant `container`. It starts a stopped container first.
 
 The code changed these points of this plan:
 
@@ -323,7 +324,7 @@ Live on Beast, with the test Laravel Project `P` (PHP 8.5) and its default Insta
 4. Set `QUEUE_NAME=high` in the definition's `spec.environment` with the MCP tool `project-process-definition-update`, and deploy again. `/etc/orbit/processes/<id>/` in the container holds its environment file, root only, mode 0600.
 5. `orbit process:restart <id>` succeeds, and the unit's `ExecMainStartTimestamp` changes. `orbit process:logs <id>` shows the worker's start lines.
 6. `orbit process:stop <id>`, then `orbit process:list --instance=I` shows it `inactive`; `orbit process:start <id>` brings it back.
-7. A merge to the default branch deploys, and the worker restarts on the new commit.
+7. With the [shared automatic producer enabled and unpaused](/reference/deployments#automatic-development-defaults), a merge to the default branch deploys, and the worker restarts on the new commit.
 8. The PR records the times of steps 2, 5 and 7.
 
 ### PR 5: create an Instance as a clone of the default
@@ -352,7 +353,7 @@ The code changed these points of this plan:
 - **Renewal.** The daily renewal run moves to PR 13, with the wake that also renews. A session lasts 30 days.
 - **Vault copy.** The Gateway session's vault copy stays, as a pairing's credential does. Swamp has no delete for a sensitive field that a step wrote.
 - **Plug-in point.** `InstanceLifecycleContribution` records creation and terminal destroy cleanup. Conn supplies it.
-- **Limits.** The copy sets no `limits.cpu` or `limits.memory`. No measured figure exists; the parity gate sets them.
+- **Limits.** The copy captures four CPUs, 8 GiB of memory, 4,096 processes and a 40 GiB root disk, as the [container limits](/reference/development-containers#inside-a-container) describe.
 - **Egress and PHP.** The live checks wait on the container egress path of step 2c and on 3b's PHP pin, as PR 4's do.
 
 Agent development servers changed these points:

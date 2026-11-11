@@ -3,7 +3,7 @@ title: "Orbit self-update"
 description: "The desired fleet state the Gateway serves for its commit, how orbit self-update replaces the CLI from it, and how the CLI learns that a newer release exists."
 covers:
   - apps/gateway/app/{Data,Infrastructure}/Fleet/**
-  - apps/gateway/app/Domain/Fleet/{Cli,Desired,Fleet,NodeCli,NodeFootprint,RecipeMaintenance,Release}*.php
+  - apps/gateway/app/Domain/Fleet/{Cli,Desired,FleetRelease,FleetRollout,FleetServing,NodeCli,NodeFootprint,RecipeMaintenance,Release}*.php
   - apps/gateway/app/Actions/Gateway/ShowDesiredFleetStateAction.php
   - apps/gateway/app/Http/Middleware/AnnounceDesiredCliVersion.php
   - apps/gateway/app/Console/Commands/ResolveDesiredFleetStateCommand.php
@@ -16,9 +16,9 @@ covers:
 
 `orbit self-update` updates one machine to the Gateway's release. It replaces the `orbit` binary with the CLI release that CI published for the Gateway's commit. It never touches `orbit-agent`. A Node gets the Gateway's pinned agent through [install on mismatch](/reference/node-agent#install-on-mismatch). The Gateway serves what to install as the **desired fleet state**. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) publishes the CLI and observer separately; an operator runs `self-update` on a Mac.
 
-[`node:converge`](/cli/node/converge) is a separate managed-state repair. Its agent phase installs the admitted agent and CLI pins, then later phases repair the selected software, role configuration, Tools and network. `self-update` retains its CLI-only delivery path.
+[`node:converge`](/cli/node/converge) is a separate managed-state repair. Its agent phase installs the admitted agent pin and installs the packaged CLI only for a recorded `ci-runner` role that is not removing. Other Nodes have the managed CLI removed. Later phases repair the selected software, role configuration, Tools and network. `self-update` retains its CLI-only delivery path.
 
-Nodes with a [fleet reboot hold](/reference/gateway-recovery#fleet-reboot) still receive CLI and observer updates.
+Nodes with a [fleet reboot hold](/reference/gateway-recovery#fleet-reboot) still receive observer updates and, when eligible as CI runners, CLI updates.
 
 ## Desired fleet state
 
@@ -91,7 +91,7 @@ The Gateway asks GitHub with a read-only token of its [GitHub App](/reference/gi
 
 ### CLI release status
 
-The Gateway usually deploys a commit a minute after its checks pass, minutes before CI publishes its CLI release. None of these states is an error.
+When automatic Gateway releases are enabled and unpaused, the Gateway checks for green commits every five minutes. Gateway and CLI releases run independently, so a Gateway release can precede its CLI release. None of these states is an error.
 
 | `cli.status` | `reason` | Meaning |
 | --- | --- | --- |
@@ -131,7 +131,7 @@ When GitHub does not answer for an ancestor, the search stops and names nothing.
 
 CI normally publishes a release within minutes, so the 30 minutes let the fleet wait for the commit's own release and roll out once. A release that takes longer makes the fleet roll out twice: first the fallback, then the commit's own release.
 
-Standalone `node:converge` captures the desired release for each admitted attempt rather than skipping admission on a stored footprint digest. It requires an available CLI pin; a missing pin fails input preparation before machine changes. It can target a managed Linux Node that automatic rollout excludes, including a roleless Node or the Gateway Node. See [footprint convergence](/reference/node-provisioning#converge-the-orbit-footprint) for its scope and repeat contract.
+Standalone `node:converge` captures the desired release for each admitted attempt rather than skipping admission on a stored footprint digest. Only a recorded `ci-runner` role that is not removing requires an available CLI pin; a missing pin then fails input preparation before machine changes. Other Nodes receive no CLI intent and convergence removes the managed CLI. It can target a managed Linux Node that automatic rollout excludes, including a roleless Node or the Gateway Node. See [footprint convergence](/reference/node-provisioning#converge-the-orbit-footprint) for its scope and repeat contract.
 
 ## What the command does
 

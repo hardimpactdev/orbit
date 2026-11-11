@@ -15,7 +15,7 @@ orbit instance:teardown-step:create <name> --project=ID --command=COMMAND [--tim
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--project=ID` | prompt | Numeric Project ID. |
-| `--command=COMMAND` | prompt | The shell command, at most 16 KiB of UTF-8 text with no NUL byte, and not blank. It runs from the repository root of the code the Instance serves, before [`instance:destroy`](/cli/instance/destroy) removes it. The command `@orbit/ci-caches` is a [Gateway-owned operation](/reference/instance-setup#gateway-owned-teardown-steps), not a shell command. |
+| `--command=COMMAND` | prompt | The shell command, at most 16 KiB of UTF-8 text with no NUL byte, and not blank. It runs from the repository root of the code the Instance serves, before [`instance:destroy`](/cli/instance/destroy) removes it. The [Gateway-owned setup operation](/reference/instance-setup#gateway-owned-setup-steps) `@orbit/ci-caches` is refused in teardown. |
 | `--timeout=SECONDS` | `240` | Timeout from 1 through 540 seconds. The whole list may total at most 540 seconds, except a list stored before that cap, which accepts any change that does not raise its total. |
 | `--before=NAME` | none | Insert before this step. Exclusive with `--after`. |
 | `--after=NAME` | none | Insert after this step. Exclusive with `--before`. |

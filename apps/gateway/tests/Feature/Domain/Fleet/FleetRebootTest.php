@@ -39,6 +39,7 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
@@ -218,6 +219,111 @@ it('records each Node in pass order, parks the stopped task VMs and alerts on th
         ->toBe(['reboot_halted|fleet-node:'.$this->prod->id.'|boot-a|fleet.reboot_units_failed']);
 });
 
+it('keeps an unreachable Node failure and diagnostic, skips later Nodes and alerts once, also with a reboot hold', function (bool $held): void {
+    $this->travelTo(new DateTimeImmutable('2026-11-11T02:10:00Z'));
+    $operation = Operation::query()->create(['kind' => 'fleet.reboot', 'target_type' => 'fleet', 'target_id' => 1, 'node_id' => $this->swamp->id,
+        'status' => 'running', 'state' => ['swamp_run_id' => 'run-unreachable'], 'input' => ['intent' => [
+            'order' => [$this->beast->id, $this->prod->id, $this->vpn->id],
+            'nodes' => [$this->beast->id => ['defer' => $held ? 'operator_hold' : null]],
+        ], 'task_hosts' => []]]);
+    $diagnostic = 'Failed to connect to the host via ssh: ssh: connect to host 192.0.2.9 port 22: Connection timed out';
+    $data = ['run_id' => 'run-unreachable', 'status' => 'failed', 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'error_code' => 'operation.native_failed', 'failure' => null, 'result' => ['nodes' => [
+            ['node_id' => $this->beast->id, 'name' => 'beast', 'outcome' => 'failed', 'step' => 'drain',
+                'error_code' => 'fleet.node_unreachable', 'error_detail' => $diagnostic],
+            ['node_id' => $this->prod->id, 'outcome' => 'skipped', 'reason' => 'halted'],
+        ]]];
+
+    $projected = app(FleetRebootProjection::class)->apply($operation, $data);
+    app(FleetRebootProjection::class)->apply($projected, $data);
+
+    expect($projected->status)->toBe(OperationStatus::Failed)
+        ->and($projected->result['error_code'])->toBe('fleet.node_unreachable')
+        ->and($projected->result['nodes'][0])->toMatchArray(['outcome' => 'failed', 'error_code' => 'fleet.node_unreachable',
+            'step' => 'drain', 'error_detail' => $diagnostic, 'reboot_hold' => $held])
+        ->and($projected->result['nodes'][1])->toMatchArray(['outcome' => 'skipped', 'reason' => 'halted'])
+        // The recorded failed Node proves this later missing Node was not reached.
+        ->and($projected->result['nodes'][2])->toMatchArray(['outcome' => 'skipped', 'reason' => 'not_reached'])
+        ->and(array_map(static fn (ReleaseAlert $alert): string => $alert->kind->value, $this->sent))->toBe(['reboot_halted']);
+
+    $body = $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])
+        ->getJson("/api/v1/operations/{$projected->id}")->assertOk()->assertJsonPath('data.result.nodes.0.error_detail', $diagnostic)->json();
+    if (! $held) {
+        $body['meta']['request_id'] = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+        $fixture = ['schema' => 1, 'request' => ShowOperationRequest::class,
+            'route' => 'GET /api/v1/operations/{operation}', 'status' => 200, 'body' => $body];
+        $path = base_path('../../packages/php-sdk/fixtures/operations/operation-show/fleet-reboot-unreachable.json');
+        if (getenv('ORBIT_FIXTURES') === 'record') {
+            if (! is_dir(dirname($path))) {
+                mkdir(dirname($path), 0755, true);
+            }
+            file_put_contents($path, json_encode($fixture, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
+        }
+        expect($fixture)->toBe(json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR));
+    }
+})->with([false, true]);
+
+it('marks every Node unknown and halts once when the root has no Node evidence', function (string $status, bool $reportedUnknown): void {
+    $this->travelTo(new DateTimeImmutable('2026-11-11T02:10:00Z'));
+    $operation = Operation::query()->create(['kind' => 'fleet.reboot', 'target_type' => 'fleet', 'target_id' => 1, 'node_id' => $this->swamp->id,
+        'status' => 'running', 'state' => ['swamp_run_id' => 'run-cut'], 'input' => ['intent' => [
+            'order' => [$this->beast->id, $this->prod->id], 'nodes' => [$this->beast->id => ['defer' => 'operator_hold']],
+        ], 'task_hosts' => []]]);
+    $data = ['run_id' => 'run-cut', 'status' => $status, 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'error_code' => null, 'failure' => null,
+        'result' => $reportedUnknown ? ['nodes' => [['node_id' => $this->beast->id, 'outcome' => 'unknown', 'reason' => 'run_interrupted']]] : []];
+
+    $projected = app(FleetRebootProjection::class)->apply($operation, $data);
+    app(FleetRebootProjection::class)->apply($projected, $data);
+
+    expect($projected->status)->toBe(OperationStatus::Failed)
+        ->and($projected->error_code)->toBe('fleet.reboot_interrupted')
+        ->and($projected->result)->toBe(['nodes' => [
+            ['node_id' => $this->beast->id, 'outcome' => 'unknown', 'reason' => 'run_interrupted', 'reboot_hold' => true],
+            ['node_id' => $this->prod->id, 'outcome' => 'unknown', 'reason' => 'run_interrupted', 'reboot_hold' => false],
+        ], 'error_code' => 'fleet.reboot_interrupted'])
+        ->and(array_map(static fn (ReleaseAlert $alert): string => $alert->kind->value, $this->sent))->toBe(['reboot_halted'])
+        ->and($this->sent[0]->summary)->toContain('without a complete Node report');
+
+    if ($status === 'interrupted' && ! $reportedUnknown) {
+        $body = $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])
+            ->getJson("/api/v1/operations/{$projected->id}")->assertOk()->assertJsonPath('data.result.nodes.0.outcome', 'unknown')->json();
+        $body['meta']['request_id'] = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+        $fixture = ['schema' => 1, 'request' => ShowOperationRequest::class, 'route' => 'GET /api/v1/operations/{operation}', 'status' => 200, 'body' => $body];
+        $path = base_path('../../packages/php-sdk/fixtures/operations/operation-show/fleet-reboot-interrupted.json');
+        if (getenv('ORBIT_FIXTURES') === 'record') {
+            file_put_contents($path, json_encode($fixture, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
+        }
+        expect($fixture)->toBe(json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR));
+    }
+})->with(['interrupted', 'failed', 'succeeded'])->with([false, true]);
+
+it('uses not_reached only after a recorded halt in a partial Node report', function (): void {
+    $operation = Operation::query()->create(['kind' => 'fleet.reboot', 'target_type' => 'fleet', 'target_id' => 1,
+        'status' => 'running', 'state' => ['swamp_run_id' => 'run-partial'], 'input' => ['intent' => [
+            'order' => [$this->beast->id, $this->prod->id, $this->vpn->id, $this->swamp->id],
+        ], 'task_hosts' => []]]);
+    $projected = app(FleetRebootProjection::class)->apply($operation, ['run_id' => 'run-partial', 'status' => 'failed',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'operation.native_failed', 'failure' => null,
+        'result' => ['nodes' => [
+            ['node_id' => $this->beast->id, 'outcome' => 'rebooted'],
+            ['node_id' => $this->vpn->id, 'outcome' => 'failed', 'error_code' => 'fleet.reboot_lost'],
+        ]]]);
+
+    expect($projected->result['nodes'][1])->toMatchArray(['outcome' => 'unknown', 'reason' => 'run_interrupted'])
+        ->and($projected->result['nodes'][3])->toMatchArray(['outcome' => 'skipped', 'reason' => 'not_reached'])
+        ->and($projected->result['error_code'])->toBe('fleet.reboot_lost');
+});
+
+it('refuses an unreachable diagnostic longer than its public output bound', function (): void {
+    $operation = Operation::query()->create(['kind' => 'fleet.reboot', 'target_type' => 'fleet', 'target_id' => 1, 'status' => 'running',
+        'input' => ['intent' => ['order' => [$this->beast->id]]]]);
+
+    expect(fn () => app(FleetRebootProjection::class)->apply($operation, ['result' => ['nodes' => [[
+        'node_id' => $this->beast->id, 'outcome' => 'failed', 'error_code' => 'fleet.node_unreachable', 'error_detail' => str_repeat('x', 4097),
+    ]]]]))->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('operation.result_invalid'));
+});
+
 it('keeps the CI re-run record of a Node: stopped runners, re-run and refused runs, pending runs and errors', function (): void {
     $operation = Operation::query()->create(['kind' => 'fleet.reboot', 'target_type' => 'fleet', 'target_id' => 1, 'node_id' => null,
         'status' => 'running', 'state' => ['swamp_run_id' => 'run-3'], 'input' => ['intent' => ['order' => [$this->beast->id]], 'task_hosts' => []]]);
@@ -313,7 +419,7 @@ it('admits a held task host read-only in nightly and selected operator passes an
         ->and(app(FleetReboot::class)->node($this->beast)['defer'])->toBe('tasks_busy');
 })->with(['nightly' => [true], 'operator node_ids' => [false]]);
 
-it('projects the admitted reboot hold for due, not-due and unreached Nodes and keeps held overdue alerts', function (): void {
+it('projects the admitted reboot hold for due, not-due and unknown Nodes and keeps held overdue alerts', function (): void {
     $since = now()->subDays(4)->startOfSecond()->toIso8601String();
     $ids = [$this->beast->id, $this->prod->id, $this->vpn->id];
     $operation = Operation::query()->create(['kind' => 'fleet.reboot', 'target_type' => 'fleet', 'target_id' => 1,
@@ -330,10 +436,12 @@ it('projects the admitted reboot hold for due, not-due and unreached Nodes and k
         ->assertJsonPath('data.result.nodes.0.reason', 'operator_hold');
     expect(array_column($projected->result['nodes'], 'reboot_hold'))->toBe([true, true, true])
         ->and($projected->result['nodes'][0])->toMatchArray(['reason' => 'operator_hold', 'boot_id_before' => 'held-boot', 'due_since' => $since])
+        ->and($projected->result['nodes'][2])->toMatchArray(['outcome' => 'unknown', 'reason' => 'run_interrupted'])
         ->and(FleetReboot::dueSince($this->beast->id)?->getTimestamp())->toBe(CarbonImmutable::parse($since)->getTimestamp())
         ->and(FleetReboot::dueSince($this->prod->id))->toBeNull()
         ->and(array_map(static fn (ReleaseAlert $alert): string => $alert->incident->key($alert->kind), $this->sent))
-        ->toBe(['reboot_overdue|fleet-node:'.$this->beast->id.'|due-'.CarbonImmutable::parse($since)->getTimestamp().'|fleet.reboot_overdue']);
+        ->toBe(['reboot_halted|fleet-node:'.$this->vpn->id.'|operation-'.$projected->id.'|fleet.reboot_interrupted',
+            'reboot_overdue|fleet-node:'.$this->beast->id.'|due-'.CarbonImmutable::parse($since)->getTimestamp().'|fleet.reboot_overdue']);
 });
 
 it('keeps an idle held task host out of the pass task-work lock', function (): void {

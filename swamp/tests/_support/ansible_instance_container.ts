@@ -51,12 +51,13 @@ export function fixture() {
   Deno.mkdirSync(`${folder}/bin`);
   Deno.mkdirSync(`${folder}/tasks`);
   Deno.copyFileSync(new URL("instance_bridge.py", root), `${folder}/instance_bridge.py`);
+  Deno.copyFileSync(new URL("instance_network.py", root), `${folder}/instance_network.py`);
   Deno.writeTextFileSync(`${folder}/bin/curl`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("../fixtures/instance-bridge-curl.ts", import.meta.url).pathname}' "$@"\n`);
   Deno.chmodSync(`${folder}/bin/curl`, 0o755);
   Deno.writeTextFileSync(`${folder}/nat.txt`, "");
   Deno.writeTextFileSync(`${folder}/bin/iptables-save`, `#!/bin/sh\ncat '${folder}/nat.txt'\n`);
   Deno.chmodSync(`${folder}/bin/iptables-save`, 0o755);
-  for (const shared of ["instance-network-nic-check.yml", "instance-network-device-check.yml", "instance-bridge-rules.yml"]) {
+  for (const shared of ["instance-network-nic-check.yml", "instance-bridge-rules.yml"]) {
     Deno.writeTextFileSync(`${folder}/tasks/${shared}`, stringify((parse(Deno.readTextFileSync(new URL(`tasks/${shared}`, root))) as Task[]).map(transform)).replaceAll("/usr/local/libexec", `${folder}/libexec`).replaceAll("/var/lib/orbit/instance-bridge", `${folder}/bridge-policy`));
   }
   Deno.mkdirSync(`${folder}/home`);
@@ -93,6 +94,7 @@ export function fixture() {
     root_disk_size: "40GiB",
     address: "10.253.0.2",
     network: "orbitinst0",
+    nic_acl: "orbitinst0-proxy",
     bridge_cidr: "10.253.0.0/24",
     bridge_admitted_at: 1800000000000000,
     bridge_endpoints: [] as {host: string; port: number; docker: boolean}[],

@@ -17,9 +17,10 @@ GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "systemctl", "t3")
 def main():
     container = json.loads(sys.argv[1])
     guest = sys.argv[2]
-    account = sys.argv[3]
-    folder = Path(sys.argv[4])
-    phase = sys.argv[5]
+    network_check = sys.argv[3]
+    account = sys.argv[4]
+    folder = Path(sys.argv[5])
+    phase = sys.argv[6]
     if phase not in {"container", "workspace", "agent", "t3", "sessions", "cleanup"}:
         raise ValueError("instance.clone_phase_invalid")
     name = container["name"]
@@ -171,9 +172,13 @@ def main():
                     "eth0,ipv4.address=" + container["address"],
                     "--device",
                     "eth0,security.acls="
-                    + container["network"]
-                    + "-egress,"
+                    + container["nic_acl"]
+                    + ","
                     + container["acl"],
+                    "--device",
+                    "eth0,security.acls.default.egress.action=reject",
+                    "--device",
+                    "eth0,security.acls.default.ingress.action=reject",
                 ]
                 change(argv)
                 read = json.loads(
@@ -278,6 +283,16 @@ def main():
                 result = run(argv)
                 if "Rule added" in result.stdout or "Rules updated" in result.stdout:
                     changes.append("firewall")
+            effective = run(
+                ["incus", "query", f"/1.0/instances/{name}?project={container['project']}"]
+            ).stdout
+            checked = run(
+                ["python3", "-c", network_check, container["network"], "eth0"],
+                effective,
+                check=False,
+            )
+            if checked.returncode:
+                raise RuntimeError("instance.container_network_unsafe")
             if read["status"] != "Running":
                 change(project + ["start", name])
             # Git credentials remain on the Node, and leave even when a read/fetch fails.
