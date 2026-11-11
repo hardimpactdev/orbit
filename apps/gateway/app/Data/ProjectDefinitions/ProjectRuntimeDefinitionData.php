@@ -36,6 +36,10 @@ final class ProjectRuntimeDefinitionData extends Data
             $spec['environment'] = new CommandActivityInputSanitizer()->sanitize($spec['environment'], 'environment');
         }
 
+        if ($includeCommand && array_key_exists('command', $spec)) {
+            $spec['command'] = new CommandActivityInputSanitizer()->sanitize($spec['command'], 'command');
+        }
+
         if (! $includeCommand) {
             unset($spec['command']);
             $spec = new CommandActivityInputSanitizer()->sanitizeProperties($spec);

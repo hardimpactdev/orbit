@@ -18,6 +18,9 @@ final readonly class ProcessDefinitionSpecification
      */
     public static function update(#[SensitiveParameter] array $stored, #[SensitiveParameter] array $changes): array
     {
+        if (array_key_exists('runtime', $changes)) {
+            $changes['runtime'] = self::resolve($changes['runtime'], $stored['runtime'] ?? null, 'spec.runtime');
+        }
         $spec = array_key_exists('runtime', $changes) && $changes['runtime'] !== ($stored['runtime'] ?? null)
             ? [] : $stored;
         foreach ($changes as $field => $value) {

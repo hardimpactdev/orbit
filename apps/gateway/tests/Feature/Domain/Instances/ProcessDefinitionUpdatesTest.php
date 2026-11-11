@@ -260,3 +260,48 @@ it('refuses an empty working directory instead of storing an undocumented defaul
 
     expect($definition->refresh()->spec)->toBe($original);
 });
+
+it('redacts replayed command credentials in raw item responses while retaining real storage', function (bool $mcp): void {
+    $secret = 'synthetic-real-secret';
+    $command = ['/usr/bin/worker', '--api-token='.$secret];
+    [$definition, $node] = definitionEditFixture(['runtime' => 'systemd', 'command' => $command]);
+    $redacted = ['/usr/bin/worker', '--api-token=[REDACTED]'];
+    $url = "/api/v1/projects/{$definition->project_id}/process-definitions/worker";
+    $body = ['name' => 'worker', 'environments' => ['development'], 'spec' => ['command' => $redacted]];
+
+    if ($mcp) {
+        $manifest = collect(ToolManifest::default()->definitions())->firstWhere('name', 'project-process-definition-update');
+        $tool = new ApiOperationTool($manifest, app(ApiDispatcher::class));
+        $caller = Request::create('/mcp', 'POST', server: ['REMOTE_ADDR' => $node->wireguard_ip]);
+        $response = $tool->handle(new Laravel\Mcp\Request([
+            'project' => $definition->project_id, 'process_definition' => $definition->name, ...$body,
+        ]), $caller);
+        $content = (string) $response->content();
+    } else {
+        $body['spec'] = ['runtime' => 'systemd', ...$body['spec']];
+        $content = (string) $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+            ->putJson($url, $body)->assertOk()->getContent();
+    }
+
+    expect(json_decode($content, true, flags: JSON_THROW_ON_ERROR)['data']['spec']['command'])->toBe($redacted);
+    expect($content)->not->toContain($secret);
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])->getJson($url)
+        ->assertOk()->assertJsonPath('data.spec.command', $redacted);
+    expect($definition->refresh()->spec['command'])->toBe($command);
+})->with(['raw HTTP' => false, 'raw MCP' => true]);
+
+it('preserves all omitted fields when the runtime placeholder resolves to the existing runtime', function (): void {
+    $original = ['runtime' => 'systemd', 'command' => ['/usr/bin/worker'],
+        'environment' => ['TOKEN' => 'synthetic-environment-secret'],
+        'working_directory' => '/srv/tool/custom', 'restart_on_deploy' => false];
+    [$definition, $node] = definitionEditFixture($original);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])->putJson(
+        "/api/v1/projects/{$definition->project_id}/process-definitions/worker",
+        ['name' => 'worker', 'environments' => ['development'], 'spec' => [
+            'runtime' => '[REDACTED]', 'command' => ['/usr/bin/worker'], 'keep_alive' => true,
+        ]],
+    )->assertOk();
+
+    expect($definition->refresh()->spec)->toBe([...$original, 'keep_alive' => true]);
+});
