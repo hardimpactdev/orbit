@@ -120,6 +120,13 @@ function run(
   joined = false,
   stockRoles = false,
 ) {
+  // Probe the runner before the fixture shadows wg; key tasks keep no_log enabled.
+  for (const probe of ["command -v wg", "test -x /usr/bin/wg"]) {
+    const result = new Deno.Command("sh", {
+      args: ["-c", probe],
+    }).outputSync();
+    console.log(`Fleet fixture runner: ${probe}; exit=${result.code}`);
+  }
   const folder = Deno.makeTempDirSync();
   const bin = `${folder}/bin`;
   Deno.mkdirSync(bin);
