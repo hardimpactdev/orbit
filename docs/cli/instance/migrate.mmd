@@ -90,7 +90,7 @@ sequenceDiagram
     SW->>N: Restore the checkout<br/>Route · container removed
     %%> What it does:
     %%> - puts the Route back on the checkout when the run had moved it
-    %%> - deletes the new container, its ACL, its firewall rules and its mirror, and writes the awake marker
+    %%> - deletes the new container, its ACL, its firewall rules and its mirror
     %%> - restores host Process units and the awake marker only when quiesce began; an unreachable target causes zero downtime
     %%> - the checkout and database remain in place
     SW--xGW: Run failed<br/>failed step, error_code
