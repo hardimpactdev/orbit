@@ -101,6 +101,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, InstanceDeployStep> $deploySteps
  * @property-read Collection<int, InstanceEnvironmentValue> $environmentValues
  * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
+ * @property-read Collection<int, InstanceNodeServiceTarget> $nodeServiceTargets
  * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, Schedule> $schedules
  * @property-read InstanceRemovalMember|null $removalMember
@@ -282,6 +283,12 @@ final class Instance extends Model
     public function environmentValues(): HasMany
     {
         return $this->hasMany(InstanceEnvironmentValue::class);
+    }
+
+    /** @return HasMany<InstanceNodeServiceTarget, $this> */
+    public function nodeServiceTargets(): HasMany
+    {
+        return $this->hasMany(InstanceNodeServiceTarget::class);
     }
 
     /** @return HasMany<DatabaseConnectionTarget, $this> */

@@ -43,8 +43,7 @@ final readonly class InstanceDevPorts
      */
     public function excluded(Node $node): array
     {
-        $ports = [(string) $node->public_ssh_port, (string) self::EgressProxy, InstanceContainer::T3PortFirst.'-'.InstanceContainer::T3PortLast,
-            (InstanceHostIntent::ModelForwarderPort - 1).'-'.InstanceHostIntent::ModelForwarderPort, app(VpnSettings::class)->port()];
+        $ports = self::infrastructurePorts($node);
         foreach (DatabaseServer::query()->where('node_id', $node->id)->get() as $server) {
             $ports[] = (string) $server->port;
         }
@@ -85,6 +84,13 @@ final readonly class InstanceDevPorts
         }
 
         return array_map(static fn (array $range): string => $range[0] === $range[1] ? (string) $range[0] : $range[0].'-'.$range[1], $merged);
+    }
+
+    /** @return list<string> Infrastructure ports and ranges, excluding application Processes and Databases. */
+    public static function infrastructurePorts(Node $node): array
+    {
+        return [(string) $node->public_ssh_port, (string) self::EgressProxy, InstanceContainer::T3PortFirst.'-'.InstanceContainer::T3PortLast,
+            (InstanceHostIntent::ModelForwarderPort - 1).'-'.InstanceHostIntent::ModelForwarderPort, app(VpnSettings::class)->port()];
     }
 
     /**

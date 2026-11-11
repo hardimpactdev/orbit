@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Actions\Hibernation\ActivateInstanceRuntimeAction;
+use App\Actions\Instances\AttachInstanceNodeServiceTargetAction;
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceMigrateAction;
+use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\ReadOperationAction;
@@ -16,6 +18,9 @@ use App\Actions\Schedules\ShowScheduleLogsAction;
 use App\Data\Instances\InstanceData;
 use App\Data\Operations\OperationData;
 use App\Data\Schedules\AddScheduleData;
+use App\Domain\Analytics\AnalyticsRoleSettings;
+use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
+use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Certificates\LeafCertificateSigner;
@@ -94,6 +99,8 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
+use Orbit\Extensions\AiRouter\Domain\AiRouterProcess;
+use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 uses(LazilyRefreshDatabase::class);
@@ -3766,3 +3773,68 @@ describe('migrated development Process definitions', function (): void {
     });
 
 });
+
+it('keeps a migrated attached Node Process standalone when another service claims it', function (string $claim): void {
+    $node = containerDefaultNode();
+    $node->forceFill(['ssh_host_fingerprint' => 'fixture-fingerprint'])->save();
+    $instance = migrateCheckout(containerDefaultProject(), $node);
+    $name = match ($claim) {
+        'analytics collector' => PlausibleProcess::NAME,
+        'ai-router collector' => AiRouterProcess::NAME,
+        default => 'mailpit',
+    };
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => $name,
+        'runtime' => 'docker', 'runtime_config' => ['image' => 'axllent/mailpit', 'ports' => ['0.0.0.0:1025:1025/tcp']],
+        'desired_state' => 'running', 'status' => 'active']);
+    $target = app(AttachInstanceNodeServiceTargetAction::class)->execute($instance, $process->id, 'tcp', 1025, 'MAIL_HOST', 'MAIL_PORT');
+    migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+    expect($instance->refresh()->runtime)->not->toBeNull();
+    $claimNode = $node;
+    $settings = null;
+    if ($claim !== 'ai-router collector') {
+        if ($claim !== 'analytics collector') {
+            $claimNode = containerDefaultNode('analytics', '10.44.0.10');
+            $claimNode->forceFill(['ssh_host_fingerprint' => 'fixture-fingerprint'])->save();
+        }
+        $storageNode = containerDefaultNode('storage', '10.44.0.8');
+        $storageNode->roles()->create(['role' => RoleName::Database, 'status' => 'active']);
+        $postgres = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $storageNode->id, 'name' => 'postgres',
+            'runtime' => 'docker', 'runtime_config' => ['image' => 'postgres:16', 'ports' => ['10.44.0.8:5432:5432']],
+            'desired_state' => 'running', 'status' => 'active']);
+        $clickhouse = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $storageNode->id, 'name' => 'clickhouse',
+            'runtime' => 'docker', 'runtime_config' => ['image' => 'clickhouse/clickhouse-server:26', 'ports' => ['10.44.0.8:9000:9000']],
+            'desired_state' => 'running', 'status' => 'active']);
+        $settings = new AnalyticsRoleSettings($claim === 'analytics postgres' ? $process->id : $postgres->id,
+            $claim === 'analytics clickhouse' ? $process->id : $clickhouse->id);
+    }
+    $processBefore = $process->refresh()->getRawOriginal();
+    $runtimeBefore = $instance->runtime->refresh()->getRawOriginal();
+    $operationsBefore = Operation::query()->count();
+    $rolesBefore = $claimNode->roles()->get()->toArray();
+    Queue::fake();
+    Illuminate\Support\Facades\Process::preventStrayProcesses();
+
+    try {
+        if ($claim === 'ai-router collector') {
+            app(AiRouterState::class)->enable($node->id, 'cache', 'https://router.example.com', 'fixture-key', 'fixture-read', 'fixture-control');
+        } else {
+            app(AdmitNodeRoleOperationAction::class)->add($claimNode, RoleName::Analytics, analytics: $settings);
+        }
+        test()->fail('A service must not adopt a Process that still serves an attached Instance.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe('process.node_service_ownership_conflict');
+        expect($exception->getMessage())->toBe("Process [{$name}] is attached to Instance [tool/default] (id {$instance->id}). Detach those Node service targets before claiming ownership of the Process.");
+    }
+
+    expect($process->refresh()->getRawOriginal())->toEqual($processBefore);
+    expect($instance->runtime->refresh()->getRawOriginal())->toEqual($runtimeBefore);
+    expect($claimNode->roles()->get()->toArray())->toBe($rolesBefore);
+    expect(app(AnalyticsRoleSettingsRepository::class)->find($claimNode))->toBeNull();
+    expect(app(AiRouterState::class)->enabled())->toBeFalse();
+    expect(app(AiRouterState::class)->nodeId())->toBeNull();
+    expect(Operation::query()->count())->toBe($operationsBefore);
+    $this->assertDatabaseHas('instance_node_service_targets', ['id' => $target->id, 'process_id' => $process->id, 'instance_id' => $instance->id]);
+    Illuminate\Support\Facades\Process::assertNothingRan();
+    Http::assertNothingSent();
+    Queue::assertNothingPushed();
+})->with(['analytics collector', 'analytics postgres', 'analytics clickhouse', 'ai-router collector']);

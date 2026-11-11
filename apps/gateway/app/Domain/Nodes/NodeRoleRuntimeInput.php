@@ -14,6 +14,7 @@ use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessOwnershipClaim;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessSpecification;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -53,6 +54,7 @@ final readonly class NodeRoleRuntimeInput
         } elseif ($assignment->role === RoleName::WebSocket) {
             $this->websocketSecrets->ensure($node);
         } elseif ($assignment->role === RoleName::Analytics) {
+            app(ProcessOwnershipClaim::class)->forNode($node->id, PlausibleProcess::NAME);
             $settings = $this->analytics->find($node) ?? throw new ResourceOperationException('analytics.settings_missing', 'Analytics storage intent is missing.', 422);
             $storage = $this->storage->assert($settings->postgresProcessId, $settings->clickhouseProcessId);
             $data = PlausibleProcess::data($node, $this->analytics->version($node),
