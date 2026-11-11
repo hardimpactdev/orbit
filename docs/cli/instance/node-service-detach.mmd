@@ -1,0 +1,23 @@
+sequenceDiagram
+  %% status: draft
+  %% command: instance:node-service:detach
+  %% kind: instance.node_service_detach
+  autonumber
+  %% lane CALL icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  participant CALL as API / MCP<br/>HTTP · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  CALL->>GW: Detach Node service target<br/>INSTANCE TARGET
+  %%> Command:
+  %%> - syntax: instance:node-service:detach
+  Note over GW: Check access and target<br/>Lock the Instance
+  alt busy lifecycle or unfinished move
+    GW--xCALL: Named refusal<br/>Keep the attachment
+  else settled Instance
+    Note over GW: Remove attachment<br/>Record succeeded Operation
+    %%> Scope:
+    %%> - Applies after successful migration too.
+    %%> - Changes only the attachment record and Operation receipt.
+    %%> - No network, environment or runtime changes.
+    GW-->>CALL: Completed Operation
+  end
