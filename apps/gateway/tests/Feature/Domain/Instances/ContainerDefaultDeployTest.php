@@ -2,8 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Actions\Projects\UpdateProjectAction;
+use App\Data\Projects\UpdateProjectData;
+use App\Domain\Instances\ContainerProcesses;
+use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
@@ -12,20 +17,26 @@ use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Projects\ProjectSourceAccess;
+use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\ProjectDevelopmentDeployStep;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
@@ -129,6 +140,8 @@ it('holds the Instance while a container default deploys, so a second deployment
     Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
         'status' => OperationStatus::Running, 'lock_key' => OperationStore::lockKey('instance', $instance->id), 'input' => [], 'state' => [], 'sequence' => 1, 'attempts' => 0]);
 
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead(str_repeat('a', 40)));
+
     $refusal = null;
     try {
         app(StartInstanceDeployAction::class)->execute($instance, 'test', null);
@@ -202,3 +215,466 @@ it('records the seed commit and a running container after a deployment passes, a
         ->and($instance->refresh()->seed_commit)->toBeNull()
         ->and($instance->deployments()->latest('id')->firstOrFail()->commit)->toBe($commit);
 });
+
+/** @return array{head:string,files:array<string,array{mode:string,object:string,content:string}|null>} */
+function deploySourceRead(string $commit, ?string $composer = null, bool $laravel = false): array
+{
+    $file = static fn (string $content): array => ['mode' => '100644', 'object' => str_repeat('d', 40), 'content' => $content];
+
+    return ['head' => $commit, 'files' => ['.env.example' => $file("APP_NAME=deployed\n"),
+        'composer.json' => $composer === null ? null : $file($composer), 'artisan' => $laravel ? $file('entry') : null]];
+}
+
+it('refreshes container source facts before freezing the deployed commit and its PHP runtime', function (bool $automatic, ?string $pin, ?string $previousPhp): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $instance->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => $previousPhp,
+        'source_profile_error' => 'app-dev.php_version_unsupported']);
+    $commit = $pin ?? str_repeat('a', 40);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()
+        ->with($instance->project->repository_url, ProjectSourceAccess::GitHubApp, 'main', ['.env.example', 'composer.json', 'artisan'], ...($pin === null ? [] : [$pin]))
+        ->andReturn(deploySourceRead($commit, '{"require":{"php":"^8.5","laravel/framework":"^13.0"}}', true));
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+
+    $operation = $automatic
+        ? app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, 'source-facts', $commit)
+        : app(StartInstanceDeployAction::class)->execute($instance, 'manual', 'source-facts', $pin);
+
+    $project = $instance->project->refresh();
+    expect($project)->php_version->toBe('8.5')->is_laravel->toBeTrue()->source_profile_error->toBeNull();
+    expect($project->source_facts_captured_at)->not->toBeNull();
+    expect($project->environmentTemplate()->firstOrFail())->source_commit->toBe($commit)
+        ->entries->toBe([['key' => 'APP_NAME', 'value' => 'deployed', 'example' => 'deployed', 'removed' => false]]);
+    expect($operation->input['commit'])->toBe($commit);
+    $container = $operation->input['deployment']['container'];
+    expect($container['php'])->toBe('/opt/orbit-runtime/current/php/8.5/bin/php');
+    expect($container['environment'])->toContain('PATH=/opt/orbit-runtime/current/php/8.5/bin:/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin');
+    expect($container['units'][0]['content'])->toContain('ExecStart=/opt/orbit-runtime/current/php/8.5/bin/frankenphp');
+    expect(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(1);
+})->with([
+    'manual head replaces null facts' => [false, null, null],
+    'manual pin replaces stale facts' => [false, str_repeat('b', 40), '8.4'],
+    'automatic pin replaces stale facts' => [true, str_repeat('c', 40), '8.4'],
+]);
+
+it('refuses a container deployment without changing facts when source cannot be read', function (): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $instance->project->update(['php_version' => '8.4']);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()
+        ->andThrow(new ResourceOperationException('project.source_unavailable', 'Could not read source.', 502));
+
+    expect(fn () => app(StartInstanceDeployAction::class)->execute($instance, 'manual', null))
+        ->toThrow(ResourceOperationException::class, 'Could not read source.');
+
+    expect($instance->project->refresh())->php_version->toBe('8.4')->source_facts_captured_at->toBeNull();
+    expect($instance->project->environmentTemplate()->exists())->toBeFalse();
+    expect(Operation::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
+});
+
+it('refuses invalid container source facts instead of deploying with the stored runtime', function (): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $instance->project->update(['php_version' => '8.4']);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()
+        ->andReturn(deploySourceRead(str_repeat('a', 40), '{"require":{"php":"^7.4"}}'));
+    $code = null;
+
+    try {
+        app(StartInstanceDeployAction::class)->execute($instance, 'manual', null);
+    } catch (ResourceOperationException $exception) {
+        $code = $exception->errorCode;
+        expect($exception->status)->toBe(422);
+    }
+
+    expect($code)->toBe('app-dev.php_version_unsupported');
+    expect($instance->project->refresh())->php_version->toBe('8.4')->source_profile_error->toBeNull()->source_facts_captured_at->toBeNull();
+    expect($instance->project->environmentTemplate()->exists())->toBeFalse();
+    expect(Operation::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
+});
+
+it('clears obsolete PHP facts when the deployed package no longer has Composer metadata', function (): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $instance->project->update(['php_version' => '8.4', 'is_laravel' => true]);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead(str_repeat('a', 40)));
+
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'manual', null);
+
+    expect($instance->project->refresh())->php_version->toBeNull()->is_laravel->toBeFalse();
+    expect($operation->input['deployment']['container']['php'])->toBeNull();
+    expect($operation->input['deployment']['container']['environment'])->toContain('PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin');
+});
+
+it('keeps checkout deployment source facts and unpinned commit resolution unchanged', function (): void {
+    Queue::fake();
+    $instance = deployDefault(container: false);
+    ProjectDevelopmentDeployStep::query()->where('project_id', $instance->project_id)->delete();
+    $instance->project->update(['php_version' => '8.4']);
+    $this->mock(ProjectSourceReader::class)->shouldNotReceive('read');
+
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'manual', null);
+
+    expect($instance->project->refresh())->php_version->toBe('8.4')->source_facts_captured_at->toBeNull();
+    expect($operation->input)->not->toHaveKey('commit');
+    expect($operation->input['deployment']['variant'])->toBe('development');
+});
+
+it('skips source capture for an automatic checkout default deployment', function (): void {
+    Queue::fake();
+    $instance = deployDefault(container: false);
+    ProjectDevelopmentDeployStep::query()->where('project_id', $instance->project_id)->delete();
+    $instance->project->update(['php_version' => '8.4']);
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $this->mock(ProjectSourceReader::class)->shouldNotReceive('read');
+    $commit = str_repeat('a', 40);
+
+    $operation = app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit);
+
+    expect($operation->input['deployment']['variant'])->toBe('development');
+    expect($operation->input['commit'])->toBe($commit);
+    expect($instance->project->refresh())->php_version->toBe('8.4')->source_facts_captured_at->toBeNull();
+    expect($instance->project->environmentTemplate()->exists())->toBeFalse();
+});
+
+it('skips source capture for a production deployment', function (bool $automatic): void {
+    Queue::fake();
+    $instance = deployDefault(container: false);
+    $instance->node->roles()->where('role', RoleName::AppDev)->delete();
+    $instance->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $home = '/home/orbit-app-'.$instance->project_id;
+    $instance->update(['branch' => 'main', 'production_user' => 'orbit-app-'.$instance->project_id,
+        'production_home' => $home, 'checkout_path' => $home.'/releases/initial', 'provisioning_step' => 'active',
+        'source_is_laravel' => false, 'auto_deploy' => true]);
+    InstanceEnvironmentValue::query()->create(['instance_id' => $instance->id, 'env_key' => 'APP_NAME', 'env_value' => 'production']);
+    $instance->project->update(['php_version' => '8.4']);
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $this->mock(ProjectSourceReader::class)->shouldNotReceive('read');
+    $commit = str_repeat('a', 40);
+
+    $operation = $automatic
+        ? app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit)
+        : app(StartInstanceDeployAction::class)->execute($instance, 'manual', null, $commit);
+
+    expect($operation->input['deployment']['variant'])->toBe('production');
+    expect($operation->input['commit'])->toBe($commit);
+    expect($instance->project->refresh())->php_version->toBe('8.4')->source_facts_captured_at->toBeNull();
+    expect($instance->project->environmentTemplate()->exists())->toBeFalse();
+})->with(['manual' => false, 'automatic' => true]);
+
+it('replays a container admission without reading a newer branch head or replacing its facts', function (): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead(str_repeat('a', 40)));
+    $start = fn (): Operation => app(OperationIdempotency::class)->under('instance.deploy', 'same-deploy', 'same-input',
+        fn (): Operation => app(StartInstanceDeployAction::class)->execute($instance, 'manual', null));
+    $first = $start();
+
+    $replay = $start();
+
+    expect($replay->id)->toBe($first->id);
+    expect($replay->input['commit'])->toBe(str_repeat('a', 40));
+    expect(Operation::query()->count())->toBe(1);
+});
+
+it('refuses a web container without PHP at the deployed commit and preserves its previous facts', function (): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $instance->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.4']);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead(str_repeat('a', 40)));
+    $code = null;
+
+    try {
+        app(StartInstanceDeployAction::class)->execute($instance, 'manual', null);
+    } catch (ResourceOperationException $exception) {
+        $code = $exception->errorCode;
+    }
+
+    expect($code)->toBe('project.source_defaults_incomplete');
+    expect($instance->project->refresh())->php_version->toBe('8.4')->source_facts_captured_at->toBeNull();
+    expect($instance->project->environmentTemplate()->exists())->toBeFalse();
+    expect(Operation::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
+});
+
+it('refuses an unsettled move before reading deploy source', function (string $entry, string $status): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $instance->project->update(['php_version' => '8.4']);
+    $move = Operation::query()->create(['kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => $instance->id,
+        'node_id' => $instance->node_id, 'status' => $status, 'input' => [], 'result' => ['moved' => false]]);
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $this->mock(ProjectSourceReader::class)->shouldNotReceive('read');
+    $commit = str_repeat('a', 40);
+    $refusal = null;
+
+    try {
+        $action = app(StartInstanceDeployAction::class);
+        match ($entry) {
+            'manual' => $action->execute($instance, 'manual', null),
+            'pinned' => $action->pinned($instance, 'manual', null, $commit),
+            'automatic' => $action->automatic($instance, $instance->node, null, $commit),
+        };
+    } catch (ResourceOperationException $exception) {
+        $refusal = $exception->errorCode;
+        expect($exception->status)->toBe(409);
+    }
+
+    expect($refusal)->toBe('instance.lifecycle_busy');
+    expect($instance->project->refresh())->php_version->toBe('8.4')->source_facts_captured_at->toBeNull();
+    expect($instance->project->environmentTemplate()->exists())->toBeFalse();
+    expect(Operation::query()->where('kind', 'instance.deploy')->exists())->toBeFalse();
+    expect($move->refresh()->status->value)->toBe($status);
+    Queue::assertNothingPushed();
+})->with(['manual', 'pinned', 'automatic'])->with(['running', 'failed']);
+
+it('rechecks the move during admission if it started while deploy source was read', function (string $entry): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $instance->project->update(['php_version' => '8.4']);
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $commit = str_repeat('a', 40);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturnUsing(static function () use ($instance, $commit): array {
+        Operation::query()->create(['kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => $instance->id,
+            'node_id' => $instance->node_id, 'status' => OperationStatus::Running, 'input' => []]);
+
+        return deploySourceRead($commit, '{"require":{"php":"^8.5"}}');
+    });
+    $refusal = null;
+
+    try {
+        $action = app(StartInstanceDeployAction::class);
+        match ($entry) {
+            'manual' => $action->execute($instance, 'manual', null),
+            'pinned' => $action->pinned($instance, 'manual', null, $commit),
+            'automatic' => $action->automatic($instance, $instance->node, null, $commit),
+        };
+    } catch (ResourceOperationException $exception) {
+        $refusal = $exception->errorCode;
+        expect($exception->status)->toBe(409);
+    }
+
+    expect($refusal)->toBe('instance.lifecycle_busy');
+    expect($instance->project->refresh())->php_version->toBe('8.4')->source_facts_captured_at->toBeNull();
+    expect($instance->project->environmentTemplate()->exists())->toBeFalse();
+    expect(Operation::query()->where('kind', 'instance.deploy')->exists())->toBeFalse();
+    expect(Operation::query()->where('kind', 'instance.migrate')->count())->toBe(1);
+    Queue::assertNothingPushed();
+})->with(['manual', 'pinned', 'automatic']);
+
+it('reads deploy source before opening either admission transaction', function (bool $automatic): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $baseline = DB::transactionLevel();
+    $commit = str_repeat('a', 40);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturnUsing(static function () use ($baseline, $commit): array {
+        // LazilyRefreshDatabase owns the baseline transaction; admission must add none during network/Git work.
+        expect(DB::transactionLevel())->toBe($baseline);
+
+        return deploySourceRead($commit);
+    });
+
+    $operation = $automatic
+        ? app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit)
+        : app(StartInstanceDeployAction::class)->execute($instance, 'manual', null);
+
+    expect($operation->input['commit'])->toBe($commit);
+})->with(['manual' => false, 'automatic' => true]);
+
+it('refuses changed source configuration after reading but before recording deploy facts', function (bool $automatic, string $field, mixed $changed): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $instance->project->update(['php_version' => '8.4']);
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $commit = str_repeat('a', 40);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturnUsing(static function () use ($instance, $field, $changed, $commit): array {
+        Project::query()->whereKey($instance->project_id)->update([$field => $changed]);
+
+        return deploySourceRead($commit, '{"require":{"php":"^8.5"}}');
+    });
+    $refusal = null;
+
+    try {
+        if ($automatic) {
+            app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit);
+        } else {
+            app(StartInstanceDeployAction::class)->execute($instance, 'manual', null);
+        }
+    } catch (ResourceOperationException $exception) {
+        $refusal = $exception->errorCode;
+    }
+
+    expect($refusal)->toBe('deployment.source_changed');
+    expect($instance->project->refresh())->php_version->toBe('8.4')->source_facts_captured_at->toBeNull();
+    expect($instance->project->environmentTemplate()->exists())->toBeFalse();
+    expect(Operation::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
+})->with(['manual' => false, 'automatic' => true])->with([
+    'repository URL' => ['repository_url', 'https://github.com/nckrtl/other.git'],
+    'source access' => ['source_access', ProjectSourceAccess::GhCli->value],
+    'default branch' => ['default_branch', 'next'],
+    'root' => ['root', 'apps/site/public'],
+    'type' => ['type', ProjectType::LaravelPackage->value],
+]);
+
+it('admits its captured facts after a real project refresh with unchanged source settings', function (bool $automatic): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $commit = str_repeat('a', 40);
+    $updatedHead = str_repeat('b', 40);
+    $reader = $this->mock(ProjectSourceReader::class);
+    $reader->shouldReceive('read')->once()->with($instance->project->repository_url, ProjectSourceAccess::GitHubApp, 'main',
+        ['.env.example', 'composer.json', 'artisan'])->andReturn(deploySourceRead($updatedHead, '{"require":{"php":"~8.4.0"}}'));
+    $reader->shouldReceive('read')->once()->with($instance->project->repository_url, ProjectSourceAccess::GitHubApp, 'main',
+        ['.env.example', 'composer.json', 'artisan'], $commit)->andReturnUsing(static function () use ($instance, $commit, $updatedHead): array {
+            $read = deploySourceRead($commit, '{"require":{"php":"^8.5"}}');
+            $updated = app(UpdateProjectAction::class)->execute($instance->project->fresh(), new UpdateProjectData(
+                false, null, false, null, false, null, false, null, false, null,
+                sourceAccessProvided: true, sourceAccess: ProjectSourceAccess::GitHubApp,
+            ));
+            expect($updated)->type->toBe(ProjectType::NodePackage)->php_version->toBe('8.4')->source_facts_captured_at->not->toBeNull();
+            expect($updated->environmentTemplate()->firstOrFail()->source_commit)->toBe($updatedHead);
+
+            return $read;
+        });
+
+    $operation = $automatic
+        ? app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit)
+        : app(StartInstanceDeployAction::class)->execute($instance, 'manual', null, $commit);
+
+    expect($operation->input['commit'])->toBe($commit);
+    expect($operation->input['deployment']['container']['php'])->toBe('/opt/orbit-runtime/current/php/8.5/bin/php');
+    expect($instance->project->refresh())->type->toBe(ProjectType::NodePackage)->php_version->toBe('8.5');
+    expect($instance->project->environmentTemplate()->firstOrFail()->source_commit)->toBe($commit);
+    expect(Operation::query()->count())->toBe(1);
+})->with(['manual' => false, 'automatic' => true]);
+
+it('refuses admission after a real project update changes source settings and preserves that update', function (bool $automatic): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $commit = str_repeat('a', 40);
+    $updatedHead = str_repeat('b', 40);
+    $reader = $this->mock(ProjectSourceReader::class);
+    $reader->shouldReceive('read')->once()->with($instance->project->repository_url, ProjectSourceAccess::GitHubApp, 'main',
+        ['.env.example', 'composer.json', 'artisan'])->andReturn(deploySourceRead($updatedHead, '{"require":{"php":"~8.4.0"}}'));
+    $reader->shouldReceive('read')->once()->with($instance->project->repository_url, ProjectSourceAccess::GitHubApp, 'main',
+        ['.env.example', 'composer.json', 'artisan'], $commit)->andReturnUsing(static function () use ($instance, $commit, $updatedHead): array {
+            $read = deploySourceRead($commit, '{"require":{"php":"^8.5"}}');
+            $updated = app(UpdateProjectAction::class)->execute($instance->project->fresh(), new UpdateProjectData(
+                true, ProjectType::LaravelPackage, false, null, false, null, false, null, false, null,
+                sourceAccessProvided: true, sourceAccess: ProjectSourceAccess::GitHubApp,
+            ));
+            expect($updated)->type->toBe(ProjectType::LaravelPackage)->php_version->toBe('8.4')->source_facts_captured_at->not->toBeNull();
+            expect($updated->environmentTemplate()->firstOrFail()->source_commit)->toBe($updatedHead);
+
+            return $read;
+        });
+    $refusal = null;
+
+    try {
+        if ($automatic) {
+            app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit);
+        } else {
+            app(StartInstanceDeployAction::class)->execute($instance, 'manual', null, $commit);
+        }
+    } catch (ResourceOperationException $exception) {
+        $refusal = $exception->errorCode;
+        expect($exception->status)->toBe(409);
+    }
+
+    expect($refusal)->toBe('deployment.source_changed');
+    expect($instance->project->refresh())->type->toBe(ProjectType::LaravelPackage)->php_version->toBe('8.4');
+    expect($instance->project->environmentTemplate()->firstOrFail()->source_commit)->toBe($updatedHead);
+    expect(Operation::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
+})->with(['manual' => false, 'automatic' => true]);
+
+it('rechecks automatic eligibility after reading source', function (): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $commit = str_repeat('a', 40);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturnUsing(static function () use ($instance, $commit): array {
+        $instance->node->roles()->where('role', RoleName::AppDev)->update(['status' => 'failed']);
+
+        return deploySourceRead($commit);
+    });
+    $refusal = null;
+
+    try {
+        app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit);
+    } catch (ResourceOperationException $exception) {
+        $refusal = $exception->errorCode;
+    }
+
+    expect($refusal)->toBe(AutomaticDeployPolicyWriter::InactiveRole);
+    expect($instance->project->refresh()->source_facts_captured_at)->toBeNull();
+    expect(Operation::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
+});
+
+it('replays an admission that appeared during source capture without overwriting its facts', function (bool $automatic): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $instance->project->update(['php_version' => '8.4']);
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $commit = str_repeat('a', 40);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturnUsing(static function () use ($instance, $commit): array {
+        Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id,
+            'node_id' => $instance->node_id, 'status' => OperationStatus::Queued, 'idempotency_key' => 'concurrent-deploy',
+            'idempotency_fingerprint' => 'same-input', 'input' => ['commit' => $commit], 'sequence' => 1]);
+
+        return deploySourceRead($commit, '{"require":{"php":"^8.5"}}');
+    });
+
+    $operation = app(OperationIdempotency::class)->under('instance.deploy', 'concurrent-deploy', 'same-input', fn (): Operation => $automatic
+        ? app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit)
+        : app(StartInstanceDeployAction::class)->execute($instance, 'manual', null));
+
+    expect($operation->idempotency_key)->toBe('concurrent-deploy');
+    expect($instance->project->refresh())->php_version->toBe('8.4')->source_facts_captured_at->toBeNull();
+    expect(Operation::query()->count())->toBe(1);
+    Queue::assertNothingPushed();
+})->with(['manual' => false, 'automatic' => true]);
+
+it('retains admission-wide PHP facts after deployment failure or cancellation while keeping the older seed', function (string $status): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $instance->project->update(['php_version' => '8.4']);
+    $seed = str_repeat('a', 40);
+    $commit = str_repeat('b', 40);
+    $instance->runtime()->update(['seed_commit' => $seed]);
+    ProcessDefinition::query()->create(['project_id' => $instance->project_id, 'name' => 'worker', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'php', 'worker.php'], 'environment' => [], 'restart_policy' => 'always']]);
+    app(InstantiateProjectRuntimeDefinitionsAction::class)->refreshForContainer($instance);
+    expect(app(ContainerProcesses::class)->units($instance)[0]['content'])->toContain('Environment=PATH=/opt/orbit-runtime/current/php/8.4/bin:');
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead($commit, '{"require":{"php":"^8.5"}}'));
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'manual', null);
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'facts-run']]);
+
+    app(InstanceDeployProjection::class)->apply($operation, ['status' => $status, 'run_id' => 'facts-run',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [
+            'steps' => [], 'summary' => ['failed_steps' => ['Run dev deploy steps-0']]]]);
+
+    expect($operation->refresh()->status->value)->toBe($status);
+    expect($instance->project->refresh()->php_version)->toBe('8.5');
+    expect($instance->project->environmentTemplate()->firstOrFail()->source_commit)->toBe($commit);
+    expect($instance->runtime()->firstOrFail()->seed_commit)->toBe($seed);
+    $snapshot = app(InstanceDeploymentIntent::class)->snapshot($instance);
+    expect($snapshot['container']['php'])->toBe('/opt/orbit-runtime/current/php/8.5/bin/php');
+    expect(app(ContainerProcesses::class)->units($instance)[0]['content'])->toContain('Environment=PATH=/opt/orbit-runtime/current/php/8.5/bin:');
+    $clone = Instance::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+        'name' => 'feature', 'checkout_path' => '/srv/tool/feature', 'status' => InstanceState::Active]);
+    $runtime = InstanceRuntime::query()->create(['instance_id' => $clone->id, 'node_id' => $clone->node_id,
+        'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$clone->id, 'bridge_address' => '10.253.0.3',
+        'runtime_version' => 'r', 'agent_version' => 'a', 't3_port' => 3800, 'clone_source_instance_id' => $instance->id,
+        'power_state' => InstanceRuntimePowerState::Stopped]);
+    $cloneIntent = app(InstanceContainer::class)->intent($clone, $runtime);
+    expect($cloneIntent['clone']['seed_commit'])->toBe($seed);
+    expect($cloneIntent['php'])->toBe('/opt/orbit-runtime/current/php/8.5/bin/php');
+})->with(['failed', 'cancelled']);

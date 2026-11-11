@@ -298,7 +298,7 @@ describe('the PHP version of a web-serving Project', function (): void {
             /** @param array<string, mixed>|null $composer */
             public function __construct(private ?array $composer) {}
 
-            public function read(string $repositoryUrl, ProjectSourceAccess $access, string $branch, array $paths): array
+            public function read(string $repositoryUrl, ProjectSourceAccess $access, string $branch, array $paths, ?string $commit = null): array
             {
                 $files = array_fill_keys($paths, null);
                 if ($this->composer !== null) {
@@ -317,7 +317,7 @@ describe('the PHP version of a web-serving Project', function (): void {
         $project = containerDefaultProject(ProjectType::LaravelApp);
         app()->instance(ProjectSourceReader::class, new class implements ProjectSourceReader
         {
-            public function read(string $repositoryUrl, ProjectSourceAccess $access, string $branch, array $paths): array
+            public function read(string $repositoryUrl, ProjectSourceAccess $access, string $branch, array $paths, ?string $commit = null): array
             {
                 throw new RuntimeException('Migration must not infer the PHP version.');
             }
