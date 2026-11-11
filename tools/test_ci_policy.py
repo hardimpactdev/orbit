@@ -119,6 +119,7 @@ class RequiredGateTest(unittest.TestCase):
         self.assertIn('    if: always()', block)
         jobs = block.split('needs: [', 1)[1].split(']', 1)[0].split(', ')
         self.assertIn('gateway-tests', jobs)
+        self.assertIn('cli-tests', jobs)
         self.assertNotIn('swamp', jobs)
         self.assertNotIn('proof-run', jobs)
         self.assertIn('      actions: read', block)
@@ -126,7 +127,7 @@ class RequiredGateTest(unittest.TestCase):
         self.assertIn("PROOF_BLOCKING: ${{ vars.ORBIT_PROOF_BLOCKING != 'false' }}", block)
 
     def test_every_other_selected_failure_or_skip_still_blocks(self):
-        for component in ('gateway-tests', 'pi', 'agent', 'php', 'Swamp / Swamp workflow validate', 'Swamp / Swamp Deno tests'):
+        for component in ('gateway-tests', 'cli-tests', 'pi', 'agent', 'php', 'Swamp / Swamp workflow validate', 'Swamp / Swamp Deno tests'):
             for slow in ('true', 'false'):
                 for result in ('failure', 'cancelled', 'skipped'):
                     with self.subTest(component=component, slow=slow, result=result):
@@ -145,6 +146,16 @@ class RequiredGateTest(unittest.TestCase):
                     self.assertEqual(error, 'Incomplete build selections')
         error, _, _ = self.run_required(results={'changes': 'failure'})
         self.assertEqual(error, 'Build input selection failed')
+
+    def test_cli_pest_skip_requires_explicit_false_and_complete_boolean_selection(self):
+        for slow in ('true', 'false'):
+            error, _, _ = self.run_required(slow=slow, results={'cli-tests': 'skipped'},
+                                             selections={'cli-tests': False})
+            self.assertIsNone(error)
+            for value in (None, 'false', 0):
+                with self.subTest(slow=slow, selection=value):
+                    error, _, _ = self.run_required(slow=slow, selections={'cli-tests': value})
+                    self.assertEqual(error, 'Incomplete build selections')
 
     def test_non_blocking_slow_jobs_need_not_complete_on_main_or_a_pr(self):
         for proof_required in (False, True):

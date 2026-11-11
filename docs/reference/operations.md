@@ -320,6 +320,8 @@ The list selects operations and caller Node names in one query. Show uses the bo
 
 The CLI reads with `operation:show`, `operation:list`, and `operation:cancel` ([operation](/cli/operation)). MCP has the tools `operation-show`, `operation-list`, and `operation-cancel` ([MCP: Operations](/reference/mcp#operations)).
 
+Commands that follow an Operation print each string in its terminal `result.warnings` as a warning before the Operation and request IDs. `--json` retains the list in the final Operation.
+
 ### Filter the list
 
 `GET /api/v1/operations` takes four optional query filters. A record must match each filter that the request sends.

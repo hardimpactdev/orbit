@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockResponse;
 
 /** @return array<string, mixed> */
@@ -63,71 +65,98 @@ function instance_auto_deploy_payload(array $overrides = []): array
 }
 
 /** @return array<string, mixed> */
-function registration_payload(?string $nameConvertedFrom = null): array
+function registration_payload(): array
 {
-    $instance = [
+    return [
         ...instance_payload(),
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/acme/default',
         'selected_branch' => 'main',
         'deployment_branch' => null,
     ];
-
-    return [
-        'project' => [
-            'id' => 3,
-            'name' => 'acme',
-            'slug' => 'acme',
-            'type' => 'laravel-app',
-            'repository_url' => 'git@github.com:acme/acme.git',
-            'source_access' => 'github_app',
-            'default_branch' => 'main',
-            'root' => 'public',
-            'task_check' => 'composer check',
-        ],
-        'instance' => $instance,
-        'instances' => [$instance],
-        'status' => 'active',
-        'source_count' => 1,
-        'completed_count' => 1,
-        'name_converted_from' => $nameConvertedFrom,
-    ];
 }
 
-function registration_mock_response(?string $nameConvertedFrom = null): MockResponse
+function registration_mock_response(): MockResponse
 {
     return MockResponse::make([
-        'data' => registration_payload($nameConvertedFrom),
+        'data' => registration_payload(),
         'meta' => ['request_id' => instance_request_id()],
-    ]);
+    ], 201);
 }
 
 function registration_json(): string
 {
-    $data = registration_payload();
-    $data['project']['request_id'] = instance_request_id();
-    foreach (['instance', 'instances'] as $key) {
-        if ($key === 'instance') {
-            $data[$key] = [
-                ...$data[$key],
-                'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
-                'routes' => [[...instance_route_payload(), 'request_id' => instance_request_id()]],
-                'request_id' => instance_request_id(),
-            ];
+    return json_encode([
+        ...registration_payload(),
+        'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
+        'routes' => [[...instance_route_payload(), 'request_id' => instance_request_id()]],
+        'request_id' => instance_request_id(),
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+}
 
-            continue;
-        }
-        $data[$key] = array_map(static fn (array $row): array => [
-            ...$row,
-            'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
-            'routes' => [[...instance_route_payload(), 'request_id' => instance_request_id()]],
-            'request_id' => instance_request_id(),
-        ], $data[$key]);
-    }
-    unset($data['name_converted_from']);
-    $data['request_id'] = instance_request_id();
+/**
+ * @param  array<string, mixed>|null  $result
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function instance_operation_payload(string $kind, ?array $result = null, array $overrides = []): array
+{
+    return [
+        'id' => 901,
+        'kind' => $kind,
+        'target_type' => 'instance',
+        'target_id' => 5,
+        'input' => [],
+        'status' => 'succeeded',
+        'sequence' => 8,
+        'current_step' => null,
+        'current_step_started_at' => null,
+        'current_step_observed_at' => null,
+        'failed_step' => null,
+        'error_code' => null,
+        'error' => null,
+        'result' => $result ?? match ($kind) {
+            'instance.destroy' => ['removed' => true],
+            default => ['instance_id' => 5, 'ready' => true, 'commit' => str_repeat('a', 40)],
+        },
+        'cancel_requested' => false,
+        'attempts' => 1,
+        'triggered_by' => 'node:2',
+        'caller_node_id' => 2,
+        'caller_node_name' => 'beast',
+        'created_at' => '2026-10-29T10:00:00+00:00',
+        'started_at' => '2026-10-29T10:00:00+00:00',
+        'finished_at' => '2026-10-29T10:00:01+00:00',
+        'poll_after_seconds' => null,
+        'capacity_wait' => null,
+        ...$overrides,
+    ];
+}
 
-    return json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+/**
+ * @param  array<string, mixed>|null  $result
+ * @param  array<string, mixed>  $overrides
+ * @return array<class-string, MockResponse>
+ */
+function instance_operation_responses(string $request, string $kind, ?array $result = null, array $overrides = [], ?string $requestId = null): array
+{
+    $body = ['data' => instance_operation_payload($kind, $result, $overrides),
+        'meta' => ['request_id' => $requestId ?? instance_request_id()]];
+
+    return [
+        $request => MockResponse::make($body, 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make($body),
+    ];
+}
+
+/** @param array<string, mixed>|null $result */
+function instance_operation_json(string $kind, ?array $result = null, array $overrides = [], ?string $requestId = null): string
+{
+    $payload = instance_operation_payload($kind, $result, $overrides);
+    $payload['input'] = new stdClass;
+
+    return json_encode([...$payload, 'request_id' => $requestId ?? instance_request_id()], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }
 
 /** @return array<string, mixed> */
@@ -166,32 +195,6 @@ function instance_mock_response(int $status = 200, ?array $payload = null): Mock
     ], $status);
 }
 
-function removal_mock_response(bool $force = false): MockResponse
-{
-    return MockResponse::make([
-        'data' => removal_payload($force),
-        'meta' => ['request_id' => instance_request_id()],
-    ]);
-}
-
-/** @return array<string, mixed> */
-function removal_payload(bool $force = false): array
-{
-    return [
-        'operation_id' => '0198e15d-16c4-7855-8eb2-182b53ad28bb',
-        'id' => 5,
-        'name' => 'dev',
-        'force' => $force,
-        'status' => 'completed',
-        'current_step' => null,
-        'total' => 1,
-        'completed' => 1,
-        'remaining' => 0,
-        'failed_step' => null,
-        'error_code' => null,
-    ];
-}
-
 /** @return array<string, mixed> */
 function removal_progress_payload(bool $force = false): array
 {
@@ -216,14 +219,6 @@ function instance_json(): string
         ...instance_payload(),
         'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
         'routes' => [[...instance_route_payload(), 'request_id' => instance_request_id()]],
-        'request_id' => instance_request_id(),
-    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-}
-
-function removal_json(): string
-{
-    return json_encode([
-        ...removal_payload(),
         'request_id' => instance_request_id(),
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }

@@ -11,6 +11,7 @@ use Illuminate\Foundation\Console\VendorPublishCommand;
 use Laravel\Boost\Console\AddSkillCommand;
 use Laravel\Boost\Console\InstallCommand as BoostInstallCommand;
 use Laravel\Boost\Console\ListSkillCommand;
+use Laravel\Boost\Console\RulesIndexCommand;
 use Laravel\Boost\Console\StartCommand as BoostStartCommand;
 use Laravel\Boost\Console\UpdateCommand;
 use Laravel\Mcp\Console\Commands\InspectorCommand;
@@ -95,6 +96,7 @@ return [
         class_exists(AddSkillCommand::class) ? AddSkillCommand::class : null,
         class_exists(BoostInstallCommand::class) ? BoostInstallCommand::class : null,
         class_exists(ListSkillCommand::class) ? ListSkillCommand::class : null,
+        class_exists(RulesIndexCommand::class) ? RulesIndexCommand::class : null,
         class_exists(BoostStartCommand::class) ? BoostStartCommand::class : null,
         class_exists(UpdateCommand::class) ? UpdateCommand::class : null,
         class_exists(InspectorCommand::class) ? InspectorCommand::class : null,

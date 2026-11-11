@@ -18,6 +18,7 @@ orbit node:role:remove <node> <role> [--force] [--purge-data] [--offline] [--jso
 | `--force` | prompt | Confirm the removal without prompting. Required without a terminal and with `--json`. |
 | `--purge-data` | off | Also delete role data. For `metrics`, the Prometheus and Grafana volumes and the stored credentials. For `websocket`, the Reverb checkout. For `ci-runner`, the Incus project, network and ACL. |
 | `--offline` | off | Remove the role from a Node Orbit cannot reach: only the work on other Nodes runs. A reachable Node still gets ordinary cleanup. |
+| `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the final Operation as JSON. |
 
 ```bash
