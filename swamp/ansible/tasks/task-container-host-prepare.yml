@@ -127,11 +127,62 @@
   register: container_images
   changed_when: false
 
-- name: Copy the stock Ubuntu container image
-  when: container_host.alias not in (container_images.stdout | from_json | map(attribute='aliases') | flatten | map(attribute='name') | list)
+- name: Read the image daemon identity
   ansible.builtin.command:
-    argv: [incus, image, copy, images:ubuntu/26.04/cloud, "local:", --alias, "{{ container_host.alias }}", --target-project, "{{ container_host.project }}"]
-  changed_when: true
+    argv: [incus, query, /1.0]
+  register: container_image_daemon
+  changed_when: false
+
+- name: Require the image daemon PID
+  ansible.builtin.assert:
+    that: (container_image_daemon.stdout | from_json).environment.server_pid | int > 0
+    fail_msg: "{{ container_host.fail }}: cannot identify the image daemon"
+
+- name: Read the image daemon environment
+  ansible.builtin.slurp:
+    src: "/proc/{{ (container_image_daemon.stdout | from_json).environment.server_pid }}/environ"
+  register: container_image_environment
+  no_log: true
+
+- name: Select the image daemon directory and socket
+  ansible.builtin.set_fact:
+    container_image_directory: "{{ daemon_directory }}"
+    container_image_socket: >-
+      {{ (daemon_environment | regex_findall('(?:^|\x00)INCUS_SOCKET=([^\x00]*)') | first) | default(daemon_directory ~ '/unix.socket', true) }}
+  vars:
+    daemon_environment: "{{ container_image_environment.content | b64decode }}"
+    daemon_directory: >-
+      {{ (daemon_environment | regex_findall('(?:^|\x00)INCUS_DIR=([^\x00]*)') | first) | default('/var/lib/incus', true) }}
+  no_log: true
+
+- name: Require absolute image daemon paths
+  ansible.builtin.assert:
+    that:
+      - container_image_directory is match('^/')
+      - container_image_socket is match('^/')
+    fail_msg: "{{ container_host.fail }}: cannot locate the image daemon"
+
+- name: Read the image daemon through its local socket
+  ansible.builtin.uri:
+    url: http://localhost/1.0
+    unix_socket: "{{ container_image_socket }}"
+    return_content: true
+    timeout: 10
+  register: container_image_local_daemon
+
+- name: Require the same image daemon
+  ansible.builtin.assert:
+    that: >-
+      container_image_local_daemon.json.metadata.environment.server_pid | int ==
+      (container_image_daemon.stdout | from_json).environment.server_pid | int
+    fail_msg: "{{ container_host.fail }}: image daemon directory mismatch"
+
+- name: Reconcile the independent stock container image
+  orbit_incus_images:
+    project: "{{ container_host.project }}"
+    alias: "{{ container_host.alias }}"
+    archive_directory: "{{ container_image_directory }}/images"
+    failure_code: "{{ container_host.fail }}"
 
 # The container bridge has its own catalog names: the withdrawal of a bridge's rules deletes them by comment.
 - name: Allow container DHCP requests to the host

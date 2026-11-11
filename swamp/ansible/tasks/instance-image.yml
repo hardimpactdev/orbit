@@ -96,7 +96,7 @@
       ansible.builtin.command: { argv: "{{ ['incus', '--project', instances.project] + item }}" }
       loop:
         - [stop, "{{ build }}"]
-        - [publish, "{{ build }}", --alias, "{{ instances.image.alias }}"]
+        - [publish, "{{ build }}", --alias, "{{ instances.image.alias }}", user.orbit.stock-build=]
       changed_when: true
   always:
     - name: Remove the build container

@@ -20,8 +20,8 @@ Deno.test({
             });
             result = await f.run();
             assert(result.ok, result.output);
-            const images = f.state().images.filter((i: { source?: string }) =>
-                !i.source
+            const images = f.state().images.filter((i: { aliases: { name: string }[] }) =>
+                i.aliases.some((alias) => alias.name.startsWith("orbit-instance"))
             );
             assertEquals(images.map((i: { aliases: unknown }) => i.aliases), [[
                 { name: "orbit-instance-bbbbbbbbbbbb" },
@@ -88,7 +88,7 @@ Deno.test({
                 "the image keeps a sudo path: user:ubuntu, sudoers:/etc/sudoers.d/90-cloud-init-users, member:ubuntu",
             );
             const after = f.state();
-            assert(!f.calls().some((c) => c.includes("publish")));
+            assert(!f.calls().some((c) => c.includes("publish") && c.includes("orbit-instance-build")));
             assertEquals(after.instances, []);
         } finally {
             f.cleanup();
@@ -119,3 +119,34 @@ for (const [pool, temporary] of [["dir", "orbit-instance-build"], ["zfs", "orbit
         },
     });
 }
+
+Deno.test({
+    name: "prepared publication clears inherited stock build ownership",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture();
+        try {
+            const result = await f.run();
+            assert(result.ok, result.output);
+            const state = f.state();
+            const stock = state.images.find((
+                image: { aliases: { name: string }[] },
+            ) => image.aliases.some((alias) =>
+                alias.name === f.instances.stock
+            ));
+            const prepared = state.images.find((
+                image: { aliases: { name: string }[] },
+            ) => image.aliases.some((alias) =>
+                alias.name === "orbit-instance"
+            ));
+            assertEquals(
+                stock.properties["user.orbit.stock-build"],
+                f.instances.stock,
+            );
+            assertEquals(prepared.properties["user.orbit.stock-build"], "");
+            assertEquals(state.instances, []);
+        } finally {
+            f.cleanup();
+        }
+    },
+});

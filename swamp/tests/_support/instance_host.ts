@@ -1,6 +1,7 @@
 /** Run the shipped Instance container host phase against a stateful Incus boundary: folders, image, reruns and updates. */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
+import { stockImageDaemon, stockImageTask } from "./stock_image.ts";
 
 export const hasAnsible =
     new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
@@ -15,6 +16,7 @@ type Task = Record<string, unknown>;
  * Package, kernel-module, sysctl and firewall modules need Linux and root: they become files in the fixture folder.
  */
 function transform(task: Task, folder: string): Task {
+    stockImageTask(task, folder);
     for (const part of ["block", "always"]) {
         if (Array.isArray(task[part])) {
             task[part] = (task[part] as Task[]).map((inner) =>
@@ -351,6 +353,7 @@ export async function fixture(
             zfs_pool_name: "fast/orbit-instances",
         }),
     );
+    const stopDaemon = stockImageDaemon(folder);
     const scripts: Record<string, string> = {
         incus: `exec '${Deno.execPath()}' run -A '${
             new URL("../fixtures/task-vm-host-incus.ts", import.meta.url)
@@ -598,7 +601,7 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
                 return false;
             }
         },
-        cleanup: () => Deno.removeSync(folder, { recursive: true }),
+        cleanup: () => { stopDaemon(); Deno.removeSync(folder, { recursive: true }); },
     };
 }
 
