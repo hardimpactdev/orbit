@@ -57,6 +57,12 @@ Each new release has one CLI binary per supported platform, a checksum file, and
 
 Each CLI binary is one executable file with a static PHP 8.5 inside. The Linux names follow `uname -m`, as the agent's do. `SHA256SUMS` has the `sha256sum` format: one line per binary, sorted by name, with the lowercase hex digest, two spaces, and the asset name.
 
+### Agent build cache
+
+The Linux and macOS agent jobs cache Cargo downloads and `apps/agent/target`. Cache keys separate runner OS, host architecture, the full Rust compiler version, and target triples. They include the Cargo lockfile and manifests, then the agent source commit. A source change first restores a cache with the same dependency inputs; a lockfile change can restore one for the same compiler and targets. Cargo always runs with `--locked --release` and checks which artifacts need to rebuild. Both macOS targets share their job's cache.
+
+`build-delivery --commit` records the agent source commit in the manifest. It builds the checked-out release source in `apps/agent/target`; it does not check out that commit or build in the delivery output directory. The delivery directory holds only packaged binaries, checksums and the manifest. Cache reuse does not change the agent pin or release provenance.
+
 ### Provenance
 
 The publish job signs the release with the workflow's own identity. `actions/attest-build-provenance` takes the job's OIDC token, gets a short-lived certificate from Sigstore's public Fulcio CA, and records the signature in Sigstore's public Rekor log. The job needs `id-token: write` and `attestations: write`, and no secret. It signs one in-toto statement with SLSA provenance v1. Its subjects are the files above, each with its SHA-256 digest. The job adds the Sigstore bundle as `provenance.sigstore.json` to the same `gh release create` call, so the release appears with it.
@@ -154,7 +160,7 @@ So a green commit gets no release when both of these are true:
 - A newer commit reached `main` before the release workflow published. A rerun of the commit's CI makes that likely.
 - The commits between them changed a file under `.github/workflows`.
 
-The publish step then fails with the error `Release refused for a non-tip commit`. A `workflow_dispatch` run for that commit cannot publish it either. The Gateway never deploys such a commit, because prepare needs the release's agent. It deploys the next commit that has a release. A Gateway may already run a commit without a CLI release, from before releases carried the agent. It does not wait for that release forever: its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit until the Gateway deploys a newer commit with its own release.
+The publish step then fails with the error `Release refused for a non-tip commit`. A `workflow_dispatch` run for that commit cannot publish it either. Gateway deployment can still proceed: it verifies the published agent delivery named by the target commit's [frozen pin](/reference/node-agent#releases), independently of that commit's CLI release. When the CLI release stays missing for 30 minutes, the desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit until the Gateway deploys a newer commit with its own CLI release.
 
 ## Pull-request builds
 

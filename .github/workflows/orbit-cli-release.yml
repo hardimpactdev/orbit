@@ -190,6 +190,25 @@ jobs:
       - name: Install the musl compiler
         run: sudo apt-get update && sudo apt-get install --no-install-recommends --yes musl-tools
 
+      - name: Read the Rust compiler identity
+        id: rust
+        run: echo "version=$(rustc --version --verbose | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      # --commit labels the manifest; build-delivery compiles the checked-out source in apps/agent/target.
+      # Keep release artifacts separate from CI's cargo check cache. Restore across source/lock changes,
+      # but never across compilers, runner platforms or target triples. Cargo checks restored fingerprints.
+      - name: Cache agent release dependencies and builds
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/agent/target
+          key: agent-release-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.version }}-x86_64-unknown-linux-musl-${{ hashFiles('apps/agent/Cargo.lock', 'apps/agent/Cargo.toml', 'apps/agent/crates/**/Cargo.toml', 'apps/gateway/extensions/*/agent/Cargo.toml') }}-${{ needs.resolve.outputs.agent_source }}
+          restore-keys: |
+            agent-release-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.version }}-x86_64-unknown-linux-musl-${{ hashFiles('apps/agent/Cargo.lock', 'apps/agent/Cargo.toml', 'apps/agent/crates/**/Cargo.toml', 'apps/gateway/extensions/*/agent/Cargo.toml') }}-
+            agent-release-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.version }}-x86_64-unknown-linux-musl-
+
       - name: Build the Linux agent
         working-directory: apps/agent
         run: scripts/build-delivery "$RUNNER_TEMP/agent-delivery" --commit "$SOURCE"
@@ -221,6 +240,25 @@ jobs:
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Read the Rust compiler identity
+        id: rust
+        run: echo "version=$(rustc --version --verbose | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      # --commit labels the manifest; build-delivery compiles the checked-out source in apps/agent/target.
+      # Keep release artifacts separate from CI's cargo check cache. Restore across source/lock changes,
+      # but never across compilers, runner platforms or target triples. Cargo checks restored fingerprints.
+      - name: Cache agent release dependencies and builds
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/agent/target
+          key: agent-release-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.version }}-aarch64-apple-darwin-x86_64-apple-darwin-${{ hashFiles('apps/agent/Cargo.lock', 'apps/agent/Cargo.toml', 'apps/agent/crates/**/Cargo.toml', 'apps/gateway/extensions/*/agent/Cargo.toml') }}-${{ needs.resolve.outputs.agent_source }}
+          restore-keys: |
+            agent-release-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.version }}-aarch64-apple-darwin-x86_64-apple-darwin-${{ hashFiles('apps/agent/Cargo.lock', 'apps/agent/Cargo.toml', 'apps/agent/crates/**/Cargo.toml', 'apps/gateway/extensions/*/agent/Cargo.toml') }}-
+            agent-release-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.version }}-aarch64-apple-darwin-x86_64-apple-darwin-
 
       - name: Build the macOS agents
         working-directory: apps/agent
