@@ -110,6 +110,9 @@ jobs:
       run:
         working-directory: ${{ inputs.working-directory || 'swamp' }}
     steps:
+      - name: Start the shard deadline before setup
+        working-directory: ${{ github.workspace }}
+        run: echo "ORBIT_SHAPE_DEADLINE_EPOCH=$(( $(date +%s) + 1440 ))" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0

@@ -290,9 +290,9 @@ export const caddy = "10.253.0.1";
 export const peer = "10.44.0.20";
 
 // The gate supplies one wall-clock deadline across Deno's separate file isolates.
-// A developer running one file gets eleven minutes from this import.
+// A developer running one file gets twelve minutes from this import.
 const fixtureDeadline = Number(
-    Deno.env.get("ORBIT_INSTANCE_HOST_DEADLINE_MS") ?? Date.now() + 660_000,
+    Deno.env.get("ORBIT_INSTANCE_HOST_DEADLINE_MS") ?? Date.now() + 720_000,
 );
 
 /** `ip -4 -o addr show` of a Node with a CI bridge in the next /24 and the Instance bridge itself. */
@@ -491,11 +491,11 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
         instances,
         write,
         artifacts: (version: string) => artifacts(folder, version),
-        async run(seconds = 480) {
+        async run(seconds = 240) {
             const remaining = (fixtureDeadline - Date.now()) / 1000;
             if (remaining <= 0) {
                 throw new Error(
-                    "Instance host fixture command exhausted its 660s budget",
+                    "Instance host fixture command exhausted its 720s budget",
                 );
             }
             seconds = Math.min(seconds, remaining);

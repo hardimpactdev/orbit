@@ -74,4 +74,3 @@ assert os.path.isdir(workspace + b'/public/link-\\xfe')
     }
   },
 });
-

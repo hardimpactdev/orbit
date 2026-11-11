@@ -209,7 +209,7 @@ class ShardPartitionTest(unittest.TestCase):
         # Build a temporary source tree from independent filesystem discovery, including nested tests.
         sources = [ROOT / 'swamp/tests', ROOT / 'swamp/bin']
         sources += [ROOT / 'swamp/extensions/behaviors' / name for name in
-                    ('automatic-deploy', 'composer-maintenance', 'js-maintenance', 'projects')]
+                    ('automatic-deploy', 'composer-maintenance', 'js-maintenance', 'projects', 'operations')]
         with tempfile.TemporaryDirectory() as directory:
             tree = Path(directory)
             for source in sources:
@@ -217,6 +217,10 @@ class ShardPartitionTest(unittest.TestCase):
             new = tree / 'tests/new/nested_test.ts'
             new.parent.mkdir(parents=True)
             new.write_text('Deno.test("new", () => {});\n')
+            for file in ('tests/nested/new_test.py', 'bin/new_test.ts'):
+                path = tree / file
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('')
             scope = gate['plan'].__globals__
             with patch.dict(scope, {'SWAMP': tree}):
                 full = steps('shape')
@@ -230,16 +234,12 @@ class ShardPartitionTest(unittest.TestCase):
                         self.assertFalse({s.unit for s in parts[i]} & {s.unit for s in parts[j]})
                 tests = [step for step in units if step.argv[0] in ('deno', 'python3')]
                 planned = Counter(step.argv[-1] for step in tests)
-                discovered = {str(path.relative_to(tree)) for source in sources for path in
-                              (tree / source.relative_to(ROOT / 'swamp')).rglob('*')
-                              if gate['DENO_TEST_FILE'].fullmatch(path.name)}
-                # Bin includes tests owned by other gates. DENO_UNIT_TESTS explicitly owns its seven files.
-                discovered = {p for p in discovered if not p.startswith('bin/') or p in
-                              {a[-1] for a in gate['DENO_UNIT_TESTS'] if a[-1].startswith('bin/')}}
-                discovered -= set(gate['DENO_TESTS_ELSEWHERE'])
-                discovered |= {str(p.relative_to(tree)) for p in (tree / 'tests').rglob('ansible_*_test.py')}
+                discovered = {str(path.relative_to(tree)) for path in tree.rglob('*')
+                              if path.name.endswith(('_test.ts', '_test.py'))}
+                discovered -= set(gate['audit_ownership'](steps()))
                 self.assertEqual(planned, Counter({path: 1 for path in discovered}))
-                self.assertEqual(planned['tests/new/nested_test.ts'], 1)
+                for file in ('tests/new/nested_test.ts', 'tests/nested/new_test.py', 'bin/new_test.ts'):
+                    self.assertEqual(planned[file], 1)
                 self.assertEqual({s.unit for s in units if s.argv[0] not in ('deno', 'python3')}, {'ruff', 'ansible-lint'})
                 self.assertEqual(len([s for s in tests if 'ansible_instance_host_' in s.unit]), 14)
                 self.assertTrue(all(len([arg for arg in s.argv if arg in discovered]) == 1 for s in tests))
@@ -274,6 +274,83 @@ class ShardPartitionTest(unittest.TestCase):
         identity = gate['manifest_id']()
         with patch.dict(gate['manifest_id'].__globals__, {'ROOT': Path('/another/checkout')}):
             self.assertEqual(identity, gate['manifest_id']())
+
+
+class OwnershipAndDeadlineTest(unittest.TestCase):
+    def test_filtered_discovery_cannot_hide_new_files_from_manifest_or_aggregator(self):
+        scope = gate['plan'].__globals__
+        for file in ('tests/nested/new_test.py', 'bin/new_test.ts'):
+            with self.subTest(file=file), tempfile.TemporaryDirectory() as directory:
+                tree = Path(directory)
+                path = tree / file
+                path.parent.mkdir(parents=True)
+                path.write_text('')
+                with patch.dict(scope, {'SWAMP': tree, 'deno_test_files': lambda: [],
+                                        'ansible_test_files': lambda: []}):
+                    with self.assertRaisesRegex(ValueError, 'test file without a shard owner: ' + re.escape(file)):
+                        gate['manifest_id']()
+                    verify = runpy.run_path(str(ROOT / 'bin/ci-swamp-shape-result'))['verify']
+                    with patch.dict(verify.__globals__, {'gate': gate}):
+                        with self.assertRaisesRegex(ValueError, 'test file without a shard owner: ' + re.escape(file)):
+                            verify('true', 'success', 'success', 'success', tree, BASE, 'a' * 40, 'filtered')
+
+    def test_external_owners_must_exist_and_select_each_file(self):
+        mutations = [
+            WORKFLOW.replace('  tests:', '  removed:'),
+            WORKFLOW.replace('deno test --parallel -A extensions/behaviors/operations',
+                             'deno test --filter skipped -A extensions/behaviors/operations'),
+            WORKFLOW.replace('      - name: Run Operations unit tests\n        if:',
+                             '      - name: Run Operations unit tests\n        if: false #'),
+            WORKFLOW.replace('--only validate --strict', '--only shape --strict'),
+            WORKFLOW.replace('          job: swamp-tests', '          job: swamp-shape'),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            workflow = Path(directory) / 'workflow.yml'
+            for mutation in mutations:
+                workflow.write_text(mutation)
+                with patch.dict(gate['plan'].__globals__, {'WORKFLOW': workflow}):
+                    with self.assertRaisesRegex(ValueError, 'test file without a shard owner:'):
+                        steps()
+            workflow.write_text(WORKFLOW)
+            scope = Path(directory) / 'scope.py'
+            scope.write_text("def select(paths): return {'swamp_checks': {'tests': False, 'validate': False}}")
+            with patch.dict(gate['plan'].__globals__, {'CI_PLAN': scope}):
+                with self.assertRaisesRegex(ValueError, 'test file without a shard owner:'):
+                    steps()
+        full = steps()
+        for name in ('node enrollment trust', 'exporter firewall'):
+            with self.assertRaisesRegex(ValueError, 'test file without a shard owner:'):
+                gate['audit_ownership']([s for s in full if s.name != name])
+
+    def test_hanging_unit_fails_by_name_and_writes_report_including_queued_work(self):
+        import os
+        import sys
+        import time
+        scope = gate['main'].__globals__
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory)
+            child = f'import os,time; os.setsid(); open({str(report / "child.pid")!r}, "w").write(str(os.getpid())); time.sleep(60)'
+            parent = f'import subprocess; subprocess.Popen([{sys.executable!r}, "-c", {child!r}])'
+            hang = gate['Step']('shape', 'fake hanging unit', [sys.executable, '-c', parent], parallel=True)
+            queued = gate['Step']('shape', 'queued unit', [sys.executable, '-c', 'raise Exception("must not launch")'], parallel=True)
+            started = time.monotonic()
+            with patch.dict(scope, {'plan': lambda *a: [hang, queued], 'tool_path': lambda *a: report,
+                                    'SHARD_BUDGET_SECONDS': 1, 'manifest_id': lambda: 'fake',
+                                    'audit_ownership': lambda *a: {}, 'external_owner_groups': lambda *a: {}, 'select_steps': lambda s, *a: s}), patch.dict(os.environ, {'ORBIT_SHAPE_DEADLINE_EPOCH': str(time.time() + 1)}), redirect_stdout(io.StringIO()):
+                code = gate['main'](['--only', 'shape', '--base', BASE, '--shard', '1/3',
+                                     '--workers', '1', '--reports', directory])
+            self.assertEqual(code, 1)
+            self.assertLess(time.monotonic() - started, 5)
+            pid = int((report / 'child.pid').read_text())
+            with self.assertRaises(ProcessLookupError):
+                os.kill(pid, 0)
+            data = json.loads((report / 'shard.json').read_text())
+            # Select both commands in this synthetic shard so queued failures are observable.
+            self.assertEqual(data['units'][0]['outcome'], 'FAILED')
+            self.assertIn('deadline', data['units'][0]['detail'])
+            self.assertEqual(data['units'][0]['unit'], 'fake hanging unit')
+            self.assertEqual(data['units'][1]['outcome'], 'FAILED')
+            self.assertEqual(data['units'][1]['detail'], 'shard deadline exhausted')
 
 
 class StableShapeResultTest(unittest.TestCase):

@@ -57,4 +57,3 @@ os.execv("/usr/bin/tar", ["tar", *sys.argv[1:]])
     },
   });
 }
-

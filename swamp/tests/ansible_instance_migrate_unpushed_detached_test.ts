@@ -30,4 +30,3 @@ for (const detached of [false, true]) {
     },
   });
 }
-

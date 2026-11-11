@@ -104,12 +104,12 @@ const f = await fixture();
 try {
     Deno.writeTextFileSync(f.folder + "/bin/ansible-playbook", '#!/bin/sh\necho started >> "$HOST_FIXTURE/starts"\nexec sleep 60\n');
     Deno.chmodSync(f.folder + "/bin/ansible-playbook", 0o755);
-    clock = 659_900;
+    clock = 719_900;
     const started = performance.now();
     await assertRejects(() => f.run(), Error, "timed out after 0.1s");
     assert(performance.now() - started < 4500, "late playbook received a fresh allowance");
-    clock = 660_001;
-    await assertRejects(() => f.run(), Error, "exhausted its 660s budget");
+    clock = 720_001;
+    await assertRejects(() => f.run(), Error, "exhausted its 720s budget");
     assertEquals(Deno.readTextFileSync(f.folder + "/starts"), "started\n");
 } finally {
     f.cleanup();
@@ -159,12 +159,12 @@ Deno.test("${
                         ? `
         assert((await f.run()).ok);
         Deno.removeSync(f.folder + "/started");
-        clock = 660_001;
+        clock = 720_001;
         Deno.writeTextFileSync(${JSON.stringify(clockFile)}, String(clock));
         `
                         : ""
                 }
-        await assertRejects(() => f.run(), Error, "exhausted its 660s budget");
+        await assertRejects(() => f.run(), Error, "exhausted its 720s budget");
         assert(!f.has("started"), "a playbook launched after the shared budget expired");
     } finally {
         f.cleanup();
@@ -178,7 +178,7 @@ Deno.test("${
             args: ["test", "-A", ...files],
             env: {
                 DENO_JOBS: "1",
-                ORBIT_INSTANCE_HOST_DEADLINE_MS: "1000000660000",
+                ORBIT_INSTANCE_HOST_DEADLINE_MS: "1000000720000",
             },
         }).outputSync();
         const decoder = new TextDecoder();
@@ -340,7 +340,7 @@ time.sleep(60)
 });
 
 
-Deno.test("the default playbook hang guard allows eight minutes before the shared deadline cap", async () => {
+Deno.test("the default playbook hang guard allows four minutes before the shared deadline cap", async () => {
     const f = await fixture();
     try {
         // Record the supervisor allowance without running a real playbook or waiting for the guard.
@@ -350,7 +350,7 @@ printf '{"timedOut":false}' > "$3"
 `);
         Deno.chmodSync(`${f.folder}/bin/python3`, 0o755);
         assert((await f.run()).ok);
-        assertEquals(Deno.readTextFileSync(`${f.folder}/guard`), "480");
+        assertEquals(Deno.readTextFileSync(`${f.folder}/guard`), "240");
     } finally {
         f.cleanup();
     }

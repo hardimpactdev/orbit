@@ -272,4 +272,3 @@ export function fixture(
     cleanup: () => Deno.removeSync(folder, { recursive: true }),
   };
 }
-

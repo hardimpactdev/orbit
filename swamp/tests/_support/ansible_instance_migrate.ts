@@ -281,4 +281,3 @@ export function migrationProcesses(f: ReturnType<typeof fixture>, presetDesired:
   f.write();
   return () => JSON.parse(Deno.readTextFileSync(`${f.folder}/host-processes.json`));
 }
-

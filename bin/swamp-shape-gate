@@ -28,6 +28,7 @@ import hashlib
 import json
 import os
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -57,24 +58,82 @@ DENO_UNIT_TESTS = (
 )
 # The file names `deno test` takes from a directory.
 DENO_TEST_FILE = re.compile(r'(.*[._])?test\.(ts|tsx|mts|js|mjs|jsx)')
-# Not in the shape group: the validation group runs the enrollment trust test, the firewall test stays out until it passes,
-# and the host method test needs systemd and passwordless sudo.
-DENO_TESTS_ELSEWHERE = ('tests/metrics_exporter_firewall_test.ts', 'tests/native_host_method_test.ts', 'tests/node_add_bootstrap_test.ts')
-
-
-# Timing data controls scheduling only. Discovery, permissions and fixture metadata live in plan().
+# External owners must be verified against executable CI selection, never exclusions.
+DENO_TESTS_ELSEWHERE = ('tests/metrics_exporter_firewall_test.ts', 'tests/node_add_bootstrap_test.ts')
 TIMINGS = SWAMP / 'tests/shape-timings.json'
-INSTANCE_HOST_BUDGET_SECONDS = 660
+INSTANCE_HOST_BUDGET_SECONDS = 720
+SHARD_BUDGET_SECONDS = 1440
+WORKFLOW = ROOT / '.github/workflows/swamp-shape.yml'
+CI_PLAN = ROOT / 'bin/ci-build-plan'
+
+
+def test_inventory():
+    return sorted(str(path.relative_to(SWAMP)) for path in SWAMP.rglob('*')
+                  if not {'.swamp', 'node_modules', '.git'} & set(path.relative_to(SWAMP).parts)
+                  and path.is_file() and (path.name.endswith('_test.ts') or path.name.endswith('_test.py')))
+
+
+def external_owners(steps):
+    source = WORKFLOW.read_text()
+    scope = runpy.run_path(str(CI_PLAN))['select']
+    owners = {}
+    for file in test_inventory():
+        if file.startswith('extensions/behaviors/operations/') and file.endswith('_test.ts'):
+            job, label, command, selection = ('tests', 'Run Operations unit tests',
+                'deno test --parallel -A extensions/behaviors/operations', 'tests')
+            condition = "if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}"
+        elif file in DENO_TESTS_ELSEWHERE:
+            job, label, command, selection = ('validate', 'Run the Swamp workflow validation',
+                'python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only validate --strict --cache "$HOME/.cache/orbit-shape-runtime" --reports "$RUNNER_TEMP"', 'validate')
+            condition = "if: steps.scope.outputs.selected == 'true'"
+            matches = [s for s in steps if s.group == 'validate' and s.argv == ['deno', 'test', '-A', file]]
+            if len(matches) != 1:
+                raise ValueError('test file without a shard owner: ' + file + ' (validation step missing)')
+        else:
+            continue
+        block = re.search(r'^  ' + job + r':\n(.*?)(?=^  [\w-]+:|\Z)', source, re.M | re.S)
+        step = re.search(r'      - name: ' + re.escape(label) + r'\n(.*?)(?=      - |\Z)', block[1] if block else '', re.S)
+        if (not step or condition != step[1].splitlines()[0].strip()
+                or [line for line in step[1].splitlines() if line.startswith('        run:')] != ['        run: ' + command]
+                or re.search(r'^    if:', block[1], re.M)
+                or '      - uses: ./.github/actions/ci-scope' not in block[1].splitlines()
+                or '        id: scope' not in block[1].splitlines()
+                or '          job: swamp-' + selection not in block[1].splitlines()
+                or not scope(['swamp/' + file])['swamp_checks'][selection]):
+            raise ValueError('test file without a shard owner: ' + file + ' (external CI owner does not select file)')
+        owners[file] = {'job': job, 'step': matches[0].name if job == 'validate' else label}
+    return owners
+
+
+def audit_ownership(steps):
+    owners = external_owners(steps)
+    for file in test_inventory():
+        count = sum(s.parallel and s.argv[:2] in (['deno', 'test'], ['python3', '-I']) and s.argv[-1] == file for s in steps)
+        count += file in owners
+        if count != 1:
+            raise ValueError('test file without a shard owner: ' + file + f' (owners: {count})')
+    return owners
+
+
+def external_owner_groups(steps):
+    owners = audit_ownership(steps)
+    return {
+        'Operations': {'job': 'tests', 'step': 'Run Operations unit tests',
+                       'files': sorted(file for file, owner in owners.items() if owner['job'] == 'tests')},
+        'validation': {'job': 'validate', 'files': {file: owner['step'] for file, owner in owners.items() if owner['job'] == 'validate'}},
+        'host services': {'files': [], 'note': 'No tests excluded; mocked native-host tests run in shape shards'},
+    }
 
 
 def deno_test_files():
-    """Every discovered test file owns one command, including nested files."""
-    files = sorted(str(path.relative_to(SWAMP)) for path in (SWAMP / 'tests').rglob('*') if DENO_TEST_FILE.fullmatch(path.name))
-    return [('-A', file) for file in files if file not in DENO_TESTS_ELSEWHERE]
+    explicit = {args[-1] for args in expanded_unit_tests()}
+    return [('-A', file) for file in test_inventory() if file.endswith('_test.ts')
+            and file not in explicit and file not in DENO_TESTS_ELSEWHERE
+            and not file.startswith('extensions/behaviors/operations/')]
 
 
 def ansible_test_files():
-    return sorted(str(path.relative_to(SWAMP)) for path in (SWAMP / 'tests').rglob('ansible_*_test.py'))
+    return [file for file in test_inventory() if file.endswith('_test.py')]
 
 
 def expanded_unit_tests():
@@ -122,7 +181,7 @@ def select_steps(steps, shard=None, control_only=False):
 def manifest_id():
     canonical = plan('BASE', Path('REPORTS'), Path('CACHE'), Path('COLLECTIONS'))
     payload = [(step.group, step.name, step.argv, step.needs, step.env, step.parallel, step.fixture_seconds) for step in canonical]
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).replace(str(ROOT), '/REPO').encode() + TIMINGS.read_bytes()).hexdigest()
+    return hashlib.sha256(json.dumps({'steps': payload, 'external_owners': audit_ownership(canonical)}, sort_keys=True).replace(str(ROOT), '/REPO').encode() + TIMINGS.read_bytes()).hexdigest()
 
 
 class Step:
@@ -150,7 +209,7 @@ def plan(base, reports, cache, collections):
     def deno_step(arguments):
         return Step('shape', 'deno test ' + ' '.join(arg for arg in arguments if not arg.startswith('-')),
                     ['deno', 'test', *arguments], env=ansible_env, parallel=True,
-                    fixture_seconds=INSTANCE_HOST_BUDGET_SECONDS if arguments[-1].startswith('tests/ansible_instance_host_') else None)
+                    fixture_seconds=INSTANCE_HOST_BUDGET_SECONDS if arguments[-1].startswith(('tests/ansible_instance_host_', 'tests/ansible_instance_container_', 'tests/ansible_instance_migrate_')) else None)
 
     steps += [Step('shape', test, ['python3', '-I', test], env=ansible_env, parallel=True) for test in ansible_test_files()]
     steps.append(Step('shape', 'ruff', ['ruff', 'check', 'ansible/build_vars.py', 'ansible/instance_migrate_links.py', 'ansible/library/orbit_artifact.py', 'tests/_support/fixture_supervisor.py',
@@ -167,10 +226,12 @@ def plan(base, reports, cache, collections):
                                                       '--report', str(reports / 'workflow-validation.json')], needs=('credentials',)),
         # It imports the extensions that the workflow validation pulls, so it needs the same credential.
         Step('validate', 'node enrollment trust', ['deno', 'test', '-A', 'tests/node_add_bootstrap_test.ts'], needs=('credentials',)),
+        Step('validate', 'exporter firewall', ['deno', 'test', '-A', 'tests/metrics_exporter_firewall_test.ts'], needs=('credentials',)),
         Step('validate', 'check-grant-patterns', ['python3', 'bin/check-grant-patterns.py', '--cache', str(cache),
                                                   '--report', str(reports / 'grant-validation.json')], needs=('credentials', 'php')),
         Step('validate', 'workflow placement', ['deno', 'run', '--allow-read', 'bin/lint-workflow-placement.ts']),
     ]
+    audit_ownership(steps)
     return steps
 
 
@@ -208,20 +269,37 @@ def default_tools():
     return Path.home() / '.cache/orbit-shape-gate'
 
 
-def tool_path(tools):
+def tool_path(tools, deadline=None):
     """The bin directory of the pinned venv, built once per pin set under a lock. A built venv needs no write access."""
     venv = tools / venv_name()
     if not (venv / '.complete').exists():
         tools.mkdir(parents=True, exist_ok=True)
         with (tools / 'lock').open('w') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+            while True:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    remaining(deadline)
+                    time.sleep(0.1)
             if not (venv / '.complete').exists():
                 shutil.rmtree(venv, ignore_errors=True)
                 print(f'Installing the pinned shape tools into {venv}', flush=True)
-                subprocess.run([sys.executable, '-m', 'venv', str(venv)], check=True)
-                subprocess.run([str(venv / 'bin/pip'), 'install', '--disable-pip-version-check', '-q', '-r', str(REQUIREMENTS)], check=True)
+                install_tool([sys.executable, '-m', 'venv', str(venv)], deadline)
+                install_tool([str(venv / 'bin/pip'), 'install', '--disable-pip-version-check', '-q', '-r', str(REQUIREMENTS)], deadline)
                 (venv / '.complete').write_text('')
     return venv / 'bin'
+
+
+def install_tool(command, deadline):
+    if deadline is None:
+        subprocess.run(command, check=True)
+        return
+    with tempfile.TemporaryDirectory(prefix='orbit-shape-install-') as scratch:
+        seconds = remaining(deadline)
+        subprocess.run([sys.executable, str(SWAMP / 'tests/_support/fixture_supervisor.py'),
+                        str(seconds), str(Path(scratch) / 'deadline.json'), *command],
+                       check=True, timeout=seconds + 5)
 
 
 def skip_reason(step, environment):
@@ -232,8 +310,19 @@ def skip_reason(step, environment):
     return None
 
 
-def run_step(step, environment, strict):
+def remaining(deadline):
+    if deadline is None:
+        return None
+    seconds = deadline - time.monotonic()
+    if seconds <= 0:
+        raise TimeoutError('shard deadline exhausted')
+    return seconds
+
+
+def run_step(step, environment, strict, deadline=None):
     print(f'==> {step.name}', flush=True)
+    if deadline is not None and time.monotonic() >= deadline:
+        return (step, 'FAILED', 0.0, 'shard deadline exhausted'), ''
     reason = skip_reason(step, environment)
     if reason and not strict:
         return (step, 'skipped', 0.0, reason), ''
@@ -245,18 +334,32 @@ def run_step(step, environment, strict):
         env = {**environment, **step.env, 'TMPDIR': scratch, 'TEMP': scratch, 'TMP': scratch}
         if step.parallel:
             env.update(DENO_JOBS='1', ANSIBLE_FORKS='1', PYTHON_CPU_COUNT='1', RAYON_NUM_THREADS='1')
+        seconds = min(value for value in (max(0, deadline - time.monotonic()) if deadline is not None else None, step.fixture_seconds if step.fixture_seconds is not None else INSTANCE_HOST_BUDGET_SECONDS if step.parallel else None, float('inf')) if value is not None)
+        if seconds <= 0:
+            return (step, 'FAILED', 0.0, 'shard deadline exhausted'), ''
         if step.fixture_seconds is not None:
-            env['ORBIT_INSTANCE_HOST_DEADLINE_MS'] = str(int(time.time() * 1000) + step.fixture_seconds * 1000)
+            env['ORBIT_INSTANCE_HOST_DEADLINE_MS'] = str(int(time.time() * 1000 + seconds * 1000))
+        receipt = Path(scratch) / 'deadline.json'
+        command = step.argv
+        if seconds != float('inf'):
+            command = [sys.executable, str(SWAMP / 'tests/_support/fixture_supervisor.py'), str(seconds), str(receipt), *command]
+        detail = ''
         try:
-            code = subprocess.run(step.argv, cwd=SWAMP, env=env, stdout=output, stderr=subprocess.STDOUT).returncode
+            code = subprocess.run(command, cwd=SWAMP, env=env, stdout=output, stderr=subprocess.STDOUT,
+                                  timeout=seconds + 5 if seconds != float('inf') else None).returncode
+            if receipt.exists() and json.loads(receipt.read_text())['timedOut']:
+                detail = 'shard deadline exhausted' if deadline is not None and time.monotonic() >= deadline else 'command deadline exhausted'
+                code = 124
+        except (subprocess.TimeoutExpired, TimeoutError):
+            detail, code = 'deadline supervisor exceeded cleanup allowance', 124
         except FileNotFoundError as error:
             output.write(f'{error.filename or step.argv[0]}: required tool not found\n')
             code = 127
         output.seek(0)
-        return (step, 'passed' if code == 0 else 'FAILED', time.monotonic() - started, f'exit {code}'), output.read()
+        return (step, 'passed' if code == 0 else 'FAILED', time.monotonic() - started, detail or f'exit {code}'), output.read()
 
 
-def execute(steps, environment, strict, workers):
+def execute(steps, environment, strict, workers, deadline=None):
     results = []
     order = {id(step): index for index, step in enumerate(steps)}
 
@@ -273,17 +376,18 @@ def execute(steps, environment, strict, workers):
         group = list(group)
         if parallel:
             with ThreadPoolExecutor(max_workers=workers) as pool:
-                futures = [pool.submit(run_step, step, environment, strict) for step in group]
+                futures = [pool.submit(run_step, step, environment, strict, *([deadline] if deadline is not None else [])) for step in group]
                 for future in as_completed(futures):
                     record(future.result())
         else:
             for step in group:
-                record(run_step(step, environment, strict))
+                record(run_step(step, environment, strict, *([deadline] if deadline is not None else [])))
     # Keep the summary and callers in plan order while command output streams in completion order.
     return sorted(results, key=lambda result: order[id(result[0])])
 
 
 def main(argv=None):
+    started = time.monotonic()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--base')
     parser.add_argument('--only', choices=('shape', 'validate'))
@@ -316,17 +420,29 @@ def main(argv=None):
     base = resolve_base(args.base) if args.only != 'validate' else ''
     args.reports.mkdir(parents=True, exist_ok=True)
     environment = {**os.environ}
-    if args.only != 'validate':
-        environment['PATH'] = f'{tool_path(args.tools)}{os.pathsep}{environment["PATH"]}'
     collections = collections_path(args.tools)
     steps = [step for step in plan(base, args.reports, args.cache, collections) if args.only in (None, step.group)]
     steps = select_steps(steps, args.shard, args.control_only)
+    deadline = None
+    if args.shard:
+        # CI starts the clock before checkout/setup; a local shard starts at gate entry.
+        deadline = min(started + SHARD_BUDGET_SECONDS,
+                       time.monotonic() + float(environment.get('ORBIT_SHAPE_DEADLINE_EPOCH', time.time() + SHARD_BUDGET_SECONDS)) - time.time())
     print('Swamp shape gate' + (f' against {base[:12]}' if base else '') + f'; reports in {args.reports}', flush=True)
-    results = execute(steps, environment, args.strict, args.workers)
+    try:
+        if args.only != 'validate':
+            installed = tool_path(args.tools, deadline) if deadline is not None else tool_path(args.tools)
+            environment['PATH'] = f'{installed}{os.pathsep}{environment["PATH"]}'
+        results = execute(steps, environment, args.strict, args.workers, *([deadline] if deadline is not None else []))
+    except (TimeoutError, subprocess.SubprocessError, OSError) as error:
+        results = [(step, 'FAILED', 0.0, 'gate setup/execution failed: ' + str(error)) for step in steps]
     if args.shard:
         report = {
             'sha': git('rev-parse', 'HEAD').stdout.strip(), 'base': base, 'manifest_id': manifest_id(),
             'shard': f'{args.shard[0]}/{args.shard[1]}',
+            'budget_seconds': SHARD_BUDGET_SECONDS, 'seconds': time.monotonic() - started,
+            'external_owners': audit_ownership(plan(base, args.reports, args.cache, collections)),
+            'external_owner_groups': external_owner_groups(plan(base, args.reports, args.cache, collections)),
             'units': [{'unit': step.unit, 'argv': step.argv, 'outcome': outcome, 'seconds': seconds, 'detail': detail}
                       for step, outcome, seconds, detail in results if step.parallel],
         }

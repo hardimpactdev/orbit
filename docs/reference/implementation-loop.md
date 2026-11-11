@@ -355,13 +355,21 @@ Per host concurrency: the reusable workflow uses one repository-wide concurrency
 
 GitHub does not guarantee host placement or reserve capacity against other workflows or task VMs. Its [concurrency queue](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency) uses `queue: max`: up to one hundred pending runs can wait; additions beyond that fail. These limits trade throughput across PRs for a bounded host load without runner changes.
 
-Long container, migration and Instance-host fixture files are split at scenario boundaries. The ACL fixtures own a separate command and deadline. Each case retains its assertions, reruns and cleanup. Instance-host commands receive an explicit eleven-minute deadline at launch, replacing an inherited deadline. The eight-minute playbook guard is capped by the remaining command time. File isolates share that command deadline. A single file outside the gate also defaults to eleven minutes.
+Every source `*_test.ts` and `*_test.py` under `swamp/` must have exactly one verified owner. Ordinary new files, including nested Python and bin tests, join the shape shards automatically. The audit excludes generated dependencies (`.swamp`, `node_modules`, `.git`). It fails by file name when an owner is absent, duplicated, or fails to select the file.
 
-Cleanup and output collection take at most five more seconds. Budgets remain 480 seconds per playbook, capped by the command's remaining 660 seconds. A split file starts with its own allowance, so earlier scenarios cannot exhaust it.
+| External group | Verified owner |
+| --- | --- |
+| Operations tests | `Swamp Deno tests` job (`tests`), `Run Operations unit tests`: `deno test --parallel -A extensions/behaviors/operations` |
+| Enrollment trust and exporter firewall | `Swamp workflow validate` job (`validate`), gate steps `node enrollment trust` and `exporter firewall` |
+| Host services | None excluded; the mocked native-host test runs in the shape shards |
 
-The timing data records measured Beast command times, with three gate workers and at most one supplemental command. New commands pause above load 12. Forecast CI time as local time times 2.1. Rebalance after adding or expanding fixtures; an unmeasured file's one-second discovery weight does not size its work. The measured layout forecasts about seventeen minutes per shard, including setup, below the unchanged thirty-minute job cap.
+The audit checks the workflow job, its command and selection condition, the validation gate steps, and the changed-file CI selection for each externally owned file. Shard reports include these verified groups.
 
-A stalled Instance-host command has at most `660 + 5` seconds from its launch. Adding that entire allowance to the seventeen-minute forecast gives `1020 + 665 = 1685` seconds (28m05s). This conservative estimate counts the command's normal time too. Queue time and unrelated runner saturation remain outside the forecast.
+Long container, migration and Instance-host fixture files are split at scenario boundaries. ACL fixtures own a separate command. Budgets remain main's 240 seconds per Instance-host playbook and 720 seconds per fixture command. Every independent shape command, including container and migration commands, receives the same 720-second deadline. File isolates share their command deadline; the playbook guard is capped by the remaining command time.
+
+Each shard has an enforced 24-minute deadline, starting before CI checkout and tool setup. Tool installation and commands share the remaining time. On expiry the gate stops launching work, fails each unfinished unit by name, cleans up process descendants, and writes its report. The unchanged 30-minute job cap leaves six minutes for cleanup and artifact upload. The workflow always uploads the report.
+
+Timing data records measured Beast command times, with at most four workers. New commands pause above load 12. Forecast CI time as local time times 2.1. Split any command whose forecast exceeds 720 seconds; rebalance shards below their 24-minute deadline. An unmeasured file's one-second discovery weight does not size its work.
 
 A Python child subreaper owns each playbook from launch. Detached workers and orphans reparent to it. On deadline it sends TERM to its children, waits one second, then repeatedly kills and reaps children, including those adopted during cleanup. Signals use pidfds. Output collection also has a deadline. A timeout fails the case with the captured output, including its last task.
 
@@ -371,7 +379,7 @@ The shape checker resolves a constant quoted CEL child-workflow name and scans t
 
 A task VM holds the same environment in `/opt/orbit-shape-gate`. The task VM role playbook builds it for the pins of its release. The script uses it when its name matches the pins, so the check runs offline.
 
-Workflow validation needs a Swamp account and reads only `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`. Without them, the script skips the workflow validation, the Node enrollment trust test (it imports the extensions that validation pulls) and the grant pattern check (it also needs PHP). It names each skipped step and still exits 0. `--only validate` exits 78 then, which the candidate gate reads as skipped. CI passes `--strict`: a skipped step is a failure there.
+Workflow validation needs a Swamp account and reads only `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`. Without them, the script skips the workflow validation, the Node enrollment trust and exporter firewall tests (they import the extensions that validation pulls) and the grant pattern check (it also needs PHP). It names each skipped step and still exits 0. `--only validate` exits 78 then, which the candidate gate reads as skipped. CI passes `--strict`: a skipped step is a failure there.
 
 CI gives the credentials to this one step on pull requests, on main pushes, on the nightly schedule and on the push of a `task-*-handoff` branch by the Orbit App (`orbit-nckrtl[bot]`), so a task handoff that changes `swamp/` can pass hosted CI. It never gives them on `pull_request_target` or to a fork. Decided by the orchestrator, for Nick's review: the push of a handoff branch by the App.
 

@@ -8,4 +8,3 @@ Deno.test("retention keeps real Git edge cases intact", () => {
   }).outputSync();
   assert(done.success, new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr));
 });
-

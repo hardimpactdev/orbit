@@ -145,7 +145,7 @@ def swamp_inputs(path):
         if (relative.startswith(('workflows/', 'extensions/', 'models/'))
                 or relative.startswith('config/') and not relative.startswith('config/swamp-shape')
                 or relative.startswith(('bin/validate-swamp-workflows', 'bin/check-grant-patterns', 'bin/lint-workflow-placement'))
-                or relative == 'tests/node_add_bootstrap_test.ts'):
+                or relative in ('tests/node_add_bootstrap_test.ts', 'tests/metrics_exporter_firewall_test.ts')):
             checks.add('validate')
         # Operation tests parse workflows, grants, manifests and Ansible assets; they also import
         # maintenance helpers, native test support and the YAML analyser. Keep those transitive inputs.

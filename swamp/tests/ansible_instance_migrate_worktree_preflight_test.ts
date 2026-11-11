@@ -50,4 +50,3 @@ for (const common of [false, true]) {
     },
   });
 }
-

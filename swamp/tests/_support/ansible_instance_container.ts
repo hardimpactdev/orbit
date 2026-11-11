@@ -183,4 +183,3 @@ export const paused = {
 export const environments = JSON.stringify({ "/etc/orbit/processes/41/abc.env": "# Orbit Process 41\nQUEUE=\"high\"\n" });
 export const restarts = (state: { systemctl?: string[][] }) =>
   (state.systemctl ?? []).filter((call) => call[0] === "restart").map((call) => call.slice(2));
-

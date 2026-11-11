@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { evaluate, python } from "./swamp-liveness_fixture_test.ts";
+import { evaluate, python } from "./swamp-liveness_fixture.ts";
 
 Deno.test("malformed probe responses are refused", async () => {
     const result = await python(`

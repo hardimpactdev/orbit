@@ -39,4 +39,3 @@ for (const blocker of ["changes", "worktree", "commits", "stashes"] as const) {
     },
   });
 }
-

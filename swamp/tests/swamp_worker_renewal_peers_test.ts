@@ -92,4 +92,3 @@ test("does not recover a down unit without two serving peers", async (f) => {
   f.start();
   assertEquals(await f.result(false), []);
 });
-
