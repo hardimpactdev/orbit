@@ -67,8 +67,7 @@ final readonly class AdmitFleetRebootAction
         $taskHosts = [];
         foreach ($members as $node) {
             $intent = $this->reboot->node($node);
-            // A busy task host is only read, so its due time is known, and then waits; its work is not held off.
-            $intent['defer'] = $intent['task_project'] !== null ? $this->reboot->busy($node) : null;
+            // Deferred Nodes are only read; their work stays unlocked.
             $nodes[(string) $node->id] = $intent;
             $order[] = $node->id;
             if ($intent['task_project'] !== null && $intent['defer'] === null) {

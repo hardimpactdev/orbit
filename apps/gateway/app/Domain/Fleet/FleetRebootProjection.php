@@ -52,7 +52,9 @@ final readonly class FleetRebootProjection implements DirectOperationProjection
         $nodes = [];
         foreach (ValidatedData::integerList($intent['order'] ?? []) as $id) {
             // A Node the pass did not reach, after a failed Node or a cut run, has no record.
-            $nodes[] = $byNode[$id] ?? ['node_id' => $id, 'outcome' => 'skipped', 'reason' => 'not_reached'];
+            // The admitted reason also shows the hold when the run never reached this Node.
+            $nodes[] = [...($byNode[$id] ?? ['node_id' => $id, 'outcome' => 'skipped', 'reason' => 'not_reached']),
+                'reboot_hold' => ($intent['nodes'][(string) $id]['defer'] ?? null) === 'operator_hold'];
         }
         $failed = array_find($nodes, static fn (array $node): bool => ($node['outcome'] ?? null) === 'failed');
         $result = ['nodes' => $nodes, ...($failed !== null ? ['error_code' => is_string($failed['error_code'] ?? null) ? $failed['error_code'] : 'fleet.reboot_failed'] : [])];

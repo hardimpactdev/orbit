@@ -31,6 +31,7 @@ The human table uses [shared list formatting](/reference/cli-ux#results) and sho
 | Cluster | Cluster name. |
 | WireGuard | Recorded WireGuard address. |
 | LAN | Recorded LAN address. |
+| Reboot hold | `yes` when [fleet reboot](/reference/gateway-recovery#fleet-reboot) is held for the Node; otherwise `no`. JSON uses `reboot_hold`. |
 
 JSON returns `nodes` and `request_id`. Each Node keeps its IDs, recorded addresses, agent state, `roles` names and Node-level `failed_step` and `error_code`. It also includes `cluster_name` alongside `cluster_id`, and `assignments`.
 

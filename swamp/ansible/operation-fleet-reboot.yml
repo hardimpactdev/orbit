@@ -44,7 +44,12 @@
         - name: Record a Node after a failed one
           ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
           vars:
-            record_update: { node_id: "{{ target.node_id }}", name: "{{ target.name }}", outcome: skipped, reason: halted }
+            record_update:
+              node_id: "{{ target.node_id }}"
+              name: "{{ target.name }}"
+              outcome: skipped
+              reason: halted
+              reboot_hold: "{{ target.defer == 'operator_hold' }}"
           when: halted
         - name: End a Node after a failed one
           ansible.builtin.meta: end_host
@@ -57,6 +62,7 @@
             record_update:
               node_id: "{{ target.node_id }}"
               name: "{{ target.name }}"
+              reboot_hold: "{{ target.defer == 'operator_hold' }}"
               outcome: not_due
               kernel_before: "{{ boot.kernel }}"
           when: not boot.due
@@ -70,6 +76,7 @@
             record_update:
               node_id: "{{ target.node_id }}"
               name: "{{ target.name }}"
+              reboot_hold: "{{ target.defer == 'operator_hold' }}"
               kernel_before: "{{ boot.kernel }}"
               boot_id_before: "{{ boot.boot_id }}"
               due_since: "{{ boot.due_since }}"
@@ -84,8 +91,8 @@
           vars:
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
-        # A task host that admission found busy waits for the next night. So does a Node that cannot finish its drain, its guest
-        # stops and its reboot inside the window. An operator's pass is not bound to the window.
+        # A held Node or a busy task host waits for the next night. So does a Node that cannot finish its drain, guest stops
+        # and reboot inside the window. An operator's pass is not bound to the window.
         - name: Decide whether the Node waits
           ansible.builtin.set_fact:
             wait_reason: >-

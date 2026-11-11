@@ -321,3 +321,53 @@ Deno.test("the rerun posts re-run-failed-jobs once per due run, records it, and 
     const pass = workflow("operation-fleet-reboot").jobs.find((job: Record<string, unknown>) => job.name === "nodes").steps[0];
     assertEquals([pass.task.inputs.root_run, pass.task.inputs.ci], ["${{ run.id }}", "${{ inputs.intent.nodes[string(self.node)].ci_project != null }}"]);
 });
+
+
+for (const due of [true, false]) {
+    Deno.test(`a held ${due ? "due" : "not-due"} Node is read but never drained or rebooted`, async () => {
+        const folder = await Deno.makeTempDir();
+        try {
+            const record = `${folder}/result-000-9.json`;
+            const boot = { due, due_since: "2026-11-06T03:00:00Z", boot_id: "held-boot", kernel: "7.0.0-42-generic", failed_units: [] };
+            // Execute the real drain control flow and record writer. Replace host reads with fixed observations and
+            // every host writer with a failing sentinel: the fixture cannot drain or reboot this machine.
+            const tasks = drainBlock.map((original) => {
+                const task = structuredClone(original);
+                if (task.name === "Read the boot state") {
+                    return { name: task.name, "ansible.builtin.set_fact": { boot } };
+                }
+                if (task["ansible.builtin.import_tasks"]) {
+                    return { name: task.name, "ansible.builtin.fail": { msg: "Held Node reached a drain" }, when: task.when };
+                }
+                if (task["ansible.builtin.include_tasks"]) task["ansible.builtin.include_tasks"] = `${ansible}tasks/fleet-reboot-record.yml`;
+                return task;
+            });
+            const vars = { run: folder, record_path: record,
+                record: "{{ lookup('ansible.builtin.file', record_path, errors='ignore') | default('{}', true) | from_json }}",
+                halted: false, target: { node_id: 9, name: "held", defer: "operator_hold", ci_project: "orbit-ci", task_project: "orbit-tasks", gateway: {} },
+                intent: { window: { timezone: "Europe/Amsterdam", start: "03:00", end: "06:00", enforced: false }, drain_seconds: 900 } };
+            const drained = await play(folder, vars, tasks);
+            assertEquals(drained.code, 0, drained.output);
+            const saved = JSON.parse(await Deno.readTextFile(record));
+            assertEquals(saved.reboot_hold, true);
+            assertEquals(saved.outcome, due ? "deferred" : "not_due");
+            if (due) {
+                assertEquals([saved.reason, saved.boot_id_before, saved.kernel_before, saved.due_since],
+                    ["operator_hold", boot.boot_id, boot.kernel, boot.due_since]);
+            } else {
+                assertEquals(saved.reason, undefined);
+                assertEquals(saved.due_since, undefined);
+            }
+            for (const phase of ["Reboot the Node", "Check the Node"]) {
+                const phaseTasks = plays.find((p) => p.name === phase)!.tasks;
+                const guard = phaseTasks.find((t) => t.name === "Keep a decided Node")!;
+                const result = await play(folder, vars, [guard, { name: "Unexpected host work", "ansible.builtin.fail": { msg: phase } }]);
+                assertEquals(result.code, 0, result.output);
+            }
+            const repeated = await play(folder, vars, [plays.find((p) => p.name === "Drain the Node")!.tasks[0], ...tasks]);
+            assertEquals(repeated.code, 0, repeated.output);
+            assertEquals(/changed=[1-9]/.test(repeated.output), false);
+            assertEquals(JSON.parse(await Deno.readTextFile(record)), saved);
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    });
+}
