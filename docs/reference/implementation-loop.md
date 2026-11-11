@@ -8,7 +8,7 @@ covers:
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py},agent_command.py}
-  - .github/{ci/checks.toml,workflows/*.yml,actions/{php,ci-scope}/action.yml}
+  - .github/{ci/checks.toml,workflows/*.yml,actions/php/action.yml}
   - apps/gateway/{phpunit.xml,database/migrations/2026_12_04_000000_seed_schema_baseline_reference_rows.php,tests/Support/TestDatabaseEnvironment.php,tests/Support/TestDatabaseGuard.php,tests/Support/PythonPrograms.php,tests/Support/FixtureProcessRunner.php,tests/Support/GatewayReleaseFixture.php,tests/Support/TaskSchedulerTickFixtures.php,tests/Feature/Domain/TaskWorkspaceTmpdirTest.php,tests/Feature/Infrastructure/Instances/DevelopmentSourceRemovalCommandTest.php}
 ---
 
@@ -58,11 +58,11 @@ Pull requests and main pushes run the fast Swamp control checks. Full shape fixt
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint; run `bin/check-flows` on the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) |
 | Generated contracts | Check Operation kinds, their charts and workflow intent; generate OpenAPI, MCP tools and the web schema; check the recorded fixtures |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
-| Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
+| Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only and docs-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and on the three-hour schedule, run the Operation Deno tests, enforce static Swamp-shape controls and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Run the case runner unit tests and lint the proof programs with `ruff` |
 | CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. The blocking switches decide whether it gates Required checks; see [the proof run job](#the-proof-run-job) |
-| Required checks | Require selected builds, static checks and Pest suites. Shape contains static controls; proof follows the blocking switches. Only explicitly untouched jobs may skip |
+| Required checks | Require selected builds, static checks and Pest suites. Swamp contains static controls; proof follows the blocking switches. Only explicitly untouched jobs may skip |
 
 The Gateway Pest job installs Gateway and CLI dev Composer dependencies and regenerates both autoloaders with `composer install --no-scripts`. It then runs `bin/build-api` so tests read the current OpenAPI and MCP contracts; these generated outputs are not cached. NodeMetrics runs the CLI's PHP consent fixture. Separate vendor caches use each project's manifest and lockfile, PHP 8.5, the runner OS and SDK Composer metadata; they never restore the runtime-only Gateway cache.
 
@@ -86,7 +86,7 @@ The gate also runs the real Ansible readiness tasks against sockets, checking th
 
 The Swamp gate rejects a new behavior name that carries a run id. A task workflow names its local and data steps by the address of the task VM, as [Behavior names](/reference/tasks#behavior-names) says.
 
-The Swamp Deno test job uses `[self-hosted, orbit-shard]` when `ORBIT_SABRE_RUNNER=true` on main and same-repository pull requests. Fork pull requests and a false variable use `ubuntu-26.04`. Docs, web, contracts and workflow validation stay hosted. `tools/test_ci_runner_policy.py` pins this routing and the fork guard. Flip `ORBIT_SABRE_RUNNER` to `false` to roll back.
+The Swamp Deno test job runs on `ubuntu-26.04`. It uses the same hosted pool as the other pull request checks.
 
 Runner containers are unprivileged. Install or repair their toolchain with `tools/ci-runners/setup.sh container NAME` while idle; jobs verify the managed PHP build and use fake privileged boundaries. Ordinary Deno tests need no sudo or Docker daemon; real Docker proofs run only on disposable proof VMs.
 
@@ -104,25 +104,13 @@ The repository variables below show today's observed values. Their meaning and d
 | `ORBIT_PROOF_BLOCKING` | `false` |
 | `Start the CLI release` | Runs on main; [CLI binaries](/reference/cli-binaries) owns its condition |
 
-These job measurements are from the CI timing sample collected on 2026-11-10. They exclude queueing unless stated. A job with no selected work usually ends in about eight seconds. These are observed times, not time limits or guarantees.
+The plan job reads the checks table once. Selected jobs start after it; unselected jobs are skipped before a runner starts. A docs-only change starts three jobs: Select build inputs, Docs build and Required checks. Reusable workflows receive the plan's selection instead of calculating it again.
 
-| Selected job | Observed time | Dependency before it starts |
-| --- | --- | --- |
-| Select build inputs | About 19 s | None |
-| PHP syntax and Composer | 21–35 s | None |
-| Gateway static analysis, collection and kernel cases | 41–60 s | None |
-| CLI build, Linux / macOS target | 44–59 s / 45–52 s | None; separate parallel jobs |
-| CLI / PHP SDK / E2E static analysis | 29–37 s / 25–31 s / 23–40 s | None |
-| Docs build / Generated contracts / Web build | 34–53 s / 27–54 s / 33–56 s | None |
-| Pi check, test and build | 35–43 s | None |
-| Rust agent check and test | 107–124 s | None |
-| Proof harness | 34–43 s | None |
-| Swamp workflow validate / Deno tests | 33–45 s / 22–53 s | None |
-| Gateway Pest suite | 47 s–1 min 13 s on 2026-11-10 pull requests | Select build inputs |
-| Swamp shape gate | About 17–20 min in the slow sample; recent completed jobs took 13:28 and 21:47 | None; the shared self-hosted pool |
-| CI proof, when selected | 3.6–49 min in the sample | Select build inputs, then proof capacity and execution |
-| Gateway release inputs | About 3 s | Select build inputs |
-| Required checks | About 3 s for aggregation, plus any API wait | Its required dependencies |
+Every executable check job has a `timeout-minutes` equal to its table `ceiling`, rounded up to minutes. Plan, Gateway release inputs and CLI release dispatch have two-minute limits. Required checks has two minutes unless a selected pull-request proof is blocking; then it retains the proof's 195-minute wait budget. CI proof keeps its own 195-minute exception. Scheduled full fixtures keep their separate limit.
+
+`CiBudgetTest` in `tools/test_ci_table.py` follows the reusable workflows from `ci.yml`. It rejects a pull request job without a timeout or table entry, a timeout above four minutes or different from the ceiling, and a dependency other than the plan. It names the non-check jobs explicitly. Only Required checks, CLI release dispatch and CI proof may have other dependencies; proof is the only long-running exception on the pull request path.
+
+Required checks has static dependencies on the selected checks, including Swamp. It accepts success or an unselected skip and checks that the plan's boolean selection keys exactly match its dependencies. Its API wait covers only blocking proof. The two proof switches retain their meaning.
 
 Full shape fixtures are over budget and disabled on pull requests and main pushes. Their scheduled and manual runs report failures without blocking merge or deploy. The fast control job keeps the shape baseline, frozen-base policy, behavior names and frozen agent contract checks. Restore PR fixtures only as measured selections of touched cases within the five-minute budget.
 
@@ -187,17 +175,15 @@ Two checks guard the flow charts. Generated contracts requires a chart or a `doc
 
 Swamp workflow validation uses the dedicated `orbit-monorepo-ci` collective token with only `extensions:read`. Validation keeps its read-only key and signed sign-in proof on pull requests and pushes to main. Shape and ordinary Operation test jobs receive no secret environment.
 
-CI uses `pull_request_target` only in the label workflow `proof-outside.yml`, which checks out one script from the base branch and passes only a commit SHA to Orbit ([the proof CI](/reference/feature-flow#the-proof-ci)). The runtime and local extension tree remain pinned. Validation, placement and Operation tests remain required, including when authentication is absent or refused. Full shape fixtures never gate Required checks; the existing switches apply to static shape controls and proof. No personal key or initial-import validation exception is used.
+CI uses `pull_request_target` only in the label workflow `proof-outside.yml`, which checks out one script from the base branch and passes only a commit SHA to Orbit ([the proof CI](/reference/feature-flow#the-proof-ci)). The runtime and local extension tree remain pinned. Validation, placement and Operation tests remain required, including when authentication is absent or refused. Full shape fixtures never gate Required checks; the existing switches apply to proof. No personal key or initial-import validation exception is used.
 
-Build jobs, including Swamp validation, shape and unit tests, start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Each uses the same `bin/ci-build-plan` policy.
-
-The three Swamp subjobs read their own selections. `Required checks` reads their results through the Actions API so it can require validation and Deno tests without waiting for shape when [slow checks are non-blocking](/reference/command-development-pipeline#capacity-ideal-state).
+The plan passes three booleans and the resolved comparison base to the Swamp workflow. Each selected subjob starts directly, and Required checks requires the reusable call's result as a static dependency.
 
 On a push to `main`, the `Start the CLI release` job runs after `Required checks` passes and dispatches `Orbit CLI Release` for the commit, regardless of `ORBIT_SLOW_CHECKS_BLOCKING`. The release does not wait for the rest of the run. A later release run from CI completion changes nothing when the release already exists with the expected commit and assets. See [published releases](/reference/cli-binaries#published-releases).
 
-Known documentation, contract-generation and proof tools select only their consumers. The planner fixture job always runs. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
+Known documentation, contract-generation and proof tools select only their consumers. The plan job always runs. The plan, PHP syntax, Docs and Swamp shape jobs keep full history for their comparisons. The plan resolves the initial import's retained comparison source before shape checks run current and frozen rules. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
-When the table selects the Rust check, CI runs `cargo check --locked --all-targets` and `scripts/check-crates test --locked`, including composed extension crates, within a 15-minute job budget. When it selects Pi, CI runs its check, tests and build within an eight-minute job budget. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
+When the table selects the Rust check, CI runs `cargo check --locked --all-targets` and `scripts/check-crates test --locked`, including composed extension crates, within its four-minute table ceiling. When it selects Pi, CI runs its check, tests and build within its two-minute table ceiling. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
 
 Installed Gateway runtime and CLI build dependencies use lock-based caches. Composer install and its current lifecycle scripts always rerun, including contract generation and autoload discovery. Download caches restore across lockfile changes. Source, generated contracts and release binaries are never restored as dependency caches.

@@ -2,7 +2,7 @@
 # ** crosses directories; * and ? stay within one name (selection_regex).
 # Costs are pull_request median wall seconds from ci-speed.md (2026-11-11).
 # swamp and swamp-shape use the current static control median, not retired fixtures.
-# Ceilings are declarations for the next workflow migration; this PR changes no timeout.
+# Each executable check uses ceiling seconds rounded up to minutes as its job timeout.
 
 [all-checks]
 # Changes to the check machinery run each check job once, without an agent delivery.

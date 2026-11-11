@@ -19,6 +19,16 @@ class BuildPlanTest(unittest.TestCase):
     def selected(self, paths, main=False):
         return {k for k, v in plan.select(paths, main)['jobs'].items() if v}
 
+    def test_docs_only_starts_only_plan_docs_and_required_but_main_keeps_release_inputs(self):
+        for path in ('docs/reference/tasks.md', 'README.md', '.agents/skills/example/SKILL.md'):
+            with self.subTest(path=path):
+                result = plan.select([path])
+                self.assertEqual({'docs'}, {name for name, selected in result['jobs'].items() if selected})
+                self.assertFalse(result['gateway_release'])
+                self.assertFalse(result['proof_run'])
+                self.assertTrue(plan.select([path], main=True)['gateway_release'])
+        self.assertTrue(plan.select(['docs/reference/tasks.md', 'apps/gateway/app/Thing.php'])['gateway_release'])
+
     def test_project_check_is_not_selected_by_ci(self):
         for paths in ([], ['README.md'], ['swamp/workflows/x.yaml'], ['apps/gateway/app/Thing.php']):
             self.assertNotIn('project-check', plan.select(paths)['jobs'], paths)
