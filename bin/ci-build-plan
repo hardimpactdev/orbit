@@ -199,7 +199,7 @@ def swamp_comparison_base(base, head):
 
 
 def changed_inputs(base, head):
-    """Select changes introduced by head, excluding commits only on the base branch."""
+    """Select head's changes; the checkout must contain both refs and their common ancestry."""
     ancestor = subprocess.check_output(['git', 'merge-base', base, head], text=True, timeout=60).strip()
     paths = subprocess.check_output(['git', 'diff', '--name-only', '--no-renames', '-z', ancestor, head],
                                     text=True, timeout=60).rstrip('\0').split('\0')
@@ -227,7 +227,7 @@ def main():
         if os.environ.get('GITHUB_STEP_SUMMARY'):
             with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as summary:
                 summary.write('### Unclaimed CI inputs\n\n' + '\n'.join(f'- {line}' for line in lines) + '\n')
-    # Build jobs may use a shallow checkout. Only the full-history changes job needs the case plan.
+    # The full-history plan job supplies one comparison for builds, fixtures and proof.
     if a.proof_cases:
         def read(ref, path):
             process = subprocess.run(['timeout', '60', 'git', 'show', f'{base if ref == "base" else a.head}:{path}'], capture_output=True, text=True)

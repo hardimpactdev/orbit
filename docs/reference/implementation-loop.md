@@ -106,7 +106,7 @@ The repository variables below show today's observed values. Their meaning and d
 
 The plan job reads the checks table once. Selected jobs start after it; unselected jobs are skipped before a runner starts. A docs-only change starts three jobs: Select build inputs, Docs build and Required checks. Reusable workflows receive the plan's selection instead of calculating it again.
 
-Build, fixture and proof selection compare the candidate with its merge base against the supplied base commit. Commits added only to main after a pull request branches do not select checks for that pull request. For an ordinary main push, the previous main commit is the merge base, so selection covers the pushed changes.
+Build, fixture and proof selection compare the candidate with its merge base against the supplied base commit. Selection requires both commits and their common ancestry; the plan job checks out full history. Commits added only to main after a pull request branches do not select checks for that pull request. For an ordinary main push, the previous main commit is the merge base, so selection covers the pushed changes.
 
 Every executable check job has a `timeout-minutes` equal to its table `ceiling`, rounded up to minutes. Plan, Gateway release inputs and CLI release dispatch have two-minute limits. Required checks has two minutes unless a selected pull-request proof is blocking; then it retains the proof's 195-minute wait budget. CI proof keeps its own 195-minute exception. Scheduled full fixtures keep their separate limit.
 
