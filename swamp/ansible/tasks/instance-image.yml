@@ -5,25 +5,35 @@
 # images it replaced go. The build container reaches the internet as every container does, through the egress proxy that the profile
 # names for `incus exec` (tasks/instance-egress.yml), and it takes the bridge's last address, which no Instance gets.
 - name: Read the Instance images
+  environment: &image_local
+    INCUS_REMOTE: local
+    INCUS_SOCKET: "{{ container_image_socket }}"
   ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", image, list, --format, json] }
   register: image_list
   changed_when: false
 
 - name: Build the image
+  environment: *image_local
   when: instances.image.alias not in (image_list.stdout | from_json | map(attribute='aliases') | flatten | map(attribute='name') | list)
   vars:
     build: orbit-instance-build
     in_build: [incus, exec, --project, "{{ instances.project }}", orbit-instance-build, --env, DEBIAN_FRONTEND=noninteractive, --]
   block:
-    - name: Remove a build container a failed run left
-      ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", delete, --force, "--", "{{ build }}"] }
+    - name: Read existing prepared-image builders
+      ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances?project={{ instances.project }}&recursion=1"] }
       register: image_leftover
       changed_when: false
-      failed_when: image_leftover.rc != 0 and 'not found' not in image_leftover.stderr
+    - name: Refuse a prior prepared-image builder
+      ansible.builtin.assert:
+        that: build not in (image_leftover.stdout | from_json | map(attribute='name') | list)
+        fail_msg: >-
+          instance.host_unavailable: instance {{ instances.project }}/{{ build }} requires an operator;
+          see /solutions/incus-shared-image-refresh#operator-cleanup
     - name: Create the build container
       ansible.builtin.command:
         argv: [incus, --project, "{{ instances.project }}", init, "{{ instances.stock }}", "{{ build }}",
                --config, security.idmap.isolated=true, --device, "eth0,ipv4.address={{ instances.build_address }}"]
+      register: image_created
       changed_when: true
     - name: Read the build container's effective devices
       ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances/{{ build }}?project={{ instances.project }}"] }
@@ -100,30 +110,22 @@
       changed_when: true
   always:
     - name: Remove the build container
+      when: image_created is defined and image_created.rc == 0
       ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", delete, --force, "--", "{{ build }}"] }
       register: image_removed
       changed_when: false
       failed_when: image_removed.rc != 0 and 'not found' not in image_removed.stderr
 
 - name: Read the Instance images after the build
+  environment: *image_local
   ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", image, list, --format, json] }
   register: image_built
   changed_when: false
 
-- name: Select the image, the image of the stable alias, and the images the new one replaced
+- name: Select the image and the image of the stable alias
   ansible.builtin.set_fact:
     image_current: "{{ image_of[instances.image.alias] }}"
     image_stable: "{{ image_of['orbit-instance'] | default('') }}"
-    # An image whose every alias is an older digest alias or the stable alias, which moves to the new image first.
-    # A container keeps what it was made from; only the image record goes.
-    image_retired: >-
-      {%- set out = [] -%}
-      {%- for image in image_built.stdout | from_json if image.aliases and image_of[instances.image.alias] != image.fingerprint -%}
-        {%- if image.aliases | map(attribute='name') | reject('match', '^orbit-instance(-[0-9a-f]{12})?$') | list | length == 0 -%}
-          {%- set _ = out.append(image.fingerprint) -%}
-        {%- endif -%}
-      {%- endfor -%}
-      {{ out }}
   vars:
     image_of: >-
       {%- set out = {} -%}
@@ -133,12 +135,10 @@
       {{ out }}
 
 - name: Point the stable alias at the image
+  environment: *image_local
   when: image_stable != image_current
-  ansible.builtin.command: { argv: "{{ ['incus', '--project', instances.project, 'image', 'alias'] + item }}" }
-  loop: "{{ ([['delete', 'orbit-instance']] if image_stable != '' else []) + [['create', 'orbit-instance', image_current]] }}"
-  changed_when: true
-
-- name: Remove the images the new one replaced
-  ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", image, delete, "{{ item }}"] }
-  loop: "{{ image_retired }}"
+  ansible.builtin.command:
+    argv: [incus, query, --request, "{{ 'PUT' if image_stable != '' else 'POST' }}", --data,
+           "{{ ({'target': image_current} if image_stable != '' else {'name': 'orbit-instance', 'target': image_current}) | to_json }}",
+           --, "/1.0/images/aliases{{ '/orbit-instance' if image_stable != '' else '' }}?project={{ instances.project }}"]
   changed_when: true

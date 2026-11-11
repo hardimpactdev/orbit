@@ -22,7 +22,8 @@ Deno.writeTextFileSync(`${folder}/targets`, JSON.stringify({
   args, remote: Boolean(remote), configRemote, socket: Deno.env.get("INCUS_SOCKET") ?? "",
 }) + "\n", { append: true });
 const projectIndex = args.indexOf("--project");
-const project = projectIndex >= 0 ? args[projectIndex + 1] : "default";
+const project = projectIndex >= 0 ? args[projectIndex + 1]
+  : (args[0] === "query" ? new URLSearchParams(args.at(-1)?.split("?")[1]).get("project") : null) ?? "default";
 if (projectIndex >= 0) args.splice(projectIndex, 2);
 const [family, action, name] = args;
 const owned = (image: {project?: string; fingerprint: string}) => image.project === undefined || image.project === project;
@@ -109,7 +110,7 @@ if (family === "query") {
   if (path === "/1.0") {
     console.log(
       JSON.stringify({
-        environment: { server_version: state.server_version ?? "7.0.1", server_pid: state.cli_server_pid ?? Number(Deno.readTextFileSync(`${folder}/daemon.pid`)) },
+        environment: { server_version: state.server_version ?? "7.0.1", server_name: state.server_name ?? "fixture-node", server_pid: state.cli_server_pid ?? Number(Deno.readTextFileSync(`${folder}/daemon.pid`)) },
       }),
     );
   } else if (resource === "images") {
@@ -210,6 +211,7 @@ if (family === "query") {
   });
 } else if (family === "image" && action === "alias") {
   const [, , verb, alias, fingerprint] = args;
+  if (verb === "create" && state.images.filter(owned).some((image: {aliases: {name: string}[]}) => image.aliases.some((a) => a.name === alias))) fail("Image alias already exists");
   for (const image of state.images.filter(owned)) {
     image.aliases = image.aliases.filter((a: { name: string }) =>
       a.name !== alias
@@ -219,6 +221,16 @@ if (family === "query") {
     state.images.find((i: { fingerprint: string }) =>
       owned(i) && i.fingerprint === fingerprint
     ).aliases.push({ name: alias });
+  }
+} else if (family === "image" && ["set-property", "unset-property"].includes(action)) {
+  const image = state.images.find((row: {fingerprint: string}) => owned(row) && row.fingerprint === name);
+  if (!image) fail("Image not found");
+  image.properties ??= {};
+  for (const arg of args.slice(3)) {
+    if (action === "set-property") {
+      const [key, value] = pair(arg);
+      image.properties[key] = value;
+    } else delete image.properties[arg];
   }
 } else if (family === "image" && action === "delete") {
   if (state.delete_failure === name) fail("Injected image deletion failure");

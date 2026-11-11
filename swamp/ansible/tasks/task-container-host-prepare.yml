@@ -220,18 +220,27 @@
 # isolated container, started once, must have written under 8 MiB. The probe leaves nothing behind, so it reports no change.
 - name: Prove that a copy is a clone
   when: container_host.probe
+  environment:
+    INCUS_REMOTE: local
+    INCUS_SOCKET: "{{ container_image_socket }}"
   vars:
     probe: [incus, --project, "{{ container_host.project }}"]
     probe_names: [orbit-clone-probe, orbit-clone-probe-copy]
   block:
-    - name: Remove a leftover clone probe
-      ansible.builtin.command: { argv: "{{ probe + ['delete', '--force', '--', item] }}" }
-      loop: "{{ probe_names }}"
-      register: container_probe_leftover
+    - name: Read existing clone probes
+      ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances?project={{ container_host.project }}&recursion=1"] }
+      register: container_probe_existing
       changed_when: false
-      failed_when: container_probe_leftover.rc != 0 and 'not found' not in container_probe_leftover.stderr
+    - name: Refuse a prior clone probe
+      ansible.builtin.assert:
+        that: item not in (container_probe_existing.stdout | from_json | map(attribute='name') | list)
+        fail_msg: >-
+          {{ container_host.fail }}: instance {{ container_host.project }}/{{ item }} requires an operator;
+          see /solutions/incus-shared-image-refresh#operator-cleanup
+      loop: "{{ probe_names }}"
     - name: Make the clone probe and its copy
       ansible.builtin.command: { argv: "{{ probe + item }}" }
+      register: container_probe_created
       loop:
         - [init, "{{ container_host.alias }}", orbit-clone-probe, --config, security.idmap.isolated=true]
         - [copy, orbit-clone-probe, orbit-clone-probe-copy]
@@ -273,7 +282,9 @@
   always:
     - name: Remove the clone probe
       ansible.builtin.command: { argv: "{{ probe + ['delete', '--force', '--', item] }}" }
-      loop: "{{ probe_names | reverse | list }}"
+      loop: >-
+        {{ (container_probe_created.results | default([])) | selectattr('rc', 'defined') |
+           selectattr('rc', 'equalto', 0) | map(attribute='item.2') | reverse | list }}
       register: container_probe_removed
       changed_when: false
       failed_when: container_probe_removed.rc != 0 and 'not found' not in container_probe_removed.stderr

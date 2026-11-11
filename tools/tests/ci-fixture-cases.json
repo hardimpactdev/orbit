@@ -142,15 +142,17 @@
     ]
   },
   "swamp/tests/ansible_instance_host_image_test.ts": {
-    "source_sha256": "8d8240927e179b84fd363cccd150735eb8d6f36cd3ce3ecf7c264af88959bd74",
+    "source_sha256": "9aaf5d30dca8e87b4bc1c04ab8603062408b4532ba3b061ede626216ebd5f3bc",
     "cases": [
-      "a new image definition is built, takes the stable alias and replaces the old image",
+      "a new image definition takes the stable alias while retaining the old image",
       "a Node without its Instance pool is refused before anything changes",
       "a directory pool skips the clone probe: a copy there is a full copy",
       "an image that keeps a sudo path is never published",
       "orbit-instance-build refuses an inherited unguarded profile NIC before starting",
       "orbit-clone-probe-copy refuses an inherited unguarded profile NIC before starting",
-      "prepared publication clears inherited stock build ownership"
+      "prepared publication clears inherited stock build ownership",
+      "the full prepared-image replacement and failure cleanup use the verified local socket despite the default remote",
+      "a prior prepared-image builder is refused by exact name and recipe without deletion"
     ]
   },
   "swamp/tests/ansible_instance_host_runtime_test.ts": {
@@ -805,7 +807,7 @@
     ]
   },
   "swamp/tests/ansible_task_container_host_prepare_test.ts": {
-    "source_sha256": "e7d15cfb6778a93628a3205d579a4decbe5143c50b57bca142497ba2579fa006",
+    "source_sha256": "052d163d2e8e6289815ac39ea8b23be50272e848d4478e66a63622db7e02bc6b",
     "cases": [
       "a container host gets its kernel side, bridge, project and clone check beside the VM side, then changes nothing",
       "the container bridge gets DHCP and DNS input rules under its own catalog names",
@@ -813,32 +815,27 @@
       "a host without Incus installs the recipe's pinned packages, fetched by digest",
       "a container host is refused before its container side changes: another Incus line, SCTP, subordinate IDs, a taken bridge",
       "a copy that Incus shifted fails the phase and leaves no probe",
-      "a clone probe that a failed run left is removed before the next probe",
+      "a prior clone probe refuses with its exact name and recipe instead of being deleted",
       "a container host on a native pool gets the ARC cap now and after reboot, and keeps it when containers go",
       "the container rule never raises a cap the host already runs",
       "an Incus package removed with its config files left counts as missing and is installed",
-      "stock publication owns an independent archive and a healthy repeat changes nothing",
-      "stock migration preserves other projects, prepared images and existing containers",
-      "a missing owned stock archive is rebuilt in the daemon directory",
-      "a different socket daemon refuses archive inspection and image deletion",
-      "unreadable daemon environment refuses before image mutation",
-      "publication with a missing archive fails and removes its temporary container",
-      "failed stock alias assignment leaves a marked orphan that the next converge removes",
-      "failed old stock deletion retains its retirement marker until a later converge",
-      "stock cleanup preserves the selected image when promotion did not happen",
-      "healthy stock reconciles interrupted builders and shared cache without touching unrelated records",
-      "duplicate publication refuses adoption and preserves the selected stock alias",
-      "a dangling shared upstream cache fails closed without deleting another project",
-      "stock recovery refuses a foreign builder without changing its resources",
-      "stock recovery refuses a foreign candidate without changing its resources",
-      "stock recovery refuses a foreign retirement without changing its resources",
-      "stock recovery refuses a foreign selected without changing its resources",
-      "stock recovery preserves unrelated aliases on owned candidates and retired images",
-      "stock replacement preserves unrelated aliases on the owned selected image",
-      "a shared upstream fingerprint alone never authorizes cache cleanup",
-      "stock image commands bind the local socket when the default remote has the same PID",
-      "stock recovery refuses an owned builder with an invalid native source fingerprint",
-      "failed publication cleanup refuses a builder whose ownership changed"
+      "fresh stock publication is independent and a healthy repeat retains all caches without changes",
+      "a prior builder refuses with exact resource and recipe even with copied stock properties",
+      "a prior candidate refuses with exact resource and recipe even with copied stock properties",
+      "a prior retirement refuses with exact resource and recipe even with copied stock properties",
+      "a prior unaliased publication refuses with exact resource and recipe even with copied stock properties",
+      "unmarked selected stock refuses with its full fingerprint and adoption recipe",
+      "replacement refuses an old selected record without a retention alias and never deletes it",
+      "a copied stock statement on a healthy selected image never licenses any deletion",
+      "a failed current publication removes only its current builder and leaves the exact interrupted image for operator cleanup",
+      "a missing current publication archive fails without deleting any image or cache",
+      "stock daemon identity refuses socket_server_pid mismatch before mutation",
+      "stock daemon identity refuses cli_server_pid mismatch before mutation",
+      "stock image commands use the approved local socket despite a same-PID default remote",
+      "the explicit fingerprint adoption recipe snapshots and retains legacy stock before one property set and ordinary convergence",
+      "the adoption recipe refuses mismatched approval tuples or existing metadata without mutation",
+      "the adoption recipe refuses interrupted resources and preserves every unrelated alias",
+      "explicit adoption can restore its saved metadata before or after replacement while retaining both images"
     ]
   },
   "swamp/tests/ansible_task_host_firewall_remove_test.ts": {

@@ -17,9 +17,9 @@ The container-host phase publishes its own stock image from a stopped temporary 
 
 The phase selects the static local target, verifies the daemon and its archive directory, and binds stock, prepared-image and clone-probe commands to that socket. The client's default remote cannot receive their reads, writes or cleanup.
 
-A healthy stock image has the selected alias, the matching `user.orbit.stock-build` statement, no update source or auto-update, and an archive. That statement permits the healthy check; it never licenses deletion. An unmarked selected image refuses with its full fingerprint and a link to the adoption recipe below.
+When the selected stock image is healthy, it has the matching `user.orbit.stock-build` statement, no update source or auto-update, and an archive. That statement permits the healthy check; it never licenses deletion. An unmarked selected image refuses with its full fingerprint and a link to the adoption recipe below.
 
-An absent alias requires publication from a stopped `orbit-stock-build` container. An adopted upstream image can be replaced only while another alias retains its old record. Publication uses `orbit-stock-candidate`; the selected alias moves only after the new fingerprint and archive pass verification. The old image and all upstream caches remain. Prepared-image replacement also retains previous images.
+An absent alias requires publication from a stopped `orbit-stock-build` container. An adopted upstream image can be replaced only while another alias retains its old record. Publication uses `orbit-stock-candidate`; the selected alias moves only after the new fingerprint and archive pass verification. The old image and all upstream caches remain. The phase also keeps each prepared image that it replaces.
 
 Cleanup removes only temporary containers and aliases successfully created in the same invocation. A prior builder, candidate or retirement alias, or an unaliased marked publication, refuses with the exact resource and this recipe. No converge automatically recovers or deletes prior leftovers, even when their properties match. A failed publication can leave an image requiring separately authorized operator cleanup.
 
@@ -33,7 +33,10 @@ Drain existing host-image writers and prevent new admissions throughout adoption
 
 The recipe verifies all inputs before writing. It snapshots the image metadata and aliases, creates the approved retention alias without replacement, and makes exactly one native property update on the full fingerprint. Incus's native `image set-property` merges that property into the existing writable metadata and uses its ETag. A failure stops; it does not retry or perform rollback automatically.
 
-<!-- stock-image-adoption -->
+### Adoption recipe
+
+Run this recipe only with the approved tuple and writer drain described above.
+
 ```python
 import json
 import os

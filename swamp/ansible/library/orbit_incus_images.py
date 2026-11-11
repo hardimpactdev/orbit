@@ -1,5 +1,5 @@
 #!/usr/bin/python
-"""Publish an independent stock image and reconcile its owned records."""
+"""Publish independent stock and refuse resources left by prior invocations."""
 
 import json
 import os
@@ -10,10 +10,10 @@ from urllib.parse import quote
 
 DOCUMENTATION = r'''
 module: orbit_incus_images
-short_description: Reconcile an independently published stock container image
+short_description: Publish an independent stock container image
 version_added: "1.0.0"
 description:
-  - Publish stock without an upstream update source and reconcile owned leftovers.
+  - Publish stock without an upstream update source; never clean prior resources.
   - No installed Ansible module publishes Incus containers and reconciles their image aliases.
 options:
   project:
@@ -79,114 +79,82 @@ class Images:
     def named(images, alias):
         return next((image for image in images if any(a['name'] == alias for a in image['aliases'])), None)
 
-    def require_owned(self, properties):
-        if properties.get('user.orbit.stock-build') != self.module.params['alias']:
-            raise ImageError('cannot prove stock ownership of a reserved resource')
+    def refuse(self, resource, *, adoption=False):
+        section = 'adopt-a-pinned-legacy-stock-image' if adoption else 'operator-cleanup'
+        raise ImageError(f'{resource} requires an operator; see /solutions/incus-shared-image-refresh#{section}')
 
-    def builder(self):
-        rows = self.query('/1.0/instances?recursion=1')
-        build = next((row for row in rows if row['name'] == 'orbit-stock-build'), None)
-        if build:
-            config = build.get('config', {})
-            self.require_owned(config)
-            source = config.get('volatile.base_image')
-            if not isinstance(source, str) or not re.fullmatch('[0-9a-f]{64}', source):
-                raise ImageError('cannot prove stock ownership without the native source fingerprint')
-        return build
-
-    def remove_build(self):
-        if self.builder():
-            self.run(['delete', '--force', '--', 'orbit-stock-build'], change=True)
-
-    def remove_named(self, alias):
-        image = self.named(self.images(), alias)
-        if image:
-            self.require_owned(image.get('properties', {}))
-            if len(image['aliases']) > 1:
-                self.run(['image', 'alias', 'delete', alias], change=True)
-            else:
-                self.run(['image', 'delete', image['fingerprint']], change=True)
-
-    def promote(self, alias, fingerprint, images):
-        selected = self.named(images, alias)
-        target = next(image for image in images if image['fingerprint'] == fingerprint)
-        self.require_owned(target.get('properties', {}))
-        if selected:
-            self.require_owned(selected.get('properties', {}))
-        if selected and selected['fingerprint'] == fingerprint:
-            return
-        path = '/1.0/images/aliases'
-        if selected:
-            self.query(path + '/' + quote(alias, safe=''), method='PUT', body={'target': fingerprint})
-        else:
-            self.query(path, method='POST', body={'name': alias, 'target': fingerprint})
-        self.changed = True
-
-    def leftovers(self, alias, known_sources=()):
-        build = self.builder()
-        sources = set(known_sources)
-        if build:
-            sources.add(build.get('config', {}).get('volatile.base_image'))
-        images = self.images()
-        for name in [alias, 'orbit-stock-retiring', 'orbit-stock-candidate']:
-            image = self.named(images, name)
-            if image:
-                self.require_owned(image.get('properties', {}))
-        self.remove_named('orbit-stock-retiring')
-        self.remove_named('orbit-stock-candidate')
-        for image in self.images():
-            if not image['aliases'] and image.get('properties', {}).get('user.orbit.stock-build') == alias:
-                self.require_owned(image['properties'])
-                self.run(['image', 'delete', image['fingerprint']], change=True)
-        for image in self.images():
-            if (image.get('cached') and image.get('update_source') and not image['aliases']
-                    and image['fingerprint'] in sources):
-                self.run(['image', 'delete', image['fingerprint']], change=True)
-        if build:
-            self.remove_build()
-
-    @staticmethod
-    def archive_exists(path):
+    def archive_exists(self, path):
         try:
             mode = path.stat().st_mode
         except FileNotFoundError:
             return False
         if not stat.S_ISREG(mode):
-            raise ImageError('image archive is not a regular file')
+            self.refuse(f'image archive {path} is not a regular file')
         return True
 
     def stock(self):
         alias = self.module.params['alias']
         archives = Path(self.module.params['archive_directory'])
         if not archives.is_dir() or not os.access(archives, os.R_OK | os.X_OK):
-            raise ImageError('cannot read the image archive directory')
-        self.leftovers(alias)
+            self.refuse(f'archive directory {archives}')
+        instances = self.query('/1.0/instances?recursion=1')
+        if any(row['name'] == 'orbit-stock-build' for row in instances):
+            self.refuse(f'instance {self.project}/orbit-stock-build')
         images = self.images()
+        for name in ['orbit-stock-candidate', 'orbit-stock-retiring']:
+            image = self.named(images, name)
+            if image:
+                self.refuse(f'alias {self.project}/{name}, image {image["fingerprint"]}')
+        for image in images:
+            if not image['aliases'] and image.get('properties', {}).get('user.orbit.stock-build') == alias:
+                self.refuse(f'interrupted image {self.project}/{image["fingerprint"]}')
         old = self.named(images, alias)
         if old:
-            self.require_owned(old.get('properties', {}))
-        if not old or old.get('update_source') or not self.archive_exists(archives / old['fingerprint']):
-            try:
-                self.run(['init', 'images:ubuntu/26.04/cloud', 'orbit-stock-build',
-                          '--config', 'security.idmap.isolated=true',
-                          '--config', 'user.orbit.stock-build=' + alias], change=True)
-                source = self.builder()['config']['volatile.base_image']
-                self.run(['publish', 'orbit-stock-build', '--alias', 'orbit-stock-candidate',
-                          'user.orbit.stock-build=' + alias], change=True)
-                images = self.images()
-                built = self.named(images, 'orbit-stock-candidate')
-                if (not built or not re.fullmatch('[0-9a-f]{64}', source) or built['fingerprint'] == source
-                        or built.get('update_source') or built['auto_update']):
-                    raise ImageError('stock publication did not produce an independent image')
-                self.require_owned(built.get('properties', {}))
-                if not self.archive_exists(archives / built['fingerprint']):
-                    raise ImageError('published stock archive is missing')
-                if old and old['fingerprint'] != built['fingerprint']:
-                    self.promote('orbit-stock-retiring', old['fingerprint'], images)
-                self.promote(alias, built['fingerprint'], images)
-                self.leftovers(alias, [source])
-            finally:
-                self.remove_build()
+            if old.get('properties', {}).get('user.orbit.stock-build') != alias:
+                self.refuse(f'unmarked selected image {self.project}/{old["fingerprint"]}, alias {alias}', adoption=True)
+            if not old.get('update_source') and not old['auto_update'] and self.archive_exists(archives / old['fingerprint']):
+                return
+            if len(old['aliases']) < 2:
+                self.refuse(f'selected image {self.project}/{old["fingerprint"]} needs a retention alias')
+        created_build = False
+        try:
+            self.run(['init', 'images:ubuntu/26.04/cloud', 'orbit-stock-build',
+                      '--config', 'security.idmap.isolated=true',
+                      '--config', 'user.orbit.stock-build=' + alias], change=True)
+            created_build = True
+            source = self.query('/1.0/instances/orbit-stock-build')['config']['volatile.base_image']
+            if not isinstance(source, str) or not re.fullmatch('[0-9a-f]{64}', source):
+                self.refuse(f'instance {self.project}/orbit-stock-build has an invalid source')
+            self.run(['publish', 'orbit-stock-build', '--alias', 'orbit-stock-candidate',
+                      'user.orbit.stock-build=' + alias], change=True)
+            built = self.named(self.images(), 'orbit-stock-candidate')
+            if not built:
+                self.refuse(f'publication alias {self.project}/orbit-stock-candidate')
+            fingerprint = built['fingerprint']
+            if (fingerprint in {image['fingerprint'] for image in images} or fingerprint == source
+                    or built.get('update_source') or built['auto_update']):
+                self.refuse(f'publication image {self.project}/{fingerprint} is not independent')
+            if not self.archive_exists(archives / fingerprint):
+                self.refuse(f'publication image {self.project}/{fingerprint} archive is missing')
+            path = '/1.0/images/aliases'
+            if old:
+                self.query(path + '/' + quote(alias, safe=''), method='PUT', body={'target': fingerprint})
+            else:
+                self.query(path, method='POST', body={'name': alias, 'target': fingerprint})
+            self.changed = True
+            # Native publish succeeded and created this alias in this invocation.
+            self.run(['image', 'alias', 'delete', 'orbit-stock-candidate'], change=True)
+        except ImageError as error:
+            raise ImageError(f'{error}; inspect instance {self.project}/orbit-stock-build '
+                             f'and publication {self.project}/orbit-stock-candidate; '
+                             'see /solutions/incus-shared-image-refresh#operator-cleanup') from error
+        finally:
+            # No property or pre-existing name grants cleanup authority.
+            if created_build:
+                try:
+                    self.run(['delete', '--force', '--', 'orbit-stock-build'], change=True)
+                except ImageError:
+                    self.refuse(f'cleanup of current instance {self.project}/orbit-stock-build')
 
 
 def main():
