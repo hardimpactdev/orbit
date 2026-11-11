@@ -700,6 +700,8 @@ Each phase keeps its Ansible JSON callback report private. Before the child ends
 
 If the root run ends before reporting any Node records, the Gateway cannot tell which Nodes were attempted: every Node records `unknown` with `run_interrupted`. Missing records without an earlier recorded halt also stay unknown. Unknown outcomes make the pass fail and raise `reboot_halted` once. Without a recorded Node failure, its error code is `fleet.reboot_interrupted`. Only missing Nodes after a recorded halt use `skipped` with `not_reached`.
 
+An `unknown` Node reports uncertainty; it does not recover a drain the pass may have started. The Gateway has no record of what that Node stopped, so it does not mark its stopped task guests `parked`: their task VMs stay `ready` while the guests are down. CI runners stopped before an interrupted reboot can stay stopped. A swamp Node that scheduled its own reboot gets no 30-minute boot confirmation, because that check reads only `scheduled`. After an interrupted pass, an operator reconciles each `unknown` Node by hand: start its stopped task guests or mark them parked, start stopped runners, and check the swamp Node's boot.
+
 Only the initial boot-state reads before any Node change retry SSH connection failures (exit 255). They get seven retries after the first attempt, with a 10-second connect timeout and one OpenSSH connection attempt per try. Ansible supplies the pauses: 0, 1, 3, 7, 15, 30 and 30 seconds. Eight timed-out attempts take at most 166 seconds per SSH invocation before process overhead. This covers a two-minute uplink outage, stays within the existing 2,400-second drain phase and leaves room for the 900-second drain and six 75-second guest stops.
 
 The phase timeouts remain the hard bounds. The window check runs after the read, so connection retries cannot make a Node start draining after the window's cutoff.
@@ -718,9 +720,9 @@ Then the phase drains the Node:
 
 On a CI runner host, the phase drains the runners every 20 seconds, for at most the drain budget. It freezes each runner container and reads the container's processes from the host. It stops a container that runs no `Runner.Worker` and records the runner with the time of its freeze. A runner with a job runs on, and so does a job on a runner of the host itself. When a job still runs at the end, the stopped runners start again, and the Node records `deferred` with `ci_busy`.
 
-On a task host, the phase stops each running task guest cleanly, within a minute, and records its name at once. The Gateway records those task VMs `parked`, and the next task call wakes them.
+On a task host, the phase stops each running task guest cleanly, within a minute, and records its name at once. When the pass reports that record, the Gateway records those task VMs `parked`, and the next task call wakes them.
 
-After the hold and window checks, the phase writes `drain_started` to the Node's run-folder record before the first CI, task guest or Gateway stop. Rescue runs undo only when this marker exists. If writing it fails, nothing has stopped yet and undo is skipped. Once a drain begins, failure keeps the existing recovery: start the Gateway scheduler and Horizon, and start every runner from the initial running inventory that is now stopped. Recovery does not depend on later record writes or on reading the stopped-runner list. Stopped task guests stay parked.
+After the hold and window checks, the phase writes `drain_started` to the Node's run-folder record before the first CI, task guest or Gateway stop. Rescue runs undo only when this marker exists. If writing it fails, nothing has stopped yet and undo is skipped. Once a drain begins, a failure that the Node's own rescue catches keeps the existing recovery: start the Gateway scheduler and Horizon, and start every runner from the initial running inventory that is now stopped. Recovery does not depend on later record writes or on reading the stopped-runner list. Stopped task guests stay parked.
 
 On the Gateway Node, the phase stops the scheduler. Then it stops Horizon, which drains on stop, within the drain budget. The reboot ends what is left.
 
