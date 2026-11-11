@@ -1,9 +1,17 @@
 ---
 title: "orbit process:list"
 sidebarTitle: "process:list"
+covers:
+  - apps/gateway/app/Actions/Processes/ListProcessesAction.php
+  - apps/gateway/app/Http/Controllers/Api/ProcessesController.php
+  - apps/gateway/app/Http/Requests/Processes/ListProcessesRequest.php
 description: "List the Processes of one Instance or Node with their desired and observed states, `keep_alive`, and `restart_on_deploy`, or the definitions of one Project."
 ---
 
 ```bash
 orbit process:list (--instance=ID | --node=ID-or-name | --project=ID) [--json]
 ```
+
+The API also accepts `GET /api/v1/processes` without `target_type` or `target_id`. It returns only Processes on Nodes the caller may reach. This includes Node-owned Processes and Processes owned by an Instance on those Nodes. A caller with [Gateway authority](/cli/node#authority) receives the fleet-wide list. A caller without Gateway authority or any Node grant receives `node_access.required`.
+
+A targeted list and a Process log read require access to the owning Node.
