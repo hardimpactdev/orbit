@@ -22,8 +22,8 @@ def steps(only=None):
 
 class WorkflowCallsTheScriptTest(unittest.TestCase):
     def test_both_jobs_call_the_script_and_keep_no_inline_steps(self):
-        shape = WORKFLOW.split('  shape:', 1)[1].split('  fixtures:', 1)[0]
-        validate = WORKFLOW.split('  validate:', 1)[1].split('  tests:', 1)[0]
+        shape = WORKFLOW.split('\n  shape:', 1)[1].split('  fixtures:', 1)[0]
+        validate = WORKFLOW.split('\n  validate:', 1)[1].split('\n  tests:', 1)[0]
         self.assertIn('python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only control --strict --base "$SHAPE_BASE" --reports "$RUNNER_TEMP"', shape)
         self.assertIn('python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only validate --strict', validate)
         for inline in ('pip install', 'ansible-lint', 'check-swamp-shape.ts', 'check-swamp-base-policy.py', 'deno test',
@@ -38,7 +38,7 @@ class WorkflowCallsTheScriptTest(unittest.TestCase):
             self.assertIn('${{ runner.temp }}/' + report, WORKFLOW)
 
     def test_full_fixtures_are_only_manual_or_scheduled_and_do_not_use_beast(self):
-        fixtures = WORKFLOW.split('  fixtures:', 1)[1].split('  validate:', 1)[0]
+        fixtures = WORKFLOW.split('  fixtures:', 1)[1].split('\n  validate:', 1)[0]
         self.assertIn("if: ${{ !inputs.changed-only && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}", fixtures)
         self.assertIn('runs-on: ubuntu-26.04', fixtures)
         self.assertIn('cancel-in-progress: true', fixtures)

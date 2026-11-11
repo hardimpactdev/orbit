@@ -8,6 +8,15 @@ on:
       changed-only:
         type: boolean
         default: false
+      shape:
+        type: boolean
+        default: true
+      validate:
+        type: boolean
+        default: true
+      tests:
+        type: boolean
+        default: true
       base-ref:
         type: string
         default: ""
@@ -28,9 +37,10 @@ concurrency:
 jobs:
   shape:
     name: Swamp shape gate
+    if: ${{ !inputs.changed-only || inputs.shape }}
     # Static controls stay on; slow fixtures have a separate manual/scheduled job.
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 2
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || 'swamp' }}
@@ -39,29 +49,20 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./.github/actions/ci-scope
-        if: inputs.changed-only
-        id: scope
-        with:
-          job: swamp-shape
-          swamp-base: 'true'
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
           deno-version: v2.9.8
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
           python-version: "3.13"
       # One script holds the steps, their order and the pinned linters (swamp/ansible/shape-gate-requirements.txt),
       # so a local run before a push checks what this job checks.
       - name: Run the shape gate
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
-          SHAPE_BASE: ${{ steps.scope.outputs.swamp-base-ref || inputs.base-ref || github.event.pull_request.base.sha || github.event.before }}
+          SHAPE_BASE: ${{ inputs.base-ref || github.event.pull_request.base.sha || github.event.before }}
         run: python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only control --strict --base "$SHAPE_BASE" --reports "$RUNNER_TEMP"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: ${{ always() && (!inputs.changed-only || steps.scope.outputs.selected == 'true') }}
+        if: always()
         with:
           name: swamp-shape-metrics
           path: ${{ runner.temp }}/shape.json
@@ -104,8 +105,9 @@ jobs:
 
   validate:
     name: Swamp workflow validate
+    if: ${{ !inputs.changed-only || inputs.validate }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 20
+    timeout-minutes: 2
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || 'swamp' }}
@@ -115,35 +117,26 @@ jobs:
           persist-credentials: false
       # Runs only when the change selects Swamp, so a pull request without Swamp inputs needs no Swamp credential;
       # Dependabot pull requests get no Actions secrets. The scheduled run validates everything.
-      - uses: ./.github/actions/ci-scope
-        id: scope
-        with:
-          job: swamp-validate
-          enabled: ${{ github.event_name != 'schedule' }}
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
-        if: steps.scope.outputs.selected == 'true'
         with:
           deno-version: v2.9.8
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        if: steps.scope.outputs.selected == 'true'
         with:
           path: ~/.cache/orbit-shape-runtime
           key: shape-runtime-${{ runner.os }}-${{ hashFiles('swamp/extensions/behaviors/node-worker/config.ts') }}
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
-        if: steps.scope.outputs.selected == 'true'
         with:
           php-version: "8.5"
           coverage: none
       # Validates every workflow, the first-contact enrollment trust, the Gateway-rendered release grants with the pinned
       # serve check-config, and placement. Local runs skip the steps that need a Swamp credential; this job never does.
       - name: Run the Swamp workflow validation
-        if: steps.scope.outputs.selected == 'true'
         env:
           SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
           SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only validate --strict --cache "$HOME/.cache/orbit-shape-runtime" --reports "$RUNNER_TEMP"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: ${{ always() && steps.scope.outputs.selected == 'true' }}
+        if: always()
         with:
           name: swamp-workflow-validation
           path: |
@@ -152,7 +145,9 @@ jobs:
 
   tests:
     name: Swamp Deno tests
-    runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","orbit-shard"]') || 'ubuntu-26.04' }}
+    if: ${{ !inputs.changed-only || inputs.tests }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 2
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || 'swamp' }}
@@ -160,27 +155,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/ci-scope
-        if: inputs.changed-only
-        id: scope
-        with:
-          job: swamp-tests
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
-        if: ${{ runner.environment != 'self-hosted' && (!inputs.changed-only || steps.scope.outputs.selected == 'true') }}
         with:
           deno-version: v2.9.8
           cache: true
       - uses: ./.github/actions/php
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
           coverage: none
       - name: Verify disposable effect prerequisites
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |
           # shellcheck disable=SC2016
           php -r 'foreach (["mysql", "pgsql", "sqlite"] as $driver) { if (!in_array($driver, PDO::getAvailableDrivers(), true)) { exit(1); } }'
       - name: Run Operations unit tests
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
           DENO_JOBS: "4"
         run: deno test --parallel -A extensions/behaviors/operations
