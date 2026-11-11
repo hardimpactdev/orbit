@@ -2,15 +2,24 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
+use App\Domain\Routes\NativeRouteConvergenceProjection;
+use App\Domain\Routes\RoutePublicationSites;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Operations\PromoteRouteWrites;
+use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Project;
+use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -314,4 +323,98 @@ it('renews a step hold that is asked for again after a lost answer, even while a
     expect($waiter->refresh()->status)->toBe(OperationStatus::Waiting)
         ->and($holds->holdStep($provision, 0))->toBe([5])
         ->and(DB::table('route_publication_holds')->where('operation_id', $provision->id)->value('lease_until'))->toBeGreaterThan(now()->addSeconds(200)->toDateTimeString());
+});
+
+it('renders both sites when a queued create gains the Node after another create completes', function (string $kind, bool $container): void {
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast', 'status' => 'active',
+        'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.7', 'public_ssh_host' => '10.44.0.7', 'user' => 'orbit']));
+    $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    if ($container) {
+        app(AllocateInstanceBridgeAction::class)->execute($node);
+    }
+    $project = Project::query()->create(['name' => 'bench', 'slug' => 'bench', 'type' => 'laravel-app',
+        'repository_url' => 'https://github.com/laravel/laravel.git', 'default_branch' => 'main', 'root' => 'public', 'php_version' => '8.5']);
+    $admit = function (string $name, string $kind) use ($node, $project, $container): array {
+        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name,
+            'checkout_path' => '/apps/bench/'.$name, 'status' => 'source_resolved', 'selected_php_version' => '8.5']);
+        if ($container) {
+            InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => 'orbit-instances',
+                'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.'.($instance->id + 1), 'runtime_version' => 'runtime', 'agent_version' => 'agent',
+                'power_state' => 'stopped', 't3_port' => 3800 + $instance->id]);
+        }
+        $route = Route::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'domain' => $name.'.bench.test',
+            'kind' => 'app', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+        $candidate = clone $route;
+        $candidate->forceFill(['status' => 'active', 'sites_published' => true]);
+        $sites = app(DevelopmentSiteRepository::class)->routeSites($candidate);
+        $render = app(RoutePublicationSites::class)->render(collect($sites),
+            fn () => app(NodeCaddyfileRenderer::class)->render($node));
+        expect($render->buildable())->toBeTrue();
+        $plan = ['route_id' => $route->id, 'domain' => $route->domain, 'caddy' => [['node_id' => $node->id, 'content' => $render->content]],
+            'ingress' => [], 'leaves' => [['node_id' => $node->id, 'scope' => 'app-instance-'.$instance->id,
+                'directory' => '/etc/caddy/orbit-certificates/app-instance-'.$instance->id.'/versions/admitted-version']], 'leaf_indexes' => [0]];
+        $operation = routeWrite([$node->id], $kind);
+        $operation->update(['target_type' => $kind === 'route.create' ? 'route' : 'instance',
+            'target_id' => $kind === 'route.create' ? $route->id : $instance->id,
+            'input' => [...$operation->input, 'route_id' => $route->id, 'instance_id' => $instance->id, 'project_id' => $project->id,
+                'route_lifecycle' => [...$operation->input['route_lifecycle'], 'effectful' => true, 'public_activated' => false],
+                'route_create' => $plan, 'direct_provisioning' => ['route' => $plan], 'certificates' => $plan['leaves']]]);
+
+        return [$operation, $route, $instance];
+    };
+    [$first, $firstRoute, $firstInstance] = $admit('first', 'route.create');
+    [$second, $secondRoute] = $admit('second', $kind);
+    $input = $second->input;
+    if ($kind === 'instance.create') {
+        Instance::query()->findOrFail($second->target_id)->update(['status' => 'reserved']);
+    }
+    $holds = app(RoutePublicationHolds::class);
+    expect($holds->admit($first))->toBeTrue()->and($holds->admit($second))->toBeFalse();
+    expect($second->refresh()->status)->toBe(OperationStatus::Waiting)
+        ->and($second->state['swamp_run_id'] ?? null)->toBeNull()
+        ->and($second->input['route_create']['caddy'][0]['content'])->not->toContain('https://first.bench.test');
+    $started = startedOperations();
+    $first->update(['state' => ['swamp_run_id' => 'first-run']]);
+    app(NativeRouteConvergenceProjection::class)->apply($first,
+        ['run_id' => 'first-run', 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => []]);
+    $firstInstance->update(['status' => 'active']);
+    expect($firstRoute->refresh()->sites_published)->toBeTrue();
+    $holds->promoteAndStart();
+
+    $second->refresh();
+    expect($started->getArrayCopy())->toBe([$second->id])
+        ->and($second->input['route_create']['caddy'][0]['content'])->toContain('https://first.bench.test', 'https://second.bench.test')
+        ->and($second->input['direct_provisioning']['route'])->toBe($second->input['route_create'])
+        ->and($second->input['route_create']['leaves'])->toBe($input['route_create']['leaves'])
+        ->and($second->input['certificates'])->toBe($input['certificates'])
+        ->and($second->input['route_id'])->toBe($secondRoute->id)
+        ->and($second->input['instance_id'])->toBe($input['instance_id']);
+    if ($container) {
+        expect($second->input['route_create']['caddy'][0]['content'])->toContain('reverse_proxy 10.253.0.2:8080', 'reverse_proxy 10.253.0.3:8080', 'https://first.bench.test:444', 'https://second.bench.test:444');
+    }
+})->with([
+    'container create' => ['instance.create', true],
+    'checkout create' => ['instance.create', false],
+    'clone' => ['instance.clone', false],
+    'Route create' => ['route.create', false],
+]);
+
+it('fails a promoted create and releases its Nodes if its admitted Route can no longer be rendered', function (): void {
+    $holds = app(RoutePublicationHolds::class);
+    $first = routeWrite([5]);
+    $second = routeWrite([5], 'instance.create');
+    $second->update(['input' => [...$second->input, 'route_create' => ['route_id' => 987654, 'caddy' => [], 'ingress' => []]]]);
+    $holds->admit($first);
+    $holds->admit($second);
+    $started = startedOperations();
+
+    finish($first);
+    $holds->promoteAndStart();
+
+    expect($second->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($second->error_code)->toBe('caddy.render_failed')
+        ->and($second->state['swamp_run_id'] ?? null)->toBeNull()
+        ->and(holder(5))->toBeNull()
+        ->and($started->getArrayCopy())->toBe([]);
 });

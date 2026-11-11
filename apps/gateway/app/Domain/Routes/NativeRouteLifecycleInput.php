@@ -56,20 +56,7 @@ final readonly class NativeRouteLifecycleInput
                 $prior['url_writes'][] = ['node_id' => $target->instance->node_id, ...$write];
             }
         }
-        $candidate = clone $route;
-        $candidate->forceFill(['status' => $removing ? RouteStatus::Retiring : RouteStatus::Active, 'sites_published' => ! $removing,
-            'replacement_step' => $metadata['public_activated'] ? RouteReplacementStep::Cleanup : null]);
-        if ($preparedWorkloads && ! $removing) {
-            $candidate->setRelation('targets', $route->targets->map(static function (RouteTarget $target): RouteTarget {
-                $copy = clone $target;
-                $instance = clone $target->instance;
-                if (in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true)) {
-                    $instance->status = InstanceState::SourceResolved;
-                }
-
-                return $copy->setRelation('instance', $instance);
-            }));
-        }
+        $candidate = $this->candidate($route, $removing, $preparedWorkloads, $metadata['public_activated']);
         $desired = $removing ? [] : [$this->mutations->route($candidate, [$route->id => $candidate], urlsOnly: $preserveEnvironment)];
         if ($removing) {
             // The empty desired Route still carries URL selection from the remaining stored Routes.
@@ -160,5 +147,26 @@ final readonly class NativeRouteLifecycleInput
 
         return ['intent' => $intent,
             'certificates' => $capture['certificates'], 'participant_node_ids' => $capture['participant_node_ids'], 'execution_secrets' => $capture['execution_secrets']];
+    }
+
+    /** The prospective Route and workload states used by both admission and a promoted create's fresh render. */
+    public function candidate(Route $route, bool $removing, bool $preparedWorkloads, bool $publicActivated): Route
+    {
+        $candidate = clone $route;
+        $candidate->forceFill(['status' => $removing ? RouteStatus::Retiring : RouteStatus::Active, 'sites_published' => ! $removing,
+            'replacement_step' => $publicActivated ? RouteReplacementStep::Cleanup : null]);
+        if ($preparedWorkloads && ! $removing) {
+            $candidate->setRelation('targets', $route->targets->map(static function (RouteTarget $target): RouteTarget {
+                $copy = clone $target;
+                $instance = clone $target->instance;
+                if (in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true)) {
+                    $instance->status = InstanceState::SourceResolved;
+                }
+
+                return $copy->setRelation('instance', $instance);
+            }));
+        }
+
+        return $candidate;
     }
 }

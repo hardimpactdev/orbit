@@ -411,7 +411,7 @@ final readonly class InstanceContainer
             # Managed by Orbit.
             [Unit]
             Description=FrankenPHP
-            After=network-online.target
+            After=network.target
 
             [Service]
             Type=simple

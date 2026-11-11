@@ -141,3 +141,16 @@ Deno.test("symlink refusals keep every path and target and the preflight flag in
     const late = result(defaultIntent, { ...moved, files: "failed", retire: "skipped", restore: "succeeded" }, workspace, null, { ...failure, preflight_refused: false });
     assertEquals([late.error_code, late.error_message, late.preflight_refused], [failure.error_code, error_message, undefined]);
 });
+
+for (const status of ["pending", "unknown"]) {
+    Deno.test(`retirement ${status} does not claim the container moved`, () => {
+        const phases = { ...moved, processes: "failed", seed: "skipped", route: "skipped", retire: status, restore: "succeeded" };
+        const receipt = result(defaultIntent, phases, workspace, null, null);
+        assertEquals([receipt.moved, receipt.restored, receipt.ready], [false, true, false]);
+    });
+    Deno.test(`Route restoration ${status} does not prove the checkout restored`, () => {
+        const phases = { ...moved, route: "failed", retire: "skipped", restore_route: status, restore: "succeeded" };
+        const receipt = result(defaultIntent, phases, workspace, null, null);
+        assertEquals([receipt.moved, receipt.restored, receipt.ready], [false, false, false]);
+    });
+}

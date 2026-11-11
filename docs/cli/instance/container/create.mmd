@@ -67,6 +67,7 @@ sequenceDiagram
     %%> - writes `/etc/orbit/instance`, owned by root and readable by all
     %%> What it does:
     %%> - writes the shared FrankenPHP Caddyfile and unit, then restarts it as `orbit`; only the Node's bridge peer with `X-Forwarded-Proto: https` sets PHP's HTTPS scheme, port and resolved client IP
+  %%> - starts use nonblocking systemd jobs, then a bounded readiness check for each running unit; container Process units order after `network.target`
     SW->>C: Start T3<br/>native clone-t3
     %%> What it does:
     %%> - T3 starts for the first time and creates its identity; the T3 project `/srv/workspace` is added as `agent`

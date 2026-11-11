@@ -4,8 +4,8 @@ description: "ADR 0250, partly built: every Instance runs in an Incus container 
 covers:
   - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress}.php
-  - apps/gateway/app/Domain/Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php
-  - apps/gateway/database/migrations/2027_02_04_000000_add_seed_commit_to_instance_runtimes.php
+  - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
+  - apps/gateway/database/migrations/2027_02_04_{000000_add_seed_commit_to_instance_runtimes,000002_add_operation_owner_to_instance_runtimes}.php
   - swamp/ansible/{instance-container.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network}.py}
   - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/{notes/**,frankenphp.Caddyfile}}
@@ -376,6 +376,8 @@ The first default Instance and its deployments are built for the Nodes of the [b
 
 #### Processes
 
+Container Process units order after `network.target`. They do not request `network-online.target`: the container network is configured before its Processes start. Orbit starts units without blocking and checks each unit within a bounded readiness wait.
+
 A container Instance's Processes come from the Project's development Process definitions, or from an existing checkout during [migration](#migrate-a-checkout-instance). Each one is a Process record and an `orbit-process-<id>-<name>.service` unit in the container, as the [Process lifecycle](/reference/processes-and-schedules) renders it for a Node, with these differences:
 
 | Part | In a container |
@@ -521,7 +523,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | SQLite | The file moves with the files. The Gateway drops the connection record of a SQLite file inside the checkout |
 | Route | The same Route, domain and certificate. One publication replaces the checkout's site and PHP-FPM pool with the container's site |
 
-The end of the move and its failure:
+The runtime reservation belongs to its admitting Operation. A late receipt cannot change a newer owner. Settlement reads private material before taking the Instance lock, then checks ownership and records the runtime and receipt atomically. An already-settled stale runtime is not repaired: inspections keep selecting it until a new migrate reuses and owns that reservation.
 
 | Part | What Orbit does |
 | --- | --- |
@@ -535,6 +537,8 @@ The end of the move and its failure:
 | Failure | Restore puts back a moved Route, then removes the container, its ACL, firewall rules and mirror |
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
 | After a failed restore | The reservation and deployment hold remain. Inspect the site and failed recovery step; deployments refuse with `instance.lifecycle_busy` until the move has run again |
+
+The whole-run budget is 5,100 seconds. A lower-bound test checks it against the declared phase and child timeouts, including restoration and cleanup, with 600 seconds of margin. A deadline or confirmed cancel still projects the native end state. A lost worker with no final result reports an unknown state and retains its reservation.
 
 Restore changes host Process states and the awake marker only when quiesce began. A target probe failure leaves both untouched.
 
@@ -815,6 +819,7 @@ Each Node records its Instance bridge, as [Nodes](#nodes) describes. Each contai
 | `bridge_address` | The container's address on its Node's bridge. It is a guest address: never the network, broadcast or first usable address, which the bridge keeps |
 | `t3_port` | The port of the Node's WireGuard address that publishes T3, from 3800 to 3999. The default Instance has none |
 | `runtime_version`, `agent_version` | The versions of the shared folders the container started with |
+| `operation_id` | The migrate Operation that owns this reservation. A new retry takes ownership before its run starts |
 | `clone_source_instance_id` | The default Instance it was cloned from. Null for the default Instance and for a migrated checkout |
 | `power_state` | `running` or `stopped`. A sleeping container is stopped |
 | `seed_commit` | A default Instance's commit of its newest `seed-<commit>` snapshot, which clones copy. Null before its first seed |

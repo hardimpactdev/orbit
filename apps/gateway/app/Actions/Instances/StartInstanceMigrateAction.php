@@ -7,6 +7,7 @@ namespace App\Actions\Instances;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\InstanceMigration\InstanceMigrationRoute;
 use App\Domain\Instances\ContainerNodes;
@@ -54,6 +55,12 @@ final readonly class StartInstanceMigrateAction
             return $replay;
         }
 
+        $previous = Operation::query()->where('kind', InstanceMigration::Kind)->where('target_type', 'instance')
+            ->where('target_id', $instance->id)->latest('id')->first();
+        if ($previous !== null) {
+            app(InstanceMigrateProjection::class)->settle($previous);
+        }
+
         return $this->admit($instance, $caller, $requestId);
     }
 
@@ -87,7 +94,7 @@ final readonly class StartInstanceMigrateAction
             $reach = array_map($this->endpoint(...), $databases['servers']);
             $publication = $route === null || $before === null ? null : $this->routes->capture($instance, $route, $runtime, $before);
 
-            return $this->operations->execute(InstanceMigration::Kind, 'instance', $instance->id, $node->id, [
+            $operation = $this->operations->execute(InstanceMigration::Kind, 'instance', $instance->id, $node->id, [
                 'instance_id' => $instance->id, 'project_id' => $instance->project_id, 'node_id' => $node->id,
                 'participant_node_ids' => array_values(array_unique([$node->id, ...($publication['participant_node_ids'] ?? [])])),
                 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($node),
@@ -102,6 +109,9 @@ final readonly class StartInstanceMigrateAction
                 ],
                 'container' => $container,
             ], $caller, $requestId);
+            $runtime->update(['operation_id' => $operation->id]);
+
+            return $operation;
         });
     }
 
