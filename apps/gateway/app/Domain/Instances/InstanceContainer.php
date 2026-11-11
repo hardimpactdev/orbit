@@ -183,7 +183,7 @@ final readonly class InstanceContainer
             'config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096'],
             'root_disk_pool' => InstanceHostIntent::Pool, 'root_disk_size' => '40GiB',
             'image' => self::Image, 'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
-            'acl' => $runtime->container_name,
+            'acl' => $runtime->container_name, 'nic_acl' => InstanceHostIntent::NicAcl,
             'bridge_cidr' => ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')),
             'bridge_admitted_at' => $admittedAt,
             'bridge_endpoints' => array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port'], 'docker' => $target['docker']], $access),

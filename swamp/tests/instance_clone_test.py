@@ -2,8 +2,11 @@
 
 import ast
 import contextlib
+import copy
 import io
 import json
+import os
+import pwd
 import runpy
 import subprocess
 import tempfile
@@ -12,9 +15,138 @@ from pathlib import Path
 from unittest.mock import patch
 
 SCRIPT = Path(__file__).parents[1] / "scripts/instance_clone.py"
+NETWORK_CHECK = SCRIPT.parents[1] / "ansible/instance_network.py"
 
 
 class CloneTest(unittest.TestCase):
+    def clone(self, damaged=None, nic_acl="orbitinst0-proxy"):
+        calls = []
+        real_run = subprocess.run
+        with tempfile.TemporaryDirectory() as folder:
+            container = {
+                "name": "instance-7",
+                "project": "orbit-instances",
+                "network": "orbitinst0",
+                "nic_acl": nic_acl,
+                "acl": "instance-7",
+                "acl_rules": {},
+                "address": "10.253.0.2",
+                "config": {},
+                "root_disk_pool": "orbit-instances",
+                "root_disk_size": "40GiB",
+                "processes": [],
+                "mirror": folder + "/mirror",
+                "protocols": ["https"],
+                "branch": "main",
+                "repository": "https://github.com/test/repo.git",
+                "clone": {
+                    "source": "instance-1",
+                    "snapshot": "seed",
+                    "t3": {"device": "t3"},
+                },
+            }
+            read = None
+
+            def command(argv, **kwargs):
+                nonlocal read
+                calls.append(argv)
+                if argv[:2] == ["python3", "-c"]:
+                    return real_run(argv, **kwargs)
+                output, status = "", 0
+                if argv[:2] == ["incus", "query"]:
+                    if "snapshots?" in argv[2]:
+                        output = json.dumps([{"name": "seed"}])
+                    elif "network-acls?" in argv[2] or "files?" in argv[2]:
+                        output = "[]"
+                    else:
+                        output, status = (json.dumps(read), 0) if read else ("", 1)
+                elif "copy" in argv:
+                    device = {"type": "nic", "network": "orbitinst0"}
+                    for arg in argv:
+                        if arg.startswith("eth0,"):
+                            key, value = arg[5:].split("=", 1)
+                            device[key] = value
+                    read = {
+                        "status": "Stopped",
+                        "devices": {"t3": {}},
+                        "expanded_devices": {"eth0": device},
+                        "config": {"volatile.uuid": "abc-123"},
+                    }
+                    if damaged:
+                        damaged(read)
+                return subprocess.CompletedProcess(argv, status, output, "")
+
+            output, error = io.StringIO(), io.StringIO()
+            with (
+                patch(
+                    "sys.argv",
+                    [
+                        str(SCRIPT),
+                        json.dumps(container),
+                        "guest",
+                        NETWORK_CHECK.read_text(),
+                        pwd.getpwuid(os.getuid()).pw_name,
+                        folder + "/private",
+                        "container",
+                    ],
+                ),
+                patch("sys.stdin", io.StringIO("PRIVATE-INPUT")),
+                patch("subprocess.run", command),
+                contextlib.redirect_stdout(output),
+                contextlib.redirect_stderr(error),
+            ):
+                try:
+                    runpy.run_path(str(SCRIPT), run_name="__main__")
+                except SystemExit as result:
+                    self.assertEqual(result.code, 1)
+            self.assertFalse(Path(folder + "/private/git-credential").exists())
+            return calls, read, error.getvalue()
+
+    def test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start(self):
+        calls, read, error = self.clone()
+        self.assertEqual(error, "")
+        nic = read["expanded_devices"]["eth0"]
+        self.assertEqual(nic["security.acls"], "orbitinst0-proxy,instance-7")
+        self.assertEqual(nic["security.acls.default.egress.action"], "reject")
+        self.assertEqual(nic["security.acls.default.ingress.action"], "reject")
+        start = ["incus", "--project", "orbit-instances", "start", "instance-7"]
+        self.assertIn(start, calls)
+        check = next(i for i, call in enumerate(calls) if call[:2] == ["python3", "-c"])
+        self.assertLess(check, calls.index(start))
+
+    def test_clone_uses_the_admitted_common_acl_name(self):
+        _, read, error = self.clone(nic_acl="admitted-proxy")
+        self.assertEqual(error, "")
+        self.assertEqual(
+            read["expanded_devices"]["eth0"]["security.acls"],
+            "admitted-proxy,instance-7",
+        )
+
+    def test_clone_refuses_unsafe_effective_nics_before_start(self):
+        safe_nic = {
+            "type": "nic",
+            "network": "orbitinst0",
+            "security.acls": "instance-7",
+            "security.acls.default.egress.action": "reject",
+        }
+        for damage in [
+            lambda read: read["expanded_devices"]["eth0"].update(
+                {"security.acls": " instance-7, orbitinst0-egress "}
+            ),
+            lambda read: read["expanded_devices"]["eth0"].update({"security.acls": ""}),
+            lambda read: read["expanded_devices"]["eth0"].update(
+                {"security.acls.default.egress.action": "allow"}
+            ),
+            lambda read: read["expanded_devices"].update(
+                {"eth1": copy.deepcopy(safe_nic)}
+            ),
+            lambda read: read["expanded_devices"].pop("eth0"),
+        ]:
+            with self.subTest(damage=damage):
+                calls, _, error = self.clone(damage)
+                self.assertEqual(error, "instance.container_network_unsafe\n")
+                self.assertFalse(any("start" in call for call in calls))
+
     def test_guest_and_node_command_names_stay_in_sync(self):
         def commands(path):
             tree = ast.parse(path.read_text())
@@ -55,6 +187,7 @@ class CloneTest(unittest.TestCase):
                         str(SCRIPT),
                         json.dumps(container),
                         "guest",
+                        NETWORK_CHECK.read_text(),
                         "agent",
                         folder,
                         phase,

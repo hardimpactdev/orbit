@@ -497,6 +497,7 @@ describe('the databases of a move', function (): void {
         $operation = migrateStart($default);
         $container = $operation->input['container'];
         $host = app(InstanceHostIntent::class)->for($node);
+        expect($container['nic_acl'])->toBe('orbitinst0-proxy')->and($host['nic_acl'])->toBe($container['nic_acl']);
         $network = [
             'acl_rules' => $container['acl_rules'],
             'firewall' => $container['firewall'],
