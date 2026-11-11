@@ -23,7 +23,7 @@ HOST_TOOL_LOCKS = {
 SAFE_REF = re.compile(r"(?:key|id|ref|name|hash|digest|public|field)s?$", re.I)
 
 
-def scan(source, gateway_primitives=(), context=None, phase_seconds=0, phase_ssh=False):
+def scan(source, gateway_primitives=(), context=None, phase_seconds=0, phase_ssh=False, bridge_context=None):
     findings = []
     try:
         tree = ast.parse(source)
@@ -96,7 +96,7 @@ def scan(source, gateway_primitives=(), context=None, phase_seconds=0, phase_ssh
         return None
 
     phase_controls = python_controls(tree, phase_seconds, bound, context, phase_ssh)
-    bridge_acquire, bridge_rejected = bridge_writer_transaction(tree, context or {})
+    bridge_acquire, bridge_rejected = bridge_writer_transaction(tree, bridge_context if bridge_context is not None else context or {})
     if bridge_rejected is not None:
         findings.append({"rule": "custom-control", "count": 1, "line": bridge_rejected.lineno})
 
@@ -218,6 +218,6 @@ if __name__ == "__main__":
                           for file, value in payload.items()}))
     elif len(sys.argv) > 2 and sys.argv[2] == "--source-context":
         payload = json.loads(payload)
-        print(json.dumps(scan(payload["source"], primitives, payload["sources"], payload.get("phase_seconds", 0), payload.get("phase_ssh", False))))
+        print(json.dumps(scan(payload["source"], primitives, payload["sources"], payload.get("phase_seconds", 0), payload.get("phase_ssh", False), payload.get("bridge_sources"))))
     else:
         print(json.dumps(scan(payload, primitives)))

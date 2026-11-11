@@ -206,12 +206,14 @@ import fcntl
 import json
 import subprocess
 import sys
+import tempfile
 import time
 from contextlib import contextmanager
 from pathlib import Path
 
 REFRESH_BUDGET_SECONDS = 30
 LIFECYCLE_BUDGET_SECONDS = 300
+CURL_TIMEOUT_SECONDS = 5
 
 
 class PolicyError(Exception):
@@ -242,15 +244,60 @@ def apply(root, incoming, reconcile=False, withdraw=False):
 
 def apply_locked(root, incoming, reconcile, withdraw, deadline):
     records = json.loads((root / 'endpoints.json').read_text())
-    subprocess.run(['curl', '--max-time', '5', 'http://localhost/1.0/network-acls/orbitinst0-egress'],
-                   input=json.dumps(records), timeout=deadline - time.monotonic(), check=True)
+    api('orbitinst0-egress', records, 'etag', deadline)
     write_file(root / 'endpoints.json', incoming)
     write_file(root / 'health.json', {'error_code': None})
     return 1
 
 
 def write_file(path, value):
-    path.write_text(json.dumps(value))
+    content = json.dumps(value, sort_keys=True) + '\n'
+    if path.exists() and path.read_text() == content:
+        return 0
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as stream:
+        stream.write(content)
+        temporary = Path(stream.name)
+    temporary.chmod(0o644)
+    temporary.replace(path)
+    return 1
+
+
+def api(name, value=None, etag=None, deadline=None):
+    """Use the Incus API's ETag, so a concurrent write cannot replace another endpoint."""
+    put = []
+    if value is not None:
+        if not isinstance(etag, str):
+            raise PolicyError('instance.container_bridge_write_failed')
+        put = ['--request', 'PUT', '--header', 'Content-Type: application/json',
+               '--header', 'If-Match: ' + etag, '--data-binary', '@-']
+    timeout = CURL_TIMEOUT_SECONDS if deadline is None else min(CURL_TIMEOUT_SECONDS, remaining(deadline))
+    result = subprocess.run(['curl', '--silent', '--show-error', '--fail-with-body', '--max-time', str(CURL_TIMEOUT_SECONDS),
+                             '--include', '--unix-socket', '/var/lib/incus/unix.socket',
+                             'http://localhost/1.0/network-acls/' + name + '?project=default', *put],
+                            input=None if value is None else json.dumps(value).encode(),
+                            capture_output=True, check=False, timeout=timeout)
+    if result.returncode == 28:
+        raise PolicyError('instance.bridge_command_timeout')
+    if result.returncode:
+        detail = result.stderr.decode().strip()
+        if b'\r\n\r\n' in result.stdout:
+            detail += ' ' + json.loads(result.stdout.split(b'\r\n\r\n', 1)[1]).get('error', '')
+        raise PolicyError(detail or 'instance.container_bridge_write_failed')
+    headers, body = result.stdout.split(b'\r\n\r\n', 1)
+    tags = [line.split(b':', 1)[1].strip().decode() for line in headers.splitlines()
+            if line.lower().startswith(b'etag:')]
+    response = json.loads(body)
+    if response.get('error_code', 0):
+        raise PolicyError(response.get('error', 'instance.container_bridge_write_failed'))
+    return response['metadata'], tags[0] if tags else None
+
+
+def remaining(deadline):
+    seconds = deadline - time.monotonic()
+    if seconds <= 0:
+        raise PolicyError('instance.bridge_command_timeout')
+    return seconds
 
 
 def unresolved_health(root):
@@ -310,3 +357,110 @@ export const bridgeContractViolations = [
         ),
     ],
 ] as const;
+
+export const bridgeInodeViolations = [
+    ["computed-lock-unlink", "    (root / ('writer' + '.lock')).unlink()\n"],
+    [
+        "state-directory-cleanup",
+        "    for path in root.iterdir():\n        path.unlink()\n",
+    ],
+    ["helper-lock-unlink", "    remove(root / ('writer' + '.lock'))\n"],
+    ["helper-state-cleanup", "    clean(root)\n"],
+    [
+        "lock-method-alias",
+        "    remove_lock = (root / ('writer' + '.lock')).unlink\n    remove_lock()\n",
+    ],
+    ["directory-replacement", "    root.replace(root / 'other.json')\n"],
+    [
+        "helper-atomic-lock-replacement",
+        "    write_file(root / ('writer' + '.lock'), {})\n",
+    ],
+].map(([name, body]) =>
+    [
+        name,
+        BRIDGE_WRITER.replace(
+            "    records =",
+            body + "    records =",
+        ).replace(
+            "def unresolved_health",
+            `def remove(path):
+    path.unlink()
+
+
+def clean(directory):
+    for path in directory.iterdir():
+        remove(path)
+
+
+def unresolved_health`,
+        ),
+    ] as const
+);
+
+export const bridgeImportViolations = [
+    [
+        "parent-import-alias",
+        "caller.py",
+        "from package import renamed_writer as writer",
+    ],
+    [
+        "relative-import",
+        "package/caller.py",
+        "from . import renamed_writer as writer",
+    ],
+    [
+        "relative-import-no-alias",
+        "package/caller.py",
+        "from . import renamed_writer",
+    ],
+    [
+        "relative-parent-import",
+        "package/sub/caller.py",
+        "from .. import renamed_writer as writer",
+    ],
+    [
+        "qualified-import",
+        "caller.py",
+        "import package.renamed_writer as writer",
+    ],
+].map(([name, path, statement]) =>
+    [
+        name,
+        path,
+        `from pathlib import Path
+${statement}
+
+${
+            statement.includes(" as writer")
+                ? "writer"
+                : "renamed_writer"
+        }.apply_locked(Path('/var/lib/orbit/instance-bridge'), {}, False, False, 1000000000)
+`,
+    ] as const
+);
+
+export const BRIDGE_RECORD_MUTATIONS = BRIDGE_WRITER.replace(
+    "    records =",
+    `    retiring = [(path, {}) for path in (root / 'endpoints').glob('*.json')]
+    with tempfile.TemporaryDirectory(prefix='.staged-', dir=root) as directory:
+        staged = []
+        for record in retiring:
+            path = Path(directory) / ('endpoint-' + str(deadline) + '.json')
+            write_file(path, {})
+            staged.append((path, {}))
+
+        def commit_confirmed(current):
+            for path, endpoint in staged:
+                active = root / 'endpoints' / path.name
+                active.parent.mkdir(parents=True, exist_ok=True)
+                path.replace(active)
+            for path, endpoint in retiring:
+                remove(path)
+
+        commit_confirmed({})
+    (root / 'reconcile.pending').unlink(missing_ok=True)
+    records =`,
+).replace(
+    "def unresolved_health",
+    "def remove(path):\n    path.unlink()\n\n\ndef unresolved_health",
+);

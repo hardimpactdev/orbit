@@ -6,7 +6,10 @@ import {
 import {
     BRIDGE_ACQUIRE,
     BRIDGE_WRITER,
+    BRIDGE_RECORD_MUTATIONS,
     bridgeContractViolations,
+    bridgeInodeViolations,
+    bridgeImportViolations,
     run,
     script,
 } from "./gate-test-support.ts";
@@ -536,4 +539,67 @@ Deno.test("bridge custody cannot be bypassed by a caller, descriptor or binding 
         "another.py":
             "from arbitrary_name import apply_locked\napply_locked(None, None, False, False, 1)\n",
     })).some((row) => row.rule === "custom-control"));
+});
+
+Deno.test("bridge proof preserves the inode through computed paths and helper calls", async () => {
+    assertEquals(await bridgeScan(BRIDGE_RECORD_MUTATIONS), []);
+    for (const [name, source] of bridgeInodeViolations) {
+        assert(
+            (await bridgeScan(source)).some((row) =>
+                row.rule === "custom-control"
+            ),
+            name,
+        );
+    }
+});
+
+Deno.test("bridge proof rejects package and relative imports across the full inventory", async () => {
+    for (const [name, path, peer] of bridgeImportViolations) {
+        const sources = {
+            "ansible/package/renamed_writer.py": BRIDGE_WRITER,
+            ["ansible/" + path]: peer,
+        };
+        const result = await run("python3", [
+            script("swamp-shape-python.py"),
+            "[]",
+            "--source-context",
+        ], {
+            input: JSON.stringify({
+                source: BRIDGE_WRITER,
+                sources: { "ansible/package/renamed_writer.py": BRIDGE_WRITER },
+                bridge_sources: sources,
+            }),
+        });
+        assertEquals(result.code, 0, result.stderr);
+        assert(
+            (JSON.parse(result.stdout) as Finding[]).some((row) =>
+                row.rule === "custom-control"
+            ),
+            name,
+        );
+    }
+    const unrelated = {
+        "ansible/caller.py":
+            "from other import renamed_writer\nprint(renamed_writer)\n",
+    };
+    const result = await run("python3", [
+        script("swamp-shape-python.py"),
+        "[]",
+        "--source-context",
+    ], {
+        input: JSON.stringify({
+            source: BRIDGE_WRITER,
+            sources: { "ansible/package/renamed_writer.py": BRIDGE_WRITER },
+            bridge_sources: {
+                "ansible/package/renamed_writer.py": BRIDGE_WRITER,
+                ...unrelated,
+            },
+        }),
+    });
+    assertEquals(result.code, 0, result.stderr);
+    assertEquals(
+        JSON.parse(result.stdout),
+        [],
+        "An unrelated qualified module is not the writer",
+    );
 });

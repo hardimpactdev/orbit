@@ -5,7 +5,10 @@ import {
 } from "jsr:@std/assert@1.0.19";
 import {
     BRIDGE_WRITER,
+    BRIDGE_RECORD_MUTATIONS,
     bridgeContractViolations,
+    bridgeInodeViolations,
+    bridgeImportViolations,
     commit,
     copyPolicy,
     git,
@@ -287,5 +290,74 @@ Deno.test("bridge transaction contract is enforced by current and immutable base
         await commit(repo, "restore valid transaction");
         const restored = await frozen();
         assertEquals(restored.code, 0, restored.stdout + restored.stderr);
+    });
+});
+
+Deno.test("current and frozen bridge policy reject inode replacement and imported unlocked entry points", async () => {
+    await temporary(async (repo) => {
+        await init(repo);
+        await write(repo + "/.gitignore", "__pycache__/\n");
+        const swamp = repo + "/swamp";
+        await copyPolicy(swamp);
+        await write(
+            swamp + "/config/agent-command-kinds.json",
+            '{"agent.status":"observer"}',
+        );
+        const baseline = JSON.stringify({ schema: 1, entries: [] });
+        const ledger = swamp + "/config/swamp-shape-baseline.json";
+        await write(ledger, baseline);
+        const base = await commit(
+            repo,
+            "freeze inode and import custody policy",
+        );
+        const source = swamp + "/ansible/package/renamed_writer.py";
+        const current = () =>
+            run(Deno.execPath(), [
+                "run",
+                "-A",
+                swamp + "/bin/check-swamp-shape.ts",
+                "--base",
+                base,
+            ], { cwd: swamp });
+        const frozen = () =>
+            run("python3", [
+                script("check-swamp-base-policy.py"),
+                "--base",
+                base,
+            ], { cwd: swamp, env: { DENO_BIN: Deno.execPath() } });
+        async function check(rejected: boolean, name: string) {
+            await commit(repo, name);
+            for (const command of [current, frozen]) {
+                const result = await command();
+                assertEquals(
+                    result.code !== 0,
+                    rejected,
+                    name + result.stdout + result.stderr,
+                );
+                if (rejected) {
+                    assertStringIncludes(result.stderr, "custom-control");
+                }
+            }
+            assertEquals(await Deno.readTextFile(ledger), baseline);
+        }
+        await write(source, BRIDGE_WRITER);
+        await check(false, "valid packaged writer");
+        await write(source, BRIDGE_RECORD_MUTATIONS);
+        await check(
+            false,
+            "safe staged record commits and helper deletion remain supported",
+        );
+        for (const [name, variant] of bridgeInodeViolations) {
+            await write(source, variant);
+            await check(true, name);
+        }
+        await write(source, BRIDGE_WRITER);
+        for (const [name, path, peer] of bridgeImportViolations) {
+            const caller = swamp + "/ansible/" + path;
+            await write(caller, peer);
+            await check(true, name);
+            await Deno.remove(caller);
+        }
+        await check(false, "removing unlocked importers restores the proof");
     });
 });
