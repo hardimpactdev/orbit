@@ -327,6 +327,10 @@ final readonly class DirectOperation
         $this->assertRun($operation, ValidatedData::string($data['run_id']));
         $status = OperationStatus::from(ValidatedData::string($data['status'] ?? 'running'));
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
+        // Families see native cancellation for their cleanup; a deadline-triggered cancel remains an Operation failure.
+        if ($status === OperationStatus::Cancelled && $code === 'operation.timed_out') {
+            $status = OperationStatus::Failed;
+        }
         $observedFailure = $operation->state['native_failure'] ?? null;
         $failure = $data['failure'] ?? null;
         if (is_array($observedFailure) && (! is_array($failure)
