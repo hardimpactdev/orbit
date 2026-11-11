@@ -73,7 +73,7 @@ sequenceDiagram
     %%> - T3 starts for the first time and creates its identity; the T3 project `/srv/workspace` is added as `agent`
     %%> Check:
     %%> - waits up to 30 s for `/.well-known/t3/environment`, else `instance.t3_unready`
-    SW->>C: Register the T3 server<br/>native clone-sessions · private copy · vault
+    SW->>C: Register the T3 server<br/>native clone-register
     %%> What it does:
     %%> - see container/t3-register.mmd: the sessions go to the vault, and the step checks the environment id and scopes
   and independent Route job · no depth link

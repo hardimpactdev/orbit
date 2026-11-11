@@ -19,7 +19,7 @@ class OpenApiOperationsTest(unittest.TestCase):
                         if isinstance(node, ast.FunctionDef) and node.name == 'data_schema_for')
         exec(compile(ast.Module(body=[function], type_ignores=[]), '<data_schema_for>', 'exec'), namespace)
 
-        for action in ('OperationsController@show', 'OperationsController@cancel'):
+        for action in ('OperationsController@show', 'OperationsController@cancel', 'ConnOperationsController@show'):
             with self.subTest(action=action):
                 schema, is_list = namespace['data_schema_for']({'action': action})
 

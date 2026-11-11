@@ -25,7 +25,7 @@ final class ConnOperationsController extends Controller
     {
         $this->assertOwner($request, $operation);
 
-        $data = OperationData::fromModel($operation, $operation->caller_node_name)->toArray();
+        $data = OperationData::summary($operation, $operation->caller_node_name)->toArray();
 
         return response()->json(['data' => $data,
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
