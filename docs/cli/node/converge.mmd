@@ -22,6 +22,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - access follows the [shared Node authority rule](/cli/node) (`NodeAccessAuthorizer`)
   %%> - admission uses recorded Node, role, Tool and network state; no live preflight
+  %%> - Node convergence, role work, enrollment and agent rekey share one Node admission lock; enrollment's role work stays inside its parent run
   alt unknown Node
     %% path: unknown-node
     GW--xCLI: Refused<br/>http.404
@@ -48,7 +49,7 @@ sequenceDiagram
     %% path: target-busy
     GW--xCLI: Refused<br/>operation.target_busy
     %%> Result:
-    %%> - no new Operation or run; the existing converge keeps its reservations
+    %%> - no new Operation or run; the existing holder keeps its reservation
   else admitted
     %% path: admitted
     opt --base

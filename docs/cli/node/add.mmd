@@ -33,6 +33,7 @@ sequenceDiagram
   %%> - Linux accepts only `x86_64`; `app-dev` needs a TLD, unless its Cluster has one
   %%> - macOS names one existing account in `--user` and `--orbit-user`, an existing WireGuard address, and no role
   %%> - no other lifecycle change runs for the name; the Gateway holds one lock per Node name
+  %%> - Node convergence, role work, enrollment and agent rekey share one Node admission lock (`operation.target_busy`); this run holds it through all frozen role work without child Operation admission
   %%> Result:
   %%> - a new Node is recorded as `provisioning`; an existing Node keeps its record until the result
   %%> - the WireGuard address and the hub peer entry are chosen
