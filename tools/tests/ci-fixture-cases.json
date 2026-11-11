@@ -1781,5 +1781,26 @@
       "Schedule journal reads long fields with --all and handles null and non-UTF-8 byte-array messages",
       "Schedule journal bounds double JSON encoding and crosses the Gateway's real framed client"
     ]
+  },
+  "swamp/tests/process_destroy_failed_cache_test.ts": {
+    "source_sha256": "9a0cf06fe8f944570eebc9f15931979d3a6e896fc9b8bdb7cb9c465e7ad44c45",
+    "cases": [
+      "destroy clears an absent failed unit cache and accepts only the fresh stopped read",
+      "destroy refuses cache cleanup and completion with remaining LoadState=loaded",
+      "destroy refuses cache cleanup and completion with remaining LoadState=masked",
+      "destroy refuses cache cleanup and completion with remaining ActiveState=active",
+      "destroy refuses cache cleanup and completion with remaining ActiveState=activating",
+      "destroy refuses cache cleanup and completion with remaining ActiveState=deactivating",
+      "destroy refuses cache cleanup and completion with remaining SubState=running",
+      "destroy refuses cache cleanup and completion with remaining UnitFileState=enabled",
+      "destroy refuses cache cleanup and completion with remaining UnitFileState=enabled-runtime",
+      "destroy refuses cache cleanup and completion with remaining MainPID=123",
+      "destroy refuses cache cleanup and completion with remaining ControlPID=456",
+      "destroy refuses cache cleanup and completion with remaining ControlGroup=/system.slice/orbit-process-41-worker.service",
+      "destroy refuses cache cleanup and completion with remaining Job=12",
+      "destroy refuses present unit files and boot links before and after reset",
+      "destroy resets only the admitted unit and rereads after the reset settles",
+      "Docker removal keeps its native absence check and never resets systemd"
+    ]
   }
 }
