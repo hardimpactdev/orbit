@@ -12,7 +12,7 @@ sequenceDiagram
   Note over GW: Check request and access
   %%> On failure:
   %%> - peer.identity_unknown or node_access.required (403): the caller lacks authority.
-  %%> - http.404 (404) or env.target_ambiguous (409): the Instance cannot be resolved.
+  %%> - http.404 (404): the Instance cannot be resolved.
   %%> - validation.failed (422) or operation.idempotency_conflict (409): the request key is invalid or conflicts.
   %%> - Every refusal leaves state unchanged and creates no new receipt.
   alt request or access refused

@@ -23,7 +23,7 @@ The MCP tool is `instance-node-service-detach`:
 
 | Input | Meaning |
 | --- | --- |
-| `instance` | Positive Instance ID or exact Route domain. |
+| `instance` | Positive numeric Instance ID. |
 | `target` | Positive numeric attachment ID returned by attach. It must belong to this Instance. |
 
 The caller must be an active WireGuard peer authorized for the Instance's Node. [Node access](/cli/node/access-add) defines that authority. The optional `Idempotency-Key` header follows the shared [Operation replay contract](/reference/operations#retry-a-start-with-a-key).
@@ -47,7 +47,6 @@ Receipt creation and attachment deletion commit in one transaction. If either wr
 | `peer.identity_unknown` | 403 | The caller is not an active WireGuard peer. |
 | `node_access.required` | 403 | The caller lacks authority for the Instance's Node. |
 | `http.404` | 404 | The Instance or its Node does not exist. |
-| `env.target_ambiguous` | 409 | The Route domain matches multiple Instances; use the Instance ID. |
 | `validation.failed` | 422 | The optional request key is malformed. |
 | `operation.idempotency_conflict` | 409 | The key already belongs to another target or input. |
 | `instance.lifecycle_busy` | 409 | The Instance is not active, migration is running or a detach is already running. |
