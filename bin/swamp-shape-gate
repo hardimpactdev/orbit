@@ -93,7 +93,7 @@ def weights():
 
 def weight(step):
     # Integer tenths avoid floating point accumulation changing tie breaks.
-    return round(weights().get(step.unit, {'sabre': 1})['sabre'] * 10)
+    return round(weights().get(step.unit, {'beast': 1})['beast'] * 10)
 
 
 def ordered(steps):
