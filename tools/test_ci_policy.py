@@ -11,10 +11,14 @@ class RequiredGateTest(unittest.TestCase):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
         block = caller.split('  cli-release:\n', 1)[1]
         condition = next(line.strip() for line in block.splitlines() if line.startswith('    if:'))
-        self.assertEqual(condition, "if: github.event_name == 'push' && github.ref == 'refs/heads/main'")
+        self.assertEqual(condition, "if: always() && needs.required.result == 'success' && github.event_name == 'push' && "
+                                    "github.ref == 'refs/heads/main'")
         self.assertIn('    needs: required\n', block)
-        # The implicit success() gate prevents dispatch after a failed or skipped Required checks job.
-        self.assertNotIn('always()', condition)
+        # Only Required's own result gates the dispatch. The implicit success() would also skip it when an unselected test
+        # job in Required's needs was skipped at job level (main 4e4cf83d, d9d10a93, 02f630f8 dispatched no release).
+        skippable = [name for name in ('gateway-tests', 'cli-tests')
+                     if "if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['" + name + "']) != 'false' }}" in caller]
+        self.assertTrue(skippable, 'the test assumes job-level skips in Required needs; update it if they are gone')
         self.assertIn('      actions: write\n', block)
         self.assertIn('gh workflow run orbit-cli-release.yml --repo "$GITHUB_REPOSITORY" --ref main -f commit="$GITHUB_SHA"', block)
 
