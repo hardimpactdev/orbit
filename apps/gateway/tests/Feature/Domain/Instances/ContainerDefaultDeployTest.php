@@ -652,7 +652,7 @@ it('retains admission-wide PHP facts after deployment failure or cancellation wh
     $commit = str_repeat('b', 40);
     $instance->runtime()->update(['seed_commit' => $seed]);
     ProcessDefinition::query()->create(['project_id' => $instance->project_id, 'name' => 'worker', 'environments' => ['development'],
-        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'php', 'worker.php'], 'environment' => [], 'restart_policy' => 'always']]);
+        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'php8.5', 'worker.php'], 'environment' => [], 'restart_policy' => 'always']]);
     app(InstantiateProjectRuntimeDefinitionsAction::class)->refreshForContainer($instance);
     expect(app(ContainerProcesses::class)->units($instance)[0]['content'])->toContain('Environment=PATH=/opt/orbit-runtime/current/php/8.4/bin:');
     $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead($commit, '{"require":{"php":"^8.5"}}'));
