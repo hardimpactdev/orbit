@@ -105,6 +105,8 @@ Orbit prepares the container and probes every attached target before downtime. I
 
 Nobody works in the checkout during the move. Orbit shows the wake page on the Route, and starts no deployment and no wake of the Instance until the move has ended.
 
+Each moved Process whose desired state is running must be active with no pending start or restart job. Orbit waits five seconds, then requires it to remain active with no pending job, the same nonzero main process ID and the same restart count. This settling window catches immediate crashes and restart loops before the Route moves. A Process that fails this check reports `instance.migrate_processes_failed`, names the Process and triggers recovery.
+
 ## Order
 
 A Project's default Instance moves first. A non-default Instance before its default refuses with `instance.default_not_migrated`.
