@@ -150,4 +150,4 @@ FrankenPHP's `trusted_proxies` does not translate native PHP CGI variables. Matc
 
 Native speed paths must use the same effective-NIC start gate as the Ansible phase. Carry the common NIC ACL name in Gateway intent for every writer; a network union ACL must never be attached to a NIC.
 
-Use stock-image tools for readiness probes and check their presence with a named failure. Adding a pinned APT package only for a probe can force a partial downgrade of an exact-version dependency set already installed by the image.
+Use existing prerequisite tools for readiness probes and check their presence with a named failure, including in check mode. Verify the actual target image and prerequisite order; a cloud-image manifest can differ from the Incus image. Adding a pinned APT package only for a probe can force a partial downgrade of an exact-version dependency set already installed by the image.

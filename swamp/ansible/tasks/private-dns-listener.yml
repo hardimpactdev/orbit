@@ -1,17 +1,16 @@
 ---
 # The Gateway uses the existing listener footprint, release and systemd socket. VPN publication converges these same units on a colocated VPN Node.
-- name: Find the image's private DNS proof tool
-  when: not ansible_check_mode
+- name: Find the private DNS proof tool
+  check_mode: false
   ansible.builtin.command:
     argv: [/bin/sh, -c, command -v dig]
   register: private_dns_tool
   changed_when: false
   failed_when: false
 - name: Require dig for the local private DNS proof
-  when: not ansible_check_mode
   ansible.builtin.assert:
     that: private_dns_tool.rc == 0
-    fail_msg: "gateway.private_dns_tool_missing: the image must provide dig for the local listener proof"
+    fail_msg: "gateway.private_dns_tool_missing: dig is required for the local listener proof"
 - name: Create private DNS release folders
   ansible.builtin.file:
     path: "{{ item }}"

@@ -41,10 +41,6 @@ final readonly class NativeNodeRoleAddInput
         }
         $role = $assignment->role;
         $packages = app(NodeBootstrapPackageCatalog::class)->forRole($node, $role);
-        $gatewayDns = $snapshot['gateway_dns'];
-        if (is_array($gatewayDns) && isset($gatewayDns['listener'])) {
-            $packages[] = 'bind9-dnsutils';
-        }
         $caddy = in_array('caddy', $packages, true);
         $services = [...($caddy ? ['caddy.service'] : []),
             ...(in_array('docker.io', $packages, true) ? ['docker.service'] : [])];
