@@ -1,0 +1,536 @@
+#!/usr/bin/env python3
+"""Select and run bounded Swamp fixture units. Costs and input rules live in checks.toml."""
+import argparse
+import ast
+import ctypes
+import hashlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from importlib.machinery import SourceFileLoader
+from importlib.util import module_from_spec, spec_from_loader
+import json
+import math
+import os
+from pathlib import Path
+import re
+import signal
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import tomllib
+
+ROOT = Path(__file__).resolve().parents[1]
+TABLE = ROOT / '.github/ci/checks.toml'
+INVENTORY = ROOT / 'tools/tests/ci-fixture-cases.json'
+PRELOAD = 'swamp/tests/_support/slice.ts'
+OUTPUT_LOCK = threading.Lock()
+CANCELLED = threading.Event()
+
+
+def module(name, path):
+    loader = SourceFileLoader(name, str(path))
+    result = module_from_spec(spec_from_loader(name, loader))
+    loader.exec_module(result)
+    return result
+
+
+gate = module('fixture_gate', ROOT / 'bin/swamp-shape-gate')
+selection_regex = module('fixture_selection', ROOT / 'bin/ci-build-plan').selection_regex
+supervisor = module('fixture_supervisor', ROOT / 'swamp/tests/_support/fixture_supervisor.py')
+
+
+def fixture_steps():
+    """Split the gate's grouped file commands, retaining their flags and environment."""
+    result = {}
+    for step in gate.plan('', ROOT, ROOT, ROOT):
+        if step.group != 'shape' or not step.parallel or step.argv[0] not in ('python3', 'deno'):
+            continue
+        files, flags = [], []
+        for arg in step.argv[2:] if step.argv[0] == 'deno' else step.argv[1:]:
+            target = gate.SWAMP / arg
+            if target.is_dir():
+                files += sorted(str(p.relative_to(gate.SWAMP)) for p in target.rglob('*') if gate.DENO_TEST_FILE.fullmatch(p.name))
+            elif target.is_file():
+                files.append(arg)
+            else:
+                flags.append(arg)
+        for file in files:
+            argv = ['deno', 'test', *flags, file] if step.argv[0] == 'deno' else ['python3', *flags, file]
+            result['swamp/' + file] = gate.Step('shape', file, argv, env=step.env, parallel=True)
+    return result
+
+
+def configuration(path=TABLE):
+    with path.open('rb') as source:
+        config = tomllib.load(source)
+    budget = config['budget']
+    if any(type(budget[key]) is not int or budget[key] <= 0 for key in
+           ('shard_seconds', 'shard_workers', 'shard_deadline_seconds', 'shard_ceiling_seconds', 'unit_ceiling_seconds', 'slice_seconds', 'slice_startup_seconds', 'pr_shards', 'default_cost')):
+        raise ValueError('Fixture budgets must be positive integers')
+    if budget['shard_deadline_seconds'] >= budget['shard_ceiling_seconds']:
+        raise ValueError('shard_deadline_seconds must be below shard_ceiling_seconds')
+    if budget['slice_seconds'] > budget['shard_seconds']:
+        raise ValueError('slice_seconds exceeds shard_seconds')
+    fixtures = {}
+    inventory = json.loads(INVENTORY.read_text())
+    for fixture in config.get('fixture', []):
+        file = fixture['file']
+        if file in fixtures:
+            raise ValueError(f'Duplicate fixture: {file}')
+        fixtures[file] = {'cost': budget['default_cost'], 'inputs': [], **fixture}
+    for file in fixture_steps():
+        fixtures.setdefault(file, {'file': file, 'cost': budget['default_cost'], 'inputs': []})
+    for fixture in fixtures.values():
+        file, cost = fixture['file'], fixture['cost']
+        if not (ROOT / file).is_file() or type(cost) is not int or cost <= 0:
+            raise ValueError(f'Invalid fixture file or cost: {file}')
+        if not sliceable(fixture) and cost > budget['shard_seconds'] and not fixture.get('after_merge'):
+            raise ValueError(f'{file}: unsliceable cost exceeds shard_seconds; set after_merge with a reason')
+        # Inventory describes measured populations, not a repository-wide source lock.
+        # Selected Deno units compare registrations before executing any test body.
+        # New files use the declared default cost and the same runtime deadlines.
+        if file in inventory:
+            fixture.update(inventory[file])
+        excluded = fixture.get('after_merge_cases', [])
+        if not isinstance(excluded, list) or any(not isinstance(name, str) or name not in fixture.get('cases', []) for name in excluded):
+            raise ValueError(f'{file}: every after_merge_cases name must be registered')
+        if excluded and not sliceable(fixture):
+            raise ValueError(f'{file}: after_merge_cases needs a Deno fixture')
+        weights = fixture.get('case_costs', {})
+        if any(name not in fixture.get('cases', []) or type(seconds) is not int or seconds <= 0 for name, seconds in weights.items()):
+            raise ValueError(f'{file}: invalid case_costs')
+        slices = fixture.get('slices', True)
+        if type(slices) not in (int, bool) or type(slices) is int and slices < 1:
+            raise ValueError(f'{file}: slices must be a positive count or a boolean')
+        if fixture.get('after_merge') and not fixture.get('reason', '').strip():
+            raise ValueError(f'{file}: after_merge needs a reason')
+    for file in config['fixtures']['default']:
+        if file not in fixtures or fixtures[file].get('after_merge'):
+            raise ValueError(f'Invalid default fixture: {file}')
+    return budget, fixtures, config['fixtures']['default']
+
+
+def sliceable(fixture):
+    return fixture['file'].endswith(('.ts', '.tsx', '.mts', '.js', '.mjs', '.jsx')) and fixture.get('slices', True)
+
+
+def units_for(fixture, budget):
+    count = math.ceil(fixture['cost'] / budget['slice_seconds']) if sliceable(fixture) else 1
+    if type(fixture.get('slices')) is int:
+        count = max(count, fixture['slices'])
+    if 'cases' in fixture and sliceable(fixture):
+        count = min(count, len([name for name in fixture['cases'] if name not in fixture.get('after_merge_cases', [])]))
+        if count == 0:
+            raise ValueError(f"{fixture['file']}: zero retained fixture cases")
+    startup = budget.get('slice_startup_seconds', 0) if sliceable(fixture) else 0
+    names = [name for name in fixture.get('cases', []) if name not in fixture.get('after_merge_cases', [])]
+    weights = fixture.get('case_costs', {})
+    if weights and set(weights) != set(names):
+        raise ValueError(f"{fixture['file']}: case_costs must name every retained case")
+    if weights and sum(weights.values()) != fixture['cost']:
+        raise ValueError(f"{fixture['file']}: cost must equal the retained case_costs total")
+    return [(fixture['file'] + (f'#{k}/{count}' if count > 1 else ''),
+             (sum(weights[name] for name in names[k::count]) if weights else fixture['cost'] / count) + startup)
+            for k in range(count)]
+
+
+def specificity(pattern):
+    # An exact file beats a glob; a narrow glob beats a shared directory or root.
+    return (int(not any(c in pattern for c in '*?')), len(re.split(r'[*?]', pattern)[0]), -pattern.count('*'))
+
+
+def plan(paths, budget, fixtures, defaults):
+    selected, unmapped = {}, []
+    all_fixtures = any(path in ('.github/ci/checks.toml', 'tools/tests/ci-fixture-cases.json', 'bin/ci-units', PRELOAD) for path in paths)
+    for path in paths:
+        matched = False
+        for file, fixture in fixtures.items():
+            matches = [specificity(pattern) for pattern in [file, *fixture['inputs']]
+                       if selection_regex(pattern).fullmatch(path)]
+            if matches:
+                matched = True
+                priority = (2, len(file), 0) if path == file else max(matches)
+                selected[file] = max(selected.get(file, (-1, 0, 0)), priority)
+        if path.startswith('swamp/') and not matched and path != PRELOAD:
+            unmapped.append(path)
+            for file in defaults:
+                selected.setdefault(file, (-1, 0, 0))
+    if all_fixtures:
+        for file, fixture in fixtures.items():
+            selected.setdefault(file, (-1, 0, 0))
+    admitted, deferred, capacity = [], [], []
+    order = {file: index for index, file in enumerate(fixtures)}
+    # Admission is by directness, then table order. Size only decides packing.
+    for file in sorted(selected, key=lambda file: (tuple(-p for p in selected[file]), order[file])):
+        fixture = fixtures[file]
+        candidates = [(name, cost, selected[file]) for name, cost in units_for(fixture, budget)]
+        if not fixture.get('after_merge'):
+            oversize = [{'unit': name, 'seconds': cost, 'cases': case_names(name, fixtures)}
+                        for name, cost, _ in candidates if cost > budget['shard_seconds']]
+            if oversize:
+                capacity.append({'file': file, 'seconds': round(sum(c[1] for c in candidates), 3),
+                                 'oversize': oversize})
+                deferred.extend(name for name, _, _ in candidates)
+                continue
+            required = len(pack(candidates, {**budget, 'pr_shards': len(candidates)}))
+            if required > budget['pr_shards']:
+                capacity.append({'file': file, 'seconds': round(sum(c[1] for c in candidates), 3),
+                                 'shards': required, 'workers': required * budget['shard_workers']})
+        if fixture.get('after_merge') or pack([*admitted, *candidates], budget) is None:
+            deferred.extend(name for name, _, _ in candidates)
+        else:
+            admitted.extend(candidates)
+    shards = pack(admitted, budget) or []
+    result = {'shards': shards, 'deferred': sorted(deferred), 'unmapped': sorted(set(unmapped))}
+    if capacity:
+        result['capacity'] = capacity
+    excluded = [{'file': file, 'case': name} for file in selected for name in fixtures[file].get('after_merge_cases', [])]
+    if excluded:
+        result['excluded'] = excluded
+    return result
+
+
+def pack(units, budget):
+    shards, lanes = [], []
+    for name, cost, _priority in sorted(units, key=lambda u: (-u[1], u[0])):
+        if cost > budget['shard_seconds']:
+            raise ValueError(f'{name}: unit cost exceeds shard_seconds')
+        candidates = [(total, shard, lane) for shard, loads in enumerate(lanes)
+                      for lane, total in enumerate(loads) if total + cost <= budget['shard_seconds'] + 1e-9]
+        if candidates:
+            _, index, lane = min(candidates)
+        else:
+            if len(shards) == budget['pr_shards']:
+                return None
+            index, lane = len(shards), 0
+            shards.append({'name': f'{index + 1:02d}', 'units': []})
+            lanes.append([0] * budget['shard_workers'])
+        shards[index]['units'].append(name)
+        lanes[index][lane] += cost
+    return shards
+
+
+def summary(text):
+    if os.environ.get('GITHUB_STEP_SUMMARY'):
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+            output.write(text + '\n')
+
+
+def plan_summary(result, fixtures):
+    lines = [f"Fixture plan: {len(result['shards'])} shards; {sum(len(s['units']) for s in result['shards'])} units; "
+             f"{len(result['deferred'])} deferred; {len(result['unmapped'])} unmapped."]
+    for name in result['deferred']:
+        reason = fixtures[name.split('#')[0]].get('reason', 'pull request shard limit')
+        lines.append(f'- Deferred `{name}`: {reason}')
+        lines += [f'  - {case}' for case in case_names(name, fixtures)]
+    for row in result.get('capacity', []):
+        if row.get('oversize'):
+            for unit in row['oversize']:
+                lines.append(f"- CAPACITY: `{unit['unit']}` needs {unit['seconds']} declared seconds, above the 150-second lane; cases: {json.dumps(unit['cases'])}. Required checks will fail.")
+        else:
+            lines.append(f"- CAPACITY: `{row['file']}` needs {row['seconds']} declared seconds, {row['shards']} shards / {row['workers']} workers; limit is six shards. Required checks will fail.")
+    lines += [f"- After merge only: `{row['file']}` — {row['case']}" for row in result.get('excluded', [])]
+    lines += [f'- Unmapped `{path}`: selected default fixtures' for path in result['unmapped']]
+    return '\n'.join(lines)
+
+
+def case_names(unit, fixtures):
+    file, separator, part = unit.partition('#')
+    names = [name for name in fixtures[file].get('cases', []) if name not in fixtures[file].get('after_merge_cases', [])]
+    if separator:
+        k, n = map(int, part.split('/'))
+        names = names[k::n]
+    return names
+
+
+def unit_step(unit, fixtures, steps, collections):
+    file, separator, part = unit.partition('#')
+    if file not in fixtures:
+        raise ValueError(f'Unknown fixture: {file}')
+    original = steps.get(file)
+    if original:
+        step = gate.Step('shape', unit, original.argv, env=original.env.copy(), parallel=True)
+    else:
+        relative = str(Path(file).relative_to('swamp'))
+        step = gate.Step('shape', unit, ['deno', 'test', '-A', relative] if sliceable(fixtures[file]) else ['python3', '-I', relative], parallel=True)
+    step.env['ANSIBLE_COLLECTIONS_PATH'] = str(collections)
+    if separator:
+        match = re.fullmatch(r'(\d+)/(\d+)', part)
+        if not match or not sliceable(fixtures[file]) or not 0 <= int(match[1]) < int(match[2]):
+            raise ValueError(f'Invalid slice: {unit}')
+        step.env['ORBIT_TEST_SLICE'] = part
+    if step.argv[0] == 'deno':
+        step.argv[2:2] = ['--preload', str(ROOT / PRELOAD)]
+        # The preload reads its control environment and writes case receipts,
+        # including in fixture commands that originally needed only read/run.
+        if '-A' not in step.argv:
+            for permission in ('--allow-env', '--allow-write'):
+                if permission not in step.argv:
+                    step.argv.insert(4, permission)
+        step.env['ORBIT_TEST_SKIP'] = json.dumps(fixtures[file].get('after_merge_cases', []))
+        step.env['ORBIT_TEST_CASES'] = json.dumps(fixtures[file].get('cases'))
+    if any(file.removeprefix('swamp/') in group for group in gate.INSTANCE_HOST_TEST_GROUPS):
+        step.env['ORBIT_INSTANCE_HOST_DEADLINE_MS'] = str(int(time.time() * 1000) + 720_000)
+    return step
+
+
+def supervise(ceiling, receipt, command, shard_deadline=None):
+    """One supervisor per unit: subreaper ownership never crosses parallel units."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
+        raise OSError(ctypes.get_errno(), 'PR_SET_CHILD_SUBREAPER')
+    started = time.monotonic()
+    cancelled = False
+    def cancel(_signum, _frame):
+        nonlocal cancelled
+        cancelled = True
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        raise InterruptedError('fixture run cancelled')
+    signal.signal(signal.SIGTERM, cancel)
+    signal.signal(signal.SIGINT, cancel)
+    timeout = min(ceiling, shard_deadline - started) if shard_deadline is not None else ceiling
+    if timeout <= 0:
+        receipt.write_text(json.dumps({'status': 'NOT RUN', 'seconds': 0}))
+        return
+    try:
+        process = subprocess.Popen(command, start_new_session=True)
+        try:
+            code = process.wait(timeout=timeout)
+            outcome = 'passed' if code == 0 else 'FAILED'
+        except (subprocess.TimeoutExpired, InterruptedError):
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+            outcome = 'CANCELLED' if cancelled else 'OVER BUDGET'
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        # Reap before removing temporary files: Ansible children can detach.
+        cleanup_deadline = time.monotonic() + 2
+        while supervisor.children():
+            supervisor.signal_children(signal.SIGKILL)
+            while True:
+                try:
+                    pid, _ = os.waitpid(-1, os.WNOHANG)
+                except ChildProcessError:
+                    break
+                if pid == 0:
+                    break
+            if time.monotonic() >= cleanup_deadline:
+                raise RuntimeError('unit descendants did not exit after SIGKILL')
+            time.sleep(0.001)
+    except FileNotFoundError as error:
+        print(f'{error.filename}: required tool not found', flush=True)
+        outcome = 'FAILED'
+    receipt.write_text(json.dumps({'status': outcome, 'seconds': round(time.monotonic() - started, 3)}))
+
+
+def run_unit(step, environment, ceiling, shard_deadline=None):
+    started = time.monotonic()
+    if CANCELLED.is_set() or shard_deadline is not None and started >= shard_deadline:
+        with OUTPUT_LOCK:
+            print(f'==> {step.name}: NOT RUN (shard deadline reached)', flush=True)
+        return {'unit': step.name, 'status': 'NOT RUN', 'seconds': 0}
+    with tempfile.TemporaryDirectory(prefix='orbit-shape-step-') as scratch, tempfile.TemporaryFile(mode='w+t') as output:
+        env = {**environment, **step.env, 'TMPDIR': scratch, 'TMP': scratch, 'TEMP': scratch,
+               'DENO_JOBS': '1', 'ANSIBLE_FORKS': '1', 'PYTHON_CPU_COUNT': '1', 'RAYON_NUM_THREADS': '1',
+               'ORBIT_TEST_STARTED_AT_MS': str(time.time_ns() // 1_000_000),
+               'ORBIT_TEST_TIMING_FILE': str(Path(scratch) / 'startup.json')}
+        receipt = Path(scratch) / 'unit-receipt.json'
+        process = subprocess.Popen([sys.executable, str(ROOT / 'bin/ci-units'), '--supervise', str(ceiling), str(receipt), str(shard_deadline) if shard_deadline is not None else 'none', *step.argv],
+                                   cwd=gate.SWAMP, env=env, stdout=output, stderr=subprocess.STDOUT)
+        sent_cancel = False
+        while True:
+            try:
+                code = process.wait(timeout=.1)
+                break
+            except subprocess.TimeoutExpired:
+                if CANCELLED.is_set() and not sent_cancel:
+                    process.terminate()
+                    sent_cancel = True
+        result = json.loads(receipt.read_text()) if code == 0 and receipt.exists() else {
+            'status': 'FAILED', 'seconds': round(time.monotonic() - started, 3)}
+        startup = Path(scratch) / 'startup.json'
+        case_receipt = None
+        if startup.exists():
+            try:
+                case_receipt = json.loads(startup.read_text())
+            except (ValueError, OSError):
+                pass
+            if isinstance(case_receipt, dict):
+                result.update({key: case_receipt[key] for key in ('startup_seconds', 'registered', 'excluded', 'cases') if key in case_receipt})
+        output.seek(0)
+        captured = output.read()
+        if step.argv[0] == 'deno' and result['status'] == 'passed':
+            registered = case_receipt.get('registered') if isinstance(case_receipt, dict) else None
+            cases = case_receipt.get('cases') if isinstance(case_receipt, dict) else None
+            expected = json.loads(step.env.get('ORBIT_TEST_CASES', 'null'))
+            skipped = json.loads(step.env.get('ORBIT_TEST_SKIP', '[]'))
+            k, n = map(int, step.env.get('ORBIT_TEST_SLICE', '0/1').split('/'))
+            valid = (isinstance(registered, list) and bool(registered)
+                     and all(isinstance(name, str) for name in registered)
+                     and (expected is None or registered == expected)
+                     and all(name in registered for name in skipped))
+            selected = [name for name in registered if name not in skipped][k::n] if valid else []
+            valid = (valid and bool(selected) and isinstance(cases, list)
+                     and all(isinstance(row, dict) and row.get('status') == 'passed' for row in cases)
+                     and [row.get('name') for row in cases] == selected)
+            if not valid:
+                result['status'] = 'FAILED'
+                captured += '\nFixture lacks a valid receipt proving every selected Deno case passed (ignored and unrun cases fail).\n'
+        if re.search(r'Ran 0 tests\b', captured):
+            result['status'] = 'FAILED'
+            captured += '\nFixture registered zero tests\n'
+    outcome, seconds = result['status'], result['seconds']
+    message = f'==> {step.name}: {outcome} ({seconds:.1f}s)'
+    if outcome == 'OVER BUDGET' and shard_deadline is not None and time.monotonic() >= shard_deadline:
+        message += f'\nOVER BUDGET: {step.name} stopped at the shard deadline.'
+    elif outcome == 'OVER BUDGET':
+        message += (f'\nOVER BUDGET: {step.name} ran {seconds:.1f} s, ceiling {ceiling:g} s. '
+                    'Raise its cost in .github/ci/checks.toml (the plan adds a slice) or make it faster.')
+    # One write per completion keeps parallel unit output together.
+    with OUTPUT_LOCK:
+        print(captured + message, flush=True)
+    return {'unit': step.name, **result}
+
+
+def run(units, budget, fixtures, times):
+    os.umask(0o022)
+    shard_deadline = time.monotonic() + budget['shard_deadline_seconds']
+    results = [{'unit': unit, 'status': 'NOT RUN', 'seconds': 0,
+                'revision': os.environ.get('GITHUB_SHA'), 'run_id': os.environ.get('GITHUB_RUN_ID'),
+                'declared_seconds': dict(units_for(fixtures[unit.split('#')[0]], budget)).get(unit),
+                'source_sha256': hashlib.sha256((ROOT / unit.split('#')[0]).read_bytes()).hexdigest() if (ROOT / unit.split('#')[0]).is_file() else None,
+                'cases': [{'name': name, 'status': 'NOT RUN', 'seconds': 0} for name in case_names(unit, fixtures)]}
+               for unit in units]
+    times.write_text(json.dumps(results, indent=2) + '\n')
+    if units:
+        try:
+            environment, collections = prepare(shard_deadline)
+        except RuntimeError as error:
+            print(str(error), flush=True)
+            summary(str(error))
+            return 1
+        steps = fixture_steps()
+        with ThreadPoolExecutor(max_workers=budget['shard_workers']) as pool:
+            futures = {pool.submit(run_unit, unit_step(unit, fixtures, steps, collections), environment,
+                                   budget['unit_ceiling_seconds'], shard_deadline): unit for unit in units}
+            for future in as_completed(futures):
+                result = future.result()
+                index = units.index(result['unit'])
+                # Keep the planned names even when the process never reached registration.
+                if not result.get('cases') and result['unit'].endswith('.py') and result['status'] in ('passed', 'FAILED'):
+                    outcome = 'passed' if result['status'] == 'passed' else 'UNKNOWN (see unittest output)'
+                    result['cases'] = [{'name': row['name'], 'status': outcome, 'seconds': None} for row in results[index]['cases']]
+                result['cases'] = result.get('cases') or results[index]['cases']
+                for row in result['cases']:
+                    if row['status'] == 'running':
+                        row['status'] = 'CENSORED'
+                        row['seconds'] = round((time.time_ns() // 1_000_000 - row['started_at_ms']) / 1000, 3)
+                results[index].update(result)
+                times.write_text(json.dumps(results, indent=2) + '\n')
+        results.sort(key=lambda result: units.index(result['unit']))
+    times.write_text(json.dumps(results, indent=2) + '\n')
+    table = '| Unit | Result | Seconds | Startup seconds |\n| --- | --- | ---: | ---: |\n' + '\n'.join(
+        f"| `{r['unit']}` | {r['status']} | {r['seconds']:.1f} | {r.get('startup_seconds', '—')} |" for r in results)
+    print(table)
+    summary(table)
+    return int(not units or CANCELLED.is_set() or any(r['status'] != 'passed' for r in results))
+
+
+def prepare(shard_deadline):
+    # The same ownership and deadline cover cold pip/collection setup too.
+    with tempfile.TemporaryDirectory() as scratch:
+        receipt = Path(scratch) / 'tools.json'
+        step = gate.Step('shape', 'fixture tool setup', [sys.executable, str(ROOT / 'bin/ci-units'), '--prepare', str(receipt)])
+        result = run_unit(step, os.environ.copy(), max(.001, shard_deadline - time.monotonic()), shard_deadline)
+        if result['status'] != 'passed':
+            raise RuntimeError(f"Fixture tool setup {result['status']}; every selected case is NOT RUN (named in the artifact)")
+        tools = json.loads(receipt.read_text())
+        return {**os.environ, 'PATH': tools['path']}, Path(tools['collections'])
+
+
+def prepare_tools(receipt):
+    tools = gate.default_tools()
+    environment = {**os.environ, 'PATH': f'{gate.tool_path(tools)}{os.pathsep}{os.environ["PATH"]}'}
+    collections = gate.collections_path(tools)
+    setup = gate.plan('', ROOT, ROOT, collections)[0]
+    subprocess.run(setup.argv, cwd=gate.SWAMP, env={**environment, **setup.env}, check=True)
+    receipt.write_text(json.dumps({'path': environment['PATH'], 'collections': str(collections)}))
+
+
+def collect(file):
+    """Read registrations without invoking test bodies; costs still need a human review."""
+    path = ROOT / file
+    if file.endswith('.py'):
+        tree = ast.parse(path.read_text())
+        cases = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name.startswith('test_')]
+    else:
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch) / 'cases.json'
+            subprocess.run(['deno', 'test', '--no-check', '-A', '--preload', str(ROOT / PRELOAD), str(path)],
+                           cwd=gate.SWAMP, env={**os.environ, 'ORBIT_TEST_COLLECT': str(output)},
+                           check=True, stdout=subprocess.DEVNULL, timeout=15)
+            cases = json.loads(output.read_text())
+        if not cases:
+            raise ValueError(f'{file}: fixture registered zero tests')
+    return {'source_sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'cases': cases}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest='command', required=True)
+    collector = commands.add_parser('collect')
+    collector.add_argument('--file', required=True)
+    planner = commands.add_parser('plan')
+    planner.add_argument('--base', required=True)
+    planner.add_argument('--head', required=True)
+    planner.add_argument('--github-output', type=Path)
+    planner.add_argument('--plan-json', type=Path)
+    runner = commands.add_parser('run')
+    runner.add_argument('--units', required=True, help='JSON array of unit names')
+    runner.add_argument('--times', type=Path, default=Path('ci-unit-times.json'))
+    args = parser.parse_args()
+    if args.command == 'collect':
+        print(json.dumps(collect(args.file), indent=2))
+        return 0
+    budget, fixtures, defaults = configuration()
+    if args.command == 'run':
+        units = json.loads(args.units)
+        if not isinstance(units, list) or any(not isinstance(unit, str) for unit in units):
+            parser.error('--units must be a JSON array of strings')
+        signal.signal(signal.SIGTERM, lambda *_: CANCELLED.set())
+        signal.signal(signal.SIGINT, lambda *_: CANCELLED.set())
+        return run(units, budget, fixtures, args.times)
+    base = gate.resolve_base(args.base)
+    paths = subprocess.check_output(['git', '-C', str(ROOT), 'diff', '--name-only', '-z', base, args.head], text=True).strip('\0').split('\0')
+    result = plan([p for p in paths if p], budget, fixtures, defaults)
+    if args.plan_json:
+        costs = {name: cost for f in fixtures.values() for name, cost in units_for(f, budget)}
+        selected = [unit for shard in result['shards'] for unit in shard['units']]
+        args.plan_json.write_text(json.dumps({**result, 'budget': budget, 'revision': os.environ.get('GITHUB_SHA', args.head),
+                                             'table_sha256': hashlib.sha256(TABLE.read_bytes()).hexdigest(),
+                                             'selected_seconds': sum(costs[u] for u in selected),
+                                             'deferred_seconds': sum(costs[u] for u in result['deferred']),
+                                             'units': {u: {'declared_seconds': costs[u], 'cases': case_names(u, fixtures)}
+                                                       for u in [*selected, *result['deferred']]}}, indent=2) + '\n')
+    print(json.dumps(result))
+    summary(plan_summary(result, fixtures))
+    if args.github_output:
+        with args.github_output.open('a') as output:
+            output.write('fixture_shards=' + json.dumps(result['shards'], separators=(',', ':')) + '\n')
+            output.write('fixture_capacity=' + json.dumps(result.get('capacity', []), separators=(',', ':')) + '\n')
+    return 0
+
+
+if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1] == '--prepare':
+        prepare_tools(Path(sys.argv[2]))
+    elif len(sys.argv) > 1 and sys.argv[1] == '--supervise':
+        supervise(float(sys.argv[2]), Path(sys.argv[3]), sys.argv[5:],
+                  None if sys.argv[4] == 'none' else float(sys.argv[4]))
+    else:
+        raise SystemExit(main())
