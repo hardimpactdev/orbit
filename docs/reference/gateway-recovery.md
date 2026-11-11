@@ -204,7 +204,7 @@ The guard deliberately excludes `proof.*` (long runs pinned to an admitted commi
 
 `gateway.release` cannot wait for itself; release admission already serializes releases. Terminal Operations never hold the guard. `instance:rename` starts no Operation; it records the branch already reported by the Node agent.
 
-Container Process journal and state reads create no Operation, so they do not hold this guard. Process actions still match `process.*`.
+Container Process journal and state reads create no Operation, so they do not hold this guard. Process actions still match `process.*`. Already queued `RefreshContainerProcessStatus` jobs fail as a missing class after the switch. They cannot run the removed handler or affect returned state, so the failures are harmless and use normal failed-job cleanup.
 
 Observed successful container migrates took 182–215 seconds, container clones (`instance.create`) 20–40 seconds, and container destroys 23–75 seconds. These are observations, not guarantees; the separate `instance.clone` kind has no recorded timing here.
 

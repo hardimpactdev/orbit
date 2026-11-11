@@ -98,7 +98,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "aa748e232c488b04a5a8e4b9c69dccec234007a6b02f176d2dd909bd28b386a9",
+    "source_sha256": "f0787511d26abd6a0356b3ebe4c4bdb54aafd0fc4ea526eaedb5305beeb60045",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
@@ -108,7 +108,7 @@
       "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer",
       "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing",
       "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file",
-      "a Process's start, stop and restart change its unit in the container; a read returns its state and journal",
+      "a Process's start, stop and restart change its unit in the container",
       "a clone runs its own Process units: the default's units and folders from the seed go, and its own start",
       "a clone's first boot starts no unit of the default and the clone has its own machine-id",
       "the workspace stays writable for its group before and after the deploy steps, whoever installed last",
@@ -123,7 +123,7 @@
       "a copied seed with an unguarded extra local NIC refuses before the clone starts",
       "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read",
       "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish",
-      "a thirty-second Process stop succeeds and inspection keeps its existing unbounded state read"
+      "a thirty-second Process stop succeeds"
     ]
   },
   "swamp/tests/ansible_instance_host_test.ts": {
@@ -1723,12 +1723,12 @@
     ]
   },
   "swamp/tests/workflow_absent_secrets_test.ts": {
-    "source_sha256": "c5c81d7c2822e09d1bae4ce9c32bc037f7c9d5ee13e80018c6d19fc4d8c13352",
+    "source_sha256": "4f3878f305667a7b8a502afbed8689adfc59a00895567ac053f2b7f1afda299b",
     "cases": [
       "a checkout create reads no key that only a container create has",
       "a container default's create and a clone's create read their own keys",
       "a production and a checkout deployment read no key that only a container deployment has",
-      "a container process:start, stop and restart read no `read` section, which only a status or log read has",
+      "a container process:start, stop and restart read no `read` section, which only a migrated Schedule log read has",
       "create finalization evaluates checkout, default and clone receipts with Swamp's CEL types",
       "deploy VP workspace reads retain step names for the capture schema",
       "guarded withdrawal resolves the same child when cleanup is needed and stays deferred during parent preflight"

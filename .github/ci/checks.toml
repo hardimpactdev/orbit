@@ -175,7 +175,7 @@ inputs = [
   "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer" = 80 # completed body 63.478s, run 43010311414; larger completed history retained
   "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing" = 66 # completed body 41.857s, run 43010311414; larger completed history retained
   "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file" = 78 # completed body 77.701s, run 43010311414; larger completed history retained
-  "a Process's start, stop and restart change its unit in the container; a read returns its state and journal" = 73 # completed body 72.036s, run 43010311414; larger completed history retained
+  "a Process's start, stop and restart change its unit in the container" = 73 # completed body 72.036s, run 43010311414; larger completed history retained
   "a clone runs its own Process units: the default's units and folders from the seed go, and its own start" = 71 # completed body 70.786s, run 43010311414; larger completed history retained
   "a clone's first boot starts no unit of the default and the clone has its own machine-id" = 109 # completed body 76.463s, run 43010311414; larger completed history retained
   "the workspace stays writable for its group before and after the deploy steps, whoever installed last" = 69 # completed body 44.079s, run 43010311414; larger completed history retained
@@ -190,7 +190,7 @@ inputs = [
   "a copied seed with an unguarded extra local NIC refuses before the clone starts" = 61 # completed body 41.636s, run 43010311414; larger completed history retained
   "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read" = 72 # completed body 51.951s, run 43010311414; larger completed history retained
   "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish" = 68 # completed body 46.788s, run 43010311414; larger completed history retained
-  "a thirty-second Process stop succeeds and inspection keeps its existing unbounded state read" = 93 # completed body 78.064s, run 43010311414; larger completed history retained
+  "a thirty-second Process stop succeeds" = 93 # completed body 78.064s, run 43010311414; larger completed history retained
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_test.ts"
