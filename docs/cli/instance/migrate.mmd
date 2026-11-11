@@ -23,7 +23,7 @@ sequenceDiagram
   %%> - the Instance goes down during the move, and its old checkout moves to retention after it; `--force` answers yes
   Note over GW: Validate, reserve runtime<br/>address · T3 port
   %%> If it never starts:
-  %%> - cancellation or admission expiry frees the new reservation and releases deferred Schedule fires under the Instance lock; an uncertain start keeps its reservation
+  %%> - cancellation or admission expiry frees the new reservation and releases deferred Schedule fires under the Instance lock; an uncertain start keeps its reservation until recovery proves no run was submitted
   %%> Requirements:
   %%> - the Instance is an active checkout Instance on an `app-dev` Node of the build list, else `instance.migrate_unsupported`
   %%> - a non-default Instance needs its Project's default Instance in a container first, else `instance.default_not_migrated`
@@ -82,6 +82,7 @@ sequenceDiagram
     SW->>N: Remove the checkout<br/>Ansible · tags retire
     %%> What it does:
     %%> - a due timer fire waits as a recorded Schedule Operation until migration terminal projection reopens admission; its context is rebuilt for the final runtime, on success or rollback
+    %%> - expiry keeps its timeout result; proven native termination releases deferred fires under the Instance lock, failing them explicitly if runtime admission stays closed; stale hold release also fails them without reopening admission
     %%> - replaces only the moved Schedules’ checkout-dependent services with host triggers for container execution, keeps their UUID timers and calendars, and resumes each recorded desired state
     %%> - removes the old host Process units and their environment folders
     %%> - repeats the same retirement preflight as an early warning; a new blocker leaves the container serving and the checkout intact

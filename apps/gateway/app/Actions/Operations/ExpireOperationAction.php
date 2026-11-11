@@ -6,6 +6,7 @@ namespace App\Actions\Operations;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationTimeout;
+use App\Domain\Operations\DirectOperationTimeoutSettlement;
 use App\Domain\Operations\DirectOperationUnstartedTerminal;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationRunBudgets;
@@ -76,22 +77,24 @@ final readonly class ExpireOperationAction
         });
     }
 
-    /** How long a timed-out Operation may hold its target while Swamp has not proven that its run ended. */
+    /** How long to await native terminal proof before releasing a timed-out Operation’s target hold and deferred admission. */
     public const int HoldMinutes = 60;
 
     /**
      * Frees the target of a timed-out Operation after `HoldMinutes` without proof that its run ended: a run that was asked to cancel an
-     * hour ago and still has no terminal is lost, and a lost run must not hold its target for ever. Returns how many it freed.
+     * hour ago and still has no terminal is lost, and a lost run must not hold its target for ever. Also settles expired runs without a target lock. Returns how many it settled.
      */
     public function releaseStaleHolds(): int
     {
         $freed = 0;
-        $stale = Operation::query()->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')->whereNotNull('lock_key')
+        $stale = Operation::query()->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')
+            ->where(fn ($query) => $query->whereNotNull('lock_key')->orWhere(fn ($query) => $query
+                ->whereNotNull('state->native_timeout')->whereNull('state->native_timeout->native_terminal_status')))
             ->where('finished_at', '<', now()->subMinutes(self::HoldMinutes))->pluck('id');
         foreach ($stale as $id) {
             DB::transaction(function () use ($id, &$freed): void {
                 $current = Operation::query()->lockForUpdate()->whereKey($id)->firstOrFail();
-                if (! self::awaitsSettlement($current)) {
+                if (! self::awaitsSettlement($current) && ! self::expiredUnsettled($current)) {
                     return;
                 }
                 $timeout = $current->state['native_timeout'] ?? [];
@@ -101,6 +104,7 @@ final readonly class ExpireOperationAction
                         'native_terminal_observed_at' => now()->toISOString(),
                     ]],
                 ]);
+                $this->settleDeferredAdmission($current);
                 $freed++;
             });
         }
@@ -162,7 +166,7 @@ final readonly class ExpireOperationAction
 
         return DB::transaction(function () use ($operation, $runId, $status): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-            if (! self::awaitsSettlement($current)) {
+            if (! self::awaitsSettlement($current) && ! self::expiredUnsettled($current)) {
                 return $current;
             }
             app(DirectOperation::class)->assertRun($current, $runId);
@@ -173,8 +177,20 @@ final readonly class ExpireOperationAction
                     'native_terminal_observed_at' => now()->toISOString(),
                 ]],
             ]);
+            $this->settleDeferredAdmission($current);
 
             return $current;
         });
+    }
+
+    private function settleDeferredAdmission(Operation $operation): void
+    {
+        if (! DirectOperation::owns($operation)) {
+            return;
+        }
+        $projection = app(DirectOperation::class)->projection($operation);
+        if ($projection instanceof DirectOperationTimeoutSettlement) {
+            $projection->timeoutSettled($operation);
+        }
     }
 }

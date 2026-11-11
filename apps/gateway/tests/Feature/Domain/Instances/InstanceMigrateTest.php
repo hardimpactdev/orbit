@@ -60,6 +60,7 @@ use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Infrastructure\Swamp\SwampReadBudget;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
+use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\DatabaseConnection;
@@ -81,8 +82,11 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Psr\Log\NullLogger;
 
 uses(LazilyRefreshDatabase::class);
+
+afterEach(fn () => app(SwampConnection::class)->release());
 
 require_once __DIR__.'/ContainerInstanceHelpers.php';
 
@@ -225,6 +229,72 @@ function migrateVault(array $secrets = []): object
     };
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token']);
+
+    return $socket;
+}
+
+/** The shared reader's native history, recovery search and cancellation boundary. */
+function migrationTerminalReader(Operation $migration, string $status, bool $noRun = false): WebSocketClient
+{
+    app(SwampConnection::class)->release();
+    $runId = '77eb3d91-e9b9-42f9-8c35-e1e5837042b2';
+    $workflow = app(DirectOperation::class)->definition($migration->kind)['workflow'];
+    $inputs = ['operation_id' => $migration->id, 'node_id' => $migration->node_id, 'kind' => $migration->kind];
+    $history = ['id' => $runId, 'workflowName' => $workflow, 'status' => $status, 'inputs' => $inputs,
+        'startedAt' => $migration->started_at->toISOString(), 'completedAt' => now()->toISOString(),
+        'jobs' => [['name' => 'migrate', 'steps' => [['name' => 'finish', 'status' => 'succeeded', 'outputs' => ['stdout' => json_encode(['ready' => false, 'moved' => false, 'restored' => true], JSON_THROW_ON_ERROR)]]]]]];
+    $search = $noRun ? [] : [['runId' => $runId, 'workflowName' => $workflow, 'inputs' => $inputs,
+        'tags' => ['orbit_start_key' => 'operation:'.$migration->id]]];
+    $socket = new class($history, $search) implements WebSocketClient
+    {
+        public array $frames = [];
+
+        private ?array $frame = null;
+
+        private bool $open = false;
+
+        public function __construct(private readonly array $history, private readonly array $search) {}
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+        {
+            $this->open = true;
+        }
+
+        public function send(array $message): void
+        {
+            $this->frames[] = $message;
+            $this->frame = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $frame = $this->frame;
+            $this->frame = null;
+            if ($frame === null) {
+                return [];
+            }
+            $payload = match ($frame['type']) {
+                'workflow.history.get' => ['data' => $this->history],
+                'workflow.run.search' => ['data' => ['results' => $this->search], 'total' => count($this->search)],
+                'run.attach' => ['runId' => $this->history['id'], 'kind' => 'workflow-run'],
+                'workflow.cancel' => ['data' => ['runId' => $this->history['id'], 'status' => 'cancellation_requested']],
+            };
+
+            return [['id' => $frame['id'], 'type' => $frame['type'] === 'run.attach' ? 'run.attached' : $frame['type'], 'payload' => $payload]];
+        }
+
+        public function close(): void
+        {
+            $this->open = false;
+        }
+
+        public function isConnected(): bool
+        {
+            return $this->open;
+        }
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.read_token' => 'read-token']);
 
     return $socket;
 }
@@ -2027,6 +2097,152 @@ describe('migrate registered Schedule timers', function (): void {
         expect($fire->refresh()->status)->toBe(OperationStatus::Waiting);
         Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
     })->with(['cancelled', 'expired']);
+
+    it('settles deferred fires through the shared terminal reader after a started migration expires', function (string $status, bool $recover): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        $run = '77eb3d91-e9b9-42f9-8c35-e1e5837042b2';
+        $migration->update(['status' => OperationStatus::Running, 'attempts' => 1, 'started_at' => now(),
+            'state' => [...$migration->state, ...($recover ? [] : ['swamp_run_id' => $run])]]);
+        $this->travel(2)->hours();
+        $expired = app(ExpireOperationAction::class)->execute($migration);
+        $timeoutResult = $expired->result;
+        $finishedAt = $expired->finished_at->toISOString();
+        expect($expired->error_code)->toBe('operation.timed_out')
+            ->and($expired->lock_key)->toBeNull()
+            ->and($fire->refresh()->status)->toBe(OperationStatus::Waiting);
+        migrationTerminalReader($expired, $status);
+        $reader = app(SwampCommandStep::class);
+        if ($recover) {
+            $reader->recoverUnbound($expired);
+            expect($expired->refresh()->state['swamp_run_id'])->toBe($run);
+        }
+        $selector = app(DirectOperation::class)->definition($migration->kind)['terminal_result'];
+
+        $ended = $reader->projectTerminal($expired, ['id' => $run, 'status' => $status], $selector);
+        $reader->projectTerminal($ended, ['id' => $run, 'status' => $status], $selector);
+
+        expect($ended->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($ended->error_code)->toBe('operation.timed_out')
+            ->and($ended->result)->toBe($timeoutResult)
+            ->and($ended->finished_at->toISOString())->toBe($finishedAt)
+            ->and($ended->lock_key)->toBeNull()
+            ->and($ended->state['native_timeout']['native_terminal_status'])->toBe($status);
+        expect($instance->runtime()->exists())->toBeTrue();
+        expect($fire->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($fire->error_code)->toBe('instance.lifecycle_busy')
+            ->and($schedule->refresh()->last_run_status->value)->toBe('error');
+        Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+        app(SwampConnection::class)->release();
+        migrateVault();
+        expect(migrateStart($instance)->input['had_runtime_reservation'])->toBeTrue();
+    })->with(['late success' => ['succeeded', false], 'late failure' => ['failed', false],
+        'late cancellation' => ['cancelled', false], 'crash interruption' => ['interrupted', false],
+        'recovered start' => ['interrupted', true]]);
+
+    it('recovers observation and reconciles an expired migration after native cancellation was confirmed', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        $run = '77eb3d91-e9b9-42f9-8c35-e1e5837042b2';
+        $migration->update(['status' => OperationStatus::Running, 'attempts' => 1, 'started_at' => now(),
+            'state' => [...$migration->state, 'swamp_run_id' => $run]]);
+        $this->travel(2)->hours();
+        $expired = app(ExpireOperationAction::class)->execute($migration);
+        $expired->update(['state' => [...$expired->state, 'native_cancel_confirmed_at' => now()->toISOString()]]);
+        $this->travel(20)->minutes();
+        $socket = migrationTerminalReader($expired, 'interrupted');
+
+        $subscriber = new SwampRunSubscriber($socket, new NullLogger);
+        $subscriber->pass();
+        expect(array_column($socket->frames, 'type'))->toContain('run.attach');
+        $subscriber->close();
+        app()->call([new ReconcileSwampOperations, 'handle']);
+
+        expect($expired->refresh()->error_code)->toBe('operation.timed_out')
+            ->and($expired->state['native_timeout']['native_terminal_status'])->toBe('interrupted');
+        expect($fire->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($fire->error_code)->toBe('instance.lifecycle_busy');
+    });
+
+    it('releases deferred fires when recovery proves an expired uncertain migration submitted no run', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        $migration->update(['status' => OperationStatus::Running, 'started_at' => now(), 'error_code' => 'swamp.start_uncertain']);
+        $this->travel(11)->minutes();
+        $expired = app(ExpireOperationAction::class)->execute($migration);
+        migrationTerminalReader($expired, 'interrupted', noRun: true);
+
+        app(SwampCommandStep::class)->recoverUnbound($expired);
+        app(SwampCommandStep::class)->recoverUnbound($expired->refresh());
+
+        expect($expired->refresh()->error_code)->toBe('operation.timed_out')
+            ->and($expired->lock_key)->toBeNull()
+            ->and($expired->state['native_timeout'])->toHaveKey('no_run_verified_at');
+        expect($instance->runtime()->exists())->toBeFalse();
+        expect($fire->refresh()->status)->toBe(OperationStatus::Queued)
+            ->and($fire->input['working_directory'])->toBe($instance->checkout_path);
+        expect(Queue::pushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id))->toHaveCount(1);
+    });
+
+    it('explicitly fails deferred fires when an expired started migration loses its stale hold without terminal proof', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        $migration->update(['status' => OperationStatus::Running, 'attempts' => 1, 'started_at' => now(),
+            'state' => [...$migration->state, 'swamp_run_id' => '77eb3d91-e9b9-42f9-8c35-e1e5837042b2']]);
+        $this->travel(2)->hours();
+        $expired = app(ExpireOperationAction::class)->execute($migration);
+        $this->travel(61)->minutes();
+
+        $socket = migrationTerminalReader($expired, 'running');
+        app()->call([new ReconcileSwampOperations, 'handle']);
+
+        expect($socket->frames)->toBe([]);
+        expect($expired->refresh()->error_code)->toBe('operation.timed_out')
+            ->and($expired->state['native_timeout']['native_terminal_status'])->toBe('unproven');
+        expect($instance->runtime()->exists())->toBeTrue();
+        expect($fire->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($fire->error_code)->toBe('instance.lifecycle_busy')
+            ->and($schedule->refresh()->last_run_status->value)->toBe('error');
+        Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+    });
+
+    it('replays deferred fires once through the shared reader after manual cancellation of a started migration', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        $run = '77eb3d91-e9b9-42f9-8c35-e1e5837042b2';
+        $migration->update(['status' => OperationStatus::Running, 'attempts' => 1, 'started_at' => now(),
+            'state' => [...$migration->state, 'swamp_run_id' => $run]]);
+        migrationTerminalReader($migration, 'cancelled');
+
+        $cancelled = app(CancelOperationAction::class)->execute($migration);
+        expect($cancelled->status)->toBe(OperationStatus::Running)
+            ->and($fire->refresh()->status)->toBe(OperationStatus::Waiting);
+        $reader = app(SwampCommandStep::class);
+        $selector = app(DirectOperation::class)->definition($migration->kind)['terminal_result'];
+        $ended = $reader->projectTerminal($cancelled, ['id' => $run, 'status' => 'cancelled'], $selector);
+        $reader->projectTerminal($ended, ['id' => $run, 'status' => 'cancelled'], $selector);
+
+        expect($ended->status)->toBe(OperationStatus::Cancelled);
+        expect($instance->runtime()->exists())->toBeFalse();
+        expect($fire->refresh()->status)->toBe(OperationStatus::Queued)
+            ->and($fire->input['working_directory'])->toBe($instance->checkout_path);
+        expect(Queue::pushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id))->toHaveCount(1);
+    });
 
     it('records extensionless interpreter operands as paths for remote containment checks', function (string $command, string $path): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());

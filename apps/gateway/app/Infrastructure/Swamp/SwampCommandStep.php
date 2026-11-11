@@ -8,6 +8,7 @@ use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationChildProjection;
+use App\Domain\Operations\DirectOperationUnstartedTerminal;
 use App\Domain\Operations\OperationResultFields;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
@@ -68,8 +69,13 @@ final readonly class SwampCommandStep
                 app(OperationStore::class)->change($current, ['lock_key' => null,
                     'state' => [...($current->state ?? []), 'native_timeout' => [
                         ...(is_array($timeout) ? $timeout : []), 'no_run_verified_at' => now()->toISOString(),
+                        'native_terminal_status' => 'unstarted',
                     ]],
                 ]);
+                $projection = app(DirectOperation::class)->projection($current);
+                if ($projection instanceof DirectOperationUnstartedTerminal) {
+                    $projection->unstartedTerminal($current);
+                }
             });
 
             return;
@@ -166,7 +172,7 @@ final readonly class SwampCommandStep
         if (ExpireOperationAction::expiredUnsettled($operation) && $completedAt !== null && $deadline !== null && $completedAt->lessThan($deadline)) {
             $operation = app(ExpireOperationAction::class)->reopen($operation, $runId);
         }
-        if (ExpireOperationAction::awaitsSettlement($operation)) {
+        if (ExpireOperationAction::expiredUnsettled($operation)) {
             return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status']);
         }
         $result = $run['status'] === 'cancelled' && $direct->projection($operation) instanceof DirectOperationChildProjection
@@ -182,7 +188,7 @@ final readonly class SwampCommandStep
 
             return $current;
         });
-        if (ExpireOperationAction::awaitsSettlement($current)) {
+        if (ExpireOperationAction::expiredUnsettled($current)) {
             return app(ExpireOperationAction::class)->settle($current, $runId, $status);
         }
         if ($current->status->terminal() || isset($current->state['swamp_scheduled_result'])) {

@@ -19,6 +19,7 @@ use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Operations\DirectOperationTimeoutSettlement;
 use App\Domain\Operations\DirectOperationUnstartedTerminal;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
@@ -36,7 +37,7 @@ use Illuminate\Support\Facades\DB;
  * the Instance's runtime: its checkout path becomes the workspace, the runtime runs, and a non-default Instance's T3 server is
  * recorded. A move that failed and restored drops the reserved runtime row, so the Instance is the checkout Instance it was.
  */
-final readonly class InstanceMigrateProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationUnstartedTerminal
+final readonly class InstanceMigrateProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeoutSettlement, DirectOperationUnstartedTerminal
 {
     public function __construct(private DirectOperation $direct) {}
 
@@ -52,6 +53,13 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         if (($operation->input['had_runtime_reservation'] ?? false) !== true) {
             Instance::query()->findOrFail($operation->target_id)->runtime()->where('operation_id', $operation->id)->delete();
         }
+        app(DeferredMigrationScheduleRuns::class)->release($operation);
+    }
+
+    public function timeoutSettled(Operation $operation): void
+    {
+        Instance::query()->lockForUpdate()->findOrFail($operation->target_id);
+        // Timeout settlement proves no runtime result. Keep the reservation; closed admission explicitly fails the fires.
         app(DeferredMigrationScheduleRuns::class)->release($operation);
     }
 

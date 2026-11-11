@@ -54,7 +54,8 @@ final class SwampRunSubscriber
             return;
         }
         foreach (Operation::query()->whereIn('kind', $kinds)->where(fn ($query) => $query->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting])
-            ->orWhere(fn ($query) => $query->where('error_code', 'operation.timed_out')->whereNotNull('lock_key')))
+            ->orWhere(fn ($query) => $query->where('error_code', 'operation.timed_out')
+                ->whereNotNull('state->native_timeout')->whereNull('state->native_timeout->native_terminal_status')))
             ->lazyById() as $operation) {
             $this->follow($operation->id);
         }
@@ -64,7 +65,7 @@ final class SwampRunSubscriber
     public function follow(int $operationId): void
     {
         $operation = Operation::query()->find($operationId);
-        if ($operation === null || ($operation->status->terminal() && ! ExpireOperationAction::awaitsSettlement($operation))) {
+        if ($operation === null || ($operation->status->terminal() && ! ExpireOperationAction::expiredUnsettled($operation))) {
             $request = $this->following[$operationId]['request'] ?? null;
             if ($request !== null) {
                 unset($this->requests[$request]);
@@ -220,7 +221,7 @@ final class SwampRunSubscriber
         $entry = $this->following[$operationId];
         if (($this->queued[$operationId] ?? null) === $entry['run']) {
             $current = Operation::query()->find($operationId);
-            if ($current === null || ! ExpireOperationAction::awaitsSettlement($current)) {
+            if ($current === null || ! ExpireOperationAction::expiredUnsettled($current)) {
                 return;
             }
         }
