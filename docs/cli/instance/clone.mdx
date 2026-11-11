@@ -19,6 +19,7 @@ orbit instance:clone <candidate> <node> <name> --preview-name=NAME [--branch=BRA
 | `--preview-name=NAME` | prompt | Preview name that Orbit combines with the destination Node's TLD: `shop.com` on a Node with the TLD `prod.orbit` becomes `shop.com.prod.orbit`. A non-web Project gets no Route but still needs the name. |
 | `--branch=BRANCH` | the candidate's branch | Target branch in the Project repository. A branch that does not exist fails the task at the fetch. |
 | `--sqlite-source-path=PATH` | none | Absolute path to one SQLite database on the candidate, to seed `database.sqlite`. |
+| `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the final task as JSON, with every step, and nothing while it follows. |
 
 ```bash
@@ -32,7 +33,7 @@ The candidate supplies the source, the stored environment values and an optional
 
 The command starts a task and follows it until it ends, as [`instance:deploy`](/cli/instance/deploy) does: a progress tree of the steps, Ctrl-C stops following and not the clone and exits 130, and `--json` prints nothing while it follows. The clone creates the production account and its home on the destination, fetches the committed source into the initial release, writes the `.env` from the candidate's stored values without `DB_*` and WebSocket credentials and with production mode forced, prepares the pinned Vite+ runtime, seeds `database.sqlite` when asked, installs the Project's Processes and Schedules enabled but not started, and for a web Project publishes a private preview Route and probes it over TLS.
 
-Cloning ends with an active Instance and no release. The result lists key-only warnings for copied development service references and paths outside the production home; `--json` returns them in `warnings`. Review them with `env:update` and `env:sync`, record deploy steps, then run [`instance:deploy`](/cli/instance/deploy). See [Next steps](/reference/instance-cloning#next-steps).
+Cloning ends with an active Instance and no release. The result lists key-only warnings for copied development service references and paths outside the production home; `--json` returns them in `result.warnings` of the final Operation. Review them with `env:update` and `env:sync`, record deploy steps, then run [`instance:deploy`](/cli/instance/deploy). See [Next steps](/reference/instance-cloning#next-steps).
 
 A failed or cancelled clone keeps the new Instance reserved and records the error on it and on its pending Route. What the destination got stays; the candidate is unchanged. Run the identical command again to reuse the Instance and repeat only what is missing. A changed candidate, Node, preview name, branch or SQLite path is refused with `instance.clone_retry_conflict`. A new name is a new target: the Project already has a production Instance on the Node, so it is refused with `instance.production_placement_conflict`. An identical request after completion returns the first successful admission.
 

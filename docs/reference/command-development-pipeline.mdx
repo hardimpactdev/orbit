@@ -69,7 +69,7 @@ The Gateway and app-dev see the outer VM's checkout as an Incus disk device, so 
 
 <div className="flow-at" data-chart="reference/pipeline/4-pr-and-ci"></div>
 
-- Built: the fast checks, and for the proof CI the trust check, the case selection and the execution as a Gateway-started chain. Execution is on by default (`proof.execution`). It moves to one Swamp flow next.
+- Built: the fast checks, including required hosted Gateway and CLI Pest suites when their inputs change, and for the proof CI the trust check, the case selection and the execution as a Gateway-started chain. Execution is on by default (`proof.execution`). It moves to one Swamp flow next.
 - Not built: the CI job on the beast and shark self-hosted runners that calls `proof:run`, and the proof CI as a job of the one CI result. Outside pull requests will run the proof CI only after review plus the `run-proofs` label.
 - Charts: the stage chart above covers the PR, CI, the label gate, the gate and the merge. [`task:pr-ready`](/cli/task/pr-ready#how-it-works) and [`task:pr-merge`](/cli/task/pr-merge#how-it-works) show the ready step and the merge step. [`proof:run`](/cli/proof/run#how-it-works) shows the proof CI run, as one Swamp flow (reviewed).
 - Docs: [CI](/reference/implementation-loop#ci), [The proof CI](/reference/feature-flow#the-proof-ci), [`orbit proof:run`](/cli/proof/run), [Choose the cases](/reference/feature-flow#choose-the-cases).

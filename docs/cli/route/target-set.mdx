@@ -18,6 +18,7 @@ orbit route:target:set <route> <target> [--targets=ID]... [--reassign=ID:ROUTE].
 | `--targets=ID` | none | The next Instance ID of the ordered target set. Repeat it for each ID. |
 | `--reassign=ID:ROUTE` | none | A detached Instance ID and its destination Route ID. Repeat it for each Instance. |
 | `--remove=ID` | none | A detached Instance ID that you allow Orbit to remove. Repeat it for each Instance. Refused today with `route.target_cleanup_unavailable`. |
+| `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the final Operation as JSON. |
 
 ```bash
