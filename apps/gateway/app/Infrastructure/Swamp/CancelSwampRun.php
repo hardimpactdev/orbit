@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Swamp;
 
+use App\Domain\InstanceMigration\InstanceMigrateReadDeadline;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
@@ -33,15 +34,15 @@ final readonly class CancelSwampRun
             || ! is_string($address) || $address === '' || ! is_string($ca) || $ca === '') {
             throw $this->unavailable();
         }
-        if (SwampRequestDeadline::remaining(self::ReplySeconds) <= 0) {
+        if (InstanceMigrateReadDeadline::remaining(self::ReplySeconds) <= 0) {
             throw $this->unavailable();
         }
         $id = bin2hex(random_bytes(16));
         try {
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), SwampRequestDeadline::remaining(15));
+            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), InstanceMigrateReadDeadline::remaining(15));
             $this->socket->send(['type' => 'workflow.cancel', 'id' => $id, 'payload' => ['runId' => $run, 'reason' => 'Orbit Operation cancellation requested']]);
-            $deadline = microtime(true) + SwampRequestDeadline::remaining(self::ReplySeconds);
-            while ($this->socket->isConnected() && ($remaining = SwampRequestDeadline::remaining($deadline - microtime(true))) > 0) {
+            $deadline = microtime(true) + InstanceMigrateReadDeadline::remaining(self::ReplySeconds);
+            while ($this->socket->isConnected() && ($remaining = InstanceMigrateReadDeadline::remaining($deadline - microtime(true))) > 0) {
                 foreach ($this->socket->receive(min(0.5, $remaining)) as $message) {
                     if (($message['id'] ?? null) !== $id) {
                         continue;

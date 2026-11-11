@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\InstanceMigration;
 
-use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
@@ -16,6 +15,9 @@ use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
+use App\Domain\Operations\OperationRunBudgets;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -24,6 +26,7 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -88,6 +91,10 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
     {
         $container = ValidatedData::object($operation->input['container'] ?? []);
         $result = ValidatedData::object($data['result'] ?? []);
+        $run = ValidatedData::object($data['native_run'] ?? []);
+        if ($run !== []) {
+            $data['step_outcomes'] = $this->steps($run);
+        }
         if ($data['status'] === 'interrupted' && ! array_key_exists('moved', $result)) {
             $steps = array_map(ValidatedData::object(...), is_array($data['step_outcomes'] ?? null) ? $data['step_outcomes'] : []);
             $began = static fn (string $name): bool => array_any($steps, static fn (array $step): bool => $step['job'] === 'migrate'
@@ -105,14 +112,56 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
 
         return DB::transaction(function () use ($operation, $data, $result, $moved, $server): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-            if (ExpireOperationAction::expiredUnsettled($operation)) {
-                if ($data['status'] === 'cancelled' && ExpireOperationAction::deadlineCancellation($operation)) {
-                    $data['error_code'] = 'operation.timed_out';
-                    $result['error_code'] = 'operation.timed_out';
-                }
-                $operation = app(ExpireOperationAction::class)->reopen($operation, ValidatedData::string($data['run_id']), ValidatedData::string($data['native_status'] ?? $data['status']));
+            if ($operation->status->terminal() && ! self::unsettled($operation)) {
+                return $operation;
             }
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
+            $nativeStatus = $data['status'];
+            $timeout = ValidatedData::object($operation->state['native_timeout'] ?? []);
+            $deadline = OperationRunBudgets::deadline($operation);
+            if ($timeout === [] && $deadline !== null && Carbon::parse(ValidatedData::string($data['finished_at']))->greaterThan($deadline)) {
+                $operation->update(['state' => [...($operation->state ?? []), 'native_timeout' => [
+                    'budget_seconds' => OperationRunBudgets::seconds($operation), 'deadline' => $deadline->toISOString(),
+                    'cancel_requested_before_deadline' => $operation->cancel_requested_at !== null,
+                    'native_terminal_status' => $nativeStatus, 'native_terminal_observed_at' => now()->toISOString(),
+                ]]]);
+            }
+            // Recheck cancellation cause from the durable audit after all private reads, under this same lock.
+            if ($data['status'] === 'cancelled') {
+                $code = $result['error_code'] ?? null;
+                if (is_string($code) && ! $this->cancelledFailure(ValidatedData::object($data['native_run'] ?? []))) {
+                    $data['status'] = 'failed';
+                    $data['error_code'] = $code;
+                } elseif (self::deadlineCancellation($operation)) {
+                    $data['status'] = 'failed';
+                    $data['error_code'] = 'operation.timed_out';
+                    $result['error_code'] = 'operation.timed_out';
+                } else {
+                    $data['error_code'] = null;
+                }
+            } elseif (in_array($data['status'], ['failed', 'interrupted'], true)) {
+                if ($result === [] || (($result['outcome'] ?? null) === 'succeeded' && ! is_string($result['error_code'] ?? null))) {
+                    $result = ['error_code' => 'operation.native_failed'];
+                }
+                $data['error_code'] = $result['error_code'] ?? 'operation.native_failed';
+            } else {
+                $data['error_code'] = null;
+            }
+            if (self::unsettled($operation)) {
+                $state = $operation->state ?? [];
+                $restore = ValidatedData::object($state['native_timeout_restore'] ?? []);
+                $timeout = ValidatedData::object($state['native_timeout'] ?? []);
+                unset($state['native_timeout_restore']);
+                if (($restore['native_failure'] ?? true) !== true) {
+                    unset($state['native_failure']);
+                }
+                $state['native_timeout'] = [...$timeout,
+                    'cancel_requested_before_deadline' => ($restore['cancel_requested'] ?? false) === true,
+                    'native_terminal_status' => $nativeStatus, 'native_terminal_observed_at' => now()->toISOString()];
+                app(OperationStore::class)->change($operation, ['status' => OperationStatus::Running, 'finished_at' => null,
+                    'error_code' => null, 'failed_step' => null, 'state' => $state,
+                    'cancel_requested_at' => ($restore['cancel_requested'] ?? true) ? $operation->cancel_requested_at : null]);
+            }
             $instance = Instance::query()->lockForUpdate()->findOrFail($operation->target_id);
             if (($data['status'] === 'succeeded' && (($result['ready'] ?? false) !== true
                     || (! $moved && ! (isset($operation->input['restore_operation_id']) && ($result['restored'] ?? false) === true))))
@@ -142,6 +191,79 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
 
             return $this->direct->project($operation, $data, $result);
         });
+    }
+
+    /** Only migrate retains native result recovery after its target hold has ended. */
+    public static function unsettled(Operation $operation): bool
+    {
+        $timeout = $operation->state['native_timeout'] ?? null;
+
+        return $operation->kind === 'instance.migrate' && $operation->status === OperationStatus::Failed
+            && $operation->error_code === 'operation.timed_out' && is_array($timeout)
+            && ! isset($timeout['no_run_verified_at'])
+            && (! isset($timeout['native_terminal_status']) || $timeout['native_terminal_status'] === 'unproven');
+    }
+
+    private static function deadlineCancellation(Operation $operation): bool
+    {
+        $timeout = $operation->state['native_timeout'] ?? null;
+        $restore = ValidatedData::object($operation->state['native_timeout_restore'] ?? []);
+
+        return is_array($timeout) && ($timeout['cancel_requested_before_deadline'] ?? $restore['cancel_requested'] ?? false) !== true;
+    }
+
+    /** Native steps guide an interrupted migrate's recovery; they do not rewrite shared progress history.
+     * @param  array<string,mixed>  $run
+     * @return list<array<string,mixed>>
+     */
+    private function steps(array $run): array
+    {
+        $steps = [];
+        foreach (is_array($run['jobs'] ?? null) ? $run['jobs'] : [] as $job) {
+            foreach (is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
+                if (is_array($step) && is_string($job['name'] ?? null) && is_string($step['name'] ?? null)) {
+                    $steps[] = ['job' => $job['name'], 'name' => $step['name'], 'status' => $step['status'] ?? 'unknown',
+                        'started_at' => $step['startedAt'] ?? null];
+                }
+            }
+        }
+
+        return $steps;
+    }
+
+    /** The first native failure distinguishes an aborted phase from an independent failure before cancellation.
+     * The pinned command/shell records a process killed by cancellation as failed, with native exit code -1.
+     *
+     * @param  array<string,mixed>  $run
+     */
+    private function cancelledFailure(array $run): bool
+    {
+        $first = $this->firstFailure($run);
+        $outputs = is_array($first['outputs'] ?? null) ? $first['outputs'] : [];
+
+        return in_array($first['status'] ?? null, ['cancelled', 'aborted'], true)
+            || ($first['error'] ?? null) === 'Command exited with code -1'
+            || ($outputs['exitCode'] ?? null) === -1;
+    }
+
+    /** @param array<string,mixed> $run
+     * @return array<string,mixed>
+     */
+    private function firstFailure(array $run): array
+    {
+        $failures = [];
+        foreach (is_array($run['jobs'] ?? null) ? $run['jobs'] : [] as $job) {
+            foreach (is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
+                if (is_array($step) && ($step['allowedFailure'] ?? false) !== true && in_array($step['status'] ?? null, ['failed', 'cancelled', 'aborted'], true)) {
+                    $failures[] = $step;
+                }
+            }
+        }
+        usort($failures, static fn (array $left, array $right): int => strcmp(
+            is_string($left['completedAt'] ?? null) ? $left['completedAt'] : '',
+            is_string($right['completedAt'] ?? null) ? $right['completedAt'] : ''));
+
+        return $failures[0] ?? [];
     }
 
     /**

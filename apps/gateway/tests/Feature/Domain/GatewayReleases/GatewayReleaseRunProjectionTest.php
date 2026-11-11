@@ -7,9 +7,7 @@ use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Models\GatewayRelease;
 use App\Models\Operation;
-use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
@@ -109,15 +107,4 @@ it('records a busy refusal with the blocker IDs and pauses after migration witho
         ->and($record->migrations_ran)->toBeTrue()
         ->and($record->message)->toContain('41, 42')
         ->and($record->phases['idle'])->toBe(['outcome' => 'failed', 'error_code' => 'gateway.release_busy']);
-});
-
-it('rolls back the terminal receipt when the release record cannot commit', function (): void {
-    DB::unprepared("CREATE TRIGGER reject_verified_release BEFORE UPDATE ON gateway_releases WHEN NEW.outcome = 'verified' BEGIN SELECT RAISE(ABORT, 'release projection failed'); END");
-    try {
-        expect(fn () => endReleaseRun('succeeded'))->toThrow(QueryException::class);
-        expect(Operation::query()->where('kind', 'gateway.release')->sole()->status->value)->toBe('running')
-            ->and(GatewayRelease::query()->sole()->outcome)->toBe(GatewayRelease::Running);
-    } finally {
-        DB::unprepared('DROP TRIGGER reject_verified_release');
-    }
 });

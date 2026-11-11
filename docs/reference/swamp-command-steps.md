@@ -3,7 +3,7 @@ title: "Swamp command steps"
 description: "The shared execution-copy and terminal-output contract for native command steps."
 covers:
   - apps/gateway/app/Domain/Proof/direct-operations.php
-  - apps/gateway/app/Infrastructure/Swamp/{CancelSwampRun,StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult,SwampConnection,SwampDispatch,SwampRequestDeadline,SwampTerminalReadUnavailable}.php
+  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult,SwampConnection,SwampDispatch,SwampTerminalReadUnavailable}.php
   - apps/gateway/app/Jobs/Operations/ReconcileSwampOperations.php
   - apps/gateway/app/Domain/Operations/DirectOperationChildProjection.php
 ---
@@ -51,10 +51,6 @@ Native behavior resources expose their attributes directly under `outputs`. The 
 
 The action that produces public values prints one JSON object on stdout. Native `command/shell` stores it in `jobs[].steps[].outputs.stdout`, alongside `exitCode`, `executedAt`, `command`, `durationMs` and `stderr`. Keep secret values out of every output. On official e459 a step that exits nonzero keeps no outputs. A refusing action fails with its own exit code; the family projector maps the native failure to its public refusal. Native dependencies skip subsequent actions.
 
-Late settlement makes no ownership transfer. It computes the generic receipt before its write transaction, then locks the Operation, rechecks the bound run, and atomically replaces the provisional expiry and records safe step metadata. Migrate reads its private T3 material before its own transaction, then locks the Instance and changes its runtime only when the reservation still belongs to that Operation. Cancellation cause comes from the durable expiry audit; the native history distinguishes an aborted phase from an independent failure.
-
-A deadline or confirmed cancellation still reads native history. Every kind except `instance.migrate` then records the [generic late receipt](/reference/operations#native-run-budgets), without a family projector, result fields or domain effects. Native step history supplies the complete receipt even when no progress event arrived. An unknown end state after an interrupted migrate keeps the runtime reservation and names its restore-only command.
-
 The shared subscriber calls `projectTerminal(Operation $operation, array $terminalRun, array{job:string,step:string} $selector): Operation` with the native event's `run` object and the fixed family declaration. The helper reads that exact root with `workflow.history.get`, authenticated with the existing `swamp.read_token`. It does not require the separate `swamp.run_token` used to start work. It selects the named job and step and decodes stdout. After the history request finishes, it briefly locks and reloads the Operation and checks its run binding. It releases that transaction before calling the family `projection.apply`, so native secret reads and cleanup never inherit a shared write lock.
 
 Each family commits its domain changes and terminal result in its own short transaction; the shared result writer locks and rechecks the original run binding and terminal status. No history request runs under that row lock. It does not repeat host or domain checks, poll status, resume a run or invoke an effect.
@@ -65,7 +61,7 @@ A projection that implements `DirectOperationChildProjection` can also record it
 
 The same shared reader finds children through recorded ancestry, bounded to 60 runs and four levels, then reads their fixed terminal selectors. It applies children in completion order under a short parent row lock and records their run IDs to suppress duplicates. An ended run of a workflow that nothing declares is recorded too, so the next pass does not read it again. Parent identity and held thread IDs constrain task turn evidence. Cancelled children supply no new transcript. No family adds a history reader.
 
-A running parent can record child evidence before its own terminal result; a parent that timed out keeps its existing evidence and applies no new child effects while awaiting native settlement. Timeout settlement releases the hold without projecting new root evidence. Native cancellation can skip finalization; a cancelled task turn keeps its previous transcript.
+A running parent can record child evidence before its own terminal result; a timed-out parent can retain that evidence while awaiting native settlement. Timeout settlement releases the hold without projecting new root evidence. Native cancellation can skip finalization; a cancelled task turn keeps its previous transcript.
 
 When a capture exceeds inline output limits, the shared reader loads the capture’s declared `artifact` resource by its recorded data ID and version (`result` when omitted). `command/shell` captures, including proof reports and task pull request receipts, select `result`; custom producer captures use their own declared resource name. Task settlement captures name `state`, `verdict` or `fix`, matching the producer. Native WebSocket map selections return their rows in `projected.rows` and leave `results` empty. The artifact lookup must return exactly one row with the declared ID, name and version. Missing or mismatched evidence leaves the child unprojected. The reader never selects the latest version.
 
@@ -118,24 +114,24 @@ A fire of a Schedule's own workflow is recorded as a task when its run ends, not
 
 ### Reconciler
 
+Migrate alone continues native terminal recovery after its deadline hold or confirmed cancellation ends. Its current reads and cancellation forwarding precede lost-run recovery; bounded slices, persisted rotation and capped backoff keep lost migrations from monopolizing that recovery. Its own projector applies the [migrate late-settlement rules](/reference/operations#native-run-budgets).
+
 `ReconcileSwampOperations` is the one place that settles an Operation with its Swamp run. The scheduler runs it every minute, and the event observer asks for a pass when it sees a run end. Polling stays: the datastore is format 2, which has no commit feed. The same pass frees the Nodes of a Route write that ended without a release and starts the Route writes that wait for them ([One Route write per Node](/reference/operations#one-route-write-per-node)).
 
-Each pass first reads current Operations and forwards their cancels. It then handles outstanding cancels of expired Operations before checking lost runs. Checks rotate by the persisted last-check time. The pass allows 180 seconds of remote work, with at most 30 seconds for lost-run recovery; the same deadline bounds root, child and artifact reads. Lost runs back off from one minute to one hour and remain eligible for late-result recovery.
-
-The reconciler uses the same reader for every direct kind:
+Each pass reads every open Operation of a direct kind against Swamp:
 
 - A bound run gets an exact root history read and any declared child evidence reads. A terminal history is projected through `SwampCommandStep::projectTerminal`.
 - A nonterminal parent records completed child evidence and stays open. Serve may announce the root’s end before saving history. An unavailable read waits for the next pass.
 - An Operation past its budget is expired. A history that shows the run ended within its budget wins.
 - An unbound Operation marked `swamp.start_uncertain` gets the exact lookup of its start. So does a timed-out one that still holds its target. The lookup repeats each pass until it binds the run or the hold ends.
-- A recorded cancel that Swamp has not confirmed is forwarded for up to an hour. A cancel is forwarded immediately after its Operation is checked.
+- A recorded cancel that Swamp has not confirmed is forwarded for up to an hour. Cancels go after the reads and stop 150 seconds into the pass.
 - A timed-out Operation whose run nothing proves ended frees its target after an hour.
 
 An open Operation whose kind has no registry entry is outside these reads. The same pass settles it.
 
 A recorded cancel request sets it to `cancelled`, and cancel does the same at once. Without a request it fails with `operation.timed_out` at its budget. The budget is 600 seconds for an unbound admission with attempts `0`, and the history budget of the kind otherwise. Either end clears the target hold.
 
-Only one pass runs at a time. Backoff changes when a lost run is read again; it never resubmits native work.
+The pass has no retry, backoff or per-Operation job. Only one pass runs at a time.
 
 ### Kept read connection
 
@@ -196,5 +192,3 @@ Unexpected errors in retained `directOperation` actions fail the native step wit
 A family with admission records may implement `DirectOperationStartRefusal`. The shared start owner calls it inside the failure transaction only after a definite refusal with no bound native run. It closes those records without claiming Node effects. An uncertain submission keeps its pending record and awaits native terminal evidence.
 
 Task build, prep corrections and review rounds capture an optional fresh claim as `Claim a task place`. The child `operation-task-provision` copies the base at the published head. Publication releases the VM through the existing place release (`operation-task-vm-slot-release`); there is no task park workflow.
-
-An expired Operation remains in reconciliation until its native terminal is projected, including after cancellation is confirmed and when the kind has no target lock. The terminal history reconstructs the steps even when all progress events were missed.

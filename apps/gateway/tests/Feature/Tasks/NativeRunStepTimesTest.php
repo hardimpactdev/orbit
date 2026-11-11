@@ -6,6 +6,7 @@ use App\Data\Operations\OperationData;
 use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Swamp\NativeRunStepTimes;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Models\Operation;
@@ -20,6 +21,62 @@ function eventStep(string $job, string $name, ?string $started = null, ?string $
 {
     return ['job' => $job, 'name' => $name, 'status' => 'succeeded', 'started_at' => $started, 'finished_at' => $finished];
 }
+
+/** @return array{job:string,name:string,started_at:string,finished_at:string|null} */
+function historyStep(string $job, string $name, string $started, ?string $finished): array
+{
+    return ['job' => $job, 'name' => $name, 'started_at' => $started, 'finished_at' => $finished];
+}
+
+it('fills the times of a step from the history by job and name', function (): void {
+    $steps = ['a' => eventStep('provision', 'eligible'), 'b' => eventStep('provision', 'cloud')];
+
+    $merged = (new NativeRunStepTimes)->merge($steps, [
+        historyStep('provision', 'cloud', '2026-11-06T03:06:21.500Z', '2026-11-06T03:06:21.700Z'),
+        historyStep('provision', 'eligible', '2026-11-06T03:06:21.100Z', '2026-11-06T03:06:21.400Z'),
+    ]);
+
+    expect($merged['a']['started_at'])->toBe('2026-11-06T03:06:21.100Z')
+        ->and($merged['a']['finished_at'])->toBe('2026-11-06T03:06:21.400Z')
+        ->and($merged['b']['started_at'])->toBe('2026-11-06T03:06:21.500Z');
+});
+
+it('keeps a time the events already carried', function (): void {
+    $merged = (new NativeRunStepTimes)->merge(
+        ['a' => eventStep('j', 's', '2026-11-06T03:00:00.000Z', null)],
+        [historyStep('j', 's', '2026-11-06T03:00:09.000Z', '2026-11-06T03:00:10.000Z')],
+    );
+
+    expect($merged['a']['started_at'])->toBe('2026-11-06T03:00:00.000Z')->and($merged['a']['finished_at'])->toBe('2026-11-06T03:00:10.000Z');
+});
+
+it('matches a repeated step name by position when both lists have the same number', function (): void {
+    $steps = ['a' => eventStep('provision', 'result'), 'b' => eventStep('provision', 'result')];
+
+    $merged = (new NativeRunStepTimes)->merge($steps, [
+        historyStep('provision', 'result', '2026-11-06T03:00:01.000Z', '2026-11-06T03:00:02.000Z'),
+        historyStep('provision', 'result', '2026-11-06T03:00:05.000Z', '2026-11-06T03:00:06.000Z'),
+    ]);
+
+    expect($merged['a']['started_at'])->toBe('2026-11-06T03:00:01.000Z')->and($merged['b']['started_at'])->toBe('2026-11-06T03:00:05.000Z');
+});
+
+it('leaves a repeated step alone when the counts differ', function (): void {
+    $steps = ['a' => eventStep('provision', 'result'), 'b' => eventStep('provision', 'result')];
+
+    $merged = (new NativeRunStepTimes)->merge($steps, [historyStep('provision', 'result', '2026-11-06T03:00:01.000Z', '2026-11-06T03:00:02.000Z')]);
+
+    expect($merged)->toBe($steps);
+});
+
+it('matches a looped step, named with its index, to the history step name', function (): void {
+    $merged = (new NativeRunStepTimes)->merge(
+        ['a' => eventStep('source', 'setup-0-0'), 'b' => eventStep('source', 'setup-0-1')],
+        [historyStep('source', 'setup-0', '2026-11-06T03:00:01.000Z', '2026-11-06T03:00:02.000Z'), historyStep('source', 'setup-0', '2026-11-06T03:00:03.000Z', '2026-11-06T03:00:04.000Z')],
+    );
+
+    expect($merged['a']['finished_at'])->toBe('2026-11-06T03:00:02.000Z')->and($merged['b']['started_at'])->toBe('2026-11-06T03:00:03.000Z');
+});
 
 it('records the times of the root and nested steps when a run ends', function (): void {
     $root = '986bc349-54dc-4dea-9f22-76e3353d1cb0';
@@ -85,35 +142,4 @@ it('records the times of the root and nested steps when a run ends', function ()
     $steps = OperationData::summary($operation->refresh())->steps;
     expect($steps[0]->started_at)->toBe('2026-11-06T03:06:21.100Z')->and($steps[0]->finished_at)->toBe('2026-11-06T03:06:30.000Z')
         ->and($steps[1]->started_at)->toBe('2026-11-06T03:06:22.000Z')->and($steps[1]->finished_at)->toBe('2026-11-06T03:06:23.000Z');
-});
-
-it('reconstructs a completed destroy receipt from native history when every progress event was missed', function (): void {
-    $run = '656d243e-e760-42de-aa95-1f149061a5b8';
-    $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => 678,
-        'status' => OperationStatus::Succeeded, 'input' => [], 'state' => ['swamp_run_id' => $run]]);
-    $socket = Mockery::mock(WebSocketClient::class);
-    $frame = [];
-    $socket->shouldReceive('connect', 'close')->andReturnNull();
-    $socket->shouldReceive('isConnected')->andReturnTrue();
-    $socket->shouldReceive('send')->andReturnUsing(function (array $message) use (&$frame): void {
-        $frame = $message;
-    });
-    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame): array {
-        return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => ['results' => []]]]];
-    });
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'read-token']);
-    $names = ['Prepare container removal', 'Write the git credential', 'Check work is pushed', 'Remove the git credential',
-        'Withdraw the Route', 'Remove hibernation files-0', 'Remove hibernation files-1', 'Remove hibernation files-2',
-        'Remove the source', 'Check it is gone', 'Delete the container', 'Read container removal', 'Clean container files'];
-    $history = ['id' => $run, 'startedAt' => '2026-11-11T00:01:58.000Z', 'jobs' => [['name' => 'destroy', 'steps' => array_map(
-        static fn (string $name): array => ['name' => $name, 'status' => 'succeeded', 'startedAt' => '2026-11-11T00:01:58.000Z', 'completedAt' => '2026-11-11T00:02:07.000Z'], $names,
-    )]]];
-
-    (new ReflectionMethod(SwampCommandStep::class, 'fillStepTimes'))->invoke(app(SwampCommandStep::class), $operation, $run, $history);
-
-    $steps = OperationData::summary($operation->refresh())->steps;
-    expect(array_map(static fn ($step) => $step->name, $steps))->toBe($names)
-        ->and($steps[12]->status)->toBe('succeeded')
-        ->and($steps[12]->finished_at)->toBe('2026-11-11T00:02:07.000Z');
 });

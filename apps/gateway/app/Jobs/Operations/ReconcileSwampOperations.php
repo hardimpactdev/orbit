@@ -6,6 +6,8 @@ namespace App\Jobs\Operations;
 
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Gateway\GatewayQueue;
+use App\Domain\InstanceMigration\InstanceMigrateProjection;
+use App\Domain\InstanceMigration\InstanceMigrateReconciliation;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationRunBudgets;
@@ -17,14 +19,12 @@ use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Tasks\TaskVmAdmission;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Infrastructure\Swamp\SwampCommandStep;
-use App\Infrastructure\Swamp\SwampRequestDeadline;
 use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
 use App\Models\Operation;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -45,11 +45,8 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 300;
 
-    private const int PassSeconds = 180;
-
-    private const int RecoverySeconds = 30;
-
-    private const int CurrentSeconds = 90;
+    /** Forwarding cancels stops after this many seconds, so a slow Swamp cannot starve the reads of the pass. */
+    private const int CancelSeconds = 150;
 
     public function __construct()
     {
@@ -59,25 +56,41 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
     public function handle(SwampCommandStep $step, ExpireOperationAction $expire, CancelSwampRun $cancel, OperationStore $store): void
     {
         $kinds = array_keys(app(DirectOperation::class)->definitions());
+        if (in_array('instance.migrate', $kinds, true)) {
+            OperationRunBudgets::duringTick(fn () => app(InstanceMigrateReconciliation::class)->run(
+                fn (Operation $operation): Operation => $this->reconcile($operation, $step, $expire),
+                fn (Operation $operation) => $this->forwardCancel($operation, $cancel, $store),
+            ));
+            $kinds = array_values(array_diff($kinds, ['instance.migrate']));
+        }
         if ($kinds === []) {
             return;
         }
-        $deadline = now()->addSeconds(self::PassSeconds);
+        $started = microtime(true);
         $cancellation = app(NativeRunCancellation::class);
-        OperationRunBudgets::duringTick(function () use ($kinds, $step, $expire, $cancel, $store, $cancellation, $deadline): void {
-            // Current work and cancel forwarding get their turn before any lost-run recovery.
-            $seen = [];
-            $current = self::open($kinds)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting]);
-            $this->checkBatch($current, now()->addSeconds(self::CurrentSeconds), $step, $expire, $cancel, $store, $cancellation, $seen);
-            $pending = self::open($kinds)->where('status', OperationStatus::Failed)
-                ->whereNotNull('state->native_cancel_requested_at')->whereNull('state->native_cancel_confirmed_at')
-                ->where('state->native_cancel_requested_at', '>', now()->subMinutes(NativeRunCancellation::ForwardMinutes)->toISOString());
-            $this->checkBatch($pending, $deadline, $step, $expire, $cancel, $store, $cancellation, $seen);
-            $recovery = self::open($kinds)->where('status', OperationStatus::Failed)
-                ->where(fn ($query) => $query->whereNull('state->native_reconcile->next_at')
-                    ->orWhere('state->native_reconcile->next_at', '<=', now()->toISOString()));
-            $recoveryDeadline = now()->addSeconds(self::RecoverySeconds)->min($deadline);
-            $this->checkBatch($recovery, $recoveryDeadline, $step, $expire, $cancel, $store, $cancellation, $seen);
+        OperationRunBudgets::duringTick(function () use ($kinds, $step, $expire, $cancel, $store, $cancellation, $started): void {
+            $forward = [];
+            foreach (self::open($kinds)->lazyById() as $operation) {
+                try {
+                    $operation = $this->reconcile($operation, $step, $expire);
+                    if ($cancellation->awaitsForwarding($operation)) {
+                        $forward[] = $operation;
+                    }
+                } catch (Throwable $exception) {
+                    $this->warn($operation, $exception);
+                }
+            }
+            // Reads first: a cancel can wait for Swamp's reply for half a minute.
+            foreach ($forward as $operation) {
+                if (microtime(true) - $started > self::CancelSeconds) {
+                    break;
+                }
+                try {
+                    $this->forwardCancel($operation, $cancel, $store);
+                } catch (Throwable $exception) {
+                    $this->warn($operation, $exception);
+                }
+            }
         });
         $expire->releaseStaleHolds();
         // An Operation of a kind that left the registry is read by nothing above; it ends on a cancel request or at its budget.
@@ -95,43 +108,6 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         app(RoutePublicationHolds::class)->sweep();
     }
 
-    /** @param Builder<Operation> $query
-     * @param  list<int>  $seen
-     */
-    private function checkBatch(Builder $query, Carbon $deadline, SwampCommandStep $step, ExpireOperationAction $expire,
-        CancelSwampRun $cancel, OperationStore $store, NativeRunCancellation $cancellation, array &$seen): void
-    {
-        foreach ($query->whereNotIn('id', $seen)->orderByRaw('cancel_requested_at IS NULL')->orderBy('state->native_reconcile->checked_at')->orderBy('id')->limit(100)->get() as $operation) {
-            if (! $deadline->isFuture()) {
-                break;
-            }
-            $seen[] = $operation->id;
-            // Persist rotation before the remote call, including when a worker stops during it.
-            DB::transaction(function () use ($operation): void {
-                $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-                $previous = $current->state['native_reconcile'] ?? [];
-                $attempt = is_array($previous) && is_int($previous['attempt'] ?? null) ? $previous['attempt'] : 0;
-                $attempt = ExpireOperationAction::expiredUnsettled($current) ? min(7, $attempt + 1) : 0;
-                $current->update(['state' => [...($current->state ?? []), 'native_reconcile' => [
-                    'checked_at' => now()->toISOString(), 'attempt' => $attempt,
-                    'next_at' => $attempt === 0 ? null : now()->addSeconds(min(3600, 60 * (2 ** ($attempt - 1))))->toISOString(),
-                ]]]);
-            });
-            try {
-                $operation = SwampRequestDeadline::during($deadline, fn (): Operation => $this->reconcile($operation->refresh(), $step, $expire));
-            } catch (Throwable $exception) {
-                $this->warn($operation, $exception);
-            }
-            try {
-                if ($cancellation->awaitsForwarding($operation->refresh()) && now()->lessThan($deadline)) {
-                    SwampRequestDeadline::during($deadline, fn () => $this->forwardCancel($operation, $cancel, $store));
-                }
-            } catch (Throwable $exception) {
-                $this->warn($operation, $exception);
-            }
-        }
-    }
-
     /** Remote text can contain inputs: log identity and type only. */
     private function warn(Operation $operation, Throwable $exception): void
     {
@@ -140,8 +116,8 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
     }
 
     /**
-     * Unfinished Operations and every provisional expiry until native terminal projection or verified absence of a run.
-     * Cancellation confirmation and target locks do not prove that native restore and finish ended.
+     * Unfinished Operations, those the Gateway timed out while Swamp has not proven their run ended, and timed-out ones with a
+     * cancel request Swamp has not confirmed.
      *
      * @param  list<string>  $kinds
      * @return Builder<Operation>
@@ -150,10 +126,10 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
     {
         return Operation::query()->whereIn('kind', $kinds)->where(fn ($query) => $query
             ->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting])
+            ->orWhere(fn ($query) => $query->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')->whereNotNull('lock_key'))
             ->orWhere(fn ($query) => $query->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')
-                ->whereNull('state->native_timeout->no_run_verified_at')
-                ->where(fn ($query) => $query->whereNull('state->native_timeout->native_terminal_status')
-                    ->orWhere('state->native_timeout->native_terminal_status', 'unproven'))));
+                ->where('state->native_cancel_requested_at', '>', now()->subMinutes(NativeRunCancellation::ForwardMinutes)->toISOString())
+                ->whereNull('state->native_cancel_confirmed_at')->whereNull('state->native_timeout->native_terminal_status')));
     }
 
     private function reconcile(Operation $operation, SwampCommandStep $step, ExpireOperationAction $expire): Operation
@@ -170,7 +146,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         }
         if (! isset($operation->state['swamp_run_id'])) {
             $operation = $expire->execute($operation)->refresh();
-            if ($operation->error_code === 'swamp.start_uncertain' || ExpireOperationAction::expiredUnsettled($operation)) {
+            if ($operation->error_code === 'swamp.start_uncertain' || ExpireOperationAction::awaitsSettlement($operation) || InstanceMigrateProjection::unsettled($operation)) {
                 $step->recoverUnbound($operation);
                 $operation->refresh();
             }

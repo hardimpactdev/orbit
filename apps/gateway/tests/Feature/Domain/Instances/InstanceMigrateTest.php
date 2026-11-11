@@ -13,6 +13,8 @@ use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
+use App\Domain\InstanceMigration\InstanceMigrateReadDeadline;
+use App\Domain\InstanceMigration\InstanceMigrateReconciliation;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\InstanceMigration\InstanceMigrationRoute;
 use App\Domain\Instances\ContainerProcesses;
@@ -27,8 +29,6 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationRunBudgets;
-use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -45,6 +45,7 @@ use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
+use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\Operations\StartAdmittedSwampRun;
@@ -58,7 +59,6 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
-use App\Models\ToolManagerRecord;
 use App\Support\ValidatedData;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -1347,7 +1347,7 @@ it('captures the Node endpoint union from the same attached targets as each NIC,
     expect($containers->nodeEndpoints($node))->toBe([]);
 });
 
-it('projects the native restored end state and steps across each post-quiesce exit', function (string $exit, string $nativeStatus, bool $expired): void {
+it('projects the native restored end state across each post-quiesce exit', function (string $exit, string $nativeStatus, bool $expired): void {
     $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
     $instance->update(['provisioning_step' => 'active']);
     $worker = migrationWorker($instance);
@@ -1356,7 +1356,8 @@ it('projects the native restored end state and steps across each post-quiesce ex
     $started = now()->subHours(2)->toISOString();
     $finished = now()->toISOString();
     $operation->forceFill(['status' => 'running', 'attempts' => 1, 'started_at' => $started,
-        'finished_at' => null, 'error_code' => null, 'state' => ['swamp_run_id' => $run]])->save();
+        'finished_at' => null, 'error_code' => null, 'cancel_requested_at' => $exit === 'cancel' ? now()->subHours(2)->addMinute() : null,
+        'state' => ['swamp_run_id' => $run]])->save();
     if ($expired) {
         app(ExpireOperationAction::class)->execute($operation);
         $operation->refresh()->update(['lock_key' => null, 'state' => [...$operation->state,
@@ -1409,10 +1410,7 @@ it('projects the native restored end state and steps across each post-quiesce ex
             ->and($instance->runtime()->exists())->toBeFalse()
             ->and($worker->refresh()->systemd_activation_hash)->toBe('old-host-hash')
             ->and(app(ProcessTargetResolver::class)->forProcess($worker)->container)->toBeNull();
-        $steps = OperationData::summary($projected)->steps;
-        expect(array_map(static fn ($step) => $step->name, $steps))->toBe(['quiesce', 'container-processes', 'restore', 'finish'])
-            ->and($steps[2]->status)->toBe('succeeded')
-            ->and($steps[2]->finished_at)->toBe($finished);
+        expect(OperationData::summary($projected)->steps)->toBeEmpty();
     } finally {
         app(SwampConnection::class)->release();
     }
@@ -1611,16 +1609,13 @@ it('review late restored history must preserve a newer migrate reservation', fun
             ->and($instance->runtime()->firstOrFail()->operation_id)->toBe($retry->id)
             ->and($worker->refresh()->systemd_activation_hash)->toBe('old-host-hash')
             ->and($instance->runtime()->firstOrFail()->seed_commit)->toBeNull();
-        $steps = OperationData::summary($projected)->steps;
-        expect(array_map(static fn ($step) => $step->name, $steps))->toBe(['quiesce', 'container-processes', 'restore', 'finish'])
-            ->and($steps[2]->status)->toBe('succeeded')
-            ->and($steps[2]->finished_at)->toBe($finished);
+        expect(OperationData::summary($projected)->steps)->toBeEmpty();
     } finally {
         app(SwampConnection::class)->release();
     }
 });
 
-it('settles the real pinned decoder receipt with native abort or independent phase failure evidence', function (string $mode, bool $expiry, bool $userCancel, string $status, ?string $code, bool $cancelAfterFailure = false): void {
+it('settles the real pinned decoder receipt with native abort or independent phase failure evidence', function (string $mode, bool $expiry, bool $userCancel, string $status, ?string $code, bool $cancelAfterFailure = false, bool $expireDuringRead = false): void {
     $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
     $operation = migrateStart($instance);
     $history = json_decode((string) file_get_contents(base_path('tests/Fixtures/instance-migrate/pinned-'.$mode.'.json')), true, flags: JSON_THROW_ON_ERROR);
@@ -1648,7 +1643,11 @@ it('settles the real pinned decoder receipt with native abort or independent pha
     $socket->shouldReceive('send')->andReturnUsing(function (array $message) use (&$frame): void {
         $frame = $message;
     });
-    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame, $history): array {
+    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame, $history, $operation, $expireDuringRead): array {
+        if ($expireDuringRead && $frame['type'] === 'workflow.history.get') {
+            app(ExpireOperationAction::class)->execute($operation->refresh());
+        }
+
         return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => $frame['type'] === 'workflow.history.get' ? $history : ['results' => []]]]];
     });
     app(SwampConnection::class)->release();
@@ -1666,6 +1665,8 @@ it('settles the real pinned decoder receipt with native abort or independent pha
         app(SwampConnection::class)->release();
     }
 })->with([
+    'expiry during history read' => ['cancel', false, false, 'failed', 'operation.timed_out', false, true],
+    'user cancellation before expiry during history read' => ['cancel', false, true, 'cancelled', null, false, true],
     'deadline abort' => ['cancel', true, false, 'failed', 'operation.timed_out'],
     'user abort' => ['cancel', false, true, 'cancelled', null],
     'user abort before expiry' => ['cancel', true, true, 'cancelled', null],
@@ -1682,7 +1683,6 @@ it('fences a direct stale migrate projector by the runtime owner under the Insta
     $old->refresh()->update(['lock_key' => null]);
     $new = migrateStart($instance);
     $runtime = $instance->runtime()->firstOrFail();
-    app(ExpireOperationAction::class)->reopen($old, 'old-root', 'failed');
 
     $settled = app(InstanceMigrateProjection::class)->apply($old->refresh(), ['run_id' => 'old-root', 'status' => 'failed',
         'started_at' => now()->subHours(2)->toISOString(), 'finished_at' => now()->toISOString(),
@@ -1807,58 +1807,6 @@ it('adversarial late moved migration does not hold a write transaction during th
     'expires during a cancellation receipt vault read' => [false, 'cancelled'],
 ]);
 
-it('late Tool success records only a safe generic receipt without family fields or effects', function (): void {
-    $node = containerDefaultNode();
-    $store = app(OperationStore::class);
-    $input = ['manager' => 'apt', 'package' => 'jq', 'node_id' => $node->id];
-    $old = $store->create('tool.install', 'node_tools', $node->id, $node->id, $input, null, null, 'manager:apt');
-    $root = '0c69f6e8-bc50-4819-bcab-f3972557d2cc';
-    $old->update(['status' => 'running', 'attempts' => 1, 'started_at' => now()->subHours(2),
-        'state' => [...$old->state, 'swamp_run_id' => $root]]);
-    app(ExpireOperationAction::class)->execute($old);
-    $old->refresh()->update(['lock_key' => null]);
-    $new = $store->create('tool.install', 'node_tools', $node->id, $node->id, $input, null, null, 'manager:apt');
-    $history = ['id' => $root, 'workflowName' => 'operation-tool-write-209', 'status' => 'succeeded',
-        'inputs' => ['operation_id' => $old->id, 'node_id' => $node->id, 'kind' => 'tool.install'],
-        'startedAt' => now()->subHours(2)->toISOString(), 'completedAt' => now()->toISOString(),
-        'jobs' => [['name' => 'tools', 'steps' => [
-            ['name' => 'Apply the package', 'status' => 'succeeded', 'outputs' => ['stdout' => 'RAW-MANAGER-OUTPUT-REVIEW', 'exitCode' => 0]],
-            ['name' => 'Choose package action', 'status' => 'succeeded', 'outputs' => ['ready' => true, 'installed_version' => '1.7']],
-            ['name' => 'Decode package state', 'status' => 'succeeded', 'outputs' => ['installed_version' => '1.7']],
-            ['name' => 'Assert package state', 'status' => 'succeeded', 'outputs' => ['exitCode' => 0]],
-        ]]]];
-    $frame = [];
-    $socket = Mockery::mock(WebSocketClient::class);
-    $socket->shouldReceive('connect', 'close')->andReturnNull();
-    $socket->shouldReceive('isConnected')->andReturnTrue();
-    $socket->shouldReceive('send')->andReturnUsing(function (array $message) use (&$frame): void {
-        $frame = $message;
-    });
-    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame, $history): array {
-        return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => $frame['type'] === 'workflow.history.get' ? $history : ['results' => []]]]];
-    });
-    app(SwampConnection::class)->release();
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'read-token']);
-    try {
-        $settled = app(SwampCommandStep::class)->projectTerminal($old, ['id' => $root], app(DirectOperation::class)->definition('tool.install')['terminal_result']);
-        expect($settled->status->value)->toBe('failed')
-            ->and($settled->error_code)->toBe('operation.timed_out')
-            ->and($settled->result)->toBe(['late_settlement' => true, 'native_status' => 'succeeded'])
-            ->and($new->refresh()->status->value)->toBe('queued')
-            ->and($settled->state['native_progress']['steps'][0])->toBe([
-                'job' => 'tools', 'name' => 'Apply the package', 'status' => 'succeeded',
-                'started_at' => null, 'finished_at' => null, 'exit_code' => 0,
-            ])
-            ->and(OperationData::fromModel($settled)->error['detail'])->toBe(
-                'The native run succeeded after the Gateway deadline. Its effects were not recorded. Run the command again.')
-            ->and(ToolManagerRecord::query()->where('node_id', $node->id)->exists())->toBeFalse();
-        expect(json_encode($settled->result, JSON_THROW_ON_ERROR))->not->toContain('RAW-MANAGER-OUTPUT-REVIEW');
-    } finally {
-        app(SwampConnection::class)->release();
-    }
-});
-
 it('review an already settled pre-fix timeout keeps a stale runtime but permits a new migrate admission', function (): void {
     $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
     $worker = migrationWorker($instance);
@@ -1882,50 +1830,59 @@ it('review an already settled pre-fix timeout keeps a stale runtime but permits 
         ->and($runtime->refresh()->operation_id)->toBe($retry->id);
 });
 
-it('arbitrates native completion against the admitted deadline before the expiry sweep', function (int $offset, bool $expireDuringRead): void {
+it('bounds lost migrate recovery and rotates it behind current work and cancel forwarding', function (): void {
     $node = containerDefaultNode();
-    $store = app(OperationStore::class);
-    $input = ['manager' => 'apt', 'package' => 'jq', 'node_id' => $node->id];
-    $old = $store->create('tool.install', 'node_tools', $node->id, $node->id, $input, null, null, 'manager:apt');
-    $root = '0c69f6e8-bc50-4819-bcab-f3972557d2cc';
-    $old->update(['status' => 'running', 'attempts' => 1, 'started_at' => now()->subHours(2),
-        'state' => [...$old->state, 'swamp_run_id' => $root]]);
-    expect(OperationRunBudgets::deadline($old)->isPast())->toBeTrue();
-    $history = ['id' => $root, 'workflowName' => 'operation-tool-write-209', 'status' => 'succeeded',
-        'inputs' => ['operation_id' => $old->id, 'node_id' => $node->id, 'kind' => 'tool.install'],
-        'startedAt' => now()->subHours(2)->toISOString(), 'completedAt' => OperationRunBudgets::deadline($old)->addSeconds($offset)->toISOString(),
-        'jobs' => [['name' => 'tools', 'steps' => [
-            ['name' => 'Apply the package', 'status' => 'succeeded', 'outputs' => ['stdout' => 'RAW-MANAGER-OUTPUT-REVIEW', 'exitCode' => 0]],
-            ['name' => 'Choose package action', 'status' => 'succeeded', 'outputs' => ['ready' => true, 'installed_version' => '1.7']],
-            ['name' => 'Decode package state', 'status' => 'succeeded', 'outputs' => ['installed_version' => '1.7']],
-            ['name' => 'Assert package state', 'status' => 'succeeded', 'outputs' => ['exitCode' => 0]],
-        ]]]];
-    $frame = [];
-    $socket = Mockery::mock(WebSocketClient::class);
-    $socket->shouldReceive('connect', 'close')->andReturnNull();
-    $socket->shouldReceive('isConnected')->andReturnTrue();
-    $socket->shouldReceive('send')->andReturnUsing(function (array $message) use (&$frame): void {
-        $frame = $message;
-    });
-    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame, $history, $old, $expireDuringRead): array {
-        if ($expireDuringRead && $frame['type'] === 'workflow.history.get') {
-            app(ExpireOperationAction::class)->execute(Operation::query()->findOrFail($old->id));
-            expect(ExpireOperationAction::expiredUnsettled($old->fresh()))->toBeTrue();
+    $create = fn (string $status, int $target, array $state): Operation => Operation::query()->create([
+        'kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => $target, 'node_id' => $node->id,
+        'input' => [], 'status' => $status, 'sequence' => 1, 'attempts' => 1, 'started_at' => now()->subHours(2),
+        'error_code' => $status === 'failed' ? 'operation.timed_out' : null, 'state' => $state,
+    ]);
+    $lost = [];
+    for ($i = 0; $i < 8; $i++) {
+        $lost[] = $create('failed', 1000 + $i, ['native_timeout' => ['deadline' => now()->subHour()->toISOString()],
+            'native_cancel_confirmed_at' => now()->toISOString()]);
+    }
+    $fresh = $create('running', 2000, []);
+    $cancelled = $create('running', 2001, ['swamp_run_id' => '0c69f6e8-bc50-4819-bcab-f3972557d2cc',
+        'native_cancel_requested_at' => now()->toISOString()]);
+    $cancelled->update(['cancel_requested_at' => now()]);
+    $checked = [];
+    $reconcile = function (Operation $operation) use ($fresh, $cancelled, &$checked): Operation {
+        $checked[] = $operation->id;
+        if ($operation->is($fresh)) {
+            $operation->update(['status' => 'succeeded']);
+        } elseif (! $operation->is($cancelled)) {
+            expect(InstanceMigrateReadDeadline::remaining(30))->toBeLessThanOrEqual(30);
+            $this->travel(31)->seconds();
         }
 
-        return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => $frame['type'] === 'workflow.history.get' ? $history : ['results' => []]]]];
-    });
+        return $operation;
+    };
+    $forward = function (Operation $operation) use (&$checked): void {
+        $checked[] = 'cancel';
+        $operation->update(['status' => 'cancelled', 'state' => [...$operation->state, 'native_cancel_confirmed_at' => now()->toISOString()]]);
+    };
+    app(InstanceMigrateReconciliation::class)->run($reconcile, $forward);
+    expect($checked)->toBe([$cancelled->id, 'cancel', $fresh->id, $lost[0]->id])
+        ->and($lost[0]->refresh()->state['native_reconcile']['attempt'])->toBe(1)
+        ->and($lost[0]->state['native_reconcile']['next_at'])->toBeGreaterThan(now()->toISOString());
+    $checked = [];
+    app(InstanceMigrateReconciliation::class)->run($reconcile, $forward);
+    expect($checked)->toBe([$lost[1]->id]);
+});
+
+it('ends a migrate history read when its slice expires and restores the surrounding read budget', function (): void {
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $operation = migrateStart($instance);
+    $run = '0c69f6e8-bc50-4819-bcab-f3972557d2cc';
+    $operation->update(['status' => 'running', 'state' => ['swamp_run_id' => $run]]);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'read-token']);
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldNotReceive('connect', 'send');
     app(SwampConnection::class)->release();
     app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'read-token']);
-    try {
-        $settled = app(SwampCommandStep::class)->projectTerminal($old, ['id' => $root], app(DirectOperation::class)->definition('tool.install')['terminal_result'], atDeadline: true);
-        expect([$settled->status->value, $settled->error_code, $settled->result, ToolManagerRecord::query()->where('node_id', $node->id)->exists()])->toBe($offset > 0
-            ? ['failed', 'operation.timed_out', ['late_settlement' => true, 'native_status' => 'succeeded'], false]
-            : ['succeeded', null, ['installed_version' => '1.7', 'outcome' => 'unchanged'], false]);
-        expect($settled->state['native_timeout']['native_terminal_status'])->toBe('succeeded');
-        expect(json_encode($settled->result, JSON_THROW_ON_ERROR))->not->toContain('RAW-MANAGER-OUTPUT-REVIEW');
-    } finally {
-        app(SwampConnection::class)->release();
-    }
-})->with(['late before sweep' => [1, false], 'late after sweep' => [1, true], 'in budget after sweep' => [-1, true], 'at deadline after sweep' => [0, true]]);
+    expect(fn () => InstanceMigrateReadDeadline::during(now()->subSecond(),
+        fn () => app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $run], ['job' => 'migrate', 'step' => 'finish'])))
+        ->toThrow(SwampTerminalReadUnavailable::class);
+    expect(InstanceMigrateReadDeadline::remaining(30))->toBe(30.0);
+});

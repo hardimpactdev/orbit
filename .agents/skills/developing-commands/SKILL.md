@@ -96,5 +96,3 @@ A Process preset moved into a container needs the shared container ingress and R
 Gateway releases admit refresh jobs only after verification and the new Horizon start. A command from a new release can serialize a job class that old workers cannot load. Keep the pre-load Operation guard separate from the Horizon drain: Swamp runs can outlive the queue job that started them.
 
 For an attachment read, reuse the operation's ordered inventory and eager-load its identity graph. Project public fields explicitly, and compare query counts with one attachment and several on distinct Nodes.
-
-Native terminal eligibility belongs in the shared recorder under the Operation lock. If private reads permit cancellation confirmation to arrive before family writes commit, throw from that recorder to roll back the family transaction, then recheck and write the generic receipt in a short transaction. A provisional expiry does not override a verified in-budget completion; reopen it.

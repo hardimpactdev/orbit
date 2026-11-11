@@ -12,7 +12,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Tasks\TaskVmAdmission;
 use App\Models\Operation;
-use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Records Gateway budget expiry and a cancel request, and asks Swamp to stop the bound run; Swamp ends it. */
@@ -42,7 +41,7 @@ final readonly class ExpireOperationAction
                 : ($current->failed_step ?? $current->current_step);
             $seconds = OperationRunBudgets::seconds($current);
             $state['native_timeout'] = ['budget_seconds' => $seconds, 'deadline' => $deadline->toISOString()];
-            // What terminal reconciliation restores once the exact native result is available.
+            // What reopen() restores when the bound run turns out to have met its budget.
             $state['native_timeout_restore'] = ['cancel_requested' => $current->cancel_requested_at !== null,
                 'native_failure' => is_array($failure) && is_string($failure['detail'] ?? null)];
             if (! is_array($failure) || ! is_string($failure['detail'] ?? null)) {
@@ -104,7 +103,7 @@ final readonly class ExpireOperationAction
         $timeout = $operation->state['native_timeout'] ?? null;
 
         return $operation->status === OperationStatus::Failed && $operation->error_code === 'operation.timed_out'
-            && is_array($timeout) && (! isset($timeout['native_terminal_status']) || $timeout['native_terminal_status'] === 'unproven');
+            && is_array($timeout) && ! isset($timeout['native_terminal_status']);
     }
 
     public static function awaitsSettlement(Operation $operation): bool
@@ -112,22 +111,14 @@ final readonly class ExpireOperationAction
         return $operation->status === OperationStatus::Failed && $operation->error_code === 'operation.timed_out' && $operation->lock_key !== null;
     }
 
-    /** A native cancellation after expiry keeps its timeout meaning unless the user already asked to cancel. */
-    public static function deadlineCancellation(Operation $operation): bool
-    {
-        $timeout = $operation->state['native_timeout'] ?? null;
-        $restore = ValidatedData::object($operation->state['native_timeout_restore'] ?? []);
-
-        return is_array($timeout) && ($timeout['cancel_requested_before_deadline'] ?? $restore['cancel_requested'] ?? false) !== true;
-    }
-
     /**
-     * Replace a provisional expiry once the exact native root has a terminal result.
-     * The caller projects that terminal through its normal family projection, including a restoration that ended after the deadline.
+     * Undo an expiry whose root was not bound yet, once its exact native terminal met the bound kind's budget.
+     * The admission deadline (600 s) applies until the start reply binds the run; a slow reply must not turn a
+     * run that met its budget into a failure. The caller then projects the terminal as usual.
      */
-    public function reopen(Operation $operation, string $runId, string $nativeStatus): Operation
+    public function reopen(Operation $operation, string $runId): Operation
     {
-        return DB::transaction(function () use ($operation, $runId, $nativeStatus): Operation {
+        return DB::transaction(function () use ($operation, $runId): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if (! self::expiredUnsettled($current)) {
                 return $current;
@@ -135,10 +126,7 @@ final readonly class ExpireOperationAction
             app(DirectOperation::class)->assertRun($current, $runId);
             $state = $current->state ?? [];
             $restore = is_array($state['native_timeout_restore'] ?? null) ? $state['native_timeout_restore'] : [];
-            $timeout = ValidatedData::object($state['native_timeout'] ?? []);
             unset($state['native_timeout'], $state['native_timeout_restore']);
-            $state['native_timeout'] = [...$timeout, 'cancel_requested_before_deadline' => ($restore['cancel_requested'] ?? false) === true,
-                'native_terminal_status' => $nativeStatus, 'native_terminal_observed_at' => now()->toISOString()];
             if (($restore['native_failure'] ?? true) !== true) {
                 unset($state['native_failure']);
             }
@@ -148,6 +136,31 @@ final readonly class ExpireOperationAction
                 'status' => OperationStatus::Running, 'finished_at' => null, 'error_code' => null, 'failed_step' => null,
                 'cancel_requested_at' => ($restore['cancel_requested'] ?? true) === true ? $current->cancel_requested_at : null,
                 'state' => $state, 'result' => $result,
+            ]);
+
+            return $current;
+        });
+    }
+
+    /** Called only after the shared reader verifies the exact terminal native root identity. */
+    public function settle(Operation $operation, string $runId, string $status): Operation
+    {
+        if (! in_array($status, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
+            throw new \LogicException('A target hold requires terminal native proof.');
+        }
+
+        return DB::transaction(function () use ($operation, $runId, $status): Operation {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            if (! self::awaitsSettlement($current)) {
+                return $current;
+            }
+            app(DirectOperation::class)->assertRun($current, $runId);
+            $timeout = $current->state['native_timeout'] ?? [];
+            app(OperationStore::class)->change($current, ['lock_key' => null,
+                'state' => [...($current->state ?? []), 'native_timeout' => [
+                    ...(is_array($timeout) ? $timeout : []), 'native_terminal_status' => $status,
+                    'native_terminal_observed_at' => now()->toISOString(),
+                ]],
             ]);
 
             return $current;

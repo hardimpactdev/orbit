@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace App\Infrastructure\Swamp;
+namespace App\Domain\InstanceMigration;
 
 use Closure;
 use Illuminate\Support\Carbon;
 
-/** A reconciler pass bounds history, child and artifact reads and cancel requests together. */
-final class SwampRequestDeadline
+/** A migrate reconciliation slice bounds its history, artifact reads and cancel requests together. */
+final class InstanceMigrateReadDeadline
 {
     private static ?Carbon $deadline = null;
 

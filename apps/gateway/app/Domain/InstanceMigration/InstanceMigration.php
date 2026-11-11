@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\InstanceMigration;
 
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -22,7 +21,7 @@ final class InstanceMigration
 
     public static function running(Instance $instance): bool
     {
-        return OperationStore::forTarget('instance', $instance->id)->where('kind', self::Kind)
+        return Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
             ->whereNotIn('status', OperationStatus::terminalValues())->exists();
     }
 
@@ -32,7 +31,7 @@ final class InstanceMigration
      */
     public static function pending(Instance $instance): bool
     {
-        $last = OperationStore::forTarget('instance', $instance->id)->where('kind', self::Kind)->orderByDesc('id')->first();
+        $last = Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)->orderByDesc('id')->first();
 
         return $last instanceof Operation && $last->status !== OperationStatus::Succeeded && ($last->result['moved'] ?? false) !== true;
     }
