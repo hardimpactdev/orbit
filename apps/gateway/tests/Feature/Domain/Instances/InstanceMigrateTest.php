@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Hibernation\ActivateInstanceRuntimeAction;
 use App\Actions\Instances\StartInstanceDeployAction;
+use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceMigrateAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
@@ -25,6 +26,7 @@ use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
+use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceAttachedTargets;
 use App\Domain\Instances\InstanceContainer;
@@ -187,9 +189,9 @@ function migrateServerDatabase(Instance $instance, DatabaseServer $server, strin
  *
  * @param  array<string, string>  $secrets
  */
-function migrateVault(array $secrets = []): object
+function migrateVault(array $secrets = [], ?string $failKey = null): object
 {
-    $socket = new class($secrets) implements WebSocketClient
+    $socket = new class($secrets, $failKey) implements WebSocketClient
     {
         /** @var list<array{key: string, value: string}> */
         public array $puts = [];
@@ -197,14 +199,17 @@ function migrateVault(array $secrets = []): object
         /** @var list<array<string, mixed>> */
         private array $frames = [];
 
+        public array $sentTypes = [];
+
         /** @param array<string, string> $secrets */
-        public function __construct(private array $secrets) {}
+        public function __construct(private array $secrets, private readonly ?string $failKey) {}
 
         public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
 
         public function send(array $message): void
         {
             $this->frames[] = $message;
+            $this->sentTypes[] = $message['type'];
         }
 
         public function receive(float $timeoutSeconds): array
@@ -215,6 +220,9 @@ function migrateVault(array $secrets = []): object
                     'secretKey' => $frame['payload']['secretKey'], 'vaultType' => 'local_encryption', 'value' => $this->secrets[$frame['payload']['secretKey']] ?? '']]]];
             }
             $this->puts[] = ['key' => $frame['payload']['key'], 'value' => (string) ($frame['payload']['value'] ?? '')];
+            if ($frame['payload']['key'] === $this->failKey) {
+                return [['id' => $frame['id'], 'type' => 'error', 'error' => ['code' => 'vault_put_failed']]];
+            }
 
             return [['id' => $frame['id'], 'type' => 'vault.put', 'payload' => ['data' => [
                 'vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
@@ -391,6 +399,53 @@ describe('the admission of a move', function (): void {
         expect(containerRefusal(fn () => migrateStart($default)))->toBe('instance.lifecycle_busy')
             ->and(InstanceMigration::running($default))->toBeTrue();
     });
+});
+
+describe('migration target ownership', function (): void {
+    it('terminates a queued migration whose non-default Instance was already removed', function (string $terminal): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        migrateMovedDefault($project, $node);
+        $instance = migrateCheckout($project, $node, 'removed');
+        $migration = migrateStart($instance);
+        expect($migration->status)->toBe(OperationStatus::Queued);
+        expect(Schedule::query()->exists())->toBeFalse();
+        // Reproduce an already deleted target from before the destroy admission guard.
+        $instance->runtime()->delete();
+        DB::table('instances')->where('id', $instance->id)->delete();
+        $this->travel(11)->minutes();
+
+        $ended = $terminal === 'cancelled' ? app(CancelOperationAction::class)->execute($migration)
+            : app(ExpireOperationAction::class)->execute($migration);
+
+        expect($ended->refresh()->status)->toBe($terminal === 'cancelled' ? OperationStatus::Cancelled : OperationStatus::Failed)
+            ->and($ended->finished_at)->not->toBeNull()
+            ->and(Instance::query()->whereKey($instance->id)->exists())->toBeFalse();
+        if ($terminal === 'expired') {
+            expect($ended->error_code)->toBe('operation.timed_out');
+        }
+    })->with(['cancelled', 'expired']);
+
+    it('refuses forced destruction before cleanup and rechecks migration ownership at admission', function (bool $captured): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        migrateMovedDefault($project, $node);
+        $instance = migrateCheckout($project, $node, 'moving');
+        $destroy = app(StartInstanceDestroyAction::class);
+        $snapshot = $captured ? $destroy->snapshot($instance, true) : null;
+        $migration = migrateStart($instance);
+        $before = $instance->refresh()->getAttributes();
+        expect(Schedule::query()->exists())->toBeFalse();
+
+        $action = $captured ? fn () => app(DirectInstanceDestroyIntent::class)->record($snapshot)
+            : fn () => $destroy->execute($instance, true);
+        expect(containerRefusal($action))->toBe('instance.lifecycle_busy');
+
+        expect($instance->refresh()->getAttributes())->toBe($before)
+            ->and($migration->refresh()->status)->toBe(OperationStatus::Queued)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+        expect($instance->removalMember()->exists())->toBeFalse();
+    })->with(['initial guard' => false, 'snapshot predates migration' => true]);
 });
 
 describe('the PHP version of a web-serving Project', function (): void {
@@ -2342,6 +2397,45 @@ describe('migrate registered Schedule timers', function (): void {
         'start worker failure' => ['start worker failure', true], 'stale settlement' => ['stale settlement', false],
         'recovered terminal' => ['recovered terminal', true], 'no-run recovery' => ['no-run recovery', false],
     ]);
+
+    it('reopens Schedule admission after real execution-copy preparation fails before submission', function (bool $retry): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $reserved = null;
+        if ($retry) {
+            migrateEnd(migrateStart($instance), 'failed', ['ready' => false, 'moved' => false, 'restored' => false,
+                'error_code' => 'instance.migrate_restore_failed']);
+            $reserved = $instance->runtime()->firstOrFail()->id;
+        }
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        $key = 'instance-migrate-processes-'.$migration->id;
+        SwampVaultExecutionCopy::forget('orbit-control-inputs', $key);
+        $socket = migrateVault(failKey: $key);
+
+        expect(containerRefusal(fn () => (new StartAdmittedSwampRun($migration->id))->handle(
+            app(StartSwampRun::class), app(ExpireOperationAction::class),
+        )))->toBe('swamp.vault_sync_unavailable');
+
+        expect($socket->sentTypes)->toContain('vault.put')->not->toContain('workflow.run');
+        expect(array_column($socket->puts, 'key'))->toContain($key);
+        expect($migration->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($migration->error_code)->toBe('swamp.vault_sync_unavailable')
+            ->and($migration->state['native_start_not_submitted'])->toBeTrue();
+        expect($instance->runtime()->exists())->toBe($retry)
+            ->and($instance->runtime()->first()?->id)->toBe($reserved);
+        expect($fire->refresh()->status)->toBe($retry ? OperationStatus::Failed : OperationStatus::Queued);
+        if ($retry) {
+            expect($fire->error_code)->toBe('instance.lifecycle_busy');
+            Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+        } else {
+            expect($fire->input['working_directory'])->toBe($instance->checkout_path);
+            Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+            app(CancelOperationAction::class)->execute($fire);
+            expect(app(ScheduleOperationAdmission::class)->inputFor($schedule, 'run')['working_directory'])->toBe($instance->checkout_path);
+        }
+    })->with(['new reservation' => false, 'previous failed restore reservation' => true]);
 
     it('records extensionless interpreter operands as paths for remote containment checks', function (string $command, string $path): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());

@@ -41,13 +41,13 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
     /** The one settlement rule, called by OperationStore in the first terminal transition's transaction. */
     public function terminal(Operation $operation, Operation $before): void
     {
-        $instance = Instance::query()->lockForUpdate()->findOrFail($operation->target_id);
+        $instance = Instance::query()->lockForUpdate()->find($operation->target_id);
+        if ($instance === null) {
+            return;
+        }
         $unstarted = ! isset($before->state['swamp_run_id']) && $before->attempts === 0
             && ! ($before->status === OperationStatus::Running && isset($before->state['swamp_start']));
-        // StartSwampRun leaves an uncertain submission running; only these failures prove no native submission.
-        $refused = ! isset($operation->state['swamp_run_id']) && in_array($operation->error_code, [
-            'swamp.start_refused', 'swamp.start_unavailable', 'swamp.start_enqueue_failed', 'swamp.start_job_failed',
-        ], true);
+        $refused = ! isset($operation->state['swamp_run_id']) && ($operation->state['native_start_not_submitted'] ?? false) === true;
         if (($unstarted || $refused) && ($operation->input['had_runtime_reservation'] ?? false) !== true) {
             $instance->runtime()->delete();
         }
