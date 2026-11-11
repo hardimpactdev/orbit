@@ -47,3 +47,53 @@ class OpenApiOptionalPropertyTest(unittest.TestCase):
         exec(compile(ast.Module(body=[function], type_ignores=[]), '<prop_schema>', 'exec'), namespace)
         schema = namespace['prop_schema']({'type': 'array|Optional', 'doc': 'list<string>'})
         self.assertEqual(schema, {'type': 'array', 'items': {'type': 'string'}})
+
+
+class OpenApiPresetRulesTest(unittest.TestCase):
+    def rules_namespace(self):
+        import json
+        import subprocess
+        import sys
+
+        namespace = {'re': re, 'json': json, 'subprocess': subprocess, 'sys': sys,
+                     'GW': ROOT / 'apps/gateway', 'enum_cases': {}, 'enums': {}}
+        functions = {'run_json', 'resolve_rule_constants', 'strip_closures',
+                     'resolve_route_ternaries', 'tokens_for', 'schema_from_tokens'}
+        assignments = {'RULE_CONSTANT', 'ROUTE_TERNARY', 'TYPE_RULES'}
+        nodes = [node for node in SOURCE.body
+                 if (isinstance(node, ast.FunctionDef) and node.name in functions)
+                 or (isinstance(node, ast.Assign)
+                     and any(isinstance(target, ast.Name) and target.id in assignments
+                             for target in node.targets))]
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), '<preset_rules>', 'exec'), namespace)
+        return namespace
+
+    def test_preset_class_constant_accepts_only_vp_dev(self):
+        namespace = self.rules_namespace()
+        path = ROOT / 'apps/gateway/app/Http/Requests/ProjectDefinitions/ProcessDefinitionRequest.php'
+        source = namespace['resolve_rule_constants'](path.read_text(), path)
+        rule = re.search(r"'spec.preset'\s*=>\s*(\[.*?\]),", source).group(1)
+
+        schema, _, _ = namespace['schema_from_tokens'](namespace['tokens_for'](rule))
+
+        self.assertEqual(schema, {'type': 'string', 'enum': ['vp-dev']})
+
+    def test_integer_preset_version_accepts_only_integer_one(self):
+        namespace = self.rules_namespace()
+
+        schema, _, _ = namespace['schema_from_tokens'](
+            namespace['tokens_for']("['sometimes', 'integer', Rule::in([1])]"))
+
+        self.assertEqual(schema, {'type': 'integer', 'enum': [1]})
+
+    def test_nullable_scalar_enum_accepts_null_without_changing_nonnullable_enums(self):
+        namespace = self.rules_namespace()
+
+        namespace['enums']['Policy'] = ['never', 'always']
+        schema, _, _ = namespace['schema_from_tokens'](
+            namespace['tokens_for']("['sometimes', 'nullable', Rule::enum(Policy::class)]"))
+        ordinary, _, _ = namespace['schema_from_tokens'](
+            namespace['tokens_for']("[Rule::enum(Policy::class)]"))
+
+        self.assertEqual(schema, {'type': ['string', 'null'], 'enum': ['never', 'always', None]})
+        self.assertEqual(ordinary, {'type': 'string', 'enum': ['never', 'always']})

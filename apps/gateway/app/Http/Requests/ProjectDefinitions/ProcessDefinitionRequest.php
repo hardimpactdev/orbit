@@ -10,6 +10,7 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\RequiredMountPaths;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\ProjectDefinitions\DefinitionEnvironment;
+use App\Domain\ProjectDefinitions\ProcessDefinitionSpecification;
 use App\Models\ProcessDefinition;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
@@ -51,6 +52,8 @@ final class ProcessDefinitionRequest extends FormRequest
             ],
             'spec.working_directory' => [
                 'sometimes',
+                'nullable',
+                'filled',
                 'string',
                 'max:4096',
                 'regex:/\A\/(?!.*(?:^|\/)\.\.(?:\/|$))[^\x00\r\n]*\z/D',
@@ -79,10 +82,11 @@ final class ProcessDefinitionRequest extends FormRequest
             'spec.volumes.*.read_only' => ['sometimes', 'boolean'],
             'spec.restart_policy' => [
                 'sometimes',
+                'nullable',
                 Rule::in(['never', 'on-failure', 'always', 'unless-stopped']),
             ],
-            'spec.keep_alive' => ['sometimes', 'boolean'],
-            'spec.restart_on_deploy' => ['sometimes', 'boolean'],
+            'spec.keep_alive' => ['sometimes', 'nullable', 'boolean'],
+            'spec.restart_on_deploy' => ['sometimes', 'nullable', 'boolean'],
             'spec.environment_file' => ['sometimes', 'nullable', 'string', 'max:4096', 'regex:/\A\/(?!.*(?:^|\/)\.\.(?:\/|$))[^\x00\r\n]*\z/D'],
             'spec.required_mount_paths' => ['sometimes', 'array', 'list', 'max:64'],
             'spec.required_mount_paths.*' => ['required', 'string'],
@@ -95,9 +99,20 @@ final class ProcessDefinitionRequest extends FormRequest
     public function validationData(): array
     {
         try {
+            $definition = $this->route('processDefinition');
+            if ($definition instanceof ProcessDefinition) {
+                ProcessDefinitionSpecification::assertSupportedMarkers($this->json('spec'));
+            }
             $this->inspectedData = app(ProjectDefinitionJsonInspector::class)->inspectProcess($this->getContent());
 
-            return $this->inspectedData;
+            $data = $this->inspectedData;
+            if ($definition instanceof ProcessDefinition && is_array($data['spec'] ?? null)) {
+                $data['spec'] = ProcessDefinitionSpecification::update(
+                    $definition->spec, ValidatedData::object($data['spec']),
+                );
+            }
+
+            return $data;
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -107,17 +122,18 @@ final class ProcessDefinitionRequest extends FormRequest
     public function after(): array
     {
         return [function (Validator $validator): void {
-            $this->validateSystemdExecutable($validator, $this->inspectedData);
-            $this->validateEnvironmentNames($validator, $this->inspectedData);
-            $this->validatePorts($validator, $this->inspectedData);
-            $this->validateDevelopmentSpecification($validator, $this->inspectedData);
+            $this->validateSystemdExecutable($validator, $validator->getData());
+            $this->validateEnvironmentNames($validator, $validator->getData());
+            $this->validatePorts($validator, $validator->getData());
+            $this->validateDevelopmentSpecification($validator, $validator->getData());
         }];
     }
 
     public function payload(): ProjectDefinitionInputData
     {
         $validated = $this->validated();
-        $spec = ValidatedData::object($validated['spec'] ?? null);
+        $spec = ValidatedData::object($this->route('processDefinition') instanceof ProcessDefinition
+            ? ($this->inspectedData['spec'] ?? null) : ($validated['spec'] ?? null));
         if (is_array($spec['volumes'] ?? null)) {
             foreach ($spec['volumes'] as &$volume) {
                 if (is_array($volume)) {
@@ -183,7 +199,9 @@ final class ProcessDefinitionRequest extends FormRequest
             if (! $development || $capturedPreset !== VpDevPreset::NAME
                 || ($spec['preset'] ?? null) !== $capturedPreset
                 || ($spec['preset_version'] ?? 1) !== ($existingSpec['preset_version'] ?? 1)
-                || ($spec['command'] ?? null) !== VpDevPreset::definitionCommand()) {
+                || ($spec['command'] ?? null) !== VpDevPreset::definitionCommand()
+                || (array_key_exists('preset_version', ValidatedData::object($this->inspectedData['spec'] ?? null))
+                    && data_get($this->inspectedData, 'spec.preset_version') === null)) {
                 $validator->errors()->add('spec.preset', 'Only an existing captured vp-dev definition with its canonical command and preset metadata can be edited.');
             }
             if (($spec['required_mount_paths'] ?? []) !== []) {

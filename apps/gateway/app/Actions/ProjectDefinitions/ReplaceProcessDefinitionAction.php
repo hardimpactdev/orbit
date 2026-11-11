@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\ProjectDefinitions;
 
 use App\Data\ProjectDefinitions\ProjectDefinitionInputData;
+use App\Domain\ProjectDefinitions\ProcessDefinitionSpecification;
 use App\Domain\ProjectDefinitions\ProjectDefinitionConflict;
 use App\Models\ProcessDefinition;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -20,7 +21,7 @@ final readonly class ReplaceProcessDefinitionAction
     ): ProcessDefinition {
         return DB::transaction(function () use ($definition, $data): ProcessDefinition {
             $definition = ProcessDefinition::query()->lockForUpdate()->findOrFail($definition->id);
-            $spec = $data->spec;
+            $spec = ProcessDefinitionSpecification::update($definition->spec, $data->spec);
             if (is_array($spec['environment'] ?? null)) {
                 $existing = $definition->spec['environment'] ?? [];
                 foreach ($spec['environment'] as $name => $value) {

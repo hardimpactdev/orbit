@@ -235,7 +235,11 @@ def resolve_rule_constants(source, path):
     """Inline rule strings built from a PHP constant or a static method without arguments, such as
     `'regex:'.self::Pattern` or `'max:'.TaskTopology::maxNodes()`, with the value PHP gives them."""
     refs = RULE_CONSTANT.findall(source)
-    if not refs:
+    in_pattern = re.compile(r'Rule::in\(\[(.*?)\]\)', re.S)
+    constant_pattern = re.compile(r'\b(\w+)::(\w+)\b(?!->|\()')
+    in_refs = {pair for match in in_pattern.finditer(source)
+               for pair in constant_pattern.findall(match.group(1))}
+    if not refs and not in_refs:
         return source
     namespace = re.search(r'^namespace\s+([\w\\]+);', source, re.M).group(1)
     uses = {alias or name.rsplit('\\', 1)[-1]: name for name, alias in re.findall(r'^use\s+([\w\\]+)(?:\s+as\s+(\w+))?;', source, re.M)}
@@ -247,7 +251,8 @@ def resolve_rule_constants(source, path):
             return f'\\{fqcn}::{name}()'
         return f"(new \\ReflectionClassConstant(\\{fqcn}::class, '{name}'))->getValue()"
 
-    expressions = sorted({expression(cls, name, call) for _, cls, name, call in refs})
+    expressions = sorted({expression(cls, name, call) for _, cls, name, call in refs}
+                         | {expression(cls, name, '') for cls, name in in_refs})
     script = "require 'vendor/autoload.php'; echo json_encode([" + ', '.join(expressions) + "], JSON_THROW_ON_ERROR);"
     values = dict(zip(expressions, run_json(['php', '-r', script], GW)))
 
@@ -258,7 +263,20 @@ def resolve_rule_constants(source, path):
             sys.exit(f'Rule constant {cls}::{name}{call} in {path.name} is not a string or an integer')
         return "'" + prefix + str(value).replace("'", "\\'") + "'"
 
-    return RULE_CONSTANT.sub(resolve, source)
+    source = RULE_CONSTANT.sub(resolve, source)
+
+    def resolve_in(match):
+        def literal(reference):
+            cls, name = reference.groups()
+            value = values[expression(cls, name, '')]
+            if isinstance(value, str):
+                return "'" + value.replace("'", "\\'") + "'"
+            if isinstance(value, int) and not isinstance(value, bool):
+                return str(value)
+            sys.exit(f'Rule::in constant {cls}::{name} in {path.name} is not a string or integer')
+        return 'Rule::in([' + constant_pattern.sub(literal, match.group(1)) + '])'
+
+    return in_pattern.sub(resolve_in, source)
 
 
 def load_form_requests():
@@ -660,7 +678,7 @@ DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@processIndex': 'List process definitions',
     'ProjectRuntimeDefinitionsController@processStore': 'Create a process definition',
     'ProjectRuntimeDefinitionsController@processShow': 'Show a process definition',
-    'ProjectRuntimeDefinitionsController@processUpdate': 'Replace a process definition',
+    'ProjectRuntimeDefinitionsController@processUpdate': 'Update a process definition',
     'ProjectRuntimeDefinitionsController@processDestroy': 'Remove a process definition',
     'ProjectRuntimeDefinitionsController@scheduleIndex': 'List Schedule definitions',
     'ProjectRuntimeDefinitionsController@scheduleStore': 'Create a Schedule definition',
@@ -693,7 +711,7 @@ SUMMARIES = {
     'project:dependency-read-token': 'Mint a short-lived, one-repository GitHub App read token for the configured Services peer only. Never persist the reply. Disabled until ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID is configured.',
     'project:list': 'List Projects', 'project:show': 'Show a Project', 'project:create': 'Create a Project', 'project:update': 'Update a Project', 'project:maintenance:enable': 'Enable dependency maintenance', 'project:maintenance:disable': 'Disable dependency maintenance', 'project:maintenance:inspect': 'Inspect dependency updates', 'project:review-and-merge:enable': 'Enable review and merge', 'project:review-and-merge:disable': 'Disable review and merge', 'project:pr-merge': 'Squash-merge a pull request outside every task group', 'project:destroy': 'Remove a Project',
     'project:process-definition:list': 'List process definitions', 'project:process-definition:create': 'Create a process definition',
-    'project:process-definition:show': 'Show a process definition', 'project:process-definition:update': 'Replace a process definition',
+    'project:process-definition:show': 'Show a process definition', 'project:process-definition:update': 'Update a process definition',
     'project:process-definition:destroy': 'Remove a process definition',
     'project:schedule-definition:list': 'List Schedule definitions', 'project:schedule-definition:create': 'Create a Schedule definition',
     'project:schedule-definition:show': 'Show a Schedule definition', 'project:schedule-definition:update': 'Replace a Schedule definition',
@@ -1068,11 +1086,14 @@ def tokens_for(value, route_name=None):
         else:
             toks.append(('enum', m.group(1)))
     for m in re.finditer(r'Rule::in\(\[(.*?)\]\)', v, re.S):
-        # Quoted values and `Enum::Case->value`. A bare case list used to become an empty enum.
+        # Quoted values, integer literals and `Enum::Case->value`; class constants are resolved before parsing.
         values = []
-        for token in re.finditer(r"'([^']*)'|(\w+)::(\w+)->value", m.group(1)):
+        for token in re.finditer(r"'([^']*)'|(\w+)::(\w+)->value|(?<![\w])(-?\d+)(?![\w])", m.group(1)):
             if token.group(1) is not None:
                 values.append(token.group(1))
+                continue
+            if token.group(4) is not None:
+                values.append(int(token.group(4)))
                 continue
             case = f'{token.group(2)}::{token.group(3)}'
             value = enum_cases.get(case)
@@ -1107,7 +1128,7 @@ def schema_from_tokens(toks):
             type_ = type_ or 'string'
         elif kind == 'in':
             sch['enum'] = t
-            type_ = type_ or 'string'
+            type_ = type_ or ('integer' if t and all(isinstance(value, int) for value in t) else 'string')
         elif kind == 'requiredIf':
             notes.append('Conditionally required.')
         elif kind == 'rule':
@@ -1167,6 +1188,8 @@ def schema_from_tokens(toks):
             sch['maxItems'] = int(mx)
         if mn:
             sch['minItems'] = int(mn)
+    if nullable and 'enum' in sch and None not in sch['enum']:
+        sch['enum'] = [*sch['enum'], None]
     sch = {'type': [type_, 'null'] if nullable else type_, **sch}
     if notes:
         sch['description'] = ' '.join(notes)
@@ -1977,6 +2000,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             'propertyNames': {'pattern': r'^[A-Za-z_][A-Za-z0-9_]*$(?![\s\S])'},
             'additionalProperties': {'type': 'string', 'maxLength': 4096, 'pattern': r'^[^\x00\r\n]*$(?![\s\S])'},
         }
+    if route['name'] == 'project:process-definition:update' and body_schema:
+        body_schema['properties']['spec'].pop('required', None)
+        body_schema['description'] = 'Partial specification update: omitted fields keep their stored values. Null removes scalar overrides. Supplied maps and lists replace the whole field; empty collections clear it. An environment value equal to [REDACTED] keeps the stored value for that key; unknown keys refuse. All other supplied strings containing [REDACTED] anywhere in spec refuse with their field path; send only fields to change and omit redacted fields. A different runtime replaces the runtime specification and requires its command and other required fields.'
     if body_schema and 'oneOf' in body_schema:
         for variant in body_schema['oneOf']:
             variant['additionalProperties'] = False
