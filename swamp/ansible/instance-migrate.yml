@@ -88,7 +88,9 @@
         # Once the Route has moved, the container serves even if retirement refuses or fails. A failed restore keeps its old
         # failure behavior; a refused preflight ends the host before any restore action.
         - name: Let the Route serve again
-          when: phase == 'retire' or (phase == 'restore' and migrate_quiesced | bool and ansible_failed_result is not defined)
+          when: >-
+            (phase == 'retire' and (migrate_claim.rc | default(0)) == 0) or
+            (phase == 'restore' and migrate_quiesced | bool and ansible_failed_result is not defined)
           block:
             - name: Make the marker folder
               ansible.builtin.file: { path: "{{ migrate.awake.directory }}", state: directory, owner: root, group: caddy, mode: "0755" }

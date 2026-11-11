@@ -143,38 +143,57 @@ final readonly class SwampCommandStep
         }
         $result = $run['status'] === 'cancelled' && $direct->projection($operation) instanceof DirectOperationChildProjection
             ? [] : $this->terminalOutput($run, $selector);
-        $status = $run['status'];
-        if ($status === 'cancelled' && is_string($result['error_code'] ?? null)) {
-            $status = 'failed';
-        } elseif ($status === 'cancelled' && ExpireOperationAction::deadlineCancellation($operation)) {
-            $result = [...$result, 'error_code' => 'operation.timed_out'];
-        }
-        if (in_array($status, ['failed', 'interrupted'], true) && ($result === []
-            || (($result['outcome'] ?? null) === 'succeeded' && ! is_string($result['error_code'] ?? null)))) {
-            $result = ['error_code' => 'operation.native_failed'];
-        }
-
-        $current = DB::transaction(function () use ($direct, $operation, $runId): Operation {
-            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+        $prepare = function (Operation $current) use ($direct, $runId, $run, $result): Operation|array {
             $direct->assertRun($current, $runId);
+            if (ExpireOperationAction::expiredUnsettled($current)) {
+                $current = app(ExpireOperationAction::class)->reopen($current, $runId, $run['status']);
+            }
+            if ($current->status->terminal() || isset($current->state['swamp_scheduled_result'])) {
+                return $current;
+            }
+            $status = $run['status'];
+            $code = $result['error_code'] ?? null;
+            if ($status === 'cancelled') {
+                if (is_string($code) && ! NativeRunResult::cancelledFailure($run)) {
+                    $status = 'failed';
+                } elseif (ExpireOperationAction::deadlineCancellation($current)) {
+                    $result = [...$result, 'error_code' => 'operation.timed_out'];
+                    $code = 'operation.timed_out';
+                } else {
+                    $code = null;
+                }
+            }
+            if (in_array($status, ['failed', 'interrupted'], true) && ($result === []
+                || (($result['outcome'] ?? null) === 'succeeded' && ! is_string($code)))) {
+                $result = ['error_code' => 'operation.native_failed'];
+                $code = 'operation.native_failed';
+            }
+            $data = [
+                'run_id' => $runId, 'status' => $status, 'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
+                'error_code' => $code ?? (in_array($status, ['failed', 'interrupted'], true) ? 'operation.native_failed' : null),
+                'result' => $result, 'failure' => app(NativeStepFailure::class)->fromRun($run, $current),
+                'step_outcomes' => $this->recordedSteps($run),
+            ];
 
-            return $current;
+            return [$current, $data, $result];
+        };
+        $apply = function (array $receipt) use ($direct): Operation {
+            [$current, $data, $result] = $receipt;
+            $superseded = $current->state['projection_superseded_by'] ?? null;
+
+            return is_int($superseded)
+                ? $direct->project($current, $data, [...$result, 'superseded_by' => $superseded])
+                : $direct->projection($current)->apply($current, $data);
+        };
+        // Only late settlement holds this row through the family projection. Admission locks the same row to transfer ownership.
+        $receipt = DB::transaction(function () use ($operation, $prepare, $apply): Operation|array {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            $late = ExpireOperationAction::expiredUnsettled($current);
+            $receipt = $prepare($current);
+
+            return $late && is_array($receipt) ? $apply($receipt) : $receipt;
         });
-        if (ExpireOperationAction::expiredUnsettled($current)) {
-            // The timeout is provisional. Only exact native terminal evidence can reopen it for its family projection.
-            $current = app(ExpireOperationAction::class)->reopen($current, $runId, $run['status']);
-        }
-        if ($current->status->terminal() || isset($current->state['swamp_scheduled_result'])) {
-            return $current;
-        }
-
-        // Family projections read/clean native secrets outside their own short result transaction.
-        $projected = $direct->projection($current)->apply($current, [
-            'run_id' => $runId, 'status' => $status, 'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
-            'error_code' => $result['error_code'] ?? (in_array($status, ['failed', 'interrupted'], true) ? 'operation.native_failed' : null),
-            'result' => $result, 'failure' => app(NativeStepFailure::class)->fromRun($run, $current),
-            'step_outcomes' => $this->recordedSteps($run),
-        ]);
+        $projected = $receipt instanceof Operation ? $receipt : $apply($receipt);
         $this->fillStepTimes($projected, $runId, $run);
 
         return $projected->refresh();
@@ -240,7 +259,9 @@ final readonly class SwampCommandStep
                 if (($current->status->terminal() && ! ExpireOperationAction::expiredUnsettled($current)) || isset($recorded[ValidatedData::string($child['id'])])) {
                     return;
                 }
-                $projection->applyChild($current, ValidatedData::object($child['inputs'] ?? []), $result);
+                if (! isset($current->state['projection_superseded_by'])) {
+                    $projection->applyChild($current, ValidatedData::object($child['inputs'] ?? []), $result);
+                }
                 $current->update(['state' => [...($current->state ?? []), 'native_children' => [
                     ...ValidatedData::object($current->state['native_children'] ?? []), ValidatedData::string($child['id']) => true,
                 ]]]);
@@ -713,6 +734,9 @@ final readonly class SwampCommandStep
         if (! is_string($token) || $token === '' || ! is_string($address) || $address === '' || ! is_string($ca) || $ca === '') {
             throw $this->unavailable();
         }
+        if (SwampRequestDeadline::remaining(30) <= 0) {
+            throw new SwampTerminalReadUnavailable;
+        }
         $endpoint = new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token);
         $connection = app(SwampConnection::class);
         // A connection kept from an earlier job may have been closed by serve while idle. Then the first use fails on a dead
@@ -735,12 +759,15 @@ final readonly class SwampCommandStep
      */
     private function exchange(SwampConnection $connection, WebSocketEndpoint $endpoint, string $type, array $arguments): array
     {
+        if (SwampRequestDeadline::remaining(30) <= 0) {
+            throw new SwampTerminalReadUnavailable;
+        }
         $id = bin2hex(random_bytes(16));
         try {
-            $socket = $connection->socket($endpoint, 15, $this->socket);
+            $socket = $connection->socket($endpoint, SwampRequestDeadline::remaining(15), $this->socket);
             $socket->send(['type' => $type, 'id' => $id, 'payload' => $arguments]);
-            $deadline = microtime(true) + 30;
-            while ($socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
+            $deadline = microtime(true) + SwampRequestDeadline::remaining(30);
+            while ($socket->isConnected() && ($remaining = SwampRequestDeadline::remaining($deadline - microtime(true))) > 0) {
                 foreach ($socket->receive(min(1.0, $remaining)) as $message) {
                     if (($message['id'] ?? null) !== $id) {
                         continue;

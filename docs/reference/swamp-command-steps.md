@@ -3,7 +3,7 @@ title: "Swamp command steps"
 description: "The shared execution-copy and terminal-output contract for native command steps."
 covers:
   - apps/gateway/app/Domain/Proof/direct-operations.php
-  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult,SwampConnection,SwampDispatch,SwampTerminalReadUnavailable}.php
+  - apps/gateway/app/Infrastructure/Swamp/{CancelSwampRun,StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult,SwampConnection,SwampDispatch,SwampRequestDeadline,SwampTerminalReadUnavailable}.php
   - apps/gateway/app/Jobs/Operations/ReconcileSwampOperations.php
   - apps/gateway/app/Domain/Operations/DirectOperationChildProjection.php
 ---
@@ -50,6 +50,10 @@ Upstream fixes go through the orchestrator to Nick. Only official Swamp versions
 Native behavior resources expose their attributes directly under `outputs`. The T3 registration resource named `terminal` therefore supplies `outputs.stdout`; its resource name adds no level.
 
 The action that produces public values prints one JSON object on stdout. Native `command/shell` stores it in `jobs[].steps[].outputs.stdout`, alongside `exitCode`, `executedAt`, `command`, `durationMs` and `stderr`. Keep secret values out of every output. On official e459 a step that exits nonzero keeps no outputs. A refusing action fails with its own exit code; the family projector maps the native failure to its public refusal. Native dependencies skip subsequent actions.
+
+A later admission for the same target and admission hold key supersedes provisional expired Operations in the admission transaction. The original hold key stays in Operation state after release; distinct hold scopes remain independent. If an expired Operation released its hold before its key was recorded, it cannot prove disjoint ownership and a newer admission suppresses its domain projection.
+
+Their late receipts retain `superseded_by`, but cannot project domain changes. Late settlement serializes with that transfer on the expired Operation row. Cancellation cause comes from the durable expiry audit under that lock: a cancel-derived phase code keeps native evidence, a deadline cancel records `operation.timed_out`, and an independent phase failure keeps its code.
 
 A deadline or confirmed cancellation still reads and projects the native terminal output. Native step history supplies the complete receipt even when no progress event arrived. An unknown end state after an interrupted migrate keeps the runtime reservation and names its restore-only command.
 
@@ -118,20 +122,22 @@ A fire of a Schedule's own workflow is recorded as a task when its run ends, not
 
 `ReconcileSwampOperations` is the one place that settles an Operation with its Swamp run. The scheduler runs it every minute, and the event observer asks for a pass when it sees a run end. Polling stays: the datastore is format 2, which has no commit feed. The same pass frees the Nodes of a Route write that ended without a release and starts the Route writes that wait for them ([One Route write per Node](/reference/operations#one-route-write-per-node)).
 
-Each pass reads every open Operation of a direct kind against Swamp:
+Each pass first reads current Operations and forwards their cancels. It then handles outstanding cancels of expired Operations before checking lost runs. Checks rotate by the persisted last-check time. The pass allows 180 seconds of remote work, with at most 30 seconds for lost-run recovery; the same deadline bounds root, child and artifact reads. Lost runs back off from one minute to one hour and remain eligible for late-result recovery.
+
+The reconciler uses the same reader for every direct kind:
 
 - A bound run gets an exact root history read and any declared child evidence reads. A terminal history is projected through `SwampCommandStep::projectTerminal`.
 - A nonterminal parent records completed child evidence and stays open. Serve may announce the root’s end before saving history. An unavailable read waits for the next pass.
 - An Operation past its budget is expired. A history that shows the run ended within its budget wins.
 - An unbound Operation marked `swamp.start_uncertain` gets the exact lookup of its start. So does a timed-out one that still holds its target. The lookup repeats each pass until it binds the run or the hold ends.
-- A recorded cancel that Swamp has not confirmed is forwarded for up to an hour. Cancels go after the reads and stop 150 seconds into the pass.
+- A recorded cancel that Swamp has not confirmed is forwarded for up to an hour. A cancel is forwarded immediately after its Operation is checked.
 - A timed-out Operation whose run nothing proves ended frees its target after an hour.
 
 An open Operation whose kind has no registry entry is outside these reads. The same pass settles it.
 
 A recorded cancel request sets it to `cancelled`, and cancel does the same at once. Without a request it fails with `operation.timed_out` at its budget. The budget is 600 seconds for an unbound admission with attempts `0`, and the history budget of the kind otherwise. Either end clears the target hold.
 
-The pass has no retry, backoff or per-Operation job. Only one pass runs at a time.
+Only one pass runs at a time. Backoff changes when a lost run is read again; it never resubmits native work.
 
 ### Kept read connection
 

@@ -38,7 +38,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
     {
         // A queued start that never reached Swamp owns no Node effects. A retry keeps an earlier failed restore's reservation.
         if (($operation->input['had_runtime_reservation'] ?? false) !== true) {
-            Instance::query()->findOrFail($operation->target_id)->runtime()->delete();
+            Instance::query()->findOrFail($operation->target_id)->runtime()->where('operation_id', $operation->id)->delete();
         }
     }
 
@@ -56,6 +56,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                 'instance_id' => $instance->id, 'instance_name' => $instance->name, 'ssh_execution' => $input['ssh_execution'],
                 'container' => $container, 'migrate' => $input['migrate'], 'restore_only' => true,
                 'restore_quiesced' => $input['restore_quiesced'],
+                'migration_operation_id' => $restoreOperationId, 'restore_operation_id' => $operation->id,
                 'route_mutations' => $publication === null ? null : $publication['route_mutations'],
             ], 'execution_secrets' => [
                 ...($publication === null ? [] : ValidatedData::object($publication['execution_secrets'])),
@@ -71,6 +72,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         return ['intent' => [
             'instance_id' => $instance->id, 'instance_name' => $instance->name, 'ssh_execution' => $input['ssh_execution'],
             'restore_only' => false, 'restore_quiesced' => false,
+            'migration_operation_id' => $operation->id, 'restore_operation_id' => null,
             'container' => $container, 'migrate' => ValidatedData::object($input['migrate']),
             'route_mutations' => $publication === null ? null : ValidatedData::object($publication['route_mutations']),
         ], 'execution_secrets' => [
@@ -109,12 +111,15 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                 || ($moved && (($result['instance_id'] ?? null) !== $instance->id || ! is_string($result['commit'] ?? null)))) {
                 throw new ResourceOperationException('instance.result_invalid', 'The move did not prove its complete terminal result.');
             }
-            if (! $operation->status->terminal()) {
+            $runtime = $instance->runtime()->lockForUpdate()->first();
+            if (! $operation->status->terminal() && $runtime?->operation_id !== null && $runtime->operation_id !== $operation->id) {
+                return $this->direct->project($operation, $data, [...$result, 'superseded_by' => $runtime->operation_id]);
+            }
+            if (! $operation->status->terminal() && $runtime?->operation_id === $operation->id) {
                 if ($moved && is_string($result['retained_git_path'] ?? null) && is_string($result['retained_git_at'] ?? null)) {
                     $instance->update(['retained_git_path' => $result['retained_git_path'], 'retained_git_at' => $result['retained_git_at']]);
                 }
-                $runtime = $instance->runtime()->first();
-                if ($moved && $runtime !== null) {
+                if ($moved) {
                     app(ContainerProcesses::class)->complete($instance, ValidatedData::object($operation->input['container'])['processes'] ?? [], true, null);
                     $this->moved($instance, ValidatedData::object($operation->input['migrate']), ValidatedData::integerList($operation->input['sqlite_connection_ids'] ?? []));
                     // A default's clones start at the seed snapshot the run took of its commit.
@@ -126,7 +131,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                 } elseif (($result['restored'] ?? false) === true
                     && ! (($result['preflight_refused'] ?? false) === true && ($operation->input['had_runtime_reservation'] ?? false) === true)) {
                     // The run removed its container, so the address is free again. A restore that failed keeps the row and its address.
-                    $runtime?->delete();
+                    $runtime->delete();
                 }
             }
 

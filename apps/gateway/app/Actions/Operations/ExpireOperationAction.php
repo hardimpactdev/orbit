@@ -86,7 +86,7 @@ final readonly class ExpireOperationAction
                 }
                 $timeout = $current->state['native_timeout'] ?? [];
                 app(OperationStore::class)->change($current, ['lock_key' => null,
-                    'state' => [...($current->state ?? []), 'native_timeout' => [
+                    'state' => [...($current->state ?? []), 'admission_hold_key' => $current->state['admission_hold_key'] ?? $current->lock_key, 'native_timeout' => [
                         ...(is_array($timeout) ? $timeout : []), 'native_terminal_status' => 'unproven',
                         'native_terminal_observed_at' => now()->toISOString(),
                     ]],

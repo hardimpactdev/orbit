@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -13,13 +15,18 @@ use App\Domain\Tasks\TaskOperations;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\CancelSwampRun;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
+use App\Infrastructure\Swamp\SwampRequestDeadline;
+use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -201,12 +208,12 @@ it('keeps the target of an Operation that is still running', function (): void {
 afterEach(fn () => app(SwampConnection::class)->release());
 
 /** One Swamp connection that answers a history read with the run the test names and a cancel with the frame it names. */
-function reconcileSocket(?Operation $operation, string $status, string $cancel = 'cancellation_requested', ?Closure $onCancel = null): WebSocketClient
+function reconcileSocket(?Operation $operation, string $status, string $cancel = 'cancellation_requested', ?Closure $onCancel = null, ?Closure $onHistory = null): WebSocketClient
 {
     $history = $operation === null ? [] : ['id' => RUN, 'workflowName' => 'operation-task-script', 'status' => $status,
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.script'],
         'startedAt' => now()->subMinutes(3)->toIso8601ZuluString('millisecond'), 'completedAt' => now()->toIso8601ZuluString('millisecond'), 'jobs' => []];
-    $socket = new class($history, $cancel, $onCancel) implements WebSocketClient
+    $socket = new class($history, $cancel, $onCancel, $onHistory) implements WebSocketClient
     {
         /** @var list<array<string,mixed>> */
         public array $frames = [];
@@ -214,7 +221,7 @@ function reconcileSocket(?Operation $operation, string $status, string $cancel =
         private bool $open = false;
 
         /** @param array<string,mixed> $history */
-        public function __construct(private readonly array $history, private readonly string $cancel, private readonly ?Closure $onCancel) {}
+        public function __construct(private readonly array $history, private readonly string $cancel, private readonly ?Closure $onCancel, private readonly ?Closure $onHistory) {}
 
         public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
         {
@@ -238,10 +245,10 @@ function reconcileSocket(?Operation $operation, string $status, string $cancel =
             }
 
             return [['id' => $frame['id'], ...match ($frame['type']) {
-                'workflow.history.get' => ['type' => 'workflow.history.get', 'payload' => ['data' => $this->history]],
+                'workflow.history.get' => ['type' => 'workflow.history.get', 'payload' => ['data' => $this->onHistory === null ? $this->history : ($this->onHistory)($frame['payload'])]],
                 'workflow.cancel' => $this->cancel === 'error'
                     ? ['type' => 'error', 'error' => ['code' => 'workflow_cancel_failed']]
-                    : ['type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => RUN, 'status' => $this->cancel]]],
+                    : ['type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => $frame['payload']['runId'], 'status' => $this->cancel]]],
                 default => ['type' => $frame['type'], 'payload' => ['data' => ['results' => []]]],
             }]];
         }
@@ -337,7 +344,8 @@ it('frees the target of a run that nothing proves ended, one hour after the expi
     reconcile();
 
     expect($operation->refresh()->lock_key)->toBeNull()
-        ->and($operation->state['native_timeout']['native_terminal_status'])->toBe('unproven');
+        ->and($operation->state['native_timeout']['native_terminal_status'])->toBe('unproven')
+        ->and($operation->state['admission_hold_key'])->toBe(OperationStore::lockKey('task_group', $operation->target_id));
 });
 
 it('expires an unbound Operation at its admission deadline', function (): void {
@@ -406,3 +414,191 @@ it('projects a late native terminal after confirmed cancellation without a targe
     expect($operation->refresh()->error_code)->toBe('operation.native_failed')
         ->and($operation->state['native_timeout']['native_terminal_status'])->toBe('failed');
 })->with([null, 'unproven']);
+
+it('settles current work and forwards cancel before slow lost runs, then rotates recovery with backoff', function (): void {
+    Queue::fake();
+    $lost = [];
+    for ($i = 0; $i < 8; $i++) {
+        $operation = runningScript(run: (string) Str::uuid());
+        app(ExpireOperationAction::class)->execute($operation);
+        $operation->refresh()->update(['lock_key' => null, 'state' => [...$operation->state,
+            'native_cancel_confirmed_at' => now()->toISOString()]]);
+        $lost[$operation->state['swamp_run_id']] = $operation;
+    }
+    $fresh = runningScript(minutes: 1);
+    $cancelled = runningScript(run: (string) Str::uuid(), minutes: 1);
+    $cancelled->update(['cancel_requested_at' => now()]);
+    app(NativeRunCancellation::class)->request($cancelled);
+    $checked = [];
+    $socket = reconcileSocket($fresh, 'failed', onHistory: function (array $payload) use ($lost, $fresh, $cancelled, &$checked): array {
+        $run = $payload['workflowIdOrName'];
+        $checked[] = $run;
+        $operation = $lost[$run] ?? ($run === RUN ? $fresh : $cancelled);
+        if (isset($lost[$run])) {
+            // Simulate one history request consuming its full remote timeout, without a real sleep.
+            $this->travel(31)->seconds();
+        }
+
+        return ['id' => $run, 'workflowName' => 'operation-task-script', 'status' => $operation->is($fresh) ? 'failed' : 'running',
+            'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.script'],
+            'startedAt' => now()->subMinute()->toISOString(), 'completedAt' => now()->toISOString(), 'jobs' => []];
+    });
+
+    reconcile();
+
+    expect($fresh->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($fresh->error_code)->toBe('operation.native_failed')
+        ->and($cancelled->refresh()->state)->toHaveKey('native_cancel_confirmed_at')
+        ->and($checked)->toHaveCount(3);
+    $types = array_column($socket->frames, 'type');
+    expect(array_search('workflow.cancel', $types))->toBeLessThan(array_key_last($types));
+    $firstLost = array_values($lost)[0];
+    expect($firstLost->refresh()->state['native_reconcile']['attempt'])->toBe(1)
+        ->and($firstLost->state['native_reconcile']['next_at'])->toBeGreaterThan(now()->toISOString());
+    $checked = [];
+
+    reconcile();
+
+    expect($checked)->toContain(array_keys($lost)[1])->not->toContain(array_keys($lost)[0]);
+});
+
+it('keeps a superseded non-migrate receipt without applying its family domain projection', function (): void {
+    Queue::fake();
+    $old = runningScript();
+    app(ExpireOperationAction::class)->execute($old);
+    $old->refresh()->update(['lock_key' => null]);
+    $new = app(OperationStore::class)->create('tasks.script', $old->target_type, $old->target_id, $old->node_id, $old->input, null, null);
+    $direct = app(DirectOperation::class);
+    $projection = $direct->definition($old->kind)['projection'];
+    app()->instance($projection, new class implements DirectOperationProjection
+    {
+        public function input(Operation $operation): array
+        {
+            return [];
+        }
+
+        public function apply(Operation $operation, array $data): Operation
+        {
+            throw new LogicException('A superseded projector must not run.');
+        }
+    });
+    reconcileSocket($old, 'failed');
+
+    $settled = app(SwampCommandStep::class)->projectTerminal($old, ['id' => RUN], $direct->definition($old->kind)['terminal_result']);
+
+    expect($settled->status)->toBe(OperationStatus::Failed)
+        ->and($settled->result['superseded_by'])->toBe($new->id)
+        ->and($settled->state['projection_superseded_by'])->toBe($new->id)
+        ->and($settled->state['native_timeout']['native_terminal_status'])->toBe('failed');
+});
+
+it('serializes a retry admission attempted during late domain projection on the same durable row', function (): void {
+    Queue::fake();
+    $old = runningScript();
+    app(ExpireOperationAction::class)->execute($old);
+    $old->refresh()->update(['lock_key' => null]);
+    $schema = DB::selectOne("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'operations'")->sql;
+    $originalConnection = DB::getDefaultConnection();
+    $file = tempnam(sys_get_temp_dir(), 'orbit-late-owner-');
+    $options = [...config('database.connections.sqlite'), 'database' => $file, 'foreign_key_constraints' => false, 'busy_timeout' => 0];
+    config(['database.connections.late_settle' => $options, 'database.connections.late_admit' => $options]);
+    $settling = DB::connection('late_settle');
+    $settling->unprepared($schema);
+    $settling->table('operations')->insert($old->getAttributes());
+    DB::connection('late_admit')->getPdo()->exec('PRAGMA busy_timeout=0');
+    DB::setDefaultConnection('late_settle');
+    $direct = app(DirectOperation::class);
+    $definition = $direct->definition($old->kind);
+    $attempted = false;
+    app()->instance($definition['projection'], new class($attempted) implements DirectOperationProjection
+    {
+        public function __construct(public bool &$attempted) {}
+
+        public function input(Operation $operation): array
+        {
+            return [];
+        }
+
+        public function apply(Operation $operation, array $data): Operation
+        {
+            $this->attempted = true;
+            DB::setDefaultConnection('late_admit');
+            try {
+                expect(fn () => app(OperationStore::class)->create($operation->kind, $operation->target_type,
+                    $operation->target_id, $operation->node_id, $operation->input, null, null))
+                    ->toThrow(PDOException::class, 'database is locked');
+            } finally {
+                DB::setDefaultConnection('late_settle');
+            }
+
+            return app(DirectOperation::class)->project($operation, $data, $data['result']);
+        }
+    });
+    reconcileSocket($old, 'failed');
+    try {
+        $settled = app(SwampCommandStep::class)->projectTerminal(Operation::query()->findOrFail($old->id), ['id' => RUN], $definition['terminal_result']);
+        expect($attempted)->toBeTrue()->and($settled->status)->toBe(OperationStatus::Failed);
+        // Once settlement releases the transaction, the same admission succeeds and becomes the new owner.
+        $retry = app(OperationStore::class)->create($old->kind, $old->target_type, $old->target_id, $old->node_id, $old->input, null, null);
+        expect($retry->id)->toBeGreaterThan($old->id)
+            ->and($settled->refresh()->result)->not->toHaveKey('superseded_by');
+    } finally {
+        DB::setDefaultConnection($originalConnection);
+        DB::purge('late_settle');
+        DB::purge('late_admit');
+        unlink($file);
+    }
+});
+
+it('bounds a native cancel connection and reply by the remaining pass time', function (): void {
+    $operation = runningScript();
+    $frame = [];
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('connect')->once()->with(Mockery::type(WebSocketEndpoint::class), Mockery::on(fn (float $seconds): bool => $seconds > 0 && $seconds <= 0.25));
+    $socket->shouldReceive('send')->once()->andReturnUsing(function (array $message) use (&$frame): void {
+        $frame = $message;
+    });
+    $socket->shouldReceive('isConnected')->andReturnTrue();
+    $socket->shouldReceive('receive')->once()->with(Mockery::on(fn (float $seconds): bool => $seconds > 0 && $seconds <= 0.25))
+        ->andReturnUsing(function () use (&$frame): array {
+            return [['id' => $frame['id'], 'type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => RUN, 'status' => 'cancellation_requested']]]];
+        });
+    $socket->shouldReceive('close')->once();
+    config(['swamp.run_token' => 'run-token', 'swamp.address' => '10.44.0.15', 'swamp.ca_path' => __FILE__]);
+
+    SwampRequestDeadline::during(now()->addMilliseconds(250), fn () => (new CancelSwampRun($socket))->execute($operation));
+});
+
+it('transfers only the exact admission hold after release, preserving independent scopes of the same target', function (): void {
+    Queue::fake();
+    $template = runningScript();
+    $store = app(OperationStore::class);
+    $old = $store->create('tasks.script', $template->target_type, $template->target_id, $template->node_id, $template->input, null, null, 'manager:first');
+    $old->update(['status' => OperationStatus::Running, 'attempts' => 1, 'started_at' => now()->subHours(2),
+        'state' => [...$old->state, 'swamp_run_id' => RUN]]);
+    app(ExpireOperationAction::class)->execute($old);
+    $old->refresh()->update(['lock_key' => null]);
+
+    $independent = $store->create('tasks.script', $old->target_type, $old->target_id, $old->node_id, $old->input, null, null, 'manager:second');
+    expect($old->refresh()->state)->not->toHaveKey('projection_superseded_by');
+    $retry = $store->create('tasks.script', $old->target_type, $old->target_id, $old->node_id, $old->input, null, null, 'manager:first');
+
+    expect($old->refresh()->state['projection_superseded_by'])->toBe($retry->id)
+        ->and($old->state['admission_hold_key'])->toBe('manager:first')
+        ->and($independent->refresh()->state)->not->toHaveKey('projection_superseded_by');
+});
+
+it('stops a terminal read before contacting Swamp when the pass deadline ended and restores the outer scope', function (): void {
+    $operation = runningScript(minutes: 1);
+    $socket = reconcileSocket($operation, 'failed');
+    $reader = app(SwampCommandStep::class);
+    $selector = app(DirectOperation::class)->definition($operation->kind)['terminal_result'];
+    expect(fn () => SwampRequestDeadline::during(now()->subSecond(),
+        fn () => $reader->projectTerminal($operation, ['id' => RUN], $selector)))
+        ->toThrow(SwampTerminalReadUnavailable::class);
+    expect($socket->frames)->toBe([]);
+
+    $settled = $reader->projectTerminal($operation, ['id' => RUN], $selector);
+    expect($settled->status)->toBe(OperationStatus::Failed)
+        ->and(array_column($socket->frames, 'type'))->toContain('workflow.history.get');
+});

@@ -80,3 +80,5 @@ After a landed behavior change, replace the affected rule in `docs/swamp/porting
 
 
 Optional client publication must leave observer SSH intent and terminal checks intact. A partial fleet admission retains the publication retry for waiting clients; a Node that gains a client caller treats a previously absent client version as drift.
+
+Late native settlement must not reclaim a target from a newer admission. Record the ownership transfer durably, serialize it with late projection, and keep a superseded receipt without domain writes. A recovery marker checked before an effect is not a fence: restore and irreversible retirement need one atomic, permanent claim that survives cleanup and refuses native resume by the losing owner. Verify cancellation with the pinned history: an aborted command can be `failed` with exit `-1`, while a real phase failure keeps its own code.

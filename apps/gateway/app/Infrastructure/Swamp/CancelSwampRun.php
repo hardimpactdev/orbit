@@ -33,12 +33,15 @@ final readonly class CancelSwampRun
             || ! is_string($address) || $address === '' || ! is_string($ca) || $ca === '') {
             throw $this->unavailable();
         }
+        if (SwampRequestDeadline::remaining(self::ReplySeconds) <= 0) {
+            throw $this->unavailable();
+        }
         $id = bin2hex(random_bytes(16));
         try {
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15);
+            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), SwampRequestDeadline::remaining(15));
             $this->socket->send(['type' => 'workflow.cancel', 'id' => $id, 'payload' => ['runId' => $run, 'reason' => 'Orbit Operation cancellation requested']]);
-            $deadline = microtime(true) + self::ReplySeconds;
-            while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
+            $deadline = microtime(true) + SwampRequestDeadline::remaining(self::ReplySeconds);
+            while ($this->socket->isConnected() && ($remaining = SwampRequestDeadline::remaining($deadline - microtime(true))) > 0) {
                 foreach ($this->socket->receive(min(0.5, $remaining)) as $message) {
                     if (($message['id'] ?? null) !== $id) {
                         continue;

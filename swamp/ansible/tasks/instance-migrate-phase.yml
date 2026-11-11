@@ -39,6 +39,13 @@
         fail_msg: instance.migrate_restore_unsafe
         quiet: true
 
+# The read-only restore checks above precede this permanent, atomic choice. Both phases use the same rule.
+- name: Fence restore against native retirement resume
+  when: phase == 'retire' or (phase in ['restore-check', 'restore'] and (intent.restore_only | default(false) | bool))
+  ansible.builtin.include_tasks:
+    file: instance-migrate-claim.yml
+    apply: { tags: [always] }
+
 # Check every planned retirement before any Node change, and again before any checkout in the batch goes.
 - name: Check all planned retirements
   when: phase in ['container', 'quiesce', 'retire']

@@ -126,6 +126,19 @@ export const behavior = { type: "@fixture/route-proof", version: "2026.11.11.1",
                     ? "; timeout 0.1 sleep 20"
                     : "; sleep 30";
             }
+            if (mode === "lost" && ["retire", "restore-check"].includes(name)) {
+                const helper = new URL(
+                    "../ansible/instance_migrate_claim.py",
+                    import.meta.url,
+                ).pathname;
+                const side = name === "retire" ? "retire" : "restore";
+                const owner = name === "retire"
+                    ? "${{ run.id }}"
+                    : "restore-operation-2";
+                run =
+                    `python3 '${helper}' '${folder}/original-migrate.claim' '${side}' '${owner}' && ` +
+                    run;
+            }
             if (name === "restore-check" && mode === "unsafe") {
                 run +=
                     `; printf '%s' '{"error_code":"instance.migrate_restore_unsafe"}' > '${folder}/result.json'; exit 42`;
@@ -164,7 +177,7 @@ export const behavior = { type: "@fixture/route-proof", version: "2026.11.11.1",
         const finish = (await history()).jobs.flatMap((
             job: { steps: RecordValue[] },
         ) => job.steps).find((step: RecordValue) => step.name === "finish");
-        assertEquals(finish.status, "succeeded");
+        assertEquals(finish.status, "succeeded", JSON.stringify(finish));
         return JSON.parse(finish.outputs.stdout);
     };
     return {
@@ -251,6 +264,28 @@ for (
                         text(done.stdout) + text(done.stderr),
                     );
                     const result = await f.receipt();
+                    const receipts = Deno.env.get("ORBIT_SWAMP_PROOF_RECEIPTS");
+                    if (receipts) {
+                        Deno.writeTextFileSync(
+                            `${receipts}/${mode}.json`,
+                            JSON.stringify(await f.history(), null, 2) + "\n",
+                        );
+                    }
+                    const failedPhase = (await f.history()).jobs.flatMap((
+                        job: { steps: RecordValue[] },
+                    ) => job.steps).find((step: RecordValue) =>
+                        step.name === "container-processes"
+                    );
+                    assertEquals(
+                        failedPhase.error,
+                        `Command exited with code ${
+                            ["cancel", "deadline"].includes(mode)
+                                ? -1
+                                : mode === "timeout"
+                                ? 124
+                                : 42
+                        }`,
+                    );
                     assertEquals({
                         moved: result.moved,
                         restored: result.restored,
@@ -265,7 +300,20 @@ for (
                 } else {
                     assert(!exists(`${f.folder}/restore`));
                     assert((await f.call("run", "doctor", "--fix")).ok);
-                    assertEquals((await f.history()).status, "interrupted");
+                    const interrupted = await f.history();
+                    assertEquals(interrupted.status, "interrupted");
+                    await f.call(
+                        "workflow",
+                        "cancel",
+                        f.created.name,
+                        "--run",
+                        interrupted.id,
+                    );
+                    assertEquals(
+                        (await f.history()).status,
+                        "interrupted",
+                        "The release pin cannot cancel an already terminal interrupted root.",
+                    );
                     Deno.writeTextFileSync(`${f.folder}/calls`, "");
                     const input = `${f.folder}/restore-input.json`;
                     Deno.writeTextFileSync(input, f.input(true));
@@ -295,6 +343,29 @@ for (
                         restored: true,
                         ready: true,
                     });
+                    const claim = Deno.readTextFileSync(
+                        `${f.folder}/original-migrate.claim`,
+                    );
+                    const resumed = await f.call(
+                        "workflow",
+                        "resume",
+                        f.created.name,
+                        "--run",
+                        interrupted.id,
+                        "--from",
+                        "retire",
+                    );
+                    assert(!resumed.ok, resumed.stdout + resumed.stderr);
+                    assert(
+                        !exists(`${f.folder}/retire`),
+                        "A resumed original root must lose the permanent restore claim before retirement effects.",
+                    );
+                    assertEquals(
+                        Deno.readTextFileSync(
+                            `${f.folder}/original-migrate.claim`,
+                        ),
+                        claim,
+                    );
                 }
             } finally {
                 if (child && !finished) {
@@ -341,4 +412,70 @@ Deno.test({
             f.cleanup();
         }
     },
+});
+
+Deno.test("atomic Node claim admits exactly one competing side and keeps the complete winner after a rerun", async () => {
+    const folder = Deno.makeTempDirSync();
+    const helper =
+        new URL("../ansible/instance_migrate_claim.py", import.meta.url)
+            .pathname;
+    const path = `${folder}/original-migrate.claim`;
+    try {
+        const calls = ["restore", "retire"].map((side) =>
+            new Deno.Command("python3", {
+                args: [helper, path, side, `${side}-owner`],
+            }).output()
+        );
+        const results = await Promise.all(calls);
+        assertEquals(results.filter((done) => done.success).length, 1);
+        const saved = Deno.readTextFileSync(path);
+        const winner = JSON.parse(saved);
+        assert(typeof winner.at === "string");
+        const repeated = await new Deno.Command("python3", {
+            args: [helper, path, winner.side, winner.owner],
+        }).output();
+        assert(repeated.success, text(repeated.stderr));
+        assertEquals(JSON.parse(text(repeated.stdout)), { changed: false });
+        assertEquals(Deno.readTextFileSync(path), saved);
+        const otherOwner = await new Deno.Command("python3", {
+            args: [helper, path, winner.side, "different-owner"],
+        }).output();
+        assert(!otherOwner.success);
+        assertEquals(Deno.readTextFileSync(path), saved);
+        assertEquals([...Deno.readDirSync(folder)].map((entry) => entry.name), [
+            "original-migrate.claim",
+        ]);
+    } finally {
+        Deno.removeSync(folder, { recursive: true });
+    }
+});
+
+Deno.test("a killed claimant leaves a complete permanent claim before any effects and its same owner continues", async () => {
+    const folder = Deno.makeTempDirSync();
+    const helper =
+        new URL("../ansible/instance_migrate_claim.py", import.meta.url)
+            .pathname;
+    const crash =
+        "import os, runpy, signal, sys; from pathlib import Path; claim = runpy.run_path(sys.argv[1])['claim']; claim(Path(sys.argv[2]), sys.argv[3], 'same-owner'); os.kill(os.getpid(), signal.SIGKILL)";
+    try {
+        for (const side of ["restore", "retire"]) {
+            const path = `${folder}/${side}.claim`;
+            const killed = await new Deno.Command("python3", {
+                args: ["-c", crash, helper, path, side],
+            }).output();
+            assert(!killed.success);
+            const saved = Deno.readTextFileSync(path);
+            assertEquals(JSON.parse(saved).owner, "same-owner");
+            const continued = await new Deno.Command("python3", {
+                args: [helper, path, side, "same-owner"],
+            }).output();
+            assert(continued.success, text(continued.stderr));
+            assertEquals(JSON.parse(text(continued.stdout)), {
+                changed: false,
+            });
+            assertEquals(Deno.readTextFileSync(path), saved);
+        }
+    } finally {
+        Deno.removeSync(folder, { recursive: true });
+    }
 });

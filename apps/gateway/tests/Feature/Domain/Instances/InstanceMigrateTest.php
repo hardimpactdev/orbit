@@ -895,7 +895,7 @@ it('starts the run with the container, the checkout and the model key in the vau
     expect($run['execution_secrets'])->toBe(['process_environments' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-processes-'.$operation->id], 'model_environment' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-model-'.$operation->id]])
         ->and($put['value'])->toContain("ORBIT_MODEL_KEY=placeholder-model-key\n")
         ->and(json_encode($run['intent']))->not->toContain('placeholder-model-key')
-        ->and(array_keys($run['intent']))->toBe(['instance_id', 'instance_name', 'ssh_execution', 'restore_only', 'restore_quiesced', 'container', 'migrate', 'route_mutations'])
+        ->and(array_keys($run['intent']))->toBe(['instance_id', 'instance_name', 'ssh_execution', 'restore_only', 'restore_quiesced', 'migration_operation_id', 'restore_operation_id', 'container', 'migrate', 'route_mutations'])
         ->and($run['intent']['route_mutations'])->toBeNull()
         ->and(app(DirectOperation::class)->definition('instance.migrate')['workflow'])->toBe('operation-instance-migrate');
 });
@@ -1360,16 +1360,17 @@ it('projects the native restored end state and steps across each post-quiesce ex
     }
     $result = ['instance_id' => $instance->id, 'moved' => false, 'restored' => true, 'ready' => false,
         'failed_step' => 'processes', 'error_code' => $exit === 'deadline-only' ? 'operation.timed_out' : 'instance.migrate_processes_failed'];
+    $cancelled = in_array($exit, ['deadline-only', 'cancel'], true);
     $nativeResult = $result;
     if ($exit === 'deadline-only') {
-        unset($nativeResult['error_code']);
+        $nativeResult['error_code'] = 'instance.migrate_processes_failed';
     }
     $history = ['id' => $run, 'workflowName' => 'operation-instance-migrate', 'status' => $nativeStatus,
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'instance.migrate'],
         'startedAt' => $started, 'completedAt' => $finished, 'jobs' => [['name' => 'migrate', 'steps' => [
             ['name' => 'quiesce', 'status' => 'succeeded', 'startedAt' => $started, 'completedAt' => $started],
             ['name' => 'container-processes', 'status' => 'failed', 'startedAt' => $started, 'completedAt' => $finished,
-                'error' => $exit === 'step timeout' ? 'Command exited with code 124' : $exit],
+                'error' => $cancelled ? 'Command exited with code -1' : ($exit === 'step timeout' ? 'Command exited with code 124' : $exit)],
             ['name' => 'restore', 'status' => 'succeeded', 'startedAt' => $finished, 'completedAt' => $finished],
             ['name' => 'finish', 'status' => 'succeeded', 'startedAt' => $finished, 'completedAt' => $finished,
                 'outputs' => ['stdout' => json_encode($nativeResult, JSON_THROW_ON_ERROR)]],
@@ -1398,7 +1399,8 @@ it('projects the native restored end state and steps across each post-quiesce ex
         }
 
         expect($projected->result)->toBe($result)
-            ->and($projected->error_code)->toBe($result['error_code'])
+            ->and($projected->error_code)->toBe($exit === 'cancel' ? null : $result['error_code'])
+            ->and($projected->status->value)->toBe($exit === 'cancel' ? 'cancelled' : ($nativeStatus === 'interrupted' ? 'interrupted' : 'failed'))
             ->and($projected->lock_key)->toBeNull()
             ->and($instance->runtime()->exists())->toBeFalse()
             ->and($worker->refresh()->systemd_activation_hash)->toBe('old-host-hash')
@@ -1536,4 +1538,163 @@ it('renders FrankenPHP after the container network target without waiting for ne
     $operation = migrateStart($instance);
     $content = $operation->input['container']['units'][0]['content'];
     expect($content)->toContain("After=network.target\n")->not->toContain('network-online.target');
+});
+
+it('review late restored history must preserve a newer migrate reservation', function (): void {
+    $exit = 'deadline';
+    $nativeStatus = 'cancelled';
+    $expired = true;
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $instance->update(['provisioning_step' => 'active']);
+    $worker = migrationWorker($instance);
+    $operation = migrateStart($instance);
+    $run = '0c69f6e8-bc50-4819-bcab-f3972557d2cc';
+    $started = now()->subHours(2)->toISOString();
+    $finished = now()->toISOString();
+    $operation->forceFill(['status' => 'running', 'attempts' => 1, 'started_at' => $started,
+        'finished_at' => null, 'error_code' => null, 'state' => ['swamp_run_id' => $run]])->save();
+    if ($expired) {
+        app(ExpireOperationAction::class)->execute($operation);
+        $operation->refresh()->update(['lock_key' => null, 'state' => [...$operation->state,
+            'native_cancel_confirmed_at' => now()->toISOString()]]);
+    }
+    $retry = migrateStart($instance);
+    expect($retry->id)->not->toBe($operation->id);
+    $reservedId = $instance->runtime()->firstOrFail()->id;
+    $result = ['instance_id' => $instance->id, 'moved' => false, 'restored' => true, 'ready' => false,
+        'failed_step' => 'processes', 'error_code' => $exit === 'deadline-only' ? 'operation.timed_out' : 'instance.migrate_processes_failed'];
+    $nativeResult = $result;
+    if ($exit === 'deadline-only') {
+        $nativeResult['error_code'] = 'instance.migrate_processes_failed';
+    }
+    $history = ['id' => $run, 'workflowName' => 'operation-instance-migrate', 'status' => $nativeStatus,
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'instance.migrate'],
+        'startedAt' => $started, 'completedAt' => $finished, 'jobs' => [['name' => 'migrate', 'steps' => [
+            ['name' => 'quiesce', 'status' => 'succeeded', 'startedAt' => $started, 'completedAt' => $started],
+            ['name' => 'container-processes', 'status' => 'failed', 'startedAt' => $started, 'completedAt' => $finished,
+                'error' => $exit === 'step timeout' ? 'Command exited with code 124' : $exit],
+            ['name' => 'restore', 'status' => 'succeeded', 'startedAt' => $finished, 'completedAt' => $finished],
+            ['name' => 'finish', 'status' => 'succeeded', 'startedAt' => $finished, 'completedAt' => $finished,
+                'outputs' => ['stdout' => json_encode($nativeResult, JSON_THROW_ON_ERROR)]],
+        ]]]];
+    $frame = [];
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('connect', 'close')->andReturnNull();
+    $socket->shouldReceive('isConnected')->andReturnTrue();
+    $socket->shouldReceive('send')->andReturnUsing(function (array $message) use (&$frame): void {
+        $frame = $message;
+    });
+    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame, $history): array {
+        return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => $frame['type'] === 'workflow.history.get' ? $history : ['results' => []]]]];
+    });
+    app(SwampConnection::class)->release();
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'read-token']);
+    try {
+        if ($expired) {
+            // Exercise the production selector after cancellation is confirmed, with no target lock.
+            app()->call([new ReconcileSwampOperations, 'handle']);
+            $projected = $operation->refresh();
+        } else {
+            $projected = app(SwampCommandStep::class)->projectTerminal($operation->refresh(), ['id' => $run],
+                ['job' => 'migrate', 'step' => 'finish'], atDeadline: true);
+        }
+
+        expect($projected->result)->toBe([...$result, 'superseded_by' => $retry->id])
+            ->and($projected->error_code)->toBe($result['error_code'])
+            ->and($projected->lock_key)->toBeNull()
+            ->and($instance->runtime()->firstOrFail()->id)->toBe($reservedId)
+            ->and($instance->runtime()->firstOrFail()->operation_id)->toBe($retry->id)
+            ->and($worker->refresh()->systemd_activation_hash)->toBe('old-host-hash')
+            ->and($instance->runtime()->firstOrFail()->seed_commit)->toBeNull();
+        $steps = OperationData::summary($projected)->steps;
+        expect(array_map(static fn ($step) => $step->name, $steps))->toBe(['quiesce', 'container-processes', 'restore', 'finish'])
+            ->and($steps[2]->status)->toBe('succeeded')
+            ->and($steps[2]->finished_at)->toBe($finished);
+    } finally {
+        app(SwampConnection::class)->release();
+    }
+});
+
+it('settles the real pinned decoder receipt with native abort or independent phase failure evidence', function (string $mode, bool $expiry, bool $userCancel, string $status, ?string $code, bool $cancelAfterFailure = false): void {
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $operation = migrateStart($instance);
+    $history = json_decode((string) file_get_contents(base_path('tests/Fixtures/instance-migrate/pinned-'.$mode.'.json')), true, flags: JSON_THROW_ON_ERROR);
+    if ($cancelAfterFailure) {
+        $history['status'] = 'cancelled';
+        $history['jobs'][0]['steps'][] = ['name' => 'later-phase', 'status' => 'failed',
+            'error' => 'Command exited with code -1', 'completedAt' => now()->toISOString()];
+    }
+    $run = $history['id'];
+    $history['workflowName'] = 'operation-instance-migrate';
+    $history['inputs'] = ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'instance.migrate'];
+    $history['startedAt'] = now()->subHours(2)->toISOString();
+    $history['completedAt'] = now()->toISOString();
+    $operation->forceFill(['status' => 'running', 'attempts' => 1, 'started_at' => $history['startedAt'],
+        'cancel_requested_at' => $userCancel ? now()->subMinute() : null, 'state' => ['swamp_run_id' => $run]])->save();
+    if ($expiry) {
+        app(ExpireOperationAction::class)->execute($operation);
+    }
+    $native = json_decode($history['jobs'][0]['steps'][array_search('finish', array_column($history['jobs'][0]['steps'], 'name'))]['outputs']['stdout'], true, flags: JSON_THROW_ON_ERROR);
+    expect($native['error_code'])->toBe('instance.migrate_processes_failed');
+    $frame = [];
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('connect', 'close')->andReturnNull();
+    $socket->shouldReceive('isConnected')->andReturnTrue();
+    $socket->shouldReceive('send')->andReturnUsing(function (array $message) use (&$frame): void {
+        $frame = $message;
+    });
+    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame, $history): array {
+        return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => $frame['type'] === 'workflow.history.get' ? $history : ['results' => []]]]];
+    });
+    app(SwampConnection::class)->release();
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'read-token']);
+    try {
+        $settled = app(SwampCommandStep::class)->projectTerminal($operation->refresh(), ['id' => $run], ['job' => 'migrate', 'step' => 'finish']);
+        expect($settled->status->value)->toBe($status)->and($settled->error_code)->toBe($code)
+            ->and($settled->result['restored'])->toBeTrue()->and($settled->result['moved'])->toBeFalse()
+            ->and($instance->runtime()->exists())->toBeFalse();
+        if ($mode === 'cancel' && $code !== 'operation.timed_out') {
+            expect($settled->result)->toBe($native);
+        }
+    } finally {
+        app(SwampConnection::class)->release();
+    }
+})->with([
+    'deadline abort' => ['cancel', true, false, 'failed', 'operation.timed_out'],
+    'user abort' => ['cancel', false, true, 'cancelled', null],
+    'user abort before expiry' => ['cancel', true, true, 'cancelled', null],
+    'independent exit 42' => ['failure', true, false, 'failed', 'instance.migrate_processes_failed'],
+    'independent exit 124' => ['timeout', true, false, 'failed', 'instance.migrate_processes_failed'],
+    'independent failure before later cancel' => ['failure', true, false, 'failed', 'instance.migrate_processes_failed', true],
+]);
+
+it('fences a direct stale migrate projector by the runtime owner under the Instance lock', function (): void {
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $old = migrateStart($instance);
+    $old->forceFill(['status' => 'running', 'attempts' => 1, 'started_at' => now()->subHours(2), 'state' => ['swamp_run_id' => 'old-root']])->save();
+    app(ExpireOperationAction::class)->execute($old);
+    $old->refresh()->update(['lock_key' => null]);
+    $new = migrateStart($instance);
+    $runtime = $instance->runtime()->firstOrFail();
+    app(ExpireOperationAction::class)->reopen($old, 'old-root', 'failed');
+
+    $settled = app(InstanceMigrateProjection::class)->apply($old->refresh(), ['run_id' => 'old-root', 'status' => 'failed',
+        'started_at' => now()->subHours(2)->toISOString(), 'finished_at' => now()->toISOString(),
+        'result' => ['moved' => false, 'restored' => true, 'ready' => false]]);
+
+    expect($settled->result['superseded_by'])->toBe($new->id)
+        ->and($instance->runtime()->firstOrFail()->id)->toBe($runtime->id)
+        ->and($runtime->refresh()->operation_id)->toBe($new->id);
+});
+
+it('backfills the owner of an existing migrate runtime from the latest admission', function (): void {
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $operation = migrateStart($instance);
+    $migration = require database_path('migrations/2027_02_04_000002_add_operation_owner_to_instance_runtimes.php');
+    $migration->down();
+    $migration->up();
+
+    expect($instance->runtime()->firstOrFail()->operation_id)->toBe($operation->id);
 });
