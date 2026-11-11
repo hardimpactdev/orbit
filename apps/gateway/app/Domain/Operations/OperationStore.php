@@ -6,7 +6,6 @@ namespace App\Domain\Operations;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -20,14 +19,6 @@ final readonly class OperationStore
     public static function lockKey(string $targetType, int $targetId): string
     {
         return "{$targetType}:{$targetId}";
-    }
-
-    /** The target identity used by admission holds, including after a hold is released.
-     * @return Builder<Operation>
-     */
-    public static function forTarget(string $targetType, int $targetId): Builder
-    {
-        return Operation::query()->where('target_type', $targetType)->where('target_id', $targetId);
     }
 
     /** @param array<string,mixed> $input */

@@ -170,7 +170,7 @@ The host side reuses the container host tasks of the task containers (#3279):
 - The project, bridge, ACL, profile, stock image, input rules and clone probe.
 - The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge refuses a Node without it.
 - The profile mounts the two folders, read-only and idmapped. The project allows host disks and proxy devices for T3.
-- Every container gets an isolated ID map and a default-reject NIC ACL. It permits the model forwarder, egress proxy and attached targets. The bridge stays default-reject. A late unsafe NIC fails the audit.
+- Every container gets an isolated ID map and a default-reject NIC ACL. It permits the model forwarder, egress proxy and attached targets. The bridge delegates egress to that NIC policy.
 
 The image and the folders:
 

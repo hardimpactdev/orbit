@@ -100,8 +100,7 @@ final class OperationData extends Data
             }
             $steps[] = new OperationStepData($row['name'], $row['job'], $row['status'],
                 is_string($row['started_at'] ?? null) ? $row['started_at'] : null,
-                is_string($row['finished_at'] ?? null) ? $row['finished_at'] : null,
-                array_key_exists('exit_code', $row) ? (is_int($row['exit_code']) ? $row['exit_code'] : null) : new Optional);
+                is_string($row['finished_at'] ?? null) ? $row['finished_at'] : null);
         }
 
         return $steps;

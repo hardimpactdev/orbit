@@ -536,7 +536,7 @@ The runtime reservation belongs to its admitting Operation. A late receipt canno
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
 | After a failed restore | The site stays the checkout's, and a deployment refuses with `instance.lifecycle_busy` until the move has run again |
 
-The whole-run budget follows the declared phase timeouts, including restoration and cleanup. A deadline or confirmed cancel still projects the native end state and complete step history. A lost worker with no final result reports an unknown state and the [restore-only command](/cli/instance/migrate#failure); restoration refuses once retirement began.
+The whole-run budget follows the declared phase timeouts, including restoration and cleanup. A deadline or confirmed cancel still projects the native end state. A lost worker with no final result reports an unknown state and the [restore-only command](/cli/instance/migrate#failure); restoration refuses once retirement began.
 
 Restore changes host Process states and the awake marker only when quiesce began. A target probe failure leaves both untouched.
 

@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace App\Infrastructure\Swamp;
 
 use App\Actions\Operations\ExpireOperationAction;
+use App\Domain\InstanceMigration\InstanceMigrateProjection;
+use App\Domain\InstanceMigration\InstanceMigrateReadDeadline;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationChildProjection;
-use App\Domain\Operations\NativeTerminalNeedsSettlement;
 use App\Domain\Operations\OperationResultFields;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
@@ -44,7 +45,7 @@ final readonly class SwampCommandStep
         $direct = app(DirectOperation::class);
         $workflow = $direct->definition($operation->kind)['workflow'] ?? null;
         $start = ['key' => 'operation:'.$operation->id, 'workflow' => $workflow];
-        $timedOut = ExpireOperationAction::expiredUnsettled($operation);
+        $timedOut = ExpireOperationAction::awaitsSettlement($operation) || InstanceMigrateProjection::unsettled($operation);
         if ($workflow === null || ! $direct->usesNativeTerminal($operation) || isset($operation->state['swamp_run_id'])
             || (isset($operation->state['swamp_start']) && $operation->state['swamp_start'] !== $start)
             || (! $timedOut && ($operation->status !== OperationStatus::Running || $operation->error_code !== 'swamp.start_uncertain'
@@ -59,7 +60,7 @@ final readonly class SwampCommandStep
         if ($timedOut && ($reply['total'] ?? null) === 0 && $rows === []) {
             DB::transaction(function () use ($operation): void {
                 $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-                if (! ExpireOperationAction::expiredUnsettled($current) || isset($current->state['swamp_run_id'])
+                if ((! ExpireOperationAction::awaitsSettlement($current) && ! InstanceMigrateProjection::unsettled($current)) || isset($current->state['swamp_run_id'])
                     || $current->kind !== $operation->kind || $current->node_id !== $operation->node_id
                     || ($current->state['swamp_start'] ?? null) !== ($operation->state['swamp_start'] ?? null)) {
                     return;
@@ -91,12 +92,12 @@ final readonly class SwampCommandStep
         DB::transaction(function () use ($operation, $runId, $start): void {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if (isset($current->state['swamp_run_id'])
-                || (! ExpireOperationAction::expiredUnsettled($current) && ($current->status !== OperationStatus::Running
+                || ((! ExpireOperationAction::awaitsSettlement($current) && ! InstanceMigrateProjection::unsettled($current)) && ($current->status !== OperationStatus::Running
                     || $current->error_code !== 'swamp.start_uncertain' || ($current->state['swamp_start'] ?? null) !== $start))
                 || $current->node_id !== $operation->node_id || $current->kind !== $operation->kind) {
                 return;
             }
-            app(OperationStore::class)->change($current, ['dispatched_at' => now(), 'error_code' => ExpireOperationAction::expiredUnsettled($current) ? $current->error_code : null,
+            app(OperationStore::class)->change($current, ['dispatched_at' => now(), 'error_code' => (ExpireOperationAction::awaitsSettlement($current) || InstanceMigrateProjection::unsettled($current)) ? $current->error_code : null,
                 'state' => [...($current->state ?? []), 'swamp_run_id' => $runId]]);
         });
     }
@@ -119,7 +120,7 @@ final readonly class SwampCommandStep
             return $operation;
         }
         $operation->refresh();
-        if ($operation->status->terminal() && ! ExpireOperationAction::expiredUnsettled($operation)) {
+        if ($operation->status->terminal() && ! ExpireOperationAction::expiredUnsettled($operation) && ! InstanceMigrateProjection::unsettled($operation)) {
             return $operation;
         }
         $run = $this->history($runId);
@@ -142,118 +143,62 @@ final readonly class SwampCommandStep
 
             return app(ExpireOperationAction::class)->execute($operation);
         }
-        $data = [
-            'run_id' => $runId, 'native_status' => $run['status'], 'status' => $run['status'],
-            'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'], 'error_code' => null, 'result' => [],
-            'failure' => app(NativeStepFailure::class)->fromRun($run, $operation), 'step_outcomes' => $this->recordedSteps($run),
-        ];
-        $lateReceipts = [
-            $this->lateReceipt($run, $data, deadline: true),
-            $this->lateReceipt($run, $data, deadline: false),
-        ];
-        $receipt = $direct->settleNativeTerminal($operation, $data, $lateReceipts);
-        if ($receipt !== null) {
-            $this->fillStepTimes($receipt, $runId, $run);
+        if ($operation->kind === 'instance.migrate') {
+            $projected = $direct->projection($operation)->apply($operation, [
+                'run_id' => $runId, 'status' => $run['status'], 'native_run' => $run,
+                'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
+                'result' => $this->terminalOutput($run, $selector),
+                'failure' => app(NativeStepFailure::class)->fromRun($run, $operation),
+            ]);
+            $this->fillStepTimes($projected, $runId, $run);
 
-            return $receipt->refresh();
+            return $projected;
+        }
+        $deadline = OperationRunBudgets::deadline($operation);
+        try {
+            $completedAt = is_string($run['completedAt'] ?? null) ? Carbon::parse($run['completedAt']) : null;
+        } catch (Throwable) {
+            throw $this->unavailable();
+        }
+        if ($deadline !== null && ! $deadline->isFuture() && ($completedAt === null || $completedAt->greaterThan($deadline))) {
+            $operation = app(ExpireOperationAction::class)->execute($operation);
+        }
+        // An expiry the run beat, typically at the admission deadline before a slow start reply bound the run.
+        if (ExpireOperationAction::expiredUnsettled($operation) && $completedAt !== null && $deadline !== null && $completedAt->lessThan($deadline)) {
+            $operation = app(ExpireOperationAction::class)->reopen($operation, $runId);
+        }
+        if (ExpireOperationAction::awaitsSettlement($operation)) {
+            return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status']);
         }
         $result = $run['status'] === 'cancelled' && $direct->projection($operation) instanceof DirectOperationChildProjection
             ? [] : $this->terminalOutput($run, $selector);
-        $operation->refresh();
-        $direct->assertRun($operation, $runId);
         $status = $run['status'];
-        $code = $result['error_code'] ?? null;
-        if ($status === 'cancelled') {
-            if (is_string($code) && ! NativeRunResult::cancelledFailure($run)) {
-                $status = 'failed';
-            } elseif ($operation->kind === 'instance.migrate' && ExpireOperationAction::deadlineCancellation($operation)) {
-                $result = [...$result, 'error_code' => 'operation.timed_out'];
-                $code = 'operation.timed_out';
-            } else {
-                $code = null;
-            }
-        }
-        if (in_array($status, ['failed', 'interrupted'], true) && ($result === []
-            || (($result['outcome'] ?? null) === 'succeeded' && ! is_string($code)))) {
+        if (in_array($status, ['failed', 'interrupted'], true) && ($result === [] || ($result['outcome'] ?? null) === 'succeeded')) {
             $result = ['error_code' => 'operation.native_failed'];
-            $code = 'operation.native_failed';
         }
-        $data = [...$data, 'status' => $status,
-            'error_code' => $code ?? (in_array($status, ['failed', 'interrupted'], true) ? 'operation.native_failed' : null), 'result' => $result];
-        while (true) {
-            try {
-                $projected = $direct->projection($operation)->apply($operation, $data);
-                break;
-            } catch (NativeTerminalNeedsSettlement) {
-                // The exception has unwound the family's entire write transaction, including its domain effects.
-                $projected = $direct->settleNativeTerminal($operation, $data, $lateReceipts);
-                if ($projected !== null) {
-                    break;
-                }
-                // An in-budget native finish reopens a provisional expiry and applies its normal family effects.
-                $operation->refresh();
-            }
+
+        $current = DB::transaction(function () use ($direct, $operation, $runId): Operation {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            $direct->assertRun($current, $runId);
+
+            return $current;
+        });
+        if (ExpireOperationAction::awaitsSettlement($current)) {
+            return app(ExpireOperationAction::class)->settle($current, $runId, $status);
         }
+        if ($current->status->terminal() || isset($current->state['swamp_scheduled_result'])) {
+            return $current;
+        }
+
+        // Family projections read/clean native secrets outside their own short result transaction.
+        $projected = $direct->projection($current)->apply($current, [
+            'run_id' => $runId, 'status' => $status, 'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
+            'error_code' => in_array($status, ['failed', 'interrupted'], true) ? ($result['error_code'] ?? 'operation.native_failed') : null,
+            'result' => $result, 'failure' => app(NativeStepFailure::class)->fromRun($run, $current),
+        ]);
         $this->fillStepTimes($projected, $runId, $run);
 
-        return $projected->refresh();
-    }
-
-    /** No family effects or fields apply after expiry or confirmed cancellation.
-     * @param  array<string,mixed>  $run
-     * @param  array<string,mixed>  $data
-     * @return array<string,mixed>
-     */
-    private function lateReceipt(array $run, array $data, bool $deadline): array
-    {
-        $nativeStatus = ValidatedData::string($run['status']);
-        $nativeCode = $this->nativeFailureCode($run);
-        $independent = in_array($nativeStatus, ['failed', 'interrupted'], true)
-            || ($nativeStatus === 'cancelled' && NativeRunResult::independentFailure($run));
-        $status = match (true) {
-            $nativeStatus === 'interrupted' => 'interrupted',
-            $independent, $deadline => 'failed',
-            default => 'cancelled',
-        };
-        $code = $independent ? ($nativeCode ?? 'operation.native_failed') : ($deadline ? 'operation.timed_out' : null);
-        $detail = $nativeStatus === 'succeeded' && $deadline
-            ? 'The native run succeeded after the Gateway deadline. Its effects were not recorded. Run the command again.'
-            : 'The native run ended after the Gateway deadline or confirmed cancellation. Its effects were not recorded.';
-        $steps = $this->recordedSteps($run, true);
-
-        return [...$data, 'status' => $status, 'error_code' => $code,
-            'result' => ['late_settlement' => true, 'native_status' => $nativeStatus],
-            'failure' => ['failed_step' => $independent ? (ValidatedData::object($data['failure'] ?? [])['failed_step'] ?? null) : null,
-                'detail' => $detail, 'stderr_recorded' => false], 'step_outcomes' => $steps];
-    }
-
-    /** A native phase's own public code, without interpreting any family result fields.
-     * @param  array<string,mixed>  $run
-     */
-    private function nativeFailureCode(array $run): ?string
-    {
-        $failures = [];
-        foreach (is_array($run['jobs'] ?? null) ? $run['jobs'] : [] as $job) {
-            foreach (is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
-                if (is_array($step) && ($step['status'] ?? null) === 'failed' && ($step['allowedFailure'] ?? false) !== true) {
-                    $failures[] = $step;
-                }
-            }
-        }
-        usort($failures, static fn (array $left, array $right): int => strcmp(
-            is_string($left['completedAt'] ?? null) ? $left['completedAt'] : '',
-            is_string($right['completedAt'] ?? null) ? $right['completedAt'] : ''));
-        foreach ($failures as $step) {
-            $output = is_array($step['outputs'] ?? null) ? $step['outputs'] : [];
-            $printed = is_string($output['stdout'] ?? null) ? json_decode($output['stdout'], true) : null;
-            foreach ([$step['error'] ?? null, $output['error_code'] ?? null, is_array($printed) ? ($printed['error_code'] ?? null) : null] as $code) {
-                if (is_string($code) && preg_match('/\A[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\z/D', $code) === 1 && strlen($code) <= 128) {
-                    return $code;
-                }
-            }
-        }
-
-        return null;
+        return $projected;
     }
 
     /** The same declared terminal reader records completed children while their parent is open.
@@ -316,9 +261,7 @@ final readonly class SwampCommandStep
                 if (($current->status->terminal() && ! ExpireOperationAction::expiredUnsettled($current)) || isset($recorded[ValidatedData::string($child['id'])])) {
                     return;
                 }
-                if (! $current->status->terminal() && ! isset($current->state['native_cancel_confirmed_at'])) {
-                    $projection->applyChild($current, ValidatedData::object($child['inputs'] ?? []), $result);
-                }
+                $projection->applyChild($current, ValidatedData::object($child['inputs'] ?? []), $result);
                 $current->update(['state' => [...($current->state ?? []), 'native_children' => [
                     ...ValidatedData::object($current->state['native_children'] ?? []), ValidatedData::string($child['id']) => true,
                 ]]]);
@@ -328,38 +271,30 @@ final readonly class SwampCommandStep
     }
 
     /**
-     * Terminal history supplies the complete step receipt even when progress events were lost. Include nested runs. A failed
-     * optional history read never changes the domain result; its warning identifies the missing receipt evidence.
+     * The step events carry no times; the terminal history has them for each step of the run and of its nested runs. Best effort:
+     * a failed read leaves the times empty and never fails the projection.
      *
      * @param  array<string,mixed>  $run
      */
     private function fillStepTimes(Operation $operation, string $runId, array $run): void
     {
         try {
-            $late = ($operation->result['late_settlement'] ?? false) === true;
-            $recorded = $this->recordedSteps($run, $late);
-            try {
-                foreach ($this->nestedRuns($runId, is_string($run['startedAt'] ?? null) ? $run['startedAt'] : '') as $nested) {
-                    $recorded = [...$recorded, ...$this->recordedSteps($this->history($nested), $late)];
-                }
-            } catch (Throwable $exception) {
-                // The verified root history remains valid evidence when a child history read is unavailable.
-                Log::warning('Nested step history was unavailable.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+            $recorded = $this->recordedSteps($run);
+            foreach ($this->nestedRuns($runId, is_string($run['startedAt'] ?? null) ? $run['startedAt'] : '') as $nested) {
+                $recorded = [...$recorded, ...$this->recordedSteps($this->history($nested))];
             }
-            usort($recorded, static fn (array $left, array $right): int => strcmp($left['started_at'] ?? '9999', $right['started_at'] ?? '9999'));
+            usort($recorded, static fn (array $left, array $right): int => strcmp($left['started_at'], $right['started_at']));
             DB::transaction(function () use ($operation, $runId, $recorded): void {
                 $current = Operation::query()->lockForUpdate()->find($operation->id);
                 $progress = $current?->state['native_progress'] ?? null;
-                if ($current === null || ($current->state['swamp_run_id'] ?? null) !== $runId) {
+                if ($current === null || ! is_array($progress) || ($progress['run'] ?? null) !== $runId || ! is_array($progress['steps'] ?? null)) {
                     return;
                 }
-                $progress = is_array($progress) && ($progress['run'] ?? null) === $runId ? $progress : ['run' => $runId, 'seq' => 0];
-                // Terminal history is authoritative for both outcomes and times. Events can be absent or stop at expiry.
-                $steps = $recorded;
-                if ($steps === ($progress['steps'] ?? [])) {
+                $steps = app(NativeRunStepTimes::class)->merge($progress['steps'], $recorded);
+                if ($steps === $progress['steps']) {
                     return;
                 }
-                $state = [...($current->state ?? []), 'native_progress' => [...$progress, 'steps' => $steps, 'active' => []]];
+                $state = [...($current->state ?? []), 'native_progress' => [...$progress, 'steps' => $steps]];
                 app(OperationStore::class)->change($current, ['state' => $state]);
             });
         } catch (Throwable $exception) {
@@ -369,9 +304,9 @@ final readonly class SwampCommandStep
 
     /**
      * @param  array<string,mixed>  $run
-     * @return list<array{job:string,name:string,status:string,started_at:?string,finished_at:?string,exit_code?:?int}>
+     * @return list<array{job:string,name:string,started_at:string,finished_at:string|null}>
      */
-    private function recordedSteps(array $run, bool $exitCodes = false): array
+    private function recordedSteps(array $run): array
     {
         $recorded = [];
         $jobs = is_array($run['jobs'] ?? null) ? $run['jobs'] : [];
@@ -382,12 +317,9 @@ final readonly class SwampCommandStep
                 $name = is_array($step) ? ($step['name'] ?? null) : null;
                 $started = is_array($step) ? ($step['startedAt'] ?? null) : null;
                 $finished = is_array($step) ? ($step['completedAt'] ?? null) : null;
-                $outputs = is_array($step) && is_array($step['outputs'] ?? null) ? $step['outputs'] : [];
-                if (is_string($jobName) && is_string($name) && in_array($step['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted', 'unknown', 'running', 'pending', 'skipped'], true)) {
-                    $recorded[] = ['job' => $jobName, 'name' => $name, 'status' => $step['status'],
-                        'started_at' => is_string($started) && NativeRunTimestamp::parse($started) !== null ? $started : null,
-                        'finished_at' => is_string($finished) && NativeRunTimestamp::parse($finished) !== null ? $finished : null,
-                        ...($exitCodes ? ['exit_code' => is_int($outputs['exitCode'] ?? null) ? $outputs['exitCode'] : null] : [])];
+                if (is_string($jobName) && is_string($name) && is_string($started) && NativeRunTimestamp::parse($started) !== null) {
+                    $recorded[] = ['job' => $jobName, 'name' => $name, 'started_at' => $started,
+                        'finished_at' => is_string($finished) && NativeRunTimestamp::parse($finished) !== null ? $finished : null];
                 }
             }
         }
@@ -794,7 +726,7 @@ final readonly class SwampCommandStep
         if (! is_string($token) || $token === '' || ! is_string($address) || $address === '' || ! is_string($ca) || $ca === '') {
             throw $this->unavailable();
         }
-        if (SwampRequestDeadline::remaining(30) <= 0) {
+        if (InstanceMigrateReadDeadline::remaining(30) <= 0) {
             throw new SwampTerminalReadUnavailable;
         }
         $endpoint = new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token);
@@ -819,15 +751,15 @@ final readonly class SwampCommandStep
      */
     private function exchange(SwampConnection $connection, WebSocketEndpoint $endpoint, string $type, array $arguments): array
     {
-        if (SwampRequestDeadline::remaining(30) <= 0) {
+        if (InstanceMigrateReadDeadline::remaining(30) <= 0) {
             throw new SwampTerminalReadUnavailable;
         }
         $id = bin2hex(random_bytes(16));
         try {
-            $socket = $connection->socket($endpoint, SwampRequestDeadline::remaining(15), $this->socket);
+            $socket = $connection->socket($endpoint, InstanceMigrateReadDeadline::remaining(15), $this->socket);
             $socket->send(['type' => $type, 'id' => $id, 'payload' => $arguments]);
-            $deadline = microtime(true) + SwampRequestDeadline::remaining(30);
-            while ($socket->isConnected() && ($remaining = SwampRequestDeadline::remaining($deadline - microtime(true))) > 0) {
+            $deadline = microtime(true) + InstanceMigrateReadDeadline::remaining(30);
+            while ($socket->isConnected() && ($remaining = InstanceMigrateReadDeadline::remaining($deadline - microtime(true))) > 0) {
                 foreach ($socket->receive(min(1.0, $remaining)) as $message) {
                     if (($message['id'] ?? null) !== $id) {
                         continue;

@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
@@ -297,15 +296,14 @@ it('records a completed child while its parent is running and deduplicates paren
     }
 })->with(['tasks.prep', 'tasks.prep_fix', 'tasks.build', 'tasks.review_round'])->with([false, true]);
 
-it('keeps the transcript and distinguishes deadline cancellation from user cancellation', function (bool $expired, bool $userCancel): void {
+it('keeps the previous transcript when native cancellation skips finalization', function (bool $expired): void {
     [$group, $thread, $operation] = recordedTaskWorld();
     $root = '986bc349-54dc-4dea-9f22-76e3353d1cc0';
-    $operation->update(['state' => ['swamp_run_id' => $root, ...($expired ? ['native_timeout' => [], 'native_timeout_restore' => ['cancel_requested' => $userCancel]] : [])],
+    $operation->update(['state' => ['swamp_run_id' => $root, ...($expired ? ['native_timeout' => []] : [])],
         'input' => ['group_id' => $group->id, 'thread_id' => $thread->id],
         'started_at' => $expired ? now()->subHours(2) : now()->subMinute(), 'dispatched_at' => $expired ? now()->subHours(2) : now()->subMinute(),
         'status' => $expired ? OperationStatus::Failed : OperationStatus::Running,
-        'error_code' => $expired ? 'operation.timed_out' : null, 'cancel_requested_at' => $userCancel ? now()->subMinutes(2) : null,
-        'lock_key' => 'task-group:'.$group->id]);
+        'error_code' => $expired ? 'operation.timed_out' : null, 'lock_key' => 'task-group:'.$group->id]);
     $result = ['state' => 'failed', 'transcript' => [['id' => 'partial', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Saved before disconnect', 'at' => '']]];
     $history = ['id' => $root, 'workflowName' => 'operation-task-turn', 'status' => 'cancelled',
         'startedAt' => now()->subHours(2)->toISOString(), 'completedAt' => now()->toISOString(),
@@ -358,18 +356,14 @@ it('keeps the transcript and distinguishes deadline cancellation from user cance
         $selector = app(DirectOperation::class)->definition('tasks.turn')['terminal_result'];
         $reader->projectTerminal($operation, ['id' => $root], $selector);
         expect($thread->refresh()->tokens)->toBe(100);
-        expect($operation->refresh()->status)->toBe($expired && ! $userCancel ? OperationStatus::Failed : OperationStatus::Cancelled)
-            ->and($operation->error_code)->toBe($expired && ! $userCancel ? 'operation.timed_out' : null);
-        if ($expired) {
-            expect($operation->state['native_timeout']['native_terminal_status'])->toBe('cancelled');
-        }
+        expect($operation->refresh()->status)->toBe($expired ? OperationStatus::Failed : OperationStatus::Cancelled);
         expect($operation->lock_key)->toBeNull();
         $this->getJson('/api/v1/tasks/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Recorded answer')->assertJsonPath('data.state', 'done');
         Http::assertNothingSent();
     } finally {
         app(SwampConnection::class)->release();
     }
-})->with(['user cancellation' => [false, true], 'deadline cancellation' => [true, false], 'user request predates expiry' => [true, true]]);
+})->with([false, true]);
 
 it('loads a root turn capture from its recorded result artifact before projecting', function (): void {
     [$group, $thread, $operation] = recordedTaskWorld();
@@ -491,83 +485,3 @@ it('projects a terminal review parent with large verdict and checked fix artifac
         app(SwampConnection::class)->release();
     }
 });
-
-it('review expiry during the terminal history read preserves deadline causality', function (bool $userCancel): void {
-    $expired = true;
-    [$group, $thread, $operation] = recordedTaskWorld();
-    $root = '986bc349-54dc-4dea-9f22-76e3353d1cc0';
-    $operation->update(['state' => ['swamp_run_id' => $root, ...($expired ? ['native_timeout' => [], 'native_timeout_restore' => ['cancel_requested' => $userCancel]] : [])],
-        'input' => ['group_id' => $group->id, 'thread_id' => $thread->id],
-        'started_at' => $expired ? now()->subHours(2) : now()->subMinute(), 'dispatched_at' => $expired ? now()->subHours(2) : now()->subMinute(),
-        'status' => $expired ? OperationStatus::Failed : OperationStatus::Running,
-        'error_code' => $expired ? 'operation.timed_out' : null, 'cancel_requested_at' => $userCancel ? now()->subMinutes(2) : null,
-        'lock_key' => 'task-group:'.$group->id]);
-    $operation->update(['status' => OperationStatus::Running, 'error_code' => null, 'state' => ['swamp_run_id' => $root]]);
-    $result = ['state' => 'failed', 'transcript' => [['id' => 'partial', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Saved before disconnect', 'at' => '']]];
-    $history = ['id' => $root, 'workflowName' => 'operation-task-turn', 'status' => 'cancelled',
-        'startedAt' => now()->subHours(2)->toISOString(), 'completedAt' => now()->toISOString(),
-        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.turn', 'intent' => $operation->input],
-        'jobs' => [['name' => 'turn', 'steps' => [['name' => 'shape_result', 'status' => 'succeeded', 'outputs' => ['result_json' => json_encode($result, JSON_THROW_ON_ERROR)]]]]]];
-    $socket = new class($history, $operation->id) implements WebSocketClient
-    {
-        private ?array $frame = null;
-
-        private bool $open = false;
-
-        public function __construct(private array $history, private int $operationId) {}
-
-        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
-        {
-            $this->open = true;
-        }
-
-        public function send(array $message): void
-        {
-            $this->frame = $message;
-        }
-
-        public function receive(float $timeoutSeconds): array
-        {
-            $frame = $this->frame;
-            $this->frame = null;
-            if ($frame === null) {
-                return [];
-            }
-
-            if ($frame['type'] === 'workflow.history.get') {
-                app(ExpireOperationAction::class)->execute(Operation::query()->findOrFail($this->operationId));
-            }
-
-            return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => $frame['type'] === 'workflow.run.search' ? ['results' => []] : $this->history]]];
-        }
-
-        public function close(): void
-        {
-            $this->open = false;
-        }
-
-        public function isConnected(): bool
-        {
-            return $this->open;
-        }
-    };
-    app()->instance(WebSocketClient::class, $socket);
-    app(SwampConnection::class)->release();
-    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'fixture-read-token']);
-    try {
-        $reader = app(SwampCommandStep::class);
-        $selector = app(DirectOperation::class)->definition('tasks.turn')['terminal_result'];
-        $reader->projectTerminal($operation, ['id' => $root], $selector);
-        expect($thread->refresh()->tokens)->toBe(100);
-        expect($operation->refresh()->status)->toBe($expired && ! $userCancel ? OperationStatus::Failed : OperationStatus::Cancelled)
-            ->and($operation->error_code)->toBe($expired && ! $userCancel ? 'operation.timed_out' : null);
-        if ($expired) {
-            expect($operation->state['native_timeout']['native_terminal_status'])->toBe('cancelled');
-        }
-        expect($operation->lock_key)->toBeNull();
-        $this->getJson('/api/v1/tasks/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Recorded answer')->assertJsonPath('data.state', 'done');
-        Http::assertNothingSent();
-    } finally {
-        app(SwampConnection::class)->release();
-    }
-})->with(['deadline during read' => false, 'user cancel before expiry during read' => true]);

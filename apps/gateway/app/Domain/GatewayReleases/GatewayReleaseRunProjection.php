@@ -89,16 +89,13 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         $snapshot = ValidatedData::object($data['result'] ?? [])['snapshot'] ?? null;
         $snapshot = is_string($snapshot) && trim($snapshot) !== '' ? trim($snapshot) : null;
         $status = $data['status'] ?? null;
+        $projected = app(DirectOperation::class)->project($operation, $data, $status === 'succeeded' ? ['sha' => $operation->input['sha'],
+            'previous' => $operation->input['previous'], 'snapshot' => $snapshot] : []);
+        if (in_array($status, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
+            $this->finish($operation, $data, $snapshot);
+        }
 
-        return DB::transaction(function () use ($operation, $data, $status, $snapshot): Operation {
-            $projected = app(DirectOperation::class)->project($operation, $data, $status === 'succeeded' ? ['sha' => $operation->input['sha'],
-                'previous' => $operation->input['previous'], 'snapshot' => $snapshot] : []);
-            if (in_array($status, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
-                $this->finish($operation, $data, $snapshot);
-            }
-
-            return $projected;
-        });
+        return $projected;
     }
 
     /** The run may still be working on the Gateway Node, so its release pauses with the old or new code live. */

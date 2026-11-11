@@ -27,49 +27,6 @@ final readonly class NativeRunResult
         return is_string($entry['status'] ?? null) ? $entry['status'] : null;
     }
 
-    /** The first native failure distinguishes an aborted phase from an independent failure before cancellation.
-     * The pinned command/shell records a process killed by cancellation as failed, with native exit code -1.
-     *
-     * @param  array<string,mixed>  $run
-     */
-    public static function cancelledFailure(array $run): bool
-    {
-        $first = self::firstFailure($run);
-        $outputs = is_array($first['outputs'] ?? null) ? $first['outputs'] : [];
-
-        return in_array($first['status'] ?? null, ['cancelled', 'aborted'], true)
-            || ($first['error'] ?? null) === 'Command exited with code -1'
-            || ($outputs['exitCode'] ?? null) === -1;
-    }
-
-    /** Independent failure evidence does not require a public code or captured outputs.
-     * @param  array<string,mixed>  $run
-     */
-    public static function independentFailure(array $run): bool
-    {
-        return (self::firstFailure($run)['status'] ?? null) === 'failed' && ! self::cancelledFailure($run);
-    }
-
-    /** @param array<string,mixed> $run
-     * @return array<string,mixed>
-     */
-    private static function firstFailure(array $run): array
-    {
-        $failures = [];
-        foreach (is_array($run['jobs'] ?? null) ? $run['jobs'] : [] as $job) {
-            foreach (is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
-                if (is_array($step) && ($step['allowedFailure'] ?? false) !== true && in_array($step['status'] ?? null, ['failed', 'cancelled', 'aborted'], true)) {
-                    $failures[] = $step;
-                }
-            }
-        }
-        usort($failures, static fn (array $left, array $right): int => strcmp(
-            is_string($left['completedAt'] ?? null) ? $left['completedAt'] : '',
-            is_string($right['completedAt'] ?? null) ? $right['completedAt'] : ''));
-
-        return $failures[0] ?? [];
-    }
-
     /**
      * @param  array<string,mixed>  $run
      * @return array{steps:array<string,array{status:string,stdout?:string,exit_code?:int,error_code?:string}>,summary:array{status:string,succeeded:int,failed:int,skipped:int,failed_steps:list<string>}}
