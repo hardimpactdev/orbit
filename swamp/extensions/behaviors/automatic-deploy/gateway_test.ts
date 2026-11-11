@@ -440,13 +440,18 @@ Deno.test("a holder found in the list is read in full, because list rows carry n
     const automatic = { ...f.operation, id: 902, status: "running" };
     f.operations.set(902, automatic);
     f.intercept((_method, path) =>
-        path.startsWith("/api/v1/operations?") && path.endsWith("status=running")
+        path.startsWith("/api/v1/operations?") &&
+            path.endsWith("status=running")
             ? { status: 200, body: { data: [listRow(automatic)] } }
             : undefined
     );
     await f.run();
     assertEquals(f.state().result, "deploying");
-    assert(f.requests.some((r) => r.method === "GET" && r.path === "/api/v1/operations/902"));
+    assert(
+        f.requests.some((r) =>
+            r.method === "GET" && r.path === "/api/v1/operations/902"
+        ),
+    );
     assertEquals(deployPosts(f), []);
 });
 

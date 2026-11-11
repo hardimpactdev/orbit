@@ -30,7 +30,9 @@ sequenceDiagram
       %%> - reads a retained pending Operation by ID; ended Operations settle for their admitted commit; success reports up_to_date only when the current runtime seed matches
       %%> - failed, cancelled, interrupted and timed-out Operations share one per-commit retry accounting with history: ten minutes, twenty minutes, then stop after three failures; null-commit history retains the admission pin
       %%> - a lost admission response follows the development receipt by key; an absent admission is fenced before abandoning the intent and applying the same retry accounting
-      %%> - an old terminal checkpoint or failure cannot block a newer green head after an Instance moves into a container
+      %%> - a newer manual deployment clears terminal pending intent and accounting before its history boundary; evaluate the current runtime seed and head in that tick
+      %%> - an old terminal checkpoint or failure cannot block a newer green head while the Instance is eligible and auto_deploy is on
+      %%> - a finished Swamp run stays deploying until Gateway reconciliation or budget expiry ends its Operation; ineligibility preserves admitted identity until recovery
       %%> - never discovers or admits production work; its paused production schedule stays unchanged
       Note over SW: Check the moved head<br/>Project merge_check
       %%> What it does:

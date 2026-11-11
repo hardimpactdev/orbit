@@ -333,31 +333,46 @@ The `auto_deploy` flag has the same meaning for development and production: on p
 
 Turn automatic deployment off for one ready container default with `orbit instance:auto-deploy:disable <instance>`. Turn it back on with `orbit instance:auto-deploy:enable <instance>`. Disabling does not cancel a deployment already running, but queued automatic work rechecks the flag before execution. Manual deployment remains available. Both commands refuse a checkout Instance with `instance.auto_deploy_container_default_required`: a user's working tree is never an automatic deployment target.
 
-Before rolling code back past the ready-container eligibility fix, stop development ticks by stopping the Gateway scheduler Process with `orbit process:stop <scheduler-process-id>` and let queued development scans and deploys finish. Rolling code back restores the old unsafe eligibility; reversing only the data migration does not. Per-Instance switches are not a fleet stop for older code that ignores them. Resume the scheduler only after the eligibility fix is serving again.
+Before rolling code back past the ready-container eligibility fix:
+
+1. On the Swamp Node, run `swamp workflow schedule list` and verify that the native `automatic-production-deploy` schedule is paused. Keep it paused until safe code serves again: older code runs development policy from this schedule and admits checkout defaults.
+2. Stop the Gateway scheduler Process with `orbit process:stop <scheduler-process-id>`.
+3. Drain outstanding development policy runs, queued development scans and deploy Operations.
+4. Roll back the code. Resume the Gateway scheduler only after the eligibility fix serves again.
+
+Rolling code back restores the old unsafe eligibility; reversing only the data migration does not. Per-Instance switches are not a fleet stop for older code that ignores them.
 
 #### Development terminal outcomes
 
 Each admitted request counts once against its pinned commit. A failed, cancelled, interrupted, timed-out or fenced request uses one failure total: retry after 10 minutes, then 20 minutes, then stop after three failures. Cancellation counts even before execution; otherwise repeated cancellation could retry one head without limit. Production also counts cancellation as failure, but blocks it immediately under its lasting-failure rule. `deployment.paused` settles without counting. A successful Operation proves `up_to_date` only when the current container seed matches.
 
-The matrix below covers every outcome and intent state. `R` means settle and apply that retry total; `S` means settle without counting, then deploy if the seed differs; `D` means deploy when green and due. Every terminal cell permits a newer green head after settlement. Gateway target exclusion still applies: a timed-out run holds its target until native settlement or the Gateway's 60-minute hold limit. A running cancellation request stays nonterminal until Swamp ends it.
+The matrix below covers every outcome and intent state. `R` means settle and apply that retry total unless a later manual deployment resets it; `S` means settle without counting, then deploy if the seed differs; `D` means deploy when green and due. `M` means clear pending intent, discard accounting before the newer manual deployment, then evaluate the current seed and head. Every terminal cell permits a newer green head after settlement while the Instance is eligible and automatic deployment is on.
 
-| Outcome (test stem) | Gateway history | No pending intent | Pending with ID | Pending without ID | Pre-container intent (ID / no ID) |
-| --- | --- | --- | --- | --- | --- |
-| `success` | `succeeded`, observed SHA | S | S | S after receipt | S; check current seed |
-| `failure` | `failed`, pinned SHA | R | R | R after receipt | R for old SHA |
-| `legacy-null-failure` | `failed`, null SHA in older rows | R from retained pin | R from intent pin | R from receipt and pin | R for old SHA |
-| `start-refusal` | No row; or `failed`, pinned SHA, `admission` for an existing row | R from retained pin | R | R after receipt | R for old SHA |
-| `queued-cancel` | No row; cancelled Operation, attempts 0, null result/error | R from retained pin | R | R after receipt | R for old SHA |
-| `cancellation-request` | No terminal row; Operation still running | Busy | Deploying | Deploying after receipt | Deploying until terminal |
-| `running-cancel` | `failed`, pinned SHA, `deployment.cancelled` | R | R | R after receipt | R for old SHA |
-| `interruption` | `interrupted`, pinned SHA; older rows have null SHA | R | R | R after receipt | R for old SHA |
-| `timeout` | No row, or `failed`, pinned SHA, `operation.timed_out` if a row already started | R | R | R after receipt | R for old SHA |
-| `absent-admission` | No row; absent key resolves to a cancelled admission fence | R from retained pin | R from fence | Resolve key, then R | Resolve original key, then R |
-| `paused` | No row, or `failed`, `deployment.paused` | S | S | S after receipt | S |
-| `replay` | Same Operation and row; no second admission | Same outcome once | Same outcome once | Receipt, same outcome once | Original receipt, same outcome once |
-| `refused-before-admission` | No Operation or row | D; no attempt yet | Impossible: no ID exists | Resolve absent key, then R | Resolve original key, then R |
+Gateway target exclusion still applies: a timed-out run holds its target until native settlement or the Gateway's 60-minute hold limit. A running cancellation request stays nonterminal until Swamp ends it. A finished Swamp run also stays busy or deploying while its Gateway projection is unfinished; reconciliation or budget expiry must end the Operation first.
 
-Policy tests are named `matrix <stem> / <intent>` in `development_test.ts`, with intents `none`, `id`, `key`, `stale-id`, and `stale-key`. The two stale forms are separate tests of the same old-commit rule. Each test includes same-head and newer-head checks. Cells without a pending intent reuse history or retained evidence from settlement; without either, there is no known attempt to count. The timeout and start-refusal tests cover both row shapes; the interruption test covers old null and new pinned SHAs. Replay uses the underlying terminal outcome, so it never adds a second failure. Pre-admission refusal and absent admission share the same fence once a key was saved.
+| Outcome (test stem) | Gateway history | No pending intent | Pending with ID | Pending without ID | Pre-container intent with ID | Pre-container intent without ID |
+| --- | --- | --- | --- | --- | --- | --- |
+| `success` | `succeeded`, observed SHA | S | S | S after receipt | S; check current seed | S; check current seed |
+| `failure` | `failed`, pinned SHA | R | R | R after receipt | R for old SHA | R for old SHA |
+| `legacy-null-failure` | `failed`, null SHA in older rows | R from retained pin | R from intent pin | R from receipt and pin | R for old SHA | R for old SHA |
+| `start-refusal` | No row; or `failed`, pinned SHA, `admission` for an existing row | R from retained pin | R | R after receipt | R for old SHA | R for old SHA |
+| `queued-cancel` | No row; cancelled Operation, attempts 0, null result/error | R from retained pin | R | R after receipt | R for old SHA | R for old SHA |
+| `cancellation-request` | No terminal row; Operation still running | Busy | Deploying | Deploying after receipt | Deploying until terminal | Deploying until terminal |
+| `projection-unfinished` | Normally no development row; Swamp ended, Operation nonterminal | Busy until reconciliation or expiry | Deploying until reconciliation or expiry | Deploying after receipt until reconciliation or expiry | Deploying until reconciliation or expiry | Deploying after receipt until reconciliation or expiry |
+| `running-cancel` | `failed`, pinned SHA, `deployment.cancelled` | R | R | R after receipt | R for old SHA | R for old SHA |
+| `interruption` | `interrupted`, pinned SHA; older rows have null SHA | R | R | R after receipt | R for old SHA | R for old SHA |
+| `timeout` | No row, or `failed`, pinned SHA, `operation.timed_out` if a row already started | R | R | R after receipt | R for old SHA | R for old SHA |
+| `absent-admission` | No row; absent key resolves to a cancelled admission fence. Real path: `Gateway development admissions and lost-response recovery use only development routes` | R from retained pin | R from fence | Resolve key, then R | Resolve original key, then R | Resolve original key, then R |
+| `paused` | No row, or `failed`, `deployment.paused` | S | S | S after receipt | S | S |
+| `manual-superseded` | Original terminal row plus a newer manual deployment row; current seed may differ | M | M | M after receipt | M | M after receipt |
+| `ineligible-before-execution` | Worker refuses: failed Operation, normally no row; `deployment.paused` does not count | Skip; D without evidence on recovery | Keep intent while skipped; S for paused, R otherwise on recovery | Keep key while skipped; receipt then S for paused, R otherwise | Keep admitted identity; S for paused, R otherwise on recovery | Keep admitted identity; receipt then S for paused, R otherwise |
+| `ineligible-after-execution` | Native outcome may settle; no row until projection; removed runtime can leave expiry responsible | Skip; evaluate history when eligible again | Keep admitted identity; reconcile when eligible again | Keep admitted identity; read receipt when eligible again | Keep admitted identity; reconcile when eligible again | Keep admitted identity; read receipt when eligible again |
+| `replay` | Same Operation and row; no second admission. Real path: `replays one development admission while queued, while running and after success` | Same outcome once | Same outcome once | Receipt, same outcome once | Original receipt, same outcome once | Original receipt, same outcome once |
+| `refused-before-admission` | No Operation or row | D; no attempt yet | Impossible: no ID exists | Resolve absent key, then R | Impossible: no ID exists | Resolve original key, then R |
+
+Policy tests are named `matrix <stem> / <intent>` in `development_test.ts`, with intents `none`, `id`, `key`, `stale-id`, and `stale-key`. The two stale forms are separate tests of the same old-commit rule. Tests check the same head and a newer green head where eligible. Cells without a pending intent reuse history or retained evidence from settlement; without either, there is no known attempt to count. The timeout and start-refusal tests cover both row shapes; the interruption test covers old null and new pinned SHAs.
+
+Replay uses the underlying terminal outcome, so it never adds a second failure. The table names the real client proof in `development_test.ts` for absent admission and the Gateway admission proof in `ContainerDefaultDeployTest.php` for replay. Pre-admission refusal and absent admission share the same fence once a key was saved.
 
 The `matrix original-command <status> / stale-key` tests exercise original command recovery through the real Gateway client. The `matrix reconciled-success / id` and `/ key` tests prove that a receipt read which advances the seed cannot redeploy that SHA.
 

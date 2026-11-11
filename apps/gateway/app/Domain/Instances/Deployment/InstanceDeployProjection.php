@@ -81,7 +81,7 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             $text = static fn (mixed $value, int $limit): ?string => $value === null ? null : mb_strcut(ValidatedData::string($value), 0, $limit, 'UTF-8');
             $facts = ['deployment_id' => $historyId, 'release' => $text(ValidatedData::object($payload['release'] ?? [])['name'] ?? null, 128),
                 'selected_release' => $text(ValidatedData::object($payload['selected_release'] ?? [])['name'] ?? null, 128),
-                'commit' => $text($status === 'succeeded' ? ($payload['commit'] ?? null) : InstanceDeploymentIntent::commit($locked), 64), 'failed_step' => $text($payload['failed_step'] ?? null, 255)];
+                'commit' => $text($this->development($locked) && $status !== 'succeeded' ? InstanceDeploymentIntent::commit($locked) : ($payload['commit'] ?? null), 64), 'failed_step' => $text($payload['failed_step'] ?? null, 255)];
             if (isset($payload['warnings'])) {
                 $facts['warnings'] = ValidatedData::integer($payload['warnings']);
             }

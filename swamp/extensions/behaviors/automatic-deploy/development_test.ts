@@ -163,8 +163,8 @@ function fixture() {
         busy: () => {
             busy = true;
         },
-        holder: () => {
-            holder = true;
+        holder: (active = true) => {
+            holder = active;
         },
         lost: () => {
             lost = true;
@@ -1129,11 +1129,12 @@ for (const outcome of matrixOutcomes) {
                             commit: variant === "null" ? null : B,
                             triggered_by: "swamp:auto-deploy",
                             caller_node_id: 9,
-                            failed_step:
-                                ["failure", "legacy-null-failure", "replay"]
+                            failed_step: outcome === "start-refusal"
+                                ? "admission"
+                                : ["failure", "legacy-null-failure", "replay"]
                                         .includes(outcome)
-                                    ? "Check out in the container"
-                                    : null,
+                                ? "Check out in the container"
+                                : null,
                             error_code: outcome === "running-cancel"
                                 ? "deployment.cancelled"
                                 : error,
@@ -1398,5 +1399,309 @@ for (const intent of matrixIntents) {
         await f.run();
         assertEquals(f.starts.length, 1);
         assertEquals(f.starts[0].endsWith(f.source.head), true);
+    });
+}
+
+// Cross the eligibility/manual boundaries with the same five intent forms as
+// the terminal matrix. No pending intent means there is no saved admission pin.
+function matrixPending(intent: typeof matrixIntents[number]) {
+    return intent === "none" ? null : {
+        commit: B,
+        key: intent.startsWith("stale") ? "old-checkout" : "dev.deploy.saved",
+        operation_id: intent.endsWith("id") ? 100 : null,
+        manual_after: 0,
+    };
+}
+function greenHead(f: ReturnType<typeof fixture>, head = B) {
+    f.source.head = head;
+    f.instance.auto_deploy.gate = "Required checks";
+    f.checks.length = 0;
+    f.checks.push({
+        name: "Required checks",
+        head_sha: head,
+        app: "github-actions",
+        status: "completed",
+        conclusion: "success",
+    });
+}
+for (const intent of matrixIntents) {
+    Deno.test(`matrix projection-unfinished / ${intent}`, async () => {
+        for (
+            const terminal of [
+                "succeeded",
+                "failed",
+                "interrupted",
+                "timeout",
+            ] as const
+        ) {
+            const f = fixture();
+            greenHead(f, "c".repeat(40));
+            const pending = matrixPending(intent);
+            f.memory.set("development-7", { pending });
+            // Swamp is over, but projection has not completed: no history row
+            // exists and the Gateway still reports a running Operation.
+            f.operation.status = "running";
+            f.holder();
+            for (const at of [now, "2026-10-31T05:09:00.000Z"]) {
+                await f.run(at);
+                assertEquals(f.history, []);
+                assertEquals(f.starts, []);
+                assertEquals(
+                    f.memory.get("development-7")?.result,
+                    pending ? "deploying" : "busy",
+                );
+                assertEquals(
+                    f.memory.get("development-7")?.unrecorded_failures,
+                    [],
+                );
+                assertEquals(
+                    f.memory.get("development-7")?.pending,
+                    pending ? { ...pending, operation_id: 100 } : null,
+                );
+            }
+            f.operation.status = terminal === "timeout" ? "failed" : terminal;
+            f.operation.error_code = terminal === "timeout"
+                ? "operation.timed_out"
+                : terminal === "succeeded"
+                ? null
+                : "operation.native_failed";
+            // Reconciliation creates the terminal history lazily; expiry alone
+            // cannot create one. Timeout target hold is bounded by the Gateway.
+            if (terminal !== "timeout") {
+                f.operation.result = { deployment_id: 1 };
+                f.history.push({
+                    ...failed(1),
+                    status: terminal,
+                    commit: B,
+                    failed_step: terminal === "failed"
+                        ? "Check out in the container"
+                        : null,
+                    error_code: f.operation.error_code,
+                });
+                if (terminal === "succeeded") f.instance.seed_commit = B;
+            }
+            await f.run("2026-10-31T06:10:00.000Z");
+            assertEquals(f.starts.length, 1);
+            assertEquals(f.starts[0].endsWith(f.source.head), true);
+        }
+    });
+    Deno.test(`matrix manual-superseded / ${intent}`, async () => {
+        for (
+            const status of [
+                "succeeded",
+                "failed",
+                "interrupted",
+                "cancelled",
+            ] as const
+        ) {
+            for (const seedMatches of [false, true]) {
+                const f = fixture();
+                greenHead(f);
+                const pending = matrixPending(intent);
+                f.memory.set("development-7", {
+                    pending,
+                    unrecorded_failures: [{
+                        key: "older-unrecorded",
+                        commit: B,
+                        deployment_id: null,
+                        manual_after: 0,
+                        finished_at: now,
+                    }],
+                });
+                f.history.push(failed(1), failed(2), {
+                    ...failed(3),
+                    status: status === "cancelled" ? "failed" : status,
+                    caller_node_id: 9,
+                    failed_step: status === "failed"
+                        ? "Check out in the container"
+                        : null,
+                    error_code: status === "cancelled"
+                        ? "deployment.cancelled"
+                        : status === "succeeded"
+                        ? null
+                        : "operation.native_failed",
+                }, {
+                    ...failed(4, true),
+                    status: "succeeded",
+                    caller_node_id: null,
+                    commit: seedMatches ? B : A,
+                    failed_step: null,
+                    error_code: null,
+                });
+                f.instance.seed_commit = seedMatches ? B : A;
+                Object.assign(f.operation, {
+                    status,
+                    attempts: 1,
+                    error_code: status === "succeeded" || status === "cancelled"
+                        ? null
+                        : "operation.native_failed",
+                    result: { deployment_id: 3 },
+                });
+                await f.run();
+                assertEquals(
+                    f.memory.get("development-7")?.unrecorded_failures,
+                    [],
+                );
+                assertEquals(
+                    f.memory.get("development-7")?.result,
+                    seedMatches ? "up_to_date" : "started",
+                );
+                assertEquals(f.starts.length, seedMatches ? 0 : 1);
+                const next = f.memory.get("development-7")?.pending as {
+                    key: string;
+                    manual_after: number;
+                } | null;
+                if (seedMatches) assertEquals(next, null);
+                else {
+                    assertExists(next);
+                    assertEquals(next.manual_after, 4);
+                    assertEquals(next.key === pending?.key, false);
+                }
+            }
+        }
+    });
+    Deno.test(`matrix ineligible-before-execution / ${intent}`, async () => {
+        for (
+            const code of [
+                "deployment.paused",
+                "instance.auto_deploy_container_default_required",
+                "instance.auto_deploy_role_inactive",
+                "operation.execution_forbidden",
+            ]
+        ) {
+            const f = fixture();
+            greenHead(f);
+            const pending = matrixPending(intent);
+            f.memory.set("development-7", { pending });
+            // StartSwampRun::fail records the worker refusal without history.
+            Object.assign(f.operation, {
+                status: "failed",
+                attempts: 1,
+                error_code: code,
+                result: {
+                    error: { code, message: "No longer eligible", details: {} },
+                },
+            });
+            f.instance.auto_deploy.development_eligible = false;
+            const saved = structuredClone(f.memory.get("development-7"));
+            await f.run();
+            assertEquals(f.memory.get("development-7"), saved);
+            assertEquals(f.requests.map((r) => r.path), ["/api/v1/instances"]);
+            assertEquals(f.history, []);
+            assertEquals(f.starts, []);
+            f.instance.auto_deploy.development_eligible = true;
+            await f.run();
+            const counted = pending !== null && code !== "deployment.paused";
+            assertEquals(f.starts.length, counted ? 0 : 1);
+            assertEquals(
+                (f.memory.get("development-7")
+                    ?.unrecorded_failures as unknown[]).length,
+                counted ? 1 : 0,
+            );
+            if (counted) {
+                await f.run("2026-10-31T05:09:59.999Z");
+                assertEquals(
+                    f.memory.get("development-7")?.result,
+                    "backing_off",
+                );
+                assertEquals(f.starts, []);
+                f.operation.status = "queued";
+                await f.run("2026-10-31T05:10:00.000Z");
+                assertEquals(f.starts.length, 1);
+            }
+        }
+    });
+    Deno.test(`matrix ineligible-after-execution / ${intent}`, async () => {
+        for (
+            const terminal of [
+                "succeeded",
+                "failed",
+                "runtime-removed",
+            ] as const
+        ) {
+            const f = fixture();
+            greenHead(f);
+            const pending = matrixPending(intent);
+            f.memory.set("development-7", { pending });
+            f.operation.status = "running";
+            f.holder();
+            f.instance.auto_deploy.development_eligible = false;
+            const saved = structuredClone(f.memory.get("development-7"));
+            await f.run();
+            assertEquals(f.memory.get("development-7"), saved);
+            assertEquals(f.requests.map((r) => r.path), ["/api/v1/instances"]);
+            // Disabling cannot cancel the native run. A surviving runtime can
+            // still project its result. A removed runtime may prevent projection.
+            if (terminal !== "runtime-removed") {
+                f.operation.status = terminal;
+                f.operation.error_code = terminal === "failed"
+                    ? "operation.native_failed"
+                    : null;
+                f.operation.result = { deployment_id: 1 };
+                f.history.push({
+                    ...failed(1),
+                    status: terminal,
+                    failed_step: terminal === "failed"
+                        ? "Check out in the container"
+                        : null,
+                    error_code: f.operation.error_code,
+                });
+                if (terminal === "succeeded") f.instance.seed_commit = B;
+            }
+            await f.run();
+            assertEquals(f.memory.get("development-7"), saved);
+            assertEquals(f.starts, []);
+            // Restore eligibility. An unfinished projection still holds its pin
+            // until the Gateway budget expires, even though Swamp has ended.
+            f.instance.auto_deploy.development_eligible = true;
+            if (terminal === "runtime-removed") {
+                await f.run();
+                assertEquals(
+                    f.memory.get("development-7")?.result,
+                    pending ? "deploying" : "busy",
+                );
+                assertEquals(
+                    f.memory.get("development-7")?.pending,
+                    pending ? { ...pending, operation_id: 100 } : null,
+                );
+                assertEquals(f.starts, []);
+                Object.assign(f.operation, {
+                    status: "failed",
+                    error_code: "operation.timed_out",
+                    result: { error_code: "operation.timed_out" },
+                });
+                assertEquals(f.history, []);
+            }
+            await f.run();
+            const counted = terminal !== "succeeded" &&
+                (pending !== null || terminal === "failed");
+            assertEquals(
+                f.starts.length,
+                terminal === "runtime-removed" && !pending ? 1 : 0,
+            );
+            if (terminal === "succeeded") {
+                assertEquals(f.memory.get("development-7")?.pending, null);
+                assertEquals(
+                    f.memory.get("development-7")?.result,
+                    "up_to_date",
+                );
+            } else if (counted) {
+                await f.run("2026-10-31T05:09:59.999Z");
+                assertEquals(
+                    f.memory.get("development-7")?.result,
+                    "backing_off",
+                );
+                f.holder(false);
+                f.operation.status = "queued";
+                await f.run("2026-10-31T05:10:00.000Z");
+                assertEquals(f.starts.length, 1);
+            }
+            const before = f.starts.length;
+            greenHead(f, "c".repeat(40));
+            f.operation.status = "failed";
+            await f.run("2026-10-31T05:11:00.000Z");
+            assertEquals(f.starts.length, before + 1);
+            assertEquals(f.starts.at(-1)?.endsWith(f.source.head), true);
+        }
     });
 }

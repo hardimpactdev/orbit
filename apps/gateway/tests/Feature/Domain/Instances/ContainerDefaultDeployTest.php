@@ -476,7 +476,7 @@ it('settles queued development cancellation without inventing deployment history
     expect(Operation::query()->count())->toBe(1);
 });
 
-it('keeps development terminal history and its receipt in one attempt', function (bool $started, bool $timeout): void {
+it('settles development refusal and expiry without history or with a synthetic pre-existing row', function (bool $existingRow, bool $timeout): void {
     $this->freezeTime();
     $instance = deployDefault(container: true);
     $instance->runtime()->update(['seed_commit' => str_repeat('a', 40)]);
@@ -485,7 +485,8 @@ it('keeps development terminal history and its receipt in one attempt', function
         'status' => OperationStatus::Running, 'started_at' => now()->subDay(), 'triggered_by' => 'swamp:auto-deploy',
         'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance), 'commit' => $commit],
         'state' => [], 'attempts' => 1, 'lock_key' => OperationStore::lockKey('instance', $instance->id)]);
-    if ($started) {
+    if ($existingRow) {
+        // Current development execution creates history only at terminal projection; the pre-existing row here is synthetic.
         $row = app(InstanceDeploymentRecorder::class)->start($instance, 'swamp:auto-deploy');
         $operation->update(['state' => ['deployment_id' => $row->id]]);
     }
@@ -498,7 +499,7 @@ it('keeps development terminal history and its receipt in one attempt', function
     }
 
     expect($expired->status)->toBe(OperationStatus::Failed)->and($expired->error_code)->toBe($timeout ? 'operation.timed_out' : 'swamp.start_refused');
-    if ($started) {
+    if ($existingRow) {
         $row = $instance->deployments()->firstOrFail();
         expect($row->status)->toBe('failed')->and($row->commit)->toBe($commit)->and($row->error_code)->toBe($timeout ? 'operation.timed_out' : 'swamp.start_refused')
             ->and($expired->fresh()->result['deployment_id'] ?? null)->toBe($row->id);
@@ -511,7 +512,7 @@ it('keeps development terminal history and its receipt in one attempt', function
         expect(app(ExpireOperationAction::class)->releaseStaleHolds())->toBe(1)
             ->and($expired->fresh()->lock_key)->toBeNull();
     }
-})->with(['before history' => false, 'with running history' => true])->with(['timeout' => true, 'start refusal' => false]);
+})->with(['current execution without history' => false, 'synthetic pre-existing running row' => true])->with(['timeout' => true, 'start refusal' => false]);
 
 it('replays one development admission while queued, while running and after success', function (): void {
     Queue::fake();

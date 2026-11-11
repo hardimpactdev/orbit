@@ -288,21 +288,30 @@ export async function tickDevelopment(
                 }
                 state.pending = null;
                 await save();
-                if (operation.status !== "succeeded") {
-                    await publish("failed", operation.id, null, intent.commit);
-                    // Ended failure never permits an immediate same-head effect.
-                    if (
-                        intent.commit === head &&
-                        operation.error_code !== "deployment.paused"
-                    ) continue;
-                } else if (instance.seed_commit === intent.commit) {
-                    await publish(
-                        "up_to_date",
-                        operation.id,
-                        null,
-                        intent.commit,
-                    );
-                    if (intent.commit === head) continue;
+                // A later manual deployment supersedes this automatic attempt.
+                // Its boundary already discarded retry evidence; evaluate the live seed/head.
+                if (intent.manual_after >= manual) {
+                    if (operation.status !== "succeeded") {
+                        await publish(
+                            "failed",
+                            operation.id,
+                            null,
+                            intent.commit,
+                        );
+                        // Ended failure never permits an immediate same-head effect.
+                        if (
+                            intent.commit === head &&
+                            operation.error_code !== "deployment.paused"
+                        ) continue;
+                    } else if (instance.seed_commit === intent.commit) {
+                        await publish(
+                            "up_to_date",
+                            operation.id,
+                            null,
+                            intent.commit,
+                        );
+                        if (intent.commit === head) continue;
+                    }
                 }
                 // A stale success cannot prove the current container's seed; observe normally.
             }
