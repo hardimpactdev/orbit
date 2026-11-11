@@ -60,8 +60,7 @@ class PlanningTest(unittest.TestCase):
 
     def test_hosted_prerequisite_deferrals_reach_full_set_with_all_cases(self):
         files = ['swamp/tests/node_worker_systemd_cleanup_test.ts',
-                 'swamp/tests/fleet_reboot_unreachable_test.ts',
-                 'swamp/tests/ansible_task_vm_fleet_build_test.ts']
+                 'swamp/tests/fleet_reboot_unreachable_test.ts']
         budget, configured, defaults = self.api.configuration()
         inventory = json.loads((ROOT / 'tools/tests/ci-fixture-cases.json').read_text())
         fixtures = [configured[file] for file in files]
@@ -78,7 +77,19 @@ class PlanningTest(unittest.TestCase):
         for file in files:
             restored = [case for unit in result['units'] if unit['unit'].split('#')[0] == file for case in unit['cases']]
             self.assertCountEqual(restored, current[file])
-        self.assertEqual(len(result['restored_pr_exclusions']), 3)
+        self.assertEqual(len(result['restored_pr_exclusions']), 2)
+
+    def test_operator_key_case_is_restored_to_bounded_pr_selection(self):
+        file = 'swamp/tests/ansible_task_vm_fleet_build_test.ts'
+        case = 'a from-stock refresh with no Gateway release metadata reaches all nested roles after private DNS lets the websocket dependency listen'
+        budget, fixtures, defaults = self.api.configuration()
+        result = self.api.plan([file], budget, fixtures, defaults)
+        selected = [case for shard in result['shards'] for unit in shard['units']
+                    if unit.split('#')[0] == file for case in self.api.case_names(unit, fixtures)]
+        self.assertIn(case, selected)
+        self.assertCountEqual(selected, fixtures[file]['cases'])
+        self.assertNotIn('capacity', result)
+        self.assertEqual(result['deferred'], [])
 
     def test_changed_registration_population_uses_live_names_and_new_case_estimate(self):
         result = self.plan([{'file': 'swamp/a.ts', 'cost': 25, 'case_costs': {'old': 25}}],
