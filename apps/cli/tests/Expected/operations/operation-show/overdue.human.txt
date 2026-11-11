@@ -1,0 +1,48 @@
+Loading operation...
+
+┌  Show operation
+│
+├  ● Loaded operation
+│
+└  Loaded operation.
+
+
+┌  Operation: 1
+│
+├  Kind               tasks.script
+│
+├  Target             task_group 42
+│
+├  Status             failed
+│
+├  Error code         operation.timed_out
+│
+├  Current step       —
+│
+├  Step started       —
+│
+├  Step observed      —
+│
+├  Failed step        work
+│
+├  Error detail       The Operation exceeded its 900-second run budget.
+│
+├  Result             {"error_code":"operation.timed_out"}
+│
+├  Cancel requested   yes
+│
+├  Attempts           1
+│
+├  By                 —
+│
+├  Caller Node        —
+│
+├  Created            2026-11-11T10:00:00+00:00
+│
+├  Started            2026-11-11T10:00:00+00:00
+│
+├  Overdue since      2026-11-11T10:15:00.000000Z
+│
+└  Finished           2026-11-11T10:16:00+00:00
+
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a846
