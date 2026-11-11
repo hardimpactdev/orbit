@@ -22,6 +22,8 @@ The CLI requires consent. `--yes` confirms without a prompt and is required for 
 
 A running migration or an unsettled migration runtime refuses removal with `instance.lifecycle_busy`, including forced removal. Orbit checks migration ownership before cleanup and again under the Instance admission lock.
 
+A failed migration that keeps its runtime reservation blocks destroy, even with `--force`, with `instance.lifecycle_busy`; let any open migration expire, then rerun `instance:migrate`.
+
 ## Native order
 
 The run follows the [destroy flow](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/destroy.mmd). Each Node action is one `@swamp/ssh exec` command, an official `@swamp/cfgmgmt/file` step or, for the Route withdrawal, an Ansible phase; nothing is copied to the Node. Admission already removed the Instance's native Schedules. A normal removal first writes the read token as a 0600 credential file, fetches origin in each checkout and refuses dirty or unpushed work (`Check work is pushed`); the next step removes the credential file. The `.env` and `.env.testing` that Orbit renders, at any depth, do not count as work: a stock Laravel `.gitignore` covers `.env` but not `.env.testing`.

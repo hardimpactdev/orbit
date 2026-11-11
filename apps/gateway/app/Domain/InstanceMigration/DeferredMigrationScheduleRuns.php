@@ -50,13 +50,16 @@ final readonly class DeferredMigrationScheduleRuns
         return $operation;
     }
 
-    /** Migration is terminal and the Instance lock is held; queue only after that transaction commits. */
-    public function release(Operation $migration): void
+    /** Migration is terminal; its Operation and any existing Instance are locked. Queue only after commit. */
+    public function release(Operation $migration, bool $targetAvailable): void
     {
         foreach (Operation::query()->where('kind', 'schedule.run')->where('status', OperationStatus::Waiting)
             ->where('target_type', 'instance_schedules')->where('target_id', $migration->target_id)
             ->where('input->deferred_instance_migration', $migration->id)->orderBy('id')->lockForUpdate()->get() as $operation) {
             try {
+                if (! $targetAvailable) {
+                    throw new ResourceOperationException('schedule.target_unavailable', 'The deferred Schedule target Instance no longer exists.', 409);
+                }
                 $schedule = Schedule::query()->whereKey($operation->input['id'])->first();
                 if ($schedule === null) {
                     throw new ResourceOperationException('schedule.target_unavailable', 'The deferred Schedule no longer exists.', 409);

@@ -402,17 +402,24 @@ describe('the admission of a move', function (): void {
 });
 
 describe('migration target ownership', function (): void {
-    it('terminates a queued migration whose non-default Instance was already removed', function (string $terminal): void {
+    it('settles a queued migration and its fires when its non-default Instance was already removed', function (string $terminal, string $fireState): void {
         $node = containerDefaultNode();
         $project = containerDefaultProject();
         migrateMovedDefault($project, $node);
         $instance = migrateCheckout($project, $node, 'removed');
+        $schedule = $fireState === 'none' ? null : migrationSchedule($instance);
         $migration = migrateStart($instance);
+        $fire = $schedule === null ? null : app(RunScheduleAction::class)->admit($schedule, $node);
         expect($migration->status)->toBe(OperationStatus::Queued);
-        expect(Schedule::query()->exists())->toBeFalse();
+        if ($fire !== null) {
+            expect($fire->status)->toBe(OperationStatus::Waiting);
+        }
         // Reproduce an already deleted target from before the destroy admission guard.
         $instance->runtime()->delete();
         DB::table('instances')->where('id', $instance->id)->delete();
+        if ($fireState === 'deleted') {
+            $schedule->delete();
+        }
         $this->travel(11)->minutes();
 
         $ended = $terminal === 'cancelled' ? app(CancelOperationAction::class)->execute($migration)
@@ -424,7 +431,55 @@ describe('migration target ownership', function (): void {
         if ($terminal === 'expired') {
             expect($ended->error_code)->toBe('operation.timed_out');
         }
-    })->with(['cancelled', 'expired']);
+        if ($fire !== null) {
+            expect($fire->refresh()->status)->toBe(OperationStatus::Failed)
+                ->and($fire->finished_at)->not->toBeNull()
+                ->and($fire->error_code)->toBe('schedule.target_unavailable')
+                ->and($fire->result['error']['code'])->toBe('schedule.target_unavailable');
+            Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+            if ($fireState === 'retained') {
+                expect($schedule->refresh()->last_run_status->value)->toBe('error')
+                    ->and($schedule->error_code)->toBe('schedule.target_unavailable');
+            } else {
+                expect(Schedule::query()->whereKey($schedule->id)->exists())->toBeFalse();
+            }
+            $settled = $fire->getAttributes();
+            $result = $ended->result;
+            app(OperationStore::class)->change($ended, ['status' => $ended->status]);
+            app(CancelOperationAction::class)->execute($ended);
+            app(ExpireOperationAction::class)->execute($ended->refresh());
+            expect($fire->refresh()->getAttributes())->toBe($settled)
+                ->and($ended->refresh()->result)->toBe($result);
+        }
+        expect(Operation::query()->where('kind', 'schedule.run')->where('status', OperationStatus::Waiting)->exists())->toBeFalse();
+    })->with([
+        'cancel without fires' => ['cancelled', 'none'], 'expire without fires' => ['expired', 'none'],
+        'cancel with retained Schedule' => ['cancelled', 'retained'], 'expire with retained Schedule' => ['expired', 'retained'],
+        'cancel with deleted Schedule' => ['cancelled', 'deleted'], 'expire with deleted Schedule' => ['expired', 'deleted'],
+    ]);
+
+    it('blocks forced destroy after migration expiry but admits migration recovery with its reservation', function (): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        migrateMovedDefault($project, $node);
+        $instance = migrateCheckout($project, $node, 'retry');
+        $migration = migrateStart($instance);
+        $migration->update(['status' => OperationStatus::Running, 'attempts' => 1, 'started_at' => now(),
+            'state' => [...$migration->state, 'swamp_run_id' => '77eb3d91-e9b9-42f9-8c35-e1e5837042b2']]);
+        $reservation = $instance->runtime()->firstOrFail()->id;
+        expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($instance, true)))->toBe('instance.lifecycle_busy');
+        $this->travel(2)->hours();
+
+        $expired = app(ExpireOperationAction::class)->execute($migration);
+
+        expect($expired->error_code)->toBe('operation.timed_out')
+            ->and($instance->runtime()->firstOrFail()->id)->toBe($reservation);
+        expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($instance, true)))->toBe('instance.lifecycle_busy');
+        $retry = migrateStart($instance);
+        expect($retry->status)->toBe(OperationStatus::Queued)
+            ->and($retry->input['had_runtime_reservation'])->toBeTrue()
+            ->and($instance->runtime()->firstOrFail()->id)->toBe($reservation);
+    });
 
     it('refuses forced destruction before cleanup and rechecks migration ownership at admission', function (bool $captured): void {
         $node = containerDefaultNode();
