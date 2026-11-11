@@ -1,0 +1,31 @@
+---
+# Shared Gateway runtime has already changed the resolver. A failed check retains the listener and its ownership record for retry.
+- name: Read the resolver before withdrawing local private DNS
+  when: not ansible_check_mode
+  ansible.builtin.command: { argv: [resolvectl, dns, orbit] }
+  register: private_dns_resolver
+  changed_when: false
+- name: Require the separate resolver before withdrawing local private DNS
+  when: not ansible_check_mode
+  ansible.builtin.assert:
+    that:
+      - private_dns_withdraw.resolver_address != private_dns_withdraw.local_address
+      - >-
+        private_dns_withdraw.resolver_address in private_dns_resolver.stdout.split(': ', 1)[-1].split()
+    quiet: true
+- name: Inspect recorded local DNS units
+  ansible.builtin.stat: { path: "/etc/systemd/system/{{ item }}" }
+  loop: "{{ private_dns_withdraw.units }}"
+  register: private_dns_owned_units
+- name: Stop and disable recorded local DNS units
+  when: item.stat.exists
+  ansible.builtin.systemd: { name: "{{ item.item }}", state: stopped, enabled: false, daemon_reload: true }
+  loop: "{{ private_dns_owned_units.results }}"
+  loop_control: { label: "{{ item.item }}" }
+- name: Remove recorded local DNS units and catalog
+  ansible.builtin.file: { path: "{{ item }}", state: absent }
+  loop: "{{ private_dns_withdraw.files + [private_dns_withdraw.releases] }}"
+  register: private_dns_withdrawn
+- name: Reload units after local DNS withdrawal # noqa no-handler
+  when: private_dns_withdrawn is changed
+  ansible.builtin.systemd: { daemon_reload: true }

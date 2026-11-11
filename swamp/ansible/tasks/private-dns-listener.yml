@@ -1,0 +1,76 @@
+---
+# The Gateway uses the existing listener footprint, release and systemd socket. VPN publication converges these same units on a colocated VPN Node.
+- name: Create private DNS release folders
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ ['/var/lib/orbit/private-dns'] + private_dns.directories }}"
+- name: Write private DNS release files
+  ansible.builtin.copy:
+    dest: "{{ item.path }}"
+    content: "{{ item.content }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ private_dns.files }}"
+  loop_control: { label: "{{ item.path }}" }
+  register: private_dns_files
+- name: Test the private DNS release before activation
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv: [timeout, "30", /usr/bin/php8.5, "{{ private_dns.release }}/serve.php", --self-test]
+  changed_when: false
+- name: Write the local private DNS catalog
+  ansible.builtin.copy:
+    dest: /var/lib/orbit/private-dns/catalog.json
+    content: "{{ private_dns.catalog }}"
+    owner: root
+    group: root
+    mode: "0644"
+- name: Write the private DNS units
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item.name }}"
+    content: "{{ item.content }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { name: orbit-private-dns.service, content: "{{ private_dns.service }}" }
+    - { name: orbit-private-dns.socket, content: "{{ private_dns.socket }}" }
+  loop_control: { label: "{{ item.name }}" }
+  register: private_dns_units
+- name: Start the single private DNS socket
+  when: not ansible_check_mode
+  ansible.builtin.systemd:
+    name: orbit-private-dns.socket
+    enabled: true
+    state: started
+    daemon_reload: "{{ private_dns_units is changed }}"
+# The socket holds queries across a listener restart. Catalog-only changes are loaded without a restart.
+- name: Start the private DNS listener
+  when: not ansible_check_mode
+  ansible.builtin.systemd:
+    name: orbit-private-dns.service
+    enabled: true
+    state: "{{ 'restarted' if private_dns_units is changed or private_dns_files is changed else 'started' }}"
+- name: Prove the local Gateway DNS answer before routing
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv: [timeout, "5", dig, "@{{ private_dns.address }}", +short, +time=1, +tries=1, gateway.orbit, A]
+  register: private_dns_answer
+  changed_when: false
+  until: private_dns_answer.rc == 0 and private_dns_answer.stdout | trim == private_dns.address
+  retries: 5
+  delay: 1
+- name: Read the loaded local private DNS catalog
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv: [timeout, "5", cat, /var/lib/orbit/private-dns/catalog.json.loaded]
+  register: private_dns_loaded
+  changed_when: false
+  until: private_dns_loaded.rc == 0 and private_dns_loaded.stdout | trim == private_dns.catalog_sha256
+  retries: 5
+  delay: 1

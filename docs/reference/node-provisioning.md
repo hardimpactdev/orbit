@@ -873,7 +873,11 @@ Cross-family enrollment uses the internal `ProvisionNodeData` field names. TaskV
 
 Every hub render excludes Nodes in `Removing` state, including concurrent enrollment and retained synchronous renders. Enrollment rollback restores the prior state before restoring hub membership. Node removal places serving cleanup on every admitted participant, including Services and control workers. Enrollment retains its own placement policy.
 
-Enrollment and Node removal publish private DNS only on an active Node with an active VPN assignment. Gateway-only Nodes receive no DNS publication. Role convergence uses the same owner selection. Saved footprint listener runs refuse a target without an active VPN role.
+Enrollment and Node removal publish private DNS only on an active Node with an active VPN assignment. Gateway-only Nodes receive no fleet DNS publication.
+
+When no separate Node has a VPN role assignment, the Gateway runtime [installs the shared local listener and its baseline catalog](/reference/private-dns#the-gateway-machine) before resolver routing. Any separate VPN assignment, including a failed or removing Node or role, keeps the Gateway runtime, recipe and resolver inputs unchanged, so stock-bootstrap repair has no side effect on a working production Gateway. Colocated Gateway and VPN roles use one listener footprint.
+
+Admission records local ownership before dispatch, so a crash or a later machine-task failure keeps cleanup possible; if a separate VPN joins later, the next Gateway converge routes DNS to it and withdraws the recorded local listener. Fleet publication keeps the VPN owner selection. Saved footprint listener runs refuse a target without an active VPN role.
 
 If the existing worker cache is empty, owned by root and mode `0755`, converge
 replaces it with a private `0700` cache for the configured Node user. It refuses

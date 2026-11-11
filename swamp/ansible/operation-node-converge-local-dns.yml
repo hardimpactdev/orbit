@@ -1,0 +1,28 @@
+---
+# The roles phase selects this wrapper only for an admitted local DNS installation or withdrawal.
+- name: Prepare selected Gateway local private DNS
+  hosts: target
+  become: true
+  gather_facts: false
+  tags: [roles]
+  tasks:
+    - name: Install and prove selected local listeners before shared role runtime
+      when: role_plan.runtime.gateway_dns.listener is defined
+      ansible.builtin.include_tasks: tasks/private-dns-listener.yml
+      vars: { private_dns: "{{ role_plan.runtime.gateway_dns.listener }}" }
+      loop: "{{ converge_intent.roles }}"
+      loop_control: { loop_var: role_plan, label: "{{ role_plan.role }}" }
+- name: Apply the shared Node converge
+  ansible.builtin.import_playbook: operation-node-converge.yml
+- name: Withdraw selected Gateway local private DNS after shared role runtime
+  hosts: target
+  become: true
+  gather_facts: false
+  tags: [roles]
+  tasks:
+    - name: Withdraw selected recorded local listeners
+      when: role_plan.runtime.gateway_dns.withdraw is defined
+      ansible.builtin.include_tasks: tasks/private-dns-withdraw.yml
+      vars: { private_dns_withdraw: "{{ role_plan.runtime.gateway_dns.withdraw }}" }
+      loop: "{{ converge_intent.roles }}"
+      loop_control: { loop_var: role_plan, label: "{{ role_plan.role }}" }

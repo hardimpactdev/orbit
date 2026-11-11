@@ -59,6 +59,9 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
                 return $projected;
             }
             $intent = ValidatedData::object($operation->input['native_role']);
+            if (NativeRunResult::stepStatus($raw, 'Apply the role on the Node') === 'succeeded') {
+                app(GatewayPrivateDnsState::class)->record(ValidatedData::integer($operation->node_id), ValidatedData::object($intent['runtime'] ?? []));
+            }
             $certificates = ValidatedData::object($snapshot['certificates']);
             foreach (RouteExecutionProof::objects($certificates['leaves']) as $index => $leaf) {
                 if (NativeRunResult::stepStatus($raw, 'Sign role certificates-'.$index) === 'succeeded') {

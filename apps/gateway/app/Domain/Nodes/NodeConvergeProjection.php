@@ -49,7 +49,7 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
         }
         $data = [...$data, 'status' => $result['outcome'], 'error_code' => $result['error_code'] ?? null];
 
-        return DB::transaction(function () use ($operation, $data, $result, $tools, $admitted): Operation {
+        return DB::transaction(function () use ($operation, $data, $result, $tools, $admitted, $intent): Operation {
             $locked = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
             if ($locked->status->terminal()) {
                 return $locked;
@@ -69,6 +69,14 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
                     $tool->installed_version = ValidatedData::string($observation['installed_version']);
                 }
                 $tool->save();
+            }
+
+            $phases = $result['phases'];
+            if (is_array($phases) && (ValidatedData::object($phases[3])['status'] ?? null) === 'succeeded') {
+                foreach (is_array($intent['roles'] ?? null) ? $intent['roles'] : [] as $role) {
+                    $role = ValidatedData::object($role);
+                    app(GatewayPrivateDnsState::class)->record(ValidatedData::integer($operation->node_id), ValidatedData::object($role['runtime'] ?? []));
+                }
             }
 
             return app(DirectOperation::class)->project($locked, $data, $result);

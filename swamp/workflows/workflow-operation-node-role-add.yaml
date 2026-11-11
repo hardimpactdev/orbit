@@ -379,8 +379,14 @@ jobs:
       behaviorName: ${{ "ansible-role-node-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" --tags node "$ORBIT_ANSIBLE/operation-node-role-add.yml"
-        env: *id001
+        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" --tags node "$ORBIT_ANSIBLE/$ORBIT_PLAYBOOK"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ORBIT_PLAYBOOK: '${{ "playbook" in inputs.intent ? inputs.intent.playbook : "operation-node-role-add.yml" }}'
   dependsOn:
   - job: phase_13
     condition: {type: succeeded}

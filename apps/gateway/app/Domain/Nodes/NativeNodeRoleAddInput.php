@@ -41,6 +41,10 @@ final readonly class NativeNodeRoleAddInput
         }
         $role = $assignment->role;
         $packages = app(NodeBootstrapPackageCatalog::class)->forRole($node, $role);
+        $gatewayDns = $snapshot['gateway_dns'];
+        if (is_array($gatewayDns) && isset($gatewayDns['listener'])) {
+            $packages[] = 'bind9-dnsutils';
+        }
         $caddy = in_array('caddy', $packages, true);
         $services = [...($caddy ? ['caddy.service'] : []),
             ...(in_array('docker.io', $packages, true) ? ['docker.service'] : [])];
@@ -167,6 +171,14 @@ final readonly class NativeNodeRoleAddInput
             'exporters' => $exporters, 'prometheus' => $prometheus, 'artifact_digests' => $artifactDigests,
             'services' => array_map(static fn (string $name, int $index): array => ['name' => $name, 'index' => $index], $services, array_keys($services)),
             'firewall' => app(NodeRoleFirewallInput::class)->convergeCommands($node, $role)];
+
+        $gatewayDns = $runtime['intent']['gateway_dns'];
+        if (is_array($gatewayDns) && (isset($gatewayDns['listener']) || isset($gatewayDns['withdraw']))) {
+            $intent['playbook'] = 'operation-node-role-add-local-dns.yml';
+        }
+
+        // Every admission builds this plan in its transaction, before dispatch can start machine work.
+        app(GatewayPrivateDnsState::class)->claim($node->id, $runtime['intent']);
 
         return ['intent' => $intent, 'execution_secrets' => $runtime['execution_secrets'], 'participant_node_ids' => [SwampNode::id(), $node->id]];
     }
