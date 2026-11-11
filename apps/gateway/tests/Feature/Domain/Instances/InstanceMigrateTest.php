@@ -23,6 +23,7 @@ use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceAttachedTargets;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
@@ -233,6 +234,8 @@ describe('the admission of a move', function (): void {
             ->and($operation->input['migrate'])->toBe(['checkout' => '/home/orbit/apps/tool/default', 'branch' => 'main', 'default' => true,
                 'application' => '/home/orbit/apps/tool/default',
                 'awake' => ['directory' => '/dev/shm/orbit/hibernation', 'path' => '/dev/shm/orbit/hibernation/app-instance-'.$default->id.'.awake'],
+                'environment' => ['targets' => [], 'node_addresses' => ['10.44.0.7', '10.44.0.7'],
+                    'proxy_policy' => ['private_v4' => InstanceEgress::PrivateV4, 'private_domains' => ['orbit']]],
                 'databases' => [], 'processes' => [], 'firewall_prefix' => 'orbit:instance-'.$default->id.'-',
                 'retire' => [['path' => '/home/orbit/apps/tool/default', 'mirror' => '/var/lib/orbit/instance-repositories/'.$default->id.'.git']]])
             ->and($operation->node_id)->toBe($node->id);
@@ -570,8 +573,38 @@ describe('the databases of a move', function (): void {
             ->and(array_column($shownTargets, 'id'))->toBe([$database->id, $valkey->id, $catalog->id])
             ->and(array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port']], $shownTargets))
             ->toBe($operation->input['migrate']['databases'])
+            ->and($operation->input['migrate']['environment']['targets'])->toBe($operation->input['migrate']['databases'])
+            ->and($container['bridge_endpoints'])->toBe([
+                ['host' => '10.44.0.7', 'port' => 5432, 'docker' => true],
+                ['host' => '10.44.0.7', 'port' => 6379, 'docker' => true],
+                ['host' => '10.44.0.3', 'port' => 5434, 'docker' => false],
+            ])
             // No second database: the Instance keeps the one it has.
             ->and(DatabaseConnection::query()->where('owner_instance_id', $default->id)->pluck('id')->all())->toEqualCanonicalizing([$valkey->id, $database->id, $catalog->id]);
+    });
+
+    it('uses the container access endpoints for the guard despite a different target projection without copying credentials', function (): void {
+        $node = containerDefaultNode();
+        $node->update(['lan_ip' => '192.168.50.7', 'tld' => 'private.test']);
+        $default = migrateCheckout(containerDefaultProject(), $node);
+        $server = migrateDatabaseServer($node, 'catalog', DatabaseDriver::Mysql, 3308);
+        $database = migrateServerDatabase($default, $server, 'FOOD_CATALOG_DB');
+        migrateServerDatabase($default, $server, 'ANALYTICS');
+        $default->databaseConnectionTargets()->update(['network' => 'lan']);
+
+        $operation = migrateStart($default);
+
+        expect($operation->input['migrate']['environment'])->toBe([
+            'targets' => [['host' => '10.44.0.7', 'port' => 3308]],
+            'node_addresses' => ['10.44.0.7', '192.168.50.7', '10.44.0.7'],
+            'proxy_policy' => ['private_v4' => InstanceEgress::PrivateV4, 'private_domains' => ['orbit', 'private.test']],
+        ]);
+        expect($operation->input['migrate']['databases'])->toBe([['host' => '10.44.0.7', 'port' => 3308], ['host' => '10.44.0.7', 'port' => 3308]])
+            ->and($operation->input['container']['acl_rules']['egress'])->toBe([['action' => 'allow', 'destination' => '10.44.0.7/32',
+                'protocol' => 'tcp', 'destination_port' => '3308', 'state' => 'enabled']])
+            ->and($operation->input['container']['firewall'][0]['to_ip'])->toBe('10.44.0.7');
+        expect(json_encode($operation->input['migrate']['environment'], JSON_THROW_ON_ERROR))
+            ->not->toContain($database->password, 'root-secret', 'username', 'password');
     });
 
     it('still lets a clone of the moved default copy its database with a template copy on the same server', function (): void {
@@ -659,7 +692,7 @@ describe('the end of a move', function (): void {
             ->and($feature->refresh()->checkout_path)->toBe(InstanceContainer::workspaceOnNode($feature));
     });
 
-    it('keeps an earlier reservation after a refused retirement preflight, and releases only a fresh one', function (bool $retry, string $code, string $message): void {
+    it('keeps an earlier reservation after a refused preflight, and releases only a fresh one', function (bool $retry, string $code, string $message): void {
         $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
         if ($retry) {
             $previous = migrateStart($default);
@@ -680,6 +713,7 @@ describe('the end of a move', function (): void {
         'worktrees or changes' => ['instance.migrate_retirement_blocked', 'Cannot retire checkout "/fixture". Other worktrees (1 total; first 20): ["/detached"].'],
         'unpushed commits' => ['instance.migrate_unpushed_commits', 'Cannot retire checkout "/fixture". Unpushed branches or detached HEAD (1 total): [{"branch": "spare", "commits": 2}].'],
         'stashes' => ['instance.migrate_stashes_present', 'Cannot retire checkout "/fixture". Stashes: 2.'],
+        'service host' => ['instance.migrate_env_service_unreachable', '.env: DB_HOST=127.0.0.1:3308. Attach the exact target, correct the .env, or use a non-network driver.'],
     ]);
 
     it('records a named symlink preflight refusal without changing checkout state or choosing a repair', function (string $reason, string $target): void {

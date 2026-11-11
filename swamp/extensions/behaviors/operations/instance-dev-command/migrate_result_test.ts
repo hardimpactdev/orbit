@@ -79,6 +79,7 @@ for (const [error_code, error_message] of [
     ["instance.migrate_retirement_blocked", 'Cannot retire checkout "/fixture". Other worktrees (1 total; first 20): ["/detached"].'],
     ["instance.migrate_unpushed_commits", 'Cannot retire checkout "/fixture". Unpushed branches or detached HEAD (1 total): [{"branch": "spare", "commits": 2}].'],
     ["instance.migrate_stashes_present", 'Cannot retire checkout "/fixture". Stashes: 2.'],
+    ["instance.migrate_env_service_unreachable", ".env: DB_HOST=127.0.0.1:3308. Attach the exact target, correct the .env, or use a non-network driver."],
 ]) {
     Deno.test(`${error_code} keeps the public message and preflight marker before and after cutover`, async () => {
         const folder = await Deno.makeTempDir();

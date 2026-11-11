@@ -61,6 +61,13 @@
     - name: Check the source symlink result
       ansible.builtin.include_tasks: instance-migrate-link-result.yml
 
+# No service host is rewritten. Check every copied app environment while the checkout still serves.
+- name: Check copied service endpoints before downtime
+  when: phase in ['container', 'quiesce']
+  ansible.builtin.include_tasks:
+    file: instance-migrate-env-check.yml
+    apply: { tags: [always] }
+
 # Nothing on the Node changed before this point. Restore preserves prior resources when these read-only checks refused.
 - name: Record that the container preflight passed
   when: phase == 'container'
