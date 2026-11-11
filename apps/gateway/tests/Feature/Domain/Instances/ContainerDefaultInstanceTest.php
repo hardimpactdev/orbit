@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\RenameInstanceAction;
 use App\Actions\Instances\StartInstanceCloneAction;
+use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceEnvironmentImportAction;
 use App\Actions\Instances\StartInstanceEnvironmentSyncAction;
@@ -15,6 +16,7 @@ use App\Data\Instances\CloneInstanceData;
 use App\Data\Instances\RenameInstanceData;
 use App\Data\Instances\TransferInstanceData;
 use App\Data\Projects\UpdateProjectData;
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceFolderPlan;
@@ -241,8 +243,12 @@ it('serves a container Instance\'s Route by proxying to FrankenPHP at its bridge
         ->and(str_contains($caddy, 'php_fastcgi'))->toBeFalse();
 });
 
-it('records a created container default as running at its first seed commit', function (): void {
-    $operation = containerCreate(containerDefaultProject(), containerDefaultNode());
+it('records a created routed container default at its first seed and admits deployment without a policy tick', function (): void {
+    $node = containerDefaultNode();
+    $node->update(['tld' => 'beast.test']);
+    Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+    $operation = containerCreate(containerDefaultProject(ProjectType::LaravelApp, '8.5'), $node);
     $operation->forceFill(['status' => 'running', 'finished_at' => null, 'error_code' => null, 'result' => null, 'state' => ['swamp_run_id' => 'run-1']])->save();
     $commit = str_repeat('d', 40);
 
@@ -254,6 +260,15 @@ it('records a created container default as running at its first seed commit', fu
     expect(Instance::query()->findOrFail($operation->target_id)->status)->toBe(InstanceState::Active)
         ->and($runtime->power_state)->toBe(InstanceRuntimePowerState::Running)
         ->and($runtime->seed_commit)->toBe($commit);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(['head' => $commit, 'files' => [
+        '.env.example' => null, 'artisan' => ['mode' => '100644', 'object' => $commit, 'content' => 'entry'],
+        'composer.json' => ['mode' => '100644', 'object' => $commit, 'content' => '{"require":{"php":"^8.5","laravel/framework":"^13.0"}}'],
+    ]]);
+
+    $deploy = app(StartInstanceDeployAction::class)->execute(Instance::query()->findOrFail($operation->target_id), 'manual', null);
+
+    expect($deploy->input['deployment'])->toMatchArray(['variant' => 'container', 'projection_route_id' => null]);
+    $this->assertDatabaseHas('instances', ['id' => $operation->target_id, 'development_projection_pending' => false]);
 });
 
 it('keeps a failed container default stopped, with the .env keys it wrote once its deploy steps ran', function (): void {
@@ -265,6 +280,7 @@ it('keeps a failed container default stopped, with the .env keys it wrote once i
         'result' => ['ready' => false, 'instance_id' => $operation->target_id, 'commit' => str_repeat('e', 40), 'failed_step' => 'deploy']]);
 
     $instance = Instance::query()->findOrFail($operation->target_id);
+    $this->assertDatabaseHas('instances', ['id' => $instance->id, 'development_projection_pending' => true]);
     expect($instance->failed_step)->toBe('deploy')
         ->and($operation->input['environment_keys'])->not->toBeEmpty()
         ->and($instance->environment_owned_keys)->toBe($operation->input['environment_keys'])
