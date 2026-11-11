@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import runpy
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -91,6 +92,7 @@ class PlanningTest(unittest.TestCase):
         self.assertNotIn('cases', result['fixtures']['swamp/a.ts'])
         self.assertEqual('swamp/a.ts', result['units'][0]['unit'])
 
+    @unittest.skipUnless(shutil.which('deno'), 'needs Deno; receiver plan installs the pinned version')
     def test_preload_collects_loop_registration_changes_without_invoking_bodies(self):
         with tempfile.TemporaryDirectory() as scratch:
             source = Path(scratch) / 'registration_test.ts'
@@ -111,6 +113,7 @@ class PlanningTest(unittest.TestCase):
         self.assertLess(result['seconds'], 3)
         self.assertEqual('passed', following['status'])
 
+    @unittest.skipUnless(shutil.which('deno'), 'needs Deno; receiver plan installs the pinned version')
     def test_ignored_and_exit_zero_deno_cases_cannot_pass_the_receiver(self):
         for body in ('Deno.test({name: "ignored", ignore: true, fn() {}});', 'Deno.exit(0);'):
             with tempfile.TemporaryDirectory() as scratch, patch('sys.stdout', io.StringIO()):
