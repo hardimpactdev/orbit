@@ -251,6 +251,9 @@ it('selects omitted attach IDs and prompts for both keys in a real mocked termin
         ->and($result['trace'])->toHaveCount(4)
         ->and($result['trace'][2]['query'])->toBe(['target_type' => 'node', 'target_id' => 9])
         ->and($result['trace'][3]['body'])->toBe(['process_id' => 221, 'protocol' => 'tcp', 'host_env_key' => 'MAIL_HOST', 'port_env_key' => 'MAIL_PORT']);
+    foreach ([0, 1, 3] as $index) {
+        expect($result['trace'][$index])->not->toHaveKey('query');
+    }
 });
 
 it('requires terminal detach consent and never sends on decline or cancellation', function (array $keys, bool $consent): void {
