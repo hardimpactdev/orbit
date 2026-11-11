@@ -4,36 +4,9 @@
 # is left, and Laravel runs a cut job again after `retry_after`.
 - name: Stop the Gateway scheduler
   ansible.builtin.systemd_service: { name: "{{ target.gateway.scheduler }}", state: stopped }
-  register: scheduler_stop
-- name: Record the stopped scheduler
-  ansible.builtin.include_tasks: fleet-reboot-record.yml
-  vars:
-    record_update:
-      gateway_stopped: "{{ (record.gateway_stopped | default([])) + ([target.gateway.scheduler] if scheduler_stop.changed else []) }}"
-- name: Drain and record Horizon even after a partial failure
+- name: Drain Horizon within the budget
+  ansible.builtin.command: { argv: [timeout, "{{ intent.drain_seconds }}", systemctl, stop, "{{ target.gateway.horizon }}"] }
+  register: horizon
+  changed_when: true
+  failed_when: horizon.rc not in [0, 124]
   when: target.gateway.horizon | length > 0
-  block:
-    - name: Read Horizon before the drain
-      ansible.builtin.command: { argv: [systemctl, show, --property=ActiveState, --value, "{{ target.gateway.horizon }}"] }
-      changed_when: false
-      register: horizon_before
-    - name: Drain Horizon within the budget
-      ansible.builtin.command: { argv: [timeout, "{{ intent.drain_seconds }}", systemctl, stop, "{{ target.gateway.horizon }}"] }
-      register: horizon
-      changed_when: true
-      failed_when: horizon.rc not in [0, 124]
-      when: horizon_before.stdout not in ['inactive', 'failed']
-  always:
-    - name: Read Horizon after the drain
-      ansible.builtin.command: { argv: [systemctl, show, --property=ActiveState, --value, "{{ target.gateway.horizon }}"] }
-      changed_when: false
-      register: horizon_after
-    - name: Record the stopped Horizon
-      ansible.builtin.include_tasks: fleet-reboot-record.yml
-      vars:
-        record_update:
-          gateway_stopped: "{{ (record.gateway_stopped | default([])) + [target.gateway.horizon] }}"
-      when:
-        - horizon is defined and horizon is not skipped
-        - horizon_before.stdout not in ['inactive', 'failed']
-        - horizon_after.stdout in ['inactive', 'failed', 'deactivating']

@@ -39,6 +39,11 @@ def systemd():
 def command(tool, args):
     state = read_state()
     log(tool, args)
+    if tool == 'cat':
+        if state.get('ci_read_failure'):
+            return 1
+        print(Path(args[0]).read_text(), end='')
+        return 0
     if tool == 'systemctl' and args[0] == 'show':
         print(state['units'][args[-1]])
         return 0
@@ -57,7 +62,7 @@ def command(tool, args):
                 print(json.dumps([{'name': name, 'status': status} for name, status in state['runners'].items()]))
             return 0
         name = args[-1]
-        if action == 'pause' and name == 'ci-b':
+        if action == 'pause' and name == 'ci-b' and state.get('ci_partial_failure'):
             # An operator stops another runner after the initial inventory. It does not belong to this drain.
             state['runners']['ci-external'] = 'Stopped'
             save(state)

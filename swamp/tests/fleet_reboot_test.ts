@@ -373,20 +373,21 @@ for (const due of [true, false]) {
 }
 
 
-for (const scenario of ["held observation", "held record", "Gateway partial stop", "CI partial stop",
-    "Gateway already stopped", "Gateway Horizon already stopped", "Gateway timeout"]) {
-    Deno.test(`the drain rescue restores only its recorded stops after ${scenario} fails`, async () => {
+for (const scenario of ["held observation", "held record", "marker record", "Gateway partial stop", "Gateway record after stop",
+    "CI partial stop", "CI stop-list record", "CI stop-list read", "Gateway already stopped", "Gateway Horizon already stopped", "Gateway timeout"]) {
+    Deno.test(`the drain rescue preserves main recovery after ${scenario} fails`, async () => {
         const folder = await Deno.makeTempDir();
         try {
             for (const part of ["tasks", "files", "library", "bin"]) await Deno.mkdir(`${folder}/${part}`);
             const state = { units: { "schedule.service": scenario === "Gateway already stopped" ? "inactive" : "active",
                     "horizon.service": scenario.includes("already stopped") ? "inactive" : "active" },
-                horizon_timeout: scenario === "Gateway timeout",
+                horizon_timeout: scenario === "Gateway timeout", ci_partial_failure: scenario === "CI partial stop",
+                ci_read_failure: scenario === "CI stop-list read",
                 runners: { "ci-a": "Running", "ci-b": "Running", "ci-external": "Running", "ci-parked": "Stopped" } };
             await Deno.writeTextFile(`${folder}/state.json`, JSON.stringify(state));
             const fixture = fileURLToPath(new URL("fixtures/fleet-reboot-host.py", import.meta.url));
             await Deno.copyFile(fixture, `${folder}/library/orbit_reboot_systemd.py`);
-            for (const tool of ["systemctl", "incus"]) {
+            for (const tool of ["systemctl", "incus", "cat"]) {
                 await Deno.writeTextFile(`${folder}/bin/${tool}`, `#!/bin/sh\nexec python3 '${fixture}' ${tool} "$@"\n`);
                 await Deno.chmod(`${folder}/bin/${tool}`, 0o755);
             }
@@ -400,31 +401,39 @@ for (const scenario of ["held observation", "held record", "Gateway partial stop
                     [key === "ansible.builtin.systemd_service" ? "orbit_reboot_systemd" : key, transform(child)]));
                 return value;
             };
+            const recordFault = scenario === "held record" ? "record_update.reason | default('') == 'operator_hold'"
+                : scenario === "marker record" ? "record_update.drain_started | default(false)"
+                : scenario === "Gateway record after stop" ? "record_update.fixture_after_stop | default(false)"
+                : scenario === "CI stop-list record" ? "record_update.ci_stopped is defined" : "false";
             for await (const file of Deno.readDir(`${ansible}tasks`)) {
                 if (file.name.startsWith("fleet-reboot-")) {
-                    await Deno.writeTextFile(`${folder}/tasks/${file.name}`, JSON.stringify(transform(parse(await Deno.readTextFile(`${ansible}tasks/${file.name}`)))));
+                    const tasks: Task[] = transform(parse(await Deno.readTextFile(`${ansible}tasks/${file.name}`)));
+                    if (file.name === "fleet-reboot-record.yml") {
+                        // Fail the real copy after an earlier record exists, preserving its contents like a failed atomic write.
+                        (tasks[0]["ansible.builtin.copy"] as Record<string, unknown>).dest = `{{ (record_path ~ '/blocked') if (${recordFault}) else record_path }}`;
+                    }
+                    if (file.name === "fleet-reboot-drain-gateway.yml" && scenario === "Gateway record after stop") {
+                        const afterStop = tasks.findIndex((task) => task.name === "Stop the Gateway scheduler") + 1;
+                        tasks.splice(afterStop, 0, { name: "Write a record after stopping the scheduler", "ansible.builtin.include_tasks": "fleet-reboot-record.yml",
+                            vars: { record_update: { fixture_after_stop: true } } });
+                    }
+                    await Deno.writeTextFile(`${folder}/tasks/${file.name}`, JSON.stringify(tasks));
                 }
             }
             const phase = transform(structuredClone(plays.find((p) => p.name === "Drain the Node")!.tasks.find((t) => t.name === "Drain the Node")!));
-            phase.block = phase.block.map((task: Task) => {
-                if (task.name === "Read the boot state") return scenario === "held observation"
-                    ? { name: task.name, "ansible.builtin.fail": { msg: "Observation failed" } }
-                    : { name: task.name, "ansible.builtin.set_fact": { boot: { due: true, due_since: "2026-11-06T03:00:00Z",
-                        kernel: "7.0.0-42-generic", boot_id: "before", failed_units: [] } } };
-                if (task.name === "Record a Node that waits" && scenario === "held record") {
-                    return { name: task.name, "ansible.builtin.fail": { msg: "Record write failed" } };
-                }
-                return task;
-            });
-            if (scenario.includes("already stopped") || scenario === "Gateway timeout") {
+            phase.block = phase.block.map((task: Task) => task.name !== "Read the boot state" ? task
+                : scenario === "held observation" ? { name: task.name, "ansible.builtin.fail": { msg: "Observation failed" } }
+                : { name: task.name, "ansible.builtin.set_fact": { boot: { due: true, due_since: "2026-11-06T03:00:00Z",
+                    kernel: "7.0.0-42-generic", boot_id: "before", failed_units: [] } } });
+            if (scenario.includes("already stopped") || scenario === "Gateway timeout" || scenario === "CI stop-list read") {
                 phase.block.push({ name: "Fail after drain", "ansible.builtin.fail": { msg: "Drain failed" } });
             }
             const record = `${folder}/result.json`;
             const result = await play(folder, { run: folder, record_path: record, phase: "drain", halted: false,
                 record: "{{ lookup('ansible.builtin.file', record_path, errors='ignore') | default('{}', true) | from_json }}",
                 target: { node_id: 9, name: "fixture", defer: scenario.startsWith("held") ? "operator_hold" : null,
-                    task_project: null, ci_project: scenario === "CI partial stop" ? "orbit-ci" : null,
-                    gateway: scenario === "CI partial stop" ? null : { scheduler: "schedule.service", horizon: "horizon.service" } },
+                    task_project: null, ci_project: scenario.startsWith("CI") ? "orbit-ci" : null,
+                    gateway: scenario.startsWith("CI") ? null : { scheduler: "schedule.service", horizon: "horizon.service" } },
                 intent: { window: { timezone: "Europe/Amsterdam", start: "03:00", end: "06:00", enforced: false }, drain_seconds: 20 },
             }, [phase], { REBOOT_FIXTURE: folder, ANSIBLE_LIBRARY: `${folder}/library`,
                 PATH: `${folder}/bin:${Deno.env.get("PATH")}` });
@@ -433,17 +442,17 @@ for (const scenario of ["held observation", "held record", "Gateway partial stop
             assertEquals(saved.outcome, "failed", result.output);
             const calls: string[][] = (await Deno.readTextFile(`${folder}/calls.jsonl`).catch(() => "")).trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
             const starts = calls.filter((call) => call[0] === "systemd" && call[1] === "started" || call[0] === "incus" && call[1] === "start");
-            if (scenario === "Gateway partial stop" || scenario === "Gateway timeout") {
+            const after = JSON.parse(await Deno.readTextFile(`${folder}/state.json`));
+            if (scenario.startsWith("Gateway")) {
                 assertEquals(starts, [["systemd", "started", "schedule.service"], ["systemd", "started", "horizon.service"]]);
-                assertEquals(saved.gateway_stopped, ["schedule.service", "horizon.service"]);
-            } else if (scenario === "Gateway Horizon already stopped") {
-                assertEquals(starts, [["systemd", "started", "schedule.service"]]);
-                assertEquals(saved.gateway_stopped, ["schedule.service"]);
-            } else if (scenario === "CI partial stop") {
-                assertEquals(starts, [["incus", "start", "--project", "orbit-ci", "ci-a"]]);
-                assertEquals(saved.ci_stopped.map((runner: { name: string }) => runner.name), ["ci-a"]);
+                assertEquals(after.units, { "schedule.service": "active", "horizon.service": "active" });
+            } else if (scenario.startsWith("CI")) {
+                assertEquals(starts.map((call) => call.at(-1)).sort(), scenario === "CI partial stop" ? ["ci-a", "ci-external"] : ["ci-a", "ci-b", "ci-external"]);
+                assertEquals(after.runners, { "ci-a": "Running", "ci-b": "Running", "ci-external": "Running", "ci-parked": "Stopped" });
             } else {
                 assertEquals(starts, []);
+                assertEquals(calls.filter((call) => call[0] === "systemd" && call[1] === "stopped" || call[0] === "incus" && ["stop", "pause"].includes(call[1])), []);
+                assertEquals(saved.drain_started, undefined);
             }
         } finally { await Deno.remove(folder, { recursive: true }); }
     });

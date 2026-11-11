@@ -685,7 +685,7 @@ The order is the rollout's [risk groups](#rollout-set-and-order), then two more.
 | 5 | The control path: the `vpn` hub, the Gateway Node, and the Node of the Route that serves the Swamp address (`swamp.orbit`) |
 | 6 | The `swamp` Node |
 
-Set a durable per-Node reboot hold with `orbit node:update NODE --reboot-hold=true`; clear it with `--reboot-hold=false`. The default is false. The existing Node update API and MCP accept the boolean `reboot_hold` field. Every Node read shows it. Admission freezes the hold as the existing `defer: operator_hold` intent value, ahead of task-busy deferral. Changes apply to the next pass. Both nightly passes and operator passes with `node_ids` respect the hold. No new intent key is required, so the Gateway and workflow ship in one release: migrate the database, load Swamp, then activate the Gateway. Stop records are run-local results, and undo treats an absent stop list as empty.
+Set a durable per-Node reboot hold with `orbit node:update NODE --reboot-hold=true`; clear it with `--reboot-hold=false`. The default is false. The existing Node update API and MCP accept the boolean `reboot_hold` field. Every Node read shows it. Admission freezes the hold as the existing `defer: operator_hold` intent value, ahead of task-busy deferral. Changes apply to the next pass. Both nightly passes and operator passes with `node_ids` respect the hold. No new intent key is required, so the Gateway and workflow ship in one release: migrate the database, load Swamp, then activate the Gateway. The `drain_started` marker is run-local state, and rescue skips undo when it is absent.
 
 A task host with an open task Operation on one of its task VMs stays in the pass, but only to be read: it records since when it is due and then `deferred` with `tasks_busy`. While the pass runs, the Gateway holds new task work off every other task host it visits that has no reboot hold:
 
@@ -710,7 +710,7 @@ On a CI runner host, the phase drains the runners every 20 seconds, for at most 
 
 On a task host, the phase stops each running task guest cleanly, within a minute, and records its name at once. The Gateway records those task VMs `parked`, and the next task call wakes them.
 
-The drain records the runners, scheduler and Horizon it stopped in the Node's run-folder record, including partial stops when a drain command fails. When the drain fails, the phase starts only those recorded runners and units before it records the failure. A unit an operator had already stopped stays stopped. An observation or record failure before any drain starts no service. Stopped task guests stay parked.
+After the hold and window checks, the phase writes `drain_started` to the Node's run-folder record before the first CI, task guest or Gateway stop. Rescue runs undo only when this marker exists. If writing it fails, nothing has stopped yet and undo is skipped. Once a drain begins, failure keeps the existing recovery: start the Gateway scheduler and Horizon, and start every runner from the initial running inventory that is now stopped. Recovery does not depend on later record writes or on reading the stopped-runner list. Stopped task guests stay parked.
 
 On the Gateway Node, the phase stops the scheduler. Then it stops Horizon, which drains on stop, within the drain budget. The reboot ends what is left.
 

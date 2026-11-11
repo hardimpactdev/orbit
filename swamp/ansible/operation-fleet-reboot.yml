@@ -109,6 +109,10 @@
         - name: End a Node that waits
           ansible.builtin.meta: end_host
           when: wait_reason | length > 0
+        - name: Record that the drain is starting
+          ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
+          vars:
+            record_update: { drain_started: true }
         # CI first: a busy runner defers the Node before any task guest stops.
         - name: Drain the CI runners
           ansible.builtin.import_tasks: tasks/fleet-reboot-drain-ci.yml
@@ -120,8 +124,10 @@
           ansible.builtin.import_tasks: tasks/fleet-reboot-drain-gateway.yml
           when: target.gateway is not none
       rescue:
+        # If the marker write failed, nothing has stopped yet, so skipping undo is correct.
         - name: Start what the drain stopped
           ansible.builtin.import_tasks: tasks/fleet-reboot-drain-undo.yml
+          when: record.drain_started is defined
         - name: Record the failed phase
           ansible.builtin.import_tasks: tasks/fleet-reboot-failed.yml
 

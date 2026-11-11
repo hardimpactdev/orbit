@@ -31,7 +31,7 @@ sequenceDiagram
     %%> - a due held Node records boot ID, kernel and due time, then `deferred` (`operator_hold`); without a due reboot it stays `not_due`
     %%> - CI: stop each idle runner, frozen while read; a job still running after 15 min defers the Node
     %%> - task guests stop and are recorded parked; on the Gateway the scheduler stops and Horizon drains within 15 min
-    %%> - record each runner, scheduler and Horizon stop in the run folder; a failed drain restores only those stops
+    %%> - record `drain_started` before the first stop; rescue runs the existing Gateway and CI recovery only after that marker
     SW->>N: Reboot and wait for SSH<br/>reboot phase
     %%> Why:
     %%> - the swamp Node instead schedules its own reboot after the run ends: `scheduled`
