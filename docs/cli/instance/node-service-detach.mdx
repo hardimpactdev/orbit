@@ -19,7 +19,7 @@ orbit instance:node-service:detach <instance> <target> [--yes] [--json]
 orbit instance:node-service:detach 12 4 --yes
 ```
 
-In a human terminal, an omitted Instance ID uses a registry data list. The attachment ID must be supplied explicitly. JSON and noninteractive calls require both IDs. `--yes` confirms deletion of this record. Without it, a terminal asks for confirmation with No selected; JSON and noninteractive calls refuse with `instance.node_service_confirmation_required`. Declining, Ctrl-C or end of input returns `input.cancelled` before the delete request. The confirmation states that network access, environment and the Process stay unchanged.
+In a human terminal, an omitted Instance ID uses a registry data list. An omitted attachment ID uses a text prompt: enter the attachment ID returned by [attach](/cli/instance/node-service-attach). No attachment list is available. The prompt rejects non-positive or non-integer IDs and asks again. JSON and noninteractive calls require both IDs explicitly. `--yes` confirms deletion of this record. Without it, a terminal asks for confirmation with No selected after both IDs are resolved; JSON and noninteractive calls refuse with `instance.node_service_confirmation_required`. Declining, Ctrl-C or end of input returns `input.cancelled` before the delete request. The confirmation states that network access, environment and the Process stay unchanged.
 
 `--json` writes the completed Operation as one JSON object without prompts or progress. Human output shows the target ID, Instance ID, Operation ID, status and request ID in a detail tree. The CLI generates one idempotency key for its delete request; it does not poll a completed receipt.
 
@@ -61,7 +61,7 @@ Receipt creation and attachment deletion commit in one transaction. If either wr
 | `instance.id_invalid` | — | The CLI Instance ID is invalid, missing noninteractively, or no Instance is available to select. |
 | `instance.node_service_target_id_invalid` | — | The CLI attachment ID is missing or is not a positive integer. |
 | `instance.node_service_confirmation_required` | — | A JSON or noninteractive CLI call omits `--yes`. |
-| `input.cancelled` | — | A terminal selection or confirmation was cancelled, or consent was declined; no delete request was sent. |
+| `input.cancelled` | — | A terminal selection, attachment-ID prompt or confirmation was cancelled, or consent was declined; no delete request was sent. |
 | `peer.identity_unknown` | 403 | The caller is not an active WireGuard peer. |
 | `node_access.required` | 403 | The caller lacks authority for the Instance's Node. |
 | `http.404` | 404 | The Instance or its Node does not exist. |

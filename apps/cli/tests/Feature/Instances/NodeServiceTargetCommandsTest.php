@@ -182,6 +182,20 @@ describe('Node service target commands', function (): void {
         $mock->assertNothingSent();
     });
 
+    it('refuses an omitted detach target without prompting in machine or noninteractive mode', function (string $mode): void {
+        $mock = MockClient::global();
+        $exit = Artisan::call('instance:node-service:detach', ['instance' => '12', '--yes' => true, $mode => true]);
+        $output = Artisan::output();
+
+        expect($exit)->toBe(1);
+        if ($mode === '--json') {
+            expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('instance.node_service_target_id_invalid');
+        } else {
+            expect($output)->toContain('Code: instance.node_service_target_id_invalid');
+        }
+        $mock->assertNothingSent();
+    })->with(['--json', '--no-interaction']);
+
     it('refuses invalid ports and missing required keys before sending', function (array $change, string $code): void {
         $mock = MockClient::global();
         $input = ['instance' => '12', '--process' => '221', '--port' => '1025', '--host-env-key' => 'MAIL_HOST', '--port-env-key' => 'MAIL_PORT', '--json' => true];
@@ -201,11 +215,11 @@ describe('Node service target commands', function (): void {
 /** @param list<string> $arguments @param list<string> $keys @param list<array<string, mixed>> $replies
  * @return array{status: int, output: string, trace: list<array<string, mixed>>}
  */
-function nodeServiceTerminal(string $directory, array $arguments, array $keys, array $replies): array
+function nodeServiceTerminal(string $directory, array $arguments, array $keys, array $replies, string $prompt = 'Instance'): array
 {
     mkdir($directory, recursive: true);
     $configuration = ['home' => $directory.'/home', 'trace' => $directory.'/trace.jsonl', 'arguments' => $arguments,
-        'replies' => $replies, 'keys' => array_map(base64_encode(...), $keys), 'prompt' => 'Instance', 'columns' => 140, 'idle_timeout' => 8];
+        'replies' => $replies, 'keys' => array_map(base64_encode(...), $keys), 'prompt' => $prompt, 'columns' => 140, 'idle_timeout' => 8];
     file_put_contents($directory.'/case.json', json_encode($configuration, JSON_THROW_ON_ERROR));
     $fixture = dirname(__DIR__, 2).'/Fixtures/Console/';
     $process = new Process(['python3', $fixture.'command-consent-pty.py', PHP_BINARY, $fixture.'command-consent.php', $directory.'/case.json']);
@@ -259,4 +273,32 @@ it('requires terminal detach consent and never sends on decline or cancellation'
     'explicit Yes' => [["\x1b[D", "\r"], true],
     'Ctrl-C' => [["\x03"], false],
     'Ctrl-D' => [["\x04"], false],
+]);
+
+it('prompts for an omitted detach ID, validates before consent and sends nothing on cancellation', function (array $keys, bool $consent, bool $invalid): void {
+    $replies = $consent ? [['class' => DetachInstanceNodeServiceTargetRequest::class, 'status' => 202,
+        'body' => ['data' => ['id' => 41, 'kind' => 'instance.node_service_detach', 'target_type' => 'instance', 'target_id' => 12,
+            'status' => 'succeeded', 'sequence' => 2, 'result' => [...nodeServiceCliData(), 'detached' => true]]]]] : [];
+    $result = nodeServiceTerminal($this->orbitHome.'/detach-id-terminal', ['instance:node-service:detach', '12'], $keys, $replies, 'Node service target ID');
+
+    expect($result['status'])->toBe($consent ? 0 : 1)
+        ->and($result['output'])->toContain('Use the attachment ID from the attach result; no attachment list is available.')
+        ->and($result['trace'])->toHaveCount($consent ? 1 : 0);
+    if ($invalid) {
+        expect($result['output'])->toContain('Node service target ID must be a positive integer.');
+    }
+    if ($consent) {
+        expect($result['output'])->toContain('Delete Node service target record [4] from Instance [12]?')
+            ->and($result['trace'][0]['method'])->toBe('DELETE')
+            ->and($result['trace'][0]['url'])->toEndWith('/api/v1/instances/12/node-service-targets/4');
+    } else {
+        expect($result['output'])->toContain('Code: input.cancelled');
+    }
+})->with([
+    'typed ID then Yes' => [['4', "\r", "\x1b[D", "\r"], true, false],
+    'invalid text then correction' => [[...str_split('bad'), "\r", "\x7f", "\x7f", "\x7f", '4', "\r", "\x1b[D", "\r"], true, true],
+    'zero then correction' => [['0', "\r", "\x7f", '4', "\r", "\x1b[D", "\r"], true, true],
+    'typed ID then No' => [['4', "\r", "\r"], false, false],
+    'Ctrl-C at ID prompt' => [["\x03"], false, false],
+    'Ctrl-D at ID prompt' => [["\x04"], false, false],
 ]);

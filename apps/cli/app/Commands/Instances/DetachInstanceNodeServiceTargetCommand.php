@@ -6,8 +6,11 @@ namespace App\Commands\Instances;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\ConsoleWriter;
+use App\Support\Console\PromptAborted;
 use Illuminate\Support\Str;
+use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\Requests\Instances\DetachInstanceNodeServiceTargetRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
@@ -37,8 +40,9 @@ final class DetachInstanceNodeServiceTargetCommand extends NodeServiceTargetComm
         if ($instance === null) {
             return self::FAILURE;
         }
+        $targetId ??= $this->promptTargetId();
         if ($targetId === null) {
-            return $this->renderGatewayFailure('instance.node_service_target_id_invalid', 'Node service target ID is required.');
+            return self::FAILURE;
         }
         if (! $this->confirmAction("Delete Node service target record [{$targetId}] from Instance [{$instance}]? Network access, environment and Process stay unchanged.", 'Node service target detach cancelled.',
             option: 'yes', requiredCode: 'instance.node_service_confirmation_required')) {
@@ -64,5 +68,28 @@ final class DetachInstanceNodeServiceTargetCommand extends NodeServiceTargetComm
         }
 
         return self::SUCCESS;
+    }
+
+    private function promptTargetId(): ?int
+    {
+        if (! $this->consoleMode()->mayPrompt) {
+            $this->renderGatewayFailure('instance.node_service_target_id_invalid', 'Node service target ID is required.');
+
+            return null;
+        }
+        try {
+            $value = $this->commandPrompts()->run(fn (): TextPrompt => new TextPrompt(
+                'Node service target ID', required: true,
+                validate: static fn (string $id): ?string => filter_var($id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false
+                    ? 'Node service target ID must be a positive integer.' : null,
+                hint: 'Use the attachment ID from the attach result; no attachment list is available.',
+            ));
+
+            return is_string($value) ? (int) $value : null;
+        } catch (PromptAborted|ConsoleInterrupted) {
+            $this->renderGatewayFailure('input.cancelled', 'Node service target input cancelled.');
+
+            return null;
+        }
     }
 }
