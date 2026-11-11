@@ -7,6 +7,7 @@ namespace Orbit\Extensions\Conn\Http\Requests;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 use Orbit\Extensions\Conn\Domain\ConnThreadProjects;
 
 final class ListConnProjectBranchesRequest extends FormRequest
@@ -30,7 +31,20 @@ final class ListConnProjectBranchesRequest extends FormRequest
     /** @return array<string, mixed> */
     public function validationData(): array
     {
-        return $this->query->all();
+        parse_str($this->server->getString('QUERY_STRING'), $query);
+
+        return array_key_exists('query', $query) ? ['query' => $query['query']] : [];
+    }
+
+    /** @return list<callable(Validator): void> */
+    public function after(): array
+    {
+        return [static function (Validator $validator): void {
+            $query = $validator->getData()['query'] ?? null;
+            if (is_string($query) && trim($query) !== $query) {
+                $validator->errors()->add('query', 'Leading or trailing whitespace is not allowed.');
+            }
+        }];
     }
 
     public function nameQuery(): string

@@ -8,6 +8,7 @@ use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubBranchPullRequest;
 use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\SourceControl\ReadDeadline;
 use Illuminate\Support\Facades\Http;
 use SensitiveParameter;
 
@@ -17,23 +18,20 @@ final readonly class HttpGitHubBranchPullRequests
     public const int PageLimit = 5;
 
     /** @return array<string, GitHubBranchPullRequest> Newest open PR for each head in this repository. */
-    public function newestOpen(#[SensitiveParameter] string $token, GitHubRepository $repository): array
+    public function newestOpen(#[SensitiveParameter] string $token, GitHubRepository $repository, ReadDeadline $deadline): array
     {
-        $deadline = microtime(true) + 10.0;
         $pulls = [];
         for ($page = 1; $page <= self::PageLimit; $page++) {
-            $remaining = $deadline - microtime(true);
-            if ($remaining <= 0) {
-                throw GitHubApiException::unavailable();
-            }
+            $remaining = $deadline->remaining();
             $response = Http::baseUrl('https://api.github.com')->withToken($token)
                 ->withHeaders(['Accept' => 'application/vnd.github+json', 'X-GitHub-Api-Version' => '2022-11-28', 'User-Agent' => 'orbit-gateway'])
                 ->timeout(min(5.0, $remaining))->connectTimeout(min(2.0, $remaining))->withoutRedirecting()
                 ->get('/repos/'.$repository->owner.'/'.$repository->name.'/pulls', [
                     'state' => 'open', 'sort' => 'created', 'direction' => 'desc', 'per_page' => 100, 'page' => $page,
                 ]);
+            $deadline->remaining();
             $rows = $response->json();
-            if (! $response->successful() || ! is_array($rows) || ! array_is_list($rows) || count($rows) > 100 || microtime(true) >= $deadline) {
+            if (! $response->successful() || ! is_array($rows) || ! array_is_list($rows) || count($rows) > 100) {
                 throw GitHubApiException::unavailable();
             }
             foreach ($rows as $row) {
@@ -65,6 +63,7 @@ final readonly class HttpGitHubBranchPullRequests
                     $pulls[$head] = ['created' => $created, 'pull' => new GitHubBranchPullRequest($url, $number, GitHubPullRequestState::Open, $title)];
                 }
             }
+            $deadline->remaining();
             if (! str_contains($response->header('Link'), 'rel="next"')) {
                 return array_map(static fn (array $entry): GitHubBranchPullRequest => $entry['pull'], $pulls);
             }

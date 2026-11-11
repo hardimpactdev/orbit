@@ -12,7 +12,7 @@ covers:
 
 A Gateway reads private `github.com` repositories through its own GitHub App. The [Tasks](/reference/tasks) extension also publishes its pull requests through it, and, for a [review-and-merge](/reference/tasks#review-and-merge) Project, reviews and merges pull requests through it. Orbit reads public repositories without the App. A Project whose owner does not install the App can [read through the Gateway's GitHub CLI](#read-through-the-github-cli) instead.
 
-The [Conn branch list](/reference/conn#threads-in-an-orbit-project) reads remote heads with the Project's existing source access. Its optional GitHub PR projection uses a separate repository `pull_requests: read` installation token, or the configured GitHub CLI credential. It reads open PRs once per repository, across bounded pages; no token is returned or logged.
+The [Conn branch list](/reference/conn#threads-in-an-orbit-project) reads remote heads with the Project's existing source access. Its optional GitHub PR projection uses a separate repository `pull_requests: read` installation token, or the configured GitHub CLI credential. It reads open PRs once per repository, across bounded pages; no token is returned or logged. Conn reuses the installation facts for both reads; each credentialed read has its own ten-second budget. Other credential readers retain their timeouts.
 
 ## What the App is
 

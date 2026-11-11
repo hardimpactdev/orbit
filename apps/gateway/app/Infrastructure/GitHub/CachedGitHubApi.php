@@ -12,6 +12,7 @@ use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubPullRequestDraft;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReview;
+use App\Domain\SourceControl\ReadDeadline;
 use App\Domain\Tasks\TaskBranchUpdate;
 use SensitiveParameter;
 
@@ -27,14 +28,14 @@ final readonly class CachedGitHubApi implements GitHubApi
 
     public function __construct(private GitHubApi $github, private GitHubTokenCache $tokens) {}
 
-    public function repositoryInstallation(GitHubAppCredentials $credentials, GitHubRepository $repository): ?int
+    public function repositoryInstallation(GitHubAppCredentials $credentials, GitHubRepository $repository, ?ReadDeadline $deadline = null): ?int
     {
-        return $this->tokens->installation($credentials->appId, $repository, fn (): ?int => $this->github->repositoryInstallation($credentials, $repository));
+        return $this->tokens->installation($credentials->appId, $repository, fn (): ?int => ($deadline === null ? $this->github->repositoryInstallation($credentials, $repository) : $this->github->repositoryInstallation($credentials, $repository, $deadline)));
     }
 
-    public function repositoryReadToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string
+    public function repositoryReadToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository, ?ReadDeadline $deadline = null): string
     {
-        return $this->tokens->token($credentials->appId, $installationId, $repository, 'contents', fn (): string => $this->github->repositoryReadToken($credentials, $installationId, $repository));
+        return $this->tokens->token($credentials->appId, $installationId, $repository, 'contents', fn (): string => ($deadline === null ? $this->github->repositoryReadToken($credentials, $installationId, $repository) : $this->github->repositoryReadToken($credentials, $installationId, $repository, $deadline)));
     }
 
     public function installationReadToken(GitHubAppCredentials $credentials, int $installationId): string
@@ -72,9 +73,9 @@ final readonly class CachedGitHubApi implements GitHubApi
         return $this->github->repositoryPullRequestToken($credentials, $installationId, $repository);
     }
 
-    public function repositoryPullRequestReadToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string
+    public function repositoryPullRequestReadToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository, ?ReadDeadline $deadline = null): string
     {
-        return $this->github->repositoryPullRequestReadToken($credentials, $installationId, $repository);
+        return $deadline === null ? $this->github->repositoryPullRequestReadToken($credentials, $installationId, $repository) : $this->github->repositoryPullRequestReadToken($credentials, $installationId, $repository, $deadline);
     }
 
     public function pullRequestsByHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $head): array

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\GitHub;
 
+use App\Domain\SourceControl\ReadDeadline;
 use App\Domain\Tasks\TaskBranchUpdate;
 use SensitiveParameter;
 
@@ -14,7 +15,7 @@ interface GitHubApi
      *
      * @throws GitHubApiException
      */
-    public function repositoryInstallation(GitHubAppCredentials $credentials, GitHubRepository $repository): ?int;
+    public function repositoryInstallation(GitHubAppCredentials $credentials, GitHubRepository $repository, ?ReadDeadline $deadline = null): ?int;
 
     /**
      * A token that reads the contents of this one repository and expires after one hour.
@@ -25,6 +26,7 @@ interface GitHubApi
         GitHubAppCredentials $credentials,
         int $installationId,
         GitHubRepository $repository,
+        ?ReadDeadline $deadline = null,
     ): string;
 
     /**
@@ -61,6 +63,7 @@ interface GitHubApi
         GitHubAppCredentials $credentials,
         int $installationId,
         GitHubRepository $repository,
+        ?ReadDeadline $deadline = null,
     ): string;
 
     /**

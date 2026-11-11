@@ -19,7 +19,13 @@ final class GitBranchName
 
     public static function isValid(string $branch): bool
     {
-        if ($branch === '' || strlen($branch) > 255 || $branch === 'HEAD' || str_starts_with($branch, '-')) {
+        return strlen($branch) <= 255 && self::isValidSyntax($branch);
+    }
+
+    /** Git ref syntax, without Orbit's creation-input length limit. */
+    public static function isValidSyntax(string $branch): bool
+    {
+        if ($branch === '' || $branch === 'HEAD' || str_starts_with($branch, '-')) {
             return false;
         }
 

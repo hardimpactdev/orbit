@@ -12,10 +12,12 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
+use App\Domain\SourceControl\ReadDeadline;
 use App\Infrastructure\GitHub\CachedGitHubApi;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\SourceControl\GitRemoteBranchHeads;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -26,6 +28,8 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\Response;
 
+use function Pest\Laravel\freezeTime;
+use function Pest\Laravel\travel;
 use function Pest\Laravel\withServerVariables;
 
 uses(LazilyRefreshDatabase::class);
@@ -74,7 +78,7 @@ function branchGitHub(Project $project): void
 {
     $project->update(['repository_url' => 'https://github.com/example/branches.git', 'source_access' => ProjectSourceAccess::GhCli]);
     $cli = Mockery::mock(GitHubCliToken::class);
-    $cli->shouldReceive('token')->andReturn('fixture-token');
+    $cli->shouldReceive('token')->once()->andReturn('fixture-token');
     app()->instance(GitHubCliToken::class, $cli);
 }
 
@@ -200,7 +204,7 @@ it('returns 422 validation.failed for a malformed query', function (string $quer
 
     branchRequest($caller, "/api/v1/conn/projects/{$project->id}/branches?".$query)
         ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed')->assertJsonStructure(['error' => ['details' => ['query']]]);
-})->with(['query[]=bad', 'query='.str_repeat('x', 256), 'query=bad%00name']);
+})->with(['query[]=bad', 'query='.str_repeat('x', 256), 'query=bad%00name', 'query=main%0A', 'query=%09main', 'query=main%09', 'query=%0Amain', 'query='.str_repeat('%20', 256)]);
 
 it('returns source.head_unavailable when remote output fails or is truncated', function (int $exit, bool $truncated): void {
     [$caller, $project] = branchProject();
@@ -232,9 +236,9 @@ it('reads with the Project GitHub App installation and a separate PR read token'
     $project->update(['repository_url' => 'https://github.com/example/branches.git']);
     app(GitHubAppStore::class)->put(new GitHubAppCredentials(123, 'fixture', 'fixture', 'example', 'organization', 'https://github.com/apps/fixture', 'fixture-key'));
     $github = Mockery::mock(GitHubApi::class);
-    $github->shouldReceive('repositoryInstallation')->twice()->andReturn(7);
+    $github->shouldReceive('repositoryInstallation')->once()->andReturn(7);
     $github->shouldReceive('repositoryReadToken')->once()->andReturn('fixture-contents');
-    $github->shouldReceive('repositoryPullRequestReadToken')->once()->with(Mockery::type(GitHubAppCredentials::class), 7, Mockery::type(GitHubRepository::class))->andReturn('fixture-pr-read');
+    $github->shouldReceive('repositoryPullRequestReadToken')->once()->with(Mockery::type(GitHubAppCredentials::class), 7, Mockery::type(GitHubRepository::class), Mockery::type(ReadDeadline::class))->andReturn('fixture-pr-read');
     app()->instance(GitHubApi::class, $github);
     branchRemote(['main']);
     Http::fake(['api.github.com/repos/example/branches/pulls*' => Http::response([branchPull(7, 'main')])]);
@@ -261,13 +265,13 @@ it('returns an empty list for a readable empty remote without asking GitHub', fu
     Http::assertNothingSent();
 });
 
-it('returns source.head_unavailable for malformed remote refs', function (): void {
+it('returns source.head_unavailable for malformed remote refs', function (string $name): void {
     [$caller, $project] = branchProject();
-    branchRemote(['invalid branch']);
+    branchRemote([$name]);
 
     branchRequest($caller, "/api/v1/conn/projects/{$project->id}/branches")
         ->assertStatus(502)->assertJsonPath('error.code', 'source.head_unavailable');
-});
+})->with(['invalid branch', 'bad..name', 'x.lock', 'a//b']);
 
 it('lists long valid remote branch names without applying the creation input limit', function (): void {
     [$caller, $project] = branchProject();
@@ -276,4 +280,155 @@ it('lists long valid remote branch names without applying the creation input lim
 
     branchRequest($caller, "/api/v1/conn/projects/{$project->id}/branches")
         ->assertOk()->assertJsonPath('data.0.name', $name);
+});
+
+it('returns 422 for leading and trailing spaces instead of trimming the substring', function (): void {
+    [$caller, $project] = branchProject();
+
+    branchRequest($caller, "/api/v1/conn/projects/{$project->id}/branches?query=%20main%20")
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+});
+
+it('returns 409 instance.default_missing when the Project default is not ready', function (): void {
+    [$caller, $project, $node] = branchProject();
+    InstanceRuntime::query()->where('node_id', $node->id)->update(['seed_commit' => null]);
+
+    branchRequest($caller, "/api/v1/conn/projects/{$project->id}/branches")
+        ->assertStatus(409)->assertJsonPath('error.code', 'instance.default_missing');
+    Http::assertNothingSent();
+});
+
+it('includes slow App credential acquisition in each read budget and reuses its installation', function (): void {
+    freezeTime();
+    [$caller, $project] = branchProject();
+    $project->update(['repository_url' => 'https://github.com/example/branches.git']);
+    openssl_pkey_export(openssl_pkey_new(['private_key_bits' => 2048]) ?: throw new RuntimeException('No key.'), $pem);
+    app(GitHubAppStore::class)->put(new GitHubAppCredentials(123, 'fixture', 'fixture', 'example', 'organization', 'https://github.com/apps/fixture', $pem));
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldReceive('run')->once()->with(Mockery::on(static fn (ProcessInvocation $invocation): bool => $invocation->timeout === 5.0 && $invocation->arguments[0] === 'git'))
+        ->andReturn(new CommandResult(0, str_repeat('a', 40)."\trefs/heads/main\n", '', 1, false));
+    app()->instance(ProcessRunner::class, $runner);
+    Http::fake([
+        'api.github.com/repos/example/branches/installation' => function (Request $request, array $options) {
+            expect($options['timeout'])->toBe(10.0)->and($options['connect_timeout'])->toBe(10.0)->and($options['allow_redirects'])->toBeFalse();
+            travel(2)->seconds();
+
+            return Http::response(['id' => 7]);
+        },
+        'api.github.com/app/installations/7/access_tokens' => function (Request $request, array $options) {
+            $permissions = $request['permissions'];
+            $contents = is_array($permissions) && isset($permissions['contents']);
+            expect($options['timeout'])->toBe($contents ? 8.0 : 10.0);
+            travel($contents ? 3 : 8)->seconds();
+
+            return Http::response(['token' => $contents ? 'fixture-contents' : 'fixture-pr-read'], 201);
+        },
+        'api.github.com/repos/example/branches/pulls*' => function (Request $request, array $options) {
+            expect($options['timeout'])->toBe(2.0);
+            expect($request->hasHeader('Authorization', 'Bearer fixture-pr-read'))->toBeTrue();
+
+            return Http::response([branchPull(7, 'main')]);
+        },
+    ]);
+
+    branchRequest($caller, "/api/v1/conn/projects/{$project->id}/branches")
+        ->assertOk()->assertJsonPath('data.0.pull_request.number', 7)->assertJsonPath('meta.pull_requests_unavailable', false);
+    Http::assertSentCount(4);
+});
+
+it('returns source.head_unavailable when slow source credential acquisition exhausts its deadline', function (string $phase): void {
+    freezeTime();
+    [$caller, $project] = branchProject();
+    $project->update(['repository_url' => 'https://github.com/example/branches.git']);
+    app(GitHubAppStore::class)->put(new GitHubAppCredentials(123, 'fixture', 'fixture', 'example', 'organization', 'https://github.com/apps/fixture', 'fixture-key'));
+    $github = Mockery::mock(GitHubApi::class);
+    $github->shouldReceive('repositoryInstallation')->once()->andReturnUsing(static function (GitHubAppCredentials $credentials, GitHubRepository $repository, ReadDeadline $deadline) use ($phase): int {
+        expect($deadline->remaining())->toBe(10.0);
+        if ($phase === 'installation') {
+            travel(11)->seconds();
+        }
+
+        return 7;
+    });
+    if ($phase === 'token') {
+        $github->shouldReceive('repositoryReadToken')->once()->andReturnUsing(static function (GitHubAppCredentials $credentials, int $installation, GitHubRepository $repository, ReadDeadline $deadline): string {
+            expect($deadline->remaining())->toBe(10.0);
+            travel(11)->seconds();
+
+            return 'fixture-contents';
+        });
+    }
+    app()->instance(GitHubApi::class, $github);
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldNotReceive('run');
+    app()->instance(ProcessRunner::class, $runner);
+
+    branchRequest($caller, "/api/v1/conn/projects/{$project->id}/branches")
+        ->assertStatus(502)->assertJsonPath('error.code', 'source.head_unavailable');
+    Http::assertNothingSent();
+})->with(['installation', 'token']);
+
+it('keeps branches when slow PR credential acquisition exhausts the PR deadline', function (): void {
+    freezeTime();
+    [$caller, $project] = branchProject();
+    $project->update(['repository_url' => 'https://github.com/example/branches.git']);
+    app(GitHubAppStore::class)->put(new GitHubAppCredentials(123, 'fixture', 'fixture', 'example', 'organization', 'https://github.com/apps/fixture', 'fixture-key'));
+    $github = Mockery::mock(GitHubApi::class);
+    $github->shouldReceive('repositoryInstallation')->once()->andReturn(7);
+    $github->shouldReceive('repositoryReadToken')->once()->andReturn('fixture-contents');
+    $github->shouldReceive('repositoryPullRequestReadToken')->once()->andReturnUsing(static function (GitHubAppCredentials $credentials, int $installation, GitHubRepository $repository, ReadDeadline $deadline): string {
+        expect($deadline->remaining())->toBe(10.0);
+        travel(11)->seconds();
+
+        return 'fixture-pr-read';
+    });
+    app()->instance(GitHubApi::class, $github);
+    branchRemote(['main']);
+
+    branchRequest($caller, "/api/v1/conn/projects/{$project->id}/branches")
+        ->assertOk()->assertJsonPath('data.0.name', 'main')->assertJsonPath('data.0.pull_request', null)->assertJsonPath('meta.pull_requests_unavailable', true);
+    Http::assertNothingSent();
+});
+
+it('bounds CLI credential acquisition and reuses its token for the PR read', function (int $credentialSeconds): void {
+    freezeTime();
+    [$caller, $project] = branchProject();
+    $project->update(['repository_url' => 'https://github.com/example/branches.git', 'source_access' => ProjectSourceAccess::GhCli]);
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldReceive('run')->once()->with(Mockery::on(static fn (ProcessInvocation $invocation): bool => $invocation->arguments[0] === 'gh' && $invocation->timeout === 10.0))
+        ->andReturnUsing(static function () use ($credentialSeconds): CommandResult {
+            travel($credentialSeconds)->seconds();
+
+            return new CommandResult(0, str_repeat('a', 24), '', 1, false);
+        });
+    if ($credentialSeconds < 10) {
+        $runner->shouldReceive('run')->once()->with(Mockery::on(static fn (ProcessInvocation $invocation): bool => $invocation->arguments[0] === 'git' && $invocation->timeout === 7.0))
+            ->andReturn(new CommandResult(0, str_repeat('a', 40)."\trefs/heads/main\n", '', 1, false));
+        Http::fake(['api.github.com/repos/example/branches/pulls*' => Http::response([branchPull(7, 'main')])]);
+    }
+    app()->instance(ProcessRunner::class, $runner);
+
+    $response = branchRequest($caller, "/api/v1/conn/projects/{$project->id}/branches");
+    if ($credentialSeconds < 10) {
+        $response->assertOk()->assertJsonPath('data.0.pull_request.number', 7);
+        Http::assertSentCount(1);
+        Http::assertSent(fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer '.str_repeat('a', 24)));
+    } else {
+        $response->assertStatus(502)->assertJsonPath('error.code', 'source.head_unavailable');
+        Http::assertNothingSent();
+    }
+})->with([3, 11]);
+
+it('preserves the original CLI token and exact-head timeout defaults', function (): void {
+    [, $project] = branchProject();
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldReceive('run')->once()->with(Mockery::on(static fn (ProcessInvocation $invocation): bool => $invocation->arguments[0] === 'gh' && $invocation->timeout === 30.0))
+        ->andReturn(new CommandResult(0, str_repeat('a', 24), '', 1, false));
+    $runner->shouldReceive('run')->once()->with(Mockery::on(static fn (ProcessInvocation $invocation): bool => $invocation->arguments[0] === 'git' && $invocation->timeout === 60.0 && in_array('--exit-code', $invocation->arguments, true)))
+        ->andReturn(new CommandResult(0, str_repeat('a', 40)."\trefs/heads/main\n", '', 1, false));
+    app()->instance(ProcessRunner::class, $runner);
+
+    expect(app(GitHubCliToken::class)->token())->toBe(str_repeat('a', 24))
+        ->and(app(GitRemoteBranchHeads::class)->head($project, 'main'))->toBe(str_repeat('a', 40));
+    Http::assertNothingSent();
 });

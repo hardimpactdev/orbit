@@ -21,6 +21,7 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\ReadDeadline;
 use App\Domain\Tasks\TaskBranchUpdate;
 use DateTimeImmutable;
 use Illuminate\Http\Client\PendingRequest;
@@ -42,12 +43,14 @@ final readonly class HttpGitHubApi implements GitHubApi
 
     public function __construct(private HttpGitHubReviewReader $reviewReader) {}
 
-    public function repositoryInstallation(GitHubAppCredentials $credentials, GitHubRepository $repository): ?int
+    public function repositoryInstallation(GitHubAppCredentials $credentials, GitHubRepository $repository, ?ReadDeadline $deadline = null): ?int
     {
         $response = $this->send(
-            fn (): Response => $this->asApp($credentials)
+            fn (): Response => $this->asApp($credentials, $deadline)
                 ->get($this->repositoryPath($repository).'/installation'),
         );
+
+        $deadline?->remaining();
 
         if ($response->status() === 404) {
             return null;
@@ -178,8 +181,9 @@ final readonly class HttpGitHubApi implements GitHubApi
         GitHubAppCredentials $credentials,
         int $installationId,
         GitHubRepository $repository,
+        ?ReadDeadline $deadline = null,
     ): string {
-        return $this->repositoryToken($credentials, $installationId, $repository, ['contents' => 'read']);
+        return $this->repositoryToken($credentials, $installationId, $repository, ['contents' => 'read'], $deadline);
     }
 
     public function installationReadToken(GitHubAppCredentials $credentials, int $installationId): string
@@ -264,8 +268,9 @@ final readonly class HttpGitHubApi implements GitHubApi
         GitHubAppCredentials $credentials,
         int $installationId,
         GitHubRepository $repository,
+        ?ReadDeadline $deadline = null,
     ): string {
-        return $this->repositoryToken($credentials, $installationId, $repository, ['pull_requests' => 'read']);
+        return $this->repositoryToken($credentials, $installationId, $repository, ['pull_requests' => 'read'], $deadline);
     }
 
     public function pullRequestsByHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $head): array
@@ -667,14 +672,16 @@ final readonly class HttpGitHubApi implements GitHubApi
         int $installationId,
         ?GitHubRepository $repository,
         array $permissions,
+        ?ReadDeadline $deadline = null,
     ): string {
         $response = $this->send(
-            fn (): Response => $this->asApp($credentials)->withoutRedirecting()->post("/app/installations/{$installationId}/access_tokens", [
+            fn (): Response => $this->asApp($credentials, $deadline)->withoutRedirecting()->post("/app/installations/{$installationId}/access_tokens", [
                 ...($repository === null ? [] : ['repositories' => [$repository->name]]),
                 'permissions' => $permissions,
             ]),
         );
 
+        $deadline?->remaining();
         $token = $response->json('token');
 
         if ($response->clientError()) {
@@ -728,14 +735,16 @@ final readonly class HttpGitHubApi implements GitHubApi
         }
     }
 
-    private function asApp(GitHubAppCredentials $credentials): PendingRequest
+    private function asApp(GitHubAppCredentials $credentials, ?ReadDeadline $deadline = null): PendingRequest
     {
-        return $this->request()->withToken(GitHubAppJwt::sign($credentials, now()->getTimestamp()));
+        $jwt = GitHubAppJwt::sign($credentials, now()->getTimestamp());
+
+        return $this->request($deadline)->withToken($jwt);
     }
 
-    private function request(): PendingRequest
+    private function request(?ReadDeadline $deadline = null): PendingRequest
     {
-        return Http::baseUrl(self::BASE_URL)
+        $request = Http::baseUrl(self::BASE_URL)
             ->timeout(self::TIMEOUT)
             ->acceptJson()
             ->withHeaders([
@@ -743,5 +752,11 @@ final readonly class HttpGitHubApi implements GitHubApi
                 'X-GitHub-Api-Version' => '2022-11-28',
                 'User-Agent' => 'orbit-gateway',
             ]);
+        if ($deadline !== null) {
+            $remaining = $deadline->remaining();
+            $request->timeout($remaining)->connectTimeout($remaining)->withoutRedirecting();
+        }
+
+        return $request;
     }
 }
