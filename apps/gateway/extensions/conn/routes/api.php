@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireEnabledExtension;
 use App\Http\Middleware\RequireNodeAccess;
@@ -39,6 +40,8 @@ Route::middleware([
             ->whereNumber('profile')
             ->name('conn:profile:settings:patch');
         Route::get('projects', [ConnProjectsController::class, 'index'])->name('conn:project:list');
+        Route::get('projects/{project}/instances/check', [ConnProjectsController::class, 'checkInstanceName'])
+            ->withoutMiddleware(RecordCommandActivity::class)->whereNumber('project')->name('conn:instance:name:check');
         Route::post('projects/{project}/instances', [ConnProjectsController::class, 'createInstance'])->whereNumber('project')->name('conn:instance:create');
         Route::get('environments', [ConnEnvironmentsController::class, 'index'])->name('conn:environment:list');
         Route::post('environments/{environment}/sessions/cleanup', [ConnEnvironmentsController::class, 'cleanup'])->name('conn:environment:cleanup');

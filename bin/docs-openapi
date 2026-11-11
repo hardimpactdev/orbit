@@ -738,6 +738,7 @@ SUMMARIES = {
     'conn:profile:settings:show': 'Show profile settings', 'conn:profile:settings:update': 'Replace profile settings sections', 'conn:profile:settings:patch': 'Patch profile settings sections',
     'conn:environment:cleanup': 'Admit stale Gateway session cleanup',
     'conn:environment:list': 'List T3 servers', 'conn:environment:register': 'Register a T3 server',
+    'conn:instance:name:check': 'Check a proposed clone name',
     'conn:project:list': 'List the Projects a thread can start in', 'conn:instance:create': "Create a thread's clone",
     'conn:operation:show': 'Show a Conn operation', 'conn:operation:cancel': 'Cancel a Conn operation', 'conn:pairing:show': 'Read a one-time pairing URL',
     'conn:pairing:list': 'List pairings on a T3 server', 'conn:pairing:create': 'Mint a pairing link', 'conn:pairing:revoke': "Revoke a Node's sessions on a T3 server",
@@ -877,6 +878,7 @@ DESCRIPTIONS = {
     'conn:environment:list': 'Lists the registered T3 servers whose registering Node the caller has node access to, with their URL, server version, registration time, and admin session expiry. `status` is `session_expired` when the server must register again; cleanup_pending records a newer registration revision awaiting Swamp cleanup. A server of a container Instance names its `instance_id` and the container\'s `power_state` (`running` or `stopped`); it also supplies `project_id`, `project_name`, `project_slug`, `instance_name`, `node_name`, and `instance_url` for Conn to display Orbit facts while container T3 servers stay stock. `instance_url` follows the Instance URL rule (authoritative Route, otherwise first Route, or null without a Route), separately from the T3 `url`. Other servers have null for all eight Instance fields.',
     'conn:environment:register': 'Needs no node access. The calling Node becomes the server\'s Node; an environment id that another Node registered, or whose Node was removed while the caller has no Gateway access, returns `conn.environment_owned` (409). Called from a T3 server\'s host on startup with an admin session from `t3 auth session issue --label "Orbit Gateway"`. The Gateway checks that `url` serves `environment_id` and that T3 accepts `admin_session` with admin scopes, stores the session encrypted, and records a cleanup revision. Swamp later revokes earlier Gateway sessions while preserving the current session. Returns `conn.environment_mismatch` or `conn.admin_scope_missing` (422), and `conn.server_unreachable`, `conn.session_rejected`, `conn.request_refused`, or `conn.response_invalid` (502).',
     'conn:project:list': 'Requires node access to at least one Node. Lists each Project whose default Instance runs in a container, is active and has a seed snapshot, on a Node the caller has node access to, with that Node. See /reference/conn#threads-in-an-orbit-project.',
+    'conn:instance:name:check': 'Requires node access to the ready container default, as conn:instance:create does. Checks a proposed clone name without reserving it or writing any row. Returns name, available, reason (null, taken, invalid or default), and the domain preview (null for invalid names, non-web Projects or no usable TLD). Every Instance row in the Project holds its name, including the caller\'s own, pending creates and removals. Unavailable names answer 200; malformed query fields answer validation.failed (422). A Project without a ready default answers instance.default_missing (409).',
     'conn:instance:create': 'Requires node access to the Node of the Project\'s default Instance. Admits instance.create of a clone named `name` on that Node, as instance:create does, and returns the Operation (202) whose target_id is the new Instance. Follow it with conn:operation:show. The same name again resumes the caller\'s own clone; a name another device\'s create holds returns `instance.name_taken` (409). A name that resolves to `default` returns `validation.failed` (422); a Project without a ready container default returns `instance.default_missing` (409).',
     'conn:pairing:list': 'Requires node access to the Node that registered the server. Lists the pairing links the Gateway minted on one T3 server, newest first, with the Node and revocation time of each.',
     'conn:environment:cleanup': 'Requires Gateway Node access. Records conn.gateway_sessions_revoke for a pending registration cleanup revision and returns HTTP 202. Swamp revokes only non-current Orbit Gateway admin sessions through owner-bound keyed effects. A clean revision returns HTTP 204; an active cleanup returns operation.target_busy. A newer registration stays pending for a later maintenance tick. No credentials enter this request or its Operation.',
@@ -1770,6 +1772,7 @@ CTRL_DATA_OVERRIDES = {
     'ProcessesController@index': ('ProcessData', True), 'ProcessesController@start': ('ProcessData', False), 'ProcessesController@stop': ('ProcessData', False), 'ProcessesController@restart': ('ProcessData', False), 'ProcessesController@update': ('ProcessData', False),
     'DatabaseConnectionsController@users': ('DatabaseUserData', True),
     'AiRouterController@models': ('AiRouterModelData', True),
+    'ConnProjectsController@checkInstanceName': ('ConnInstanceNameCheckData', False),
     'TaskGroupsController@comments': ('TaskCommentData', True),
     'TaskGroupsController@groupComments': ('TaskCommentData', True),
     'TasksController@status': ('TasksStatusData', False),
@@ -1913,6 +1916,10 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         if 'return DatabaseConnectionFieldRules::update();' in rules_text:
             field_rules = database_field_rules()
             rules_text = database_update_rules(field_rules)
+        if 'InstanceName::rules()' in rules_text:
+            source = (GW / 'app/Domain/Instances/InstanceName.php').read_text()
+            shared = block(source, source.find('function rules(')).strip().removeprefix('return ').removesuffix(';')
+            rules_text = rules_text.replace('InstanceName::rules()', shared)
         sch, body_required = rules_to_schema(rules_text, route['name'])
         if route['method'] == 'GET':
             for k, v in (sch.get('properties') or {}).items():
@@ -2182,6 +2189,11 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         elif route['name'] == 'conn:environment:cleanup':
             responses['202'] = envelope(ref('OperationData'), 'Accepted pending registration cleanup. Follow conn:operation:show.')
             responses['204'] = {'description': 'The registration cleanup revision is already complete.'}
+        elif route['name'] == 'conn:instance:name:check':
+            responses['422'] = error_response('validation.failed: name is missing or is not a string, or the query has unknown fields.')
+            responses['200'] = envelope(ref('ConnInstanceNameCheckData'), 'Advisory name availability; unavailable names also answer 200. No name is reserved.')
+            responses['403'] = error_response("node_access.required: the caller has no node access to the default's Node.")
+            responses['409'] = error_response('instance.default_missing: the Project has no ready container default.')
         elif route['name'] == 'conn:instance:create':
             responses['202'] = envelope(ref('OperationData'), "Accepted instance.create of the thread's clone. Follow conn:operation:show.")
             responses['403'] = error_response("node_access.required: the caller has no node access to the Node of the Project's default Instance.")

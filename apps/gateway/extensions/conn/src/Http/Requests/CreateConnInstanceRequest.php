@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Http\Requests;
 
-use App\Domain\Instances\DefaultInstanceName;
+use App\Domain\Instances\InstanceName;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Instance;
 use App\Models\Node;
@@ -14,6 +14,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Validator;
 use LogicException;
+use Orbit\Extensions\Conn\Domain\ConnInstanceNames;
 use Orbit\Extensions\Conn\Domain\ConnThreadProjects;
 use UnexpectedValueException;
 
@@ -37,7 +38,7 @@ final class CreateConnInstanceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:63', 'regex:/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/'],
+            'name' => InstanceName::rules(),
         ];
     }
 
@@ -57,7 +58,7 @@ final class CreateConnInstanceRequest extends FormRequest
         return [function (Validator $validator): void {
             $project = $this->route('project');
             $name = $validator->getData()['name'] ?? null;
-            if ($project instanceof Project && is_string($name) && DefaultInstanceName::resolve($project, $name) === DefaultInstanceName::Name) {
+            if ($project instanceof Project && is_string($name) && app(ConnInstanceNames::class)->isDefault($project, $name)) {
                 $validator->errors()->add('name', 'A thread starts in a new clone; this name means the default Instance.');
             }
         }];
