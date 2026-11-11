@@ -91,7 +91,7 @@ class ShapeGateToolsTest(unittest.TestCase):
         for step in deno_tests:
             self.assertEqual(step.env.get('ANSIBLE_COLLECTIONS_PATH'), str(collections), step.name)
 
-    def test_every_deno_test_file_runs_once_with_two_early_instance_host_groups(self):
+    def test_every_deno_test_file_runs_once_with_three_early_instance_host_groups(self):
         steps = self.gate.plan('HEAD', self.system, self.system, self.system / 'collections')
         files = sorted(str(path.relative_to(ROOT / 'swamp')) for path in (ROOT / 'swamp/tests').glob('*_test.ts'))
         commands = [step for step in steps if step.group == 'shape' and step.argv[:3] == ['deno', 'test', '-A'] and step.argv[-1].startswith('tests/')]
@@ -103,15 +103,19 @@ class ShapeGateToolsTest(unittest.TestCase):
         self.assertIn('tests/ansible_instance_host_test.ts', planned)
         self.assertTrue(all(step.parallel for step in commands))
         instance = [step for step in commands if any('ansible_instance_host' in arg for arg in step.argv)]
-        self.assertEqual(len(instance), 2, 'at most two Instance-host playbooks run at once')
+        self.assertEqual([step.argv[3:] for step in instance], [
+            ['tests/ansible_instance_host_updates_test.ts'],
+            ['tests/ansible_instance_host_test.ts', 'tests/ansible_instance_host_image_test.ts', 'tests/ansible_instance_host_runtime_test.ts'],
+            ['tests/ansible_instance_host_acl_test.ts'],
+        ], 'ACL fixtures own a command budget without changing the other host groups')
         self.assertEqual([step.argv[3:] for step in instance], [list(group) for group in self.gate.INSTANCE_HOST_TEST_GROUPS])
-        self.assertEqual(steps[2:4], instance, 'long fixtures start before the other independent tests')
+        self.assertEqual(steps[2:5], instance, 'long fixtures start before the other independent tests')
         self.assertTrue(all('--parallel' not in step.argv for step in instance), 'files inside a group run serially')
 
     def test_each_instance_command_receives_one_deadline_at_launch(self):
         steps = self.gate.plan('HEAD', self.system, self.system, self.system / 'collections')
         commands = [step for step in steps if tuple(step.argv[3:]) in self.gate.INSTANCE_HOST_TEST_GROUPS]
-        self.assertEqual(len(commands), 2)
+        self.assertEqual(len(commands), 3)
         for step in commands:
             with mock.patch.object(self.gate.time, 'time', return_value=1_000_000.125), \
                     mock.patch.object(self.gate.subprocess, 'run') as run:

@@ -1,6 +1,8 @@
 ---
 title: "orbit doctor"
 sidebarTitle: "doctor"
+covers:
+  - apps/gateway/app/Domain/Doctor/{FactDoctor,NodeDoctorIssueCode}.php
 ---
 
 ```bash
@@ -29,7 +31,7 @@ A check whose fact has not arrived yet, or cannot be read, gives one unverifiabl
 
 | Family | Checks |
 | --- | --- |
-| `node` | Recorded lifecycle; platform and architecture; root filesystem free space; the agent's liveness: never seen (`node.agent_missing`) or silent (`node.agent_view_stale`); a reboot due for more than 3 days (`node.reboot_due`, from the [fleet reboot](/reference/gateway-recovery#fleet-reboot) passes). |
+| `node` | Recorded lifecycle; [Instance bridge refresh health](/reference/development-containers#prepare-a-node) (`node.instance_bridge_unhealthy`); platform and architecture; root filesystem free space; the agent's liveness: never seen (`node.agent_missing`) or silent (`node.agent_view_stale`); a reboot due for more than 3 days (`node.reboot_due`, from the [fleet reboot](/reference/gateway-recovery#fleet-reboot) passes). |
 | `role` | Recorded lifecycle and current state of each service required by an active Linux role. |
 | `process` | Current registered systemd unit or Docker container presence and running/stopped state. A systemd `activating/auto-restart` snapshot is crash-loop evidence. A cumulative restart count alone is not. |
 

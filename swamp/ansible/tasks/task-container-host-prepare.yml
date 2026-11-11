@@ -41,7 +41,9 @@
   changed_when: true
 
 - name: Converge the container egress ACL
-  when: container_acl.get('egress', []) != container_acl_rules.egress or container_acl.get('ingress', []) != container_acl_rules.ingress
+  when: >-
+    (not (container_acl_preserve | default(false) | bool) or container_acl == {})
+    and (container_acl.get('egress', []) != container_acl_rules.egress or container_acl.get('ingress', []) != container_acl_rules.ingress)
   ansible.builtin.command:
     argv: [incus, network, acl, edit, "{{ container_acl_name }}", --project, default]
     stdin: "{{ container_acl_rules | to_json }}"

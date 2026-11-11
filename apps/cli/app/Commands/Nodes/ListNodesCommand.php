@@ -60,6 +60,7 @@ final class ListNodesCommand extends NodeCommand
                 $node->clusterName,
                 $node->wireguardIp ?? null,
                 $node->lanIp ?? null,
+                $node->rebootHold ? 'yes' : 'no',
             ];
         }
 
@@ -82,6 +83,7 @@ final class ListNodesCommand extends NodeCommand
             'Cluster',
             'WireGuard',
             'LAN',
+            'Reboot hold',
         ], $rows));
 
         $this->writeHumanMessage("Request ID: {$response->requestId}");

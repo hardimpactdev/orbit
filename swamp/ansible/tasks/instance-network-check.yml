@@ -1,0 +1,19 @@
+---
+# Inspect expanded devices, so profile inheritance counts. Includes stopped containers and the temporary image builder.
+- name: Read every container's effective devices
+  ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances?all-projects=true&recursion=1"] }
+  register: instance_network_containers
+  changed_when: false
+
+- name: Require an egress gate on each NIC of the Instance bridge
+  ansible.builtin.include_tasks: instance-network-nic-check.yml
+  vars:
+    network_name: "{{ instances.network }}"
+    network_failure: instance.host_unavailable
+  loop: "{{ instance_network_containers.stdout | from_json }}"
+  loop_control: { loop_var: network_container, label: "{{ network_container.name }}" }
+
+- name: Read the Instance bridge's ACL defaults
+  ansible.builtin.command: { argv: [incus, query, --, "/1.0/networks/{{ instances.network }}?project=default"] }
+  register: instance_network_check
+  changed_when: false

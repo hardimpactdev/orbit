@@ -66,10 +66,22 @@
         argv: >-
           {{ incus_project + ['init', container.image, container.name, '--config', 'security.idmap.isolated=true',
               '--device', 'eth0,ipv4.address=' ~ container.address,
-              '--device', 'eth0,security.acls=' ~ container.network ~ '-egress,' ~ container.acl,
+              '--device', 'eth0,security.acls=' ~ container.network ~ '-proxy,' ~ container.acl,
               '--device', 'eth0,security.acls.default.egress.action=reject',
               '--device', 'eth0,security.acls.default.ingress.action=reject'] + resource_args }}
       changed_when: true
+
+# Lifecycle mutations only add; removal belongs to host reconciliation from current Gateway intent.
+- name: Admit the attached target endpoints at the bridge
+  tags: [container, clone]
+  when: phase in ['container', 'clone']
+  ansible.builtin.include_tasks: instance-bridge-rules.yml
+  vars:
+    bridge_network: "{{ container.network }}"
+    bridge_cidr: "{{ container.bridge_cidr }}"
+    bridge_endpoints: "{{ container.bridge_endpoints }}"
+    bridge_admitted_at: "{{ container.bridge_admitted_at }}"
+    bridge_reconcile: false
 
 # A clone copies the default's seed snapshot, which the default took with its units stopped: a ZFS clone that needs no start of the
 # default. The copy takes its own address and ACL; T3 is published on the Node's WireGuard address in NAT mode, so T3 sees its
@@ -97,7 +109,9 @@
         argv: >-
           {{ incus_project + ['copy', container.clone.source ~ '/' ~ container.clone.snapshot, container.name,
               '--device', 'eth0,ipv4.address=' ~ container.address,
-              '--device', 'eth0,security.acls=' ~ container.network ~ '-egress,' ~ container.acl] + resource_args }}
+              '--device', 'eth0,security.acls=' ~ container.network ~ '-proxy,' ~ container.acl,
+              '--device', 'eth0,security.acls.default.egress.action=reject',
+              '--device', 'eth0,security.acls.default.ingress.action=reject'] + resource_args }}
       changed_when: true
     - name: Read the copy's devices
       ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
@@ -141,7 +155,9 @@
                | map('regex_replace', '^', '/etc/orbit/processes/') | list) }}
     - name: Keep the default's units from starting in the copy
       when: copy_remove | length > 0
-      ansible.builtin.command: { argv: "{{ incus_project + ['file', 'delete', '--force'] + (copy_remove | map('regex_replace', '^', container.name) | list) }}" }
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['file', 'delete', '--force'] + (copy_remove | map('regex_replace', '^', container.name) | list) }}
       changed_when: true
     # Incus's own id of the copy, without dashes, the form systemd writes.
     - name: Give the copy its own machine-id
@@ -167,6 +183,29 @@
     comment: "{{ item.comment }}"
   loop: "{{ container.firewall }}"
   loop_control: { label: "{{ item.comment }}" }
+
+# Both independent ACLs reject by default. Validate all effective bridge NICs, including copied local extra devices.
+- name: Check the container's effective egress gates before starting it
+  tags: [container, clone, start]
+  when: phase in ['container', 'clone', 'start']
+  block:
+    - name: Read the container's effective devices
+      ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
+      register: container_nic_read
+      changed_when: false
+    - name: Require the expected Instance bridge NIC
+      ansible.builtin.assert:
+        that:
+          - (container_nic_read.stdout | from_json).expanded_devices.get('eth0', {}).get('network', '') == container.network
+        fail_msg: instance.container_network_unsafe
+        quiet: true
+    - name: Check every effective bridge NIC
+      ansible.builtin.include_tasks: instance-network-nic-check.yml
+      vars:
+        network_container: "{{ container_nic_read.stdout | from_json }}"
+        network_name: "{{ container.network }}"
+        network_failure: instance.container_network_unsafe
+        expected_network_device: eth0
 
 - name: Start the container
   tags: [container, clone, start]
@@ -223,7 +262,9 @@
     - name: Write the changed container PHP settings
       when: container_php_ini_read.rc != 0 or container_php_ini_read.stdout ~ '\n' != container_php_ini_content
       ansible.builtin.command:
-        argv: "{{ incus_project + ['file', 'push', '--create-dirs', '--uid', '0', '--gid', '0', '--mode', '0644', '-', container.name ~ container_php_ini_path] }}"
+        argv: >-
+          {{ incus_project + ['file', 'push', '--create-dirs', '--uid', '0', '--gid', '0', '--mode', '0644', '-',
+          container.name ~ container_php_ini_path] }}
         stdin: "{{ container_php_ini_content }}"
         stdin_add_newline: false
       register: container_php_ini_write
@@ -285,7 +326,9 @@
     - name: Fetch
       when: phase != 'clone' or clone_remote.stdout | trim != ''
       ansible.builtin.command:
-        argv: "{{ remote_git + ['fetch', '--quiet', '--no-tags', '--', container.repository, '+refs/heads/' ~ container.branch ~ ':refs/heads/' ~ container.branch] }}"
+        argv: >-
+          {{ remote_git + ['fetch', '--quiet', '--no-tags', '--', container.repository,
+          '+refs/heads/' ~ container.branch ~ ':refs/heads/' ~ container.branch] }}
       changed_when: false
     # The default's mirror on this Node holds the seed's commit, whichever branch the default follows.
     - name: Fetch the seed's commit from the default's mirror
@@ -426,7 +469,9 @@
       no_log: true
     - name: Push the .env into the container
       ansible.builtin.command:
-        argv: "{{ incus_project + ['file', 'push', '--uid', '1000', '--gid', '2760', '--mode', '0640', environment_path, container.name ~ container.environment_file] }}"
+        argv: >-
+          {{ incus_project + ['file', 'push', '--uid', '1000', '--gid', '2760', '--mode', '0640', environment_path,
+          container.name ~ container.environment_file] }}
       changed_when: true
   always:
     - name: Remove the .env on the Node
@@ -500,7 +545,9 @@
   block:
     - name: Read the Process units and folders
       ansible.builtin.command:
-        argv: "{{ as_root + ['find', item, '-mindepth', '1', '-maxdepth', '1', '-name', 'orbit-process-*.service' if item == '/etc/systemd/system' else '[0-9]*'] }}"
+        argv: >-
+          {{ as_root + ['find', item, '-mindepth', '1', '-maxdepth', '1', '-name',
+          'orbit-process-*.service' if item == '/etc/systemd/system' else '[0-9]*'] }}
       loop: [/etc/systemd/system, /etc/orbit/processes]
       register: foreign_read
       changed_when: false
@@ -600,7 +647,9 @@
     - name: Write the changed units
       when: item.rc != 0 or item.stdout ~ '\n' != item.item.content
       ansible.builtin.command:
-        argv: "{{ incus_project + ['file', 'push', '--uid', '0', '--gid', '0', '--mode', '0644', '-', container.name ~ '/etc/systemd/system/' ~ item.item.name] }}"
+        argv: >-
+          {{ incus_project + ['file', 'push', '--uid', '0', '--gid', '0', '--mode', '0644', '-',
+          container.name ~ '/etc/systemd/system/' ~ item.item.name] }}
         stdin: "{{ item.item.content }}"
         stdin_add_newline: false
       loop: "{{ units_read.results }}"
@@ -732,7 +781,9 @@
       changed_when: false
     - name: Wait for T3
       ansible.builtin.command:
-        argv: "{{ as_agent + ['curl', '--fail', '--silent', '--max-time', '2', 'http://127.0.0.1:' ~ container.clone.t3.internal_port ~ '/.well-known/t3/environment'] }}"
+        argv: >-
+          {{ as_agent + ['curl', '--fail', '--silent', '--max-time', '2',
+          'http://127.0.0.1:' ~ container.clone.t3.internal_port ~ '/.well-known/t3/environment'] }}
       register: t3_ready
       until: t3_ready.rc == 0
       retries: "{{ container.clone.t3.ready_seconds }}"
@@ -753,7 +804,9 @@
       when: t3_project.rc != 0
       block:
         - name: Add the project
-          ansible.builtin.command: { argv: "{{ as_agent + [container.clone.t3.t3, 'project', 'add', container.workspace, '--title', container.clone.t3.title] }}" }
+          ansible.builtin.command:
+            argv: >-
+              {{ as_agent + [container.clone.t3.t3, 'project', 'add', container.workspace, '--title', container.clone.t3.title] }}
           register: t3_added
           changed_when: true
         - name: Keep the project's id

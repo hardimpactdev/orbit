@@ -33,7 +33,7 @@ function transform(task: Task): Task {
       mode: "0600",
     };
   }
-  const args = task["ansible.builtin.file"] as Record<string, unknown> | undefined;
+  const args = (task["ansible.builtin.file"] ?? task["ansible.builtin.copy"]) as Record<string, unknown> | undefined;
   if (args) {
     delete args.owner;
     delete args.group;
@@ -66,11 +66,20 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   const folder = Deno.makeTempDirSync();
   const apps = Deno.makeTempDirSync({ dir: "/var/tmp" });
   for (const path of ["bin", "tasks", "home", "run", "markers"]) Deno.mkdirSync(`${folder}/${path}`);
+  Deno.copyFileSync(new URL("instance_bridge.py", root), `${folder}/instance_bridge.py`);
+  Deno.writeTextFileSync(`${folder}/bin/curl`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-bridge-curl.ts", import.meta.url).pathname}' "$@"\n`);
+  Deno.chmodSync(`${folder}/bin/curl`, 0o755);
+  Deno.writeTextFileSync(`${folder}/nat.txt`, "");
+  Deno.writeTextFileSync(`${folder}/bin/iptables-save`, `#!/bin/sh\ncat '${folder}/nat.txt'\n`);
+  Deno.chmodSync(`${folder}/bin/iptables-save`, 0o755);
+  for (const shared of ["instance-network-nic-check.yml", "instance-network-device-check.yml", "instance-bridge-rules.yml"]) {
+    Deno.writeTextFileSync(`${folder}/tasks/${shared}`, stringify((parse(Deno.readTextFileSync(new URL(`tasks/${shared}`, root))) as Task[]).map(transform)).replaceAll("/usr/local/libexec", `${folder}/libexec`).replaceAll("/var/lib/orbit/instance-bridge", `${folder}/bridge-policy`));
+  }
   Deno.mkdirSync(`${folder}/library`);
   Deno.copyFileSync(new URL("fixtures/instance-migrate-systemd.py", import.meta.url), `${folder}/library/orbit_migrate_systemd.py`);
   Deno.writeTextFileSync(`${folder}/host-processes.json`, "{}");
   Deno.writeTextFileSync(`${folder}/process-environments.json`, "{}");
-  Deno.writeTextFileSync(`${folder}/state.json`, "{}");
+  Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({"network-acls": [{name: "orbitinst0-egress", egress: [], ingress: []}]}));
   Deno.writeTextFileSync(
     `${folder}/bin/incus`,
     `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-migrate-incus.ts", import.meta.url).pathname}' "$@"\n`,
@@ -148,6 +157,9 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     root_disk_size: "40GiB",
     address: `10.253.0.${id}`,
     network: "orbitinst0",
+    bridge_cidr: "10.253.0.0/24",
+    bridge_admitted_at: 1800000000000000,
+    bridge_endpoints: [] as {host: string; port: number; docker: boolean}[],
     acl: `instance-${id}`,
     acl_rules: {
       description: `Orbit Instance ${id}`,
@@ -200,8 +212,8 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
       return `${root}/${[...Deno.readDirSync(root)].find((entry) => entry.isDirectory)!.name}`;
     },
     write,
-    run(phase: string) {
-      const playbook = ["quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
+    run(phase: string, rawContainer = false) {
+      const playbook = !rawContainer && ["container", "quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
       const done = new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
           "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/${playbook}`],
@@ -223,7 +235,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     },
     /** The phases of a move up to the copied files. */
     build() {
-      for (const phase of ["quiesce", "container", "workspace", "files"]) {
+      for (const phase of ["container", "quiesce", "workspace", "files"]) {
         const result = this.run(phase);
         assert(result.ok, `${phase}: ${result.output}`);
       }
@@ -327,7 +339,7 @@ for (const reason of ["outside checkout", "broken"]) {
         for (const path of ["public/storage", "local package"]) Deno.symlinkSync(target, `${f.checkout}/${path}`);
         const before = Deno.readTextFileSync(`${f.folder}/state.json`);
 
-        const result = f.run("quiesce");
+        const result = f.run("container");
 
         assert(!result.ok, result.output);
         assertEquals(f.result().error_code, "instance.migrate_symlink_unsupported");
@@ -350,6 +362,40 @@ for (const reason of ["outside checkout", "broken"]) {
 }
 
 Deno.test({
+  name: "a link introduced after preparation refuses quiesce with zero downtime and removes only the prepared container",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.migrate.retire = [];
+      f.write();
+      const processes = migrationProcesses(f, "running");
+      const before = processes();
+      const markerBefore = Deno.statSync(f.migrate.awake.path).mtime?.getTime();
+      const prepared = f.run("container");
+      assert(prepared.ok, prepared.output);
+      Deno.symlinkSync(f.apps, `${f.checkout}/late-link`);
+      const refused = f.run("quiesce");
+      assert(!refused.ok, refused.output);
+      assertEquals(f.result().error_code, "instance.migrate_symlink_unsupported");
+      assertEquals(f.result().preflight_refused, false);
+      assertEquals(processes(), before);
+      assert(!exists(`${f.folder}/run/quiesced`));
+      const restored = f.run("restore");
+      assert(restored.ok, restored.output);
+      assertEquals(f.state().containers, {});
+      assertEquals(f.state()["network-acls"].filter((acl: {name: string}) => acl.name !== "orbitinst0-egress"), []);
+      assertEquals(f.ufw(), []);
+      assertEquals(processes(), before);
+      assertEquals(Deno.statSync(f.migrate.awake.path).mtime?.getTime(), markerBefore);
+      assertEquals(Deno.readLinkSync(`${f.checkout}/late-link`), f.apps);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
   name: "file targets with directory suffixes refuse before downtime and in the copied tree without repairing links",
   ignore: !hasAnsible,
   fn() {
@@ -370,7 +416,7 @@ Deno.test({
           Deno.symlinkSync(target, `${f.checkout}/${path}`);
         }
       }
-      const preflight = f.run("quiesce");
+      const preflight = f.run("container");
       assert(!preflight.ok, preflight.output);
       assertEquals(f.result().error_code, "instance.migrate_symlink_unsupported");
       assertEquals(f.result().preflight_refused, true);
@@ -382,7 +428,7 @@ Deno.test({
       // Make every link valid for preflight, then copy a file in place of that directory.
       Deno.removeSync(file);
       Deno.mkdirSync(file);
-      for (const phase of ["quiesce", "container", "workspace"]) {
+      for (const phase of ["container", "quiesce", "workspace"]) {
         const result = f.run(phase);
         assert(result.ok, result.output);
       }
@@ -443,7 +489,7 @@ if os.environ.get("ORBIT_CHECKOUT") == ${JSON.stringify(f.checkout)}:
 os.execv("/usr/bin/tar", ["tar", *sys.argv[1:]])
 `);
         Deno.chmodSync(`${f.folder}/bin/tar`, 0o755);
-        for (const phase of ["quiesce", "container", "workspace"]) {
+        for (const phase of ["container", "quiesce", "workspace"]) {
           const result = f.run(phase);
           assert(result.ok, result.output);
         }
@@ -502,7 +548,7 @@ Deno.test({
       // .env came as it was; the path into the checkout points into the workspace now.
       assertEquals(f.read(".env"), `APP_KEY=base64:kept\nDB_DATABASE=${f.rootfs}/srv/workspace/database/database.sqlite\n`);
       // The way to the database server came with the container.
-      assertEquals(f.state()["network-acls"][0].egress, f.container.acl_rules.egress);
+      assertEquals(f.state()["network-acls"].find((acl: {name: string}) => acl.name === f.container.acl).egress, f.container.acl_rules.egress);
       assertEquals(f.ufw().map((line) => JSON.parse(line).comment), ["orbit:instance-7-database"]);
       // The move uses create's resource limits and full root device, even for an image-based migration.
       assertEquals(f.state().containers["instance-7"].config, ["security.idmap.isolated=true", "limits.cpu=4", "limits.memory=8GiB", "limits.processes=4096"]);
@@ -538,7 +584,7 @@ Deno.test({
     try {
       f.migrate.retire.push({ path: f.main, mirror: `${f.folder}/mirror/7.git`, common_of: f.checkout });
       f.write();
-      const quiesce = f.run("quiesce");
+      const quiesce = f.run("container");
       assert(!quiesce.ok, quiesce.output);
       assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
       assert(f.result().error_message.includes(f.main));
@@ -592,7 +638,7 @@ Deno.test({
       const restore = f.run("restore");
       assert(restore.ok, restore.output);
       assertEquals(f.state().containers, {});
-      assertEquals(f.state()["network-acls"], []);
+      assertEquals(f.state()["network-acls"].filter((acl: {name: string}) => acl.name !== "orbitinst0-egress"), []);
       assertEquals(f.ufw(), []);
       assert(!exists(f.container.mirror));
       assert(!exists(f.rootfs));
@@ -638,9 +684,9 @@ Deno.test({
     try {
       git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
       git(f.checkout, "checkout", "--quiet", "-b", "elsewhere");
-      const quiesce = f.run("quiesce");
+      const quiesce = f.run("container");
       assert(!quiesce.ok);
-      assertEquals(f.result(), { error_code: "instance.migrate_branch_changed" });
+      assertEquals(f.result(), { error_code: "instance.migrate_branch_changed", preflight_refused: true });
       // The Route still serves, and no container was made.
       assert(exists(f.migrate.awake.path));
       assertEquals(f.state().containers ?? {}, {});
@@ -660,20 +706,28 @@ Deno.test({
       // Nothing listens on this port.
       f.migrate.databases.push({ host: "127.0.0.1", port: 1 });
       f.write();
-      for (const phase of ["quiesce", "container", "workspace"]) assert(f.run(phase).ok);
-      const files = f.run("files");
+      const processes = migrationProcesses(f, "running");
+      const processBefore = processes();
+      const markerBefore = Deno.statSync(f.migrate.awake.path).mtime?.getTime();
+      const files = f.run("container");
       assert(!files.ok);
       assertEquals(f.result(), { error_code: "instance.database_unreachable" });
+      assert(exists(f.migrate.awake.path));
+      assertEquals(processes(), processBefore);
+      assert(!exists(`${f.folder}/run/quiesced`));
+      assert(!exists(`${f.rootfs}/srv/workspace/.git`));
       assertEquals([...Deno.readDirSync(`${f.rootfs}/srv`)].map((entry) => entry.name), ["workspace"]);
       assertEquals([...Deno.readDirSync(`${f.folder}/mirror`)].map((entry) => entry.name), ["7.git"]);
       const restore = f.run("restore");
       assert(restore.ok, restore.output);
       assertEquals(f.state().containers, {});
-      assertEquals(f.state()["network-acls"], []);
+      assertEquals(f.state()["network-acls"].filter((acl: {name: string}) => acl.name !== "orbitinst0-egress"), []);
       assertEquals(f.ufw(), []);
       assert(exists(f.migrate.awake.path));
       assertEquals(git(f.checkout, "status", "--porcelain"), status);
       assertEquals(f.result(), { error_code: "instance.database_unreachable" });
+      assertEquals(processes(), processBefore);
+      assertEquals(Deno.statSync(f.migrate.awake.path).mtime?.getTime(), markerBefore);
     } finally {
       f.cleanup();
     }
@@ -727,10 +781,10 @@ Deno.test({
       Deno.writeTextFileSync(`${f.checkout}/untracked.txt`, "not ignored\n");
       const before = git(f.checkout, "status", "--porcelain=v1", "--untracked-files=all");
       // Retained resources from a previous failure must survive both preflight and its restore path.
-      assert(f.run("container").ok);
+      assert(f.run("container", true).ok);
       const state = f.state();
       const rules = f.ufw();
-      const quiesce = f.run("quiesce");
+      const quiesce = f.run("container");
       assert(!quiesce.ok, quiesce.output);
       const receipt = f.result();
       assertEquals(receipt.error_code, "instance.migrate_retirement_blocked");
@@ -763,7 +817,7 @@ Deno.test({
         Deno.writeTextFileSync(`${f.checkout}/file-${String(i).padStart(2, "0")}.txt`, "new\n");
         git(f.checkout, "worktree", "add", "--quiet", "--detach", `${f.apps}/worktree-${String(i).padStart(2, "0")}`);
       }
-      const quiesce = f.run("quiesce");
+      const quiesce = f.run("container");
       assert(!quiesce.ok, quiesce.output);
       const message = f.result().error_message;
       assert(message.includes("Other worktrees (22 total; first 20)"));
@@ -856,10 +910,13 @@ for (const presetDesired of ["running", "stopped"] as const) {
       const f = fixture();
       try {
         const host = migrationProcesses(f, presetDesired);
+        const prepared = f.run("container");
+        assert(prepared.ok, prepared.output);
+        assertEquals(host()[f.migrate.processes[0].name], { state: "started", enabled: true });
         const stopped = f.run("quiesce");
         assert(stopped.ok, stopped.output);
         assertEquals(host()[f.migrate.processes[0].name], { state: "stopped", enabled: false });
-        for (const phase of ["container", "workspace", "files"]) {
+        for (const phase of ["workspace", "files"]) {
           const result = f.run(phase);
           assert(result.ok, result.output);
         }
@@ -932,7 +989,7 @@ Deno.test({
       git(f.checkout, "checkout", "--quiet", "main");
       const refs = git(f.checkout, "show-ref");
       const status = git(f.checkout, "status", "--porcelain");
-      const quiesce = f.run("quiesce");
+      const quiesce = f.run("container");
       assert(!quiesce.ok, quiesce.output);
       const receipt = f.result();
       assertEquals(receipt.error_code, "instance.migrate_unpushed_commits");
@@ -966,7 +1023,7 @@ for (const detached of [false, true]) {
         } else git(f.checkout, "update-ref", "-d", "refs/remotes/origin/main");
         const head = git(f.checkout, "rev-parse", "HEAD");
         const refs = git(f.checkout, "show-ref");
-        const quiesce = f.run("quiesce");
+        const quiesce = f.run("container");
         assert(!quiesce.ok, quiesce.output);
         assertEquals(f.result().error_code, "instance.migrate_unpushed_commits");
         const expected = detached ? '"branch": "detached HEAD", "commits": 1' : '"branch": "main", "commits": 3';
@@ -994,9 +1051,9 @@ Deno.test({
       }
       const stashes = git(f.checkout, "stash", "list", "--format=%H");
       const refs = git(f.checkout, "show-ref");
-      assert(f.run("container").ok);
+      assert(f.run("container", true).ok);
       const state = f.state();
-      const quiesce = f.run("quiesce");
+      const quiesce = f.run("container");
       assert(!quiesce.ok, quiesce.output);
       assertEquals(f.result().error_code, "instance.migrate_stashes_present");
       assert(f.result().error_message.includes("Stashes: 2"));
@@ -1138,7 +1195,7 @@ Deno.test({
       const stash = git(f.checkout, "rev-parse", "refs/stash");
       git(f.checkout, "reflog", "expire", "--expire=all", "refs/stash");
       assertEquals(git(f.checkout, "stash", "list"), "");
-      const quiesce = f.run("quiesce");
+      const quiesce = f.run("container");
       assert(!quiesce.ok, quiesce.output);
       assertEquals(f.result().error_code, "instance.migrate_stashes_present");
       assert(f.result().error_message.includes("Stashes: 1"));
@@ -1190,3 +1247,63 @@ Deno.test({
     }
   },
 });
+
+for (const docker of [false, true]) for (const failures of [1, 9]) {
+  Deno.test({
+    name: `${docker ? "Docker" : "direct"} bridge endpoint add with ${failures === 1 ? "transient" : "persistent"} missing-veth failure stays before the migration probe and downtime`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        f.migrate.retire = [];
+        f.container.bridge_endpoints = [{host: "10.44.0.7", port: 5432, docker}];
+        f.migrate.databases = [{host: "10.44.0.7", port: 5432}];
+        f.write();
+        const state = f.state();
+        state.bridgeVethFailures = failures;
+        state.bridgeProbe = {host: "10.44.0.7", port: 5432,
+          translatedHost: docker ? "172.17.0.2" : "10.44.0.7", translatedPort: docker ? 5433 : 5432};
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+        if (docker) Deno.writeTextFileSync(`${f.folder}/nat.txt`, "-A DOCKER -d 10.44.0.7/32 ! -i docker0 -p tcp -m tcp --dport 5432 -j DNAT --to-destination 172.17.0.2:5433\n");
+        const before = Deno.readTextFileSync(`${f.checkout}/.env`);
+        const result = f.run("container");
+        assertEquals(result.ok, failures === 1, result.output);
+        assert(exists(f.migrate.awake.path));
+        assert(!exists(`${f.folder}/run/quiesced`));
+        assertEquals(Deno.readTextFileSync(`${f.checkout}/.env`), before);
+        const calls = Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+        const writes = calls.filter((call) => call[0] === "curl" && call.includes("PUT"));
+        assertEquals(writes.length, failures === 1 ? 2 : 5);
+        const probe = calls.findIndex((call) => call.some((arg) => arg.includes("/dev/tcp/$1/$2")));
+        if (failures === 1) assert(probe > calls.findIndex((call) => call === writes.at(-1)));
+        else assertEquals(probe, -1, "a failed bridge admission must not probe or quiesce");
+      } finally { f.cleanup(); }
+    },
+  });
+}
+
+for (const mappings of [0, 2]) {
+  Deno.test({
+    name: `${mappings} local Docker DNAT mappings refuse migration before a probe or downtime with the named error`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        f.migrate.retire = [];
+        f.container.bridge_endpoints = [{host: "10.44.0.7", port: 3306, docker: true}];
+        f.migrate.databases = [{host: "10.44.0.7", port: 3306}];
+        f.write();
+        Deno.writeTextFileSync(`${f.folder}/nat.txt`, Array.from({length: mappings}, (_, i) => `-A DOCKER -d 10.44.0.7/32 ! -i docker0 -p tcp -m tcp --dport 3306 -j DNAT --to-destination 172.17.0.${i + 2}:3306`).join("\n"));
+        const result = f.run("container");
+        assert(!result.ok, result.output);
+        assertEquals(f.result().error_code, "instance.container_endpoint_unresolved", result.output);
+        assert(exists(f.migrate.awake.path));
+        assert(!exists(`${f.folder}/run/quiesced`));
+        const calls = Deno.readTextFileSync(`${f.folder}/calls`);
+        assert(!calls.includes('"PUT"'));
+        assert(!calls.includes('/dev/tcp/$1/$2'));
+        assertEquals(JSON.parse(Deno.readTextFileSync(`${f.folder}/bridge-policy/health.json`)).error_code, "instance.container_endpoint_unresolved");
+      } finally {f.cleanup();}
+    },
+  });
+}

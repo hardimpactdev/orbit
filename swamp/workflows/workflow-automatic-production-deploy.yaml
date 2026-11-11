@@ -19,6 +19,7 @@ jobs:
   - name: policy
     steps:
       - name: tick
+        writes: true
         task:
           type: model_method
           modelType: "@nckrtl/automatic-deploy"

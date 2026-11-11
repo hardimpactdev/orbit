@@ -30,6 +30,7 @@ jobs:
         condition: { type: succeeded }
     steps:
       - name: upstream
+        writes: true
         task:
           type: model_method
           modelType: '@nckrtl/project-horizon-new-dawn'
@@ -43,6 +44,7 @@ jobs:
         condition: { type: succeeded }
     steps:
       - name: backlog
+        writes: true
         task:
           type: model_method
           modelIdOrName: orbit-gateway

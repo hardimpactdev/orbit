@@ -68,12 +68,12 @@ DENO_TEST_FILE = re.compile(r'(.*[._])?test\.(ts|tsx|mts|js|mjs|jsx)')
 DENO_TESTS_ELSEWHERE = ('tests/metrics_exporter_firewall_test.ts', 'tests/native_host_method_test.ts', 'tests/node_add_bootstrap_test.ts')
 
 
-# Two balanced serial commands keep Instance-host Ansible contention within half the four-worker budget.
-# ci-shark-3 measured 328.1s and 503.7s; older Sabre cases regroup to 468s and 569s.
+# CI exhausted the updates+ACL command's shared 720s budget; ACL fixtures own a third command.
 # Each command shares a 720s fixture budget across all Deno file isolates.
 INSTANCE_HOST_TEST_GROUPS = (
     ('tests/ansible_instance_host_updates_test.ts',),
     ('tests/ansible_instance_host_test.ts', 'tests/ansible_instance_host_image_test.ts', 'tests/ansible_instance_host_runtime_test.ts'),
+    ('tests/ansible_instance_host_acl_test.ts',),
 )
 
 
@@ -109,7 +109,7 @@ def plan(base, reports, cache, collections):
         return Step('shape', 'deno test ' + ' '.join(arg for arg in arguments if not arg.startswith('-')),
                     ['deno', 'test', *arguments], env=ansible_env, parallel=True)
 
-    # Start both long fixture groups alongside lint and the first Python check, rather than at the queue's tail.
+    # Start the long fixture groups alongside lint, rather than at the queue's tail.
     steps += [deno_step(arguments) for arguments in deno_files[:len(INSTANCE_HOST_TEST_GROUPS)]]
     steps += [Step('shape', test, ['python3', '-I', test], env=ansible_env, parallel=True) for test in ANSIBLE_TESTS]
     steps.append(Step('shape', 'ruff', ['ruff', 'check', 'ansible/build_vars.py', 'ansible/instance_migrate_links.py', 'ansible/library/orbit_artifact.py', 'tests/_support/fixture_supervisor.py',

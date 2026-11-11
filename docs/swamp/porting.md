@@ -91,6 +91,8 @@ The Gateway projects the terminal result from one named step. It reads that step
 
 The workflow has one Swamp step per logical phase, plus the steps that are not machine work. For a command on one Node the shape is always the same:
 
+The [writes audit](/reference/operations) covers custom behavior and model methods too. Its one reviewed native-data list is `nativeDataMethods` in `swamp/tests/writes-reviewed.json`.
+
 ```yaml
 id: REPLACE_WORKFLOW_UUID
 name: operation-REPLACE_KIND

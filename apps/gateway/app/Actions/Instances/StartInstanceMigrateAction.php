@@ -84,19 +84,7 @@ final readonly class StartInstanceMigrateAction
             // The Node's mirror fetches the branch from the checkout itself: commits that were never pushed come along, and it needs no token.
             $container = [...$this->containers->intent($instance, $runtime, $databases['servers'][0] ?? null, $branch, $route === null ? null : 'https://'.$route->domain),
                 'repository' => $instance->checkout_path, 'protocols' => ['file'], 'steps' => []];
-            $reach = isset($databases['servers'][0]) ? [$this->endpoint($databases['servers'][0])] : [];
-            $rules = ValidatedData::object($container['acl_rules']);
-            $egress = is_array($rules['egress']) ? array_values($rules['egress']) : [];
-            $firewall = is_array($container['firewall']) ? array_values($container['firewall']) : [];
-            foreach (array_slice($databases['servers'], 1) as $connection) {
-                // Every further server of the Instance, such as Valkey, gets the same way as its database.
-                $access = $this->containers->databaseAccess($instance, $runtime, $connection, 'database-'.$connection->id);
-                $egress[] = ['action' => 'allow', 'destination' => $access['host'].'/32', 'protocol' => 'tcp',
-                    'destination_port' => (string) $access['port'], 'state' => 'enabled'];
-                $firewall[] = $access['rule'];
-                $reach[] = ['host' => $access['host'], 'port' => $access['port']];
-            }
-            $container = [...$container, 'acl_rules' => [...$rules, 'egress' => $egress], 'firewall' => $firewall];
+            $reach = array_map($this->endpoint(...), $databases['servers']);
             $publication = $route === null || $before === null ? null : $this->routes->capture($instance, $route, $runtime, $before);
 
             return $this->operations->execute(InstanceMigration::Kind, 'instance', $instance->id, $node->id, [

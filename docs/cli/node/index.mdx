@@ -100,7 +100,7 @@ The WireGuard hub and private DNS stay on their original Node. `vpn` is protecte
 
 ### One update for a Node's fields
 
-`node:update` is a partial patch: it changes only the fields you name. The name, the platform, and the task VM host settings are records, so the Gateway saves them at once. Only the apps folder changes the machine, so only it starts a run. One command keeps one place for a Node's fields. A rename does not touch WireGuard: removing and adding the Node again would delete its WireGuard peer and records.
+`node:update` is a partial patch: it changes only the fields you name. The name, platform, LAN address, reboot hold, and task VM host settings are records, so the Gateway saves them at once. Only the apps folder changes the machine, so only it starts a run. Set or clear a [fleet reboot hold](/reference/gateway-recovery#fleet-reboot) with `node:update NODE --reboot-hold=true` or `false`. Every Node read shows `reboot_hold`. One command keeps one place for a Node's fields. A rename does not touch WireGuard: removing and adding the Node again would delete its WireGuard peer and records.
 
 A host with zero task places and positive CI places serves CI proofs and proofs of its refreshed base. Full pools wait for capacity.
 

@@ -1,0 +1,13 @@
+---
+- name: Require a default-reject gate on the selected bridge NIC
+  tags: [always]
+  ansible.builtin.assert:
+    that:
+      - network_device.value.get('security.acls', '') | trim | length > 0
+      - network_device.value.get('security.acls.default.egress.action', '') == 'reject'
+      - network_name ~ '-egress' not in network_device.value.get('security.acls', '').split(',') | map('trim') | list
+      - expected_network_device is not defined or network_device.key == expected_network_device
+    fail_msg: >-
+      {{ network_failure if expected_network_device is defined else network_failure ~ ': ' ~ network_container.name ~ '/'
+         ~ network_device.key ~ ' needs an effective ACL with default egress reject and no bridge union ACL' }}
+    quiet: true

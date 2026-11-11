@@ -26,6 +26,7 @@ final class UpdateNodeCommand extends NodeCommand
         {node? : Node ID or name}
         {--name= : New unique registry name}
         {--platform= : Platform of an unmanaged Node: linux, macos, or ipados}
+        {--reboot-hold= : Hold fleet reboots: true or false}
         {--lan-ip= : LAN IPv4 address; an empty value clears it}
         {--apps-path= : Apps folder; an empty value restores the default}
         {--task-vms= : Task VM host settings as a JSON object, or null to remove them}
@@ -33,7 +34,7 @@ final class UpdateNodeCommand extends NodeCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Change the name, platform, LAN address, apps folder, or task VM host settings of a Node.';
+    protected $description = 'Change the name, platform, LAN address, reboot hold, apps folder, or task VM host settings of a Node.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -46,11 +47,16 @@ final class UpdateNodeCommand extends NodeCommand
         $name = $this->option('name');
         $platform = $this->option('platform');
         $lanIp = $this->option('lan-ip');
+        $rebootHold = $this->option('reboot-hold');
         $appsPath = $this->option('apps-path');
         $taskVms = $this->option('task-vms');
 
-        if (! is_string($name) && ! is_string($platform) && ! is_string($lanIp) && ! is_string($appsPath) && ! is_string($taskVms)) {
-            return $this->renderGatewayFailure('node.option_required', 'Provide at least one of --name, --platform, --lan-ip, --apps-path, or --task-vms.');
+        if (! is_string($name) && ! is_string($platform) && ! is_string($lanIp) && ! is_string($appsPath) && ! is_string($taskVms) && ! is_string($rebootHold)) {
+            return $this->renderGatewayFailure('node.option_required', 'Provide at least one of --name, --platform, --lan-ip, --reboot-hold, --apps-path, or --task-vms.');
+        }
+
+        if (is_string($rebootHold) && ! in_array($rebootHold, ['true', 'false'], true)) {
+            return $this->renderGatewayFailure('node.reboot_hold_invalid', 'Reboot hold must be true or false.');
         }
 
         if ($name === '') {
@@ -108,6 +114,7 @@ final class UpdateNodeCommand extends NodeCommand
                 hasTaskVms: $host !== null,
                 taskVms: NodeSettingOptions::taskVms($host['value'] ?? null),
                 idempotencyKey: is_string($idempotencyKey) ? $idempotencyKey : null,
+                rebootHold: is_string($rebootHold) ? $rebootHold === 'true' : null,
                 hasLanIp: is_string($lanIp),
                 lanIp: is_string($lanIp) && $lanIp !== '' ? $lanIp : null,
             ),

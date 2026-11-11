@@ -851,6 +851,9 @@ async fn report_facts(
                             std::env::consts::OS,
                             std::env::consts::ARCH,
                             &filesystems,
+                            facts::instance_bridge_health(std::path::Path::new(
+                                facts::INSTANCE_BRIDGE_HEALTH,
+                            )),
                         ),
                     )
                     .await;

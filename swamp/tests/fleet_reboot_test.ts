@@ -316,7 +316,144 @@ Deno.test("the rerun posts re-run-failed-jobs once per due run, records it, and 
     // The shared mint child asks for the pass's tokens with the root run, which the Gateway binds to the Operation.
     assertEquals([mint.task.workflowIdOrName, mint.task.inputs.run_id, mint.task.inputs.purpose], ["task-github-mint", "${{ inputs.root_run }}", "ci_rerun"]);
     assertEquals([step.guard, step.allowFailure], ["${{ !inputs.ci }}", true]);
+    assertEquals(step.writes, true, "the rerun sends a POST and revokes its tokens; a lost dispatch must not repeat it");
     assertEquals(step.task.inputs.env.ORBIT_GITHUB, '${{ vault.get("orbit-control-inputs", "fleet-reboot-github-operation-" + string(inputs.operation_id)) }}');
     const pass = workflow("operation-fleet-reboot").jobs.find((job: Record<string, unknown>) => job.name === "nodes").steps[0];
     assertEquals([pass.task.inputs.root_run, pass.task.inputs.ci], ["${{ run.id }}", "${{ inputs.intent.nodes[string(self.node)].ci_project != null }}"]);
 });
+
+
+for (const due of [true, false]) {
+    Deno.test(`a held ${due ? "due" : "not-due"} Node is read but never drained or rebooted`, async () => {
+        const folder = await Deno.makeTempDir();
+        try {
+            const record = `${folder}/result-000-9.json`;
+            const boot = { due, due_since: "2026-11-06T03:00:00Z", boot_id: "held-boot", kernel: "7.0.0-42-generic", failed_units: [] };
+            // Execute the real drain control flow and record writer. Replace host reads with fixed observations and
+            // every host writer with a failing sentinel: the fixture cannot drain or reboot this machine.
+            const tasks = drainBlock.map((original) => {
+                const task = structuredClone(original);
+                if (task.name === "Read the boot state") {
+                    return { name: task.name, "ansible.builtin.set_fact": { boot } };
+                }
+                if (task["ansible.builtin.import_tasks"]) {
+                    return { name: task.name, "ansible.builtin.fail": { msg: "Held Node reached a drain" }, when: task.when };
+                }
+                if (task["ansible.builtin.include_tasks"]) task["ansible.builtin.include_tasks"] = `${ansible}tasks/fleet-reboot-record.yml`;
+                return task;
+            });
+            const vars = { run: folder, record_path: record,
+                record: "{{ lookup('ansible.builtin.file', record_path, errors='ignore') | default('{}', true) | from_json }}",
+                halted: false, target: { node_id: 9, name: "held", defer: "operator_hold", ci_project: "orbit-ci", task_project: "orbit-tasks", gateway: {} },
+                intent: { window: { timezone: "Europe/Amsterdam", start: "03:00", end: "06:00", enforced: false }, drain_seconds: 900 } };
+            const drained = await play(folder, vars, tasks);
+            assertEquals(drained.code, 0, drained.output);
+            const saved = JSON.parse(await Deno.readTextFile(record));
+            assertEquals(saved.reboot_hold, true);
+            assertEquals(saved.outcome, due ? "deferred" : "not_due");
+            if (due) {
+                assertEquals([saved.reason, saved.boot_id_before, saved.kernel_before, saved.due_since],
+                    ["operator_hold", boot.boot_id, boot.kernel, boot.due_since]);
+            } else {
+                assertEquals(saved.reason, undefined);
+                assertEquals(saved.due_since, undefined);
+            }
+            for (const phase of ["Reboot the Node", "Check the Node"]) {
+                const phaseTasks = plays.find((p) => p.name === phase)!.tasks;
+                const guard = phaseTasks.find((t) => t.name === "Keep a decided Node")!;
+                const result = await play(folder, vars, [guard, { name: "Unexpected host work", "ansible.builtin.fail": { msg: phase } }]);
+                assertEquals(result.code, 0, result.output);
+            }
+            const repeated = await play(folder, vars, [plays.find((p) => p.name === "Drain the Node")!.tasks[0], ...tasks]);
+            assertEquals(repeated.code, 0, repeated.output);
+            assertEquals(/changed=[1-9]/.test(repeated.output), false);
+            assertEquals(JSON.parse(await Deno.readTextFile(record)), saved);
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    });
+}
+
+
+for (const scenario of ["held observation", "held record", "marker record", "Gateway partial stop", "Gateway record after stop",
+    "CI partial stop", "CI stop-list record", "CI stop-list read", "Gateway already stopped", "Gateway Horizon already stopped", "Gateway timeout"]) {
+    Deno.test(`the drain rescue preserves main recovery after ${scenario} fails`, async () => {
+        const folder = await Deno.makeTempDir();
+        try {
+            for (const part of ["tasks", "files", "library", "bin"]) await Deno.mkdir(`${folder}/${part}`);
+            const state = { units: { "schedule.service": scenario === "Gateway already stopped" ? "inactive" : "active",
+                    "horizon.service": scenario.includes("already stopped") ? "inactive" : "active" },
+                horizon_timeout: scenario === "Gateway timeout", ci_partial_failure: scenario === "CI partial stop",
+                ci_read_failure: scenario === "CI stop-list read",
+                runners: { "ci-a": "Running", "ci-b": "Running", "ci-external": "Running", "ci-parked": "Stopped" } };
+            await Deno.writeTextFile(`${folder}/state.json`, JSON.stringify(state));
+            const fixture = fileURLToPath(new URL("fixtures/fleet-reboot-host.py", import.meta.url));
+            await Deno.copyFile(fixture, `${folder}/library/orbit_reboot_systemd.py`);
+            for (const tool of ["systemctl", "incus", "cat"]) {
+                await Deno.writeTextFile(`${folder}/bin/${tool}`, `#!/bin/sh\nexec python3 '${fixture}' ${tool} "$@"\n`);
+                await Deno.chmod(`${folder}/bin/${tool}`, 0o755);
+            }
+            await Deno.writeTextFile(`${folder}/bin/pgrep`, "#!/bin/sh\nexit 1\n");
+            await Deno.chmod(`${folder}/bin/pgrep`, 0o755);
+            await Deno.copyFile(`${ansible}files/fleet-reboot-ci-drain.sh`, `${folder}/files/fleet-reboot-ci-drain.sh`);
+            const transform = (value: unknown): any => {
+                if (typeof value === "string") return value.replaceAll("/run/orbit-fleet-reboot-ci-stops", `${folder}/ci-stops`);
+                if (Array.isArray(value)) return value.map(transform);
+                if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, child]) =>
+                    [key === "ansible.builtin.systemd_service" ? "orbit_reboot_systemd" : key, transform(child)]));
+                return value;
+            };
+            const recordFault = scenario === "held record" ? "record_update.reason | default('') == 'operator_hold'"
+                : scenario === "marker record" ? "record_update.drain_started | default(false)"
+                : scenario === "Gateway record after stop" ? "record_update.fixture_after_stop | default(false)"
+                : scenario === "CI stop-list record" ? "record_update.ci_stopped is defined" : "false";
+            for await (const file of Deno.readDir(`${ansible}tasks`)) {
+                if (file.name.startsWith("fleet-reboot-")) {
+                    const tasks: Task[] = transform(parse(await Deno.readTextFile(`${ansible}tasks/${file.name}`)));
+                    if (file.name === "fleet-reboot-record.yml") {
+                        // Fail the real copy after an earlier record exists, preserving its contents like a failed atomic write.
+                        (tasks[0]["ansible.builtin.copy"] as Record<string, unknown>).dest = `{{ (record_path ~ '/blocked') if (${recordFault}) else record_path }}`;
+                    }
+                    if (file.name === "fleet-reboot-drain-gateway.yml" && scenario === "Gateway record after stop") {
+                        const afterStop = tasks.findIndex((task) => task.name === "Stop the Gateway scheduler") + 1;
+                        tasks.splice(afterStop, 0, { name: "Write a record after stopping the scheduler", "ansible.builtin.include_tasks": "fleet-reboot-record.yml",
+                            vars: { record_update: { fixture_after_stop: true } } });
+                    }
+                    await Deno.writeTextFile(`${folder}/tasks/${file.name}`, JSON.stringify(tasks));
+                }
+            }
+            const phase = transform(structuredClone(plays.find((p) => p.name === "Drain the Node")!.tasks.find((t) => t.name === "Drain the Node")!));
+            phase.block = phase.block.map((task: Task) => task.name !== "Read the boot state" ? task
+                : scenario === "held observation" ? { name: task.name, "ansible.builtin.fail": { msg: "Observation failed" } }
+                : { name: task.name, "ansible.builtin.set_fact": { boot: { due: true, due_since: "2026-11-06T03:00:00Z",
+                    kernel: "7.0.0-42-generic", boot_id: "before", failed_units: [] } } });
+            if (scenario.includes("already stopped") || scenario === "Gateway timeout" || scenario === "CI stop-list read") {
+                phase.block.push({ name: "Fail after drain", "ansible.builtin.fail": { msg: "Drain failed" } });
+            }
+            const record = `${folder}/result.json`;
+            const result = await play(folder, { run: folder, record_path: record, phase: "drain", halted: false,
+                record: "{{ lookup('ansible.builtin.file', record_path, errors='ignore') | default('{}', true) | from_json }}",
+                target: { node_id: 9, name: "fixture", defer: scenario.startsWith("held") ? "operator_hold" : null,
+                    task_project: null, ci_project: scenario.startsWith("CI") ? "orbit-ci" : null,
+                    gateway: scenario.startsWith("CI") ? null : { scheduler: "schedule.service", horizon: "horizon.service" } },
+                intent: { window: { timezone: "Europe/Amsterdam", start: "03:00", end: "06:00", enforced: false }, drain_seconds: 20 },
+            }, [phase], { REBOOT_FIXTURE: folder, ANSIBLE_LIBRARY: `${folder}/library`,
+                PATH: `${folder}/bin:${Deno.env.get("PATH")}` });
+            assertNotEquals(result.code, 0, result.output);
+            const saved = JSON.parse(await Deno.readTextFile(record));
+            assertEquals(saved.outcome, "failed", result.output);
+            const calls: string[][] = (await Deno.readTextFile(`${folder}/calls.jsonl`).catch(() => "")).trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+            const starts = calls.filter((call) => call[0] === "systemd" && call[1] === "started" || call[0] === "incus" && call[1] === "start");
+            const after = JSON.parse(await Deno.readTextFile(`${folder}/state.json`));
+            if (scenario.startsWith("Gateway")) {
+                assertEquals(starts, [["systemd", "started", "schedule.service"], ["systemd", "started", "horizon.service"]]);
+                assertEquals(after.units, { "schedule.service": "active", "horizon.service": "active" });
+            } else if (scenario.startsWith("CI")) {
+                assertEquals(starts.map((call) => call.at(-1)).sort(), scenario === "CI partial stop" ? ["ci-a", "ci-external"] : ["ci-a", "ci-b", "ci-external"]);
+                assertEquals(after.runners, { "ci-a": "Running", "ci-b": "Running", "ci-external": "Running", "ci-parked": "Stopped" });
+            } else {
+                assertEquals(starts, []);
+                assertEquals(calls.filter((call) => call[0] === "systemd" && call[1] === "stopped" || call[0] === "incus" && ["stop", "pause"].includes(call[1])), []);
+                assertEquals(saved.drain_started, undefined);
+            }
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    });
+}

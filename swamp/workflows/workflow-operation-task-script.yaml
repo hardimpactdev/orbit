@@ -346,6 +346,7 @@ jobs:
         - type: succeeded
         - type: skipped
   - name: shape
+    writes: true
     labels: {role: swamp}
     task:
       type: behavior

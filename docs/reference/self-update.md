@@ -18,6 +18,8 @@ covers:
 
 [`node:converge`](/cli/node/converge) is a separate managed-state repair. Its agent phase installs the admitted agent and CLI pins, then later phases repair the selected software, role configuration, Tools and network. `self-update` retains its CLI-only delivery path.
 
+Nodes with a [fleet reboot hold](/reference/gateway-recovery#fleet-reboot) still receive CLI and observer updates.
+
 ## Desired fleet state
 
 Fleet rollout and `fleet.cli_converge` do not call `orbit self-update` or an agent command. Swamp publishes the release from Node 209 over SSH with the native [`node-cli-install`](/reference/node-provisioning#orbit-cli) child: `@swamp/cfgmgmt` fetches the binary with its checksum, checks its version, and switches the same link that `orbit self-update` keeps. A Node that runs a newer release or a commit build keeps it. A rollout run that fails before it reaches any Node settles as failed and leaves every Node pending, so the next admission tries them again.

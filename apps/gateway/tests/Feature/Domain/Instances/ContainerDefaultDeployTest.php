@@ -114,6 +114,7 @@ function deployDefault(bool $container): Instance
 }
 
 it('deploys a container default as the container variant, whose commands need no Vite+ store on the Node', function (): void {
+    $this->travelTo(now()->setTimestamp(1800000000)->microsecond(123456));
     $instance = deployDefault(container: true);
     $snapshot = app(InstanceDeploymentIntent::class)->snapshot($instance);
     $operation = new Operation(['input' => ['deployment' => $snapshot]]);

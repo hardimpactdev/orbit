@@ -42,6 +42,7 @@
                     "error_code": null
                 }
             ],
+            "reboot_hold": false,
             "access": {
                 "can_access": [],
                 "accessible_by": []
