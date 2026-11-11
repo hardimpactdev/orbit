@@ -14,11 +14,17 @@ covers:
 
 # Instance containers
 
-**Not built, except the [records](#records), the [Node preparation](#prepare-a-node), [egress and DNS](#egress-and-dns) and the [default Instance](#the-default-instance).** This page specifies steps 3, 4, 5 and 8 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order). It describes the target, and the production basics of step 10. The parity gate of step 6 lives in the plan. The PRs in [Container runtime](/solutions/development-container-runtime) build it, one part at a time, and move each part into its owning page. Until then, development Instances run from checkouts on their Node, as [Applications](/domains/applications) describes, and task groups run on [task VMs](/reference/compute-drivers#task-vms).
+**Partly built, limited to the [build list](#the-build-list).** This page describes the delivered parts and the remaining target of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order). The [Container runtime plan](/solutions/development-container-runtime) tracks the remaining work. Existing checkout Instances stay until migrated. Task groups still run on [task VMs](/reference/compute-drivers#task-vms).
+
+| Part | Delivered state |
+| --- | --- |
+| Records, Node preparation, egress and DNS | Built |
+| Default create and deploy, clone, forced non-default destroy, checkout migration | Built on the build-list Nodes |
+| Task containers, nested-fleet parity, sleep/wake and production containers | Planned |
 
 Every development Instance runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
 
-Every new Instance is a ZFS clone of the Project's default Instance on the Node, and its database is a clone of the default Instance's database. The default Instance is the only one built from scratch, and it deploys every merge to the default branch, so clones start at the current default branch with its dependencies installed. The default Instance never runs T3, so each clone starts T3 for the first time and gets its own T3 identity.
+Every new Instance is a ZFS clone of the Project's default Instance on the Node, and its database is a clone of the default Instance's database. The default Instance is the only one built from scratch. Clones start from its last successfully deployed seed, with that seed's dependencies installed. See the [delivered automatic-deployment state](/reference/deployments#automatic-development-defaults). The default Instance never runs T3, so each clone starts T3 for the first time and gets its own T3 identity.
 
 A task runs in such a container too. There is no separate task container: the same container has two [drivers](#drivers), a user in Conn and Swamp for a task. A Project may turn on a [nested fleet](#nested-fleet), which Orbit needs for its command proofs.
 
@@ -338,13 +344,13 @@ So Composer, npm, Bun, Vite+, Git over HTTPS, curl, apt, Guzzle and Node's `fetc
 
 ## Lifecycle
 
-Every lifecycle flow runs from the Node, with `incus` and Ansible phases. Each phase selects only its own tagged tasks before Ansible evaluates their conditions; it does not walk the tasks of other phases. Development Instances have no Schedules: Schedules are production only ([ADR 0215](/decisions/0215-start-development-processes-from-project-definitions)).
+Lifecycle flows run from the Node with `incus`, usually through Ansible phases. The [clone flow](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) uses official SSH steps running shipped Python host and guest scripts for its five direct phases. Each Ansible phase selects only its own tagged tasks before Ansible evaluates their conditions; it does not walk the tasks of other phases. Development Instances have no Schedules: Schedules are production only ([ADR 0215](/decisions/0215-start-development-processes-from-project-definitions)).
 
 ### The default Instance
 
 The default Instance is the clone source of its Project on the Node. Orbit builds the Project's first default Instance from scratch. It launches a container from the image and pushes in the default branch, fetched on the Node. The database family creates the database on a Database server once the container can reach one; until then the default uses the database in its workspace. Orbit writes `.env` and runs the Project's [development deploy steps](/reference/deployments#development-deploy-steps), which install dependencies and migrate. The [first default chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd) has the steps.
 
-After that, the default Instance deploys every merge to the default branch, as a checkout default does today ([development deployment](/reference/deployments)). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
+After that, [`instance:deploy`](/cli/instance/deploy) explicitly deploys the default branch. Automatic deployment depends on the [shared producer and policy setting](/reference/deployments#automatic-development-defaults). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
 
 There are no development setup steps. The default Instance has them done already, so a clone needs none. A clone prepares its container in five direct command phases: container, workspace and Processes, agent, T3, and sessions. Each native step reports its timestamps through the existing Operation progress.
 
@@ -357,7 +363,7 @@ The first default Instance and its deployments are built for the Nodes of the [b
 | Part | What Orbit does |
 | --- | --- |
 | Container | `instance-<id>` in the project `orbit-instances`, from the image `orbit-instance`, at the lowest free guest address of the bridge. It has no T3 port |
-| ACL | The NIC carries the bridge ACL and the container's own ACL `instance-<id>`. Only the Node's Caddy, from the bridge's address, reaches port 8080 |
+| ACL | The NIC carries `orbitinst0-proxy` and the container's own ACL `instance-<id>`; `orbitinst0-egress` stays on the bridge only. Only the Node's Caddy, from the bridge's address, reaches port 8080 |
 | Git | The Node fetches with the read token into its mirror `/var/lib/orbit/instance-repositories/<id>.git`. A bundle carries the branch into the container, and `orbit` checks it out in `/srv/workspace` |
 | Checkout path | The workspace's path on the Node, inside the container's root file system. It keeps the path unique on the Node; Orbit never works in it from the Node |
 | `.env` | In the workspace's application directory, for `orbit` with group `work`, mode 0640 |
@@ -528,7 +534,7 @@ The end of the move and its failure:
 | Failed removal | The container stays the Instance. The run fails with `instance.migrate_retire_failed` (or the retirement refusal code for a new blocker), and the source or retained checkout stays on the Node |
 | Failure | Restore puts back a moved Route, then removes the container, its ACL, firewall rules and mirror |
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
-| After a failed restore | The site stays the checkout's, and a deployment refuses with `instance.lifecycle_busy` until the move has run again |
+| After a failed restore | The reservation and deployment hold remain. Inspect the site and failed recovery step; deployments refuse with `instance.lifecycle_busy` until the move has run again |
 
 Restore changes host Process states and the awake marker only when quiesce began. A target probe failure leaves both untouched.
 
@@ -879,7 +885,7 @@ The boundary that matters is the preview URL, which reaches only `orbit`. A swit
 
 ### Clones of a default that never runs T3
 
-A clone of a container that ran T3 serves the same environment id. It also accepts the same sessions, the Gateway's among them. The default Instance is the one clone source, and it never runs T3, so no clone inherits an identity. Because the default deploys every merge, a clone starts current without setup steps.
+A clone of a container that ran T3 serves the same environment id. It also accepts the same sessions, the Gateway's among them. The default Instance is the one clone source, and it never runs T3, so no clone inherits an identity. A clone starts at the default's last successfully deployed seed without setup steps. A merge alone does not refresh that seed.
 
 ### Shared folders per Node
 

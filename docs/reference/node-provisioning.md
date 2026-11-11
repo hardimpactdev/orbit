@@ -263,7 +263,7 @@ On Ubuntu, the Gateway uses this setup when the request names no role and the No
 | Node agent | The Gateway installs the [Node agent](/reference/node-agent), because the Node has a pinned SSH host key. |
 | Metrics | The Node runs no exporter until you run `metrics:exporter:enable`. See [Exporter selection](/reference/metrics#exporter-selection). |
 
-When the package sources do not resolve, the bootstrap fails. Unlike a Node with roles, it does not clear Orbit DNS on the `orbit` link first. See [Add the machine again](#add-the-machine-again).
+When the package sources do not resolve, the bootstrap fails. Unlike a Node with roles, it does not clear Orbit DNS on the `orbit` link first. See [Add the machine again](#add-a-node).
 
 The `DNS =` line is in `/etc/wireguard/orbit.conf`, and `wg-quick` applies it when the tunnel starts. The Gateway deletes an existing `/etc/wireguard/orbit.dns-link`.
 
@@ -461,7 +461,7 @@ The wait for a nested fleet is not a phase of the role: it is the task file `swa
 
 The nested guests are Incus system containers. The role serves them nothing: each gets the checkout of its task as an Incus disk device, and a restore of `base` is a plain restore and a reboot (see [compute drivers](/reference/compute-drivers)).
 
-Before starting a base VM, the host playbook converges its [firmware boot setting](/reference/compute-drivers#size-of-a-task-vm). Task copies inherit it from the base snapshot, so the OVMF menu adds no delay.
+Before starting a base VM, the host playbook converges its [firmware boot setting](/reference/compute-drivers#incus-provider). Task copies inherit it from the base snapshot, so the OVMF menu adds no delay.
 
 A host without a recorded base snapshot first discards any unpromoted base VM and seed and builds from stock. This also removes the cached cloud-init state of a failed first boot, whose one-shot package installation does not run again on a restart. Recorded bases are preserved unless the refresh requests `--from-stock`.
 

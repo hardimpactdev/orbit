@@ -16,12 +16,12 @@ Four parties share the work of a command. Each has one job.
 | Who | Does | Does not |
 | --- | --- | --- |
 | **Gateway** | Admits the command, validates it, records the full intent, locks, starts one Swamp run, projects the result. | Run anything on a machine. |
-| **Swamp** | Runs the logical phases in order, with guards, `forEach`, `allowFailure` and cancellation. Calls the Gateway's mint and sign primitives and external APIs (GitHub). | Run a command on a Node, except through an Ansible phase. |
-| **Ansible** | Does every action on a machine. One Swamp step runs one tagged part of a repository playbook. The playbook reads, changes and checks in one run. | Call the Gateway, or decide the order of phases. |
+| **Swamp** | Runs the logical phases in order, with guards, `forEach`, `allowFailure` and cancellation. Calls the Gateway's mint and sign primitives and external APIs (GitHub). | Run a command on a Node, except through an Ansible phase or the measured clone exception below. |
+| **Ansible** | Does machine actions except the measured clone exception below. One Swamp step runs one tagged part of a repository playbook. The playbook reads, changes and checks in one run. | Call the Gateway, or decide the order of phases. |
 | **Case runner** | Proves the command: it runs the real CLI with `--json` against a nested fleet and checks the answer, the machine state and the Gateway records. The cases are data in `swamp/proof/<family>/<command>.cases.yaml` ([format](/reference/verification-cases)). | Change a machine, or hold logic that a case could state. |
 | **Molecule** | Tests the pure Jinja templates of a playbook against fixed text (`unit` scenario). | Prove the command or run on the nested fleet. |
 
-Python inside a framework (Ansible, Molecule) is fine. New work adds no Python glue of its own: no wrapper scripts, no custom Ansible modules, and no second runner. The proof case runner in `swamp/proof/runner/` is the one runner.
+Python inside a framework (Ansible, Molecule) is fine. New work adds no Python glue of its own: no wrapper scripts, no custom Ansible modules, and no second runner, except a measured native exception under the [Swamp shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md#use-what-swamp-provides-first-nick-2026-10-31). The shipped [Instance clone](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) uses official SSH steps with Python host and guest scripts for container, workspace and Processes, agent, T3, and sessions phases. The proof case runner in `swamp/proof/runner/` is the one runner.
 
 ## Port a command, step by step
 
@@ -30,7 +30,7 @@ A port has seven steps. Do them in this order.
 1. [**Chart first.**](#1-chart-first) Update `docs/cli/<family>/<command>.mmd` to the ideal flow.
 2. [**Gateway intent.**](#2-gateway-intent) Admit, record the intent, declare the workflow and the terminal result.
 3. [**Swamp phases.**](#3-swamp-phases) One workflow, one Swamp step per logical phase.
-4. [**Playbook.**](#4-the-playbook) One tagged part per phase. All machine work.
+4. [**Playbook.**](#4-write-the-playbook) One tagged part per phase. All machine work.
 5. [**Proof.**](#5-prove-it) A cases file for the command, and a Molecule `unit` scenario for each template.
 6. [**Time budget.**](#6-set-the-time-budget) Measure it with `profile_tasks`.
 7. [**Delete.**](#7-delete-what-the-port-replaces) Steps, behaviors, tests and chart nodes that the port replaces, in the same PR.
@@ -39,7 +39,7 @@ One command is one PR: the chart, the documentation, the Gateway change, the wor
 
 ### 1. Chart first
 
-The chart in `docs/cli/<family>/<command>.mmd` is the spec ([chart rules](/cli/README)). Update it to the ideal flow before any code. Tighten it with the `flow-tighten` skill. Then check the chart against the shape:
+The chart in `docs/cli/<family>/<command>.mmd` is the spec ([chart rules](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md)). Update it to the ideal flow before any code. Tighten it with the `flow-tighten` skill. Then check the chart against the shape:
 
 A phase is a stage of the command that a person can name, such as "Withdraw the Route" or "Converge the rule". Draw each phase as one arrow from Swamp to the Node, labelled with the phase. Its tasks belong in the playbook.
 
@@ -221,7 +221,7 @@ An Ansible phase has a fixed cost: the step dispatch (about 1.1 s), the start of
 
 | Item | Rule |
 | --- | --- |
-| Run budget | Every kind expires; a measured p95 with headroom wins. Otherwise 30 minutes until the first success, then 1.5× the longest success. `instance.create` has 60 s (PLAN: under 10 s; policy, not proof). |
+| Run budget | Follow the [native run budget rule](/reference/operations#native-run-budgets). `instance.create` captures its plan budget; 60 seconds is only the uncaptured fallback. |
 | Enforcement | Serve `--max-run-duration` caps runs at the longest fixed budget. At the kind budget the Gateway marks `operation.timed_out` and cancels (decision 4). Add no family timer or poller. |
 | No-run rows | Expire after 600 s but keep the lock until the exact native lookup by Operation id proves no run (L17-2300-OD1). Timeouts and transport errors prove nothing. |
 | Phase timeout | Each phase command starts with a literal `timeout <phase budget>`. On exit 124 the shared F1 projector renders `<step> timed out after <N>s` (OD2; pending, lane 16). The budget covers the waits inside the playbook. |

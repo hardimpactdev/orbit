@@ -133,7 +133,7 @@ A managed Valkey connection's driver, Node, address, port, username, and passwor
 
 An Instance owns a database that Orbit created for it: by `database:create --server --instance`, by [`instance:create --database-server`](/domains/applications#database-on-a-server). The record keeps the owner in `owner_instance_id`.
 
-[`instance:destroy`](/reference/instance-removal#owned-databases) drops each database the Instance owns, with its test databases and user, and deletes the record. Deleting the record of a database on a server drops the database the same way. Before any drop, Orbit checks the complete [removal set](/reference/database-servers#remove-a-database). A blocker returns `database.in_use` (409) without changing databases or records. A server failure keeps the record for retry. Admission records each database's Node and its stored SSH host pin, so a retry reaches the same host. Orbit never drops a database that it only registered.
+[`instance:destroy`](/reference/instance-removal#native-order) drops each database the Instance owns, with its test databases and user, and deletes the record. Deleting the record of a database on a server drops the database the same way. Before any drop, Orbit checks the complete [removal set](/reference/database-servers#remove-a-database). A blocker returns `database.in_use` (409) without changing databases or records. A server failure keeps the record for retry. Admission records each database's Node and its stored SSH host pin, so a retry reaches the same host. Orbit never drops a database that it only registered.
 
 ## Test databases
 

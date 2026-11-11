@@ -831,7 +831,7 @@ The cost is a trust root to keep current and a verifier to teach a new format be
 
 The Gateway is private, so GitHub cannot reach it, and the GitHub App has [no webhooks](/reference/github-app#no-webhooks). A CI job that pushes to a deploy endpoint with a GitHub OIDC identity was rejected: it needs a new trusted path into the Gateway and new credential handling, and an earlier attempt stalled on exactly that.
 
-A CI deploy job that connects to the Gateway over SSH was rejected too: the CI runners are kept off the Gateway on purpose, so CI jobs cannot reach the control plane ([Self-hosted Gateway runner](/reference/implementation-loop#self-hosted-gateway-runner)). Pulling through the existing GitHub App adds no network path, credential, or Node grant.
+A CI deploy job that connects to the Gateway over SSH was rejected in favor of pulling through the existing GitHub App. Pulling adds no deployment credential or Node grant.
 
 ### Code decides what ships
 
