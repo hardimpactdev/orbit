@@ -7,7 +7,6 @@ namespace App\Infrastructure\Processes;
 use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\AppDev\SsrEndpoint;
 use App\Domain\Instances\ContainerProcessCommands;
-use App\Domain\Instances\Environment\VpDevEnvironment;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -16,6 +15,7 @@ use App\Domain\Processes\RequiredMountPaths;
 use App\Domain\Processes\VpDevPreset;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Models\Process;
+use App\Models\Route;
 use InvalidArgumentException;
 use SensitiveParameter;
 
@@ -68,7 +68,7 @@ final readonly class SystemdProcessRenderer
             );
         }
 
-        $environmentProjection = $this->environmentProjection($target, $managedAccount, ! $process->isVpDev());
+        $environmentProjection = $this->environmentProjection($target, $managedAccount, ! $process->isVpDev(), $process->isVpDev());
         if ($process->isVpDev()) {
             $command = VpDevPreset::command($target->container === null ? null : $target->instance?->vite_port);
             if ($target->container === null) {
@@ -152,8 +152,7 @@ final readonly class SystemdProcessRenderer
             }
         }
 
-        return $target->instance === null ? $environment
-            : app(VpDevEnvironment::class)->project($target->instance, $environment, $target->routeDomain);
+        return $environment;
     }
 
     private function isReservedEnvironmentName(string $name): bool
@@ -167,6 +166,7 @@ final readonly class SystemdProcessRenderer
             'ORBIT_DEV_SERVER_HOST',
             'ORBIT_DEV_SERVER_PATH',
             'ORBIT_DEV_SERVER_PORT',
+            '__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS',
         ], true);
     }
 
@@ -204,7 +204,7 @@ final readonly class SystemdProcessRenderer
     }
 
     /** @return array{directives: list<string>, commandPrefix: list<string>} */
-    private function environmentProjection(ProcessTarget $target, ?ManagedUserAccount $managedAccount, bool $certificates): array
+    private function environmentProjection(ProcessTarget $target, ?ManagedUserAccount $managedAccount, bool $certificates, bool $vpDev): array
     {
         $directives = [];
         $commandValues = [];
@@ -217,6 +217,15 @@ final readonly class SystemdProcessRenderer
             $commandValues[] = "ORBIT_DEV_SERVER_ORIGIN={$origin}";
             $commandValues[] = "ORBIT_DEV_SERVER_HOST={$target->routeDomain}";
             $commandValues[] = 'ORBIT_DEV_SERVER_PATH='.DevelopmentServerEndpoint::PATH;
+            if ($vpDev && $target->instance !== null) {
+                // The resolver already loaded every Route; web-root Routes share this Instance's Vite endpoint.
+                $domains = [$target->routeDomain, ...$target->instance->routes->sortBy('id')
+                    ->map(static fn (Route $route): string => $route->domain)->all()];
+                $hosts = implode(',', array_unique($domains));
+                $directives[] = 'Environment=__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS='.$hosts;
+                $commandValues[] = '__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS='.$hosts;
+            }
+
             $port = $target->instance?->vite_port;
 
             if (is_int($port)) {

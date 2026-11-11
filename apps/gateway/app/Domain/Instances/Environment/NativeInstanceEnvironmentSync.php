@@ -80,7 +80,7 @@ final readonly class NativeInstanceEnvironmentSync
     /** @return array{content:string,keys:list<string>,testing:array{content:string,test_database:string}|null} */
     private function render(InstanceEnvironmentContext $context, bool $writeTesting): array
     {
-        $values = $this->renderer->values($context, $this->store->synchronizationSnapshot($context)->values());
+        $values = $this->store->synchronizationSnapshot($context)->values();
         $testing = $writeTesting ? $this->testing->plan($context->instanceId, $values) : null;
 
         return ['content' => $this->renderer->render($context, $values), 'keys' => array_keys($values),
