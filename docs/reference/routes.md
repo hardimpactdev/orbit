@@ -697,6 +697,8 @@ Route writes also hold their Nodes (decided by the orchestrator, for Nick's revi
 
 A second Route write that needs a held Node is admitted with status `waiting`. It starts no Swamp run and gets no 409. It starts when every Node it needs is free, oldest first. A newer write also waits behind an older waiting one that shares a Node. Its time budget counts from its start, and an operator can cancel it while it waits.
 
+When a waiting `instance:create`, `instance:clone` or `route:create` gains its Nodes, the Gateway renders its whole Caddyfiles again from the current site catalog and its admitted Route. It keeps the admitted Instance, Route and certificate identities. The previous writer commits its accepted sites and releases its hold in the same transaction, so the next render includes them.
+
 A timed-out task keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes. The DNS Node is not held: its records are keyed, and the apply phase refuses a file that changed since the read.
 
 Task provision and cancel, `instance:register` and the Cluster Router writes also publish sites, but their run does much else. They hold the Nodes of their Route-publish step only (decided by the orchestrator, for Nick's review, 2026-11-06). Before that step the run calls `operation:direct:route-hold` with its run ID. The Gateway reads the Nodes from the admitted intent and answers when it holds all of them, after at most 5 s.

@@ -6,6 +6,8 @@ namespace App\Domain\Routes;
 
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\SwampNode;
+use App\Infrastructure\AppDev\DevelopmentSite;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Route;
@@ -28,6 +30,33 @@ final readonly class NativeRouteCreatePlan
         $plan = $this->build($route, $lifecycle);
 
         return [...$plan, 'probe_ssh' => $plan['probes'] === [] ? (object) [] : app(SwampSshExecutionInput::class)->forNode(SwampNode::node())];
+    }
+
+    /**
+     * A waiting create now owns its Nodes. Render whole Caddyfiles from the committed catalog and its admitted Route;
+     * keep the original certificates, participant Nodes, workloads and all other captured intent.
+     *
+     * @param  array<string,mixed>  $plan
+     * @return array<string,mixed>
+     */
+    public function refreshCaddy(Route $route, array $plan, bool $preparedWorkloads, bool $publicActivated): array
+    {
+        $route->loadMissing(['targets.instance.node', 'targets.instance.project', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node']);
+        $repository = app(DevelopmentSiteRepository::class);
+        $candidate = app(NativeRouteLifecycleInput::class)->candidate($route, false, $preparedWorkloads, $publicActivated);
+        $sites = $repository->renderAll()->reject(static fn (DevelopmentSite $site): bool => $site->domain === $route->domain)
+            ->values()->merge($repository->routeSites($candidate));
+        foreach (['caddy', 'ingress'] as $list) {
+            $rows = RouteExecutionProof::objects($plan[$list]);
+            foreach ($rows as $index => $row) {
+                $node = Node::query()->findOrFail(ValidatedData::integer($row['node_id']));
+                $render = app(NativeRoutePublicationInput::class)->snapshot($node, $sites, true);
+                $rows[$index] = [...$row, 'content' => ValidatedData::object($render['caddy'])['content']];
+            }
+            $plan[$list] = $rows;
+        }
+
+        return $plan;
     }
 
     /** @param array<string,mixed> $lifecycle

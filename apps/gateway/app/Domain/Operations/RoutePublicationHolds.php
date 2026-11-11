@@ -5,9 +5,14 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Actions\Operations\ExpireOperationAction;
+use App\Domain\Routes\NativeRouteCreatePlan;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Operations\PromoteRouteWrites;
 use App\Models\Operation;
+use App\Models\Route;
+use App\Support\ValidatedData;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -332,11 +337,45 @@ final class RoutePublicationHolds
     {
         foreach ($operations as $operation) {
             try {
+                $this->refreshPublication($operation);
+            } catch (Throwable $exception) {
+                // A failed render never dispatches a run and gives its Nodes back to the next waiter.
+                app(StartSwampRun::class)->refuse($operation, $exception instanceof ResourceOperationException ? $exception
+                    : new ResourceOperationException('caddy.render_failed', 'The waiting Route publication could not be rendered.', 409));
+
+                continue;
+            }
+            try {
                 app(SwampDispatch::class)->start($operation);
             } catch (Throwable $exception) {
                 // The start records its own failure on the Operation, which releases the Nodes; the others still start.
                 Log::warning('A waiting Route write could not be started.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
             }
         }
+    }
+
+    /** Only unstarted creates can replace their whole publication from the current catalog; their resource intent stays fixed. */
+    private function refreshPublication(Operation $operation): void
+    {
+        if (! in_array($operation->kind, ['instance.create', 'instance.clone', 'route.create'], true) || ! isset($operation->input['route_create'])) {
+            return;
+        }
+        DB::transaction(function () use ($operation): void {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            if ($current->status !== OperationStatus::Queued || isset($current->state['swamp_run_id'])) {
+                return;
+            }
+            $input = $current->input;
+            $plan = ValidatedData::object($input['route_create']);
+            $route = Route::query()->findOrFail(ValidatedData::integer($plan['route_id']));
+            $lifecycle = ValidatedData::object($input['route_lifecycle']);
+            $input['route_create'] = app(NativeRouteCreatePlan::class)->refreshCaddy($route, $plan,
+                $current->kind === 'instance.create', ($lifecycle['public_activated'] ?? false) === true);
+            if (is_array($input['direct_provisioning'] ?? null)) {
+                $input['direct_provisioning']['route'] = $input['route_create'];
+            }
+            app(OperationStore::class)->change($current, ['input' => $input]);
+            $operation->setRawAttributes($current->getAttributes(), true);
+        });
     }
 }

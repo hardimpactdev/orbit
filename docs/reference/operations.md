@@ -411,6 +411,8 @@ Task provision and cancel, `instance.register` and the Cluster Router writes hol
 
 The hold is the `route_publication_holds` table, with one row per Node. A finished write frees its Nodes and queues `PromoteRouteWrites`, which moves the waiting writes that fit to `queued`, oldest first, and starts them. The minute pass of `ReconcileSwampOperations` frees the Nodes of a write that ended without a release. A waiting write has no deadline; its budget starts when it starts. A timed-out write keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes.
 
+At promotion, a waiting `instance.create`, `instance.clone` or `route.create` re-captures its Caddy publication from the current site catalog before its run starts; other kinds keep their existing publication behavior.
+
 ## Errors
 
 These codes belong to every operation.
