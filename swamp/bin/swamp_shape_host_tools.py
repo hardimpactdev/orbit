@@ -1,4 +1,4 @@
-"""Narrow AST proof for the canonical parameterized PHP/FPM host transaction."""
+"""Structural proofs for canonical host-tool transactions."""
 
 import ast
 
@@ -540,3 +540,341 @@ def {function.name}({host}, {user}):
             }:
                 return False
     return calls > 0
+
+
+BRIDGE_LOCK = '''
+@contextmanager
+def writer_lock(root):
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / 'writer.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise PolicyError('instance.bridge_busy') from None
+        yield
+'''
+
+BRIDGE_APPLY = '''
+def apply(root, incoming, reconcile=False, withdraw=False):
+    deadline = time.monotonic() + (REFRESH_BUDGET_SECONDS if incoming is None else LIFECYCLE_BUDGET_SECONDS)
+    with writer_lock(root):
+        try:
+            return apply_locked(root, incoming, reconcile, withdraw, deadline)
+        except (PolicyError, ValueError, OSError, subprocess.SubprocessError) as error:
+            code = 'instance.bridge_state_unresolved' if unresolved_health(root) else failure_code(error)
+            state_file(root, 'health', {'error_code': code})
+            raise
+'''
+
+BRIDGE_MAIN = '''
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--state-dir', type=Path, default=Path('/var/lib/orbit/instance-bridge'))
+    parser.add_argument('--intent', action='store_true')
+    parser.add_argument('--reconcile', action='store_true')
+    parser.add_argument('--withdraw', action='store_true')
+    args = parser.parse_args()
+    try:
+        changed = apply(args.state_dir, json.load(sys.stdin) if args.intent else None, args.reconcile, args.withdraw)
+        print(json.dumps({'changed': changed}))
+    except (PolicyError, ValueError, OSError, subprocess.SubprocessError) as error:
+        code = failure_code(error)
+        print(json.dumps({'error_code': code}))
+        print(str(error), file=sys.stderr)
+        raise SystemExit(1) from error
+'''
+
+BRIDGE_FAILURE = '''
+def failure_code(error):
+    if isinstance(error, subprocess.TimeoutExpired):
+        return 'instance.bridge_command_timeout'
+    return str(error) if str(error).startswith('instance.') else 'instance.container_bridge_write_failed'
+'''
+
+
+# The only destructive authority: fixed state leaves or canonical numeric endpoint
+# identities. Unlink cannot remove a directory; replacement uses a fresh regular
+# temporary file. Neither operation can name writer.lock or replace an ancestor.
+BRIDGE_STATE = r'''
+def state_file(root, kind, value=None, host=None, port=None, capture=None, remove=False):
+    root = Path(root)
+    if kind in ('config', 'health', 'pending'):
+        path = root / {'config': 'config.json', 'health': 'health.json', 'pending': 'reconcile.pending'}[kind]
+    elif kind in ('endpoint', 'staged'):
+        host = str(ipaddress.IPv4Address(host))
+        if type(port) is not int or not 1 <= port <= 65535 or type(capture) is not int or capture < 0:
+            raise PolicyError('instance.container_bridge_write_failed')
+        directory = 'endpoints' if kind == 'endpoint' else '.staged'
+        path = root / directory / (host + '-' + str(port) + '-' + str(capture) + '.json')
+    else:
+        raise PolicyError('instance.container_bridge_write_failed')
+    if remove:
+        path.unlink(missing_ok=True)
+        return 1
+    content = json.dumps(value, sort_keys=True) + '\n'
+    if path.exists() and path.read_text() == content:
+        return 0
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as stream:
+        stream.write(content)
+        temporary = Path(stream.name)
+    temporary.chmod(0o644)
+    temporary.replace(path)
+    return 1
+'''
+
+BRIDGE_API = r'''
+def api(name, value=None, etag=None, deadline=None):
+    """Use the Incus API's ETag, so a concurrent write cannot replace another endpoint."""
+    put = []
+    if value is not None:
+        if not isinstance(etag, str):
+            raise PolicyError('instance.container_bridge_write_failed')
+        put = ['--request', 'PUT', '--header', 'Content-Type: application/json',
+               '--header', 'If-Match: ' + etag, '--data-binary', '@-']
+    timeout = CURL_TIMEOUT_SECONDS if deadline is None else min(CURL_TIMEOUT_SECONDS, remaining(deadline))
+    result = subprocess.run(['curl', '--silent', '--show-error', '--fail-with-body', '--max-time', str(CURL_TIMEOUT_SECONDS),
+                             '--include', '--unix-socket', '/var/lib/incus/unix.socket',
+                             'http://localhost/1.0/network-acls/' + name + '?project=default', *put],
+                            input=None if value is None else json.dumps(value).encode(),
+                            capture_output=True, check=False, timeout=timeout)
+    if result.returncode == 28:
+        raise PolicyError('instance.bridge_command_timeout')
+    if result.returncode:
+        detail = result.stderr.decode().strip()
+        if b'\r\n\r\n' in result.stdout:
+            detail += ' ' + json.loads(result.stdout.split(b'\r\n\r\n', 1)[1]).get('error', '')
+        raise PolicyError(detail or 'instance.container_bridge_write_failed')
+    headers, body = result.stdout.split(b'\r\n\r\n', 1)
+    tags = [line.split(b':', 1)[1].strip().decode() for line in headers.splitlines()
+            if line.lower().startswith(b'etag:')]
+    response = json.loads(body)
+    if response.get('error_code', 0):
+        raise PolicyError(response.get('error', 'instance.container_bridge_write_failed'))
+    return response['metadata'], tags[0] if tags else None
+'''
+
+
+def bridge_writer_transaction(tree, sources):
+    """Return (acquisition, rejected site) for the closed bridge-writer contract.
+
+    Compare custody, dispatch and the unlocked entry point in full. Other tool
+    functions run only through apply's locked body: no executable module code,
+    alternate entry point, callback escape, import replacement or rebinding can
+    bypass custody. This does not exempt a file or add a lock pathname allowance.
+    """
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    candidate = functions.get('writer_lock')
+    if candidate is None:
+        return None, None
+
+    def refused():
+        return None, candidate
+
+    # Require the complete source inventory, as for the PHP runtime proof.
+    try:
+        modules = {path: ast.parse(source) for path, source in sources.items()}
+    except SyntaxError:
+        return refused()
+    own = [path for path, module in modules.items() if ast.dump(module) == ast.dump(tree)]
+    if len(own) != 1:
+        return refused()
+    def module_parts(path):
+        parts = path.removesuffix('.py').split('/')
+        return parts[:-1] if parts[-1] == '__init__' else parts
+
+    writer = module_parts(own[0])
+
+    def imports_writer(parts):
+        # Inventory paths include the shipped source root; Python imports may
+        # start below it. Compare qualified suffixes, never just the last name.
+        return bool(parts) and len(parts) <= len(writer) and writer[-len(parts):] == parts
+
+    for path, peer in modules.items():
+        if path == own[0]:
+            continue
+        package = module_parts(path) if path.endswith('/__init__.py') else module_parts(path)[:-1]
+        for node in ast.walk(peer):
+            if isinstance(node, ast.Import):
+                targets = [alias.name.split('.') for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                base = node.module.split('.') if node.module else []
+                if node.level:
+                    if node.level > len(package):
+                        return refused()  # An unresolved relative import cannot prove custody.
+                    base = package[:len(package) - node.level + 1] + base
+                if any(alias.name == '*' for alias in node.names) and any(
+                        base and len(base) <= length and writer[:length][-len(base):] == base
+                        for length in range(1, len(writer))):
+                    return refused()  # A package's __all__ may load the writer submodule.
+                targets = [base, *(base + alias.name.split('.') for alias in node.names)]
+            else:
+                continue
+            if any(imports_writer(target) for target in targets):
+                return refused()
+
+    contracts = [ast.parse(source).body[0]
+                 for source in (BRIDGE_LOCK, BRIDGE_APPLY, BRIDGE_MAIN, BRIDGE_FAILURE, BRIDGE_STATE, BRIDGE_API)]
+    if any(contract.name not in functions or ast.dump(functions[contract.name]) != ast.dump(contract)
+           for contract in contracts):
+        return refused()
+    classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
+    if len(classes) != 1 or ast.dump(classes[0]) != ast.dump(ast.parse('class PolicyError(Exception):\n    pass').body[0]):
+        return refused()
+    standard = {'argparse', 'fcntl', 'ipaddress', 'json', 're', 'shlex', 'subprocess', 'sys', 'tempfile', 'time'}
+    imported = {}
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name not in standard or alias.asname or alias.name in imported:
+                    return refused()
+                imported[alias.name] = node
+        if isinstance(node, ast.ImportFrom):
+            if (node.level or (node.module, [(a.name, a.asname) for a in node.names]) not in
+                    [('contextlib', [('contextmanager', None)]), ('pathlib', [('Path', None)])]):
+                return refused()
+            alias = node.names[0].name
+            if alias in imported:
+                return refused()
+            imported[alias] = node
+    required = {'argparse', 'fcntl', 'json', 'subprocess', 'sys', 'time', 'ipaddress', 'tempfile', 'contextmanager', 'Path'}
+    if not required <= imported.keys():
+        return refused()
+    # Literal constants are inert; all record/ACL/health work must remain in
+    # function bodies reached through the exact entry point and locked dispatch.
+    constants = set()
+    entry = ast.parse("if __name__ == '__main__':\n    main()").body[0]
+    for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.ClassDef)):
+            continue
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            continue
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and isinstance(node.value, ast.Constant):
+            identifier = node.targets[0].id
+            if identifier in constants:
+                return refused()
+            constants.add(identifier)
+            continue
+        if ast.dump(node) != ast.dump(entry) or node is not tree.body[-1]:
+            return refused()
+    builtins = {'BlockingIOError', 'Exception', 'ValueError', 'OSError', 'SystemExit', 'print', 'str', 'isinstance', 'type', 'int', '__name__'}
+    reserved = set(functions) | set(imported) | constants | builtins | {'PolicyError'}
+    if (set(functions) | set(imported) | constants) & builtins:
+        return refused()
+    declarations = [node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))]
+    if len(declarations) != len(set(declarations)) or (set(declarations) & (set(imported) | constants)) or set(imported) & constants:
+        return refused()
+    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    acquisition = next(node for node in ast.walk(candidate) if isinstance(node, ast.Call) and ast.unparse(node.func) == 'fcntl.flock')
+    acquire_nodes = set(ast.walk(acquisition))
+    main_nodes = set(ast.walk(functions['main']))
+    state_nodes = set(ast.walk(functions['state_file']))
+    api_nodes = set(ast.walk(functions['api']))
+    lock_nodes = set(ast.walk(candidate))
+    callable_names = {node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+    safe_builtins = {'all', 'any', 'bool', 'dict', 'enumerate', 'float', 'int', 'isinstance',
+                     'len', 'list', 'max', 'min', 'next', 'print', 'range', 'set', 'sorted',
+                     'str', 'tuple', 'zip', 'PolicyError', 'SystemExit'}
+    module_members = {
+        'argparse': {'ArgumentParser'}, 'fcntl': {'flock', 'LOCK_EX', 'LOCK_NB'},
+        'ipaddress': {'IPv4Address'}, 'json': {'load', 'loads', 'dumps'}, 're': {'fullmatch'},
+        'shlex': {'split'}, 'subprocess': {'run', 'check_output', 'SubprocessError', 'TimeoutExpired'},
+        'sys': {'stdin', 'stderr'}, 'tempfile': {'NamedTemporaryFile'},
+        'time': {'monotonic'},
+    }
+    destructive = {'unlink', 'remove', 'removedirs', 'rmdir', 'rmtree', 'rename', 'renames',
+                   'replace', 'move', 'move_into', 'copy', 'copy_into', 'copyfile', 'copytree',
+                   'symlink_to', 'hardlink_to', 'link_to', 'touch', 'write_text', 'write_bytes',
+                   'cleanup', 'truncate'}
+    effects = destructive | {'open', 'append', 'extend', 'insert', 'pop', 'clear'}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)) and node not in tree.body:
+            return refused()
+        if isinstance(node, ast.ExceptHandler) and node.name in reserved:
+            return refused()
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)) and node.id in reserved:
+            if not (isinstance(parents.get(node), ast.Assign) and parents[node] in tree.body):
+                return refused()
+        if isinstance(node, ast.arg) and node.arg in reserved:
+            return refused()
+        if isinstance(node, ast.Global):
+            return refused()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node not in tree.body:
+            if node.name in reserved or not isinstance(node, ast.FunctionDef) or node.decorator_list:
+                return refused()
+        if isinstance(node, ast.FunctionDef):
+            if node is not candidate and node.decorator_list:
+                return refused()
+            if node in tree.body and (node.returns or any(arg.annotation for arg in ast.walk(node.args) if isinstance(arg, ast.arg))
+                                      or any(value is not None and not isinstance(value, ast.Constant)
+                                             for value in node.args.defaults + node.args.kw_defaults)):
+                return refused()
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            return refused()
+        if isinstance(node, ast.Attribute):
+            parent = parents.get(node)
+            # Deny every destructive effect, including dead/nested/control-flow
+            # sites. Only the exact semantic state helper owns these operations.
+            if node.attr in destructive and node not in state_nodes:
+                return refused()
+            if node.attr == 'open' and node not in state_nodes | lock_nodes:
+                return refused()
+            if node.attr.startswith('_') or node.attr in effects and not (isinstance(parent, ast.Call) and parent.func is node):
+                return refused()
+            if isinstance(node.value, ast.Name) and node.value.id in module_members:
+                if node.attr not in module_members[node.value.id]:
+                    return refused()
+                if node.value.id not in {'sys', 'fcntl'} and node.attr not in {'SubprocessError', 'TimeoutExpired'}:
+                    if not (isinstance(parent, ast.Call) and parent.func is node):
+                        return refused()
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            parent = parents.get(node)
+            if node.id.startswith('__') and node.id != '__name__':
+                return refused()
+            if node.id in module_members and not isinstance(parent, ast.Attribute):
+                return refused()
+            if node.id in {'eval', 'exec', 'globals', 'locals', 'vars', 'getattr', 'setattr', 'delattr', '__import__', 'open', 'compile'}:
+                return refused()
+            if node.id in {'Path', 'contextmanager'} and not (isinstance(parent, ast.Call) and parent.func is node or node in candidate.decorator_list
+                                                                         or node.id == 'Path' and node in main_nodes):
+                return refused()
+            if node.id == 'fcntl' and node not in acquire_nodes:
+                return refused()
+            if node.id == 'type' and node not in state_nodes:
+                return refused()
+            if node.id in callable_names:
+                if not (isinstance(parent, ast.Call) and parent.func is node):
+                    return refused()
+                enclosing = parent
+                while enclosing in parents and not isinstance(enclosing, ast.FunctionDef):
+                    enclosing = parents[enclosing]
+                caller = enclosing.name if isinstance(enclosing, ast.FunctionDef) else None
+                allowed = {'writer_lock': {'apply'}, 'apply': {'main'}, 'apply_locked': {'apply'}, 'main': {None}}
+                if node.id in allowed and caller not in allowed[node.id]:
+                    return refused()
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {'eval', 'exec', 'globals', 'locals', 'vars', 'getattr', 'setattr', 'delattr', '__import__', 'open'}:
+            return refused()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            if node.func.id not in callable_names | safe_builtins | {'Path', 'contextmanager'}:
+                if node not in state_nodes or node.func.id != 'type':
+                    return refused()
+            if node.func.id == 'state_file':
+                # This API accepts semantic state kinds, never an arbitrary path,
+                # callback or destination. Its exact body constructs every leaf.
+                if (not 2 <= len(node.args) <= 3 or any(isinstance(arg, ast.Starred) for arg in node.args)
+                        or not isinstance(node.args[1], ast.Constant)
+                        or node.args[1].value not in {'config', 'health', 'pending', 'endpoint', 'staged'}
+                        or any(item.arg not in {'host', 'port', 'capture', 'remove'} for item in node.keywords)):
+                    return refused()
+        if isinstance(node.func, ast.Attribute):
+            callee = ast.unparse(node.func)
+            if callee.startswith('tempfile.') and node not in state_nodes:
+                return refused()
+            if callee.startswith('subprocess.') and node not in api_nodes:
+                nat = ast.parse("subprocess.check_output(['iptables-save', '-t', 'nat'], text=True, timeout=remaining(deadline))", mode='eval').body
+                if ast.dump(node) != ast.dump(nat):
+                    return refused()
+    return acquisition, None
