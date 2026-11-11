@@ -456,9 +456,11 @@
    "Check the unit": "idempotent"
   },
   "operation-process-destroy": {
+   "Check boot removal": "idempotent",
    "Check container removal": "idempotent",
-   "Check the unit": "idempotent",
-   "Check unit removal": "idempotent"
+   "Check the unit": "read-only",
+   "Check unit removal": "idempotent",
+   "Read removed unit state": "read-only"
   },
   "operation-process-install-instance-definitions": {
    "result": "read-only"
