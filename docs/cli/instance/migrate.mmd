@@ -17,10 +17,16 @@ sequenceDiagram
   CLI->>GW: instance:migrate 42
   %%> Command:
   %%> - `orbit instance:migrate INSTANCE`
-  %%> - syntax: `<instance> [--force] [--idempotency-key=KEY] [--json]`
+  %%> - syntax: `<instance> [--force] [--restore] [--idempotency-key=KEY] [--json]`
   Note over CLI: Confirm the downtime
   %%> What it asks:
   %%> - the Instance goes down during the move, and its old checkout moves to retention after it; `--force` answers yes
+  alt restore after an interrupted root without finish
+    Note over GW: Reuse the latest frozen intent
+    %%> - `--restore` requires the latest migrate to be interrupted without a native finish, else `instance.migrate_restore_unavailable`
+    %%> - retirement must not have begun and the container must not own the Instance, else `instance.migrate_restore_unsafe`
+    %%> - admits a new Operation of the same kind, with only Route restore, container removal and host Process/awake restore; it never repeats the move
+  end
   Note over GW: Validate, reserve runtime<br/>address · T3 port
   %%> Requirements:
   %%> - the Instance is an active checkout Instance on an `app-dev` Node of the build list, else `instance.migrate_unsupported`
@@ -103,6 +109,7 @@ sequenceDiagram
     %%> Retry:
     %%> - run the same command again; it starts with a new container
     %%> - a restore that failed keeps the reserved record and its address, and names the failed step
+    %%> - an interrupted root with no finish records moved/restored/ready as unknown and names `orbit instance:migrate INSTANCE --restore --force`; restore refuses after retirement began
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show TASK
