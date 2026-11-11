@@ -9,10 +9,10 @@ use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use JsonException;
-use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Orbit\Sdk\Requests\Processes\UpdateProcessRequest;
 use Orbit\Sdk\Requests\Projects\ListProcessDefinitionsRequest;
+use Orbit\Sdk\Requests\Projects\ShowProcessDefinitionRequest;
 use Orbit\Sdk\Requests\Projects\UpdateProcessDefinitionRequest;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
 use Orbit\Sdk\Responses\Processes\ProcessMutationResponse;
@@ -100,7 +100,7 @@ final class UpdateProcessCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $runtime = $this->stringOption('runtime') ?? ($installed ? null : 'systemd');
+        $runtime = $this->stringOption('runtime');
 
         if ($runtime !== null && ! in_array($runtime, ['systemd', 'docker'], strict: true)) {
             return $this->renderGatewayFailure(
@@ -110,19 +110,6 @@ final class UpdateProcessCommand extends ProcessCommand
         }
 
         $command = $this->stringListOption('command');
-        if (! $installed && $command === [] && $this->consoleMode()->mayPrompt) {
-            do {
-                $argument = $this->commandPrompts()->run(fn () => new TextPrompt(
-                    label: 'Command argument', required: $command === [],
-                    validate: static fn (string $value): ?string => strlen($value) > 4096 || preg_match('/[\\x00\\r\\n]/', $value) === 1 ? 'Invalid command argument.' : null,
-                    hint: $command === [] ? 'One literal argv item; no shell evaluation.' : 'Leave empty to finish.',
-                ));
-                if (! is_string($argument) || $argument === '') {
-                    break;
-                }
-                $command[] = $argument;
-            } while (count($command) < 64);
-        }
 
         if (
             count($command) > 64
@@ -138,7 +125,7 @@ final class UpdateProcessCommand extends ProcessCommand
             );
         }
 
-        $restartPolicy = $this->stringOption('restart') ?? ($installed ? null : 'never');
+        $restartPolicy = $this->stringOption('restart');
 
         if (
             $restartPolicy !== null
@@ -151,13 +138,6 @@ final class UpdateProcessCommand extends ProcessCommand
         }
 
         $image = $this->stringOption('image');
-        if (! $installed && $runtime === 'docker' && $image === null && $this->consoleMode()->mayPrompt) {
-            $answer = $this->commandPrompts()->run(fn () => new TextPrompt(
-                label: 'Docker image', required: true,
-                validate: static fn (string $value): ?string => strlen($value) > 255 || preg_match('/\\A[A-Za-z0-9][A-Za-z0-9._\\/:@-]*\\z/D', $value) !== 1 ? 'Invalid Docker image.' : null,
-            ));
-            $image = is_string($answer) ? $answer : null;
-        }
         $workingDirectory = $this->stringOption('working-directory');
         $environmentWasProvided = $this->input->hasParameterOption('--environment');
         $environment = $this->environment();
@@ -241,12 +221,32 @@ final class UpdateProcessCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $spec = [
-            'runtime' => $runtime,
-            'command' => $command,
-            'restart_policy' => $restartPolicy,
-            'keep_alive' => $this->option('keep-alive') === true,
-        ];
+        $connector = $this->gatewayConnector($repository, $connectors);
+        if ($connector === null) {
+            return self::FAILURE;
+        }
+        $current = $this->sendWithProgress(
+            $connector,
+            new ShowProcessDefinitionRequest($projectId, $name),
+            ProjectRuntimeDefinitionResponse::class,
+            ['Read Process definition', 'Reading Process definition', 'Read Process definition'],
+        );
+        if (! $current instanceof ProjectRuntimeDefinitionResponse) {
+            return self::FAILURE;
+        }
+        $spec = $current->spec;
+        if ($runtime !== null) {
+            $spec['runtime'] = $runtime;
+        }
+        if ($this->input->hasParameterOption('--command')) {
+            $spec['command'] = $command;
+        }
+        if ($restartPolicy !== null) {
+            $spec['restart_policy'] = $restartPolicy;
+        }
+        if ($this->option('keep-alive') === true) {
+            $spec['keep_alive'] = true;
+        }
 
         if ($image !== null) {
             $spec['image'] = $image;
@@ -282,12 +282,6 @@ final class UpdateProcessCommand extends ProcessCommand
                 'process.definition_invalid',
                 'Process definition could not be encoded.',
             );
-        }
-
-        $connector = $this->gatewayConnector($repository, $connectors);
-
-        if ($connector === null) {
-            return self::FAILURE;
         }
 
         $response = $this->sendWithProgress(
