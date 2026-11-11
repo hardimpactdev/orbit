@@ -3,7 +3,7 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,test,ci-build-plan,ci-units,ci-cache-ref,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
+  - bin/{review-check,test,ci-build-plan,ci-units,ci-cache-ref,ci-runner-prerequisites,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy,swamp-shape-python,swamp_shape_host_tools}.py,swamp/bin/{check-swamp-shape,gate-test-support}.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
   - "{tools/check_budget.py,swamp/tests/_support/slice.ts}"
   - "{apps/*,packages/php-sdk}/rector.php"
@@ -67,6 +67,10 @@ Pull requests and main pushes run the fast Swamp control checks. Selected shape 
 The Gateway Pest job installs Gateway and CLI dev Composer dependencies and regenerates both autoloaders with `composer install --no-scripts`. It then runs `bin/build-api` so tests read the current OpenAPI and MCP contracts; these generated outputs are not cached. NodeMetrics runs the CLI's PHP consent fixture. Separate vendor caches use each project's manifest and lockfile, PHP 8.5, the runner OS and SDK Composer metadata; they never restore the runtime-only Gateway cache.
 
 The job downloads the recipe's Deno 2.9.8 artifact and checks its SHA-256 before extraction. It caches the archive and JSR/npm downloads and warms the firewall test imports before Pest. It downloads the recipe's Caddy 2.11.7 artifact, checks its SHA-512 before extraction and requires the executable and version before running tests. Missing Caddy fails setup. The real Caddy fixtures wait for every listener in the chain before sending their assertions; the echo server uses an ephemeral loopback admin port. SQLite stays in memory; no database or Redis service is started. The two privileged kernel cases remain in Gateway static analysis.
+
+Gateway static analysis checks `nft --version` before its two real-kernel cases. Pi checks `setfacl --version` and `getfacl --version` before its ACL tests and verifies passwordless access to `nobody`. When the tools work, both jobs skip apt. Missing tools use `bin/ci-runner-prerequisites`: a signed Ubuntu 26.04 main index from Azure, then `archive.ubuntu.com` if needed.
+
+Each attempt uses private source and index files, a three-second connection timeout and no retries. An incomplete index update fails the attempt. Update and install share ten seconds for Azure and twenty seconds for the fallback. At the deadline, the helper kills the attempt's process group. It verifies the installed commands and fails if neither attempt supplies them. The job limits remain two minutes.
 
 The CI policy tests run actionlint on the complete CI workflow to check Actions syntax, types and context availability. The checker downloads pinned actionlint 1.7.12 and verifies its archive's SHA-256 before extraction, including cache hits. Its runner-label catalog predates `ubuntu-26.04`, so the actionlint configuration adds that label explicitly.
 
