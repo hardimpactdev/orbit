@@ -10,7 +10,6 @@ use App\Domain\ProjectDefinitions\ProjectDefinitionConflict;
 use App\Models\ProcessDefinition;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use SensitiveParameter;
 
 final readonly class ReplaceProcessDefinitionAction
@@ -22,18 +21,6 @@ final readonly class ReplaceProcessDefinitionAction
         return DB::transaction(function () use ($definition, $data): ProcessDefinition {
             $definition = ProcessDefinition::query()->lockForUpdate()->findOrFail($definition->id);
             $spec = ProcessDefinitionSpecification::update($definition->spec, $data->spec);
-            if (is_array($spec['environment'] ?? null)) {
-                $existing = $definition->spec['environment'] ?? [];
-                foreach ($spec['environment'] as $name => $value) {
-                    if ($value !== '[REDACTED]') {
-                        continue;
-                    }
-                    if (! is_array($existing) || ! is_string($existing[$name] ?? null)) {
-                        throw ValidationException::withMessages(['spec.environment' => ['A redacted value must name an existing environment key.']]);
-                    }
-                    $spec['environment'][$name] = $existing[$name];
-                }
-            }
             try {
                 $definition->update([
                     'name' => $data->name,

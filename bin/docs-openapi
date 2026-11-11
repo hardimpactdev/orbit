@@ -1188,6 +1188,8 @@ def schema_from_tokens(toks):
             sch['maxItems'] = int(mx)
         if mn:
             sch['minItems'] = int(mn)
+    if nullable and 'enum' in sch and None not in sch['enum']:
+        sch['enum'] = [*sch['enum'], None]
     sch = {'type': [type_, 'null'] if nullable else type_, **sch}
     if notes:
         sch['description'] = ' '.join(notes)
@@ -2000,7 +2002,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         }
     if route['name'] == 'project:process-definition:update' and body_schema:
         body_schema['properties']['spec'].pop('required', None)
-        body_schema['description'] = 'Partial specification update: omitted fields keep their stored values. Supplied maps and lists replace the whole field; empty collections clear it. A different runtime replaces the runtime specification and requires its command and other required fields.'
+        body_schema['description'] = 'Partial specification update: omitted fields keep their stored values. Null removes scalar overrides. Supplied maps and lists replace the whole field; empty collections clear it. Matched redaction placeholders keep stored values; unmatched placeholders refuse. A different runtime replaces the runtime specification and requires its command and other required fields.'
     if body_schema and 'oneOf' in body_schema:
         for variant in body_schema['oneOf']:
             variant['additionalProperties'] = False

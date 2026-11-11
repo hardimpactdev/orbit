@@ -108,7 +108,22 @@ The agent routes `agent:watch` and `agent:facts` are internal: only `orbit-agent
 
 `instance:register` lists two success answers: 201 with the Instance when the Gateway registers at once, and 202 with the Operation of the run that protects `.env`. The [Node agent](/reference/node-agent#facts) page owns their meaning.
 
-Project Process definition updates use `PUT /api/v1/projects/{project}/process-definitions/{name}`. The body requires `name`, `environments` and a `spec` object; fields inside `spec` are optional. [Definition updates](/reference/processes-and-schedules#project-definitions) preserve omitted fields and define runtime replacement and collection clearing. The generator resolves class constants in `Rule::in` and preserves integer enum values. The captured preset schema accepts `preset: vp-dev` and integer `preset_version: 1`; it publishes no empty enum.
+Project Process definition updates use `PUT /api/v1/projects/{project}/process-definitions/{name}`. The body requires `name`, `environments` and a `spec` object; fields inside `spec` are optional. An absent specification key keeps its stored value. A different runtime replaces the runtime specification and requires its command and other required fields.
+
+| Specification field | Removal or default |
+| --- | --- |
+| `working_directory` | Null removes the override: Docker uses its image's working directory; systemd uses its owner's default. |
+| `restart_policy` | Null restores `never`. |
+| `keep_alive`, `restart_on_deploy` | Null restores `false` and `true`, respectively. Explicit false remains supported. |
+| `environment_file` | Null restores the owner's default environment file. |
+| `environment` | An empty object clears the map. To remove one key, send the remaining map. |
+| `ports`, `volumes`, `required_mount_paths` | An empty list clears the field. To remove one item, send the remaining list. |
+| `runtime`, `command`, Docker `image` | Required fields cannot be cleared. |
+| Captured `preset`, `preset_version`, canonical command | Cannot be changed or cleared. |
+
+A sent string containing `[REDACTED]` preserves the entire stored value at the same field, list position or map key. A placeholder without a matching stored scalar refuses with a field validation error. This applies to command arguments and environment values as well as scalar fields; Orbit never stores a sent placeholder. Supplied maps and lists replace the whole collection after resolving placeholders.
+
+The generator resolves class constants in `Rule::in` and preserves integer enum values. Nullable scalar enums include null. The captured preset schema accepts `preset: vp-dev` and integer `preset_version: 1`; it publishes no empty enum. [Project definitions](/reference/processes-and-schedules#project-definitions) describe ownership and application of edits.
 
 A form-request rule `present` marks that property required, as `required` does.
 

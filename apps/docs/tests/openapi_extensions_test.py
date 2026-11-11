@@ -85,3 +85,15 @@ class OpenApiPresetRulesTest(unittest.TestCase):
             namespace['tokens_for']("['sometimes', 'integer', Rule::in([1])]"))
 
         self.assertEqual(schema, {'type': 'integer', 'enum': [1]})
+
+    def test_nullable_scalar_enum_accepts_null_without_changing_nonnullable_enums(self):
+        namespace = self.rules_namespace()
+
+        namespace['enums']['Policy'] = ['never', 'always']
+        schema, _, _ = namespace['schema_from_tokens'](
+            namespace['tokens_for']("['sometimes', 'nullable', Rule::enum(Policy::class)]"))
+        ordinary, _, _ = namespace['schema_from_tokens'](
+            namespace['tokens_for']("[Rule::enum(Policy::class)]"))
+
+        self.assertEqual(schema, {'type': ['string', 'null'], 'enum': ['never', 'always', None]})
+        self.assertEqual(ordinary, {'type': 'string', 'enum': ['never', 'always']})
