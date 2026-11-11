@@ -51,7 +51,7 @@ it('cancels a run whose last step transition is older than its hard limit', func
     Queue::fake();
     $operation = runLimitOperation($soft);
     app(NativeRunProgress::class)->apply($operation->id, $operation->state['swamp_run_id'],
-        ['kind' => 'step_started', 'stepId' => 'work', 'jobId' => 'main', 'seq' => 1]);
+        ['kind' => 'step_started', 'stepId' => 'work', 'jobId' => 'main', 'seq' => 1, 'startedAt' => now()->toISOString()]);
     $this->travel($idle - 2)->seconds();
     expect(app(ExpireOperationAction::class)->execute($operation->refresh())->status)->toBe(OperationStatus::Running);
     $this->travel(2)->seconds();
@@ -73,7 +73,7 @@ it('keeps a run past three times soft alive while steps keep transitioning', fun
     foreach (range(1, 4) as $seq) {
         $this->travel(19)->minutes();
         app(NativeRunProgress::class)->apply($operation->id, $operation->state['swamp_run_id'],
-            ['kind' => 'step_started', 'stepId' => 'work-'.$seq, 'jobId' => 'main', 'seq' => $seq]);
+            ['kind' => 'step_started', 'stepId' => 'work-'.$seq, 'jobId' => 'main', 'seq' => $seq, 'startedAt' => now()->toISOString()]);
         app(ExpireOperationAction::class)->execute($operation->refresh());
     }
 
@@ -119,6 +119,7 @@ it('records the overdue API response without requesting cancellation', function 
     $this->travelTo(new DateTimeImmutable('2026-11-11T10:00:00Z'));
     Queue::fake();
     $operation = runLimitOperation();
+    $operation->update(['input' => ['run_budget_seconds' => 900, 'soft_limit_seconds' => 360]]);
     $this->travel(7)->minutes();
     app(SwampReadBudget::class)->take('operation:'.$operation->id, 30);
 
@@ -134,4 +135,97 @@ it('records the overdue API response without requesting cancellation', function 
         file_put_contents($path, json_encode($fixture, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
     }
     expect($fixture)->toBe(json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR));
+});
+
+it('keeps the latest transition after a step ends with an empty or overlapping active list', function (string $kind, bool $overlap): void {
+    $this->travelTo(new DateTimeImmutable('2026-11-11T10:00:00Z'));
+    Queue::fake();
+    $operation = runLimitOperation();
+    $run = $operation->state['swamp_run_id'];
+    $progress = app(NativeRunProgress::class);
+    if ($overlap) {
+        $progress->apply($operation->id, $run, ['kind' => 'step_started', 'stepId' => 'long', 'jobId' => 'parallel', 'seq' => 1,
+            'startedAt' => '2026-11-11T10:01:00Z']);
+    }
+    $progress->apply($operation->id, $run, ['kind' => 'step_started', 'stepId' => 'work', 'jobId' => 'main', 'seq' => 2,
+        'startedAt' => '2026-11-11T10:20:00Z']);
+    $this->travel(35)->minutes();
+
+    $progress->apply($operation->id, $run, ['kind' => $kind, 'stepId' => 'work', 'jobId' => 'main', 'seq' => 3,
+        'completedAt' => '2026-11-11T10:35:00Z', 'allowedFailure' => true]);
+    $current = app(ExpireOperationAction::class)->execute($operation->refresh());
+
+    expect(OperationRunBudgets::deadline($current)?->toISOString())->toBe('2026-11-11T11:11:00.000000Z')
+        ->and($current->status)->toBe(OperationStatus::Running)
+        ->and($current->current_step)->toBe($overlap ? 'long' : null);
+})->with(['completion' => 'step_completed', 'failure' => 'step_failed', 'skip' => 'step_skipped'])
+    ->with(['empty' => false, 'overlap' => true]);
+
+it('does not give a delayed step start a fresh hard allowance', function (): void {
+    $this->travelTo(new DateTimeImmutable('2026-11-11T10:00:00Z'));
+    Queue::fake();
+    $operation = runLimitOperation();
+    $this->travel(60)->minutes();
+
+    app(NativeRunProgress::class)->apply($operation->id, $operation->state['swamp_run_id'],
+        ['kind' => 'step_started', 'stepId' => 'work', 'jobId' => 'main', 'seq' => 1, 'startedAt' => '2026-11-11T10:01:00Z']);
+    $current = app(ExpireOperationAction::class)->execute($operation->refresh());
+
+    expect(OperationRunBudgets::deadline($current)?->toISOString())->toBe('2026-11-11T10:37:00.000000Z')
+        ->and($current->error_code)->toBe('operation.timed_out');
+});
+
+it('preserves a step transition across replay and repeated same-step observations', function (): void {
+    $this->travelTo(new DateTimeImmutable('2026-11-11T10:00:00Z'));
+    $operation = runLimitOperation();
+    $progress = app(NativeRunProgress::class);
+    $event = ['kind' => 'step_started', 'stepId' => 'work', 'jobId' => 'main', 'seq' => 1, 'startedAt' => '2026-11-11T10:01:00Z'];
+    $this->travel(5)->minutes();
+    $progress->apply($operation->id, $operation->state['swamp_run_id'], $event);
+    $this->travel(25)->minutes();
+
+    $progress->apply($operation->id, $operation->state['swamp_run_id'], [...$event, 'seq' => 2, 'startedAt' => '2026-11-11T10:25:00Z']);
+    $progress->apply($operation->id, $operation->state['swamp_run_id'], $event);
+
+    expect(OperationRunBudgets::deadline($operation->refresh())?->toISOString())->toBe('2026-11-11T10:37:00.000000Z');
+});
+
+it('anchors delayed step endings to their native time', function (string $kind): void {
+    $this->travelTo(new DateTimeImmutable('2026-11-11T10:00:00Z'));
+    Queue::fake();
+    $operation = runLimitOperation();
+    $this->travel(80)->minutes();
+
+    app(NativeRunProgress::class)->apply($operation->id, $operation->state['swamp_run_id'],
+        ['kind' => $kind, 'stepId' => 'work', 'jobId' => 'main', 'seq' => 1, 'completedAt' => '2026-11-11T10:35:00Z', 'allowedFailure' => true]);
+    $current = app(ExpireOperationAction::class)->execute($operation->refresh());
+
+    expect(OperationRunBudgets::deadline($current)?->toISOString())->toBe('2026-11-11T11:11:00.000000Z')
+        ->and($current->error_code)->toBe('operation.timed_out');
+})->with(['completion' => 'step_completed', 'failure' => 'step_failed', 'skip' => 'step_skipped']);
+
+it('does not move the hard deadline backwards for an older transition on another step', function (): void {
+    $this->travelTo(new DateTimeImmutable('2026-11-11T10:00:00Z'));
+    $operation = runLimitOperation();
+    $progress = app(NativeRunProgress::class);
+    $this->travel(30)->minutes();
+    $progress->apply($operation->id, $operation->state['swamp_run_id'],
+        ['kind' => 'step_started', 'stepId' => 'recent', 'jobId' => 'main', 'seq' => 1, 'startedAt' => '2026-11-11T10:20:00Z']);
+
+    $progress->apply($operation->id, $operation->state['swamp_run_id'],
+        ['kind' => 'step_started', 'stepId' => 'old', 'jobId' => 'parallel', 'seq' => 2, 'startedAt' => '2026-11-11T10:05:00Z']);
+
+    expect(OperationRunBudgets::deadline($operation->refresh())?->toISOString())->toBe('2026-11-11T10:56:00.000000Z');
+});
+
+it('does not replace the start anchor with receipt time when native transition time is missing', function (): void {
+    $this->travelTo(new DateTimeImmutable('2026-11-11T10:00:00Z'));
+    Queue::fake();
+    $operation = runLimitOperation();
+    $this->travel(60)->minutes();
+
+    app(NativeRunProgress::class)->apply($operation->id, $operation->state['swamp_run_id'],
+        ['kind' => 'step_started', 'stepId' => 'work', 'jobId' => 'main', 'seq' => 1]);
+
+    expect(app(ExpireOperationAction::class)->execute($operation->refresh())->error_code)->toBe('operation.timed_out');
 });

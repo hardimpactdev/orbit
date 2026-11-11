@@ -105,7 +105,7 @@ For example, `task_vm.image_refresh` has 10,800 seconds and `node.converge` 3,90
 
 `gateway.release` has a provisional 3,600 seconds. The legacy runner's last 47 verified releases took 117 seconds at p95 and 125 at most. The Horizon drain waits for running jobs up to the longest supervisor timeout plus 30 seconds, 1,730 seconds. Their sum times 1.5 rounds up to 3,000; the busy guard adds up to 600 seconds. Before loading Swamp, the release checks queued, running and waiting `instance.create`, `instance.deploy*`, `conn.*` and `process.*` Operations every 5 seconds. It proceeds when idle or refuses with `gateway.release_busy` and the remaining IDs after 10 minutes. Force does not bypass the guard. An expiry [pauses releases](/reference/gateway-recovery#release-as-a-swamp-run). A maintainer must update the fixed row after measuring successful runs.
 
-A `tasks.script` and a `tasks.check` capture their budget at admission in `input.run_budget_seconds`, and the captured number is the Operation's run budget. Every script and every check captures the budget of its kind's history.
+A `tasks.script` and a `tasks.check` capture their learned soft limit at admission in `input.soft_limit_seconds`. They keep the native SSH time limit separately in `input.run_budget_seconds`: the greater of that learned limit and 900 seconds. A quick success can lower the soft limit without cutting off later valid work at the native step boundary.
 
 The workflows set the captured number as the native `timeoutSec` of each of their SSH steps. These native step limits still apply independently of the Gateway’s soft and hard limits.
 
@@ -127,7 +127,9 @@ Otherwise, the Gateway uses the longest successful run of that kind completed in
 
 The run budget is a soft limit. Passing it marks the Operation overdue, records `overdue_since` in API reads and `operation:show`, and raises one `operation.overdue` alert in Activity (`operation:overdue-alert`) and through the [signed release webhook](/reference/gateway-recovery#webhook). The alert contains IDs, kind and limits, without inputs or output. The Operation keeps running. The reconciler caches each kind’s history budget for one pass.
 
-The hard limit is the greater of three times the soft limit and the soft limit plus 30 minutes. It counts from `current_step_observed_at`, the last observed step transition, or `started_at` when no step has been observed. A run that keeps changing steps can run beyond three times its soft limit. Only a run with no step transition for the hard limit is cancelled. This separates a slow run from a stuck run, so learned budgets need no 15-minute floor. Native step timeouts remain separate limits.
+The hard limit is the greater of three times the soft limit and the soft limit plus 30 minutes. It counts from the latest authoritative native step transition time: `startedAt` for a start and `completedAt` for completion, failure or skip. The Gateway retains that time after a step leaves the active list, including when other steps still run.
+
+Receipt time, replay and repeated observations of the same transition do not extend the deadline. A transition without a valid native timestamp keeps the previous anchor; without one, the anchor is `started_at`. A run that keeps changing steps can run beyond three times its soft limit. Only a run with no step transition for the hard limit is cancelled. This separates a slow run from a stuck run, so learned soft limits need no 15-minute floor. The native task SSH timeout keeps its existing 15-minute minimum independently.
 
 An unbound admission with attempts `0` has a separate 600-second budget, matching Swamp’s default `queueTimeout`, regardless of its kind’s execution budget. It runs from `started_at`, or `created_at` when no start was recorded. The reconciler includes these rows, even when cancellation was already requested.
 

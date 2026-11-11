@@ -101,3 +101,25 @@ it('closes no row with an index-less skip of a started forEach item', function (
     expect(array_map(static fn (array $row): array => [$row['name'], $row['status']], progressRows($operation)))
         ->toBe([['Sign the CSR-0-0', 'running'], ['Sign the CSR-0', 'skipped']]);
 });
+
+it('keeps a completed transition across repeated observations and accepts a later restart of the same step', function (): void {
+    $this->travelTo(new DateTimeImmutable('2026-11-11T10:00:00Z'));
+    $operation = progressOperation();
+    $progress = app(NativeRunProgress::class);
+    $event = ['jobId' => 'main', 'stepId' => 'work'];
+    $progress->apply($operation->id, 'run-1', [...$event, 'kind' => 'step_started', 'seq' => 1, 'startedAt' => '2026-11-11T10:01:00Z']);
+    $progress->apply($operation->id, 'run-1', [...$event, 'kind' => 'step_completed', 'seq' => 2, 'completedAt' => '2026-11-11T10:35:00Z']);
+    $this->travel(60)->minutes();
+
+    $progress->apply($operation->id, 'run-1', [...$event, 'kind' => 'step_completed', 'seq' => 3, 'completedAt' => '2026-11-11T11:00:00Z']);
+
+    expect(progressRows($operation)[0]['finished_at'])->toBe('2026-11-11T10:35:00Z')
+        ->and($operation->state['native_progress']['last_transition_at'])->toBe('2026-11-11T10:35:00.000000Z')
+        ->and($operation->current_step)->toBeNull();
+
+    $this->travel(1)->minutes();
+    $progress->apply($operation->id, 'run-1', [...$event, 'kind' => 'step_started', 'seq' => 4, 'startedAt' => '2026-11-11T11:01:00Z']);
+
+    expect($operation->refresh()->state['native_progress']['last_transition_at'])->toBe('2026-11-11T11:01:00.000000Z')
+        ->and($operation->current_step)->toBe('work');
+});

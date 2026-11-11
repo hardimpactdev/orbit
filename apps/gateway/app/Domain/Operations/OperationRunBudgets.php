@@ -17,8 +17,8 @@ final class OperationRunBudgets
     private const int AdmissionSeconds = 600;
 
     /**
-     * Kinds whose admission captures `input.run_budget_seconds` and hands it to their SSH steps as the step time limit. The
-     * captured number wins over the kind's history, as the soft limit; native step limits remain separate.
+     * Task admissions capture the soft limit separately from the native SSH timeout. An already admitted task without the
+     * separate soft limit keeps its captured run budget.
      *
      * @var list<string>
      */
@@ -39,13 +39,16 @@ final class OperationRunBudgets
     }
 
     /**
-     * What the admission of a `tasks.script` captures in `input.run_budget_seconds`: the budget of the history. The workflow sets
-     * it as the time limit of each of its SSH steps, independently of the Gateway hard limit. The Gateway does not re-read the
-     * history after admission.
+     * Native task SSH timeouts retain their existing floor independently of the learned soft limit.
+     * Both values are frozen at admission; workflows keep reading only run_budget_seconds.
+     *
+     * @return array{soft_limit_seconds:int,run_budget_seconds:int}
      */
-    public static function scriptBudget(): int
+    public static function taskBudgets(string $kind): array
     {
-        return self::historySeconds(OperationKinds::TasksScript);
+        $soft = self::historySeconds($kind);
+
+        return ['soft_limit_seconds' => $soft, 'run_budget_seconds' => max(900, $soft)];
     }
 
     public static function seconds(Operation $operation): int
@@ -53,7 +56,7 @@ final class OperationRunBudgets
         if (self::admitting($operation)) {
             return self::AdmissionSeconds;
         }
-        $captured = $operation->input['run_budget_seconds'] ?? null;
+        $captured = $operation->input['soft_limit_seconds'] ?? $operation->input['run_budget_seconds'] ?? null;
         if (in_array($operation->kind, self::CapturedKinds, true) && is_int($captured) && $captured > 0) {
             return $captured;
         }
@@ -135,10 +138,9 @@ final class OperationRunBudgets
         }
         $start = $operation->started_at ?? $operation->created_at;
         $progress = $operation->state['native_progress'] ?? null;
-        $active = is_array($progress) && is_array($progress['active'] ?? null) ? $progress['active'] : [];
-        $current = $active === [] ? null : end($active);
-        if (! self::admitting($operation) && is_array($current) && is_string($current['observed_at'] ?? null)) {
-            $start = CarbonImmutable::parse($current['observed_at']);
+        $transition = is_array($progress) ? ($progress['last_transition_at'] ?? null) : null;
+        if (! self::admitting($operation) && is_string($transition)) {
+            $start = CarbonImmutable::parse($transition);
         }
 
         return $start === null ? null : CarbonImmutable::instance($start)->addSeconds(self::hardSeconds($operation));

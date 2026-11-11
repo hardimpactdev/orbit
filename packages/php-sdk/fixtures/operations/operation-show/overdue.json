@@ -10,7 +10,8 @@
             "target_type": "task_group",
             "target_id": 42,
             "input": {
-                "run_budget_seconds": 360
+                "run_budget_seconds": 900,
+                "soft_limit_seconds": 360
             },
             "status": "running",
             "sequence": 2,
