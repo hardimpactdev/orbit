@@ -7,7 +7,7 @@ import { run, script } from "./gate-test-support.ts";
 const source = await Deno.readTextFile(
     new URL("../../.github/workflows/swamp-shape.yml", import.meta.url),
 );
-const validate = source.split("  validate:")[1].split("  tests:")[0];
+const validate = source.split("\n  validate:\n")[1].split("\n  tests:\n")[0];
 Deno.test("validation receives only its registry-read credentials", () => {
     for (const key of ["API_KEY", "SIGNIN_TOKEN"]) {
         assertStringIncludes(validate, "secrets.SWAMP_" + key);
@@ -16,8 +16,8 @@ Deno.test("validation receives only its registry-read credentials", () => {
     assert(!source.includes("  native-plan:"));
 });
 Deno.test("required validation only receives event-scoped credentials", () => {
-    const shape = source.split("  shape:")[1].split("  validate:")[0],
-        tests = source.split("  tests:")[1];
+    const shape = source.split("\n  shape:\n")[1].split("\n  validate:\n")[0],
+        tests = source.split("\n  tests:\n")[1];
     for (const name of ["SWAMP_API_KEY", "SWAMP_SIGNIN_TOKEN"]) {
         assert(!shape.includes(name));
         assert(!tests.includes(name));
@@ -54,9 +54,10 @@ Deno.test("serve grant validation and coverage regressions remain required", asy
     const ci = await Deno.readTextFile(
         new URL("../../.github/workflows/ci.yml", import.meta.url),
     );
-    // Required checks waits for the Swamp validation job through the Actions API, not `needs`.
-    const required = ci.split("  required:")[1];
-    assertStringIncludes(required, "'Swamp / Swamp workflow validate': 'swamp'");
+    // Required checks depends on the reusable Swamp workflow, including validation.
+    const required = ci.split("\n  required:\n")[1];
+    const needs = required.match(/^    needs: \[(.+)\]$/m)?.[1].split(/,\s*/);
+    assert(needs?.includes("swamp"));
 });
 Deno.test("native environment is explicit and configuration is isolated", async () => {
     const result = await run("python3", [
