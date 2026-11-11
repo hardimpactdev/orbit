@@ -6,7 +6,8 @@ covers:
   - apps/gateway/app/Domain/AppDev/{ClusterRouterDnsSelection*,Dns*,PrivateDns*}.php
   - apps/gateway/app/Infrastructure/WireGuard/{NativeWireGuardPeerConverger,NativeWireGuardPeerDnsRepairer,PeerDnsPolicy}.php
   - apps/gateway/app/Infrastructure/Gateway/GatewayPrivateDnsResolver.php
-  - apps/gateway/app/Domain/Nodes/GatewayPrivateDnsRoute.php
+  - apps/gateway/app/Domain/Nodes/{GatewayPrivateDnsRoute,NodeDesiredConvergeInput}.php
+  - swamp/ansible/tasks/private-dns-listener.yml
   - apps/gateway/app/{Actions/Fleet/AdmitPeerDnsAction,Console/Commands/ReconcilePeerDnsCommand}.php
 ---
 
@@ -85,7 +86,9 @@ The Gateway uses the fleet VPN resolver when any separate Node holds a `vpn` rol
 
 Local DNS becomes eligible only after the last separate `vpn` assignment row is gone. Failed and removing rows still suppress it. The current APIs forbid removing the VPN role or its Node, so production has no supported path into local DNS.
 
-With no separate VPN assignment, the Gateway role installs the shared private-DNS listener and a catalog rendered from the Gateway database before routing the private VPN domain to its own WireGuard address. The Gateway decides this from desired fleet state and passes the listener into the converge input; host probes do not select the policy. It proves that `gateway.orbit` answers and the listener loaded the catalog before applying resolver routing.
+With no separate VPN assignment, the Gateway role installs the shared private-DNS listener and a catalog rendered from the Gateway database before routing the private VPN domain to its own WireGuard address. The Gateway decides this from desired fleet state and passes the listener into the converge input; host probes do not select the policy.
+
+The proof uses the image’s existing `dig` to prove that `gateway.orbit` answers, then checks that the listener loaded the catalog before applying resolver routing. Local DNS adds no package to the captured recipe and changes no package pin. If `dig` is missing, the phase fails with `gateway.private_dns_tool_missing` before installing the listener.
 
 Only a local DNS installation or withdrawal selects an additional wrapper playbook. Every existing Ansible file used by a Gateway with a separate VPN resolver stays unchanged. Shipping the additional files in the manifest has no host effect.
 

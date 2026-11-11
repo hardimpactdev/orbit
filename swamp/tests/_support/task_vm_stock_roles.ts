@@ -371,6 +371,33 @@ async function operation(
   }
 }
 
+export async function missingGatewayDnsTool() {
+  const folder = Deno.makeTempDirSync();
+  try {
+    Deno.mkdirSync(`${folder}/bin`);
+    prepareStockRoles(folder);
+    const path = `${folder}/tasks/private-dns-listener.yml`;
+    const tasks = JSON.parse(Deno.readTextFileSync(path)) as Task[];
+    // Hide image tools only from the real availability check, without changing the host or Ansible's own PATH.
+    tasks.find((task) =>
+      task.name === "Find the image's private DNS proof tool"
+    )!
+      .environment = { PATH: `${folder}/without-dig` };
+    Deno.writeTextFileSync(path, JSON.stringify(tasks));
+    await operation(folder, 2);
+    return {
+      status: Deno.readTextFileSync(`${folder}/role-2.status`),
+      output: Deno.readTextFileSync(`${folder}/role-2.output`),
+      units: [...Deno.readDirSync(`${folder}/units`)].map((entry) =>
+        entry.name
+      ),
+    };
+  } finally {
+    cleanupStockRoles(folder);
+    Deno.removeSync(folder, { recursive: true });
+  }
+}
+
 export async function existingGatewayDns(check = false) {
   const folder = Deno.makeTempDirSync();
   try {

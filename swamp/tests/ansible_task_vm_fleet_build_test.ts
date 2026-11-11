@@ -9,6 +9,7 @@ import {
   cleanupStockRoles,
   existingGatewayDns,
   freshGatewayDnsCheck,
+  missingGatewayDnsTool,
   prepareStockRoles,
   productionGatewayDns,
   stockBaseTasks,
@@ -550,6 +551,20 @@ Deno.test({
         find(result.log, "php artisan orbit:node-add app-prod"),
       true,
     );
+  },
+});
+
+Deno.test({
+  name:
+    "local Gateway DNS fails with a named error before activation when dig is missing",
+  ignore: !hasAnsible,
+  async fn() {
+    const result = await missingGatewayDnsTool();
+    assertEquals(result.status, "failed", result.output);
+    assertStringIncludes(result.output, "gateway.private_dns_tool_missing");
+    assertStringIncludes(result.output, "the image must provide dig");
+    assertEquals(result.units, []);
+    assertEquals(result.output.includes("FAILED - RETRYING"), false);
   },
 });
 

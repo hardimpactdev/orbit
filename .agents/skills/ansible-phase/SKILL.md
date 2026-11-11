@@ -149,3 +149,5 @@ When resolving symlinks, retain directory requirements from raw targets ending i
 FrankenPHP's `trusted_proxies` does not translate native PHP CGI variables. Match the real Node peer and forwarded HTTPS before setting scheme, port or client IP. Share one rendered Caddyfile between the Ansible Processes phase and the native clone guest, and test configuration drift without unit drift in both writers.
 
 Native speed paths must use the same effective-NIC start gate as the Ansible phase. Carry the common NIC ACL name in Gateway intent for every writer; a network union ACL must never be attached to a NIC.
+
+Use stock-image tools for readiness probes and check their presence with a named failure. Adding a pinned APT package only for a probe can force a partial downgrade of an exact-version dependency set already installed by the image.

@@ -176,6 +176,51 @@ it('captures Gateway DNS without a configured DNS server or a separate VPN Node'
         ->toHaveKey('listener');
 });
 
+it('adds zero packages to the captured Gateway recipe when local DNS is selected', function (): void {
+    config(['swamp.address' => 'swamp.orbit', 'swamp.ca_path' => '/fixture/ca.pem', 'swamp.run_token' => 'fixture',
+        'swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
+    app()->instance(LeafCertificateSigner::class, new class implements LeafCertificateSigner
+    {
+        public function rootCertificate(): string
+        {
+            return "fixture root\n";
+        }
+    });
+    $frame = null;
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('connect', 'close')->andReturnNull();
+    $socket->shouldReceive('isConnected')->andReturnTrue();
+    $socket->shouldReceive('send')->andReturnUsing(function (array $sent) use (&$frame): void {
+        $frame = $sent;
+    });
+    $socket->shouldReceive('receive')->andReturnUsing(static function () use (&$frame): array {
+        if (! isset($frame['id'], $frame['payload']['vaultName'], $frame['payload']['key'])) {
+            throw new LogicException('The fixture expects a vault.put frame before its response.');
+        }
+
+        return [['type' => 'vault.put', 'id' => $frame['id'], 'payload' => ['data' => ['vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    });
+    app()->instance(WebSocketClient::class, $socket);
+    $node = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.45.0.1',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture', 'agent_secret_hash' => str_repeat('a', 64),
+        'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64']));
+    $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $node->roles()->create(['role' => RoleName::Swamp, 'status' => LifecycleStatus::Active]);
+    $vpn = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'vpn', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.45.0.2',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture',
+        'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64']));
+    $vpn->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+    $operation = Operation::query()->create(['kind' => 'node.converge', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
+        'status' => 'running', 'input' => [], 'triggered_by' => 'test']);
+    $capture = app(NodeDesiredConvergeInput::class);
+    $without = $capture->capture($node, ['gateway'], false, $operation, null)['intent'];
+    expect($without)->not->toHaveKey('playbook');
+    $vpn->roles()->delete();
+    $with = $capture->capture($node, ['gateway'], false, $operation, null)['intent'];
+    expect($with['playbook'])->toBe('operation-node-converge-local-dns.yml');
+    expect($with['recipe'])->toBe($without['recipe']);
+});
+
 it('keeps production Gateway runtime recipe and Ansible vars byte identical to main', function (LifecycleStatus $vpnNodeStatus, LifecycleStatus $vpnRoleStatus): void {
     config(['orbit.gateway_checkout' => '/home/orbit/orbit/apps/gateway', 'orbit.home' => '/home/orbit/.orbit',
         'orbit.hibernation.sweep_seconds' => 600, 'orbit.gateway_queue.connection' => null,
