@@ -1,7 +1,7 @@
 id: b86db038-a619-468c-9c35-d3d30673b762
 name: proof-fleet-restore
 description: >-
-  Put the nested fleet of a proof task VM back to its `base` snapshot and make it ready and current (stage 3 of the command development pipeline): a plain restore of the three nested containers, 45 seconds at most and no retry, a start of the containers, the readiness check, then the apply step. Each step is one command over official SSH to the task VM.
+  Put the nested fleet of a proof task VM back to its `base` snapshot and make it ready and current (stage 3 of the command development pipeline): a plain restore of the three nested containers, 45 seconds at most and no retry, a start of the containers, the cloud-init wait, the apply step with migrations, then the readiness check. Each step is one command over official SSH to the task VM.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -46,15 +46,15 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-restore-" + string(inputs.ssh_execution.target.node_id) + "-wait-for-cloud-init" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("proof-restore-" + string(inputs.ssh_execution.target.node_id) + "-wait-for-cloud-init" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'exec', '${{ "nested-" + self.role }}', '--', 'cloud-init', 'status', '--wait'], okExitCodes: [0, 2], timeoutSec: 70}}
     dependsOn: [{step: 'Check the containers run', condition: {type: succeeded}}]
-  # Ready: every Node agent online, the operator known, Doctor healthy (child `task-nested-ready`, shared with the fleet start).
-  - name: 'Check readiness'
-    labels: {role: swamp}
-    writes: true
-    task: {type: workflow, workflowIdOrName: task-nested-ready, inputs: {guest_node_id: '${{ inputs.ssh_execution.target.node_id }}', ssh_execution: '${{ inputs.ssh_execution }}'}}
-    dependsOn: [{step: 'Wait for cloud-init', condition: {type: succeeded}}]
-  # The checkout and the state of the restored fleet run the current code again.
+  # The mounted checkout already serves the candidate, but `base` restores its older schema. Apply needs only the boot and state mounts, not the Gateway API.
   - name: 'Apply the checkout'
     labels: {role: swamp}
     writes: true
     task: {type: workflow, workflowIdOrName: task-nested-apply, inputs: {guest_node_id: '${{ inputs.ssh_execution.target.node_id }}', ssh_execution: '${{ inputs.ssh_execution }}', fleet: '${{ {"guests": {"gateway": "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod"}, "network": "oe-nested"} }}', club: '${{ true }}'}}
-    dependsOn: [{step: 'Check readiness', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Wait for cloud-init', condition: {type: succeeded}}]
+  # Doctor and the nodes API must read only after the checkout migrations and service restart succeed.
+  - name: 'Check readiness'
+    labels: {role: swamp}
+    writes: true
+    task: {type: workflow, workflowIdOrName: task-nested-ready, inputs: {guest_node_id: '${{ inputs.ssh_execution.target.node_id }}', ssh_execution: '${{ inputs.ssh_execution }}'}}
+    dependsOn: [{step: 'Apply the checkout', condition: {type: succeeded}}]
