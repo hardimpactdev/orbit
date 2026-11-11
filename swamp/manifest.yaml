@@ -7,6 +7,8 @@ description: Private intent files and shipped playbooks for Ansible phases.
 behaviors:
   - operations/ansible-input/write.ts
 additionalFiles:
+  - scripts/instance_clone.py
+  - scripts/instance_clone_guest.py
   - ansible/proof-gateway.yml
   - ansible/proof-observers.yml
   - ansible/proof-observer-facts.php
@@ -19,6 +21,7 @@ additionalFiles:
   - ansible/operation-node-role-add.yml
   - ansible/operation-node-converge.yml
   - ansible/tasks/node-role-runtime.yml
+  - ansible/tasks/node-converge-cli-absent.yml
   - ansible/tasks/node-converge-base.yml
   - ansible/tasks/node-kernel-policy.yml
   - ansible/tasks/node-update-policy.yml
@@ -67,6 +70,13 @@ additionalFiles:
   - ansible/tasks/instance-container-process.yml
   - ansible/route-create-site.yml
   - ansible/route-withdraw.yml
+  - ansible/instance-migrate.yml
+  - ansible/instance_migrate_links.py
+  - ansible/tasks/instance-migrate-link-result.yml
+  - ansible/tasks/instance-migrate-phase.yml
+  - ansible/tasks/instance-migrate-discard.yml
+  - ansible/tasks/instance-migrate-retire.yml
+  - ansible/tasks/instance-migrate-retirement-check.yml
   - ansible/ai-router-task-guard.yml
   - ansible/ai-router-model-forwarder.yml
   - ansible/tasks/address-node.yml

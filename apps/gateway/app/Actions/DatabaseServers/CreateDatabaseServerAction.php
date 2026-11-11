@@ -72,6 +72,9 @@ final readonly class CreateDatabaseServerAction
             ? DatabaseServerProcess::valkeyData($server, $node, $process->name ?? $server->slug, (string) $volume)
             : DatabaseServerProcess::data($server, $node, $server->root_password);
         $attributes = $this->specifications->attributes($processData, $target);
+        if ($process !== null) {
+            $attributes['runtime_config']['image'] = $process->runtime_config['image'];
+        }
         $initialize = ! $redis && ($server->status !== LifecycleStatus::Active || $process === null || DatabaseServerProcess::holdsRootPassword($process));
         $initialEnvironment = $initialize ? $attributes['runtime_config']['environment'] : [];
         $attributes['runtime_config']['environment'] = [];

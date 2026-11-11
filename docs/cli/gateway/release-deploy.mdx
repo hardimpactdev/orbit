@@ -28,6 +28,7 @@ Interrupting the CLI stops following, not the release. Read the outcome later wi
 | --- | --- |
 | `gateway.release_commit_invalid` | The commit is not a full 40-character SHA. |
 | `gateway.release_in_progress` | Another release is queued or running. |
+| `gateway.release_busy` | Protected Operations remain active after 10 minutes. The record names their IDs; the old release stays live and automatic releases pause. |
 | `gateway.release_not_adopted` | The Gateway does not run from a release yet. |
 | `gateway.release_web_build_missing` | CI published no web build for the commit. |
 | `gateway.release_follow_failed` | The CLI stopped reading the record. The release continues on the Gateway. |

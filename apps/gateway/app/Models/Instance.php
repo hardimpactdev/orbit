@@ -30,6 +30,8 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property string $source_layout
  * @property string $checkout_path
+ * @property string|null $retained_git_path
+ * @property Carbon|null $retained_git_at
  * @property string|null $source_prepare_id
  * @property string|null $production_user
  * @property string|null $production_home
@@ -143,6 +145,8 @@ final class Instance extends Model
         'name',
         'source_layout',
         'checkout_path',
+        'retained_git_path',
+        'retained_git_at',
         'source_prepare_id',
         'production_user',
         'production_home',
@@ -253,6 +257,13 @@ final class Instance extends Model
 
         return $authoritative->first(static fn (Route $route): bool => ! $route->hasWebRoot())
             ?? $authoritative->first();
+    }
+
+    public function url(): ?string
+    {
+        $route = $this->authoritativeRoute() ?? $this->routes->first();
+
+        return $route instanceof Route ? "https://{$route->domain}" : null;
     }
 
     /** @return HasMany<InstanceDeployStep, $this> */
@@ -455,6 +466,7 @@ final class Instance extends Model
             'vite_port' => 'integer',
             'ssr_port' => 'integer',
             'clone_candidate_id' => 'integer',
+            'retained_git_at' => 'immutable_datetime',
             'clone_completed_at' => 'immutable_datetime',
             'registration_detached' => 'boolean',
             'registration_primary' => 'boolean',

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Data\Operations\OperationData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerDestroyExecutionCopies;
@@ -93,12 +94,12 @@ function destroyDefault(): Instance
     return $default->refresh();
 }
 
-function destroyClone(Instance $default): Instance
+function destroyClone(Instance $default, bool $migrated = false): Instance
 {
     $clone = Instance::query()->create(['project_id' => $default->project_id, 'node_id' => $default->node_id, 'name' => 'feature',
         'status' => InstanceState::Active, 'branch' => 'feature', 'starting_commit' => str_repeat('c', 40), 'source_layout' => 'checkout', 'checkout_path' => '/tmp/reservation', 'first_setup_pending' => false]);
     $clone->update(['checkout_path' => InstanceContainer::workspaceOnNode($clone)]);
-    app(InstanceContainer::class)->reserve($clone, $default->node, $default);
+    app(InstanceContainer::class)->reserve($clone, $default->node, $migrated ? null : $default);
 
     return $clone->refresh();
 }
@@ -117,16 +118,16 @@ it('keeps container default destruction unavailable in this clone-only slice', f
         ->and(Operation::query()->count())->toBe($before)->and($default->fresh()->status)->toBe(InstanceState::Active);
 })->with([false, true]);
 
-it('requires force for clone cleanup until guarded removal is built', function (): void {
-    $clone = destroyClone(destroyDefault());
+it('requires force for non-default cleanup until guarded removal is built', function (bool $migrated): void {
+    $clone = destroyClone(destroyDefault(), $migrated);
     $before = Operation::query()->count();
     expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($clone, false)))->toBe('instance.container_destroy_force_required')
         ->and(Operation::query()->count())->toBe($before)->and($clone->fresh()->status)->toBe(InstanceState::Active);
-});
+})->with(['clone' => false, 'migrated checkout' => true]);
 
-it('removes container Processes and disabled Conn records and frees the port only after success', function (): void {
+it('removes container Processes and disabled Conn records and frees the port only after success', function (bool $migrated): void {
     $default = destroyDefault();
-    $clone = destroyClone($default);
+    $clone = destroyClone($default, $migrated);
     $port = $clone->runtime->t3_port;
     $process = Process::query()->forceCreate(['owner_type' => 'instance', 'owner_id' => $clone->id, 'name' => 'worker', 'runtime' => 'systemd',
         'runtime_config' => ['command' => ['node', 'worker.js']], 'status' => 'active']);
@@ -134,7 +135,7 @@ it('removes container Processes and disabled Conn records and frees the port onl
         'url' => 'http://10.44.0.7:3800', 'node_id' => $clone->node_id, 'admin_session' => 'gateway-private-value',
         'admin_session_expires_at' => now()->addDay(), 'registered_at' => now()]);
     $pairing = ConnPairing::query()->create(['node_id' => $clone->node_id, 'conn_environment_id' => $environment->id, 'client_label' => 'mac', 'credential' => 'private-link']);
-    $create = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $clone->id,
+    $create = Operation::query()->create(['kind' => $migrated ? 'instance.migrate' : 'instance.create', 'target_type' => 'instance', 'target_id' => $clone->id,
         'node_id' => $clone->node_id, 'status' => 'succeeded', 'input' => [], 'state' => [],
         'result' => ['t3' => ['gateway_session' => ['vault' => 'orbit-control-inputs', 'key' => 'native-gateway-copy']]]]);
     app(ExtensionStore::class)->set('conn', false);
@@ -148,8 +149,29 @@ it('removes container Processes and disabled Conn records and frees the port onl
     expect($next->runtime->t3_port)->toBe($port);
     expect($default->runtime()->exists())->toBeTrue();
     $deleted = collect($this->socket->messages)->where('type', 'vault.delete')->pluck('payload.key')->all();
-    expect($deleted)->toContain('native-gateway-copy', 'instance-create-model-'.$create->id)
+    expect($deleted)->toContain('native-gateway-copy', ($migrated ? 'instance-migrate-model-' : 'instance-create-model-').$create->id)
+        ->toContain(($migrated ? 'instance-migrate-processes-' : 'instance-create-processes-').$create->id)
         ->not->toContain('instance-create-model-'.Operation::query()->where('target_id', $default->id)->value('id'));
+})->with(['clone' => false, 'migrated checkout' => true]);
+
+it('keeps retained Git findable in the destroy result after deleting a migrated Instance', function (): void {
+    $clone = destroyClone(destroyDefault(), true);
+    $path = '/home/orbit/apps/tool/feature.orbit-retired-git';
+    $at = '2026-11-10T19:00:00+00:00';
+    $clone->update(['retained_git_path' => $path, 'retained_git_at' => $at]);
+    $operation = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    $terminal = destroyTerminal($operation, 'succeeded');
+
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, $terminal);
+
+    expect($clone->fresh())->toBeNull()
+        ->and(OperationData::summary($operation->fresh())->result)->toBe([
+            'removed' => true, 'retained_git_path' => $path, 'retained_git_at' => $at,
+        ]);
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation->fresh(), $terminal);
+    expect($operation->fresh()->result)->toBe([
+        'removed' => true, 'retained_git_path' => $path, 'retained_git_at' => $at,
+    ]);
 });
 
 it('keeps a failed removal retryable without freeing the port', function (): void {

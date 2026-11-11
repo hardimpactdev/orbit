@@ -382,3 +382,50 @@ Deno.test("a rollout admitted before the record tables were dropped still prepar
         await Deno.remove(directory, { recursive: true });
     }
 });
+
+for (const kind of ["fleet.rollout", "fleet.cli_converge"] as const) {
+    Deno.test(`${kind} omits CLI publication for a Node with no caller`, async () => {
+        const directory = await Deno.makeTempDir();
+        const file = `${directory}/state.json`;
+        const node = {
+            node_id: 2, user: "orbit", release: null, profile: "", skip_reason: "cli_not_required", plan_error: null,
+            daytime: true, agent: { ...agent, url: "https://artifacts.invalid/agent" },
+            ssh: { control_node_id: 209, identity_file: "/identity", target: { host: "node.invalid", user: "orbit", port: 22, host_keys: ["public-key"] } },
+        };
+        try {
+            await Deno.writeTextFile(file, JSON.stringify({
+                bound: true, calls: [], operation: {
+                    id: 7, kind, node_id: 1, status: "running", cancel_requested: false,
+                    input: { nodes: [node, { ...node, node_id: 3 }] },
+                },
+            }));
+            const release = fleetRelease(() => directHttp(file));
+            const test = createModelTestContext({ globalArgs: { gatewayUrl: "https://gateway.invalid", caFile: "/unused" } });
+            const context = Object.assign(test.context, { extensionFile: (path: string) => new URL(path, import.meta.url).pathname }) as unknown as Parameters<typeof release.methods.gate.execute>[1];
+            const args = { operation_id: 7, kind, node_id: 1, run_id: crypto.randomUUID() };
+            const gate = await release.methods.gate.execute({ ...args, target_node_id: 2, previous: {} }, context);
+            assertEquals(gate.install, false);
+            const record = await release.methods.record.execute({
+                ...args, target_node_id: 2, gate, native_cli: { status: "skipped", result: null },
+            }, context);
+            assertEquals(record.cli_version, null);
+            assertEquals(record.ok, true);
+            if (kind === "fleet.rollout") {
+                assertEquals([record.outcome, record.step], ["unchanged", "agent"]);
+                // The next Node must wait for the observer, not treat CLI omission as a completed visit.
+                const pending = await release.methods.gate.execute({ ...args, target_node_id: 3, previous: { "node-0": { outputs: { record } } } }, context);
+                assertEquals(pending.result.outcome, "pending");
+                const observer = await release.methods.observer.execute({
+                    ...args, target_node_id: 2, record, agent: node.agent, fetch: "succeeded", changed: true, restart: "succeeded", running,
+                }, context);
+                assertEquals([observer.outcome, observer.step, observer.agent_version], ["converged", "verify", agent.version]);
+                const next = await release.methods.gate.execute({ ...args, target_node_id: 3, previous: { "node-0": { outputs: { record, observer } } } }, context);
+                assertEquals([next.result.outcome, next.result.step], ["unchanged", "agent"]);
+            } else {
+                assertEquals([record.outcome, record.step], ["skipped", "admission"]);
+            }
+        } finally {
+            await Deno.remove(directory, { recursive: true });
+        }
+    });
+}

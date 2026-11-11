@@ -40,13 +40,17 @@ final readonly class DatabaseServerCommands
         ];
     }
 
-    private static function probe(DatabaseDriver $driver): string
+    /** @return list<string> */
+    public static function healthcheckArguments(DatabaseDriver $driver): array
     {
-        return match ($driver) {
+        $probe = match ($driver) {
             DatabaseDriver::Pgsql => 'pg_isready --host=127.0.0.1 --username=postgres --dbname=postgres',
             DatabaseDriver::Redis => 'valkey-cli PING',
             default => 'mysqladmin --protocol=TCP --host=127.0.0.1 ping --silent',
         };
+
+        return ['--health-cmd', $probe, '--health-interval', '2s', '--health-timeout', '5s',
+            '--health-retries', '3', '--health-start-period', '300s'];
     }
 
     /**
@@ -59,8 +63,8 @@ final readonly class DatabaseServerCommands
         $argv = ['docker', 'run', '--detach', '--name', $input['container'],
             '--label', 'orbit.managed=true', '--label', 'orbit.container.kind=process',
             '--label', 'orbit.process.id='.$input['process_id'], '--label', 'orbit.process.spec='.$spec,
-            '--restart', ValidatedData::string($definition['restart']), '--health-cmd', self::probe(DatabaseDriver::from($input['driver'])),
-            '--health-interval', '2s', '--health-timeout', '5s', '--health-retries', '3', '--health-start-period', '300s'];
+            '--restart', ValidatedData::string($definition['restart']),
+            ...ValidatedData::stringList($definition['healthcheck_arguments'])];
         foreach (ValidatedData::stringList($definition['ports']) as $port) {
             array_push($argv, '--publish', $port);
         }

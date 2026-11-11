@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/conn-revocation-plan'
-version: 2026.11.10.2
+version: 2026.11.10.3
 visibility: private
 license: MIT
 description: Conn revocation data and a shipped upstream T3 auth snapshot reader.

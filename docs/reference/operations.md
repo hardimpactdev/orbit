@@ -101,7 +101,7 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `fleet.reboot` has a provisional 10,800 seconds, the length of its window: a pass never starts a Node it cannot drain and reboot before the window closes. A 14-day p95 replaces it once passes have history.
 
-`gateway.release` has a provisional 3,000 seconds. The legacy runner's last 47 verified releases took 117 seconds at p95 and 125 at most. The Horizon drain waits for running jobs up to the longest supervisor timeout plus 30 seconds, 1,730 seconds. Their sum times 1.5 rounds up to 3,000. An expiry [pauses releases](/reference/gateway-recovery#release-as-a-swamp-run). A first success replaces it with a p95.
+`gateway.release` has a provisional 3,600 seconds. The legacy runner's last 47 verified releases took 117 seconds at p95 and 125 at most. The Horizon drain waits for running jobs up to the longest supervisor timeout plus 30 seconds, 1,730 seconds. Their sum times 1.5 rounds up to 3,000; the busy guard adds up to 600 seconds. Before loading Swamp, the release checks queued, running and waiting `instance.create`, `instance.deploy*`, `conn.*` and `process.*` Operations every 5 seconds. It proceeds when idle or refuses with `gateway.release_busy` and the remaining IDs after 10 minutes. Force does not bypass the guard. An expiry [pauses releases](/reference/gateway-recovery#release-as-a-swamp-run). A first success replaces it with a p95.
 
 A `tasks.script` and a `tasks.check` capture their budget at admission in `input.run_budget_seconds`, and the captured number is the Operation's run budget. Every script and every check captures the budget of its kind's history.
 
@@ -395,7 +395,7 @@ An operation holds its target from the start request to its terminal status. A s
 
 ### One Route write per Node
 
-A Route write holds the Nodes that serve its site, from admission to its terminal status ([Coordinate publication](/reference/routes#coordinate-publication)). The kinds are `instance.create`, `instance.destroy`, `instance.clone`, `instance.transfer`, `route.create`, `route.update`, `route.destroy` and `route.target_set`. A second write for a held Node is admitted with status `waiting` and a `hold_nodes` value in its state. It starts no run and gets no `409`.
+A Route write holds the Nodes that serve its site, from admission to its terminal status ([Coordinate publication](/reference/routes#coordinate-publication)). The kinds are `instance.create`, `instance.destroy`, `instance.clone`, `instance.transfer`, `instance.migrate`, `route.create`, `route.update`, `route.destroy` and `route.target_set`. A second write for a held Node is admitted with status `waiting` and a `hold_nodes` value in its state. It starts no run and gets no `409`.
 
 Task provision and cancel, `instance.register` and the Cluster Router writes hold the same Nodes for one step only. The run calls `operation:direct:route-hold` before its Route-publish step and `operation:direct:route-release` after it. The hold of such a step has a lease of 5 minutes, which the minute pass frees when it ends, and the terminal status of the Operation frees it too.
 

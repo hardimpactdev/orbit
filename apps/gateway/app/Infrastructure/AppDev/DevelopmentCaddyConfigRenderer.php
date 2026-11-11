@@ -194,7 +194,7 @@ final readonly class DevelopmentCaddyConfigRenderer
                 $tls = "\n        tls_server_name {$site->domain}\n        tls_trusted_ca_certs {$root}\n        versions 1.1";
             }
 
-            return <<<CADDY
+            $application = <<<CADDY
                 reverse_proxy {$upstream} {{$host}
                     flush_interval -1
                     transport http {{$tls}
@@ -203,6 +203,8 @@ final readonly class DevelopmentCaddyConfigRenderer
                     }
                 }
                 CADDY;
+
+            return $site->viteUpstream === null ? $application : $this->withDevelopmentServer($application, $site->viteUpstream);
         }
 
         if ($site->isProxy()) {
@@ -274,7 +276,7 @@ final readonly class DevelopmentCaddyConfigRenderer
             return $application;
         }
 
-        $handlers = $this->withDevelopmentServer($application, $site->vitePort);
+        $handlers = $this->withDevelopmentServer($application, $site->vitePort === null ? null : DevelopmentServerEndpoint::upstream($site->vitePort));
         $wake = $this->hibernationWake($site);
 
         return $wake === null ? $handlers : $wake.PHP_EOL.$handlers;
@@ -359,13 +361,12 @@ final readonly class DevelopmentCaddyConfigRenderer
             CADDY;
     }
 
-    private function withDevelopmentServer(string $applicationHandler, ?int $port): string
+    private function withDevelopmentServer(string $applicationHandler, ?string $upstream): string
     {
         $vite = '';
 
-        if ($port !== null) {
+        if ($upstream !== null) {
             $path = DevelopmentServerEndpoint::PATH;
-            $upstream = DevelopmentServerEndpoint::upstream($port);
             $vite = <<<CADDY
                 @orbit_vite {
                     path {$path} {$path}/*

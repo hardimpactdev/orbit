@@ -80,3 +80,15 @@ CI capacity is a bounded wait, never a passing no-case outcome. A proof report m
 Released proof workflows run the runner from each PR head. Check its help for support before calling a new runner command; an older open PR can still use the previous interface.
 
 A PTY key driver must acknowledge consumed input, not rendered output. With color off, moving a selector highlight can produce no new bytes. Wait for the complete key to enter the stopped reader’s terminal queue, then for consumption before sending the next key. Start on a marker unique to the prompt, not a progress label.
+
+After adding an API input, regenerate OpenAPI and the MCP manifest and exercise the generated tool through admission. Ignored generated outputs are release artifacts; source support alone does not prove the deployed tool exposes the input.
+
+A migrated Instance has no clone source. Test lifecycle consumers against migrated non-defaults too; identify the default by its name, and retire migration execution copies during destroy.
+
+Large SQLite fixtures need bounded insert batches. A single insert can exceed the build's bound-parameter limit; formatting its huge QueryException may consume the test deadline and hide the actual error. Keep the production row count and indexes, then measure compilation, preparation and execution before changing a timeout.
+
+Inspect the whole previous-exception chain when a timed test reports a migration error. Laravel can wrap PHPUnit's timer exception in a QueryException, and an action can wrap it again. Account for work before lazy database initialization; use fixed test inputs for RSA prime search while preserving the real signing and database paths.
+
+A Process preset moved into a container needs the shared container ingress and Route projection as well as its unit. Keep its assigned port in the shared intent so deployment rebuilds preserve access, and use container controls after cutover instead of the Node preset preparation.
+
+Gateway releases admit refresh jobs only after verification and the new Horizon start. A command from a new release can serialize a job class that old workers cannot load. Keep the pre-load Operation guard separate from the Horizon drain: Swamp runs can outlive the queue job that started them.
