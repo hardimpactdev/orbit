@@ -1779,7 +1779,8 @@ Deno.test({
       const sourceUnit = `${f.folder}/source.service`;
       Deno.writeTextFileSync(sourceUnit, "[Service]\nExecStart=/bin/true\n");
       f.migrate.processes.push({ name: "writer.service", path: sourceUnit, environment_directory: `${f.folder}/source-env`, desired: "running" });
-      Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify({ "writer.service": { state: "running", enabled: true } }));
+      const schedules = migrationSchedules(f, "enabled");
+      Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify({ ...schedules.states, "writer.service": { state: "running", enabled: true } }));
       const before = Deno.readTextFileSync(`${f.folder}/host-processes.json`);
       f.migrate.databases = [{ host: "127.0.0.1", port: 1 }];
       f.write();
@@ -1815,6 +1816,17 @@ Deno.test({
       assert(allowed.ok, allowed.output);
       assert(exists(f.migrate.awake.path));
       assert(!exists(`${f.folder}/run/quiesced`));
+      const allowedEnvironment = Deno.readTextFileSync(`${f.checkout}/.env`);
+      Deno.writeTextFileSync(`${f.checkout}/.env`, allowedEnvironment.replace("127.0.0.1", "127.0.0.2"));
+      const refusedQuiesce = f.run("quiesce");
+      assert(!refusedQuiesce.ok, refusedQuiesce.output);
+      assertEquals(f.result().error_code, "instance.migrate_env_service_unreachable");
+      assert(exists(`${f.folder}/run/schedule-timers.json`), "Schedule checks finish before the repeated environment guard");
+      assert(exists(f.migrate.awake.path));
+      assert(!exists(`${f.folder}/run/quiesced`));
+      assertEquals(Deno.readTextFileSync(`${f.folder}/host-processes.json`), before);
+      assertEquals(Deno.readTextFileSync(schedules.timerPath), schedules.timer);
+      Deno.writeTextFileSync(`${f.checkout}/.env`, allowedEnvironment);
       const quiesce = f.run("quiesce");
       assert(quiesce.ok, quiesce.output);
       assert(!exists(f.migrate.awake.path));
