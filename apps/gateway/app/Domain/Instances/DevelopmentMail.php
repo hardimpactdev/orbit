@@ -65,7 +65,7 @@ final readonly class DevelopmentMail
         foreach ([1025, 2525] as $port) {
             $name = 'orbit-mail-'.$port;
             $files[] = ['name' => $name.'.socket', 'content' => "# Managed by Orbit: development mail.\n[Unit]\nDescription=Orbit development SMTP {$port}\n[Socket]\nListenStream=127.0.0.1:{$port}\n[Install]\nWantedBy=sockets.target\n"];
-            $files[] = ['name' => $name.'.service', 'content' => "# Managed by Orbit: development mail.\n[Unit]\nDescription=Orbit development SMTP proxy {$port}\nAfter=network.target\n[Service]\nExecStart=/usr/lib/systemd/systemd-socket-proxyd {$endpoint['host']}:{$endpoint['port']}\nRestart=on-failure\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\n"];
+            $files[] = ['name' => $name.'.service', 'content' => "# Managed by Orbit: development mail.\n[Unit]\nDescription=Orbit development SMTP proxy {$port}\nAfter=network.target\n[Service]\nExecStart=/usr/lib/systemd/systemd-socket-proxyd {$endpoint['host']}:{$endpoint['port']}\nRestart=on-failure\nNoNewPrivileges=yes\n"];
         }
 
         return $files;
