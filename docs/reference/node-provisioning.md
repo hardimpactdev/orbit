@@ -105,7 +105,7 @@ The enrollment workflow records the verified bootstrap host key for the WireGuar
 
 `node.bootstrap` creates a missing managed account, adds its SSH key, and validates passwordless sudo before publishing the rule. It preserves existing home and directory modes and refuses linked access paths.
 
-A [task VM copies its base snapshot](/reference/compute-drivers#claims-copy-the-base-snapshot) for the `app-dev` software. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.
+A [task VM copies its base snapshot](/reference/compute-drivers#claims-copy-the-base-snapshot) for the `app-dev` software. Its [common converge](/reference/compute-drivers#converge-a-running-task-vm) prepares the SSH user's Incus client config before parallel fleet work. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.
 
 The Gateway role requires `logrotate`, pinned in the recipe's `gateway` profile. The gateway role convergence installs the [host log-retention rules](/reference/gateway-recovery#disk-retention), the Gateway PHP-FPM pool and the agent-view and hibernator units, and retires the release unit's timer and the Documents PHP-FPM start hook. Releases leave them unchanged.
 

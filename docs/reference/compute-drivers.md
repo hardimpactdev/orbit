@@ -649,7 +649,7 @@ No task file names a version.
 
 The `software` phase installs Ubuntu packages and file packages at their pins. It also installs `python3-venv` and `jq` from the same snapshot, which the shape gate needs. They come from the pinned Ubuntu snapshot, through their own apt configuration, with the artifact mirror first. The VM's apt sources stay as they are. Node, pnpm, Bun, Vite+, Rust, the Swamp binary and the Pi server follow. A tool that already shows its pinned version is left alone, so a VM at its pins reports no change.
 
-The `tools` phase installs the shape gate linters. The nested fleet is Incus system containers that take the checkout as a disk device, so the VM serves nothing to them.
+The `tools` phase installs the shape gate linters and prepares the Incus client config for the SSH user `orbit` with one serial read. Existing client configs stay in place. Task copies inherit the config, so later parallel Incus calls, including proof restores, cannot race on its first-use write. Incus creates or truncates that file before writing its YAML. The nested fleet is Incus system containers that take the checkout as a disk device, so the VM serves nothing to them.
 
 - The intent names the nested subnet and the interface `nested` (`TaskVmNestedFleet`), so the VM leads the nested network of that subnet.
 - UFW then allows DHCP, DNS and the package cache from the nested bridge, and routes it out.
