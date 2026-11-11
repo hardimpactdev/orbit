@@ -132,6 +132,8 @@ After a proven cutover, Orbit records each direct moved Process as a Project dev
 
 A cutover proven by the move result captures these definitions even if checkout retirement fails afterward. A failed preflight or a move restored to the checkout captures none. A one-time data repair captures proven migrated defaults that still have direct Processes. It requires the completed move’s container, seed, Process membership and exact activation content; it refuses unknown commands or changed and conflicting rows by name. The repair is one transaction and is safe to repeat. Rolling back its migration keeps the captured definitions and links, because clones or later edits may already depend on them. A separate schema change removes the redundant uniqueness check on Instance Vite ports; host reservations stay unique. Its rollback restores the check only when there are no repeated nonnull Node and Vite-port pairs. Otherwise rollback reports the duplicate-group count and leaves the schema, rows and ports unchanged.
 
+Captured command-name definitions need a renderer that supports this migration feature. Switching Gateway code back leaves the definitions, links and schema in place; it does not make those definitions compatible with an older renderer. Once container copies share a recorded Vite port, Gateway rollback must leave the removed Instance uniqueness index absent. It does not reassign ports or reverse captured data.
+
 ## Order
 
 A Project's default Instance moves first. A non-default Instance before its default refuses with `instance.default_not_migrated`.

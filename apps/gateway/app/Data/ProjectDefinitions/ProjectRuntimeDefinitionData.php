@@ -32,6 +32,10 @@ final class ProjectRuntimeDefinitionData extends Data
     ): self {
         $spec = $definition->spec;
 
+        if (is_array($spec['environment'] ?? null)) {
+            $spec['environment'] = new CommandActivityInputSanitizer()->sanitize($spec['environment'], 'environment');
+        }
+
         if (! $includeCommand) {
             unset($spec['command']);
             $spec = new CommandActivityInputSanitizer()->sanitizeProperties($spec);

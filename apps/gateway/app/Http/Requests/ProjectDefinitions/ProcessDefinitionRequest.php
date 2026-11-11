@@ -7,12 +7,16 @@ namespace App\Http\Requests\ProjectDefinitions;
 use App\Data\ProjectDefinitions\ProjectDefinitionInputData;
 use App\Domain\Instances\ContainerProcessCommands;
 use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Processes\RequiredMountPaths;
+use App\Domain\Processes\VpDevPreset;
 use App\Domain\ProjectDefinitions\DefinitionEnvironment;
+use App\Models\ProcessDefinition;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Validator;
+use InvalidArgumentException;
 use UnexpectedValueException;
 
 final class ProcessDefinitionRequest extends FormRequest
@@ -51,7 +55,7 @@ final class ProcessDefinitionRequest extends FormRequest
                 'max:4096',
                 'regex:/\A\/(?!.*(?:^|\/)\.\.(?:\/|$))[^\x00\r\n]*\z/D',
             ],
-            'spec.environment' => ['sometimes', 'prohibited_unless:spec.runtime,docker', 'array', 'max:100'],
+            'spec.environment' => ['sometimes', 'array', 'max:100'],
             'spec.environment.*' => ['string', 'max:4096', 'not_regex:/[\x00\r\n]/'],
             'spec.ports' => ['sometimes', 'prohibited_unless:spec.runtime,docker', 'array', 'list', 'max:100'],
             'spec.ports.*' => [
@@ -78,6 +82,12 @@ final class ProcessDefinitionRequest extends FormRequest
                 Rule::in(['never', 'on-failure', 'always', 'unless-stopped']),
             ],
             'spec.keep_alive' => ['sometimes', 'boolean'],
+            'spec.restart_on_deploy' => ['sometimes', 'boolean'],
+            'spec.environment_file' => ['sometimes', 'nullable', 'string', 'max:4096', 'regex:/\A\/(?!.*(?:^|\/)\.\.(?:\/|$))[^\x00\r\n]*\z/D'],
+            'spec.required_mount_paths' => ['sometimes', 'array', 'list', 'max:64'],
+            'spec.required_mount_paths.*' => ['required', 'string'],
+            'spec.preset' => ['required_with:spec.preset_version', Rule::in([VpDevPreset::NAME])],
+            'spec.preset_version' => ['sometimes', 'integer', Rule::in([1])],
         ];
     }
 
@@ -100,6 +110,7 @@ final class ProcessDefinitionRequest extends FormRequest
             $this->validateSystemdExecutable($validator, $this->inspectedData);
             $this->validateEnvironmentNames($validator, $this->inspectedData);
             $this->validatePorts($validator, $this->inspectedData);
+            $this->validateDevelopmentSpecification($validator, $this->inspectedData);
         }];
     }
 
@@ -142,6 +153,43 @@ final class ProcessDefinitionRequest extends FormRequest
         }
 
         $validator->errors()->add('spec.command.0', 'The systemd executable must be an absolute path.');
+    }
+
+    /** @param array<string, mixed> $data */
+    private function validateDevelopmentSpecification(Validator $validator, array $data): void
+    {
+        $spec = ValidatedData::object($data['spec'] ?? null);
+        $development = ($data['environments'] ?? []) === [DefinitionEnvironment::Development->value]
+            && ($spec['runtime'] ?? null) === ProcessRuntime::Systemd->value;
+        foreach (['restart_on_deploy', 'environment_file', 'required_mount_paths', 'preset', 'preset_version'] as $field) {
+            if (array_key_exists($field, $spec) && ! $development) {
+                $validator->errors()->add("spec.{$field}", 'This field is supported only by development-only systemd definitions.');
+            }
+        }
+        if (array_key_exists('environment', $spec) && ! $development && ($spec['runtime'] ?? null) !== ProcessRuntime::Docker->value) {
+            $validator->errors()->add('spec.environment', 'Environment values require Docker or a development-only systemd definition.');
+        }
+        if (array_key_exists('required_mount_paths', $spec)) {
+            try {
+                RequiredMountPaths::parse($spec['required_mount_paths']);
+            } catch (InvalidArgumentException $exception) {
+                $validator->errors()->add('spec.required_mount_paths', $exception->getMessage());
+            }
+        }
+        $definition = $this->route('processDefinition');
+        $existingSpec = $definition instanceof ProcessDefinition ? $definition->spec : [];
+        $capturedPreset = $existingSpec['preset'] ?? null;
+        if (array_key_exists('preset', $spec) || $capturedPreset !== null) {
+            if (! $development || $capturedPreset !== VpDevPreset::NAME
+                || ($spec['preset'] ?? null) !== $capturedPreset
+                || ($spec['preset_version'] ?? 1) !== ($existingSpec['preset_version'] ?? 1)
+                || ($spec['command'] ?? null) !== VpDevPreset::definitionCommand()) {
+                $validator->errors()->add('spec.preset', 'Only an existing captured vp-dev definition with its canonical command and preset metadata can be edited.');
+            }
+            if (($spec['required_mount_paths'] ?? []) !== []) {
+                $validator->errors()->add('spec.required_mount_paths', 'The preset owns this configuration.');
+            }
+        }
     }
 
     /** @param array<string, mixed> $data */

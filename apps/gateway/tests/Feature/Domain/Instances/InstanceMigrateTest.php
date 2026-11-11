@@ -10,7 +10,6 @@ use App\Actions\Instances\StartInstanceMigrateAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\ReadOperationAction;
-use App\Actions\ProjectDefinitions\ReplaceProcessDefinitionAction;
 use App\Actions\Schedules\CreateScheduleAction;
 use App\Actions\Schedules\RunScheduleAction;
 use App\Actions\Schedules\ShowScheduleLogsAction;
@@ -3056,31 +3055,166 @@ describe('migrated development Process definitions', function (): void {
         expect($instance->refresh()->runtime_definitions_captured_at)->toBeNull();
     })->with(['different command' => false, 'foreign definition' => true]);
 
-    it('deploys a product definition edit to the migrated default and its clone', function (): void {
+    it('edits a complete captured definition through the API and preserves default and clone intent', function (bool $preset): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
-        $process = migrationWorker($instance);
+        $process = $preset ? migrationVpDev($instance, surveyed: true) : migrationWorker($instance);
+        $process->update(['restart_on_deploy' => false, 'runtime_config' => [
+            ...$process->runtime_config,
+            ...($preset ? ['preset_version' => 1] : ['required_mount_paths' => [$instance->checkout_path.'/storage']]),
+        ]]);
         migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
         $definition = ProcessDefinition::query()->sole();
+        $original = $definition->spec;
         $cloneOperation = containerCreate($instance->project, $instance->node, 'f67-child');
         $clone = Instance::query()->findOrFail($cloneOperation->target_id);
         $copy = Process::query()->where('owner_id', $clone->id)->sole();
-        $request = ProcessDefinitionRequest::create('/', 'PUT', content: json_encode(['name' => $definition->name, 'environments' => ['development'],
-            'spec' => ['runtime' => 'systemd', 'command' => ['node', 'changed-worker.js'], 'restart_policy' => 'on-failure']], JSON_THROW_ON_ERROR));
-        $validator = Validator::make($request->validationData(), $request->rules());
-        foreach ($request->after() as $after) {
-            $validator->after($after);
+        $instance->node->accessibleNodes()->attach($instance->node_id);
+        $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
+        $spec = [...$original, 'keep_alive' => true];
+        $spec['environment'] = array_fill_keys(array_keys($spec['environment']), '[REDACTED]');
+        if (! $preset) {
+            $spec['command'] = ['node', 'changed-worker.js'];
         }
-        $validator->validate();
-        $request->setValidator($validator);
-        app(ReplaceProcessDefinitionAction::class)->execute($definition, $request->payload());
+
+        $this->putJson("/api/v1/projects/{$instance->project_id}/process-definitions/{$definition->name}", [
+            'name' => $definition->name, 'environments' => ['development'], 'spec' => $spec,
+        ])->assertOk()->assertJsonPath('data.spec.environment.QUEUE_TOKEN', '[REDACTED]')
+            ->assertJsonPath('data.spec.restart_on_deploy', false);
+        $expected = [...$original, 'keep_alive' => true, 'command' => $spec['command']];
+        expect($definition->refresh()->spec)->toEqual($expected);
 
         foreach ([$instance->refresh(), $clone] as $target) {
             app(InstantiateProjectRuntimeDefinitionsAction::class)->refreshForContainer($target);
-            expect(app(ContainerProcesses::class)->units($target)[0]['content'])->toContain('"/opt/orbit-runtime/current/bin/node" "changed-worker.js"');
+            $units = app(ContainerProcesses::class)->units($target);
+            expect($units[0]['content'])->toContain('EnvironmentFile=-/srv/workspace/.env');
+            expect($units[0]['content'])->toContain($preset ? '--port='.$target->vite_port : '"/opt/orbit-runtime/current/bin/node" "changed-worker.js"');
+            if (! $preset) {
+                expect($units[0]['content'])->toContain('RequiresMountsFor=/srv/workspace/storage');
+            }
+            $record = $target->processes()->sole();
+            expect($record->restart_on_deploy)->toBeFalse();
+            expect($record->keep_alive)->toBeTrue();
+            expect($record->runtime_config['environment'])->toEqual($original['environment']);
+            $private = app(ContainerProcesses::class)->environments($target, $units);
+            expect($private)->toContain('migration-process-secret')->not->toContain('[REDACTED]');
+            if ($preset) {
+                expect($record->runtime_config['preset_version'])->toBe(1);
+                expect($record->isVpDev())->toBeTrue();
+            }
         }
         expect($process->refresh()->id)->toBe($process->id);
         expect($copy->refresh()->source_definition_id)->toBe($definition->id);
+    })->with(['captured worker' => false, 'captured vp-dev' => true]);
+
+    it('redacts captured definition show update and delete while privately delivering the edited clone', function (bool $preset): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $preset ? migrationVpDev($instance) : migrationWorker($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $definition = ProcessDefinition::query()->sole();
+        $instance->node->accessibleNodes()->attach($instance->node_id);
+        $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
+        $url = "/api/v1/projects/{$instance->project_id}/process-definitions/{$definition->name}";
+
+        $shown = $this->getJson($url)->assertOk()->assertJsonPath('data.spec.environment.QUEUE_TOKEN', '[REDACTED]');
+        expect($shown->getContent())->not->toContain('migration-process-secret');
+        $payload = array_intersect_key($shown->json('data'), array_flip(['name', 'environments', 'spec']));
+        $payload['spec']['keep_alive'] = true;
+        $updated = $this->putJson($url, $payload)->assertOk()->assertJsonPath('data.spec.environment.QUEUE_TOKEN', '[REDACTED]');
+        expect($updated->getContent())->not->toContain('migration-process-secret');
+        expect($definition->refresh()->spec['environment']['QUEUE_TOKEN'])->toBe('migration-process-secret');
+
+        $payload['spec']['environment'] = ['QUEUE_TOKEN' => 'replacement-process-secret'];
+        $this->putJson($url, $payload)->assertOk()->assertJsonPath('data.spec.environment.QUEUE_TOKEN', '[REDACTED]');
+        $cloneOperation = containerCreate($instance->project, $instance->node, 'f67-private');
+        $clone = Instance::query()->findOrFail($cloneOperation->target_id);
+        $private = app(ContainerProcesses::class)->environments($clone, containerIntentOf($cloneOperation)['processes']);
+        expect($private)->toContain('replacement-process-secret')->not->toContain('[REDACTED]');
+        expect(json_encode($cloneOperation->input, JSON_THROW_ON_ERROR))->not->toContain('replacement-process-secret');
+
+        $deleted = $this->deleteJson($url)->assertOk()->assertJsonPath('data.spec.environment.QUEUE_TOKEN', '[REDACTED]');
+        expect($deleted->getContent())->not->toContain('replacement-process-secret');
+        $this->assertModelMissing($definition);
+        expect($clone->processes()->sole()->runtime_config['environment']['QUEUE_TOKEN'])->toBe('replacement-process-secret');
+    })->with(['captured worker' => false, 'captured vp-dev' => true]);
+
+    it('refuses a redaction placeholder for an unknown environment key without changing captured values', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        migrationWorker($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $definition = ProcessDefinition::query()->sole();
+        $before = $definition->spec;
+        $instance->node->accessibleNodes()->attach($instance->node_id);
+
+        $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip])
+            ->putJson("/api/v1/projects/{$instance->project_id}/process-definitions/{$definition->name}", [
+                'name' => $definition->name, 'environments' => ['development'],
+                'spec' => [...$before, 'environment' => ['UNKNOWN_TOKEN' => '[REDACTED]']],
+            ])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+        expect($definition->refresh()->spec)->toBe($before);
     });
+
+    it('keeps captured-only fields out of production and mixed definition input', function (array $environments, array $extra): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->node->accessibleNodes()->attach($instance->node_id);
+
+        $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip])
+            ->postJson("/api/v1/projects/{$instance->project_id}/process-definitions", [
+                'name' => 'worker', 'environments' => $environments,
+                'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/node', 'worker.js'], ...$extra],
+            ])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+        expect(ProcessDefinition::query()->count())->toBe(0);
+    })->with([
+        'production restart flag' => [['production'], ['restart_on_deploy' => false]],
+        'mixed mount intent' => [['development', 'production'], ['required_mount_paths' => ['/srv/workspace/storage']]],
+        'production environment file' => [['production'], ['environment_file' => '/srv/workspace/.env']],
+        'production systemd environment' => [['production'], ['environment' => ['PRIVATE' => 'not-stored']]],
+        'new development preset' => [['development'], ['preset' => 'vp-dev', 'preset_version' => 1]],
+    ]);
+
+    it('preserves supported production definition input and redacts private Docker values', function (array $environments, array $spec): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->node->accessibleNodes()->attach($instance->node_id);
+
+        $response = $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip])
+            ->postJson("/api/v1/projects/{$instance->project_id}/process-definitions", [
+                'name' => 'worker', 'environments' => $environments, 'spec' => $spec,
+            ])->assertCreated()->assertJsonPath('data.environments', $environments);
+        expect(ProcessDefinition::query()->sole()->spec)->toEqual($spec);
+        if (isset($spec['environment'])) {
+            $response->assertJsonPath('data.spec.environment.PRIVATE', '[REDACTED]');
+            expect($response->getContent())->not->toContain('production-docker-secret');
+            $payload = array_intersect_key($response->json('data'), array_flip(['name', 'environments', 'spec']));
+            $this->putJson("/api/v1/projects/{$instance->project_id}/process-definitions/worker", $payload)
+                ->assertOk()->assertJsonPath('data.spec.environment.PRIVATE', '[REDACTED]');
+            expect(ProcessDefinition::query()->sole()->spec['environment'])->toBe(['PRIVATE' => 'production-docker-secret']);
+        }
+    })->with([
+        'production systemd' => [['production'], ['runtime' => 'systemd', 'command' => ['/usr/bin/node', 'worker.js']]],
+        'mixed systemd' => [['development', 'production'], ['runtime' => 'systemd', 'command' => ['/usr/bin/node', 'worker.js']]],
+        'production Docker' => [['production'], ['runtime' => 'docker', 'image' => 'node:22', 'command' => ['node', 'worker.js'],
+            'environment' => ['PRIVATE' => 'production-docker-secret']]],
+    ]);
+
+    it('refuses invalid edits of captured preset metadata without replacing intent', function (array $changes): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        migrationVpDev($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $definition = ProcessDefinition::query()->sole();
+        $before = $definition->spec;
+        $instance->node->accessibleNodes()->attach($instance->node_id);
+
+        $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip])
+            ->putJson("/api/v1/projects/{$instance->project_id}/process-definitions/{$definition->name}", [
+                'name' => $definition->name, 'environments' => ['development'], 'spec' => [...$before, ...$changes],
+            ])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+        expect($definition->refresh()->spec)->toBe($before);
+    })->with([
+        'custom preset command' => [['command' => ['vp', 'custom']]],
+        'unsupported preset version' => [['preset_version' => 2]],
+        'missing preset identity' => [['preset' => null]],
+        'preset mount override' => [['required_mount_paths' => ['/srv/workspace/storage']]],
+        'invalid environment file' => [['environment_file' => '/srv/../private.env']],
+    ]);
 
     it('gives a cloned migrated vp-dev Process its own port and keeps preset and environment intent', function (): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
