@@ -1,0 +1,186 @@
+{
+  "provenance": {
+    "repository": "https://github.com/swamp-club/swamp",
+    "ref": "db3f6373",
+    "generation": "Pinned StepRun transition methods, mapWorkflowExecutionEvent, serializeEvent and toRunData; fixed native clock; no live host capture.",
+    "source_blobs": {
+      "src/libswamp/workflows/run.ts": "b7dac6ccc9c49538f96165420c91ddc821cc1143",
+      "src/serve/serializer.ts": "165a11faf5730fb7e6124d56679871008d1dbfb6",
+      "src/domain/workflows/workflow_run.ts": "50dd9a964e9ccdd7e988037a4093474ab462573b",
+      "src/domain/workflows/execution_service.ts": "59c8d82edfc7ded3a8eded345c2b101b85bf4671"
+    }
+  },
+  "cases": {
+    "running": {
+      "event": {
+        "type": "event",
+        "event": {
+          "kind": "step_started",
+          "jobId": "main",
+          "stepId": "work",
+          "seq": 1
+        }
+      },
+      "history": {
+        "type": "workflow.history.get",
+        "payload": {
+          "data": {
+            "id": "ea55ab37-bcbe-4459-81dc-cbb397e7d870",
+            "workflowId": "986bc349-54dc-4dea-9f22-76e3353d1cb0",
+            "workflowName": "operation-task-script",
+            "inputs": {
+              "operation_id": 1,
+              "node_id": 1,
+              "kind": "tasks.script"
+            },
+            "status": "running",
+            "jobs": [
+              {
+                "name": "main",
+                "status": "running",
+                "steps": [
+                  {
+                    "name": "work",
+                    "status": "running",
+                    "startedAt": "2026-11-11T10:40:00.000Z"
+                  }
+                ]
+              }
+            ],
+            "startedAt": "2026-11-11T10:00:00.000Z"
+          }
+        }
+      }
+    },
+    "succeeded": {
+      "event": {
+        "type": "event",
+        "event": {
+          "kind": "step_completed",
+          "jobId": "main",
+          "stepId": "work",
+          "seq": 1
+        }
+      },
+      "history": {
+        "type": "workflow.history.get",
+        "payload": {
+          "data": {
+            "id": "ea55ab37-bcbe-4459-81dc-cbb397e7d870",
+            "workflowId": "986bc349-54dc-4dea-9f22-76e3353d1cb0",
+            "workflowName": "operation-task-script",
+            "inputs": {
+              "operation_id": 1,
+              "node_id": 1,
+              "kind": "tasks.script"
+            },
+            "status": "running",
+            "jobs": [
+              {
+                "name": "main",
+                "status": "running",
+                "steps": [
+                  {
+                    "name": "work",
+                    "status": "succeeded",
+                    "startedAt": "2026-11-11T10:20:00.000Z",
+                    "completedAt": "2026-11-11T10:35:00.000Z",
+                    "duration": 900000
+                  }
+                ]
+              }
+            ],
+            "startedAt": "2026-11-11T10:00:00.000Z"
+          }
+        }
+      }
+    },
+    "failed": {
+      "event": {
+        "type": "event",
+        "event": {
+          "kind": "step_failed",
+          "jobId": "main",
+          "stepId": "work",
+          "error": "fixture failure",
+          "allowedFailure": true,
+          "seq": 1
+        }
+      },
+      "history": {
+        "type": "workflow.history.get",
+        "payload": {
+          "data": {
+            "id": "ea55ab37-bcbe-4459-81dc-cbb397e7d870",
+            "workflowId": "986bc349-54dc-4dea-9f22-76e3353d1cb0",
+            "workflowName": "operation-task-script",
+            "inputs": {
+              "operation_id": 1,
+              "node_id": 1,
+              "kind": "tasks.script"
+            },
+            "status": "running",
+            "jobs": [
+              {
+                "name": "main",
+                "status": "running",
+                "steps": [
+                  {
+                    "name": "work",
+                    "status": "failed",
+                    "error": "fixture failure",
+                    "startedAt": "2026-11-11T10:20:00.000Z",
+                    "completedAt": "2026-11-11T10:35:00.000Z",
+                    "duration": 900000
+                  }
+                ]
+              }
+            ],
+            "startedAt": "2026-11-11T10:00:00.000Z"
+          }
+        }
+      }
+    },
+    "skipped": {
+      "event": {
+        "type": "event",
+        "event": {
+          "kind": "step_skipped",
+          "jobId": "main",
+          "stepId": "work",
+          "seq": 1
+        }
+      },
+      "history": {
+        "type": "workflow.history.get",
+        "payload": {
+          "data": {
+            "id": "ea55ab37-bcbe-4459-81dc-cbb397e7d870",
+            "workflowId": "986bc349-54dc-4dea-9f22-76e3353d1cb0",
+            "workflowName": "operation-task-script",
+            "inputs": {
+              "operation_id": 1,
+              "node_id": 1,
+              "kind": "tasks.script"
+            },
+            "status": "running",
+            "jobs": [
+              {
+                "name": "main",
+                "status": "running",
+                "steps": [
+                  {
+                    "name": "work",
+                    "status": "skipped",
+                    "completedAt": "2026-11-11T10:35:00.000Z"
+                  }
+                ]
+              }
+            ],
+            "startedAt": "2026-11-11T10:00:00.000Z"
+          }
+        }
+      }
+    }
+  }
+}

@@ -67,6 +67,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Tests\Support\NativeRunBudgetSocket;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -1408,6 +1409,7 @@ it('projects the native restored end state across each post-quiesce exit', funct
         'finished_at' => null, 'error_code' => null, 'cancel_requested_at' => $exit === 'cancel' ? now()->subHours(5)->addMinute() : null,
         'state' => ['swamp_run_id' => $run]])->save();
     if ($expired) {
+        NativeRunBudgetSocket::install($operation);
         app(ExpireOperationAction::class)->execute($operation);
         $operation->refresh()->update(['lock_key' => null, 'state' => [...$operation->state,
             'native_cancel_confirmed_at' => now()->toISOString()]]);
@@ -1495,6 +1497,7 @@ it('review late restored history must preserve a newer migrate reservation', fun
     $operation->forceFill(['status' => 'running', 'attempts' => 1, 'started_at' => $started,
         'finished_at' => null, 'error_code' => null, 'state' => ['swamp_run_id' => $run]])->save();
     if ($expired) {
+        NativeRunBudgetSocket::install($operation);
         app(ExpireOperationAction::class)->execute($operation);
         $operation->refresh()->update(['lock_key' => null, 'state' => [...$operation->state,
             'native_cancel_confirmed_at' => now()->toISOString()]]);
@@ -1572,6 +1575,7 @@ it('settles the real pinned decoder receipt with native abort or independent pha
     $operation->forceFill(['status' => 'running', 'attempts' => 1, 'started_at' => $history['startedAt'],
         'cancel_requested_at' => $userCancel ? now()->subMinute() : null, 'state' => ['swamp_run_id' => $run]])->save();
     if ($expiry) {
+        NativeRunBudgetSocket::install($operation);
         app(ExpireOperationAction::class)->execute($operation);
     }
     $native = json_decode($history['jobs'][0]['steps'][array_search('finish', array_column($history['jobs'][0]['steps'], 'name'))]['outputs']['stdout'], true, flags: JSON_THROW_ON_ERROR);
@@ -1585,7 +1589,7 @@ it('settles the real pinned decoder receipt with native abort or independent pha
     });
     $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame, $history, $operation, $expireDuringRead): array {
         if ($expireDuringRead && $frame['type'] === 'workflow.history.get') {
-            app(ExpireOperationAction::class)->execute($operation->refresh());
+            app(ExpireOperationAction::class)->execute($operation->refresh(), $history);
         }
 
         return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => $frame['type'] === 'workflow.history.get' ? $history : ['results' => []]]]];
@@ -1619,6 +1623,7 @@ it('fences a direct stale migrate projector by the runtime owner under the Insta
     $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
     $old = migrateStart($instance);
     $old->forceFill(['status' => 'running', 'attempts' => 1, 'started_at' => now()->subHours(5), 'state' => ['swamp_run_id' => 'old-root']])->save();
+    NativeRunBudgetSocket::install($old);
     app(ExpireOperationAction::class)->execute($old);
     $old->refresh()->update(['lock_key' => null]);
     $new = migrateStart($instance);
@@ -1654,6 +1659,7 @@ it('adversarial late moved migration does not hold a write transaction during th
     $operation->update(['status' => 'running', 'attempts' => 1, 'started_at' => now()->subHours(5),
         'state' => [...$operation->state, 'swamp_run_id' => $root]]);
     if ($expireBeforeRead) {
+        NativeRunBudgetSocket::install($operation);
         app(ExpireOperationAction::class)->execute($operation);
     }
     $operation->refresh();
@@ -1681,7 +1687,7 @@ it('adversarial late moved migration does not hold a write transaction during th
         if ($frame['type'] === 'vault.read-secret') {
             $level = DB::transactionLevel();
             if (! $expireBeforeRead) {
-                app(ExpireOperationAction::class)->execute($operation->refresh());
+                app(ExpireOperationAction::class)->execute($operation->refresh(), $history);
             }
             $value = ['vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['secretKey'],
                 'vaultType' => 'local_encryption', 'value' => 'gateway-session-value'];

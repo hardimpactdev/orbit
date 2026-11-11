@@ -21,22 +21,28 @@ use App\Models\Operation;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\NativeRunBudgetSocket;
 
 uses(LazilyRefreshDatabase::class);
 
 const RUN = 'ea55ab37-bcbe-4459-81dc-cbb397e7d870';
 
 /** A tasks.script of a group that started 40 minutes ago with a 360-second budget. */
-function runningScript(?string $run = RUN, int $minutes = 40): Operation
+function runningScript(?string $run = RUN, int $minutes = 40, bool $history = true): Operation
 {
     $group = Task::query()->create(['title' => 'Proof', 'brief' => 'Prove it', 'status' => TaskGroupStatus::Running]);
     $address = '10.44.0.'.(100 + $group->id);
     $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'vm-'.$group->id, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => $address, 'wireguard_ip' => $address, 'user' => 'orbit']));
 
-    return Operation::query()->create(['kind' => 'tasks.script', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $node->id,
+    $operation = Operation::query()->create(['kind' => 'tasks.script', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $node->id,
         'input' => ['script' => 'scripts/dependencies', 'args' => ['routine'], 'run_budget_seconds' => 360], 'status' => OperationStatus::Running,
         'state' => $run === null ? [] : ['swamp_run_id' => $run], 'sequence' => 1, 'attempts' => 1, 'started_at' => now()->subMinutes($minutes)]);
+    if ($history) {
+        NativeRunBudgetSocket::install($operation);
+    }
+
+    return $operation;
 }
 
 it('asks Swamp to cancel the bound run when the Gateway times the Operation out', function (): void {
@@ -136,8 +142,8 @@ function cancelSocket(array $reply): WebSocketClient
 }
 
 it('asks Swamp to cancel the run with a workflow.cancel request on the run token', function (): void {
-    $socket = cancelSocket(['type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => RUN, 'workflowName' => 'operation-task-script', 'status' => 'cancellation_requested']]]);
     $operation = runningScript();
+    $socket = cancelSocket(['type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => RUN, 'workflowName' => 'operation-task-script', 'status' => 'cancellation_requested']]]);
 
     app(CancelSwampRun::class)->execute($operation);
 
@@ -151,7 +157,7 @@ it('asks Swamp to cancel the run with a workflow.cancel request on the run token
 it('accepts a cancel that already settled the run', function (): void {
     cancelSocket(['type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => RUN, 'workflowName' => 'operation-task-script', 'status' => 'cancelled']]]);
 
-    app(CancelSwampRun::class)->execute(runningScript());
+    app(CancelSwampRun::class)->execute(runningScript(history: false));
 
     expect(true)->toBeTrue();
 });
@@ -159,14 +165,14 @@ it('accepts a cancel that already settled the run', function (): void {
 it('reports swamp.cancel_unavailable when Swamp answers with an error', function (): void {
     cancelSocket(['type' => 'error', 'error' => ['code' => 'workflow_cancel_failed', 'message' => 'No cancellable run']]);
 
-    expect(fn () => app(CancelSwampRun::class)->execute(runningScript()))
+    expect(fn () => app(CancelSwampRun::class)->execute(runningScript(history: false)))
         ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'swamp.cancel_unavailable');
 });
 
 it('reports swamp.cancel_unavailable without a bound run and sends nothing', function (): void {
     $socket = cancelSocket(['type' => 'workflow.cancel', 'payload' => ['data' => []]]);
 
-    expect(fn () => app(CancelSwampRun::class)->execute(runningScript(null)))
+    expect(fn () => app(CancelSwampRun::class)->execute(runningScript(null, history: false)))
         ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'swamp.cancel_unavailable')
         ->and($socket->frames)->toBe([]);
 });

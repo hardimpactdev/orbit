@@ -11,14 +11,17 @@ use App\Domain\Operations\OperationOverdueAlerts;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskVmAdmission;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
 /** Marks soft-limit overruns overdue; only the hard limit records expiry and asks Swamp to stop the bound run. */
 final readonly class ExpireOperationAction
 {
-    public function execute(Operation $operation): Operation
+    /** @param array<string,mixed>|null $nativeRun A run just verified by the shared native reader. */
+    public function execute(Operation $operation, ?array $nativeRun = null): Operation
     {
         $deadline = OperationRunBudgets::deadline($operation);
         $soft = OperationRunBudgets::softDeadline($operation);
@@ -27,7 +30,16 @@ final readonly class ExpireOperationAction
             return $operation;
         }
 
-        return DB::transaction(function () use ($operation): Operation {
+        if ($deadline !== null && ! $deadline->isFuture() && isset($operation->state['swamp_run_id']) && $nativeRun === null) {
+            try {
+                $nativeRun = app(SwampCommandStep::class)->readProgress($operation);
+            } catch (ResourceOperationException) {
+                // No hard-expiry proof: the next pass reads again. Soft-limit alerts still apply.
+            }
+            $operation->refresh();
+        }
+
+        return DB::transaction(function () use ($operation, $nativeRun): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if ($current->status->terminal()) {
                 return $current;
@@ -35,6 +47,9 @@ final readonly class ExpireOperationAction
             app(OperationOverdueAlerts::class)->raise($current);
             $deadline = OperationRunBudgets::deadline($current);
             if ($deadline === null || $deadline->isFuture()) {
+                return $current;
+            }
+            if (isset($current->state['swamp_run_id']) && ($nativeRun['id'] ?? null) !== $current->state['swamp_run_id']) {
                 return $current;
             }
             if (isset($current->input['capacity_request'])) {

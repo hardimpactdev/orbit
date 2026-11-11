@@ -122,14 +122,8 @@ final readonly class SwampCommandStep
         if ($operation->status->terminal() && ! ExpireOperationAction::expiredUnsettled($operation) && ! InstanceMigrateProjection::unsettled($operation)) {
             return $operation;
         }
-        $run = $this->history($runId);
-        $inputs = $run['inputs'] ?? null;
-        $workflow = $direct->definition($operation->kind)['workflow'] ?? throw $this->unavailable();
-        if (($run['id'] ?? null) !== $runId || ($run['workflowName'] ?? null) !== $workflow
-            || ! in_array($run['status'] ?? null, [...$terminalStatuses, 'pending', 'running', 'suspended'], true)
-            || ($hasStatus && $run['status'] !== $terminalRun['status']) || ! is_array($inputs)
-            || ($inputs['operation_id'] ?? null) !== $operation->id || ($inputs['node_id'] ?? null) !== $operation->node_id
-            || ($inputs['kind'] ?? null) !== $operation->kind) {
+        $run = $this->readProgress($operation);
+        if ($hasStatus && $run['status'] !== $terminalRun['status']) {
             throw $this->unavailable();
         }
         $this->projectChildren($operation, $runId, $run);
@@ -140,7 +134,7 @@ final readonly class SwampCommandStep
                 throw new SwampTerminalReadUnavailable;
             }
 
-            return app(ExpireOperationAction::class)->execute($operation);
+            return app(ExpireOperationAction::class)->execute($operation, $run);
         }
         if ($operation->kind === 'instance.migrate') {
             $projected = $direct->projection($operation)->apply($operation, [
@@ -160,7 +154,7 @@ final readonly class SwampCommandStep
             throw $this->unavailable();
         }
         if ($deadline !== null && ! $deadline->isFuture() && ($completedAt === null || $completedAt->greaterThan($deadline))) {
-            $operation = app(ExpireOperationAction::class)->execute($operation);
+            $operation = app(ExpireOperationAction::class)->execute($operation, $run);
         }
         // An expiry the run beat, typically at the admission deadline before a slow start reply bound the run.
         if (ExpireOperationAction::expiredUnsettled($operation) && $completedAt !== null && $deadline !== null && $completedAt->lessThan($deadline)) {
@@ -198,6 +192,49 @@ final readonly class SwampCommandStep
         $this->fillStepTimes($projected, $runId, $run);
 
         return $projected;
+    }
+
+    /**
+     * Reads the real native checkpoint before a hard-expiry decision, including runs that predate this Gateway release.
+     *
+     * @return array<string,mixed>
+     */
+    public function readProgress(Operation $operation): array
+    {
+        $runId = $operation->state['swamp_run_id'] ?? null;
+        if (! is_string($runId)) {
+            throw $this->unavailable();
+        }
+        $run = $this->history($runId);
+        $inputs = $run['inputs'] ?? null;
+        $workflow = app(DirectOperation::class)->definition($operation->kind)['workflow'] ?? null;
+        if (($run['id'] ?? null) !== $runId || ($run['workflowName'] ?? null) !== $workflow
+            || ! in_array($run['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted', 'pending', 'running', 'suspended'], true)
+            || ! is_array($run['jobs'] ?? null) || ! is_array($inputs)
+            || ($inputs['operation_id'] ?? null) !== $operation->id || ($inputs['node_id'] ?? null) !== $operation->node_id
+            || ($inputs['kind'] ?? null) !== $operation->kind) {
+            throw $this->unavailable();
+        }
+        $progress = app(NativeRunProgress::class);
+        $progress->recordHistory($operation, $runId, [$run]);
+        $operation->refresh();
+        $deadline = OperationRunBudgets::deadline($operation);
+        if (! $operation->status->terminal() && $deadline !== null && ! $deadline->isFuture()) {
+            $children = $this->nestedRuns($runId, is_string($run['startedAt'] ?? null) ? $run['startedAt'] : '', complete: true);
+            $runs = [$run];
+            foreach ($children as $childId) {
+                $child = $this->history($childId);
+                $parent = is_array($child['parentRun'] ?? null) ? ($child['parentRun']['runId'] ?? null) : null;
+                if (($child['id'] ?? null) !== $childId || ! in_array($parent, [$runId, ...$children], true) || ! is_array($child['jobs'] ?? null)) {
+                    throw $this->unavailable();
+                }
+                $runs[] = $child;
+            }
+            $progress->recordHistory($operation, $runId, $runs);
+            $operation->refresh();
+        }
+
+        return $run;
     }
 
     /** The same declared terminal reader records completed children while their parent is open.
@@ -331,12 +368,15 @@ final readonly class SwampCommandStep
      *
      * @return list<string>
      */
-    private function nestedRuns(string $rootId, string $since): array
+    private function nestedRuns(string $rootId, string $since, bool $complete = false): array
     {
         $parents = [];
         for ($offset = 0; $offset < 1000; $offset += 200) {
             $reply = $this->read('workflow.run.search', ['since' => $since, 'limit' => 200, 'offset' => $offset]);
             $data = $reply['data'] ?? null;
+            if ($complete && (! is_array($data) || ! is_array($data['results'] ?? null))) {
+                throw $this->unavailable();
+            }
             $page = is_array($data) && is_array($data['results'] ?? null) ? $data['results'] : [];
             foreach ($page as $row) {
                 $id = is_array($row) ? ($row['runId'] ?? null) : null;
@@ -349,10 +389,13 @@ final readonly class SwampCommandStep
             if (count($page) < 200) {
                 break;
             }
+            if ($complete && $offset === 800) {
+                throw $this->unavailable();
+            }
         }
         $found = [];
         $frontier = [$rootId];
-        for ($depth = 0; $depth < 4 && $frontier !== []; $depth++) {
+        for ($depth = 0; $depth < ($complete ? 60 : 4) && $frontier !== []; $depth++) {
             $next = [];
             foreach ($parents as $child => $parent) {
                 if (in_array($parent, $frontier, true) && ! in_array($child, $found, true)) {
@@ -361,6 +404,10 @@ final readonly class SwampCommandStep
                 }
             }
             $frontier = $next;
+        }
+
+        if ($complete && (count($found) > 60 || array_any($parents, static fn (string $parent, string $child): bool => in_array($parent, $frontier, true) && ! in_array($child, $found, true)))) {
+            throw $this->unavailable();
         }
 
         return array_slice($found, 0, 60);

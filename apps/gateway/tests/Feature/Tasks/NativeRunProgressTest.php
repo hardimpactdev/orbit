@@ -42,8 +42,8 @@ it('keeps all five clone phases visible while publication runs in its own job', 
     $rows = progressRows($operation);
     expect(array_column($rows, 'name'))->toBe(['clone-route', 'clone-container', 'clone-workspace', 'clone-agent', 'clone-t3', 'clone-sessions'])
         ->and(array_column(array_slice($rows, 1), 'status'))->toBe(array_fill(0, 5, 'succeeded'))
-        ->and(array_column(array_slice($rows, 1), 'started_at'))->not->toContain(null)
-        ->and(array_column(array_slice($rows, 1), 'finished_at'))->not->toContain(null)
+        ->and(array_column(array_slice($rows, 1), 'started_at'))->toBe(array_fill(0, 5, null))
+        ->and(array_column(array_slice($rows, 1), 'finished_at'))->toBe(array_fill(0, 5, null))
         ->and($operation->current_step)->toBe('clone-route');
 });
 
@@ -102,24 +102,25 @@ it('closes no row with an index-less skip of a started forEach item', function (
         ->toBe([['Sign the CSR-0-0', 'running'], ['Sign the CSR-0', 'skipped']]);
 });
 
-it('keeps a completed transition across repeated observations and accepts a later restart of the same step', function (): void {
-    $this->travelTo(new DateTimeImmutable('2026-11-11T10:00:00Z'));
+it('retains native history time across event replay and advances only from later history', function (): void {
+    $this->travelTo(new DateTimeImmutable('2026-11-11T11:00:00Z'));
     $operation = progressOperation();
     $progress = app(NativeRunProgress::class);
-    $event = ['jobId' => 'main', 'stepId' => 'work'];
-    $progress->apply($operation->id, 'run-1', [...$event, 'kind' => 'step_started', 'seq' => 1, 'startedAt' => '2026-11-11T10:01:00Z']);
-    $progress->apply($operation->id, 'run-1', [...$event, 'kind' => 'step_completed', 'seq' => 2, 'completedAt' => '2026-11-11T10:35:00Z']);
-    $this->travel(60)->minutes();
+    $fixtures = json_decode(file_get_contents(base_path('tests/Fixtures/SwampRunBudgets/db3f6373.json')), true, flags: JSON_THROW_ON_ERROR)['cases'];
+    $event = $fixtures['succeeded']['event']['event'];
+    $history = $fixtures['succeeded']['history']['payload']['data'];
+    $progress->apply($operation->id, 'run-1', $event);
+    $progress->recordHistory($operation, 'run-1', [$history]);
+    $this->travel(10)->minutes();
 
-    $progress->apply($operation->id, 'run-1', [...$event, 'kind' => 'step_completed', 'seq' => 3, 'completedAt' => '2026-11-11T11:00:00Z']);
+    $progress->apply($operation->id, 'run-1', [...$event, 'seq' => 2]);
+    $progress->apply($operation->id, 'run-1', $event);
+    $progress->recordHistory($operation, 'run-1', [$history]);
 
-    expect(progressRows($operation)[0]['finished_at'])->toBe('2026-11-11T10:35:00Z')
-        ->and($operation->state['native_progress']['last_transition_at'])->toBe('2026-11-11T10:35:00.000000Z')
+    expect($operation->refresh()->state['native_progress']['last_transition_at'])->toBe('2026-11-11T10:35:00.000000Z')
         ->and($operation->current_step)->toBeNull();
 
-    $this->travel(1)->minutes();
-    $progress->apply($operation->id, 'run-1', [...$event, 'kind' => 'step_started', 'seq' => 4, 'startedAt' => '2026-11-11T11:01:00Z']);
-
-    expect($operation->refresh()->state['native_progress']['last_transition_at'])->toBe('2026-11-11T11:01:00.000000Z')
-        ->and($operation->current_step)->toBe('work');
+    $progress->recordHistory($operation, 'run-1', [$fixtures['running']['history']['payload']['data']]);
+    $progress->recordHistory($operation, 'run-1', [$history]);
+    expect($operation->refresh()->state['native_progress']['last_transition_at'])->toBe('2026-11-11T10:40:00.000000Z');
 });

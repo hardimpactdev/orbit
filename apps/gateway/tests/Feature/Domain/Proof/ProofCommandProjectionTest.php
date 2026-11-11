@@ -32,6 +32,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Queue;
 use Symfony\Component\Yaml\Yaml;
+use Tests\Support\NativeRunBudgetSocket;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -641,6 +642,7 @@ describe('a run that ends at its budget', function (): void {
         $proof->update(['input' => [...$proof->input, 'selected_commands' => ['firewall:allow'], 'batches' => $batches]]);
         app(ProofBatchProjection::class)->applyChild($run, ...$child('one', PROOF_PASSED));
 
+        NativeRunBudgetSocket::install($run);
         app(ExpireOperationAction::class)->execute($run->refresh());
 
         $verdicts = collect($proof->refresh()->result['cases'])->mapWithKeys(static fn (array $case): array => [$case['case'] => $case['verdict']])->all();

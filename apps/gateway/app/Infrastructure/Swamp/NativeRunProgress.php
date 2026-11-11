@@ -54,15 +54,8 @@ final readonly class NativeRunProgress
 
                 return;
             }
-            $lastTransition = NativeRunTimestamp::parse($progress['last_transition_at'] ?? null);
-            $transition = NativeRunTimestamp::parse($event[$event['kind'] === 'step_started' ? 'startedAt' : 'completedAt'] ?? null);
-            if ($transition !== null && ($lastTransition === null || $transition->greaterThan($lastTransition))) {
-                $lastTransition = $transition;
-            }
             if ($event['kind'] === 'step_started') {
-                $started = $event['startedAt'] ?? null;
-                $started = is_string($started) && NativeRunTimestamp::parse($started) !== null ? $started : null;
-                $active[$key] = ['step' => mb_strcut($event['stepId'], 0, 255), 'started_at' => $started, 'observed_at' => now()->toISOString(),
+                $active[$key] = ['step' => mb_strcut($event['stepId'], 0, 255), 'started_at' => null, 'observed_at' => now()->toISOString(),
                     'parent' => $parent, 'job' => $event['jobId'], 'index' => $index];
             } else {
                 unset($active[$key]);
@@ -72,20 +65,59 @@ final readonly class NativeRunProgress
                     'name' => $event['stepId'], 'status' => 'failed', 'error' => $event['error'] ?? null,
                 ]]]]], $operation);
             }
-            $finished = $event['completedAt'] ?? null;
             $steps[$key] = ['name' => mb_strcut($event['stepId'], 0, 240).($index === '' ? '' : '-'.$index), 'job' => mb_strcut($event['jobId'], 0, 255),
                 'status' => $status,
                 'started_at' => $active[$key]['started_at'] ?? $prior['started_at'] ?? null,
-                'finished_at' => $event['kind'] === 'step_started' ? null
-                    : (is_string($finished) && NativeRunTimestamp::parse($finished) !== null ? $finished : null)];
-            $state['native_progress'] = ['run' => $runId, 'seq' => $event['seq'], 'active' => $active, 'steps' => $steps,
-                'last_transition_at' => $lastTransition?->toISOString()];
+                'finished_at' => null];
+            $state['native_progress'] = [...$progress, 'run' => $runId, 'seq' => $event['seq'], 'active' => $active, 'steps' => $steps];
             $current = $active === [] ? null : end($active);
             $failure = $state['native_failure'] ?? null;
             app(OperationStore::class)->change($operation, [
                 'state' => $state, 'current_step' => $current['step'] ?? null,
                 'failed_step' => is_array($failure) && is_string($failure['failed_step'] ?? null) ? $failure['failed_step'] : null,
             ]);
+        });
+    }
+
+    /**
+     * Native events have no times. The shared reader supplies identity-checked root and descendant history, read outside this transaction.
+     *
+     * @param  list<array<string,mixed>>  $runs
+     */
+    public function recordHistory(Operation $operation, string $runId, array $runs): void
+    {
+        $latest = null;
+        foreach ($runs as $run) {
+            foreach (is_array($run['jobs'] ?? null) ? $run['jobs'] : [] as $job) {
+                foreach (is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
+                    if (! is_array($step)) {
+                        continue;
+                    }
+                    foreach (['startedAt', 'completedAt'] as $field) {
+                        $time = NativeRunTimestamp::parse($step[$field] ?? null);
+                        if ($time !== null && ($latest === null || $time->greaterThan($latest))) {
+                            $latest = $time;
+                        }
+                    }
+                }
+            }
+        }
+        if ($latest === null) {
+            return;
+        }
+        DB::transaction(function () use ($operation, $runId, $latest): void {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            if ($current->status->terminal() || ($current->state['swamp_run_id'] ?? null) !== $runId) {
+                return;
+            }
+            $stored = $current->state['native_progress'] ?? null;
+            $progress = is_array($stored) && ($stored['run'] ?? null) === $runId ? $stored : [];
+            $previous = NativeRunTimestamp::parse($progress['last_transition_at'] ?? null);
+            if ($previous !== null && ! $latest->greaterThan($previous)) {
+                return;
+            }
+            app(OperationStore::class)->change($current, ['state' => [...($current->state ?? []),
+                'native_progress' => [...$progress, 'run' => $runId, 'last_transition_at' => $latest->toISOString()]]]);
         });
     }
 
