@@ -1,0 +1,1670 @@
+{
+  "source_commit": "e635db82b8a02688acd7f018193e0660883597a2",
+  "source_sha256": "f72168949105452271aedf04cfc419ccfb64fe0570bda843bcd9aa2823598294",
+  "registrations": [
+    "development moved head with red Required checks is gate_failed",
+    "development moved head with running Required checks is gate_pending",
+    "development moved head with green Required checks is started",
+    "development retries the same moved head's running check and deploys once green",
+    "development rereads red checks and deploys the same head after a green rerun",
+    "development waits for a missing configured check and never uses unrelated green evidence",
+    "development policy admits only after Gateway ownership switches",
+    "development policy returns only the final checkpoint handle",
+    "native development policy saves the exact pinned intent before admission",
+    "an existing target hold starts no competing deployment",
+    "target_busy at admission clears only the unadmitted intent",
+    "a lost admission response follows its receipt without a second start",
+    "retained succeeded Operation settles its old commit before a newer green head deploys (history false)",
+    "retained succeeded Operation settles its old commit before a newer green head deploys (history true)",
+    "retained failed Operation settles its old commit before a newer green head deploys (history false)",
+    "retained failed Operation settles its old commit before a newer green head deploys (history true)",
+    "retained commit_failed for an old checkout commit cannot block a newer green container head",
+    "retained failed for an old checkout commit cannot block a newer green container head",
+    "retained up_to_date for an old checkout commit cannot block a newer green container head",
+    "waiting for green does not reassign an old commit's failed attempts to the new head",
+    "an ended failed Operation without history never authorizes an immediate same-head effect",
+    "interrupted development deploys settle, back off and re-admit the head",
+    "interrupted development deploy without evidence backs off once then admits the current head",
+    "a definite start failure without history uses the same retry backoff",
+    "all ended failure receipts settle and share bounded accounting",
+    "development retries and backoff are owned by Swamp and reset after manual work",
+    "pending publication uses the normal Route root before dev deployment",
+    "terminal cancellation settles even without admission-fence evidence",
+    "unrelated production and non-default checkouts with null history cannot block dev discovery",
+    "a default with no authoritative Route deploys even when its display Route is unrelated",
+    "native-first deployment skips the old Gateway dev owner before reading new fields",
+    "Gateway development admissions and lost-response recovery use only development routes",
+    "development policy refuses an enabled production Instance explicitly included in its input",
+    "a fresh production placement refuses a stale development selection",
+    "development policy never discovers work outside the Gateway selection",
+    "fresh Gateway refusal stops a selected default before history or head reads",
+    "canonical Gateway refusal skips ambiguous app-dev plus app-prod placement",
+    "three no-history failures escalate to twenty minutes and stop the head; a newer green head deploys",
+    "recorded and no-history failures share one ordinal and manual reset",
+    "late history replaces retained failure only once it carries the pinned SHA",
+    "old checkout success cannot declare a different container seed up to date (green true)",
+    "old checkout success cannot declare a different container seed up to date (green false)",
+    "matrix success / none",
+    "matrix success / id",
+    "matrix success / key",
+    "matrix success / stale-id",
+    "matrix success / stale-key",
+    "matrix failure / none",
+    "matrix failure / id",
+    "matrix failure / key",
+    "matrix failure / stale-id",
+    "matrix failure / stale-key",
+    "matrix legacy-null-failure / none",
+    "matrix legacy-null-failure / id",
+    "matrix legacy-null-failure / key",
+    "matrix legacy-null-failure / stale-id",
+    "matrix legacy-null-failure / stale-key",
+    "matrix start-refusal / none",
+    "matrix start-refusal / id",
+    "matrix start-refusal / key",
+    "matrix start-refusal / stale-id",
+    "matrix start-refusal / stale-key",
+    "matrix queued-cancel / none",
+    "matrix queued-cancel / id",
+    "matrix queued-cancel / key",
+    "matrix queued-cancel / stale-id",
+    "matrix queued-cancel / stale-key",
+    "matrix running-cancel / none",
+    "matrix running-cancel / id",
+    "matrix running-cancel / key",
+    "matrix running-cancel / stale-id",
+    "matrix running-cancel / stale-key",
+    "matrix interruption / none",
+    "matrix interruption / id",
+    "matrix interruption / key",
+    "matrix interruption / stale-id",
+    "matrix interruption / stale-key",
+    "matrix timeout / none",
+    "matrix timeout / id",
+    "matrix timeout / key",
+    "matrix timeout / stale-id",
+    "matrix timeout / stale-key",
+    "matrix absent-admission / none",
+    "matrix absent-admission / id",
+    "matrix absent-admission / key",
+    "matrix absent-admission / stale-id",
+    "matrix absent-admission / stale-key",
+    "matrix paused / none",
+    "matrix paused / id",
+    "matrix paused / key",
+    "matrix paused / stale-id",
+    "matrix paused / stale-key",
+    "matrix replay / none",
+    "matrix replay / id",
+    "matrix replay / key",
+    "matrix replay / stale-id",
+    "matrix replay / stale-key",
+    "matrix refused-before-admission / none",
+    "matrix refused-before-admission / key",
+    "matrix refused-before-admission / stale-key",
+    "matrix reconciled-success / id",
+    "matrix reconciled-success / key",
+    "matrix original-command succeeded / stale-key",
+    "matrix original-command failed / stale-key",
+    "matrix original-command cancelled / stale-key",
+    "matrix original-command interrupted / stale-key",
+    "matrix cancellation-request / none",
+    "matrix cancellation-request / id",
+    "matrix cancellation-request / key",
+    "matrix cancellation-request / stale-id",
+    "matrix cancellation-request / stale-key",
+    "matrix projection-unfinished / none",
+    "matrix manual-superseded / none",
+    "matrix ineligible-before-execution / none",
+    "matrix ineligible-after-execution / none",
+    "matrix projection-unfinished / id",
+    "matrix manual-superseded / id",
+    "matrix ineligible-before-execution / id",
+    "matrix ineligible-after-execution / id",
+    "matrix projection-unfinished / key",
+    "matrix manual-superseded / key",
+    "matrix ineligible-before-execution / key",
+    "matrix ineligible-after-execution / key",
+    "matrix projection-unfinished / stale-id",
+    "matrix manual-superseded / stale-id",
+    "matrix ineligible-before-execution / stale-id",
+    "matrix ineligible-after-execution / stale-id",
+    "matrix projection-unfinished / stale-key",
+    "matrix manual-superseded / stale-key",
+    "matrix ineligible-before-execution / stale-key",
+    "matrix ineligible-after-execution / stale-key",
+    "matrix toggle-after-1-failures-recorded / none",
+    "matrix toggle-after-1-failures-mixed / none",
+    "matrix toggle-after-2-failures-recorded / none",
+    "matrix toggle-after-2-failures-mixed / none",
+    "matrix toggle-after-3-failures-recorded / none",
+    "matrix toggle-after-3-failures-mixed / none",
+    "matrix toggle-pending / none",
+    "matrix toggle-running / none",
+    "matrix toggle-after-1-failures-recorded / id",
+    "matrix toggle-after-1-failures-mixed / id",
+    "matrix toggle-after-2-failures-recorded / id",
+    "matrix toggle-after-2-failures-mixed / id",
+    "matrix toggle-after-3-failures-recorded / id",
+    "matrix toggle-after-3-failures-mixed / id",
+    "matrix toggle-pending / id",
+    "matrix toggle-running / id",
+    "matrix toggle-after-1-failures-recorded / key",
+    "matrix toggle-after-1-failures-mixed / key",
+    "matrix toggle-after-2-failures-recorded / key",
+    "matrix toggle-after-2-failures-mixed / key",
+    "matrix toggle-after-3-failures-recorded / key",
+    "matrix toggle-after-3-failures-mixed / key",
+    "matrix toggle-pending / key",
+    "matrix toggle-running / key",
+    "matrix toggle-after-1-failures-recorded / stale-id",
+    "matrix toggle-after-1-failures-mixed / stale-id",
+    "matrix toggle-after-2-failures-recorded / stale-id",
+    "matrix toggle-after-2-failures-mixed / stale-id",
+    "matrix toggle-after-3-failures-recorded / stale-id",
+    "matrix toggle-after-3-failures-mixed / stale-id",
+    "matrix toggle-pending / stale-id",
+    "matrix toggle-running / stale-id",
+    "matrix toggle-after-1-failures-recorded / stale-key",
+    "matrix toggle-after-1-failures-mixed / stale-key",
+    "matrix toggle-after-2-failures-recorded / stale-key",
+    "matrix toggle-after-2-failures-mixed / stale-key",
+    "matrix toggle-after-3-failures-recorded / stale-key",
+    "matrix toggle-after-3-failures-mixed / stale-key",
+    "matrix toggle-pending / stale-key",
+    "matrix toggle-running / stale-key",
+    "matrix manual-running / none",
+    "matrix interleaved-heads-queued / none",
+    "matrix interleaved-heads-running / none",
+    "matrix interleaved-heads-succeeded / none",
+    "matrix merge-check-changed / none",
+    "matrix manual-running / id",
+    "matrix interleaved-heads-queued / id",
+    "matrix interleaved-heads-running / id",
+    "matrix interleaved-heads-succeeded / id",
+    "matrix merge-check-changed / id",
+    "matrix manual-running / key",
+    "matrix interleaved-heads-queued / key",
+    "matrix interleaved-heads-running / key",
+    "matrix interleaved-heads-succeeded / key",
+    "matrix merge-check-changed / key",
+    "matrix manual-running / stale-id",
+    "matrix interleaved-heads-queued / stale-id",
+    "matrix interleaved-heads-running / stale-id",
+    "matrix interleaved-heads-succeeded / stale-id",
+    "matrix merge-check-changed / stale-id",
+    "matrix manual-running / stale-key",
+    "matrix interleaved-heads-queued / stale-key",
+    "matrix interleaved-heads-running / stale-key",
+    "matrix interleaved-heads-succeeded / stale-key",
+    "matrix merge-check-changed / stale-key",
+    "durable retry limit survives fifty later automatic deployments",
+    "matrix pruned-return-after-weeks / manual-reset-false",
+    "matrix pruned-return-after-weeks / manual-reset-true",
+    "matrix durable-duplicate-evidence / id",
+    "matrix durable-duplicate-evidence / key",
+    "matrix durable-duplicate-evidence / stale-id",
+    "matrix durable-duplicate-evidence / stale-key",
+    "matrix durable-late-reconciliation / unknown-history-id",
+    "matrix durable-checkpoint-replay / failed-write",
+    "matrix durable-success-reset / replay-old-no-row-failure",
+    "thousands of stopped SHAs do not enlarge retry reads or publications",
+    "old checkpoints use bounded batches and a partial publication replays without losing or doubling failures"
+  ],
+  "intent_translation": "Swamp checkpoint IDs/keys are exported and deleted, not imported. Each historical intent cell proves its lifecycle/retry assertion from authoritative admitted Operations instead; no policy HTTP or checkpoint store remains.",
+  "cells": [
+    {
+      "deno": "development moved head with red Required checks is gate_failed",
+      "pest": "ports development cell development moved head with red Required checks is gate_failed",
+      "scenario": "gate",
+      "intent": "none",
+      "variant": "red"
+    },
+    {
+      "deno": "development moved head with running Required checks is gate_pending",
+      "pest": "ports development cell development moved head with running Required checks is gate_pending",
+      "scenario": "gate",
+      "intent": "none",
+      "variant": "running"
+    },
+    {
+      "deno": "development moved head with green Required checks is started",
+      "pest": "ports development cell development moved head with green Required checks is started",
+      "scenario": "gate",
+      "intent": "none",
+      "variant": "green"
+    },
+    {
+      "deno": "development retries the same moved head's running check and deploys once green",
+      "pest": "ports development cell development retries the same moved head's running check and deploys once green",
+      "scenario": "gate",
+      "intent": "none",
+      "variant": "running"
+    },
+    {
+      "deno": "development rereads red checks and deploys the same head after a green rerun",
+      "pest": "ports development cell development rereads red checks and deploys the same head after a green rerun",
+      "scenario": "gate",
+      "intent": "none",
+      "variant": "red"
+    },
+    {
+      "deno": "development waits for a missing configured check and never uses unrelated green evidence",
+      "pest": "ports development cell development waits for a missing configured check and never uses unrelated green evidence",
+      "scenario": "gate",
+      "intent": "none",
+      "variant": "unrelated"
+    },
+    {
+      "deno": "development policy admits only after Gateway ownership switches",
+      "pest": "ports development cell development policy admits only after Gateway ownership switches",
+      "scenario": "ownership",
+      "intent": "none"
+    },
+    {
+      "deno": "development policy returns only the final checkpoint handle",
+      "pest": "ports development cell development policy returns only the final checkpoint handle",
+      "scenario": "admission",
+      "intent": "none"
+    },
+    {
+      "deno": "native development policy saves the exact pinned intent before admission",
+      "pest": "ports development cell native development policy saves the exact pinned intent before admission",
+      "scenario": "admission",
+      "intent": "none"
+    },
+    {
+      "deno": "an existing target hold starts no competing deployment",
+      "pest": "ports development cell an existing target hold starts no competing deployment",
+      "scenario": "busy",
+      "intent": "none"
+    },
+    {
+      "deno": "target_busy at admission clears only the unadmitted intent",
+      "pest": "ports development cell target_busy at admission clears only the unadmitted intent",
+      "scenario": "source-race",
+      "intent": "none"
+    },
+    {
+      "deno": "a lost admission response follows its receipt without a second start",
+      "pest": "ports development cell a lost admission response follows its receipt without a second start",
+      "scenario": "admission",
+      "intent": "none"
+    },
+    {
+      "deno": "retained succeeded Operation settles its old commit before a newer green head deploys (history false)",
+      "pest": "ports development cell retained succeeded Operation settles its old commit before a newer green head deploys (history false)",
+      "scenario": "retained-old",
+      "intent": "none",
+      "status": "succeeded",
+      "history": false
+    },
+    {
+      "deno": "retained succeeded Operation settles its old commit before a newer green head deploys (history true)",
+      "pest": "ports development cell retained succeeded Operation settles its old commit before a newer green head deploys (history true)",
+      "scenario": "retained-old",
+      "intent": "none",
+      "status": "succeeded",
+      "history": true
+    },
+    {
+      "deno": "retained failed Operation settles its old commit before a newer green head deploys (history false)",
+      "pest": "ports development cell retained failed Operation settles its old commit before a newer green head deploys (history false)",
+      "scenario": "retained-old",
+      "intent": "none",
+      "status": "failed",
+      "history": false
+    },
+    {
+      "deno": "retained failed Operation settles its old commit before a newer green head deploys (history true)",
+      "pest": "ports development cell retained failed Operation settles its old commit before a newer green head deploys (history true)",
+      "scenario": "retained-old",
+      "intent": "none",
+      "status": "failed",
+      "history": true
+    },
+    {
+      "deno": "retained commit_failed for an old checkout commit cannot block a newer green container head",
+      "pest": "ports development cell retained commit_failed for an old checkout commit cannot block a newer green container head",
+      "scenario": "interleaved",
+      "intent": "none"
+    },
+    {
+      "deno": "retained failed for an old checkout commit cannot block a newer green container head",
+      "pest": "ports development cell retained failed for an old checkout commit cannot block a newer green container head",
+      "scenario": "interleaved",
+      "intent": "none"
+    },
+    {
+      "deno": "retained up_to_date for an old checkout commit cannot block a newer green container head",
+      "pest": "ports development cell retained up_to_date for an old checkout commit cannot block a newer green container head",
+      "scenario": "interleaved",
+      "intent": "none"
+    },
+    {
+      "deno": "waiting for green does not reassign an old commit's failed attempts to the new head",
+      "pest": "ports development cell waiting for green does not reassign an old commit's failed attempts to the new head",
+      "scenario": "interleaved-wait",
+      "intent": "none"
+    },
+    {
+      "deno": "an ended failed Operation without history never authorizes an immediate same-head effect",
+      "pest": "ports development cell an ended failed Operation without history never authorizes an immediate same-head effect",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "failure"
+    },
+    {
+      "deno": "interrupted development deploys settle, back off and re-admit the head",
+      "pest": "ports development cell interrupted development deploys settle, back off and re-admit the head",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "interruption"
+    },
+    {
+      "deno": "interrupted development deploy without evidence backs off once then admits the current head",
+      "pest": "ports development cell interrupted development deploy without evidence backs off once then admits the current head",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "interruption"
+    },
+    {
+      "deno": "a definite start failure without history uses the same retry backoff",
+      "pest": "ports development cell a definite start failure without history uses the same retry backoff",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "start-refusal"
+    },
+    {
+      "deno": "all ended failure receipts settle and share bounded accounting",
+      "pest": "ports development cell all ended failure receipts settle and share bounded accounting",
+      "scenario": "ended-receipts",
+      "intent": "none"
+    },
+    {
+      "deno": "development retries and backoff are owned by Swamp and reset after manual work",
+      "pest": "ports development cell development retries and backoff are owned by Swamp and reset after manual work",
+      "scenario": "manual-reset",
+      "intent": "none"
+    },
+    {
+      "deno": "pending publication uses the normal Route root before dev deployment",
+      "pest": "ports development cell pending publication uses the normal Route root before dev deployment",
+      "scenario": "route",
+      "intent": "none"
+    },
+    {
+      "deno": "terminal cancellation settles even without admission-fence evidence",
+      "pest": "ports development cell terminal cancellation settles even without admission-fence evidence",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "queued-cancel"
+    },
+    {
+      "deno": "unrelated production and non-default checkouts with null history cannot block dev discovery",
+      "pest": "ports development cell unrelated production and non-default checkouts with null history cannot block dev discovery",
+      "scenario": "selection",
+      "intent": "none",
+      "variant": "clone"
+    },
+    {
+      "deno": "a default with no authoritative Route deploys even when its display Route is unrelated",
+      "pest": "ports development cell a default with no authoritative Route deploys even when its display Route is unrelated",
+      "scenario": "admission",
+      "intent": "none"
+    },
+    {
+      "deno": "native-first deployment skips the old Gateway dev owner before reading new fields",
+      "pest": "ports development cell native-first deployment skips the old Gateway dev owner before reading new fields",
+      "scenario": "ownership",
+      "intent": "none"
+    },
+    {
+      "deno": "Gateway development admissions and lost-response recovery use only development routes",
+      "pest": "ports development cell Gateway development admissions and lost-response recovery use only development routes",
+      "scenario": "admission",
+      "intent": "none"
+    },
+    {
+      "deno": "development policy refuses an enabled production Instance explicitly included in its input",
+      "pest": "ports development cell development policy refuses an enabled production Instance explicitly included in its input",
+      "scenario": "selection",
+      "intent": "none",
+      "variant": "production"
+    },
+    {
+      "deno": "a fresh production placement refuses a stale development selection",
+      "pest": "ports development cell a fresh production placement refuses a stale development selection",
+      "scenario": "source-race",
+      "intent": "none"
+    },
+    {
+      "deno": "development policy never discovers work outside the Gateway selection",
+      "pest": "ports development cell development policy never discovers work outside the Gateway selection",
+      "scenario": "selection",
+      "intent": "none",
+      "variant": "off"
+    },
+    {
+      "deno": "fresh Gateway refusal stops a selected default before history or head reads",
+      "pest": "ports development cell fresh Gateway refusal stops a selected default before history or head reads",
+      "scenario": "selection",
+      "intent": "none",
+      "variant": "checkout"
+    },
+    {
+      "deno": "canonical Gateway refusal skips ambiguous app-dev plus app-prod placement",
+      "pest": "ports development cell canonical Gateway refusal skips ambiguous app-dev plus app-prod placement",
+      "scenario": "selection",
+      "intent": "none",
+      "variant": "ambiguous"
+    },
+    {
+      "deno": "three no-history failures escalate to twenty minutes and stop the head; a newer green head deploys",
+      "pest": "ports development cell three no-history failures escalate to twenty minutes and stop the head; a newer green head deploys",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "failure"
+    },
+    {
+      "deno": "recorded and no-history failures share one ordinal and manual reset",
+      "pest": "ports development cell recorded and no-history failures share one ordinal and manual reset",
+      "scenario": "manual-reset",
+      "intent": "none"
+    },
+    {
+      "deno": "late history replaces retained failure only once it carries the pinned SHA",
+      "pest": "ports development cell late history replaces retained failure only once it carries the pinned SHA",
+      "scenario": "late-history",
+      "intent": "none"
+    },
+    {
+      "deno": "old checkout success cannot declare a different container seed up to date (green true)",
+      "pest": "ports development cell old checkout success cannot declare a different container seed up to date (green true)",
+      "scenario": "old-success",
+      "intent": "none",
+      "green": true
+    },
+    {
+      "deno": "old checkout success cannot declare a different container seed up to date (green false)",
+      "pest": "ports development cell old checkout success cannot declare a different container seed up to date (green false)",
+      "scenario": "old-success",
+      "intent": "none",
+      "variant": "red",
+      "green": false
+    },
+    {
+      "deno": "matrix success / none",
+      "pest": "ports development cell matrix success / none",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "success"
+    },
+    {
+      "deno": "matrix success / id",
+      "pest": "ports development cell matrix success / id",
+      "scenario": "terminal",
+      "intent": "id",
+      "outcome": "success"
+    },
+    {
+      "deno": "matrix success / key",
+      "pest": "ports development cell matrix success / key",
+      "scenario": "terminal",
+      "intent": "key",
+      "outcome": "success"
+    },
+    {
+      "deno": "matrix success / stale-id",
+      "pest": "ports development cell matrix success / stale-id",
+      "scenario": "terminal",
+      "intent": "stale-id",
+      "outcome": "success"
+    },
+    {
+      "deno": "matrix success / stale-key",
+      "pest": "ports development cell matrix success / stale-key",
+      "scenario": "terminal",
+      "intent": "stale-key",
+      "outcome": "success"
+    },
+    {
+      "deno": "matrix failure / none",
+      "pest": "ports development cell matrix failure / none",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "failure"
+    },
+    {
+      "deno": "matrix failure / id",
+      "pest": "ports development cell matrix failure / id",
+      "scenario": "terminal",
+      "intent": "id",
+      "outcome": "failure"
+    },
+    {
+      "deno": "matrix failure / key",
+      "pest": "ports development cell matrix failure / key",
+      "scenario": "terminal",
+      "intent": "key",
+      "outcome": "failure"
+    },
+    {
+      "deno": "matrix failure / stale-id",
+      "pest": "ports development cell matrix failure / stale-id",
+      "scenario": "terminal",
+      "intent": "stale-id",
+      "outcome": "failure"
+    },
+    {
+      "deno": "matrix failure / stale-key",
+      "pest": "ports development cell matrix failure / stale-key",
+      "scenario": "terminal",
+      "intent": "stale-key",
+      "outcome": "failure"
+    },
+    {
+      "deno": "matrix legacy-null-failure / none",
+      "pest": "ports development cell matrix legacy-null-failure / none",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "legacy-null-failure"
+    },
+    {
+      "deno": "matrix legacy-null-failure / id",
+      "pest": "ports development cell matrix legacy-null-failure / id",
+      "scenario": "terminal",
+      "intent": "id",
+      "outcome": "legacy-null-failure"
+    },
+    {
+      "deno": "matrix legacy-null-failure / key",
+      "pest": "ports development cell matrix legacy-null-failure / key",
+      "scenario": "terminal",
+      "intent": "key",
+      "outcome": "legacy-null-failure"
+    },
+    {
+      "deno": "matrix legacy-null-failure / stale-id",
+      "pest": "ports development cell matrix legacy-null-failure / stale-id",
+      "scenario": "terminal",
+      "intent": "stale-id",
+      "outcome": "legacy-null-failure"
+    },
+    {
+      "deno": "matrix legacy-null-failure / stale-key",
+      "pest": "ports development cell matrix legacy-null-failure / stale-key",
+      "scenario": "terminal",
+      "intent": "stale-key",
+      "outcome": "legacy-null-failure"
+    },
+    {
+      "deno": "matrix start-refusal / none",
+      "pest": "ports development cell matrix start-refusal / none",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "start-refusal"
+    },
+    {
+      "deno": "matrix start-refusal / id",
+      "pest": "ports development cell matrix start-refusal / id",
+      "scenario": "terminal",
+      "intent": "id",
+      "outcome": "start-refusal"
+    },
+    {
+      "deno": "matrix start-refusal / key",
+      "pest": "ports development cell matrix start-refusal / key",
+      "scenario": "terminal",
+      "intent": "key",
+      "outcome": "start-refusal"
+    },
+    {
+      "deno": "matrix start-refusal / stale-id",
+      "pest": "ports development cell matrix start-refusal / stale-id",
+      "scenario": "terminal",
+      "intent": "stale-id",
+      "outcome": "start-refusal"
+    },
+    {
+      "deno": "matrix start-refusal / stale-key",
+      "pest": "ports development cell matrix start-refusal / stale-key",
+      "scenario": "terminal",
+      "intent": "stale-key",
+      "outcome": "start-refusal"
+    },
+    {
+      "deno": "matrix queued-cancel / none",
+      "pest": "ports development cell matrix queued-cancel / none",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "queued-cancel"
+    },
+    {
+      "deno": "matrix queued-cancel / id",
+      "pest": "ports development cell matrix queued-cancel / id",
+      "scenario": "terminal",
+      "intent": "id",
+      "outcome": "queued-cancel"
+    },
+    {
+      "deno": "matrix queued-cancel / key",
+      "pest": "ports development cell matrix queued-cancel / key",
+      "scenario": "terminal",
+      "intent": "key",
+      "outcome": "queued-cancel"
+    },
+    {
+      "deno": "matrix queued-cancel / stale-id",
+      "pest": "ports development cell matrix queued-cancel / stale-id",
+      "scenario": "terminal",
+      "intent": "stale-id",
+      "outcome": "queued-cancel"
+    },
+    {
+      "deno": "matrix queued-cancel / stale-key",
+      "pest": "ports development cell matrix queued-cancel / stale-key",
+      "scenario": "terminal",
+      "intent": "stale-key",
+      "outcome": "queued-cancel"
+    },
+    {
+      "deno": "matrix running-cancel / none",
+      "pest": "ports development cell matrix running-cancel / none",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "running-cancel"
+    },
+    {
+      "deno": "matrix running-cancel / id",
+      "pest": "ports development cell matrix running-cancel / id",
+      "scenario": "terminal",
+      "intent": "id",
+      "outcome": "running-cancel"
+    },
+    {
+      "deno": "matrix running-cancel / key",
+      "pest": "ports development cell matrix running-cancel / key",
+      "scenario": "terminal",
+      "intent": "key",
+      "outcome": "running-cancel"
+    },
+    {
+      "deno": "matrix running-cancel / stale-id",
+      "pest": "ports development cell matrix running-cancel / stale-id",
+      "scenario": "terminal",
+      "intent": "stale-id",
+      "outcome": "running-cancel"
+    },
+    {
+      "deno": "matrix running-cancel / stale-key",
+      "pest": "ports development cell matrix running-cancel / stale-key",
+      "scenario": "terminal",
+      "intent": "stale-key",
+      "outcome": "running-cancel"
+    },
+    {
+      "deno": "matrix interruption / none",
+      "pest": "ports development cell matrix interruption / none",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "interruption"
+    },
+    {
+      "deno": "matrix interruption / id",
+      "pest": "ports development cell matrix interruption / id",
+      "scenario": "terminal",
+      "intent": "id",
+      "outcome": "interruption"
+    },
+    {
+      "deno": "matrix interruption / key",
+      "pest": "ports development cell matrix interruption / key",
+      "scenario": "terminal",
+      "intent": "key",
+      "outcome": "interruption"
+    },
+    {
+      "deno": "matrix interruption / stale-id",
+      "pest": "ports development cell matrix interruption / stale-id",
+      "scenario": "terminal",
+      "intent": "stale-id",
+      "outcome": "interruption"
+    },
+    {
+      "deno": "matrix interruption / stale-key",
+      "pest": "ports development cell matrix interruption / stale-key",
+      "scenario": "terminal",
+      "intent": "stale-key",
+      "outcome": "interruption"
+    },
+    {
+      "deno": "matrix timeout / none",
+      "pest": "ports development cell matrix timeout / none",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "timeout"
+    },
+    {
+      "deno": "matrix timeout / id",
+      "pest": "ports development cell matrix timeout / id",
+      "scenario": "terminal",
+      "intent": "id",
+      "outcome": "timeout"
+    },
+    {
+      "deno": "matrix timeout / key",
+      "pest": "ports development cell matrix timeout / key",
+      "scenario": "terminal",
+      "intent": "key",
+      "outcome": "timeout"
+    },
+    {
+      "deno": "matrix timeout / stale-id",
+      "pest": "ports development cell matrix timeout / stale-id",
+      "scenario": "terminal",
+      "intent": "stale-id",
+      "outcome": "timeout"
+    },
+    {
+      "deno": "matrix timeout / stale-key",
+      "pest": "ports development cell matrix timeout / stale-key",
+      "scenario": "terminal",
+      "intent": "stale-key",
+      "outcome": "timeout"
+    },
+    {
+      "deno": "matrix absent-admission / none",
+      "pest": "ports development cell matrix absent-admission / none",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "absent-admission"
+    },
+    {
+      "deno": "matrix absent-admission / id",
+      "pest": "ports development cell matrix absent-admission / id",
+      "scenario": "terminal",
+      "intent": "id",
+      "outcome": "absent-admission"
+    },
+    {
+      "deno": "matrix absent-admission / key",
+      "pest": "ports development cell matrix absent-admission / key",
+      "scenario": "terminal",
+      "intent": "key",
+      "outcome": "absent-admission"
+    },
+    {
+      "deno": "matrix absent-admission / stale-id",
+      "pest": "ports development cell matrix absent-admission / stale-id",
+      "scenario": "terminal",
+      "intent": "stale-id",
+      "outcome": "absent-admission"
+    },
+    {
+      "deno": "matrix absent-admission / stale-key",
+      "pest": "ports development cell matrix absent-admission / stale-key",
+      "scenario": "terminal",
+      "intent": "stale-key",
+      "outcome": "absent-admission"
+    },
+    {
+      "deno": "matrix paused / none",
+      "pest": "ports development cell matrix paused / none",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "paused"
+    },
+    {
+      "deno": "matrix paused / id",
+      "pest": "ports development cell matrix paused / id",
+      "scenario": "terminal",
+      "intent": "id",
+      "outcome": "paused"
+    },
+    {
+      "deno": "matrix paused / key",
+      "pest": "ports development cell matrix paused / key",
+      "scenario": "terminal",
+      "intent": "key",
+      "outcome": "paused"
+    },
+    {
+      "deno": "matrix paused / stale-id",
+      "pest": "ports development cell matrix paused / stale-id",
+      "scenario": "terminal",
+      "intent": "stale-id",
+      "outcome": "paused"
+    },
+    {
+      "deno": "matrix paused / stale-key",
+      "pest": "ports development cell matrix paused / stale-key",
+      "scenario": "terminal",
+      "intent": "stale-key",
+      "outcome": "paused"
+    },
+    {
+      "deno": "matrix replay / none",
+      "pest": "ports development cell matrix replay / none",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "replay"
+    },
+    {
+      "deno": "matrix replay / id",
+      "pest": "ports development cell matrix replay / id",
+      "scenario": "terminal",
+      "intent": "id",
+      "outcome": "replay"
+    },
+    {
+      "deno": "matrix replay / key",
+      "pest": "ports development cell matrix replay / key",
+      "scenario": "terminal",
+      "intent": "key",
+      "outcome": "replay"
+    },
+    {
+      "deno": "matrix replay / stale-id",
+      "pest": "ports development cell matrix replay / stale-id",
+      "scenario": "terminal",
+      "intent": "stale-id",
+      "outcome": "replay"
+    },
+    {
+      "deno": "matrix replay / stale-key",
+      "pest": "ports development cell matrix replay / stale-key",
+      "scenario": "terminal",
+      "intent": "stale-key",
+      "outcome": "replay"
+    },
+    {
+      "deno": "matrix refused-before-admission / none",
+      "pest": "ports development cell matrix refused-before-admission / none",
+      "scenario": "terminal",
+      "intent": "none",
+      "outcome": "refused-before-admission"
+    },
+    {
+      "deno": "matrix refused-before-admission / key",
+      "pest": "ports development cell matrix refused-before-admission / key",
+      "scenario": "terminal",
+      "intent": "key",
+      "outcome": "refused-before-admission"
+    },
+    {
+      "deno": "matrix refused-before-admission / stale-key",
+      "pest": "ports development cell matrix refused-before-admission / stale-key",
+      "scenario": "terminal",
+      "intent": "stale-key",
+      "outcome": "refused-before-admission"
+    },
+    {
+      "deno": "matrix reconciled-success / id",
+      "pest": "ports development cell matrix reconciled-success / id",
+      "scenario": "success",
+      "intent": "id"
+    },
+    {
+      "deno": "matrix reconciled-success / key",
+      "pest": "ports development cell matrix reconciled-success / key",
+      "scenario": "success",
+      "intent": "key"
+    },
+    {
+      "deno": "matrix original-command succeeded / stale-key",
+      "pest": "ports development cell matrix original-command succeeded / stale-key",
+      "scenario": "original-command",
+      "intent": "stale-key",
+      "status": "succeeded"
+    },
+    {
+      "deno": "matrix original-command failed / stale-key",
+      "pest": "ports development cell matrix original-command failed / stale-key",
+      "scenario": "original-command",
+      "intent": "stale-key",
+      "status": "failed"
+    },
+    {
+      "deno": "matrix original-command cancelled / stale-key",
+      "pest": "ports development cell matrix original-command cancelled / stale-key",
+      "scenario": "original-command",
+      "intent": "stale-key",
+      "status": "cancelled"
+    },
+    {
+      "deno": "matrix original-command interrupted / stale-key",
+      "pest": "ports development cell matrix original-command interrupted / stale-key",
+      "scenario": "original-command",
+      "intent": "stale-key",
+      "status": "interrupted"
+    },
+    {
+      "deno": "matrix cancellation-request / none",
+      "pest": "ports development cell matrix cancellation-request / none",
+      "scenario": "busy",
+      "intent": "none",
+      "status": "running"
+    },
+    {
+      "deno": "matrix cancellation-request / id",
+      "pest": "ports development cell matrix cancellation-request / id",
+      "scenario": "busy",
+      "intent": "id",
+      "status": "running"
+    },
+    {
+      "deno": "matrix cancellation-request / key",
+      "pest": "ports development cell matrix cancellation-request / key",
+      "scenario": "busy",
+      "intent": "key",
+      "status": "running"
+    },
+    {
+      "deno": "matrix cancellation-request / stale-id",
+      "pest": "ports development cell matrix cancellation-request / stale-id",
+      "scenario": "busy",
+      "intent": "stale-id",
+      "status": "running"
+    },
+    {
+      "deno": "matrix cancellation-request / stale-key",
+      "pest": "ports development cell matrix cancellation-request / stale-key",
+      "scenario": "busy",
+      "intent": "stale-key",
+      "status": "running"
+    },
+    {
+      "deno": "matrix projection-unfinished / none",
+      "pest": "ports development cell matrix projection-unfinished / none",
+      "scenario": "busy",
+      "intent": "none",
+      "status": "running"
+    },
+    {
+      "deno": "matrix manual-superseded / none",
+      "pest": "ports development cell matrix manual-superseded / none",
+      "scenario": "manual-reset",
+      "intent": "none"
+    },
+    {
+      "deno": "matrix ineligible-before-execution / none",
+      "pest": "ports development cell matrix ineligible-before-execution / none",
+      "scenario": "execution-refusal",
+      "intent": "none"
+    },
+    {
+      "deno": "matrix ineligible-after-execution / none",
+      "pest": "ports development cell matrix ineligible-after-execution / none",
+      "scenario": "after-execution",
+      "intent": "none"
+    },
+    {
+      "deno": "matrix projection-unfinished / id",
+      "pest": "ports development cell matrix projection-unfinished / id",
+      "scenario": "busy",
+      "intent": "id",
+      "status": "running"
+    },
+    {
+      "deno": "matrix manual-superseded / id",
+      "pest": "ports development cell matrix manual-superseded / id",
+      "scenario": "manual-reset",
+      "intent": "id"
+    },
+    {
+      "deno": "matrix ineligible-before-execution / id",
+      "pest": "ports development cell matrix ineligible-before-execution / id",
+      "scenario": "execution-refusal",
+      "intent": "id"
+    },
+    {
+      "deno": "matrix ineligible-after-execution / id",
+      "pest": "ports development cell matrix ineligible-after-execution / id",
+      "scenario": "after-execution",
+      "intent": "id"
+    },
+    {
+      "deno": "matrix projection-unfinished / key",
+      "pest": "ports development cell matrix projection-unfinished / key",
+      "scenario": "busy",
+      "intent": "key",
+      "status": "running"
+    },
+    {
+      "deno": "matrix manual-superseded / key",
+      "pest": "ports development cell matrix manual-superseded / key",
+      "scenario": "manual-reset",
+      "intent": "key"
+    },
+    {
+      "deno": "matrix ineligible-before-execution / key",
+      "pest": "ports development cell matrix ineligible-before-execution / key",
+      "scenario": "execution-refusal",
+      "intent": "key"
+    },
+    {
+      "deno": "matrix ineligible-after-execution / key",
+      "pest": "ports development cell matrix ineligible-after-execution / key",
+      "scenario": "after-execution",
+      "intent": "key"
+    },
+    {
+      "deno": "matrix projection-unfinished / stale-id",
+      "pest": "ports development cell matrix projection-unfinished / stale-id",
+      "scenario": "busy",
+      "intent": "stale-id",
+      "status": "running"
+    },
+    {
+      "deno": "matrix manual-superseded / stale-id",
+      "pest": "ports development cell matrix manual-superseded / stale-id",
+      "scenario": "manual-reset",
+      "intent": "stale-id"
+    },
+    {
+      "deno": "matrix ineligible-before-execution / stale-id",
+      "pest": "ports development cell matrix ineligible-before-execution / stale-id",
+      "scenario": "execution-refusal",
+      "intent": "stale-id"
+    },
+    {
+      "deno": "matrix ineligible-after-execution / stale-id",
+      "pest": "ports development cell matrix ineligible-after-execution / stale-id",
+      "scenario": "after-execution",
+      "intent": "stale-id"
+    },
+    {
+      "deno": "matrix projection-unfinished / stale-key",
+      "pest": "ports development cell matrix projection-unfinished / stale-key",
+      "scenario": "busy",
+      "intent": "stale-key",
+      "status": "running"
+    },
+    {
+      "deno": "matrix manual-superseded / stale-key",
+      "pest": "ports development cell matrix manual-superseded / stale-key",
+      "scenario": "manual-reset",
+      "intent": "stale-key"
+    },
+    {
+      "deno": "matrix ineligible-before-execution / stale-key",
+      "pest": "ports development cell matrix ineligible-before-execution / stale-key",
+      "scenario": "execution-refusal",
+      "intent": "stale-key"
+    },
+    {
+      "deno": "matrix ineligible-after-execution / stale-key",
+      "pest": "ports development cell matrix ineligible-after-execution / stale-key",
+      "scenario": "after-execution",
+      "intent": "stale-key"
+    },
+    {
+      "deno": "matrix toggle-after-1-failures-recorded / none",
+      "pest": "ports development cell matrix toggle-after-1-failures-recorded / none",
+      "scenario": "toggle",
+      "intent": "none",
+      "failures": 1,
+      "evidence": "recorded"
+    },
+    {
+      "deno": "matrix toggle-after-1-failures-mixed / none",
+      "pest": "ports development cell matrix toggle-after-1-failures-mixed / none",
+      "scenario": "toggle",
+      "intent": "none",
+      "failures": 1,
+      "evidence": "mixed"
+    },
+    {
+      "deno": "matrix toggle-after-2-failures-recorded / none",
+      "pest": "ports development cell matrix toggle-after-2-failures-recorded / none",
+      "scenario": "toggle",
+      "intent": "none",
+      "failures": 2,
+      "evidence": "recorded"
+    },
+    {
+      "deno": "matrix toggle-after-2-failures-mixed / none",
+      "pest": "ports development cell matrix toggle-after-2-failures-mixed / none",
+      "scenario": "toggle",
+      "intent": "none",
+      "failures": 2,
+      "evidence": "mixed"
+    },
+    {
+      "deno": "matrix toggle-after-3-failures-recorded / none",
+      "pest": "ports development cell matrix toggle-after-3-failures-recorded / none",
+      "scenario": "toggle",
+      "intent": "none",
+      "failures": 3,
+      "evidence": "recorded"
+    },
+    {
+      "deno": "matrix toggle-after-3-failures-mixed / none",
+      "pest": "ports development cell matrix toggle-after-3-failures-mixed / none",
+      "scenario": "toggle",
+      "intent": "none",
+      "failures": 3,
+      "evidence": "mixed"
+    },
+    {
+      "deno": "matrix toggle-pending / none",
+      "pest": "ports development cell matrix toggle-pending / none",
+      "scenario": "toggle-active",
+      "intent": "none",
+      "status": "queued"
+    },
+    {
+      "deno": "matrix toggle-running / none",
+      "pest": "ports development cell matrix toggle-running / none",
+      "scenario": "toggle-active",
+      "intent": "none",
+      "status": "running"
+    },
+    {
+      "deno": "matrix toggle-after-1-failures-recorded / id",
+      "pest": "ports development cell matrix toggle-after-1-failures-recorded / id",
+      "scenario": "toggle",
+      "intent": "id",
+      "failures": 1,
+      "evidence": "recorded"
+    },
+    {
+      "deno": "matrix toggle-after-1-failures-mixed / id",
+      "pest": "ports development cell matrix toggle-after-1-failures-mixed / id",
+      "scenario": "toggle",
+      "intent": "id",
+      "failures": 1,
+      "evidence": "mixed"
+    },
+    {
+      "deno": "matrix toggle-after-2-failures-recorded / id",
+      "pest": "ports development cell matrix toggle-after-2-failures-recorded / id",
+      "scenario": "toggle",
+      "intent": "id",
+      "failures": 2,
+      "evidence": "recorded"
+    },
+    {
+      "deno": "matrix toggle-after-2-failures-mixed / id",
+      "pest": "ports development cell matrix toggle-after-2-failures-mixed / id",
+      "scenario": "toggle",
+      "intent": "id",
+      "failures": 2,
+      "evidence": "mixed"
+    },
+    {
+      "deno": "matrix toggle-after-3-failures-recorded / id",
+      "pest": "ports development cell matrix toggle-after-3-failures-recorded / id",
+      "scenario": "toggle",
+      "intent": "id",
+      "failures": 3,
+      "evidence": "recorded"
+    },
+    {
+      "deno": "matrix toggle-after-3-failures-mixed / id",
+      "pest": "ports development cell matrix toggle-after-3-failures-mixed / id",
+      "scenario": "toggle",
+      "intent": "id",
+      "failures": 3,
+      "evidence": "mixed"
+    },
+    {
+      "deno": "matrix toggle-pending / id",
+      "pest": "ports development cell matrix toggle-pending / id",
+      "scenario": "toggle-active",
+      "intent": "id",
+      "status": "queued"
+    },
+    {
+      "deno": "matrix toggle-running / id",
+      "pest": "ports development cell matrix toggle-running / id",
+      "scenario": "toggle-active",
+      "intent": "id",
+      "status": "running"
+    },
+    {
+      "deno": "matrix toggle-after-1-failures-recorded / key",
+      "pest": "ports development cell matrix toggle-after-1-failures-recorded / key",
+      "scenario": "toggle",
+      "intent": "key",
+      "failures": 1,
+      "evidence": "recorded"
+    },
+    {
+      "deno": "matrix toggle-after-1-failures-mixed / key",
+      "pest": "ports development cell matrix toggle-after-1-failures-mixed / key",
+      "scenario": "toggle",
+      "intent": "key",
+      "failures": 1,
+      "evidence": "mixed"
+    },
+    {
+      "deno": "matrix toggle-after-2-failures-recorded / key",
+      "pest": "ports development cell matrix toggle-after-2-failures-recorded / key",
+      "scenario": "toggle",
+      "intent": "key",
+      "failures": 2,
+      "evidence": "recorded"
+    },
+    {
+      "deno": "matrix toggle-after-2-failures-mixed / key",
+      "pest": "ports development cell matrix toggle-after-2-failures-mixed / key",
+      "scenario": "toggle",
+      "intent": "key",
+      "failures": 2,
+      "evidence": "mixed"
+    },
+    {
+      "deno": "matrix toggle-after-3-failures-recorded / key",
+      "pest": "ports development cell matrix toggle-after-3-failures-recorded / key",
+      "scenario": "toggle",
+      "intent": "key",
+      "failures": 3,
+      "evidence": "recorded"
+    },
+    {
+      "deno": "matrix toggle-after-3-failures-mixed / key",
+      "pest": "ports development cell matrix toggle-after-3-failures-mixed / key",
+      "scenario": "toggle",
+      "intent": "key",
+      "failures": 3,
+      "evidence": "mixed"
+    },
+    {
+      "deno": "matrix toggle-pending / key",
+      "pest": "ports development cell matrix toggle-pending / key",
+      "scenario": "toggle-active",
+      "intent": "key",
+      "status": "queued"
+    },
+    {
+      "deno": "matrix toggle-running / key",
+      "pest": "ports development cell matrix toggle-running / key",
+      "scenario": "toggle-active",
+      "intent": "key",
+      "status": "running"
+    },
+    {
+      "deno": "matrix toggle-after-1-failures-recorded / stale-id",
+      "pest": "ports development cell matrix toggle-after-1-failures-recorded / stale-id",
+      "scenario": "toggle",
+      "intent": "stale-id",
+      "failures": 1,
+      "evidence": "recorded"
+    },
+    {
+      "deno": "matrix toggle-after-1-failures-mixed / stale-id",
+      "pest": "ports development cell matrix toggle-after-1-failures-mixed / stale-id",
+      "scenario": "toggle",
+      "intent": "stale-id",
+      "failures": 1,
+      "evidence": "mixed"
+    },
+    {
+      "deno": "matrix toggle-after-2-failures-recorded / stale-id",
+      "pest": "ports development cell matrix toggle-after-2-failures-recorded / stale-id",
+      "scenario": "toggle",
+      "intent": "stale-id",
+      "failures": 2,
+      "evidence": "recorded"
+    },
+    {
+      "deno": "matrix toggle-after-2-failures-mixed / stale-id",
+      "pest": "ports development cell matrix toggle-after-2-failures-mixed / stale-id",
+      "scenario": "toggle",
+      "intent": "stale-id",
+      "failures": 2,
+      "evidence": "mixed"
+    },
+    {
+      "deno": "matrix toggle-after-3-failures-recorded / stale-id",
+      "pest": "ports development cell matrix toggle-after-3-failures-recorded / stale-id",
+      "scenario": "toggle",
+      "intent": "stale-id",
+      "failures": 3,
+      "evidence": "recorded"
+    },
+    {
+      "deno": "matrix toggle-after-3-failures-mixed / stale-id",
+      "pest": "ports development cell matrix toggle-after-3-failures-mixed / stale-id",
+      "scenario": "toggle",
+      "intent": "stale-id",
+      "failures": 3,
+      "evidence": "mixed"
+    },
+    {
+      "deno": "matrix toggle-pending / stale-id",
+      "pest": "ports development cell matrix toggle-pending / stale-id",
+      "scenario": "toggle-active",
+      "intent": "stale-id",
+      "status": "queued"
+    },
+    {
+      "deno": "matrix toggle-running / stale-id",
+      "pest": "ports development cell matrix toggle-running / stale-id",
+      "scenario": "toggle-active",
+      "intent": "stale-id",
+      "status": "running"
+    },
+    {
+      "deno": "matrix toggle-after-1-failures-recorded / stale-key",
+      "pest": "ports development cell matrix toggle-after-1-failures-recorded / stale-key",
+      "scenario": "toggle",
+      "intent": "stale-key",
+      "failures": 1,
+      "evidence": "recorded"
+    },
+    {
+      "deno": "matrix toggle-after-1-failures-mixed / stale-key",
+      "pest": "ports development cell matrix toggle-after-1-failures-mixed / stale-key",
+      "scenario": "toggle",
+      "intent": "stale-key",
+      "failures": 1,
+      "evidence": "mixed"
+    },
+    {
+      "deno": "matrix toggle-after-2-failures-recorded / stale-key",
+      "pest": "ports development cell matrix toggle-after-2-failures-recorded / stale-key",
+      "scenario": "toggle",
+      "intent": "stale-key",
+      "failures": 2,
+      "evidence": "recorded"
+    },
+    {
+      "deno": "matrix toggle-after-2-failures-mixed / stale-key",
+      "pest": "ports development cell matrix toggle-after-2-failures-mixed / stale-key",
+      "scenario": "toggle",
+      "intent": "stale-key",
+      "failures": 2,
+      "evidence": "mixed"
+    },
+    {
+      "deno": "matrix toggle-after-3-failures-recorded / stale-key",
+      "pest": "ports development cell matrix toggle-after-3-failures-recorded / stale-key",
+      "scenario": "toggle",
+      "intent": "stale-key",
+      "failures": 3,
+      "evidence": "recorded"
+    },
+    {
+      "deno": "matrix toggle-after-3-failures-mixed / stale-key",
+      "pest": "ports development cell matrix toggle-after-3-failures-mixed / stale-key",
+      "scenario": "toggle",
+      "intent": "stale-key",
+      "failures": 3,
+      "evidence": "mixed"
+    },
+    {
+      "deno": "matrix toggle-pending / stale-key",
+      "pest": "ports development cell matrix toggle-pending / stale-key",
+      "scenario": "toggle-active",
+      "intent": "stale-key",
+      "status": "queued"
+    },
+    {
+      "deno": "matrix toggle-running / stale-key",
+      "pest": "ports development cell matrix toggle-running / stale-key",
+      "scenario": "toggle-active",
+      "intent": "stale-key",
+      "status": "running"
+    },
+    {
+      "deno": "matrix manual-running / none",
+      "pest": "ports development cell matrix manual-running / none",
+      "scenario": "busy",
+      "intent": "none",
+      "status": "running",
+      "manual": true
+    },
+    {
+      "deno": "matrix interleaved-heads-queued / none",
+      "pest": "ports development cell matrix interleaved-heads-queued / none",
+      "scenario": "interleaved-active",
+      "intent": "none",
+      "status": "queued"
+    },
+    {
+      "deno": "matrix interleaved-heads-running / none",
+      "pest": "ports development cell matrix interleaved-heads-running / none",
+      "scenario": "interleaved-active",
+      "intent": "none",
+      "status": "running"
+    },
+    {
+      "deno": "matrix interleaved-heads-succeeded / none",
+      "pest": "ports development cell matrix interleaved-heads-succeeded / none",
+      "scenario": "interleaved-active",
+      "intent": "none",
+      "status": "succeeded"
+    },
+    {
+      "deno": "matrix merge-check-changed / none",
+      "pest": "ports development cell matrix merge-check-changed / none",
+      "scenario": "gate-changed",
+      "intent": "none"
+    },
+    {
+      "deno": "matrix manual-running / id",
+      "pest": "ports development cell matrix manual-running / id",
+      "scenario": "busy",
+      "intent": "id",
+      "status": "running",
+      "manual": true
+    },
+    {
+      "deno": "matrix interleaved-heads-queued / id",
+      "pest": "ports development cell matrix interleaved-heads-queued / id",
+      "scenario": "interleaved-active",
+      "intent": "id",
+      "status": "queued"
+    },
+    {
+      "deno": "matrix interleaved-heads-running / id",
+      "pest": "ports development cell matrix interleaved-heads-running / id",
+      "scenario": "interleaved-active",
+      "intent": "id",
+      "status": "running"
+    },
+    {
+      "deno": "matrix interleaved-heads-succeeded / id",
+      "pest": "ports development cell matrix interleaved-heads-succeeded / id",
+      "scenario": "interleaved-active",
+      "intent": "id",
+      "status": "succeeded"
+    },
+    {
+      "deno": "matrix merge-check-changed / id",
+      "pest": "ports development cell matrix merge-check-changed / id",
+      "scenario": "gate-changed",
+      "intent": "id"
+    },
+    {
+      "deno": "matrix manual-running / key",
+      "pest": "ports development cell matrix manual-running / key",
+      "scenario": "busy",
+      "intent": "key",
+      "status": "running",
+      "manual": true
+    },
+    {
+      "deno": "matrix interleaved-heads-queued / key",
+      "pest": "ports development cell matrix interleaved-heads-queued / key",
+      "scenario": "interleaved-active",
+      "intent": "key",
+      "status": "queued"
+    },
+    {
+      "deno": "matrix interleaved-heads-running / key",
+      "pest": "ports development cell matrix interleaved-heads-running / key",
+      "scenario": "interleaved-active",
+      "intent": "key",
+      "status": "running"
+    },
+    {
+      "deno": "matrix interleaved-heads-succeeded / key",
+      "pest": "ports development cell matrix interleaved-heads-succeeded / key",
+      "scenario": "interleaved-active",
+      "intent": "key",
+      "status": "succeeded"
+    },
+    {
+      "deno": "matrix merge-check-changed / key",
+      "pest": "ports development cell matrix merge-check-changed / key",
+      "scenario": "gate-changed",
+      "intent": "key"
+    },
+    {
+      "deno": "matrix manual-running / stale-id",
+      "pest": "ports development cell matrix manual-running / stale-id",
+      "scenario": "busy",
+      "intent": "stale-id",
+      "status": "running",
+      "manual": true
+    },
+    {
+      "deno": "matrix interleaved-heads-queued / stale-id",
+      "pest": "ports development cell matrix interleaved-heads-queued / stale-id",
+      "scenario": "interleaved-active",
+      "intent": "stale-id",
+      "status": "queued"
+    },
+    {
+      "deno": "matrix interleaved-heads-running / stale-id",
+      "pest": "ports development cell matrix interleaved-heads-running / stale-id",
+      "scenario": "interleaved-active",
+      "intent": "stale-id",
+      "status": "running"
+    },
+    {
+      "deno": "matrix interleaved-heads-succeeded / stale-id",
+      "pest": "ports development cell matrix interleaved-heads-succeeded / stale-id",
+      "scenario": "interleaved-active",
+      "intent": "stale-id",
+      "status": "succeeded"
+    },
+    {
+      "deno": "matrix merge-check-changed / stale-id",
+      "pest": "ports development cell matrix merge-check-changed / stale-id",
+      "scenario": "gate-changed",
+      "intent": "stale-id"
+    },
+    {
+      "deno": "matrix manual-running / stale-key",
+      "pest": "ports development cell matrix manual-running / stale-key",
+      "scenario": "busy",
+      "intent": "stale-key",
+      "status": "running",
+      "manual": true
+    },
+    {
+      "deno": "matrix interleaved-heads-queued / stale-key",
+      "pest": "ports development cell matrix interleaved-heads-queued / stale-key",
+      "scenario": "interleaved-active",
+      "intent": "stale-key",
+      "status": "queued"
+    },
+    {
+      "deno": "matrix interleaved-heads-running / stale-key",
+      "pest": "ports development cell matrix interleaved-heads-running / stale-key",
+      "scenario": "interleaved-active",
+      "intent": "stale-key",
+      "status": "running"
+    },
+    {
+      "deno": "matrix interleaved-heads-succeeded / stale-key",
+      "pest": "ports development cell matrix interleaved-heads-succeeded / stale-key",
+      "scenario": "interleaved-active",
+      "intent": "stale-key",
+      "status": "succeeded"
+    },
+    {
+      "deno": "matrix merge-check-changed / stale-key",
+      "pest": "ports development cell matrix merge-check-changed / stale-key",
+      "scenario": "gate-changed",
+      "intent": "stale-key"
+    },
+    {
+      "deno": "durable retry limit survives fifty later automatic deployments",
+      "pest": "ports development cell durable retry limit survives fifty later automatic deployments",
+      "scenario": "durable",
+      "intent": "none",
+      "rows": 51
+    },
+    {
+      "deno": "matrix pruned-return-after-weeks / manual-reset-false",
+      "pest": "ports development cell matrix pruned-return-after-weeks / manual-reset-false",
+      "scenario": "durable",
+      "intent": "manual-reset-false",
+      "reset": false,
+      "rows": 60
+    },
+    {
+      "deno": "matrix pruned-return-after-weeks / manual-reset-true",
+      "pest": "ports development cell matrix pruned-return-after-weeks / manual-reset-true",
+      "scenario": "durable",
+      "intent": "manual-reset-true",
+      "reset": true,
+      "rows": 60
+    },
+    {
+      "deno": "matrix durable-duplicate-evidence / id",
+      "pest": "ports development cell matrix durable-duplicate-evidence / id",
+      "scenario": "late-history",
+      "intent": "id"
+    },
+    {
+      "deno": "matrix durable-duplicate-evidence / key",
+      "pest": "ports development cell matrix durable-duplicate-evidence / key",
+      "scenario": "late-history",
+      "intent": "key"
+    },
+    {
+      "deno": "matrix durable-duplicate-evidence / stale-id",
+      "pest": "ports development cell matrix durable-duplicate-evidence / stale-id",
+      "scenario": "late-history",
+      "intent": "stale-id"
+    },
+    {
+      "deno": "matrix durable-duplicate-evidence / stale-key",
+      "pest": "ports development cell matrix durable-duplicate-evidence / stale-key",
+      "scenario": "late-history",
+      "intent": "stale-key"
+    },
+    {
+      "deno": "matrix durable-late-reconciliation / unknown-history-id",
+      "pest": "ports development cell matrix durable-late-reconciliation / unknown-history-id",
+      "scenario": "late-history",
+      "intent": "unknown-history-id"
+    },
+    {
+      "deno": "matrix durable-checkpoint-replay / failed-write",
+      "pest": "ports development cell matrix durable-checkpoint-replay / failed-write",
+      "scenario": "write-rollback",
+      "intent": "failed-write"
+    },
+    {
+      "deno": "matrix durable-success-reset / replay-old-no-row-failure",
+      "pest": "ports development cell matrix durable-success-reset / replay-old-no-row-failure",
+      "scenario": "success",
+      "intent": "replay-old-no-row-failure"
+    },
+    {
+      "deno": "thousands of stopped SHAs do not enlarge retry reads or publications",
+      "pest": "ports development cell thousands of stopped SHAs do not enlarge retry reads or publications",
+      "scenario": "bounded",
+      "intent": "none"
+    },
+    {
+      "deno": "old checkpoints use bounded batches and a partial publication replays without losing or doubling failures",
+      "pest": "ports development cell old checkpoints use bounded batches and a partial publication replays without losing or doubling failures",
+      "scenario": "write-rollback",
+      "intent": "none"
+    }
+  ],
+  "main_before_cutover": {
+    "development_registrations": 18,
+    "reference_registrations": 208,
+    "note": "Closed #3359 is parity reference only; its rejected Gateway-calling Swamp additions are not deployed."
+  }
+}

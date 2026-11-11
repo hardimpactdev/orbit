@@ -10,6 +10,8 @@ use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
+use App\Domain\Instances\Deployment\DevelopmentDeployPolicy;
+use App\Domain\Instances\Deployment\DevelopmentDeployRetries;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Domain\Instances\Deployment\InstanceRuntimeDefinitions;
@@ -52,7 +54,8 @@ final readonly class StartInstanceDeployAction
         return $this->start($instance, $triggeredBy, $requestId, $commit, $callerNodeId);
     }
 
-    private function start(Instance $instance, string $triggeredBy, ?string $requestId, ?string $commit, ?int $callerNodeId, bool $automatic = false): Operation
+    /** @param array<string, mixed>|null $developmentSelection */
+    private function start(Instance $instance, string $triggeredBy, ?string $requestId, ?string $commit, ?int $callerNodeId, bool $automatic = false, ?array $developmentSelection = null): Operation
     {
         if ($commit !== null) {
             GitCommitSha::validate($commit);
@@ -61,6 +64,9 @@ final readonly class StartInstanceDeployAction
         if ($automatic) {
             $this->writer->assertSwamp($instance);
             $this->assertRepositoryIdentity($instance);
+        }
+        if ($developmentSelection !== null) {
+            DevelopmentDeployPolicy::assertSelection($instance, $developmentSelection);
         }
         $configuration = $read = null;
         if ($instance->runtime()->exists()) {
@@ -75,7 +81,7 @@ final readonly class StartInstanceDeployAction
                 (string) $project->default_branch, $project->root, $project->type, $commit);
         }
 
-        return DB::transaction(function () use ($instance, $triggeredBy, $requestId, $commit, $callerNodeId, $automatic, $configuration, $read): Operation {
+        return DB::transaction(function () use ($instance, $triggeredBy, $requestId, $commit, $callerNodeId, $automatic, $configuration, $read, $developmentSelection): Operation {
             $instance = Instance::query()->with(['node.roles', 'project'])->lockForUpdate()->findOrFail($instance->id);
             if ($automatic) {
                 $this->writer->assertSwamp($instance);
@@ -91,6 +97,9 @@ final readonly class StartInstanceDeployAction
             }
             if ($automatic) {
                 $this->assertRepositoryIdentity($instance);
+            }
+            if ($developmentSelection !== null) {
+                DevelopmentDeployPolicy::assertSelection($instance, $developmentSelection);
             }
             // A checkout default serializes its deployments with the checkout lock on the Node; a container default holds the Instance.
             $development = $instance->placedOnAppDev();
@@ -131,11 +140,18 @@ final readonly class StartInstanceDeployAction
                 $input['php_input'] = app(ProductionDeployInput::class)->phpInput($instance, $deployment);
                 $input['vp_setup'] = $deployment['needs_vp'] === true ? app(ToolManagerIntent::class)->nativeInput($instance->node, ToolManagerName::Vp) : null;
             }
+            if ($developmentSelection !== null) {
+                $input['development_policy'] = true;
+            }
             if ($callerNodeId !== null) {
                 $input['caller_node_id'] = $callerNodeId;
             }
             $operation = $this->operations->execute(OperationKinds::InstanceDeploy, OperationKinds::InstanceTarget, $instance->id, $instance->node_id,
                 $input, $triggeredBy, $requestId, lockKey: $development && $deployment['variant'] !== 'container' ? null : OperationStore::lockKey(OperationKinds::InstanceTarget, $instance->id));
+            if ($development && $operation->wasRecentlyCreated && ! in_array($triggeredBy, AutomaticDeployHistory::Triggers, true)) {
+                app(DevelopmentDeployRetries::class)->manual($instance, $operation->id);
+                $instance->save();
+            }
             if ($development || ! $operation->wasRecentlyCreated) {
                 return $operation;
             }
@@ -145,6 +161,14 @@ final readonly class StartInstanceDeployAction
 
             return $operation;
         });
+    }
+
+    /** @param array<string, mixed> $selection */
+    public function developmentAutomatic(Instance $instance, string $commit, array $selection): Operation
+    {
+        $this->assertRepositoryIdentity($instance);
+
+        return $this->start($instance, AutomaticDeployHistory::Trigger, null, $commit, null, developmentSelection: $selection);
     }
 
     /** Public pins validate the recorded Project identity before admitting the existing operation. */

@@ -1,10 +1,5 @@
 import { z } from "npm:zod@4.4.3";
 import {
-    type DevelopmentContext,
-    type Emit,
-    tickDevelopment,
-} from "./development.ts";
-import {
     CallerNodeIdSchema,
     type Decision,
     DecisionSchema,
@@ -157,14 +152,6 @@ export class GatewayClient implements Gateway {
             );
         }
         return parsed.data;
-    }
-    development(
-        context: DevelopmentContext,
-        now: string,
-        filter: number[],
-        emit: Emit,
-    ) {
-        return tickDevelopment(this.http, context, this, now, emit, filter);
     }
     async discover(filter: number[] = []): Promise<number[]> {
         // Both list endpoints return complete arrays, without pagination.

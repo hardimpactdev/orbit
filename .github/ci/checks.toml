@@ -537,20 +537,6 @@ inputs = [
 ]
 
 [[fixture]]
-file = "swamp/extensions/behaviors/automatic-deploy/development_test.ts"
-cost = 4
-inputs = [
-  "bin/swamp-shape-gate",
-  "swamp/ansible/ansible.cfg",
-  "swamp/ansible/requirements.txt",
-  "swamp/ansible/requirements.yml",
-  "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/extensions/behaviors/automatic-deploy/development.ts",
-  "swamp/extensions/behaviors/automatic-deploy/gateway.ts",
-  "swamp/extensions/behaviors/automatic-deploy/policy.ts",
-]
-
-[[fixture]]
 file = "swamp/extensions/behaviors/automatic-deploy/gateway_test.ts"
 cost = 5
 inputs = [
@@ -559,7 +545,6 @@ inputs = [
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/extensions/behaviors/automatic-deploy/development.ts",
   "swamp/extensions/behaviors/automatic-deploy/gateway.ts",
   "swamp/extensions/behaviors/automatic-deploy/mod.ts",
   "swamp/extensions/behaviors/automatic-deploy/policy.ts",
@@ -575,7 +560,6 @@ inputs = [
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/extensions/behaviors/automatic-deploy/development.ts",
   "swamp/extensions/behaviors/automatic-deploy/gateway.ts",
   "swamp/extensions/behaviors/automatic-deploy/policy.ts",
   "swamp/tests/_support/automatic_deploy.ts",
@@ -1251,7 +1235,6 @@ inputs = [
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/extensions/behaviors/automatic-deploy/development.ts",
   "swamp/extensions/behaviors/automatic-deploy/gateway.ts",
   "swamp/extensions/behaviors/automatic-deploy/policy.ts",
   "swamp/tests/_support/automatic_deploy.ts",

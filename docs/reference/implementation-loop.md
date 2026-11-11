@@ -37,6 +37,8 @@ Store detailed logs in CI artifacts or in shared evidence outside the checkout, 
 
 CI compares proof case definitions at the merge base and head before starting the proof job. The runner expands both files once; CI publishes its selection for the Gateway to consume. Missing or invalid results select whole files. [Choose the cases](/reference/feature-flow#choose-the-cases) defines those rules.
 
+Keep each fixture's ordered registrations and source hash current. When a fixture is deleted, remove only its inventory entry, deleted inputs and shape exception; preserve costs, selectors and all other entries.
+
 ## After review
 
 Address the blocking findings. Reviewers check the fixes and repeat the affected checks on the updated pull request. The final review must cover the head that the gate reads. The gate and the merge are [stage 4](/reference/command-development-pipeline#4-pr-and-ci). After the merge, keep the review evidence and release the resources allocated to the feature. For a local worktree, run `bin/worktree-remove ISSUE`.

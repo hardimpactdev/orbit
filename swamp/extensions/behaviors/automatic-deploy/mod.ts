@@ -1,9 +1,4 @@
 import { z } from "npm:zod@4.4.3";
-import {
-    type DevelopmentContext,
-    DevelopmentState,
-    type Emit,
-} from "./development.ts";
 import { GatewayClient, gatewayHttp } from "./gateway.ts";
 import {
     type Gateway,
@@ -31,12 +26,6 @@ interface Context {
     ): Promise<{ name: string }>;
 }
 export interface LiveGateway extends Gateway {
-    development(
-        context: DevelopmentContext,
-        now: string,
-        filter: number[],
-        emit: Emit,
-    ): Promise<{ name: string }[]>;
     discover(filter: number[]): Promise<number[]>;
     guard(instance: number, observation: Observation): Promise<void>;
     publish(
@@ -61,13 +50,6 @@ export function automaticDeploy(
             ),
         }),
         resources: {
-            development: {
-                description:
-                    "Development admission intent and public policy state",
-                schema: DevelopmentState,
-                lifetime: "infinite",
-                garbageCollection: 10,
-            },
             state: {
                 description:
                     "Policy memory, admission intent and raised events; never deploy success",
@@ -111,8 +93,11 @@ export function automaticDeploy(
                         key: string;
                         body: PolicyEvent;
                     }[] = [];
-                    const emit: Emit = (instance, key, body) =>
-                        events.push({ instance, key, body });
+                    const emit = (
+                        instance: number,
+                        key: string,
+                        body: PolicyEvent,
+                    ) => events.push({ instance, key, body });
                     for (const instance of await client.discover(instances)) {
                         try {
                             const name = `state-${instance}`;
@@ -184,16 +169,6 @@ export function automaticDeploy(
                             if (isPolicyRefusal(error)) continue;
                             failures.push({ instance, error });
                         }
-                    }
-                    for (
-                        const handle of await client.development(
-                            context,
-                            clock(),
-                            instances,
-                            emit,
-                        )
-                    ) {
-                        handles.set(handle.name, handle);
                     }
                     // The Gateway records events and failures from the fire's terminal result; no step calls it for them.
                     // A failed Instance no longer stops the tick, so the other events still arrive; the assert step fails the run.

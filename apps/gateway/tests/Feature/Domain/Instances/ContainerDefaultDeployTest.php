@@ -11,6 +11,7 @@ use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
+use App\Domain\Instances\Deployment\DevelopmentDeployPolicy;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\InstanceContainer;
@@ -112,6 +113,17 @@ function deployDefault(bool $container): Instance
     }
 
     return $instance;
+}
+
+/** Automatic development cases use a real ready, explicitly enabled default; production cases keep their own entry point. */
+function deployAutomaticDevelopment(Instance $instance, string $commit): Operation
+{
+    $instance->update(['auto_deploy' => true]);
+    $instance->runtime()->whereNull('seed_commit')->update(['seed_commit' => str_repeat('f', 40)]);
+    $instance = $instance->fresh(['project', 'node.roles', 'runtime']);
+
+    return app(StartInstanceDeployAction::class)->developmentAutomatic($instance, $commit,
+        DevelopmentDeployPolicy::selection($instance));
 }
 
 it('deploys a container default as the container variant, whose commands need no Vite+ store on the Node', function (): void {
@@ -239,7 +251,7 @@ it('refreshes container source facts before freezing the deployed commit and its
     app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
 
     $operation = $automatic
-        ? app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, 'source-facts', $commit)
+        ? deployAutomaticDevelopment($instance, $commit)
         : app(StartInstanceDeployAction::class)->execute($instance, 'manual', 'source-facts', $pin);
 
     $project = $instance->project->refresh();
@@ -324,7 +336,7 @@ it('keeps checkout deployment source facts and unpinned commit resolution unchan
     expect($operation->input['deployment']['variant'])->toBe('development');
 });
 
-it('skips source capture for an automatic checkout default deployment', function (): void {
+it('refuses automatic checkout defaults before source capture or admission', function (): void {
     Queue::fake();
     $instance = deployDefault(container: false);
     ProjectDevelopmentDeployStep::query()->where('project_id', $instance->project_id)->delete();
@@ -333,10 +345,9 @@ it('skips source capture for an automatic checkout default deployment', function
     $this->mock(ProjectSourceReader::class)->shouldNotReceive('read');
     $commit = str_repeat('a', 40);
 
-    $operation = app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit);
-
-    expect($operation->input['deployment']['variant'])->toBe('development');
-    expect($operation->input['commit'])->toBe($commit);
+    expect(fn () => deployAutomaticDevelopment($instance, $commit))->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
     expect($instance->project->refresh())->php_version->toBe('8.4')->source_facts_captured_at->toBeNull();
     expect($instance->project->environmentTemplate()->exists())->toBeFalse();
 });
@@ -417,7 +428,7 @@ it('refuses an unsettled move before reading deploy source', function (string $e
         match ($entry) {
             'manual' => $action->execute($instance, 'manual', null),
             'pinned' => $action->pinned($instance, 'manual', null, $commit),
-            'automatic' => $action->automatic($instance, $instance->node, null, $commit),
+            'automatic' => deployAutomaticDevelopment($instance, $commit),
         };
     } catch (ResourceOperationException $exception) {
         $refusal = $exception->errorCode;
@@ -451,7 +462,7 @@ it('rechecks the move during admission if it started while deploy source was rea
         match ($entry) {
             'manual' => $action->execute($instance, 'manual', null),
             'pinned' => $action->pinned($instance, 'manual', null, $commit),
-            'automatic' => $action->automatic($instance, $instance->node, null, $commit),
+            'automatic' => deployAutomaticDevelopment($instance, $commit),
         };
     } catch (ResourceOperationException $exception) {
         $refusal = $exception->errorCode;
@@ -480,7 +491,7 @@ it('reads deploy source before opening either admission transaction', function (
     });
 
     $operation = $automatic
-        ? app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit)
+        ? deployAutomaticDevelopment($instance, $commit)
         : app(StartInstanceDeployAction::class)->execute($instance, 'manual', null);
 
     expect($operation->input['commit'])->toBe($commit);
@@ -501,7 +512,7 @@ it('refuses changed source configuration after reading but before recording depl
 
     try {
         if ($automatic) {
-            app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit);
+            deployAutomaticDevelopment($instance, $commit);
         } else {
             app(StartInstanceDeployAction::class)->execute($instance, 'manual', null);
         }
@@ -545,7 +556,7 @@ it('admits its captured facts after a real project refresh with unchanged source
         });
 
     $operation = $automatic
-        ? app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit)
+        ? deployAutomaticDevelopment($instance, $commit)
         : app(StartInstanceDeployAction::class)->execute($instance, 'manual', null, $commit);
 
     expect($operation->input['commit'])->toBe($commit);
@@ -580,7 +591,7 @@ it('refuses admission after a real project update changes source settings and pr
 
     try {
         if ($automatic) {
-            app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit);
+            deployAutomaticDevelopment($instance, $commit);
         } else {
             app(StartInstanceDeployAction::class)->execute($instance, 'manual', null, $commit);
         }
@@ -609,7 +620,7 @@ it('rechecks automatic eligibility after reading source', function (): void {
     $refusal = null;
 
     try {
-        app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit);
+        deployAutomaticDevelopment($instance, $commit);
     } catch (ResourceOperationException $exception) {
         $refusal = $exception->errorCode;
     }
@@ -635,7 +646,7 @@ it('replays an admission that appeared during source capture without overwriting
     });
 
     $operation = app(OperationIdempotency::class)->under('instance.deploy', 'concurrent-deploy', 'same-input', fn (): Operation => $automatic
-        ? app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit)
+        ? deployAutomaticDevelopment($instance, $commit)
         : app(StartInstanceDeployAction::class)->execute($instance, 'manual', null));
 
     expect($operation->idempotency_key)->toBe('concurrent-deploy');

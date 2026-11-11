@@ -3,13 +3,11 @@ title: "Instance releases"
 description: "How production Instances build releases and select current code, and how development defaults deploy in their checkout."
 covers:
   - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/ReadyContainerDefault.php,Projects/*DeployStep*.php}
-  - apps/gateway/app/Jobs/Instances/CheckDevelopmentDeployments.php
-  - apps/gateway/database/migrations/2027_02_04_000002_create_development_deploy_retries.php
   - apps/gateway/app/Actions/Instances/{StartInstanceDeployAction,StartInstanceRollbackAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
   - apps/gateway/app/Infrastructure/Instances/{DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram}.php
   - apps/agent/src/commands/{production,production_tests,production_home,production_home_tests,deploy_step,dev_deploy,dev_deploy_tests}.rs
   - apps/gateway/app/Http/{Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
-  - apps/gateway/{app/{Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep},Data/Instances/InstanceDeploymentData}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_05_000000_add_caller_node_id_to_instance_deployments}.php}
+  - apps/gateway/{app/{Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep},Data/Instances/InstanceDeploymentData}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_05_000000_add_caller_node_id_to_instance_deployments,2027_02_04_000002_create_development_deploy_retries}.php,app/Jobs/Instances/CheckDevelopmentDeployments.php}
   - swamp/extensions/behaviors/{automatic-deploy/**,operations/development-deploy/**}
   - packages/php-sdk/src/{Requests/Projects/*DevelopmentDeployStep*,Responses/{Projects/*DevelopmentDeployStep*,Deployments/InstanceDeploymentResponse}}.php
 ---
@@ -335,9 +333,13 @@ A head the Gateway cannot read fails the tick for that Instance with `source.hea
 
 The Gateway decides automatic deployment for ready development container defaults. The existing `auto_deploy` switch controls selection, admission and Instance output. An active container default with a seed snapshot on an active app-dev Node is eligible; checkout Instances, clones, ambiguous placements and inactive Nodes or roles are not. No migration enables a default.
 
-The minute pre-check reads each eligible Project's default-branch head once and compares it with the container snapshot's seed. An unchanged default starts no Swamp run. The Gateway checks the configured merge check for the exact head SHA, accepting only completed GitHub Actions runs with success. It reads pending or red evidence again on later ticks. With no configured check, the head needs no check evidence. It admits an ordinary pinned `instance.deploy` after rechecking eligibility, the switch, source configuration and seed under the Instance lock. Swamp executes that deployment; it has no development policy tick or checkpoints.
+The minute pre-check reads each eligible Project's default-branch head once and compares it with the container snapshot's seed. An unchanged default starts no Swamp run. The Gateway checks the configured merge check for the exact head SHA, accepting only completed GitHub Actions runs with success. It reads pending or red evidence again on later ticks. With no configured check, the head needs no check evidence.
 
-Retries belong to the admitted SHA, including failures without deployment history. The existing durable `development_deploy_retries` table preserves each SHA's stop state after history pruning. The first failure waits ten minutes; the second waits twenty; the third stops that SHA. Cancellation, interruption, start refusal and timeout count once. A new green SHA has its own retry state. Disable and enable preserve attempts; an admitted manual development deployment resets them. A successful deployment resets its SHA, and only the current container seed proves that the default is up to date. Repeated or late observations do not count an outcome twice or revive pre-reset evidence.
+The Gateway admits an ordinary pinned `instance.deploy` after rechecking eligibility, the switch, source configuration and seed under the Instance lock. Swamp executes that deployment; it has no development policy tick or checkpoints.
+
+Retries belong to the admitted SHA, including failures without deployment history. The existing durable `development_deploy_retries` table preserves each SHA's stop state after history pruning. The first failure waits ten minutes; the second waits twenty; the third stops that SHA. Cancellation, interruption, start refusal and timeout count once.
+
+A new green SHA has its own retry state. Disable and enable preserve attempts; an admitted manual development deployment resets them. A successful deployment resets its SHA, and only the current container seed proves that the default is up to date. Repeated or late observations do not count an outcome twice or revive pre-reset evidence.
 
 A queued, running, waiting or cancelling Operation keeps its ordinary target hold. A timeout follows the existing Operation terminal and late-result rules. Pending Route publication remains an admission refusal; the tick performs no Route repair. The Route owner settles its publication. Production retains its separate Swamp policy, retry rules, pause and schedule.
 
@@ -481,7 +483,7 @@ Swamp deployment rows copy the authorized Gateway peer's Node ID from the operat
 | `triggered_by` | Meaning |
 | --- | --- |
 | `swamp:auto-deploy` | Swamp production or development policy admitted through the automatic endpoint. `caller_node_id` identifies the authorized Gateway peer. Fenced automatic admission receipts use the same origin. |
-| `orbit:auto-deploy` | The previous PHP automatic runner's label. Existing rows keep this label, including early Swamp admissions. No labels or caller IDs are backfilled. |
+| `orbit:auto-deploy` | Gateway development auto-deploy and the previous PHP runner. Existing rows keep this label; no caller IDs are backfilled. |
 | A Node name | A manual deployment or rollback by that Node. |
 
 Both automatic labels count as automatic for pause and failure selection. A Swamp deployment never creates a manual-deploy pause. A rollback still pauses automatic deployment regardless of its label. Clients cannot set either automatic label or the caller ID on a deploy request.

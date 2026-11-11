@@ -348,31 +348,8 @@
       "native environment is explicit and configuration is isolated"
     ]
   },
-  "swamp/extensions/behaviors/automatic-deploy/development_test.ts": {
-    "source_sha256": "966a5126d7f6d0f370047e2232dc817a5ad49365559489609e476df45366af36",
-    "cases": [
-      "development policy admits only after Gateway ownership switches",
-      "development policy returns only the final checkpoint handle",
-      "native development policy saves the exact pinned intent before admission",
-      "an existing target hold starts no competing deployment",
-      "target_busy at admission clears only the unadmitted intent",
-      "a lost admission response follows its receipt without a second start",
-      "terminal work without history cannot authorize a new effect",
-      "interrupted development deploys settle, back off and re-admit the head",
-      "interrupted development deploy without evidence backs off once then admits the current head",
-      "a definite start failure releases pending intent for the next scheduled admission",
-      "an uncertain or executed failure without history retains pending intent",
-      "development retries and backoff are owned by Swamp and reset after manual work",
-      "pending publication uses the normal Route root before dev deployment",
-      "only a proven zero-effect admission fence clears a pending development intent",
-      "unrelated production and non-default checkouts with null history cannot block dev discovery",
-      "a default with no authoritative Route deploys even when its display Route is unrelated",
-      "native-first deployment skips the old Gateway dev owner before reading new fields",
-      "canonical Gateway refusal skips ambiguous app-dev plus app-prod placement"
-    ]
-  },
   "swamp/extensions/behaviors/automatic-deploy/gateway_test.ts": {
-    "source_sha256": "b4643019d66d98fb60268b5c6e58340215272bf3c9d63a66967bb74b04b73a07",
+    "source_sha256": "7876abf55b97f96b22f4734334f8011d76948f1e43fb84419c47b59621fbc563",
     "cases": [
       "native policy returns only the final production checkpoint handle",
       "live default discovers production, guards ownership, saves intent, admits and publishes exact Gateway shapes",

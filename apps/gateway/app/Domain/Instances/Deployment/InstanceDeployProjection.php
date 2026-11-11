@@ -40,6 +40,7 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
     public function workflowInput(Operation $operation): array
     {
         if ($this->development($operation)) {
+            DevelopmentDeployPolicy::assertExecutable($operation);
             $input = app(DevelopmentDeployInput::class)->workflowInput($operation);
 
             return ['intent' => [...ProductionDeployInput::placeholder(), ...$input['intent']], 'execution_secrets' => $input['execution_secrets']];
@@ -85,6 +86,9 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             if (isset($payload['warnings'])) {
                 $facts['warnings'] = ValidatedData::integer($payload['warnings']);
             }
+            if ($this->development($locked) && ! in_array($status, ['running', 'succeeded'], true)) {
+                $facts['commit'] = InstanceDeploymentIntent::commit($locked);
+            }
             $projected = $this->direct->project($locked, $data, $status === 'running' ? [] : $facts);
             if ($terminal || $status === 'running') {
                 return $projected;
@@ -123,6 +127,9 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             if (is_array($payload['runtime_definitions'] ?? null)) {
                 $this->members->project($locked, ValidatedData::object($payload['runtime_definitions']));
             }
+            if ($this->development($locked)) {
+                app(DevelopmentDeployRetries::class)->settled($projected);
+            }
             $row = InstanceDeployment::query()->where('instance_id', $instance->id)->findOrFail($historyId);
             $this->history->recordNative($row, $status, ValidatedData::nullableString($data['error_code'] ?? null), $facts);
 
@@ -133,6 +140,9 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
     /** A definite refusal has no native effects and must not leave an admission history row running. */
     public function refused(Operation $operation): void
     {
+        if ($this->development($operation)) {
+            app(DevelopmentDeployRetries::class)->settled($operation);
+        }
         $id = $operation->state['deployment_id'] ?? null;
         if (! is_int($id)) {
             return;
@@ -144,6 +154,9 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
     /** A production deployment recorded its running row at admission; the expired run leaves it failed. */
     public function timedOut(Operation $operation): void
     {
+        if ($this->development($operation)) {
+            app(DevelopmentDeployRetries::class)->settled($operation);
+        }
         $id = $operation->state['deployment_id'] ?? null;
         if (! is_int($id)) {
             return;

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
-use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ReadyContainerDefault;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -25,6 +25,9 @@ enum AutomaticDeployPolicyWriter: string
         if ($this !== self::Swamp) {
             throw new ResourceOperationException('instance.auto_deploy_policy_owner', 'The Gateway PHP runner owns automatic deployment.', 409);
         }
+        if ($instance->placedOnAppDev()) {
+            throw new ResourceOperationException('instance.auto_deploy_policy_owner', 'The Gateway owns development automatic deployment.', 409);
+        }
         $refusal = $this->eligibilityRefusal($instance);
         if ($refusal !== null) {
             throw new ResourceOperationException($refusal, $refusal === self::InactiveRole
@@ -37,10 +40,7 @@ enum AutomaticDeployPolicyWriter: string
     public function eligibilityRefusal(Instance $instance): ?string
     {
         if ($instance->placedOnAppDev()) {
-            return $instance->name === 'default' && $instance->status === InstanceState::Active
-                && $instance->source_layout === InstanceSourceLayout::Checkout->value
-                && $instance->node->roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::AppDev && $role->status === LifecycleStatus::Active)
-                    ? null : self::InactiveRole;
+            return $this->developmentEligibilityRefusal($instance);
         }
         $instance->loadMissing('node.roles');
         if (! $instance->node->roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::AppProd && $role->status === LifecycleStatus::Active)) {
@@ -49,5 +49,27 @@ enum AutomaticDeployPolicyWriter: string
 
         return $instance->placedOnAppProd() && $instance->auto_deploy && $instance->status === InstanceState::Active
             ? null : AutomaticDeployHistory::Paused;
+    }
+
+    public const string ContainerDefaultRequired = 'instance.auto_deploy_container_default_required';
+
+    public function assertDevelopmentConfigurable(Instance $instance): void
+    {
+        if (($refusal = $this->developmentEligibilityRefusal($instance, requireEnabled: false)) !== null) {
+            throw new ResourceOperationException($refusal, 'Development automatic deployment requires a ready container default on an active app-dev Node.', 409);
+        }
+    }
+
+    public function developmentEligibilityRefusal(Instance $instance, bool $requireEnabled = true): ?string
+    {
+        if (! $instance->placedOnAppDev() || ! ReadyContainerDefault::query()->whereKey($instance->id)->exists()) {
+            return self::ContainerDefaultRequired;
+        }
+        if ($instance->node->status !== LifecycleStatus::Active
+            || ! $instance->node->roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::AppDev && $role->status === LifecycleStatus::Active)) {
+            return self::InactiveRole;
+        }
+
+        return ! $requireEnabled || $instance->auto_deploy ? null : AutomaticDeployHistory::Paused;
     }
 }

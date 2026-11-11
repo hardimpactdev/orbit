@@ -34,14 +34,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/automatic-deploy/development.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/automatic-deploy/gateway.ts",
       "rule": "custom-control",
       "count": 1,
