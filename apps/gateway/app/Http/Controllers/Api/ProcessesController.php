@@ -37,11 +37,15 @@ final class ProcessesController extends Controller
 {
     public function __construct(private readonly ProcessSwampSafety $safety, private readonly ProcessTargetResolver $targets, private readonly ProcessRuntimeManager $runtime) {}
 
+    #[RequiresNodeAccess(ServingNode::ProcessCollection)]
     public function index(ListProcessesRequest $request, ListProcessesAction $action): JsonResponse
     {
+        $caller = $request->user();
+        abort_unless($caller instanceof Node, 403);
+
         $processes = $request->hasTarget()
             ? $action->execute($request->targetType(), $request->targetId())
-            : $action->executeAll();
+            : $action->executeAll($caller);
 
         return response()->json([
             'data' => $processes->all(),
