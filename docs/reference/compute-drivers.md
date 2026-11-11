@@ -1274,6 +1274,8 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209, one `command/
 | `Prove the candidate` | `task-vm-candidate-proof`: one task start from the new snapshot in the free place, then its release. |
 | `Prune old snapshots` | Phase `base-prune`: keeps the new snapshot and the recorded one, which becomes `-previous`, and removes the others. |
 
+After cloud-init ends with status 0 or 2, `base-start` reads `orbit`'s authorized keys through Incus and compares their native SHA256 fingerprints with the admitted control public key. Missing or empty keys fail with `task_vm.bootstrap_key_missing`; no matching fingerprint fails with `task_vm.bootstrap_key_mismatch`. Both refusals stop the refresh before `Converge`. This detects incomplete provisioning. It does not prevent a reboot, rewrite keys or replay cloud-init.
+
 A failed run runs `Roll the base VM back` (phase `base-discard`): the base VM stops, the run's snapshot goes, and the VM rolls back to the recorded snapshot. A host keeps the base it had. The Gateway records the new snapshot as the host's latest promoted build only when the run passed, with the recipe identity of the release. A running task VM keeps its own clone of the older snapshot.
 
 The converge of a refresh is bounded at 5,400 s, and the converge of a task start at 3,300 s, because a new host builds the whole base. Both callers use the same 300-second SSH readiness budget in `task-vm-ready.yml`, polling every second and continuing as soon as the connection succeeds. A task start waits for SSH over WireGuard, including the guest's early boot and identity setup. A direct connection does not imply the guest has finished booting. The converge waits for the nested Gateway only while it builds the fleet.
