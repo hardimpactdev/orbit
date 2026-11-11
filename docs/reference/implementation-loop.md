@@ -45,7 +45,7 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 Orbit CI runs builds, static checks and the full Gateway and CLI Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same fast checks.
 
-Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units in hosted shards. The full set also runs by manual dispatch or every three hours, outside the merge and deploy path. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
+Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units in hosted shards. [Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
 
 | Check | Work |
 | --- | --- |
@@ -108,7 +108,7 @@ The plan job reads the checks table once. Selected jobs start after it; unselect
 
 Build, fixture and proof selection compare the candidate with its merge base against the supplied base commit. Selection requires both commits and their common ancestry; the plan job checks out full history. Commits added only to main after a pull request branches do not select checks for that pull request. For an ordinary main push, the previous main commit is the merge base, so selection covers the pushed changes.
 
-Every executable check job has a `timeout-minutes` equal to its table `ceiling`, rounded up to minutes. Plan, Gateway release inputs and CLI release dispatch have two-minute limits. Required checks has two minutes unless a selected pull-request proof is blocking; then it retains the proof's 195-minute wait budget. CI proof keeps its own 195-minute exception. Scheduled full fixtures keep their separate limit.
+Every executable check job has a `timeout-minutes` equal to its table `ceiling`, rounded up to minutes. Plan, Gateway release inputs and CLI release dispatch have two-minute limits. Required checks has two minutes unless a selected pull-request proof is blocking; then it retains the proof's 195-minute wait budget. CI proof keeps its own 195-minute exception. [Main full set](/reference/main-full-set) keeps its separate limits.
 
 `CiBudgetTest` in `tools/test_ci_table.py` follows the reusable workflows from `ci.yml`. It rejects a pull request job without a timeout or table entry, a timeout above four minutes or different from the ceiling, and a dependency other than the plan. It names the non-check jobs explicitly. Only Required checks, CLI release dispatch and CI proof may have other dependencies; proof is the only long-running exception on the pull request path.
 
@@ -339,7 +339,7 @@ When the candidate selects the Swamp checks by the rule of `bin/ci-build-plan`, 
 
 #### Run the Swamp shape gate before you push
 
-The `Swamp shape gate` and `Swamp workflow validate` jobs of CI call one script, `bin/swamp-shape-gate`. CI selects `--only control` for static shape rules. The candidate gate and manual or scheduled fixture runs use the full shape group. Commit your change first: the checkers compare committed `HEAD` with the base.
+The `Swamp shape gate` and `Swamp workflow validate` jobs of CI call one script, `bin/swamp-shape-gate`. CI selects `--only control` for static shape rules. The candidate gate uses the full shape group. [Main full set](/reference/main-full-set) runs the fixtures after merge. Commit your change first: the checkers compare committed `HEAD` with the base.
 
 ```bash
 bin/swamp-shape-gate                # shape and validation, against the merge base with origin/main

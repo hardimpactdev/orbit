@@ -56,6 +56,14 @@ Orbit has one runtime kind for Instances and agent work: an unprivileged Incus c
 - **Production Instance.** Containers on its `app-prod` Node, with the user `orbit` only and no agent. Production containers never sleep. Step 10 moves them, after development containers work.
 - **Node.** The machine Orbit runs on: a bare-metal host or a VPS. Containers are runtimes of Instances, never Nodes. They get no WireGuard identity, no roles and no exporter.
 
+### Dedicated workspace volumes (draft extension)
+
+**Agreed direction, not built or proved.** The [workspace-volume specification](/reference/development-containers#workspace-volumes-draft) extends this in-progress decision. It owns the workspace boundary, clone contract and package-link recommendations. The accepted policies for edits, clone links and coordinated lifecycle actions remain unimplemented. The other marked recommendations need review and the isolated-ID-map proof before implementation; none changes the delivered lifecycle today.
+
+Keeping the workspace independent of a container root gives it an explicit owner and lets a consumer use selected live package files. Treating a container copy as a workspace clone would leave custom-volume devices referring to the source. A shared writable root or common cache would also couple Instances that chose no link. The specification therefore requires an explicit volume copy and rebinding while preserving the container isolation boundary. Shared read-only software mounts do not prove that writable workspaces retain ownership under distinct maps.
+
+This extension serves [One way, one name](/mission#principles), [No exceptions and no legacy](/mission#principles), and [The documentation describes the present](/mission#principles). It adds no principle exception. Its rule stays in the reference; this record retains the architectural reason while the work is in progress. The existing build order is unchanged by this draft.
+
 ### Drivers
 
 A container's T3 has two drivers, and they share its threads:
