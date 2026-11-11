@@ -8,13 +8,16 @@ use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\AppDev\SsrEndpoint;
 use App\Domain\Instances\ContainerProcessCommands;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\RequiredMountPaths;
 use App\Domain\Processes\VpDevPreset;
+use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Models\Process;
+use App\Models\Route;
 use InvalidArgumentException;
 use SensitiveParameter;
 
@@ -67,7 +70,7 @@ final readonly class SystemdProcessRenderer
             );
         }
 
-        $environmentProjection = $this->environmentProjection($target, $managedAccount, ! $process->isVpDev());
+        $environmentProjection = $this->environmentProjection($target, $managedAccount, ! $process->isVpDev(), $process->isVpDev());
         if ($process->isVpDev()) {
             $command = VpDevPreset::command($target->container === null ? null : $target->instance?->vite_port);
             if ($target->container === null) {
@@ -165,6 +168,7 @@ final readonly class SystemdProcessRenderer
             'ORBIT_DEV_SERVER_HOST',
             'ORBIT_DEV_SERVER_PATH',
             'ORBIT_DEV_SERVER_PORT',
+            '__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS',
         ], true);
     }
 
@@ -202,7 +206,7 @@ final readonly class SystemdProcessRenderer
     }
 
     /** @return array{directives: list<string>, commandPrefix: list<string>} */
-    private function environmentProjection(ProcessTarget $target, ?ManagedUserAccount $managedAccount, bool $certificates): array
+    private function environmentProjection(ProcessTarget $target, ?ManagedUserAccount $managedAccount, bool $certificates, bool $vpDev): array
     {
         $directives = [];
         $commandValues = [];
@@ -215,6 +219,25 @@ final readonly class SystemdProcessRenderer
             $commandValues[] = "ORBIT_DEV_SERVER_ORIGIN={$origin}";
             $commandValues[] = "ORBIT_DEV_SERVER_HOST={$target->routeDomain}";
             $commandValues[] = 'ORBIT_DEV_SERVER_PATH='.DevelopmentServerEndpoint::PATH;
+            if ($vpDev && $target->instance !== null) {
+                // Use the authoritative Routes that select the Instance's primary hostname.
+                $routes = $target->instance->routes->filter(static fn (Route $route): bool => $route->isAuthoritative())->sortBy('id');
+                // Initial create reserves its primary Route before the Instance and its site become active.
+                if ($routes->isEmpty() && $target->instance->first_setup_pending && $target->instance->status !== InstanceState::Active) {
+                    $reserved = $target->instance->routes->firstWhere('domain', $target->routeDomain);
+                    if ($reserved instanceof Route && $reserved->status === RouteStatus::Pending
+                        && ! $reserved->hasWebRoot() && ! $reserved->isUnactivatedReplacement()) {
+                        $routes = $routes->push($reserved);
+                    }
+                }
+                $primary = $routes->firstWhere('domain', $target->routeDomain) ?? $routes->first();
+                if ($primary instanceof Route) {
+                    $hosts = implode(',', array_unique([$primary->domain, ...$routes->map(static fn (Route $route): string => $route->domain)->all()]));
+                    $directives[] = 'Environment=__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS='.$hosts;
+                    $commandValues[] = '__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS='.$hosts;
+                }
+            }
+
             $port = $target->instance?->vite_port;
 
             if (is_int($port)) {

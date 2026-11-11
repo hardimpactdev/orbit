@@ -159,6 +159,8 @@ A preset configures a development Instance Process. It sets the command, the run
 | --- | --- |
 | `vp-dev` | Runs VitePlus on an [assigned Vite port](/reference/assigned-vite-ports). The default restart policy is `on-failure`. |
 
+The preset also supplies the Instance's [Vite host allowance](/reference/assigned-vite-ports#application-setup) in its unit environment.
+
 A preset needs a development Instance target. The Gateway refuses a Node target with `validation.failed` on `target_type`, and any other Instance with `process.preset_target_invalid`. An Instance has at most one Process of each preset. Another name for the same preset fails with `process.preset_exists`. The same request again returns the existing Process and keeps its desired state. A Process name alone never selects a preset.
 
 A [hibernation wake](/reference/app-dev-runtime-hibernation#wake) starts Vite on its recorded port without changing the assignment or publishing Caddy. A port conflict keeps the site asleep and shows a failure page. [`process:start`](/cli/process/start) remains the explicit operation that rechecks the port and publishes its handler.
