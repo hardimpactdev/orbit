@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress}.php
   - apps/gateway/app/Domain/Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php
-  - apps/gateway/database/migrations/2027_02_04_000000_add_seed_commit_to_instance_runtimes.php
+  - apps/gateway/database/migrations/2027_02_04_{000000_add_seed_commit_to_instance_runtimes,000002_add_operation_owner_to_instance_runtimes}.php
   - swamp/ansible/{instance-container.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_bridge.py}
   - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/{notes/**,frankenphp.Caddyfile}}
@@ -483,6 +483,8 @@ The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/c
 - **Route.** Orbit points the Route at FrankenPHP in the container.
 - **Retirement.** Orbit moves the whole old checkout to retention and records its path and time. It deletes no Git metadata. The default's checkout stays until its last worktree has moved.
 
+Restore and retirement take the same atomic ownership claim for the original move on the Node. Restore claims after its ownership check and before restoring the Route or removing the container; retirement claims before its checkpoint or checkout changes. A losing side refuses, and a rerun by the same owner keeps its claim. The claim survives mirror cleanup, so native resume of the original move cannot retire a restored checkout. Interrupted roots are terminal and cannot be cancelled on the pinned runtime.
+
 A failed move leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) has the steps.
 
 #### Migration symlinks
@@ -517,7 +519,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | SQLite | The file moves with the files. The Gateway drops the connection record of a SQLite file inside the checkout |
 | Route | The same Route, domain and certificate. One publication replaces the checkout's site and PHP-FPM pool with the container's site |
 
-The end of the move and its failure:
+The runtime reservation belongs to its admitting Operation. A late receipt cannot change a newer owner.
 
 | Part | What Orbit does |
 | --- | --- |
@@ -813,6 +815,7 @@ Each Node records its Instance bridge, as [Nodes](#nodes) describes. Each contai
 | `bridge_address` | The container's address on its Node's bridge. It is a guest address: never the network, broadcast or first usable address, which the bridge keeps |
 | `t3_port` | The port of the Node's WireGuard address that publishes T3, from 3800 to 3999. The default Instance has none |
 | `runtime_version`, `agent_version` | The versions of the shared folders the container started with |
+| `operation_id` | The migrate Operation that owns this reservation. A new retry takes ownership before its run starts |
 | `clone_source_instance_id` | The default Instance it was cloned from. Null for the default Instance and for a migrated checkout |
 | `power_state` | `running` or `stopped`. A sleeping container is stopped |
 | `seed_commit` | A default Instance's commit of its newest `seed-<commit>` snapshot, which clones copy. Null before its first seed |

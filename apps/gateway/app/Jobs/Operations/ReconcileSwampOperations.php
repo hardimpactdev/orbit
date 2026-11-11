@@ -17,12 +17,14 @@ use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Tasks\TaskVmAdmission;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampRequestDeadline;
 use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
 use App\Models\Operation;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -43,8 +45,11 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 300;
 
-    /** Forwarding cancels stops after this many seconds, so a slow Swamp cannot starve the reads of the pass. */
-    private const int CancelSeconds = 150;
+    private const int PassSeconds = 180;
+
+    private const int RecoverySeconds = 30;
+
+    private const int CurrentSeconds = 90;
 
     public function __construct()
     {
@@ -57,31 +62,22 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         if ($kinds === []) {
             return;
         }
-        $started = microtime(true);
+        $deadline = now()->addSeconds(self::PassSeconds);
         $cancellation = app(NativeRunCancellation::class);
-        OperationRunBudgets::duringTick(function () use ($kinds, $step, $expire, $cancel, $store, $cancellation, $started): void {
-            $forward = [];
-            foreach (self::open($kinds)->lazyById() as $operation) {
-                try {
-                    $operation = $this->reconcile($operation, $step, $expire);
-                    if ($cancellation->awaitsForwarding($operation)) {
-                        $forward[] = $operation;
-                    }
-                } catch (Throwable $exception) {
-                    $this->warn($operation, $exception);
-                }
-            }
-            // Reads first: a cancel can wait for Swamp's reply for half a minute.
-            foreach ($forward as $operation) {
-                if (microtime(true) - $started > self::CancelSeconds) {
-                    break;
-                }
-                try {
-                    $this->forwardCancel($operation, $cancel, $store);
-                } catch (Throwable $exception) {
-                    $this->warn($operation, $exception);
-                }
-            }
+        OperationRunBudgets::duringTick(function () use ($kinds, $step, $expire, $cancel, $store, $cancellation, $deadline): void {
+            // Current work and cancel forwarding get their turn before any lost-run recovery.
+            $seen = [];
+            $current = self::open($kinds)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting]);
+            $this->checkBatch($current, now()->addSeconds(self::CurrentSeconds), $step, $expire, $cancel, $store, $cancellation, $seen);
+            $pending = self::open($kinds)->where('status', OperationStatus::Failed)
+                ->whereNotNull('state->native_cancel_requested_at')->whereNull('state->native_cancel_confirmed_at')
+                ->where('state->native_cancel_requested_at', '>', now()->subMinutes(NativeRunCancellation::ForwardMinutes)->toISOString());
+            $this->checkBatch($pending, $deadline, $step, $expire, $cancel, $store, $cancellation, $seen);
+            $recovery = self::open($kinds)->where('status', OperationStatus::Failed)
+                ->where(fn ($query) => $query->whereNull('state->native_reconcile->next_at')
+                    ->orWhere('state->native_reconcile->next_at', '<=', now()->toISOString()));
+            $recoveryDeadline = now()->addSeconds(self::RecoverySeconds)->min($deadline);
+            $this->checkBatch($recovery, $recoveryDeadline, $step, $expire, $cancel, $store, $cancellation, $seen);
         });
         $expire->releaseStaleHolds();
         // An Operation of a kind that left the registry is read by nothing above; it ends on a cancel request or at its budget.
@@ -97,6 +93,43 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             Log::warning('The proof runs could not be watched; the next pass tries again.', ['exception_type' => $exception::class]);
         }
         app(RoutePublicationHolds::class)->sweep();
+    }
+
+    /** @param Builder<Operation> $query
+     * @param  list<int>  $seen
+     */
+    private function checkBatch(Builder $query, Carbon $deadline, SwampCommandStep $step, ExpireOperationAction $expire,
+        CancelSwampRun $cancel, OperationStore $store, NativeRunCancellation $cancellation, array &$seen): void
+    {
+        foreach ($query->whereNotIn('id', $seen)->orderByRaw('cancel_requested_at IS NULL')->orderBy('state->native_reconcile->checked_at')->orderBy('id')->limit(100)->get() as $operation) {
+            if (! $deadline->isFuture()) {
+                break;
+            }
+            $seen[] = $operation->id;
+            // Persist rotation before the remote call, including when a worker stops during it.
+            DB::transaction(function () use ($operation): void {
+                $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+                $previous = $current->state['native_reconcile'] ?? [];
+                $attempt = is_array($previous) && is_int($previous['attempt'] ?? null) ? $previous['attempt'] : 0;
+                $attempt = ExpireOperationAction::expiredUnsettled($current) ? min(7, $attempt + 1) : 0;
+                $current->update(['state' => [...($current->state ?? []), 'native_reconcile' => [
+                    'checked_at' => now()->toISOString(), 'attempt' => $attempt,
+                    'next_at' => $attempt === 0 ? null : now()->addSeconds(min(3600, 60 * (2 ** ($attempt - 1))))->toISOString(),
+                ]]]);
+            });
+            try {
+                $operation = SwampRequestDeadline::during($deadline, fn (): Operation => $this->reconcile($operation->refresh(), $step, $expire));
+            } catch (Throwable $exception) {
+                $this->warn($operation, $exception);
+            }
+            try {
+                if ($cancellation->awaitsForwarding($operation->refresh()) && now()->lessThan($deadline)) {
+                    SwampRequestDeadline::during($deadline, fn () => $this->forwardCancel($operation, $cancel, $store));
+                }
+            } catch (Throwable $exception) {
+                $this->warn($operation, $exception);
+            }
+        }
     }
 
     /** Remote text can contain inputs: log identity and type only. */

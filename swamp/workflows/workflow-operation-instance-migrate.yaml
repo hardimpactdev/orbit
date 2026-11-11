@@ -229,8 +229,9 @@ jobs:
           inputs:
             run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags retire "$ORBIT_ANSIBLE/instance-migrate.yml"
             env: *phase
-      # Every restore effect, including the Route child, waits for the read-only ownership check on the Node.
+      # Every restore effect, including the Route child, waits for the ownership check and permanent restore claim on the Node.
       - name: restore-check
+        writes: true
         labels: {role: swamp}
         dependsOn:
           - {step: input, condition: {type: succeeded}}

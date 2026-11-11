@@ -75,8 +75,11 @@ final readonly class StartInstanceMigrateAction
             }
             $this->assertCheckout($instance, $instance->node);
 
-            return $this->operations->execute(InstanceMigration::Kind, 'instance', $instance->id, $previous->node_id,
+            $operation = $this->operations->execute(InstanceMigration::Kind, 'instance', $instance->id, $previous->node_id,
                 [...$input, 'had_runtime_reservation' => true, 'restore_operation_id' => $input['restore_operation_id'] ?? $previous->id, 'restore_quiesced' => ($previous->result['quiesced'] ?? false) === true], $caller, $requestId);
+            $runtime->update(['operation_id' => $operation->id]);
+
+            return $operation;
         });
     }
 
@@ -110,7 +113,7 @@ final readonly class StartInstanceMigrateAction
             $reach = array_map($this->endpoint(...), $databases['servers']);
             $publication = $route === null || $before === null ? null : $this->routes->capture($instance, $route, $runtime, $before);
 
-            return $this->operations->execute(InstanceMigration::Kind, 'instance', $instance->id, $node->id, [
+            $operation = $this->operations->execute(InstanceMigration::Kind, 'instance', $instance->id, $node->id, [
                 'instance_id' => $instance->id, 'project_id' => $instance->project_id, 'node_id' => $node->id,
                 'participant_node_ids' => array_values(array_unique([$node->id, ...($publication['participant_node_ids'] ?? [])])),
                 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($node),
@@ -125,6 +128,9 @@ final readonly class StartInstanceMigrateAction
                 ],
                 'container' => $container,
             ], $caller, $requestId);
+            $runtime->update(['operation_id' => $operation->id]);
+
+            return $operation;
         });
     }
 

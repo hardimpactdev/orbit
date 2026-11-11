@@ -138,7 +138,8 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | --- | --- |
 | `instance.migrate_restore_failed` | The restore-only task could not restore the Route or checkout. The reserved runtime stays for diagnosis. |
 | `instance.migrate_restore_unavailable` | The latest move is not interrupted without a final result. |
-| `instance.migrate_restore_unsafe` | Retirement began or the container owns the Instance. Restoration cannot discard it. |
+| `instance.migrate_restore_unsafe` | Retirement began or owns the permanent claim, or the container owns the Instance. Restoration cannot discard it. |
+| `instance.migrate_superseded` | Restore owns the original move. Retirement refuses and keeps the checkout intact. |
 | `instance.id_invalid` | The Instance is missing in a call that cannot prompt, or is not a positive integer. |
 | `input.cancelled` | You declined, pressed Ctrl-C, or the input ended. |
 | `instance.confirmation_required` | The call cannot prompt and has no `--force`. |

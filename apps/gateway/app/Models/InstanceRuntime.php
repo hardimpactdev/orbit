@@ -19,6 +19,7 @@ use LogicException;
  * the default Instance never has one.
  *
  * @property int $id
+ * @property int|null $operation_id
  * @property int $instance_id
  * @property int $node_id
  * @property string $incus_project
@@ -41,6 +42,7 @@ final class InstanceRuntime extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
+        'operation_id',
         'instance_id',
         'node_id',
         'incus_project',
@@ -91,6 +93,7 @@ final class InstanceRuntime extends Model
     protected function casts(): array
     {
         return [
+            'operation_id' => 'integer',
             'instance_id' => 'integer',
             'node_id' => 'integer',
             't3_port' => 'integer',

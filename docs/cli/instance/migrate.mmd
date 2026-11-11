@@ -34,6 +34,7 @@ sequenceDiagram
   %%> - a web-serving Project names its PHP version; a missing version refuses with `project.source_defaults_incomplete`, naming `orbit project:update PROJECT --source-access=github_app` to record it from source
   %%> - a database on a Database server has an IPv4 address and a port, else `instance.database_clone_unsupported`
   %%> Result:
+  %%> - the runtime reservation records the owning Operation; late receipts cannot change a newer owner
   %%> - the runtime record is reserved: the next bridge address and, for a non-default Instance, the lowest free T3 port
   %%> - the checkout stays the Instance's runtime until the Route has moved; the Route's Node is held for the run
   %%> - the Instance takes no deployment and no wake while the run lasts
@@ -43,7 +44,8 @@ sequenceDiagram
   GW-->>CLI: 202 Accepted<br/>task ID
   alt restore only
     SW->>N: Prove host ownership<br/>Ansible · tags restore-check
-    %%> - this read-only check must pass before either Route restoration or container removal
+    %%> - after the read-only check, atomically claim restore ownership for the original move before either Route restoration or container removal
+    %%> - retirement takes the same permanent claim before any retirement effect; the losing side refuses, including after native resume; the same owner may rerun
     SW->>N: Restore the Route<br/>child route-mutation-restore
     SW->>N: Restore the checkout<br/>Ansible · tags restore
     %%> - checks the Node's retirement checkpoint and host checkout before deleting any container
