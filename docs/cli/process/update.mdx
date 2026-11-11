@@ -58,7 +58,13 @@ To remove one environment key, supply the remaining map with repeated `--environ
 
 A definition edit records intent only. A later deployment of the default development container applies it to that Instance's linked Processes; new clones inherit it, while existing clones keep their Processes. Production copies keep their captured specification. Progress labels and the Project-definition response stay the same.
 
-This CLI requires a Gateway release containing PR #3412. An older Gateway treats the body as a replacement and can silently erase omitted fields. Release that Gateway and pass its health checks before releasing this CLI. Gateway status reports a commit SHA, without an ordered contract version or sparse-update capability flag; the CLI cannot establish commit ancestry from that response alone.
+Sparse Project-definition edits from this CLI are safe only against Gateway release **1921** (commit `c748f7d9`) or newer. Release that Gateway and pass its health checks before releasing this CLI.
+
+A Gateway rollback to release 1920 or earlier, or use of a proof Gateway without #3412, makes these edits unsafe. That Gateway replaces the whole definition and clears every field the CLI did not send. A keep-alive-only edit may refuse; an edit with runtime and command can succeed and silently clear omitted fields.
+
+After such a rollback, do not edit Project definitions with this CLI until the Gateway is restored to release 1921 or newer. If an edit is needed before then, send the full specification through the API or SDK.
+
+Gateway status reports a commit SHA, without an ordered contract version or sparse-update capability flag; the CLI cannot establish commit ancestry from that response alone.
 
 ```bash
 orbit process:update <name> --project=ID --for=production [--runtime=systemd|docker] [--command=ARG ...] [--image=IMAGE] [--working-directory=PATH] [--environment=NAME=VALUE ...] [--port=HOST:CONTAINER ...] [--volume=SOURCE:TARGET ...] [--restart=POLICY] [--keep-alive] [--json]
