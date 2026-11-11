@@ -43,6 +43,60 @@ Deno.test("placed coordinator invokes nested models on its native worker with li
 input=json.load(sys.stdin)
 (root/'proof').write_text(json.dumps({'args':sys.argv[1:],'input':input,'keys':list(os.environ)}))
 `);
+    const OriginalCommand = Deno.Command;
+    const unitCalls: string[][] = [];
+    // Keep the real lease guard, child process and stdin. Substitute only the
+    // host cgroup and systemd boundary; unit tests must not need a host service.
+    class HostCommand {
+        constructor(
+            private command: string,
+            private options: Deno.CommandOptions = {},
+        ) {}
+        output() {
+            const args = this.options.args ?? [];
+            let stdout = "";
+            if (this.command === "/usr/bin/cat") {
+                assertEquals(args, ["/proc/self/cgroup"]);
+                stdout = "0::/system.slice/orbit-node-worker.service\n";
+            } else {
+                assertEquals(this.command, "/usr/bin/sudo");
+                assertEquals(args.slice(0, 3), [
+                    "-n",
+                    "/usr/bin/systemctl",
+                    "stop",
+                ]);
+                assertEquals(
+                    args[3],
+                    unitCalls[0].find((arg) => arg.startsWith("--unit="))!
+                        .slice(7),
+                );
+                unitCalls.push([...args]);
+            }
+            return Promise.resolve({
+                success: true,
+                code: 0,
+                signal: null,
+                stdout: new TextEncoder().encode(stdout),
+                stderr: new Uint8Array(),
+            });
+        }
+        spawn() {
+            assertEquals(this.command, "/usr/bin/sudo");
+            const args = this.options.args ?? [];
+            assertEquals(args.slice(0, 2), ["-n", "/usr/bin/systemd-run"]);
+            assert(
+                args.includes("--property=BindsTo=orbit-node-worker.service"),
+            );
+            assert(args.includes("--property=KillMode=control-group"));
+            unitCalls.push([...args]);
+            const [command, ...invocation] = args.slice(args.indexOf("--") + 1);
+            return new OriginalCommand(command, {
+                ...this.options,
+                args: invocation,
+            }).spawn();
+        }
+    }
+    Deno.Command = HostCommand as unknown as typeof Deno.Command;
     try {
         const input = {
             workItem: "tg-7",
@@ -71,7 +125,13 @@ input=json.load(sys.stdin)
         assert(proof.args.includes("--literal-inputs"));
         assert(!proof.args.includes("--server"));
         assert(!proof.keys.includes("SWAMP_REMOTE_ONLY"));
+        assertEquals(
+            unitCalls.length,
+            2,
+            "the host unit starts and stops once",
+        );
     } finally {
+        Deno.Command = OriginalCommand;
         await Deno.remove(f.root, { recursive: true });
     }
 });

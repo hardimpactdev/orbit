@@ -399,7 +399,8 @@
       "beast": 0.1
     },
     "tests/native_host_method_test.ts": {
-      "beast": 0.7
+      "beast": 0.2,
+      "source_blob": "e70ce19ae7a5d11c1791c157a7fb0de1c859b42f"
     },
     "tests/node_converge_ansible_test.ts": {
       "beast": 35.5
