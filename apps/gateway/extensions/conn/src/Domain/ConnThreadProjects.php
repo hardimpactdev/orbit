@@ -36,7 +36,7 @@ final readonly class ConnThreadProjects
     ) {}
 
     /** @return Collection<int, ConnProjectData> */
-    public function all(Node $caller): Collection
+    public function all(Node $caller, bool $includeUnavailable = false): Collection
     {
         $projects = $this->projects->handle($caller);
         $projects->load(['instances' => static fn (HasMany $query): HasMany => $query
@@ -51,7 +51,11 @@ final readonly class ConnThreadProjects
 
             return ConnProjectData::fromProject($project, $visible, $this->domains->suffix($project, $visible),
                 $result['refusal']?->errorCode, $result['checks']);
-        });
+        })->filter(static fn (ConnProjectData $project): bool => $includeUnavailable || array_any(
+            $project->checks,
+            // This check passes only after the four readiness checks: exactly the pre-directory scope.
+            static fn (ConnProjectCheckData $check): bool => $check->key === 'node_access' && $check->status === ConnProjectCheckStatus::Pass,
+        ))->values();
     }
 
     /** Readiness precedes access. Refusals never identify a hidden Node. */
