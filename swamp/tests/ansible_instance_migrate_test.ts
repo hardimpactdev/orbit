@@ -395,6 +395,8 @@ for (const reason of ["outside checkout", "broken"]) {
     fn() {
       const f = fixture();
       try {
+        const schedules = migrationSchedules(f, "enabled");
+        const timerStates = Deno.readTextFileSync(`${f.folder}/host-processes.json`);
         f.migrate.retire = [];
         f.write();
         Deno.mkdirSync(`${f.checkout}/public`);
@@ -407,6 +409,8 @@ for (const reason of ["outside checkout", "broken"]) {
         assert(!result.ok, result.output);
         assertEquals(f.result().error_code, "instance.migrate_symlink_unsupported");
         assertEquals(f.result().preflight_refused, true);
+        assertEquals(Deno.readTextFileSync(`${f.folder}/host-processes.json`), timerStates);
+        assertEquals(Deno.readTextFileSync(schedules.timerPath), schedules.timer);
         for (const path of ["public/storage", "local package"]) {
           assert(f.result().error_message.includes(path), f.result().error_message);
           assertEquals(Deno.readLinkSync(`${f.checkout}/${path}`), target);
