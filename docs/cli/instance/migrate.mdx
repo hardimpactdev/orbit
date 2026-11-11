@@ -115,11 +115,11 @@ After the default has moved, an Instance that is still a checkout keeps working 
 
 ## Failure
 
-A move that fails leaves the checkout Instance serving as before. Orbit puts the Route back when the run had started to move it, deletes the new container with its ACL, its firewall rules and its mirror, and drops the reserved runtime record. So the access to the database server that the move added goes too. The checkout and the database are never changed before the Route serves the container. Run the same command again to retry.
+A failure before cutover leaves the checkout serving as before only when recovery succeeds. Successful recovery puts the Route back when the run had started to move it, deletes the new container with its ACL, its firewall rules and its mirror, and drops the reserved runtime record. So the access to the database server that the move added goes too. The checkout and the database are never changed before the Route serves the container. Run the same command again to retry.
 
 The task records whether the Instance moved, was restored and is ready. After a deadline or confirmed cancellation, Orbit reads the native finish. An independent failed phase keeps its code; a deadline-triggered abort keeps `operation.timed_out`, while a user abort stays cancelled. A completed restore drops the container reservation only while this migrate still owns it. A lost worker without a native finish reports an unknown end state and retains its reservation.
 
-When the restore itself fails, the task names the failed step and Orbit keeps the reserved record, so no other Instance takes the address of a container that may be left. The Instance's site stays the checkout's. Its deployments refuse with `instance.lifecycle_busy` until the same command has run again.
+When the restore itself fails, the task names the failed step and Orbit keeps the reserved record, so no other Instance takes the address of a container that may be left. The site's state depends on the failed recovery step and must be inspected. Its deployments refuse with `instance.lifecycle_busy` until the same command has run again.
 
 The retirement of the checkout is the last step. When only that step fails, the Instance stays in its container, the task fails with `instance.migrate_retire_failed`, and the source or retained checkout stays on the Node. A retirement check that finds a new blocker reports its refusal code with the same outcome, leaving the source untouched.
 

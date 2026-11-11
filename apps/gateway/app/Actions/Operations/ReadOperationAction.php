@@ -23,6 +23,10 @@ final readonly class ReadOperationAction
     public function execute(Operation $operation): Operation
     {
         if (InstanceMigrateProjection::unsettled($operation)) {
+            if (! $this->budget->take('operation:'.$operation->id, 30)) {
+                return $operation;
+            }
+
             return app(InstanceMigrateProjection::class)->settle($operation);
         }
         $runId = $operation->state['swamp_run_id'] ?? null;

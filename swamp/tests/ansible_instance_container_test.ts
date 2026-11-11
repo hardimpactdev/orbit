@@ -637,16 +637,12 @@ Deno.test({
       }
       const calls = () => f.state().systemctl.map((call: string[]) => call.join(" "));
 
-      const stateBeforeStop = f.state();
-      stateBeforeStop.queued = { [worker.name]: 2 };
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(stateBeforeStop));
       const checksBeforeStop = calls().length;
       const stop = f.run("process", { ORBIT_PROCESS_ACTION: "stop" });
       assert(stop.ok, stop.output);
-      assert(calls().includes(`disable --now --no-block -- ${worker.name}`));
+      assert(calls().includes(`disable --now -- ${worker.name}`));
       assertEquals(f.result(), { state: "inactive", output: "" });
-      assertEquals(calls().slice(checksBeforeStop).filter((call: string) => call === `show --property=ActiveState --property=Job -- ${worker.name}`).length, 3);
-      assertEquals(f.state().queued[worker.name], 0);
+      assertEquals(calls().slice(checksBeforeStop).filter((call: string) => call.startsWith("show ")).length, 0);
 
       const checksBeforeStart = calls().filter((call: string) => call === `show --property=ActiveState --property=Job -- ${worker.name}`).length;
       assert(f.run("process", { ORBIT_PROCESS_ACTION: "start" }).ok);
@@ -1137,6 +1133,37 @@ Deno.test({
       const enable = calls.findIndex((call) => call[0] === "enable" && call.includes("--now"));
       assert(tryRestart >= 0 && tryRestart < enable, JSON.stringify(calls));
       assert(calls[tryRestart].includes("--no-block"));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a thirty-second Process stop succeeds and inspection keeps its existing unbounded state read",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.processes = [worker];
+      f.write();
+      for (const phase of ["container", "workspace", "processes"]) {
+        const done = f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments });
+        assert(done.ok, done.output);
+      }
+      const state = f.state();
+      state.slowStopSeconds = 30;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const stopped = f.run("process", { ORBIT_PROCESS_ACTION: "stop" });
+      assert(stopped.ok, stopped.output);
+      assertEquals(f.result(), { state: "inactive", output: "" });
+      assertEquals(f.state().slowStopCompleted, true);
+      const inspecting = f.state();
+      inspecting.inspectionSeconds = 6;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(inspecting));
+      const inspected = f.run("process", { ORBIT_PROCESS_ACTION: "status" });
+      assert(inspected.ok, inspected.output);
+      assertEquals(f.result(), { state: "inactive", output: "" });
     } finally {
       f.cleanup();
     }

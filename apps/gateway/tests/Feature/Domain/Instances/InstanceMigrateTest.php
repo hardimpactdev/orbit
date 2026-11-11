@@ -44,6 +44,7 @@ use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
+use App\Infrastructure\Swamp\SwampReadBudget;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\Operations\StartAdmittedSwampRun;
@@ -1772,4 +1773,23 @@ it('settles the previous overdue migrate before the next migrate reserves its ru
         ->and($instance->runtime()->firstOrFail()->id)->not->toBe($runtime)
         ->and($instance->runtime()->firstOrFail()->operation_id)->toBe($next->id)
         ->and($reads)->toBe(1);
+});
+
+it('returns the stored overdue migrate when the shared read allowance is empty', function (): void {
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $operation = demandMigrate($instance);
+    $budget = app(SwampReadBudget::class);
+    for ($i = 0; $i < SwampReadBudget::PerMinute; $i++) {
+        expect($budget->take('other-kind:'.$i, 30))->toBeTrue();
+    }
+    $before = $operation->getAttributes();
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldNotReceive('connect', 'send');
+    app(SwampConnection::class)->release();
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'read-token']);
+    $stored = app(ReadOperationAction::class)->execute($operation);
+    expect($stored->getAttributes())->toBe($before)
+        ->and($operation->refresh()->getAttributes())->toBe($before)
+        ->and($instance->runtime()->exists())->toBeTrue();
 });
