@@ -14,6 +14,12 @@ final class OperationRunBudgets
 {
     private const int UnmeasuredSeconds = 1800;
 
+    /**
+     * Stop-gap floor for a budget derived from history: one quick first success must not cancel a later, larger run (instance.migrate
+     * 16674 at 120 s after a 56 s first success). Removed when every kind's budget comes from its workflow's declared step timeouts.
+     */
+    private const int LearnedFloorSeconds = 900;
+
     private const int AdmissionSeconds = 600;
 
     /**
@@ -70,7 +76,7 @@ final class OperationRunBudgets
         return self::historySeconds($operation->kind);
     }
 
-    /** The longest successful run of the kind in the last 14 days x 1.5, rounded up to a minute; 30 minutes without a success. */
+    /** The longest successful run of the kind in the last 14 days x 1.5, rounded up to a minute, at least 15 minutes; 30 minutes without a success. */
     public static function historySeconds(string $kind): int
     {
         if (isset(self::$history[$kind])) {
@@ -88,7 +94,7 @@ final class OperationRunBudgets
                 $longest = max($longest ?? 0, $duration);
             }
         }
-        $seconds = $longest === null ? self::UnmeasuredSeconds : max(60, (int) ceil($longest * 1.5 / 60) * 60);
+        $seconds = $longest === null ? self::UnmeasuredSeconds : max(self::LearnedFloorSeconds, (int) ceil($longest * 1.5 / 60) * 60);
         if (self::$history !== null) {
             self::$history[$kind] = $seconds;
         }
