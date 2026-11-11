@@ -192,8 +192,6 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     environment: {
       targets: [] as { host: string; port: number }[],
       node_addresses: ["10.44.0.7"],
-      fleet_addresses: ["10.44.0.7"],
-      wireguard_ranges: ["10.44.0.0/24"],
       proxy_policy: { private_v4: ["10.0.0.0/8", "127.0.0.0/8"], private_domains: ["orbit"] },
     },
     databases: [] as { host: string; port: number }[],
@@ -1405,6 +1403,41 @@ Deno.test({
       const allowed = f.run("quiesce");
       assert(allowed.ok, allowed.output);
       assert(!exists(f.migrate.awake.path));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "an unreadable copied environment refuses before downtime and restore preserves the source",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      // Invalid UTF-8 deterministically exercises a file read failure even when the fixture runs as root.
+      Deno.writeFileSync(`${f.checkout}/.env`, new Uint8Array([0xff, 0xfe]));
+      const sourceUnit = `${f.folder}/source.service`;
+      Deno.writeTextFileSync(sourceUnit, "[Service]\nExecStart=/bin/true\n");
+      f.migrate.processes.push({ name: "writer.service", path: sourceUnit, environment_directory: `${f.folder}/source-env`, desired: "running" });
+      Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify({ "writer.service": { state: "running", enabled: true } }));
+      const before = Deno.readTextFileSync(`${f.folder}/host-processes.json`);
+      f.write();
+
+      const refused = f.run("quiesce");
+
+      assert(!refused.ok, refused.output);
+      assertEquals(f.result().error_code, "instance.migrate_env_service_unreachable");
+      assertEquals(f.result().preflight_refused, true);
+      assert(f.result().error_message.includes(".env: cannot read .env safely."));
+      assert(exists(f.migrate.awake.path));
+      assertEquals(Deno.readTextFileSync(`${f.folder}/host-processes.json`), before);
+      assertEquals(f.state(), {});
+      const restore = f.run("restore");
+      assert(restore.ok, restore.output);
+      assert(exists(f.migrate.awake.path));
+      assertEquals(Deno.readTextFileSync(`${f.folder}/host-processes.json`), before);
+      assertEquals(f.state(), {});
     } finally {
       f.cleanup();
     }

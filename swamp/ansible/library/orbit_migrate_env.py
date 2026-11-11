@@ -30,16 +30,6 @@ options:
     type: list
     elements: str
     required: true
-  fleet_addresses:
-    description: Recorded addresses of fleet Nodes.
-    type: list
-    elements: str
-    required: true
-  wireguard_ranges:
-    description: Configured fleet WireGuard ranges.
-    type: list
-    elements: str
-    required: true
   proxy_policy:
     description: Denied IPv4 ranges and private DNS domains from the shared Instance proxy policy.
     type: dict
@@ -183,11 +173,9 @@ def port_number(value):
 
 
 def database_driver(values, stem):
-    """A SQLite default does not disable the shared host of other selected connections."""
+    """Infer a shared default port only when every selected database connection agrees."""
     driver = values.get(stem + '_CONNECTION')
-    if driver != 'sqlite':
-        return driver
-    selected = set()
+    selected = {driver} if driver != 'sqlite' else set()
     independent = {'QUEUE_CONNECTION', 'BROADCAST_CONNECTION'}
     non_database = {'sync', 'database', 'redis', 'sqs', 'beanstalkd', 'null', 'log', 'pusher',
                     'ably', 'reverb', 'mercure', 'deferred', 'background'}
@@ -203,14 +191,16 @@ def database_driver(values, stem):
         if value not in ('sqlite', '', 'null', '(null)'):
             selected.add(value)
     if not selected:
-        return 'sqlite'
-    if len(selected) == 1 and next(iter(selected)) in ('mysql', 'mariadb', 'pgsql', 'sqlsrv'):
+        return 'sqlite' if driver == 'sqlite' else None
+    if len(selected) == 1 and next(iter(selected)) in ('mysql', 'mariadb', 'pgsql', 'sqlsrv', 'redis'):
         return next(iter(selected))
     return None
 
 
-def listener_or_browser_key(key):
+def listener_or_browser_key(values, key):
     """Documented bind settings and browser publisher settings are not Node service destinations."""
+    if key[:-5] + '_CONNECTION' in values:
+        return False
     return key in {'SERVER_HOST', 'REVERB_SERVER_HOST', 'PI_SERVER_HOST', 'VITE_PUSHER_HOST', 'VITE_REVERB_HOST'}
 
 
@@ -249,7 +239,7 @@ def connection(values, key):
         ports = {'mysql': 3306, 'mariadb': 3306, 'pgsql': 5432, 'sqlsrv': 1433, 'redis': 6379}
         default = ports.get(driver)
         if driver not in ports:
-            driver_reason = 'driver use is unknown, so it is checked conservatively; '
+            driver_reason = 'driver use is unknown or selected connection ports are ambiguous, so an explicit port is required; '
     elif standard == 'MAIL':
         driver = values.get(stem + '_MAILER')
         if driver in ('log', 'array', 'sendmail'):
@@ -272,10 +262,10 @@ def connection(values, key):
 def env_files(checkout):
     """Follow copied app directories, including symlinks, once per inode to avoid cycles."""
     if not os.path.isdir(checkout):
-        raise OSError('The checkout is not a readable directory.')
+        raise OSError(0, 'Cannot inspect the checkout directory.', checkout)
 
     def refuse_unreadable(error):
-        raise OSError('Cannot inspect every copied directory.') from error
+        raise OSError(0, 'Cannot inspect every copied directory.', error.filename or checkout) from error
 
     visited = set()
     for directory, children, files in os.walk(checkout, followlinks=True, onerror=refuse_unreadable):
@@ -290,7 +280,7 @@ def env_files(checkout):
             yield os.path.join(directory, '.env')
 
 
-def inspect_environment(checkout, targets, node_addresses, fleet_addresses, wireguard_ranges, proxy_policy=None):
+def inspect_environment(checkout, targets, node_addresses, proxy_policy=None):
     """Safe refusal lines, with no environment contents except validated host and numeric port."""
     attached = {(canonical_host(str(target['host']))[0], int(target['port'])) for target in targets}
     local = set()
@@ -302,10 +292,13 @@ def inspect_environment(checkout, targets, node_addresses, fleet_addresses, wire
         except ValueError:
             pass
         local.add(host)
-    fleet = {canonical_host(value)[0] for value in fleet_addresses}
-    ranges = [ipaddress.ip_network(value, strict=False) for value in wireguard_ranges]
     refusals = []
-    for path in env_files(checkout):
+    try:
+        paths = list(env_files(checkout))
+    except OSError as error:
+        relative = os.path.relpath(error.filename or checkout, checkout)
+        return [f'{relative}: cannot inspect copied environments safely. {RECOVERY}']
+    for path in paths:
         relative = os.path.relpath(path, checkout)
         try:
             with open(path, encoding='utf-8-sig') as handle:
@@ -317,7 +310,7 @@ def inspect_environment(checkout, targets, node_addresses, fleet_addresses, wire
             refusals.append(f'{relative}: cannot read .env safely. {RECOVERY}')
             continue
         for key, value in values.items():
-            if not key.endswith('_HOST') or listener_or_browser_key(key):
+            if not key.endswith('_HOST') or listener_or_browser_key(values, key):
                 continue
             used, port, driver_reason = connection(values, key)
             if not used:
@@ -335,17 +328,15 @@ def inspect_environment(checkout, targets, node_addresses, fleet_addresses, wire
                     address = ipaddress.ip_address(host)
                     address = getattr(address, 'ipv4_mapped', None) or address
                     host_only = address.is_loopback or address.is_unspecified or str(address) in local
-                    permitted = any(address.version == network.version and address in network for network in ranges)
                 except ValueError:
                     host_only = host == 'localhost'
-                    permitted = False
                 if host_only or host in local:
                     reason = 'the host belongs to the Node or container loopback and has no exact attached target'
                 elif http_endpoint(values, key):
                     if not proxy_permits(host, proxy_policy):
                         reason = 'the HTTP endpoint is refused by the Instance proxy policy or that policy is unavailable'
-                elif host not in fleet and not permitted:
-                    reason = 'the host is outside the known fleet and WireGuard ranges and has no exact attached target'
+                else:
+                    reason = 'the direct service has no exact endpoint admitted by the container access plan'
             if reason:
                 endpoint = f'[{display}]' if ':' in display else display
                 refusals.append(f'{relative}: {key}={endpoint}:{port if port is not None else "[unknown port]"}: '
@@ -360,13 +351,11 @@ def main():
         'checkout': {'type': 'path', 'required': True},
         'targets': {'type': 'list', 'elements': 'dict', 'required': True},
         'node_addresses': {'type': 'list', 'elements': 'str', 'required': True},
-        'fleet_addresses': {'type': 'list', 'elements': 'str', 'required': True},
-        'wireguard_ranges': {'type': 'list', 'elements': 'str', 'required': True},
         'proxy_policy': {'type': 'dict', 'required': True},
     }, supports_check_mode=True)
     try:
         refusals = inspect_environment(**module.params)
-    except (OSError, ValueError):
+    except ValueError:
         module.fail_json(msg='Cannot inspect the copied .env service endpoints safely.')
     module.exit_json(changed=False, refusals=refusals)
 

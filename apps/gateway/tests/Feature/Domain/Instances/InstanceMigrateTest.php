@@ -39,7 +39,6 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
-use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -236,7 +235,6 @@ describe('the admission of a move', function (): void {
                 'application' => '/home/orbit/apps/tool/default',
                 'awake' => ['directory' => '/dev/shm/orbit/hibernation', 'path' => '/dev/shm/orbit/hibernation/app-instance-'.$default->id.'.awake'],
                 'environment' => ['targets' => [], 'node_addresses' => ['10.44.0.7', '10.44.0.7'],
-                    'fleet_addresses' => ['10.44.0.209', '10.44.0.7'], 'wireguard_ranges' => ['10.44.0.0/24'],
                     'proxy_policy' => ['private_v4' => InstanceEgress::PrivateV4, 'private_domains' => ['orbit']]],
                 'databases' => [], 'processes' => [], 'firewall_prefix' => 'orbit:instance-'.$default->id.'-',
                 'retire' => [['path' => '/home/orbit/apps/tool/default', 'mirror' => '/var/lib/orbit/instance-repositories/'.$default->id.'.git']]])
@@ -580,23 +578,24 @@ describe('the databases of a move', function (): void {
             ->and(DatabaseConnection::query()->where('owner_instance_id', $default->id)->pluck('id')->all())->toEqualCanonicalizing([$valkey->id, $database->id, $catalog->id]);
     });
 
-    it('uses attached target network selection and configured fleet addresses without copying credentials', function (): void {
+    it('uses the container access endpoints for the guard despite a different target projection without copying credentials', function (): void {
         $node = containerDefaultNode();
         $node->update(['lan_ip' => '192.168.50.7', 'tld' => 'private.test']);
         $default = migrateCheckout(containerDefaultProject(), $node);
         $database = migrateServerDatabase($default, migrateDatabaseServer($node, 'catalog', DatabaseDriver::Mysql, 3308), 'FOOD_CATALOG_DB');
         $default->databaseConnectionTargets()->update(['network' => 'lan']);
-        app(VpnSettings::class)->configure('10.77.0.0/24');
 
         $operation = migrateStart($default);
 
         expect($operation->input['migrate']['environment'])->toBe([
-            'targets' => [['host' => '192.168.50.7', 'port' => 3308]],
+            'targets' => [['host' => '10.44.0.7', 'port' => 3308]],
             'node_addresses' => ['10.44.0.7', '192.168.50.7', '10.44.0.7'],
-            'fleet_addresses' => ['10.44.0.209', '10.44.0.7', '192.168.50.7'],
-            'wireguard_ranges' => ['10.77.0.0/24'],
             'proxy_policy' => ['private_v4' => InstanceEgress::PrivateV4, 'private_domains' => ['orbit', 'private.test']],
         ]);
+        expect($operation->input['migrate']['environment']['targets'])->toBe($operation->input['migrate']['databases'])
+            ->and($operation->input['container']['acl_rules']['egress'])->toBe([['action' => 'allow', 'destination' => '10.44.0.7/32',
+                'protocol' => 'tcp', 'destination_port' => '3308', 'state' => 'enabled']])
+            ->and($operation->input['container']['firewall'][0]['to_ip'])->toBe('10.44.0.7');
         expect(json_encode($operation->input['migrate']['environment'], JSON_THROW_ON_ERROR))
             ->not->toContain($database->password, 'root-secret', 'username', 'password');
     });

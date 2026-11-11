@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
-use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
@@ -24,7 +23,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\TaskVms\TaskVmModelRoute;
-use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\DatabaseConnection;
@@ -94,7 +92,9 @@ final readonly class StartInstanceMigrateAction
             // The Node's mirror fetches the branch from the checkout itself: commits that were never pushed come along, and it needs no token.
             $container = [...$this->containers->intent($instance, $runtime, $databases['servers'][0] ?? null, $branch, $route === null ? null : 'https://'.$route->domain),
                 'repository' => $instance->checkout_path, 'protocols' => ['file'], 'steps' => []];
-            $reach = array_map($this->endpoint(...), $databases['servers']);
+            /** @var list<array{host: string, port: int, docker: bool}> $endpoints */
+            $endpoints = $container['bridge_endpoints'];
+            $reach = array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port']], $endpoints);
             $publication = $route === null || $before === null ? null : $this->routes->capture($instance, $route, $runtime, $before);
 
             $operation = $this->operations->execute(InstanceMigration::Kind, 'instance', $instance->id, $node->id, [
@@ -108,13 +108,8 @@ final readonly class StartInstanceMigrateAction
                     'application' => ApplicationDirectory::resolve($instance->checkout_path, $instance->root ?? $instance->project->root),
                     'awake' => ['directory' => RuntimeHibernation::MarkerDirectory, 'path' => RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id))],
                     'environment' => [
-                        'targets' => $databases['targets'],
+                        'targets' => $reach,
                         'node_addresses' => array_values(array_filter([$node->wireguard_ip, $node->lan_ip, $node->public_ssh_host])),
-                        'fleet_addresses' => Node::query()->get(['wireguard_ip', 'lan_ip', 'public_ssh_host'])
-                            ->flatMap(static fn (Node $peer): array => [$peer->wireguard_ip, $peer->lan_ip, $peer->public_ssh_host])
-                            ->filter(static fn (?string $address): bool => is_string($address) && filter_var($address, FILTER_VALIDATE_IP) !== false)
-                            ->unique()->values()->all(),
-                        'wireguard_ranges' => [app(VpnSettings::class)->subnet()],
                         'proxy_policy' => ['private_v4' => InstanceEgress::PrivateV4, 'private_domains' => app(PeerDnsPolicy::class)->domains()],
                     ],
                     'databases' => $reach, 'processes' => $sourceProcesses, 'firewall_prefix' => InstanceContainer::firewallPrefix($instance),
@@ -203,21 +198,17 @@ final readonly class StartInstanceMigrateAction
      * The Instance's databases. One on a Database server stays where it is, and the container gets its way to it; `DB` comes first.
      * A SQLite file in the checkout moves with the files, so its connection record goes when the move has succeeded.
      *
-     * @return array{servers: list<DatabaseConnection>, sqlite: list<int>, targets: list<array{host: string, port: int}>}
+     * @return array{servers: list<DatabaseConnection>, sqlite: list<int>}
      */
     private function databases(Instance $instance): array
     {
-        $servers = $sqlite = $endpoints = [];
+        $servers = $sqlite = [];
         $targets = $instance->databaseConnectionTargets()->with('databaseConnection.server')
             ->orderByRaw("prefix = 'DB' desc")->orderBy('id')->get();
         foreach ($targets as $target) {
             $connection = $target->databaseConnection;
             if ($connection->driver !== DatabaseDriver::Sqlite) {
                 $servers[$connection->id] = $connection;
-                $projected = app(DatabaseConnectionEnvProjection::class)->project($connection, $target->prefix, $target->network, $instance->node);
-                if (is_string($projected['host']) && is_int($projected['port'])) {
-                    $endpoints[] = ['host' => $projected['host'], 'port' => $projected['port']];
-                }
 
                 continue;
             }
@@ -227,13 +218,7 @@ final readonly class StartInstanceMigrateAction
             $sqlite[] = $connection->id;
         }
 
-        return ['servers' => array_values($servers), 'sqlite' => array_values(array_unique($sqlite)), 'targets' => $endpoints];
-    }
-
-    /** @return array{host: string, port: int} */
-    private function endpoint(DatabaseConnection $connection): array
-    {
-        return ['host' => ValidatedData::string($connection->host), 'port' => ValidatedData::integer($connection->port)];
+        return ['servers' => array_values($servers), 'sqlite' => array_values(array_unique($sqlite))];
     }
 
     /**

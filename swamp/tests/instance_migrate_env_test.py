@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 MODULE = Path(__file__).resolve().parents[1] / 'ansible/library/orbit_migrate_env.py'
 SPEC = importlib.util.spec_from_file_location('orbit_migrate_env', MODULE)
@@ -21,8 +22,6 @@ class InstanceMigrateEnvTest(unittest.TestCase):
         env.parent.mkdir(parents=True, exist_ok=True)
         env.write_text(text)
         return guard.inspect_environment(str(self.root), targets, options.get('node_addresses', ['10.44.0.5']),
-                                         options.get('fleet_addresses', ['10.44.0.5', '203.0.113.7']),
-                                         options.get('wireguard_ranges', ['10.44.0.0/24']),
                                          options.get('proxy_policy', {'private_v4': ['10.0.0.0/8', '127.0.0.0/8'],
                                                                       'private_domains': ['orbit', 'private.test']}))
 
@@ -89,7 +88,7 @@ class InstanceMigrateEnvTest(unittest.TestCase):
         self.root.joinpath('cycle').symlink_to(self.root, target_is_directory=True)
         self.root.joinpath('.git').mkdir()
         self.root.joinpath('.git/.env').write_text('MAIL_HOST=localhost\n')
-        found = guard.inspect_environment(str(self.root), [], [], [], [])
+        found = guard.inspect_environment(str(self.root), [], [])
         self.assertEqual(len(found), 2)
         self.assertTrue(any('apps/private/.env' in line for line in found))
         self.assertTrue(any('linked-app/.env' in line for line in found))
@@ -99,9 +98,16 @@ class InstanceMigrateEnvTest(unittest.TestCase):
             with self.subTest(host=host):
                 self.assertEqual(len(self.inspect(f'SERVICE_HOST={host}\nSERVICE_PORT=8080\n')), 1)
 
-    def test_known_fleet_and_wireguard_addresses_are_allowed(self):
+    def test_direct_services_require_exact_admission_even_for_fleet_and_wireguard_addresses(self):
         for host in ('10.44.0.9', '203.0.113.7'):
-            self.assertEqual(self.inspect(f'SERVICE_HOST={host}\nSERVICE_PORT=8080\n'), [])
+            for stem, port in (('DB', 3306), ('REDIS', 6379), ('MAIL', 2525), ('MEMCACHED', 11211), ('SERVICE', 8080)):
+                with self.subTest(host=host, stem=stem):
+                    text = f'{stem}_HOST={host}\n{stem}_PORT={port}\n'
+                    found = self.inspect(text)
+                    self.assertEqual(len(found), 1)
+                    self.assertIn('no exact endpoint admitted', found[0])
+                    self.assertEqual(self.inspect(text, [{'host': host, 'port': port}]), [])
+                    self.assertEqual(len(self.inspect(text, [{'host': host, 'port': port + 1}])), 1)
         self.assertEqual(self.inspect('SERVICE_HOST=example.test.\nSERVICE_PORT=8080\n',
                                       [{'host': 'EXAMPLE.test', 'port': 8080}]), [])
         self.assertEqual(len(self.inspect('SERVICE_HOST=example.test\nSERVICE_PORT=8080\n')), 1)
@@ -229,6 +235,54 @@ class InstanceMigrateEnvTest(unittest.TestCase):
         self.assertIn('apps/one/.env:2:', found[0])
         self.assertNotIn('PRIVATE', repr(found))
         self.assertNotIn('never-show-this', repr(found))
+
+    def test_projected_target_address_does_not_cover_a_different_recorded_endpoint(self):
+        targets = [{'host': '10.44.0.9', 'port': 3308}]
+        found = self.inspect('DB_CONNECTION=mysql\nDB_HOST=192.168.50.9\nDB_PORT=3308\n', targets)
+        self.assertEqual(len(found), 1)
+        self.assertIn('DB_HOST=192.168.50.9:3308', found[0])
+        self.assertEqual(self.inspect('DB_CONNECTION=mysql\nDB_HOST=10.44.0.9\nDB_PORT=3308\n', targets), [])
+
+    def test_mixed_network_selections_cannot_use_only_the_default_drivers_port(self):
+        for default, other in (('mysql', 'pgsql'), ('pgsql', 'mysql')):
+            with self.subTest(default=default):
+                text = f'DB_CONNECTION={default}\nSESSION_CONNECTION={other}\nDB_HOST=10.44.0.9\n'
+                targets = [{'host': '10.44.0.9', 'port': port} for port in (3306, 5432)]
+                for admitted in (targets[:1], targets):
+                    found = self.inspect(text, admitted)
+                    self.assertEqual(len(found), 1)
+                    self.assertIn('[unknown port]', found[0])
+                    self.assertIn('ambiguous', found[0])
+                self.assertEqual(self.inspect(text + 'DB_PORT=3308\n', [{'host': '10.44.0.9', 'port': 3308}]), [])
+        self.assertEqual(self.inspect('DB_CONNECTION=mysql\nSESSION_CONNECTION=mysql\nDB_HOST=10.44.0.9\n',
+                                      [{'host': '10.44.0.9', 'port': 3306}]), [])
+
+    def test_explicit_connection_evidence_overrides_listener_exemptions(self):
+        for stem in ('SERVER', 'REVERB_SERVER', 'PI_SERVER', 'VITE_PUSHER', 'VITE_REVERB'):
+            with self.subTest(stem=stem):
+                text = f'{stem}_CONNECTION=mysql\n{stem}_HOST=10.44.0.9\n{stem}_PORT=3308\n'
+                self.assertEqual(len(self.inspect(text)), 1)
+                self.assertEqual(self.inspect(text, [{'host': '10.44.0.9', 'port': 3308}]), [])
+
+    def test_traversal_stat_and_read_errors_return_safe_preflight_refusals(self):
+        self.inspect('DB_CONNECTION=sqlite\n')
+        denied = str(self.root / 'apps' / 'unreadable')
+
+        def denied_walk(*args, **kwargs):
+            kwargs['onerror'](PermissionError(13, 'private-exception-secret', denied))
+
+        with patch.object(guard.os, 'walk', side_effect=denied_walk):
+            found = guard.inspect_environment(str(self.root), [], [])
+        self.assertEqual(found, [f'apps/unreadable: cannot inspect copied environments safely. {guard.RECOVERY}'])
+        with patch.object(guard.os, 'walk', return_value=iter([(denied, [], [])])):
+            found = guard.inspect_environment(str(self.root), [], [])
+        self.assertEqual(found, [f'apps/unreadable: cannot inspect copied environments safely. {guard.RECOVERY}'])
+        with patch('builtins.open', side_effect=PermissionError(13, 'private-exception-secret', str(self.root / '.env'))):
+            found = guard.inspect_environment(str(self.root), [], [])
+        self.assertEqual(found, [f'.env: cannot read .env safely. {guard.RECOVERY}'])
+        self.assertNotIn('private-exception-secret', repr(found))
+        found = guard.inspect_environment(str(self.root / 'missing'), [], [])
+        self.assertEqual(found, [f'.: cannot inspect copied environments safely. {guard.RECOVERY}'])
 
     def test_multiline_private_values_do_not_forge_service_keys(self):
         self.assertEqual(self.inspect('PRIVATE="first\nMAIL_HOST=127.0.0.1\nMAIL_PORT=1025\nlast"\n'), [])
