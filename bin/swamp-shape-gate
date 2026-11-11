@@ -260,7 +260,7 @@ def main(argv=None):
     base = resolve_base(args.base) if args.only != 'validate' else ''
     args.reports.mkdir(parents=True, exist_ok=True)
     environment = {**os.environ}
-    if args.only not in ('validate', 'control'):
+    if args.only != 'validate':
         environment['PATH'] = f'{tool_path(args.tools)}{os.pathsep}{environment["PATH"]}'
     collections = collections_path(args.tools)
     steps = [step for step in plan(base, args.reports, args.cache, collections)

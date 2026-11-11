@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
@@ -67,7 +67,7 @@ class PlanTest(unittest.TestCase):
             self.assertEqual(step.argv[step.argv.index('--base') + 1], BASE)
         self.assertIn('/reports/shape.json', steps('shape')[-4].argv)
 
-    def test_control_runs_all_four_static_rules_without_fixtures_or_tool_install(self):
+    def test_control_runs_all_four_static_rules_without_fixtures(self):
         control = [step for step in steps('shape') if not step.parallel and step.name != 'ansible collections']
         self.assertEqual([step.name for step in control],
                          ['check-swamp-shape', 'check-swamp-base-policy', 'lint-behavior-names', 'frozen agent commands'])
@@ -79,6 +79,15 @@ class PlanTest(unittest.TestCase):
             code, calls, _ = ExitCodeTest().run_gate(['--only', 'control', '--base', BASE], [0] * failure + [1])
             self.assertEqual(code, 1)
             self.assertEqual(len(calls), 4)
+
+    def test_control_installs_the_pinned_tools_its_analyzers_call(self):
+        scope = gate['main'].__globals__
+        with tempfile.TemporaryDirectory() as scratch:
+            install = Mock(return_value=Path(scratch))
+            with patch.dict(scope, {'tool_path': install, 'execute': lambda *_args: []}), redirect_stdout(io.StringIO()):
+                code = gate['main'](['--only', 'control', '--base', BASE, '--reports', scratch])
+        self.assertEqual(code, 0)
+        install.assert_called_once()
 
     def test_the_validation_group_needs_credentials_where_ci_does(self):
         needs = {step.name: step.needs for step in steps('validate')}
