@@ -67,46 +67,42 @@ final readonly class InstanceEnvironmentRenderer
     }
 
     /**
-     * Resolve only the non-secret allow-list. Keep every other value's existing serialization, including
-     * values whose escaping differs between dotenv and systemd. Never rescan a replacement.
+     * Only captured live whole-value references may resolve. Replacements are data, never rescanned.
      *
      * @param  array<string, string>  $values
      * @param  array<string, string>  $template
-     * @param  array<string, list<int>>  $literalReferencePositions  byte offsets of literal allow-listed references
+     * @param  array<string, string>  $capturedReferences
      * @return array<string, string>
      */
     public function resolveTemplateReferences(
         #[\SensitiveParameter] array $values,
         #[\SensitiveParameter] array $template,
-        array $literalReferencePositions = [],
+        array $capturedReferences = [],
     ): array {
-        foreach ($template as $key => $value) {
-            preg_match_all('/\$\{([A-Za-z0-9_.]+)\}/', $value, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
-            $resolved = $value;
-            foreach (array_reverse($matches) as $match) {
-                $name = $match[1][0];
-                $offset = $match[0][1];
-                if (! self::resolvesTemplateReference($name) || ! array_key_exists($name, $values)) {
-                    continue;
-                }
-                if (in_array($offset, $literalReferencePositions[$key] ?? [], true)
-                    || ($offset > 0 && $value[$offset - 1] === '\\')) {
-                    continue;
-                }
-                $resolved = substr_replace($resolved, $values[$name], $offset, strlen($match[0][0]));
+        $resolved = $values;
+        foreach ($capturedReferences as $key => $reference) {
+            if (! isset($template[$key], $values[$reference]) || self::templateReference($template[$key]) !== $reference) {
+                continue;
             }
-            // The existing double-quoted encoding has different escape rules in the three consumers.
-            if (strpbrk($resolved, "\\\"\r\n$") === false) {
-                $values[$key] = $resolved;
+            $replacement = $values[$reference];
+            // Only commit values the unchanged writer represents literally in every consumer.
+            if (self::quote($replacement) === '"'.$replacement.'"') {
+                $resolved[$key] = $replacement;
             }
         }
 
-        return $values;
+        return $resolved;
     }
 
-    public static function resolvesTemplateReference(string $name): bool
+    public static function templateReference(string $value): ?string
     {
-        return in_array($name, self::TemplateReferences, true);
+        foreach (self::TemplateReferences as $name) {
+            if ($value === '${'.$name.'}') {
+                return $name;
+            }
+        }
+
+        return null;
     }
 
     /** Quote one value as a double-quoted dotenv value. */

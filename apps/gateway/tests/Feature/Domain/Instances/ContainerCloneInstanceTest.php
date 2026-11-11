@@ -509,6 +509,7 @@ it('resolves stock Laravel template references to the clone values in its file a
     $example .= <<<'ENV'
 
 VITE_APP_URL="${APP_URL}"
+UNQUOTED_URL=${APP_URL}
 VITE_LATER=${Z_LATER}
 Z_LATER="${VITE_APP_URL}/nested"
 PASSWORD=pa$$word
@@ -533,7 +534,7 @@ ENV;
 
     expect($values)->toMatchArray([
         'APP_NAME' => 'Laravel', 'VITE_APP_NAME' => 'Laravel', 'MAIL_FROM_NAME' => 'Laravel',
-        'APP_URL' => 'https://'.$domain, 'VITE_APP_URL' => 'https://'.$domain,
+        'APP_URL' => 'https://'.$domain, 'VITE_APP_URL' => 'https://'.$domain, 'UNQUOTED_URL' => 'https://'.$domain,
         'VITE_LATER' => '${Z_LATER}', 'Z_LATER' => '${VITE_APP_URL}/nested',
         'PASSWORD' => 'pa$$word', 'HASH' => '$2y$10$abcdef', 'PRICE' => 'price$5',
         'ESCAPED' => '${APP_NAME}', 'SINGLE' => '${APP_NAME}',
@@ -621,17 +622,17 @@ it('matches main rendering byte for byte for awkward values and non-listed refer
 it('keeps existing rendering when an allowed replacement needs incompatible escaping', function (string $name): void {
     $values = ['APP_NAME' => $name, 'VITE_APP_NAME' => '${APP_NAME}'];
 
-    expect(app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($values, ['VITE_APP_NAME' => '${APP_NAME}']))
+    expect(app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($values, ['VITE_APP_NAME' => '${APP_NAME}'], ['VITE_APP_NAME' => 'APP_NAME']))
         ->toBe($values);
-})->with(["first\nsecond", "first\rsecond", 'C:\\name', 'a"b', 'price$5', '${DB_PASSWORD}']);
+})->with(["first\nsecond", "first\rsecond", 'C:\\Shop', 'Acme $ale "Shop"', 'price$5', '${DB_PASSWORD}']);
 
 it('keeps an undefined allow-listed reference literal', function (): void {
     $values = ['VITE_APP_URL' => '${APP_URL}'];
 
-    expect(app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($values, $values))->toBe($values);
+    expect(app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($values, $values, ['VITE_APP_URL' => 'APP_URL']))->toBe($values);
 });
 
-it('preserves the stored entry shape except where literal allowed references need source provenance', function (): void {
+it('records provenance only for captured live whole-value allowed references', function (): void {
     $node = containerDefaultNode();
     $default = seededDefault($node);
     $instanceBefore = $default->fresh()->getAttributes();
@@ -646,10 +647,65 @@ ENV);
 
     expect($default->project->environmentTemplate()->sole()->entries)->toBe([
         ['key' => 'APP_NAME', 'value' => 'Laravel', 'example' => 'Laravel', 'removed' => false],
-        ['key' => 'VITE_APP_NAME', 'value' => '${APP_NAME}', 'example' => '${APP_NAME}', 'removed' => false],
-        ['key' => 'VITE_LITERAL', 'value' => '${APP_NAME}', 'example' => '${APP_NAME}', 'removed' => false, 'literal_references' => [0]],
+        ['key' => 'VITE_APP_NAME', 'value' => '${APP_NAME}', 'example' => '${APP_NAME}', 'removed' => false, 'reference' => 'APP_NAME'],
+        ['key' => 'VITE_LITERAL', 'value' => '${APP_NAME}', 'example' => '${APP_NAME}', 'removed' => false],
         ['key' => 'SECRET_LITERAL', 'value' => '${DB_PASSWORD}', 'example' => '${DB_PASSWORD}', 'removed' => false],
     ]);
     expect($default->fresh()->getAttributes())->toBe($instanceBefore);
     expect(app(InstanceEnvironmentStore::class)->values($default))->toBe($environmentBefore);
 });
+
+it('leaves every old entry unchanged until source capture records live reference provenance', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    $head = str_repeat('8', 40);
+    $entries = [];
+    foreach (['APP_NAME' => 'Laravel', 'VITE_APP_NAME' => '${APP_NAME}', 'SINGLE' => '${APP_NAME}', 'ESCAPED' => '${APP_NAME}'] as $key => $value) {
+        $entries[] = ['key' => $key, 'value' => $value, 'example' => $value, 'removed' => false];
+    }
+    $default->project->environmentTemplate()->create(['source_path' => '.env.example', 'source_commit' => $head,
+        'source_blob' => 'same-blob', 'checked_head' => $head, 'entries' => $entries]);
+    $defaultBefore = $default->fresh()->getAttributes();
+    $environmentBefore = app(InstanceEnvironmentStore::class)->values($default);
+    $fileBefore = app(DevelopmentCreateEnvironment::class)->content($default);
+    $old = containerCreate($default->project, $node, 'old');
+    $oldInstance = Instance::query()->findOrFail($old->target_id);
+    $oldFile = app(DevelopmentCreateEnvironment::class)->content($oldInstance);
+    $expected = ['APP_DEBUG' => 'true', 'APP_ENV' => 'development', 'APP_KEY' => '', 'APP_NAME' => 'Laravel',
+        'ESCAPED' => '${APP_NAME}', 'SINGLE' => '${APP_NAME}', 'VITE_APP_NAME' => '${APP_NAME}'];
+    $mainBytes = '';
+    foreach ($expected as $key => $value) {
+        $mainBytes .= $key.'='.InstanceEnvironmentRenderer::quote($value)."\n";
+    }
+    expect($oldFile)->toBe($mainBytes);
+
+    // An existing source-capture event reads the same head/blob again, with source quoting available.
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, $head, 'same-blob', <<<'ENV'
+APP_NAME=Laravel
+VITE_APP_NAME="${APP_NAME}"
+SINGLE='${APP_NAME}'
+ESCAPED="\${APP_NAME}"
+ENV);
+    $fresh = containerCreate($default->project, $node, 'refreshed');
+    $contents = app(DevelopmentCreateEnvironment::class)->content(Instance::query()->findOrFail($fresh->target_id));
+
+    expect(Dotenv::parse($contents))->toMatchArray(['VITE_APP_NAME' => 'Laravel', 'SINGLE' => '${APP_NAME}', 'ESCAPED' => '${APP_NAME}']);
+    expect($default->fresh()->getAttributes())->toBe($defaultBefore);
+    expect(app(InstanceEnvironmentStore::class)->values($default))->toBe($environmentBefore);
+    expect(app(DevelopmentCreateEnvironment::class)->content($default))->toBe($fileBefore);
+    expect(app(DevelopmentCreateEnvironment::class)->content($oldInstance))->toBe($oldFile);
+});
+
+it('uses the source key writer for a captured whole-value name without rescanning data', function (string $name): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('7', 40), 'fixture',
+        'APP_NAME='.InstanceEnvironmentRenderer::quote($name)."\n".'VITE_APP_NAME="${APP_NAME}"');
+
+    $operation = containerCreate($default->project, $node, 'data-name');
+    $contents = app(DevelopmentCreateEnvironment::class)->content(Instance::query()->findOrFail($operation->target_id));
+
+    expect($contents)->toContain('APP_NAME='.InstanceEnvironmentRenderer::quote($name)."\n",
+        'VITE_APP_NAME='.InstanceEnvironmentRenderer::quote($name)."\n");
+    expect(Dotenv::parse($contents)['VITE_APP_NAME'])->toBe($name);
+})->with(['Acme Shop', 'Acme # Shop']);

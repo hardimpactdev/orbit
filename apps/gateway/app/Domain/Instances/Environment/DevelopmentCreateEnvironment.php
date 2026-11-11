@@ -27,12 +27,12 @@ final readonly class DevelopmentCreateEnvironment
      */
     public function admit(Instance $instance, Project $project, ?DatabaseConnection $database = null, ?Instance $source = null): array
     {
-        $template = $literalReferencePositions = [];
+        $template = $capturedReferences = [];
         foreach ($project->environmentTemplate()->first()->entries ?? [] as $entry) {
             if (! $entry['removed']) {
                 $template[$entry['key']] = $entry['value'];
-                if (isset($entry['literal_references'])) {
-                    $literalReferencePositions[$entry['key']] = $entry['literal_references'];
+                if (isset($entry['reference'])) {
+                    $capturedReferences[$entry['key']] = $entry['reference'];
                 }
             }
         }
@@ -56,7 +56,7 @@ final readonly class DevelopmentCreateEnvironment
         if ($project->is_laravel === true && ($values['APP_KEY'] ?? '') === '') {
             $values['APP_KEY'] = LaravelApplicationKey::generate();
         }
-        $values = $this->renderer->resolveTemplateReferences($values, array_intersect_assoc(array_diff_key($template, $stored), $values), $literalReferencePositions);
+        $values = $this->renderer->resolveTemplateReferences($values, array_intersect_assoc(array_diff_key($template, $stored), $values), $capturedReferences);
         $this->store->seedForCreate($instance, $values);
         $keys = array_keys($values);
         sort($keys, SORT_STRING);
