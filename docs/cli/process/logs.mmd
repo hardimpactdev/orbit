@@ -6,16 +6,17 @@ sequenceDiagram
   participant CLI as CLI / MCP
   participant GW as Gateway
   participant A as Node observer
+  participant N as Node SSH account
   participant R as Reverb
   CLI->>GW: process:logs <process>
   alt bounded snapshot
     Note over GW: Read bounded log
     GW-->>CLI: Snapshot and request ID
   else Instance container
-    GW->>A: Read in the container<br/>operation-process-container
+    GW->>N: Read container journal<br/>one bounded SSH call
     %%> What it does:
-    %%> - the Node agent cannot read a container's journal, so the Gateway runs `operation-process-container` and waits for it
-    %%> - the journal lines go only to the vault; the Gateway reads them there and redacts them
+    %%> - the Gateway builds fixed argv from the resolved Instance and Process; only the bounded lines count comes from the caller
+    %%> - the existing Node SSH account reads the journal with host-equivalent output bounds; the Gateway redacts it and records no Operation or workflow
     GW-->>CLI: Snapshot and request ID
   else --follow (CLI or web viewer)
     CLI->>GW: Open viewer lease

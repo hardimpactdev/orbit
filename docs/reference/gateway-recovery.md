@@ -175,7 +175,7 @@ A kind needs this guard when its execution input is built or its execution code 
 | `instance.clone` | Builds the clone's environment, Process and Schedule input at submission. |
 | `instance.destroy` | Reads teardown programs and builds removal input after admission. |
 | `conn.*` | Preserves the existing guard for checkout and session setup across a switch. |
-| `process.*` | Preserves the existing guard for Process unit, definition and control work, including `process.inspect`. |
+| `process.*` | Preserves the existing guard for Process unit, definition and control work, excluding read-only journal and state requests. |
 
 The three lifecycle kinds above are the current addition. Other qualifying kinds remain outside this guard pending a separate change:
 
@@ -204,7 +204,7 @@ The guard deliberately excludes `proof.*` (long runs pinned to an admitted commi
 
 `gateway.release` cannot wait for itself; release admission already serializes releases. Terminal Operations never hold the guard. `instance:rename` starts no Operation; it records the branch already reported by the Node agent.
 
-`process.inspect` remains covered by the existing `process.*` rule. It captures read-only input at admission and changes only the observation record: an in-flight read leaves the last completed observation visible, and an interrupted read reports `unknown` with a reason. Excluding these recurring reads can be considered separately; this guard change preserves their current treatment.
+Container Process journal and state reads create no Operation, so they do not hold this guard. Process actions still match `process.*`.
 
 Observed successful container migrates took 182–215 seconds, container clones (`instance.create`) 20–40 seconds, and container destroys 23–75 seconds. These are observations, not guarantees; the separate `instance.clone` kind has no recorded timing here.
 
