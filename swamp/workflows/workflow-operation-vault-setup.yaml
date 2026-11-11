@@ -309,6 +309,7 @@ jobs:
       condition:
         type: succeeded
   - name: Select the collection
+    writes: true
     labels:
       role: swamp
     task:

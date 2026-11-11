@@ -41,6 +41,8 @@ Nothing to do. The release ([stage 5](../../../docs/reference/pipeline/5-automat
 
 ## Lessons
 
+When a deployment captures source metadata, test an older pinned commit after the branch advances. A branch-head fake alone cannot prove that the selected runtime and the checked-out commit agree. Check recorded lifecycle refusals before reading remote metadata. Read it before opening any admission write transaction, including an automatic caller’s outer transaction; recheck lifecycle, source settings and idempotency under ownership before recording the result.
+
 Task parents that can use a ready VM capture resume only for a parked VM. Keep `task_vm_id` separate from the optional resume intent, and let the next workflow step follow either a succeeded or skipped resume.
 
 For a command namespace change, audit model route bindings and operation fingerprints. A selector may span rows hidden by a global scope; public names must not change stored operation or retry identity.
@@ -55,6 +57,8 @@ For a shape-gate cancellation, identify the slow command from its completed outp
 A provider retirement needs its full resource inventory. An empty task VM sweep does not prove templates or storage are absent; verified templates can be deliberately excluded from sweep results. Close that inventory before removing the provider path.
 
 Receipt redaction tests must inspect the persisted response. A numeric mask can also occur legitimately in an identity, digest or timestamp; searching the whole receipt creates clock-dependent false failures.
+
+When updating CLI fixtures from resource replies to Operations, preserve product result assertions as well as the transport envelope. Use the complete terminal result from its writer and an independently specified exact expectation. Check human warnings against the current command chart; a generic Operation success line does not prove them.
 
 Run a combined Unit and Feature test collection when adding global test constants or helpers. Separate focused runs do not catch duplicate names across files.
 
@@ -80,3 +84,13 @@ Released proof workflows run the runner from each PR head. Check its help for su
 A PTY key driver must acknowledge consumed input, not rendered output. With color off, moving a selector highlight can produce no new bytes. Wait for the complete key to enter the stopped reader’s terminal queue, then for consumption before sending the next key. Start on a marker unique to the prompt, not a progress label.
 
 After adding an API input, regenerate OpenAPI and the MCP manifest and exercise the generated tool through admission. Ignored generated outputs are release artifacts; source support alone does not prove the deployed tool exposes the input.
+
+A migrated Instance has no clone source. Test lifecycle consumers against migrated non-defaults too; identify the default by its name, and retire migration execution copies during destroy.
+
+Large SQLite fixtures need bounded insert batches. A single insert can exceed the build's bound-parameter limit; formatting its huge QueryException may consume the test deadline and hide the actual error. Keep the production row count and indexes, then measure compilation, preparation and execution before changing a timeout.
+
+Inspect the whole previous-exception chain when a timed test reports a migration error. Laravel can wrap PHPUnit's timer exception in a QueryException, and an action can wrap it again. Account for work before lazy database initialization; use fixed test inputs for RSA prime search while preserving the real signing and database paths.
+
+A Process preset moved into a container needs the shared container ingress and Route projection as well as its unit. Keep its assigned port in the shared intent so deployment rebuilds preserve access, and use container controls after cutover instead of the Node preset preparation.
+
+Gateway releases admit refresh jobs only after verification and the new Horizon start. A command from a new release can serialize a job class that old workers cannot load. Keep the pre-load Operation guard separate from the Horizon drain: Swamp runs can outlive the queue job that started them.

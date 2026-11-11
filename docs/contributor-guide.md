@@ -110,9 +110,9 @@ Run the tests that cover your change with stock Pest: `vendor/bin/pest --compact
 
 Follow the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges) for PR checks.
 
-CI runs builds and static checks on pull requests, main pushes, task handoff pushes and manual dispatches. It runs no test suites or nightly test jobs. Every test file remains in the repository.
+CI runs builds and static checks on pull requests, main pushes, task handoff pushes and manual dispatches. It also runs the full Gateway and CLI Pest suites when their inputs change; [CI](/reference/implementation-loop#ci) owns its setup and selection rules. Other PHP suites remain local checks.
 
-The [CI reference](/reference/implementation-loop#ci) lists the rules. Orbit's task gate, `bin/review-check`, runs no tests. CI runs builds and static checks on the handoff commit. The [feature delivery reference](/reference/implementation-loop#the-candidate-gate) lists the gate's steps.
+The [CI reference](/reference/implementation-loop#ci) lists the rules. Orbit's task gate, `bin/review-check`, runs no tests. CI runs selected builds, static checks and Gateway and CLI Pest suites on the handoff commit. The [feature delivery reference](/reference/implementation-loop#the-candidate-gate) lists the gate's steps.
 
 The `test` script in each PHP project, and root `bin/test`, pass `--colors=never` to Pest. `bin/pest-plain` strips any ANSI control sequences that remain. The output has no ANSI escape codes and still ends with the `Tests:` summary. The scripts do not pass `--no-progress`, because parallel Pest then omits that summary. Keep the flag on the scripts.
 
@@ -132,7 +132,7 @@ Keep real subprocess coverage for remote programs that manage Git state or proce
 
 Keep a real-clock case where enforcing the timeout is the behavior under test. Start a readiness-timeout fixture with its normal startup budget, then set its short deadline after `Process::start()` returns; process launch must not expire before the readiness helper runs. Scheduler tests advance the framework clock instead of sleeping.
 
-In an Orbit task, the implementer runs only the tests that cover the change in each changed Composer project. The Gateway runs the Project check at handoff, and CI runs builds and static checks on the handoff commit. Outside an Orbit task, run these commands in each changed project, such as `apps/cli`:
+In an Orbit task, the implementer runs only the tests that cover the change in each changed Composer project. The Gateway runs the Project check at handoff, and CI runs selected builds, static checks and Gateway and CLI Pest suites on the handoff commit. Outside an Orbit task, run these commands in each changed project, such as `apps/cli`:
 
 ```bash
 composer test
@@ -145,7 +145,7 @@ Gateway tests run the shell programs that Orbit installs on Ubuntu Nodes. On mac
 
 Some tests run Node programs that use Linux kernel interfaces, such as `/proc/net/tcp` or `os.O_PATH`. On Linux, such as in CI, these tests run directly. On another system, such as macOS, they run on the Linux SSH host that `ORBIT_LINUX_TEST_HOST` names, such as an Ubuntu machine like the Nodes. The host needs the tools used by the delegated case and must accept `ssh` without a prompt.
 
-Ordinary cases need no sudo. Only deliberately selected `privileged` cases need a disposable host with sudo and the `caddy` account; the default test selection excludes them. See [Gateway tests and privilege](/reference/implementation-loop#gateway-tests-and-privilege). When `ORBIT_LINUX_TEST_HOST` is not set, these tests are skipped, and the skip message names the variable. CI runs no test suites; record local verification separately.
+Ordinary cases need no sudo. Only deliberately selected `privileged` cases need a disposable host with sudo and the `caddy` account; the default test selection excludes them. See [Gateway tests and privilege](/reference/implementation-loop#gateway-tests-and-privilege). When `ORBIT_LINUX_TEST_HOST` is not set, these tests are skipped, and the skip message names the variable. CI runs the selected Gateway default suite and its two privileged kernel cases; record other local verification separately.
 
 Each test process copies `apps/gateway` to the host with rsync once and reuses the copy. The copy holds only the files that Git would track, as `git ls-files --cached --others --exclude-standard` lists them, and `vendor/`. So ignored files such as keys, logs, caches, and databases stay local, and no `.env` file except `.env.example` leaves your machine. The copy lives in a mode 700 directory under `/tmp/orbit-gateway-linux-tests-<uid>`. The process removes its copy when it ends, also on Ctrl-C or `SIGTERM`. The host stops a test that runs longer than five minutes, or `ORBIT_LINUX_TEST_TIMEOUT` seconds. A later run removes the copies that a killed process left, after six hours.
 
@@ -199,9 +199,9 @@ Recorded fixtures contain real generator output for the base, combined ADR addit
 
 Run the merge generators in sequence. Give each independent freshness gate its own Python case for each recorded fixture: OpenAPI, MCP tools, Docs lint, navigation, and web types. Each gate checks that all recorded artifacts remain unchanged. The quality check runs these cases sequentially, without a nested worker pool. Another case rejects generators that run on a different thread. The real merge and freshness cases remain separate.
 
-GitHub CI runs Composer validation, changed-PHP syntax checks, CLI and web builds, the Docs build and generated-contract freshness, as [CI](/reference/implementation-loop#ci) lists. It builds agent delivery only when the published agent's `apps/agent` tree differs; otherwise it reuses the verified published artifacts.
+GitHub CI runs Composer validation, changed-PHP syntax checks, selected Gateway Pest, CLI and web builds, the Docs build and generated-contract freshness, as [CI](/reference/implementation-loop#ci) lists. It builds agent delivery only when the published agent's `apps/agent` tree differs; otherwise it reuses the verified published artifacts.
 
-Required checks target five minutes for pull requests; the fast checks take about 2 minutes. Project checks are removed from CI for now; run tests for the changed behavior locally. Keep Orbit TypeScript coverage in fast unit tests; do not add native workflow suites. Nick decides which checks return. Keep the remaining fast gates.
+Required checks target five minutes for pull requests; the fast checks take about 2 minutes. Project checks are removed from CI for now; Gateway Pest is required when selected, and other changed behavior is tested locally. Keep Orbit TypeScript coverage in fast unit tests; do not add native workflow suites. Nick decides which checks return. Keep the remaining fast gates.
 
 The target: after the gate, Swamp merges the PR straight into `main` with a squash merge, using a Gateway-minted App token. The gate is Nick's approving review on the exact head in manual mode, or green CI plus a fresh self-review agent in automatic mode. There is no merge queue and no GitHub auto-merge. CI then runs on `main`; a red `main` is fixed forward and never released. The proof runs only on the PR head. Two PRs for the same command normally conflict, and the second rebases, which reruns CI and the proof.
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Processes;
 
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
+use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
@@ -35,6 +36,7 @@ final readonly class ProcessTargetResolver
 
     public function forAdmission(Instance $instance): ProcessTarget
     {
+        InstanceMigration::assertSettled($instance);
         $instance->loadMissing('node');
         $this->ensureActiveInstance($instance);
 
@@ -74,6 +76,7 @@ final readonly class ProcessTargetResolver
 
     public function forPreparation(Instance $instance): ProcessTarget
     {
+        InstanceMigration::assertSettled($instance);
         $instance->loadMissing('node');
         $this->ensureLinux($instance->node);
 
@@ -121,6 +124,7 @@ final readonly class ProcessTargetResolver
             return $this->nodeContext($owner);
         }
 
+        InstanceMigration::assertSettled($owner);
         $this->ensureLinux($owner->node);
 
         if ($owner->node->status !== LifecycleStatus::Active) {
@@ -194,6 +198,7 @@ final readonly class ProcessTargetResolver
                 checkoutPath: $directory,
                 instance: $instance,
                 environmentFile: "{$directory}/.env",
+                routeDomain: $this->developmentRouteDomain($instance),
                 container: ['instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name],
             );
         }

@@ -184,6 +184,7 @@ jobs:
       condition:
         type: succeeded
   - name: mint_github
+    writes: true
     labels:
       role: swamp
     task:

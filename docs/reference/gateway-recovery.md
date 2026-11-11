@@ -131,11 +131,13 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 | Snapshot the database | Writes `backups/pre-<id>-<time>-<hex>.sqlite` with `VACUUM INTO`. The newest three stay, and the one a pause names. |
 | Migrate | Runs `artisan migrate --force --isolated` from the new release and prints the end of its output with its exit code. |
 | Check the migration | Fails the run when the migration's exit code is not 0. The paused record's message ends with the migration's output. |
+| Wait for active Operations | Checks the Gateway DB every 5 seconds for up to 600 seconds. Refuses with `gateway.release_busy` and the blocking Operation IDs if queued, running or waiting `instance.create`, `instance.deploy*`, `conn.*` or `process.*` Operations remain. |
 | Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
-| Admit VM refreshes | Runs `task-vms:refresh-images --commit <sha>` from the new release: one base refresh per task VM host, beside the hand-over. Best effort. |
-| Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed. |
+| Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed: Drain Horizon → Switch the release → Verify the Gateway → Start Horizon → Admit VM refreshes. |
 
-The admission step runs for every release, also one that later fails or switches back, and the hand-over waits only for it to end, never for the refresh. A refresh to a commit that never went live is harmless.
+The busy guard runs immediately before Swamp load, while the old release and Horizon still serve. It reads current Operation state on each poll and proceeds as soon as none blocks. It does not stop new admissions. A refusal leaves the old release live and pauses automatic releases because migrations already ran. `force` skips only the ancestry check; it never skips this guard.
+
+The activate child admits VM refreshes only after verification succeeds and Start Horizon finishes (or is skipped because no Horizon unit is configured). It uses the new release’s artisan, so its queued `StartAdmittedSwampRun` jobs reach the new workers. A failed verification, switch back or failed Horizon start admits no refreshes. Admission is best effort (`allowFailure: true`): failure does not fail the release, and the release waits only for admission to end, never for refresh completion.
 
 The build adds the worktree of the fetched commit, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
 
@@ -153,7 +155,7 @@ The Gateway records the run's terminal result. The Gateway reads the snapshot pa
 
 A run that switched back is `switched_back`: it raises a `release_failed` alert, and the next green commit releases. Any other failure from Migrate on pauses automatic releases with reason `migration_failure` and names the snapshot, such as a failed switch-back. The record carries the failed step's own code when the step printed one, such as `gateway.release_downgrade`; otherwise it carries the step's code from the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd).
 
-A cancelled or interrupted run may have migrated, so it pauses with `gateway.release_run_failed`. The run budget is 3,000 seconds. A run that outlives it pauses with `gateway.release_run_timed_out`, even when Swamp later reports an end. Read the run before you resume.
+A cancelled or interrupted run may have migrated, so it pauses with `gateway.release_run_failed`. The run budget is 3,600 seconds, including the 600-second busy guard. A run that outlives it pauses with `gateway.release_run_timed_out`, even when Swamp later reports an end. Read the run before you resume.
 
 While the run is active, every release path refuses with `gateway.release_in_progress`: manual releases, automatic releases and rollbacks use the same admission path. Settling dead records skips the run's record. Admission holds the release lock until the run owns its record.
 
@@ -183,6 +185,8 @@ Grant rendering stays in the Gateway; no Node script renders or publishes grants
 When the two files differ, the `Check the Ansible collections` step fails. The load and the release go on, and the release record gets `phases.swamp` with `warning: swamp.collections_drift` and `fix: orbit node:role:add 209 swamp --converge`. The swamp role converge is the one path that installs collections.
 
 The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The release record names its Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
+
+The load is forward only unless the release is forced, as a rollback is: an unforced load of a commit that does not descend from the serve checkout fails with `gateway.release_downgrade` and leaves the checkout alone. Resume or start the release itself, never its load run: the release passes its `force` flag to the load, and a load run started before that flag existed cannot be resumed.
 
 Serve's reload re-reads each extension manifest's `additionalFiles` ([Lab #4282](https://swamp-club.com/lab/4282), fixed in Swamp `20261103.000636.0-sha.db3f6373`), so a newly shipped file reaches workers without a restart. The load never restarts serve or a worker.
 
@@ -339,7 +343,7 @@ It runs `config:cache` locally into a temporary file, sets mode `0600`, then ren
 
 The Gateway scheduler runs `gateway:release:auto` every five minutes through `GatewaySchedule::command`. PRs merge straight into main, so the merges of those five minutes go out in one release of the newest green commit. With the [Gateway queue](/reference/gateway-queue#scheduled-work) configured, each tick is a queued job. It looks for the newest green commit and admits a Swamp run. Automatic releases are disabled by default. Turn them on after the Gateway runs from the [release layout](#release-layout) and a first manual release succeeds.
 
-Every release also admits the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of each task VM host, from its step "Admit VM refreshes", as soon as Swamp has loaded the commit. The refresh runs while the release switches, and it never holds the release: the step is best effort. A refresh that is open on a host keeps running, and the newest commit waits behind it.
+Every release also admits the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of each task VM host, from its step "Admit VM refreshes", after verification succeeds and Start Horizon finishes. Refresh admission failure never fails the release; the release waits for admission only, while the refresh runs separately. A refresh that is open on a host keeps running, and the newest commit waits behind it.
 
 ```bash
 orbit gateway:auto-release:enable
@@ -551,7 +555,7 @@ The Gateway admits one `fleet.rollout` Operation for the [Nodes that need a visi
 - when it records a release `verified`
 - every day at 03:05 Europe/Amsterdam, when the [window](#rollout-set-and-order) of the other Nodes opens
 
-Both queue the same admission job. The daily schedule only queues it. The job waits a minute at a time while the commit has no CLI release yet, or while a rollout runs. CI publishes the CLI release minutes after the release goes live. A plan with no Node to visit admits nothing.
+Both queue the same admission job. The daily schedule only queues it. The job waits a minute at a time while a rollout runs. Nodes with [CLI intent](/reference/node-provisioning#orbit-cli) wait for its release; other Nodes can roll out independently. After admitting those Nodes, the job keeps its one-minute retry for waiting CI callers. CI publishes the CLI release minutes after the release goes live. A plan with no Node to visit admits nothing.
 
 An operator starts a pass with `orbit fleet:rollout` (`POST /api/v1/fleet/rollout`). Without Node IDs, the Gateway picks the Nodes. The Swamp `fleet-maintenance` schedule that admitted a pass each minute was deleted on 2026-11-06.
 
@@ -570,9 +574,8 @@ The rollout visits a Node when all of these hold:
 - the Gateway manages it over SSH: it has a WireGuard address and a pinned SSH host key;
 - it holds at least one active role other than `gateway`;
 - it is not the Gateway's own machine: it holds no `gateway` role and is not the serving host;
-- its `/usr/local/bin/orbit` is not a CLI that Orbit did not install.
 
-Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Releases leave its agent unchanged; its CLI is the release's own `apps/cli`. A [CLI convergence](/cli/fleet#how-it-works) names why it leaves a Node out: `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, or `roleless`.
+Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Releases leave its agent unchanged; its CLI is the release's own `apps/cli`. A [CLI convergence](/cli/fleet#how-it-works) names why it leaves a Node out: `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `cli_not_required`.
 
 A task sandbox is an `app-dev` Node that a [task VM](/reference/compute-drivers#task-vms) owns, on an Incus host. The rollout leaves out the Node of every task VM that is not `destroyed`, with the reason `sandbox`. The Gateway creates a task VM for one task group and destroys it when the group ends. Provisioning links its Node to the task VM before any convergence, so the Node never gets the Orbit CLI.
 
@@ -601,13 +604,13 @@ Admission resolves the desired state of the commit the Gateway serves: the CLI r
 
 A Gateway in the release layout rolls out only a commit whose release record is `verified`. A pass during a release, before the record exists, does nothing (`release_unverified`). When the configured layout cannot be read, or its link names no complete release, the pass rolls out nothing (`release_layout_unreadable`). An in-place Gateway, whose current path is a checkout, has no release records, and its running commit is the desired state. A Gateway version that is not a commit, such as `dev`, rolls out nothing.
 
-The Gateway can release before CI publishes that commit's CLI: admission verifies the commit's pinned agent delivery. The rollout waits until the CLI release exists (`waiting`).
+The Gateway can release before CI publishes that commit's CLI: admission verifies the commit's pinned agent delivery. Only Nodes with CLI intent wait until the CLI release exists. Other Nodes remain eligible for observer rollout.
 
-When the commit's release is still missing after 30 minutes, the desired state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit with the same CLI code. When the commit's own release appears later, a Node's recorded CLI version differs from the desired one, so the next pass visits it again.
+When the commit's release is still missing after 30 minutes, the desired state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit with the same CLI code. When the commit's own release appears later, the next pass revisits a Node that requires the CLI if its recorded version differs from the desired one.
 
 ### One Node
 
-Each Node runs the `fleet-release-node` child, and every step runs on Node 209 over SSH with the Node's stored host keys. Its `gate` step checks that every earlier Node succeeded, that the task is not cancelled, and that the Node's window is open. The `cli` step runs the native [`node-cli-install`](/reference/node-provisioning#orbit-cli) child. A newer release or a commit build stays in place.
+Each Node runs the `fleet-release-node` child, and every step runs on Node 209 over SSH with the Node's stored host keys. Its `gate` step checks that every earlier Node succeeded, that the task is not cancelled, and that the Node's window is open. For a Node with CLI intent, the `cli` step runs the native [`node-cli-install`](/reference/node-provisioning#orbit-cli) child. Other Nodes skip it and publish their observer without a CLI gate. A newer CLI release or a commit build stays in place.
 
 A rollout then publishes the observer with official resources. `@swamp/cfgmgmt/fetch` writes the pinned agent to `/usr/local/bin/orbit-agent` only when its SHA-256 differs. One SSH read prints the running service's binary digest. The agent restarts only when the file changed or the running digest differs from the pin. The same read then checks that the pinned digest runs on an active unit. A failed fetch records `agent.download_failed`, a failed restart `agent.restart_failed`, and a failed check `agent.observer_unhealthy`. The rollout never reads the agent secret or changes observer configuration.
 
@@ -635,7 +638,7 @@ The Gateway's plan reads the newest result of each Node in the terminal `fleet.r
 | --- | --- |
 | No result for this commit | It was not visited yet, or it joined the rollout set since |
 | `deferred`, `failed`, `cancelled` or `skipped` | Its last visit did not converge it |
-| `converged` or `unchanged`, but drifted | Its observer reports another version, or its recorded CLI version differs from the desired release |
+| `converged` or `unchanged`, but drifted | Its observer reports another version, or its required CLI is missing or differs from the desired release |
 
 A Node waits at least 5 minutes after its last visit ended. While a failed or cancelled Node waits, the plan names no Node after it. So a Node that was offline is converged by the first pass after it returns, inside its window.
 

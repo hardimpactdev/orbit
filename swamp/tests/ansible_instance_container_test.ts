@@ -328,7 +328,7 @@ Deno.test({
         ],
         clone: {
           source: "instance-7", snapshot: `seed-${seed}`, seed_commit: seed, source_mirror: `${f.folder}/mirror/7.git`,
-          t3: { port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 20,
+          t3: { title: "Tool", port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 20,
             url: "http://10.44.0.7:3800", label: "tool / feature", t3: "/opt/orbit-agent/current/agent/bin/t3",
             project_mark: "/home/agent/.config/orbit/t3-project" },
           model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" },
@@ -480,7 +480,7 @@ Deno.test({
       Object.assign(f.container, {
         name: "instance-8", address: "10.253.0.3", acl: "instance-8", mirror: `${f.folder}/mirror/8.git`, branch: "main", firewall: [],
         clone: { source: "instance-7", snapshot: "seed-gone", seed_commit: seed, source_mirror: `${f.folder}/mirror/7.git`,
-          t3: { port: 3800, listen: "10.44.0.7", device: "t3", unit: "other.service", internal_port: 3773, ready_seconds: 1, t3: "/t3",
+          t3: { title: "Tool", port: 3800, listen: "10.44.0.7", device: "t3", unit: "other.service", internal_port: 3773, ready_seconds: 1, t3: "/t3",
             project_mark: "/home/agent/.config/orbit/t3-project" },
           model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" }, files: [], links: [] },
       });
@@ -675,7 +675,7 @@ Deno.test({
         instance_id: 8, name: "instance-8", address: "10.253.0.3", acl: "instance-8", mirror: `${f.folder}/mirror/8.git`, branch: "feature",
         firewall: [], processes: [own],
         clone: { source: "instance-7", snapshot: `seed-${seed}`, seed_commit: seed, source_mirror: `${f.folder}/mirror/7.git`,
-          t3: { port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 1, t3: "/t3",
+          t3: { title: "Tool", port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 1, t3: "/t3",
             project_mark: "/home/agent/.config/orbit/t3-project" },
           model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" }, files: [], links: [] },
       });
@@ -727,7 +727,7 @@ Deno.test({
         instance_id: 8, name: "instance-8", address: "10.253.0.3", acl: "instance-8", mirror: `${f.folder}/mirror/8.git`, branch: "feature",
         firewall: [], processes: [own],
         clone: { source: "instance-7", snapshot: `seed-${seed}`, seed_commit: seed, source_mirror: `${f.folder}/mirror/7.git`,
-          t3: { port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 1, t3: "/t3",
+          t3: { title: "Tool", port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 1, t3: "/t3",
             project_mark: "/home/agent/.config/orbit/t3-project" },
           model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" }, files: [], links: [] },
       });
@@ -886,7 +886,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "container PHP reads the shared 1G memory limit and start repairs it without rerun changes",
+  name: "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -896,24 +896,33 @@ Deno.test({
       Deno.writeTextFileSync(`${f.folder}/empty.ini`, "");
       const created = f.run("container");
       assert(created.ok, created.output);
-      const memoryLimit = () => {
+      const bridge = "/opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php";
+      const setting = (name: string) => {
         const result = new Deno.Command("php", {
-          args: ["-r", 'echo ini_get("memory_limit");'], clearEnv: true,
+          args: ["-r", `echo ini_get("${name}");`], clearEnv: true,
           env: { PATH: Deno.env.get("PATH")!, PHPRC: `${f.folder}/empty.ini`, PHP_INI_SCAN_DIR: `${rootfs}/etc/orbit/php/conf.d` },
         }).outputSync();
         assert(result.success, new TextDecoder().decode(result.stderr));
         return new TextDecoder().decode(result.stdout);
       };
-      assertEquals(memoryLimit(), "1G");
+      assertEquals(setting("memory_limit"), "1G");
+      assertEquals(setting("auto_prepend_file"), bridge);
       assertEquals(f.state().files["/etc/orbit/php/conf.d/99-orbit-runtime.ini"], { uid: "0", gid: "0", mode: "0644" });
 
+      // A running unit read the old settings at its start, so a repair restarts the running Orbit units; a rerun does not.
+      const tryRestarts = () =>
+        (f.state().systemctl ?? []).filter((call: string[]) => call[0] === "try-restart").map((call: string[]) => call.join(" "));
+      const before = tryRestarts().length;
       Deno.writeTextFileSync(settings, "memory_limit = 128M\n");
       const repaired = f.run("start");
       assert(repaired.ok, repaired.output);
-      assertEquals(memoryLimit(), "1G");
+      assertEquals(setting("memory_limit"), "1G");
+      assertEquals(setting("auto_prepend_file"), bridge);
+      assertEquals(tryRestarts().slice(before), ["try-restart orbit-*.service"]);
       const again = f.run("start");
       assert(again.ok, again.output);
       assertEquals(again.changed, 0, again.output);
+      assertEquals(tryRestarts().length, before + 1);
     } finally {
       f.cleanup();
     }

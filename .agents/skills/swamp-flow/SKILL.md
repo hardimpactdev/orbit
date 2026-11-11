@@ -72,6 +72,8 @@ Use the official workflow references to check guard, dependency and output seman
 
 ## Improve this skill
 
+For a missing-key CEL failure in a fixture, trace the admission and projection first. Keep explicit null keys and current phase names in the fixture when the live input already supplies them.
+
 Keep target identity outside optional lifecycle inputs. A ready task VM skips resume, but vault setup and terminal projection still need its VM id.
 
 After a landed behavior change, replace the affected rule in `docs/swamp/porting.md` the same hour. Keep Swamp mechanics in the official swamp skill, shared flow rules in flow-tighten and playbook rules in ansible-phase.
@@ -83,3 +85,5 @@ Development retry accounting combines failed deployment history and retained ter
 Keep development-only policy decoders, terminal classification and receipt handling out of production modules. Select the development implementation at its entry point and keep production projection behind one variant router. Pin shared production behavior with a baseline-generated guard over real receipt/history shapes and every intent form. An enable watermark is operator control, never a manual deployment boundary; retry resets require actual manual history. Exercise the real off/on API response after one, two and three failures, including pending and retained evidence.
 
 A per-SHA retry limit must outlive prunable deployment history. Keep the total and deduplication identities in Gateway rows keyed by Instance and SHA; read and publish only the head, pending intent and evidence being settled, and expose only the recorded head in Instance responses; history and receipts only contribute evidence. Never expire a stopped SHA by age when a branch can return to it. Persist the ledger before releasing a retained admission intent.
+
+Optional client publication must leave observer SSH intent and terminal checks intact. A partial fleet admission retains the publication retry for waiting clients; a Node that gains a client caller treats a previously absent client version as drift.

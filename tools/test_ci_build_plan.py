@@ -13,8 +13,8 @@ loader.exec_module(plan)
 class BuildPlanTest(unittest.TestCase):
     def test_gateway_grant_manifest_runs_the_required_gateway_boot_check(self):
         paths = ['swamp/config/gateway-workflow-grants.json']
-        self.assertEqual({'swamp', 'api-reference'}, self.selected(paths))
-        self.assertEqual({'swamp', 'api-reference', 'web'}, self.selected(paths, True))
+        self.assertEqual({'swamp', 'gateway-tests', 'api-reference'}, self.selected(paths))
+        self.assertEqual({'swamp', 'gateway-tests', 'api-reference', 'web'}, self.selected(paths, True))
 
     def selected(self, paths, main=False):
         return {k for k, v in plan.select(paths, main)['jobs'].items() if v}
@@ -24,7 +24,7 @@ class BuildPlanTest(unittest.TestCase):
             self.assertNotIn('project-check', plan.select(paths)['jobs'], paths)
 
     def test_gateway_code_keeps_contracts_php_and_web_but_skips_cli(self):
-        self.assertEqual({'php', 'gateway-static', 'api-reference', 'web'}, self.selected(['apps/gateway/app/Thing.php']))
+        self.assertEqual({'php', 'gateway-static', 'gateway-tests', 'api-reference', 'web'}, self.selected(['apps/gateway/app/Thing.php']))
 
     def test_every_gateway_path_selects_full_static_analysis(self):
         for path in ('apps/gateway/tests/Feature/ThingTest.php', 'apps/gateway/README.md',
@@ -33,8 +33,60 @@ class BuildPlanTest(unittest.TestCase):
                 with self.subTest(path=path, main=main):
                     self.assertIn('gateway-static', self.selected([path], main))
 
+    def test_gateway_pest_follows_every_gateway_and_cross_project_input(self):
+        for path in ('apps/gateway/.env.example', 'apps/gateway/phpunit.xml',
+                     'apps/gateway/tests/Feature/Http/NodeMetricsTest.php',
+                     'apps/cli/tests/Fixtures/Console/command-consent.php', 'apps/cli/app/Commands/Nodes/MetricsNodeCommand.php',
+                     'apps/cli/composer.lock', 'packages/php-sdk/fixtures/node.json', 'packages/php-sdk/composer.json',
+                     'swamp/workflows/workflow-operation-firewall-direct.yaml',
+                     'swamp/extensions/behaviors/operations/firewall/firewall.ts',
+                     'swamp/extensions/behaviors/_lib/operation.ts', 'swamp/deno.lock',
+                     'swamp/proof/firewall/allow.cases.yaml', 'swamp/proof/selection.txt',
+                     'swamp/config/gateway-workflow-grants.json', 'swamp/ansible/task-vm-host.yml',
+                     'tools/swamp-proof-guest/ansible-recaps.php', 'docs/cli/firewall/allow.mmd',
+                     'apps/gateway/app/Domain/Tasks/direct-operations.php',
+                     'apps/gateway/resources/machine-software/recipe.json',
+                     '.github/actions/php/action.yml', 'bin/bootstrap'):
+            for main in (False, True):
+                with self.subTest(path=path, main=main):
+                    self.assertTrue(plan.select([path], main)['jobs']['gateway-tests'])
+
+    def test_cli_pest_follows_sources_docs_recorded_fixtures_and_release_helpers(self):
+        for path in ('apps/cli/app/Commands/Instances/CreateInstanceCommand.php', 'apps/cli/composer.lock',
+                     'apps/cli/tests/Feature/CommandSurfaceTest.php', 'apps/cli/tests/Fixtures/Console/command-consent.php',
+                     'packages/php-sdk/src/Requests/Instances/CreateInstanceRequest.php',
+                     'packages/php-sdk/fixtures/instances/instance-create/default.json',
+                     'docs/cli/instance/create.mdx', 'docs/reference/cli-command-vocabulary.md',
+                     'apps/gateway/routes/api/instances.php', 'apps/agent/scripts/source-commit',
+                     'bin/orbit-build-cli-binary', 'bin/orbit-version', 'bin/orbit-cli-release-version',
+                     'bin/orbit-cli-release-assets', '.github/actions/php/action.yml'):
+            for main in (False, True):
+                with self.subTest(path=path, main=main):
+                    self.assertTrue(plan.select([path], main)['jobs']['cli-tests'])
+
+    def test_cli_pest_skips_unrelated_gateway_docs_web_and_swamp_inputs(self):
+        for path in ('apps/gateway/app/Thing.php', 'apps/gateway/tests/Feature/ThingTest.php',
+                     'docs/reference/tasks.md', 'docs/cli/instance/create.mmd', 'apps/docs/composer.lock',
+                     'apps/web/src/main.ts', 'swamp/workflows/workflow-example.yaml'):
+            with self.subTest(path=path):
+                self.assertFalse(plan.select([path])['jobs']['cli-tests'])
+
+    def test_root_codex_configuration_selects_cli_pest_before_the_guidance_shortcut(self):
+        for main in (False, True):
+            with self.subTest(main=main):
+                self.assertEqual({'docs', 'cli-tests'} | ({'web'} if main else set()),
+                                 self.selected(['.codex/config.toml'], main))
+        self.assertEqual({'docs'}, self.selected(['.codex/README.md']))
+
+    def test_gateway_pest_skips_unrelated_docs_web_and_swamp_tools(self):
+        for path in ('docs/reference/tasks.md', 'docs/cli/firewall/allow.mdx', 'apps/docs/composer.lock',
+                     'apps/web/src/main.ts', 'apps/web/bun.lock', 'swamp/docs/swamp-shape.md',
+                     'swamp/bin/check-swamp-base-policy.py', 'swamp/tests/shape_test.ts'):
+            with self.subTest(path=path):
+                self.assertFalse(plan.select([path])['jobs']['gateway-tests'])
+
     def test_sdk_changes_build_both_consumers(self):
-        self.assertEqual({'php', 'cli', 'cli-static', 'sdk-static', 'api-reference', 'web'}, self.selected(['packages/php-sdk/src/Request.php']))
+        self.assertEqual({'php', 'gateway-tests', 'cli', 'cli-static', 'cli-tests', 'sdk-static', 'api-reference', 'web'}, self.selected(['packages/php-sdk/src/Request.php']))
 
     def test_a_composer_manifest_or_lock_selects_the_static_analysis_of_its_project(self):
         # Dependabot bumped laravel/boost in apps/cli/composer.lock and nothing analysed the CLI against it.
@@ -59,8 +111,8 @@ class BuildPlanTest(unittest.TestCase):
         self.assertTrue({'cli-static', 'e2e-static', 'gateway-static'} <= self.selected(paths))
 
     def test_flow_charts_run_the_kind_coverage_and_step_name_checks(self):
-        self.assertEqual({'docs', 'api-reference'}, self.selected(['docs/cli/firewall/allow.mmd']))
-        self.assertEqual({'swamp', 'docs'}, self.selected(['swamp/workflows/workflow-operation-firewall-direct.yaml']))
+        self.assertEqual({'docs', 'gateway-tests', 'api-reference'}, self.selected(['docs/cli/firewall/allow.mmd']))
+        self.assertEqual({'swamp', 'gateway-tests', 'docs'}, self.selected(['swamp/workflows/workflow-operation-firewall-direct.yaml']))
 
     def test_docs_only_skips_code_builds(self):
         self.assertEqual({'docs'}, self.selected(['docs/reference/ci.md']))
@@ -80,9 +132,18 @@ class BuildPlanTest(unittest.TestCase):
                 self.assertEqual({'docs'}, self.selected([path]))
                 self.assertEqual({'docs', 'web'}, self.selected([path], True))
         self.assertEqual({'proof'}, self.selected(['tools/swamp-proof-guest/terminal.py']))
-        self.assertEqual({'api-reference', 'web'}, self.selected(['bin/build-api']))
-        self.assertEqual({'docs', 'api-reference', 'web'}, self.selected(['bin/docs-navigation']))
+        for path in ('bin/build-api', 'bin/docs-openapi', 'bin/mcp-tools'):
+            with self.subTest(path=path):
+                self.assertEqual({'gateway-tests', 'api-reference', 'web'}, self.selected([path]))
+        self.assertEqual({'docs', 'gateway-tests', 'api-reference', 'web'}, self.selected(['bin/docs-navigation']))
         self.assertEqual(set(), self.selected(['tools/test_ci_build_plan.py']))
+
+    def test_gateway_pest_selects_navigation_inputs_read_by_contract_generation(self):
+        for path in ('docs/site.json', 'docs/navigation/reference.json'):
+            for main in (False, True):
+                with self.subTest(path=path, main=main):
+                    self.assertEqual({'docs', 'gateway-tests'} | ({'web'} if main else set()),
+                                     self.selected([path], main))
 
     def test_unknown_source_roots_fail_closed_even_for_docs_under_new_apps(self):
         for path in ('apps/new/src/main.ts', 'packages/new/src/lib.rs', 'apps/new/README.md',
@@ -123,7 +184,7 @@ class BuildPlanTest(unittest.TestCase):
         self.assertEqual(set(plan.JOBS), self.selected(['bin/ci-build-plan']))
 
     def test_a_test_only_change_checks_syntax(self):
-        self.assertEqual({'php', 'gateway-static'}, self.selected(['apps/gateway/tests/Feature/ThingTest.php']))
+        self.assertEqual({'php', 'gateway-static', 'gateway-tests'}, self.selected(['apps/gateway/tests/Feature/ThingTest.php']))
 
     def test_pi_and_agent_sources_select_required_component_checks(self):
         for path in ('apps/pi-server/src/main.ts', 'apps/pi-server/tests/session.test.ts',
@@ -175,19 +236,19 @@ class BuildPlanTest(unittest.TestCase):
         self.assertFalse(plan.select(paths)['gateway_release'])
 
     def test_proof_harness_changes_select_the_proof_checks_and_nothing_else_selects_them(self):
-        self.assertEqual({'swamp', 'proof'}, self.selected(['swamp/proof/runner/steps.py']))
+        self.assertEqual({'swamp', 'gateway-tests', 'proof'}, self.selected(['swamp/proof/runner/steps.py']))
         self.assertIn('proof', self.selected(['tools/swamp-proof-guest/terminal.py']))
         for paths in (['swamp/workflows/x.yaml'], ['swamp/extensions/example.ts'], ['apps/gateway/app/Thing.php'], ['README.md']):
             self.assertNotIn('proof', self.selected(paths))
 
     def test_swamp_only_main_commit_is_a_gateway_release_because_the_release_loads_swamp(self):
         paths = ['swamp/workflows/example.yaml']
-        self.assertEqual({'swamp', 'docs', 'web'}, self.selected(paths, True))
+        self.assertEqual({'swamp', 'gateway-tests', 'docs', 'web'}, self.selected(paths, True))
         self.assertTrue(plan.select(paths, True)['gateway_release'])
 
     def test_mixed_change_keeps_gateway_artifacts_and_swamp_checks(self):
         paths = ['swamp/workflows/example.yaml', 'apps/gateway/app/Thing.php']
-        self.assertEqual({'swamp', 'docs', 'php', 'gateway-static', 'api-reference', 'web'}, self.selected(paths, main=True))
+        self.assertEqual({'swamp', 'docs', 'php', 'gateway-static', 'gateway-tests', 'api-reference', 'web'}, self.selected(paths, main=True))
         self.assertTrue(plan.select(paths, True)['gateway_release'])
 
     def test_shared_workflow_change_selects_swamp_checks(self):

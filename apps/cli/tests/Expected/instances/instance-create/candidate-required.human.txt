@@ -1,9 +1,1 @@
-Creating Instance...
-
-┌  Create Instance
-│
-├  ● Creating Instance
-│
-└  Operation failed.
-
 New production Instances require a candidate. Use instance:clone.

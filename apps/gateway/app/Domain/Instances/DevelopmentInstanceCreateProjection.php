@@ -100,7 +100,7 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
      * @param  array<string, mixed>  $result
      * @return array<string, mixed>
      */
-    private function server(array $t3, array $result): array
+    public function server(array $t3, array $result): array
     {
         $server = $result['t3'] ?? null;
         $session = is_array($server) ? ($server['gateway_session'] ?? null) : null;

@@ -44,10 +44,12 @@
     daemon_reload: "{{ agent_files is changed }}"
     state: "{{ 'restarted' if agent_binary_changed or agent_files is changed else 'started' }}"
 - name: Require a valid recorded CLI release
+  when: intent.cli != None
   ansible.builtin.assert:
     that: [intent.cli.plan_error == None]
     quiet: true
 - name: Reconcile the recorded CLI release
+  when: intent.cli != None
   block:
     - name: Install the pinned CLI
       ansible.builtin.import_tasks: node-converge-replace.yml
@@ -70,3 +72,7 @@
         content: "{{ intent.cli.profile }}"
         owner: root
         mode: "0600"
+- name: Retire the packaged CLI where it has no caller
+  when: intent.cli == None
+  ansible.builtin.import_tasks: node-converge-cli-absent.yml
+  vars: { cli_remove: true }

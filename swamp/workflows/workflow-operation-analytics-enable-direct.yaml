@@ -30,6 +30,7 @@ jobs:
   steps:
     # The Plausible site, goals and settings through its API; the credentials come from the vault.
   - name: 'Converge the site'
+    writes: true
     labels: {role: swamp}
     dependsOn: []
     task:

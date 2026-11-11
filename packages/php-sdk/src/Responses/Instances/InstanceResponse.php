@@ -25,6 +25,8 @@ use SensitiveParameter;
  *     name: string,
  *     source_layout: string,
  *     checkout_path: string,
+ *     retained_git_path?: string|null,
+ *     retained_git_at?: string|null,
  *     production_user: string|null,
  *     production_home: string|null,
  *     root: string|null,
@@ -60,6 +62,8 @@ use SensitiveParameter;
  *     name: string,
  *     source_layout: string,
  *     checkout_path: string,
+ *     retained_git_path?: string|null,
+ *     retained_git_at?: string|null,
  *     production_user: string|null,
  *     production_home: string|null,
  *     root: string|null,
@@ -126,6 +130,8 @@ final readonly class InstanceResponse
         public array $warnings = [],
         public ?string $deploymentBranch = null,
         public ?string $nameConvertedFrom = null,
+        public ?string $retainedGitPath = null,
+        public ?string $retainedGitAt = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -149,6 +155,8 @@ final readonly class InstanceResponse
             name: is_string($data['name'] ?? null) ? $data['name'] : '',
             sourceLayout: is_string($data['source_layout'] ?? null) ? $data['source_layout'] : '',
             checkoutPath: is_string($data['checkout_path'] ?? null) ? $data['checkout_path'] : '',
+            retainedGitPath: is_string($data['retained_git_path'] ?? null) ? $data['retained_git_path'] : null,
+            retainedGitAt: is_string($data['retained_git_at'] ?? null) ? $data['retained_git_at'] : null,
             productionUser: is_string($data['production_user'] ?? null) ? $data['production_user'] : null,
             productionHome: is_string($data['production_home'] ?? null) ? $data['production_home'] : null,
             root: is_string($data['root'] ?? null) ? $data['root'] : null,
@@ -187,6 +195,7 @@ final readonly class InstanceResponse
             'name' => $this->name,
             'source_layout' => $this->sourceLayout,
             'checkout_path' => $this->checkoutPath,
+            ...($this->retainedGitPath === null ? [] : ['retained_git_path' => $this->retainedGitPath, 'retained_git_at' => $this->retainedGitAt]),
             'production_user' => $this->productionUser,
             'production_home' => $this->productionHome,
             'root' => $this->root,

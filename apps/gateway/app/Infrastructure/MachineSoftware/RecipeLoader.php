@@ -328,7 +328,8 @@ final readonly class RecipeLoader
     /**
      * The two shared Instance folders. A part pins its own artifact, or names a recipe tool so that Node and its container share
      * one pin. `bin` maps each program the part gives the folder to a relative path inside the unpacked artifact; no program name
-     * repeats in a folder.
+     * repeats in a folder. A part that pins its own artifact may leave `bin` out: it gives the folder files that a container reads
+     * by path, and no program.
      *
      * @param  array<string, ToolPin>  $tools
      * @param  list<string>  $architectures
@@ -346,8 +347,9 @@ final readonly class RecipeLoader
                 $field = "instances.{$folder}.{$name}";
                 $this->require(preg_match('/^[a-z][a-z0-9-]*$/D', (string) $name) === 1, "{$field}: expected a lower-case part name.");
                 $part = $this->object($rawPart, $field);
-                $rawBin = get_object_vars($this->object($part->bin ?? null, "{$field}.bin"));
-                $this->require($rawBin !== [], "{$field}.bin: expected at least one program.");
+                $programless = ! isset($part->tool) && ! property_exists($part, 'bin');
+                $rawBin = $programless ? [] : get_object_vars($this->object($part->bin ?? null, "{$field}.bin"));
+                $this->require($programless || $rawBin !== [], "{$field}.bin: expected at least one program.");
                 $bin = [];
                 foreach ($rawBin as $program => $rawPath) {
                     $program = (string) $program;
@@ -372,7 +374,7 @@ final readonly class RecipeLoader
 
                     continue;
                 }
-                $this->object($part, $field, ['version', 'artifacts', 'bin']);
+                $this->object($part, $field, $programless ? ['version', 'artifacts'] : ['version', 'artifacts', 'bin']);
                 $version = $this->text($part->version, "{$field}.version");
                 $this->require(preg_match('/^[0-9][0-9A-Za-z.+:~_-]*$/D', $version) === 1, "{$field}.version: expected an exact version, not a channel or constraint.");
                 $artifacts = $this->object($part->artifacts, "{$field}.artifacts");

@@ -15,8 +15,8 @@ use App\Models\Project;
 use Carbon\CarbonImmutable;
 
 /**
- * Captures the Project facts a development create needs before its run: the PHP version and whether the
- * application is Laravel, from the application directory on the default branch. The same read records the Project's
+ * Captures the Project facts development create and container deploy admission need: the PHP version and whether the
+ * application is Laravel, from the application directory on a branch head or an exact commit. The same read records the Project's
  * environment template ({@see ProjectEnvironmentTemplateRefresh}), which then follows new heads.
  */
 final readonly class CaptureProjectSourceFactsAction
@@ -24,13 +24,13 @@ final readonly class CaptureProjectSourceFactsAction
     public function __construct(private ProjectSourceReader $reader, private ComposerSourceClassifier $composer) {}
 
     /** @return array{facts:array{php_version:?string, is_laravel:bool, source_profile_error:?string, source_facts_captured_at:CarbonImmutable}, head:string, template:array{mode:string, object:string, content:string}|null} */
-    public function read(string $repositoryUrl, ProjectSourceAccess $access, string $branch, ?string $root, ProjectType $type): array
+    public function read(string $repositoryUrl, ProjectSourceAccess $access, string $branch, ?string $root, ProjectType $type, ?string $commit = null): array
     {
         $application = ltrim(ApplicationDirectory::resolve('', $root), '/');
         $path = static fn (string $file): string => $application === '' ? $file : $application.'/'.$file;
         $entry = $type->frameworkEntryPoint();
         $composerPath = $type === ProjectType::Monorepo ? 'composer.json' : $path('composer.json');
-        $read = $this->reader->read($repositoryUrl, $access, $branch, [$path('.env.example'), $composerPath, $path($entry)]);
+        $read = $this->reader->read($repositoryUrl, $access, $branch, [$path('.env.example'), $composerPath, $path($entry)], ...($commit === null ? [] : [$commit]));
         $files = $read['files'];
         $composer = $files[$composerPath];
         $profile = $error = null;

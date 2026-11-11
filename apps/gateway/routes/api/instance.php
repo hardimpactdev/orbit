@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\InstanceDeploymentSourceController;
 use App\Http\Controllers\Api\InstanceDeployStepsController;
 use App\Http\Controllers\Api\InstanceLogsController;
 use App\Http\Controllers\Api\InstanceLogStreamsController;
+use App\Http\Controllers\Api\InstanceMigrationsController;
 use App\Http\Controllers\Api\InstanceQueueController;
 use App\Http\Controllers\Api\InstanceReleasesController;
 use App\Http\Controllers\Api\InstanceRollbacksController;
@@ -68,6 +69,9 @@ Route::middleware([
     Route::post('instances/{instance}/transfer', [InstanceTransfersController::class, 'store'])
         ->whereNumber('instance')
         ->name('instance:transfer');
+    Route::post('instances/{instance}/migrate', [InstanceMigrationsController::class, 'store'])
+        ->whereNumber('instance')
+        ->name('instance:migrate');
     Route::delete('instances/{instance}', [InstancesController::class, 'destroy'])
         ->whereNumber('instance')
         ->name('instance:destroy');

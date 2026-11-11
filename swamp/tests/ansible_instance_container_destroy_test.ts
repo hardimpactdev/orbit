@@ -1,15 +1,23 @@
-/** Exercise the production clone deletion phase against the existing Incus fixture. */
+/** Exercise production container deletion, including a migrated checkout with retained Git, against the Incus fixture. */
 import { assert, assertEquals } from "jsr:@std/assert@1";
 const available =
     new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
         .outputSync().success;
 Deno.test({
     name:
-        "clone cleanup removes its container, volume, default-project ACL, rules and mirror; a retry changes nothing",
+        "migrated container cleanup keeps retained Git while removing its container, volume, ACL, rules and mirror; a retry changes nothing",
     ignore: !available,
     fn() {
         const folder = Deno.makeTempDirSync();
         const root = new URL("../ansible/", import.meta.url);
+        const retained = `${folder}/old-checkout.orbit-retired-git/${
+            "a".repeat(64)
+        }`;
+        const git = (...args: string[]) => {
+            const done = new Deno.Command("git", { args }).outputSync();
+            assert(done.success, new TextDecoder().decode(done.stderr));
+            return new TextDecoder().decode(done.stdout).trim();
+        };
         try {
             for (
                 const dir of [
@@ -21,6 +29,22 @@ Deno.test({
                     "mirror.git",
                 ]
             ) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
+            Deno.mkdirSync(retained, { recursive: true });
+            git("init", "--quiet", "--initial-branch=main", retained);
+            git(
+                "-C",
+                retained,
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.test",
+                "commit",
+                "--quiet",
+                "--allow-empty",
+                "-m",
+                "retained commit",
+            );
+            const retainedCommit = git("-C", retained, "rev-parse", "HEAD");
             Deno.copyFileSync(
                 new URL("instance-container-destroy.yml", root),
                 `${folder}/instance-container-destroy.yml`,
@@ -133,8 +157,20 @@ Deno.test({
                 JSON.parse(Deno.readTextFileSync(`${folder}/run/remove.json`)),
                 { container_present: true, removed: true },
             );
+            assertEquals(
+                git("-C", retained, "rev-parse", "HEAD"),
+                retainedCommit,
+            );
+            assertEquals(
+                git("-C", retained, "cat-file", "-t", retainedCommit),
+                "commit",
+            );
             done = run();
             assert(done.ok, done.output);
+            assertEquals(
+                git("-C", retained, "rev-parse", "HEAD"),
+                retainedCommit,
+            );
             assert(/node\s*:.*changed=0/.test(done.output), done.output);
         } finally {
             Deno.removeSync(folder, { recursive: true });

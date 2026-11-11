@@ -18,6 +18,8 @@ use Orbit\Sdk\Requests\Clusters\SetClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\ShowClusterRequest;
 use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\UpdateClusterRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -137,16 +139,18 @@ it('attaches a Node and sets the Router through bodyless PUT requests', function
     string $requestClass,
     string $endpoint,
 ): void {
-    $mockClient = cluster_cli_mock($requestClass, cluster_cli_gateway_data());
+    $router = $requestClass === SetClusterRouterRequest::class;
+    $mockClient = $router ? cluster_cli_router_operation_mock($requestClass) : cluster_cli_mock($requestClass, cluster_cli_gateway_data());
 
     $this->artisan($command, ['cluster' => '3', 'node' => '2'])->assertExitCode(0);
 
-    $request = $mockClient->getLastRequest();
+    $request = $mockClient->getRecordedResponses()[0]->getPendingRequest()->getRequest();
 
     expect($request)
         ->toBeInstanceOf($requestClass)
         ->and($request?->resolveEndpoint())
-        ->toBe($endpoint);
+        ->toBe($endpoint)
+        ->and($mockClient->getRecordedResponses())->toHaveCount($router ? 2 : 1);
 })->with([
     'attach' => ['cluster:node:add', AddClusterNodeRequest::class, '/api/v1/clusters/3/nodes/2'],
     'Router set' => ['cluster:router:set', SetClusterRouterRequest::class, '/api/v1/clusters/3/router/2'],
@@ -157,16 +161,19 @@ it('detaches a Node and clears the Router with confirmed force payloads', functi
     string $requestClass,
     array $arguments,
 ): void {
-    $mockClient = cluster_cli_confirmed_mock($requestClass, cluster_cli_gateway_data());
+    $router = $requestClass === UnsetClusterRouterRequest::class;
+    $mockClient = $router ? cluster_cli_router_operation_mock($requestClass, confirmed: true) : cluster_cli_confirmed_mock($requestClass, cluster_cli_gateway_data());
 
     $this->artisan($command, [...$arguments, '--force' => true])->assertExitCode(0);
 
-    expect($mockClient->getLastRequest())
+    $request = $mockClient->getRecordedResponses()[1]->getPendingRequest()->getRequest();
+
+    expect($request)
         ->toBeInstanceOf($requestClass)
-        ->and($mockClient->getLastRequest()?->body()->all())
+        ->and($request->body()->all())
         ->toBe(['force' => true])
         ->and($mockClient->getRecordedResponses())
-        ->toHaveCount(2);
+        ->toHaveCount($router ? 3 : 2);
 })->with([
     'detach' => ['cluster:node:remove', RemoveClusterNodeRequest::class, ['cluster' => '3', 'node' => '2']],
     'Router clear' => ['cluster:router:unset', UnsetClusterRouterRequest::class, ['cluster' => '3']],
@@ -489,3 +496,33 @@ it('renders an explicit empty list and preserves the empty machine collection', 
         expect($output)->toContain('No Clusters found.', cluster_cli_request_id())->not->toContain('Operation failed.');
     }
 })->with([false, true]);
+
+/** @param class-string $requestClass */
+function cluster_cli_router_operation_mock(string $requestClass, bool $confirmed = false): MockClient
+{
+    $operation = ['id' => 42, 'kind' => $confirmed ? 'cluster.router_unset' : 'cluster.router_set',
+        'target_type' => 'cluster_router', 'target_id' => 3, 'input' => [], 'status' => 'succeeded', 'sequence' => 3,
+        'result' => ['ready' => true, 'selected' => true, 'cleanup_complete' => true]];
+
+    return MockClient::global([
+        ...($confirmed ? [ShowClusterRequest::class => MockResponse::make(['data' => cluster_cli_gateway_data(), 'meta' => ['request_id' => cluster_cli_request_id()]])] : []),
+        $requestClass => MockResponse::make(['data' => $operation, 'meta' => ['request_id' => cluster_cli_request_id()]], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $operation, 'meta' => ['request_id' => cluster_cli_request_id()]]),
+    ]);
+}
+
+it('preserves the complete Router result for humans and JSON', function (bool $unset, bool $json): void {
+    $mock = cluster_cli_router_operation_mock($unset ? UnsetClusterRouterRequest::class : SetClusterRouterRequest::class, confirmed: $unset);
+    $arguments = $unset ? ['cluster' => '3', '--force' => true] : ['cluster' => '3', 'node' => '2'];
+
+    expect(Artisan::call($unset ? 'cluster:router:unset' : 'cluster:router:set', [...$arguments, '--json' => $json]))->toBe(0);
+    $output = Artisan::output();
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])
+            ->toBe(['ready' => true, 'selected' => true, 'cleanup_complete' => true]);
+    } else {
+        expect($output)->toContain('Cluster Router succeeded.', 'Operation: 42', cluster_cli_request_id());
+    }
+    $mock->assertSentCount(($unset ? 3 : 2) + ($json ? 1 : 0));
+})->with(['set' => false, 'unset' => true])->with(['human' => false, 'json' => true]);

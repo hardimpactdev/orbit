@@ -10,6 +10,7 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Instances\CloneInstanceRequest;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
+use Orbit\Sdk\Requests\Instances\MigrateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
@@ -54,5 +55,66 @@ it('follows lifecycle admission and emits only the final Operation in JSON', fun
     'clone' => ['instance:clone', CloneInstanceRequest::class, ['candidate' => 501, 'node' => 10, 'name' => 'prod', '--preview-name' => 'preview'],
         ['node_id' => 10, 'name' => 'prod', 'preview_name' => 'preview']],
     'transfer' => ['instance:transfer', TransferInstanceRequest::class, ['instance' => 501, 'node' => 10, '--force' => true], ['node_id' => 10]],
+    'migrate' => ['instance:migrate', MigrateInstanceRequest::class, ['instance' => 501, '--force' => true], []],
     'destroy' => ['instance:destroy', DestroyInstanceRequest::class, ['instance' => 501, '--yes' => true, '--force' => true], ['force' => true]],
 ]);
+
+it('names blockers in human and JSON migration failures', function (bool $json, string $code, string $message): void {
+    $final = ['id' => 901, 'kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => 501,
+        'status' => 'failed', 'sequence' => 8, 'error_code' => $code,
+        'result' => ['instance_id' => 501, 'moved' => false, 'error_message' => $message]];
+    MockClient::global([
+        MigrateInstanceRequest::class => MockResponse::make(['data' => $final], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final]),
+    ]);
+
+    $exit = Artisan::call('instance:migrate', ['instance' => 501, '--force' => true, '--json' => $json, '--no-interaction' => true]);
+    $output = trim(Artisan::output());
+
+    expect($exit)->toBe(1);
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result']['error_message'])->toBe($message);
+    } else {
+        expect(str_replace(["\n", "\r"], '', $output))->toContain('/fixture', $code);
+        expect(preg_replace('/\s+/', '', $output))->toContain(preg_replace('/\s+/', '', $message));
+    }
+})->with(['human' => false, 'json' => true])->with([
+    'worktrees and files' => ['instance.migrate_retirement_blocked', 'Cannot retire checkout "/fixture". Other worktrees: /detached. Changed files: index.php.'],
+    'unpushed commits' => ['instance.migrate_unpushed_commits', 'Cannot retire checkout "/fixture". Branch spare has 2 unpushed commits.'],
+    'stashes' => ['instance.migrate_stashes_present', 'Cannot retire checkout "/fixture". Stashes: 2.'],
+    'symlinks' => ['instance.migrate_symlink_unsupported', 'Cannot migrate checkout "/fixture". Unsupported symlinks: [{"path":"public/storage","target":"/missing/storage","reason":"broken"},{"path":"local-package","target":"/shared/package","reason":"outside checkout"}].'],
+]);
+
+it('renders every final clone warning once for humans and retains the JSON list', function (bool $json): void {
+    $warnings = ['REDIS_HOST: Review with env:update, then env:sync.', 'ASSET_URL: Review with env:update, then env:sync.'];
+    $queued = ['id' => 901, 'kind' => 'instance.clone', 'target_type' => 'instance', 'target_id' => 501,
+        'status' => 'queued', 'sequence' => 1, 'poll_after_seconds' => 0];
+    $result = ['instance_id' => 501, 'ready' => true, 'branch' => 'main', 'commit' => str_repeat('a', 40),
+        'php_version' => '8.5', 'laravel' => true, 'candidate_commit' => str_repeat('a', 40),
+        'environment_keys' => ['REDIS_HOST', 'ASSET_URL'], 'warnings' => $warnings];
+    $final = [...$queued, 'status' => 'succeeded', 'sequence' => 8, 'poll_after_seconds' => null, 'result' => $result];
+    $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+    $mock = MockClient::global([
+        CloneInstanceRequest::class => MockResponse::make(['data' => $queued, 'meta' => ['request_id' => $requestId]], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final, 'meta' => ['request_id' => $requestId]]),
+    ]);
+
+    expect(Artisan::call('instance:clone', ['candidate' => 501, 'node' => 10, 'name' => 'prod',
+        '--preview-name' => 'preview', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+    $output = Artisan::output();
+
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
+        expect($output)->not->toContain('Warning:');
+    } else {
+        expect($output)->toContain('Warning: '.$warnings[0]."\n".'Warning: '.$warnings[1]."\n".'Operation: 901');
+        foreach ($warnings as $warning) {
+            expect(substr_count($output, $warning))->toBe(1);
+        }
+        expect($output)->toContain('Request ID: '.$requestId);
+    }
+    $mock->assertSentCount(1, CloneInstanceRequest::class);
+    $mock->assertSentCount($json ? 2 : 1, ShowOperationRequest::class);
+})->with(['human' => false, 'json' => true]);

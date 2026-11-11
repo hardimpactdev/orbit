@@ -105,6 +105,18 @@ Explicit environment synchronization writes the checkout's `.env` files, so the 
 
 If the default has pending Route publication, the automatic policy admits a normal Route update before deployment. Successful creation or update of the authoritative Route clears that mark through Route completion. Native dev deployment does not change the Route. An unchanged tick with a completed projection does not take the [projection lock](/reference/routes#coordinate-publication), because a full converge rebuilds the Node's PHP-FPM pools, Caddy, and DNS and blocks every other Route operation while it runs.
 
+### Container source facts
+
+Before admitting a manual or automatic deployment of a development default in a container, Orbit refreshes the Project's source facts with the same capture used by `project:update`: PHP version, source classification and environment template. It reads the requested commit. Without `--commit`, it reads the default branch head once and pins the deployment to the returned SHA.
+
+Before the source read, Orbit checks that any [move into a container](/reference/development-containers#migrate-a-checkout-instance) has settled. The source read runs before the admission write transaction. Under admission ownership, Orbit rechecks idempotency, automatic-deploy eligibility and the source configuration before recording the facts, and checks the move again before admitting the deployment. A changed source configuration refuses with `deployment.source_changed` (409). The container intent, including its PHP paths and Process units, is rendered after the facts are recorded; a later branch change cannot substitute another commit. The fetch still checks that the pinned commit is on the branch's first-parent chain.
+
+A failed read refuses admission with `project.source_unavailable` (502), or the source-access error when credentials cannot be obtained. Invalid or unsupported PHP or framework metadata refuses with its classification code (422), such as `app-dev.php_version_unsupported`. A web-serving Project without PHP refuses with `project.source_defaults_incomplete` (422); a missing static PHP build refuses with `instance.host_unavailable` (409). These refusals start no deployment and leave the stored facts unchanged. Orbit never deploys using stale PHP or framework facts after a capture failure. Environment-template merging and invalid-file handling follow the [existing template rules](/domains/applications#how-the-template-changes).
+
+A successful admission updates the Project-wide facts and environment template at once. Failure or cancellation of that deployment does not restore them. New container intents and later rendering of existing container Process units use the current Project PHP version. Running units change only when an operation applies their new configuration.
+
+The seed changes only after a successful deployment and determines the files a clone copies, not its PHP selection: after a failed or cancelled deploy, a clone can copy the older seed while selecting the newer admitted PHP version. Checkout Instances and production deployments do not refresh Project source facts through deployment.
+
 ### Seeds
 
 A new development Instance on the same Node starts from the default: Orbit records the default's checkout as its `seed_path` and the default's `seed_commit`, and creates a linked worktree of the default's repository at that commit. [Setup steps](/reference/instance-setup#run-setup) receive the two values as `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` and copy dependency folders from the checkout. The checkout can change while they copy, because a deployment can run at the same time. A copied folder is a quick start, not a matching set: setup must still run its locked installs. A default's own setup gets no seed.
@@ -403,7 +415,7 @@ History is created lazily by [InstanceDeployProjection](https://github.com/hardi
 
 #### Production regression guard
 
-The production guard pins `orbit-main` at `63229342f25fc1acec6463c059c43f356d1622e2`. `ProductionDeployGuardTest.php` records real production admission, cancellation, expiry and projection through public receipt/history DTOs. The TypeScript harness crosses each end state and pinned, unpinned or absent history with all five intent forms. It also consumes the Gateway's real projected rows. Each cell compares complete receipts, history, state, decisions and production request paths at 0, 10 and 20 minutes, then against a newer head at 30 minutes. The committed golden keeps a SHA-256 of each complete snapshot and readable decisions; it also pins production policy source.
+The production guard pins `orbit-main` at `49fa93d3e34883910964cd5021915216c3e300ed`. `ProductionDeployGuardTest.php` records real production admission, cancellation, expiry and projection through public receipt/history DTOs. The TypeScript harness crosses each end state and pinned, unpinned or absent history with all five intent forms. It also consumes the Gateway's real projected rows. Each cell compares complete receipts, history, state, decisions and production request paths at 0, 10 and 20 minutes, then against a newer head at 30 minutes. The committed golden keeps a SHA-256 of each complete snapshot and readable decisions; it also pins production policy source.
 
 Regenerate both goldens only on a detached checkout of that baseline. Copy the candidate guard tests and harness there unchanged, with the existing goldens. Install the Gateway dependencies in that checkout, then run:
 
@@ -725,6 +737,8 @@ The run has six parts:
 The Vite+ part runs only when a step needs Vite+. A failed required command skips the later ones. For a best-effort command, the step prints only the command's exit status, so a nonzero status does not fail the deployment.
 
 The shared terminal subscriber reads Swamp's native run data and records the deployment once. The first failed step names the error code, as [Development defaults](#development-defaults) lists. Only a verified native success advances the Instance seed. Development has no result callback, private-material read, token-mint request or Gateway command executor.
+
+A checkout Instance with an unfinished [`instance:migrate`](/cli/instance/migrate) refuses deployment with `instance.lifecycle_busy`. A reserved container row keeps the checkout runtime until the move completes.
 
 A `default` Instance in a container deploys with the variant `container` in the same workflow. Ansible phases start the container, fetch the commit into the Node's mirror and push it in, check it out under the same refusals, take the seed snapshot and check the result. Each Project command runs in the container as `orbit`, from its vault copy. [The default Instance](/reference/development-containers#the-default-instance) has the details.
 

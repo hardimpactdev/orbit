@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Fleet;
 
+use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\FleetRolloutMembership;
@@ -21,7 +22,7 @@ final readonly class FleetRolloutPlanAction
      * The Nodes that need a visit, in rollout order: behind the desired state, and not visited in the last
      * {@see FleetReleaseLag::RetryAfterSeconds} seconds. A failed Node that waits holds back every later Node.
      *
-     * @return array{status:string,commit?:string,targets?:list<int>}
+     * @return array{status:string,commit?:string,targets?:list<int>,waiting_for_cli?:bool}
      */
     public function execute(): array
     {
@@ -39,16 +40,19 @@ final readonly class FleetRolloutPlanAction
         if ($refusal !== null) {
             return ['status' => $refusal];
         }
-        if (! $state->cli->isAvailable()) {
-            return ['status' => 'waiting'];
-        }
         $members = $this->membership->members();
         $visits = $this->lag->visits($state->commit, array_map(static fn ($node): int => $node->id, $members));
         $retry = now()->subSeconds(FleetReleaseLag::RetryAfterSeconds);
         $targets = [];
+        $waiting = false;
         foreach ($members as $node) {
             $visit = $visits[$node->id] ?? null;
             if ($this->lag->behind($node, $visit, $state) === null) {
+                continue;
+            }
+            if (CliConvergePlan::required($node) && ! $state->cli->isAvailable()) {
+                $waiting = true;
+
                 continue;
             }
             if ($visit === null || $visit['finished_at']->lte($retry)) {
@@ -59,7 +63,11 @@ final readonly class FleetRolloutPlanAction
             }
         }
 
-        return ['status' => 'ready', 'commit' => $state->commit, 'targets' => $targets];
+        if ($targets === [] && $waiting) {
+            return ['status' => 'waiting'];
+        }
+
+        return ['status' => 'ready', 'commit' => $state->commit, 'targets' => $targets, 'waiting_for_cli' => $waiting];
     }
 
     /**

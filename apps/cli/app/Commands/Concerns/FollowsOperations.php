@@ -8,6 +8,7 @@ use App\Commands\GatewayCommand;
 use App\Data\GatewayProfile;
 use App\Support\Console\Animation;
 use App\Support\Console\ConsoleInterrupted;
+use App\Support\Console\ConsoleWriter;
 use App\Support\Console\InterruptIntent;
 use App\Support\Console\ProgressOutcome;
 use App\Support\Console\ProgressState;
@@ -165,6 +166,15 @@ trait FollowsOperations
     private function writeOperationSummary(OperationResponse $operation): void
     {
         $this->writeOperationResult($operation);
+
+        $warnings = $operation->result['warnings'] ?? null;
+        if (is_array($warnings)) {
+            foreach ($warnings as $warning) {
+                if (is_string($warning)) {
+                    ConsoleWriter::write($this->output, $this->humanRenderer()->warning('Warning: '.$warning));
+                }
+            }
+        }
 
         if ($operation->failedStep !== null) {
             $this->writeHumanMessage('Failed step: '.$operation->failedStep);

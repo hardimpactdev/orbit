@@ -9,6 +9,7 @@ use App\Console\Commands\ConfigureGatewayReleaseCommand;
 use App\Console\Commands\ListGatewayReleasesCommand;
 use App\Console\Commands\ResumeGatewayReleaseCleanupCommand;
 use App\Console\Commands\ShowGatewayReleaseCommand;
+use App\Console\Commands\WaitForGatewayReleaseIdleCommand;
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\GatewayReleases\GatewayReleaseAgent;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
@@ -92,6 +93,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             ResumeGatewayReleaseCleanupCommand::class,
             ListGatewayReleasesCommand::class,
             ShowGatewayReleaseCommand::class,
+            WaitForGatewayReleaseIdleCommand::class,
         ]);
         // The tick only admits a run. Its bound covers admission's network reads, such as the 120-second agent
         // download; a release that switches restarts the scheduler. PRs merge straight into main, so the merges of

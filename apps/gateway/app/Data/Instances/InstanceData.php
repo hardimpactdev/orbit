@@ -57,6 +57,8 @@ final class InstanceData extends Data
         public array $sharedPaths = [],
         public ?InstanceAutoDeployData $autoDeploy = null,
         public ?int $developmentProjectionRouteId = null,
+        public ?string $retainedGitPath = null,
+        public ?string $retainedGitAt = null,
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -85,6 +87,8 @@ final class InstanceData extends Data
             name: $instance->name,
             sourceLayout: $instance->source_layout,
             checkoutPath: $instance->checkout_path,
+            retainedGitPath: $instance->retained_git_path,
+            retainedGitAt: $instance->retained_git_at?->toIso8601String(),
             productionUser: $instance->production_user,
             productionHome: $instance->production_home,
             root: $instance->root,
@@ -101,7 +105,7 @@ final class InstanceData extends Data
                 ->map(static fn (Route $candidate): RouteData => RouteData::fromModel($candidate))
                 ->all()),
             domain: $route?->domain,
-            url: $route instanceof Route ? "https://{$route->domain}" : null,
+            url: $instance->url(),
             removal: $removal instanceof InstanceRemoval
                 ? InstanceRemovalData::fromModel($removal)
                 : null,

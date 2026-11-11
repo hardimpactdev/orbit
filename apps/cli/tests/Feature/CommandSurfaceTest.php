@@ -129,6 +129,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:destroy',
         'instance:list',
         'instance:logs',
+        'instance:migrate',
         'instance:register',
         'instance:release:list',
         'instance:rename',
@@ -661,7 +662,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'dns:resolve' => [['tld', 'target'], ['reset' => false, 'json' => false]],
         'doctor' => [[], ['node' => null, 'family' => [], 'json' => false]],
         'env:import' => [[], ['instance' => null, 'replace' => false, 'json' => false]],
-        'env:sync' => [[], ['instance' => null, 'json' => false]],
+        'env:sync' => [[], ['instance' => null, 'force' => false, 'json' => false]],
         'env:update' => [[], ['instance' => null, 'key' => null, 'value' => null, 'json' => false]],
         'extension:disable' => [['extension'], ['json' => false]],
         'extension:enable' => [['extension'], ['json' => false]],
@@ -750,6 +751,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:destroy' => [['instance'], ['yes' => false, 'force' => false, 'idempotency-key' => null, 'json' => false]],
         'instance:list' => [[], ['json' => false]],
         'instance:logs' => [['instance'], ['lines' => '100', 'follow' => false, 'json' => false]],
+        'instance:migrate' => [['instance'], ['force' => false, 'idempotency-key' => null, 'json' => false]],
         'instance:register' => [
             [],
             [
@@ -765,7 +767,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'instance:rename' => [['instance'], ['branch' => null, 'domain' => null, 'idempotency-key' => null, 'json' => false]],
+        'instance:rename' => [['instance'], ['branch' => null, 'domain' => null, 'json' => false]],
         'instance:setup' => [['instance'], ['idempotency-key' => null, 'json' => false]],
         'instance:setup-step:create' => [
             ['name'],
@@ -858,11 +860,11 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'node:converge' => [['node'], ['force' => false, 'idempotency-key' => null, 'json' => false]],
+        'node:converge' => [['node'], ['base' => false, 'roles' => null, 'idempotency-key' => null, 'json' => false]],
         'node:list' => [[], ['json' => false]],
         'node:metrics' => [['node'], ['json' => false]],
         'node:remove' => [['node'], ['force' => false, 'offline' => false, 'idempotency-key' => null, 'json' => false]],
-        'node:update' => [['node'], ['name' => null, 'platform' => null, 'apps-path' => null, 'task-vms' => null, 'idempotency-key' => null, 'json' => false]],
+        'node:update' => [['node'], ['name' => null, 'platform' => null, 'lan-ip' => null, 'apps-path' => null, 'task-vms' => null, 'idempotency-key' => null, 'json' => false]],
         'node:wireguard-key' => [['node', 'public-key'], ['json' => false]],
         'operation:cancel' => [['operation'], ['json' => false]],
         'operation:list' => [[], ['status' => null, 'kind' => null, 'instance' => null, 'limit' => null, 'cursor' => null, 'json' => false]],
@@ -982,11 +984,11 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'self-update' => [[], ['allow-downgrade' => false, 'allow-downgrade-to' => null, 'json' => false]],
         'tool:adopt' => [
             ['package'],
-            ['node' => null, 'manager' => null, 'constraint' => null, 'yes' => false, 'idempotency-key' => null, 'json' => false],
+            ['node' => null, 'manager' => null, 'constraint' => null, 'repository' => null, 'yes' => false, 'json' => false],
         ],
         'tool:install' => [
             ['package'],
-            ['node' => null, 'manager' => null, 'constraint' => null, 'idempotency-key' => null, 'json' => false],
+            ['node' => null, 'manager' => null, 'constraint' => null, 'repository' => null, 'idempotency-key' => null, 'json' => false],
         ],
         'tool:list' => [[], ['node' => null, 'json' => false]],
         'tool:manager:list' => [[], ['node' => null, 'json' => false]],
@@ -1003,12 +1005,12 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'json' => false,
         ]],
         'task:comment:create' => [['task'], ['type' => null, 'body' => null, 'author' => null, 'agent-thread' => null, 'json' => false]],
-        'task:comment:list' => [['task'], ['type' => null, 'limit' => null, 'json' => false]],
+        'task:comment:list' => [['task'], ['json' => false]],
         'task:status' => [[], ['json' => false]],
         'tool:remove' => [['tool'], ['yes' => false, 'idempotency-key' => null, 'json' => false]],
         'tool:scan' => [[], ['node' => null, 'json' => false]],
         'tool:show' => [['tool'], ['json' => false]],
-        'tool:update' => [['tool'], ['idempotency-key' => null, 'json' => false]],
+        'tool:update' => [['tool'], ['repository' => null, 'idempotency-key' => null, 'json' => false]],
         'websocket:app:create' => [['name'], ['operation-key' => null, 'json' => false]],
         'websocket:app:destroy' => [['name'], ['force' => false, 'operation-key' => null, 'json' => false]],
         'websocket:app:list' => [[], ['json' => false]],
@@ -1055,7 +1057,20 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'dns:resolve' => ['target'],
             'node:add' => ['host'],
             'node:wireguard-key' => ['node', 'public-key'],
-            'node:update' => ['node'],
+            'node:update', 'node:converge', 'node:metrics', 'node:show', 'node:role:list' => ['node'],
+            'node:role:add' => ['node', 'role'],
+            'firewall:allow' => ['port'],
+            'proof' => ['orbit-command'],
+            'proof:run' => ['commit'],
+            'project:document:list' => ['project'],
+            'project:document:search' => ['project', 'query'],
+            'project:document:create' => ['project', 'name'],
+            'project:document:versions', 'project:document:upload', 'project:document:archive',
+            'project:document:update', 'project:document:read', 'project:document:restore-version',
+            'project:document:remove', 'project:document:write', 'project:document:show',
+            'project:document:restore', 'project:document:download' => ['project', 'entry'],
+            'task:agent:show' => ['task', 'session'],
+            'task:start', 'task:check', 'task:publish', 'task:turn' => ['task'],
             'profile' => ['url'],
             'tool:install' => ['package'],
             'metrics:enable' => ['node'],
@@ -1076,13 +1091,13 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 strict: true,
             ))
             ->every(static fn ($argument): bool => $argument->isRequired()))
-            ->toBeTrue();
+            ->toBeTrue($name);
         expect(
             collect($definition->getArguments())
                 ->only($optionalArguments)
                 ->every(static fn ($argument): bool => ! $argument->isRequired()),
         )
-            ->toBeTrue();
+            ->toBeTrue($name);
         expect($actualOptions)->toBe($options);
     }
 });
@@ -1262,6 +1277,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:destroy' => [['instance' => '1'], ...$profileMissing],
         'instance:list' => [[], ...$profileMissing],
         'instance:logs' => [['instance' => '1'], ...$profileMissing],
+        'instance:migrate' => [['instance' => '1', '--force' => true], ...$profileMissing],
         'instance:register' => [
             ['--project' => '1', '--no-interaction' => true, '--path' => '/tmp/orbit-command-surface-not-git'],
             'code' => 'instance.source_invalid',
@@ -1504,7 +1520,7 @@ function cli_reference_pages(): array
 
     foreach (glob(base_path('../../docs/cli/*/*.mdx')) ?: [] as $path) {
         $contents = (string) file_get_contents($path);
-        if (preg_match('/\A---\ntitle: "orbit (\S+)"\n/', $contents, $title) === 1) {
+        if (preg_match('/\A---\ntitle: "orbit (\S+)(?: --[^"\n]+)?"\n/', $contents, $title) === 1) {
             $pages[$title[1]] = $contents;
         }
     }

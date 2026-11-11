@@ -90,9 +90,9 @@ function refused(
         ok: deferred,
     };
 }
-/** A rollout Node whose CLI succeeded also publishes the observer; every other Node ends at its record. */
+/** A rollout publishes after its required CLI, or directly when the Node has no CLI caller. */
 const observes = (record: z.infer<typeof NodeResult>) =>
-    record.ok && record.step === "cli";
+    record.ok && ["cli", "agent"].includes(record.step);
 /**
  * The observer outcome from its native steps. The check prints the running binary's SHA-256 and
  * `active`; only the pinned digest on an active unit counts as published.
@@ -287,7 +287,8 @@ export function fleetRelease(
                                 "operation.cancelled",
                                 "admission",
                             );
-                        } else if (node.skip_reason !== null) {
+                        } else if (node.skip_reason !== null &&
+                            !(args.kind === "fleet.rollout" && node.skip_reason === "cli_not_required")) {
                             result = { ...result, outcome: "skipped" };
                         } else if (node.plan_error !== null) {
                             result = refused(
@@ -308,8 +309,11 @@ export function fleetRelease(
                             "Installing Node has no admitted SSH target",
                         );
                     }
+                    if (result.outcome === "unchanged" && node.skip_reason === "cli_not_required") {
+                        result = { ...result, step: "agent" };
+                    }
                     const gate = Gate.parse({
-                        install: result.outcome === "unchanged" && result.ok,
+                        install: result.outcome === "unchanged" && result.ok && node.skip_reason !== "cli_not_required",
                         result,
                         ssh: node.ssh,
                         cli: {
@@ -405,7 +409,7 @@ export function fleetRelease(
                         result.node_id !== raw.target_node_id
                     ) {
                         throw new Error(
-                            "Only a rollout Node whose CLI succeeded publishes the observer",
+                            "Only a rollout Node ready for observer publication may proceed",
                         );
                     }
                     const safe = NodeResult.parse(observed(result, raw));

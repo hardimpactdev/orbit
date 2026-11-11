@@ -19,6 +19,7 @@ orbit node:update <node> [--name=NAME] [--platform=PLATFORM] [--lan-ip=IP] [--ap
 | `--lan-ip=IP` | unchanged | The Node's LAN IPv4 address. An empty value, `--lan-ip=`, clears it. |
 | `--apps-path=PATH` | unchanged | The [apps folder](/reference/node-settings#set-the-apps-root). An empty value, `--apps-path=`, unsets it. |
 | `--task-vms=JSON` | unchanged | The [task VM host settings](/reference/node-settings#configure-a-task-vm-host) as a JSON object. `--task-vms=null` removes them. |
+| `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print only the Node, or the final Operation of an apps folder run. |
 
 ```bash

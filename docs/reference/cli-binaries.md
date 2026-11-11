@@ -20,9 +20,9 @@ The standalone `orbit` binary runs the CLI on a machine without PHP or Composer.
 
 Every `main` commit whose `Required checks` passed gets a GitHub release on [hardimpactdev/orbit](https://github.com/hardimpactdev/orbit/releases). The release holds the CLI binaries. When the agent source changed since the previous release, the release also holds the [`orbit-agent`](/reference/node-agent#releases).
 
-The `Orbit CLI Release` workflow, `.github/workflows/orbit-cli-release.yml`, starts when a `CI` run on `main` succeeds, from a push or a manual dispatch. A pull-request run never starts it. It confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A commit whose CI fails or is cancelled gets no release.
+On a push to `main`, CI's `Start the CLI release` job dispatches `Orbit CLI Release`, `.github/workflows/orbit-cli-release.yml`, as soon as `Required checks` passes. This does not depend on `ORBIT_SLOW_CHECKS_BLOCKING`, and a test job that the change did not select, so CI skipped it, does not stop it. The release workflow confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A pull-request run never starts a release.
 
-While the repository variable `ORBIT_SLOW_CHECKS_BLOCKING` is `false`, CI's `Start the CLI release` job dispatches the workflow for the commit as soon as `Required checks` passes on `main`, so a slow non-blocking job does not hold the release back. The release appears a few minutes after `Required checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
+The release workflow also starts when a `CI` run on `main` succeeds, from a push or a manual dispatch. Runs for the same commit run in sequence. A later run checks the existing release and changes nothing when its commit and assets match. The release appears a few minutes after `Required checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
 
 Releases are public, need no login, and do not expire. A published release is never replaced.
 
@@ -91,7 +91,7 @@ The Gateway, a Node installer, and `orbit self-update` rely on these rules. They
 
 `bin/orbit-cli-release-version --tag C` prints the tag and refuses a shallow clone.
 
-A release appears after `CI` completes and the release workflow builds and publishes it. That is usually a few minutes after `Required checks` turns green. Until then every CLI URL above returns 404. Gateway deployment uses the frozen agent and proceeds independently of CLI publication. A client treats a 404 as "not published yet" and checks again later. It does not install a different version instead. Only the Gateway can name another release: when a commit's release stays missing for 30 minutes, its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit.
+A release appears once `Required checks` is green and the release workflow has built and published it, usually a few minutes later; other CI jobs may still run. Until then every CLI URL above returns 404. Gateway deployment uses the frozen agent and proceeds independently of CLI publication. A client treats a 404 as "not published yet" and checks again later. It does not install a different version instead. Only the Gateway can name another release: when a commit's release stays missing for 30 minutes, its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit.
 
 ### Find the release for a commit
 

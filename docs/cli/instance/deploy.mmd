@@ -23,6 +23,13 @@ sequenceDiagram
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   %%> - automatic deploys start the same deploy steps from a native schedule; see the `instance.auto_deploy` chart
+  opt Development default in a container
+    Note over GW: Capture source facts<br/>project:update capture
+    %%> What it does:
+    %%> - reads the requested commit, or the default branch head once; freezes that SHA for the run
+    %%> - checks the Instance migration before reading; reads outside the write transaction; admission rechecks migration, source configuration and idempotency
+    %%> - capture or classification failure refuses admission; see /reference/deployments#container-source-facts
+  end
   Note over GW: Validate, freeze intent<br/>Instance 42 locked · task #5150
   %%> Requirements:
   %%> - your Node has an access grant to Node 12

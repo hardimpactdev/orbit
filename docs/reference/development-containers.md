@@ -37,7 +37,7 @@ The container flows keep the kinds of today's Instance flows. Their charts sit o
 | Wake an Instance | [container/wake.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/wake.mmd) |
 | Register and renew the T3 server | [container/t3-register.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/t3-register.mmd) |
 | Start a thread in an Orbit Project | [container/thread.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/thread.mmd) |
-| Move a checkout Instance into a container | [container/migrate.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/migrate.mmd) |
+| Move a checkout Instance into a container | [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) |
 
 ## Nodes
 
@@ -104,7 +104,7 @@ Every development container has the same layout. The image and the create set it
 | T3 unit | `User=agent`, `UMask=0007`, `PATH` from the shared folders, `Requires=nftables.service`, `ConditionPathExists=/etc/orbit/instance`. The unit file is mode 0640 |
 | `PATH` | The runtime folder's `bin` first, for units, login shells and `incus exec` sessions, so `composer` is on it |
 | `php` | `/usr/local/bin/php` links to the Project's static `php` in the runtime folder. A Project without a PHP version has none. The create and each start set it |
-| Instance file | `/etc/orbit/instance`, owned by root and readable by all: the Instance, its Project and its URL. The default Instance has none, so T3 never starts there |
+| Instance file | `/etc/orbit/instance`, root-owned and readable by all: Instance, Project id, slug and quoted one-line name, Node and URL. Absent on the default, keeping T3 stopped |
 | Model route | `nftables` in the container lets only uid 2750 reach the forwarder, and only uid 0 and 2750 reach T3's port |
 | Processes | `/proc` with `hidepid=invisible`, so each user sees only its own processes |
 | Kernel surface | Unprivileged, no nesting, `user.max_user_namespaces=0`, an isolated ID map |
@@ -185,12 +185,15 @@ The software that the app and the agents run lives once per Node, in two version
 | --- | --- | --- |
 | `/opt/orbit-runtime/<version>/php/<php-version>/bin` | `frankenphp` and `php` of one PHP version, from its [static PHP build](/reference/compute-drivers#static-php-build) once that is published and pinned | Everyone |
 | `/opt/orbit-runtime/<version>/bin` | `composer`, Node, npm, npx, Bun, Deno, `vp`, rg | Everyone |
+| `/opt/orbit-runtime/<version>/php-data-bridge/bridge` | The files of [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge), which [container PHP loads](/reference/php-runtime#container-php). The part has no program | Everyone |
 | `/opt/orbit-runtime/vite-plus/<digest>` | The [Vite+ home](/reference/compute-drivers#the-vite-home) that `vp` runs from, linked as `<version>/vite-plus-home` | Everyone |
 | `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex` | `root:2750`, mode 0750 |
 | `/opt/orbit-agent/<version>/agent/{t3,claude-code,codex}` | The releases | `root:2750`, mode 0750 |
 | `/opt/orbit-agent/<version>/notes/<type>.md` | The [environment notes](#environment-notes) | Everyone |
 
-The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)): T3, Claude Code and Codex in the agent folder; Composer, Node, Bun, Deno, Vite+, rg and the static PHP builds in the runtime folder. Node, Bun, Deno and Vite+ reuse the recipe's own pins. A folder's version is the first 12 hex digits of a digest of everything in it, the notes included, so any change is a new version. Each program in `bin` links to its path in its part.
+The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)): T3, Claude Code and Codex in the agent folder; Composer, Node, Bun, Deno, Vite+, rg, PHP Data Bridge and the static PHP builds in the runtime folder. Node, Bun, Deno and Vite+ reuse the recipe's own pins.
+
+A folder's version is the first 12 hex digits of a digest of everything in it, the notes included, so any change is a new version. Each program in `bin` links to its path in its part.
 
 The idmapped mount keeps gid 2750 the same in every container, whatever its ID map. The spike proved this with one container; PR 3 proves it with two containers whose ID maps differ. `orbit` sees the folder `agent`, but not what is in it.
 
@@ -320,11 +323,13 @@ The default Instance is the clone source of its Project on the Node. Orbit build
 
 After that, the default Instance deploys every merge to the default branch, as a checkout default does today ([development deployment](/reference/deployments)). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
 
-There are no development setup steps. The default Instance has them done already, so a clone needs none. A clone publishes its Route, certificate and DNS beside container preparation. The Route checks the TLS handshake, so it does not wait for the application to start. Workspace access and environment files stay in the container preparation.
+There are no development setup steps. The default Instance has them done already, so a clone needs none. A clone prepares its container in five direct command phases: container, workspace and Processes, agent, T3, and sessions. Each native step reports its timestamps through the existing Operation progress.
+
+A separate job publishes the Route, certificate and DNS, so Route depth cannot delay the container job. The Route checks the TLS handshake, without waiting for the application to start. The create receipt records T3, session and Route readiness times. Workspace access and environment files stay in the container preparation.
 
 #### What is built
 
-The first default Instance and its deployments are built for the Nodes of the [build list](#the-build-list). A Project has one `default` Instance in the whole fleet, and every clone of it is made on its Node.
+The first default Instance and its deployments are built for the Nodes of the [build list](#the-build-list). A Project has one `default` Instance in the whole fleet, and every clone of it is made on its Node. Deployment admission refreshes the Project’s [source facts at the deployed commit](/reference/deployments#container-source-facts).
 
 | Part | What Orbit does |
 | --- | --- |
@@ -342,7 +347,7 @@ The first default Instance and its deployments are built for the Nodes of the [b
 
 #### Processes
 
-A container Instance's Processes come from the Project's development Process definitions. Each one is a Process record and an `orbit-process-<id>-<name>.service` unit in the container, as the [Process lifecycle](/reference/processes-and-schedules) renders it for a Node, with these differences:
+A container Instance's Processes come from the Project's development Process definitions, or from an existing checkout during [migration](#migrate-a-checkout-instance). Each one is a Process record and an `orbit-process-<id>-<name>.service` unit in the container, as the [Process lifecycle](/reference/processes-and-schedules) renders it for a Node, with these differences:
 
 | Part | In a container |
 | --- | --- |
@@ -350,7 +355,7 @@ A container Instance's Processes come from the Project's development Process def
 | Directory | The workspace's application directory, `/srv/workspace` or the Project root in it |
 | `PATH` | The Project's PHP build, then the runtime folder's `bin`, then the system folders. A definition's command is an absolute path, such as `/opt/orbit-runtime/current/php/8.5/bin/php` |
 | Environment | The workspace's `.env`, then the definition's own values in `/etc/orbit/processes/<id>/<sha256>.env`, root only, mode 0600. The values come only from the run's vault copy |
-| Runtime | systemd only. A Docker definition or a preset refuses with `process.target_unsupported` |
+| Runtime | systemd only. New definitions with Docker or a preset refuse with `process.target_unsupported`; migration also accepts the supported `vp-dev` preset |
 
 The create run installs and starts the units after the deploy steps. A unit whose desired state is stopped is installed, not started.
 
@@ -375,6 +380,8 @@ A web-serving Project without a PHP version refuses with `project.source_default
 `orbit instance:create PROJECT NODE NAME` clones the default Instance. It copies the default container with `incus copy`, a ZFS clone, and clones the default database through the database family. Then it starts the container, creates the Instance's branch from the default branch, and writes the `.env`, the agent settings, the note links and `/etc/orbit/instance`. Last, it starts T3 and the Processes, adds the T3 project at `/srv/workspace`, publishes the Route and registers the T3 server. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
 
 A clone starts at the commit of the default's newest seed snapshot, with its dependencies installed. It copies no development deploy commands to the execution vault and runs no deploy step. Its branch is the matching origin branch, fetched on the Node, or a new branch at the seed's commit.
+
+Clone readiness checks PHP only when the Project has a PHP runtime. A Project without PHP can register T3 and its sessions. The Operation keeps its stable error code and shows the failed phase, command and exit code in `error.detail`; command output stays private.
 
 It keeps the default's `APP_KEY`, because the cloned database holds data encrypted with it; the rest of `.env` is the Instance's own. When the Instance's branch changes a lockfile later, the agent or the user installs the change in the workspace with the runtime folder's `composer` or `bun`. A sleeping default Instance is cloned from its snapshot without a start. A seed snapshot stays while a clone depends on it; Orbit deletes older seed snapshots that no clone uses.
 
@@ -422,9 +429,11 @@ Orbit creates the owner and grants; no path copies roles.
 
 ### Destroy
 
-`orbit instance:destroy INSTANCE --yes --force` removes a container clone. This first slice requires `--force`: it runs no work or turn checks and no Project teardown steps. Guarded removal and container default destruction follow separately. A call without force refuses with `instance.container_destroy_force_required`; a container default still refuses with `operation.kind_unavailable`.
+`orbit instance:destroy INSTANCE --yes --force` removes a non-default container Instance, cloned or migrated. The default is the Instance named `default`. This first slice requires `--force`: it runs no work or turn checks and no Project teardown steps. Guarded removal and container default destruction follow separately. A call without force refuses with `instance.container_destroy_force_required`; a container default still refuses with `operation.kind_unavailable`.
 
 The run withdraws the clone's Route, drops its owned server databases, then stops and deletes its Incus container with its Processes, T3 history, snapshots, storage volume and published proxy device. It removes the `instance-<id>` ACL from Incus project `default`, its UFW rules and its Node repository mirror. Deleting T3 retires every session and unused pairing link. Terminal projection removes execution copies and Conn records, then deletes the runtime row to free its address and T3 port. The default and other clones stay.
+
+A migrated Instance's retained Git directory survives destroy and is purged only by hand. Its successful destroy Operation result keeps `retained_git_path` and `retained_git_at` after the Instance record is deleted; [instance:destroy](/cli/instance/destroy) explains how to read them.
 
 A failed removal retains its intent and reserved port. A fresh forced destroy accepts resources already gone and finishes cleanup. After withdrawal, the Route stays down until removal completes. The [clone destroy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/destroy.mmd) has the steps.
 
@@ -438,20 +447,75 @@ The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/c
 
 ### Migrate a checkout Instance
 
-Orbit moves each existing checkout Instance into a container, with its code and its database, one Instance at a time. A default Instance moves first, and a non-default Instance before its default refuses with `instance.default_not_migrated`.
+[`orbit instance:migrate INSTANCE`](/cli/instance/migrate) moves one existing checkout Instance into a container on its Node, with its code. A default Instance moves first, and a non-default Instance before its default refuses with `instance.default_not_migrated`. The command is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.
 
-- **Stop.** Orbit stops the Instance's Processes, and its Route shows the wake page.
-- **Repository.** A non-default checkout is a linked worktree of the default's repository. Orbit builds a standalone repository in the container: it fetches the Instance's branches on the Node and pushes them in.
-- **Files.** Orbit copies the uncommitted and ignored files of the checkout into the workspace, never its `.git`.
-- **Database.** The database family clones the checkout's database into a new one; the old one stays until the move succeeds.
+- **Stop.** Orbit removes the Instance's awake marker, and its Route shows the wake page. The Gateway starts no wake during the move.
+- **Repository.** Orbit builds a standalone repository in the container; the checkout's `.git` is never copied.
+- **Branch.** The Node's mirror fetches the Instance's branch from the checkout, and Orbit pushes it in.
+- **Files.** Orbit copies the changed, untracked and ignored files into the workspace, never the checkout's `.git`.
+- **Database.** A database on a Database server stays where it is, and the container gets its own way to it. A SQLite file in the checkout moves with the files.
+- **Start.** FrankenPHP starts as `orbit`. A non-default Instance gets its T3 server, registered as in [Create](#create). A default gets its first seed snapshot.
 - **Route.** Orbit points the Route at FrankenPHP in the container.
-- **Removal.** Orbit removes the checkout and the old database. The default's checkout stays until its last worktree has moved.
+- **Retirement.** Orbit moves the whole old checkout to retention and records its path and time. It deletes no Git metadata. The default's checkout stays until its last worktree has moved.
 
-A failed move leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/migrate.mmd) has the steps.
+A failed move leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) has the steps.
+
+#### Migration symlinks
+
+Orbit checks checkout symlinks before downtime. After copying, it checks and rewrites the exact workspace tree inside the container, before starting any Process. This final check maps absolute targets under the old checkout to the copied workspace; it never reads the host checkout. A link changed during copying can therefore fail the move with the same error and rollback behavior.
+
+A link must have both its named target and its resolved destination inside the checkout. Broken links, including cycles, and external targets refuse with `instance.migrate_symlink_unsupported`. The error lists every offending checkout path, its original target and the reason, with invalid UTF-8 bytes shown as `\xNN`. Orbit does not choose a different data source or run project setup to repair a link.
+
+A target ending in `/` or `/.` requires a directory at every link hop. A regular file with either suffix is a broken target and refuses, even if removing the suffix would make it work.
+
+In the container workspace, an absolute link into the checkout becomes a relative link to the corresponding resolved destination. For example, `public/storage -> /fast/apps/example/default/storage/app/public` becomes `public/storage -> ../storage/app/public`. A relative link within the checkout keeps its exact target. This applies to tracked, untracked and ignored links, including local-package links; restricting it to `public/storage` would leave other checkout paths pointing at the host.
+
+Orbit skips `.git` and installed dependency contents. A `vendor` directory beside `composer.json`, or `node_modules` beside `package.json`, is a dependency root. Orbit checks package links at its boundary, including Composer namespace and npm scope entries, without following them into package trees. Ordinary directories such as `resources/views/vendor` are checked normally. Rewrites use filesystem paths inside the container, so names and targets with non-UTF-8 bytes do not pass through Incus JSON arguments. The source links are never rewritten.
+
+#### What is built for the move
+
+The move is built for the Nodes of the [build list](#the-build-list).
+
+| Part | What Orbit does |
+| --- | --- |
+| Admission | An active checkout Instance on a Node of the build list, with no Route beside its own. Otherwise `instance.migrate_unsupported` |
+| Default first | A non-default Instance needs its default in a container, active and with a seed snapshot |
+| Deployment | An unfinished deployment refuses the move with `instance.lifecycle_busy` |
+| PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
+| Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the lowest free T3 port. It names no clone source |
+| While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
+| Retirement check | Before downtime and before retention, planned retirements need no other worktrees, uncommitted changes, unpushed commits or stashes. `instance.migrate_retirement_blocked` names up to 20 worktrees and files with total counts |
+| Branch | The mirror fetches the recorded branch from the checkout itself. A retained checkout can carry commits that were never pushed; retirement refuses them. The move needs no token |
+| Files | One archive of the paths of `git diff HEAD` and `git ls-files --others`, extracted as `orbit`. Tracked files that the checkout deleted are removed |
+| `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace`, and the Gateway rewrites its stored values the same way |
+| Database server | The container's ACL and the Node's firewall rule to the port of each server the Instance uses. The move checks each port from inside, else `instance.database_unreachable` |
+| SQLite | The file moves with the files. The Gateway drops the connection record of a SQLite file inside the checkout |
+| Route | The same Route, domain and certificate. One publication replaces the checkout's site and PHP-FPM pool with the container's site |
+
+The end of the move and its failure:
+
+| Part | What Orbit does |
+| --- | --- |
+| Seed | A default takes `seed-<commit>` with its units stopped. Its Project's other Instances can be clones from then on |
+| T3 | A non-default Instance gets the proxy device `t3`, the agent's files and its T3 server. The Conn layer records the server from the run's result |
+| Runtime | A Route that serves the container makes the container the Instance's runtime: the workspace becomes its checkout path |
+| Retained Git | The whole old checkout moves under `<checkout>.orbit-retired-git/<sha256 of original path>`. The Instance records `retained_git_path` and `retained_git_at`; no files or Git metadata are deleted |
+| Old checkout | Leaves its live path. Its files and Git metadata stay in retention; worktree entries are not pruned |
+| Last worktree | The default's old checkout is a retirement candidate. Any other registered worktree blocks retirement, including a path in the same batch |
+| Failed removal | The container stays the Instance. The run fails with `instance.migrate_retire_failed` (or the retirement refusal code for a new blocker), and the source or retained checkout stays on the Node |
+| Failure | The Route's restore side runs when the run had started to move it. Then the container, its ACL, its firewall rules and its mirror go |
+| Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
+| After a failed restore | The site stays the checkout's, and a deployment refuses with `instance.lifecycle_busy` until the move has run again |
+
+The database is not cloned. An Instance's database name, owner and connection come from its Project and its name. So a second database for the same Instance has no name to take, and a clone would end with a drop of the old one. Leaving it in place cannot lose data. A clone of a moved default still copies the default's database with the template copy of [Clone the database](#clone-the-database): the default's connection record is the one it had.
+
+The move keeps each ordinary systemd Process or supported `vp-dev` preset and its desired state. It stops and disables the host units before copying files, installs the same Processes in the container with their private environment files, and removes the host units and environment folders after the Route moves. A failed move removes the container before restoring the host units to their recorded desired states. An unfinished Process operation, removal or previous runtime cleanup blocks migration, and Process changes wait until migration settles. Docker Processes refuse with `process.target_unsupported`.
+
+The [migration command](/cli/instance/migrate#before-you-start) defines the supported preset forms and refusals. A migrated `vp-dev` uses the shared runtime, binds its assigned port in the container, and keeps `/__orbit/vite` on the Route. The container admits that port only from the Node, including after a deployment rebuilds its intent.
 
 ## T3 registration and pairing
 
-Orbit sets `linkedEnvironmentsEnabled: true` in `/home/agent/.t3/userdata/settings.json` for linking and `hasCompletedOnboarding: true` in `/home/agent/.claude.json`, preserves every other key, and writes only when a managed key differs or the file is missing.
+The clone adds `/srv/workspace` to T3 with the Project display name as its title, or its slug when the name is empty. Orbit sets `linkedEnvironmentsEnabled: true` in `/home/agent/.t3/userdata/settings.json` for linking and `hasCompletedOnboarding: true` in `/home/agent/.claude.json`, preserves every other key, and writes only when a managed key differs or the file is missing.
 
 The Instance's create flow registers its T3 server with the [Conn layer](/reference/conn#registration), with the same record and the same checks as a server that registers itself:
 
@@ -744,6 +808,13 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node. Also when the Project's default runs on another Node |
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
 | `instance.default_not_migrated` | 409 | `instance:migrate` of a non-default Instance whose default Instance is still a checkout |
+| `instance.migrate_unsupported` | 409 | `instance:migrate` of an Instance that is not an active development checkout on a Node of the build list |
+| `instance.migrate_retirement_blocked` | 409 | A planned retirement has other registered worktrees or uncommitted changes. The error lists up to 20 worktree paths and changed files with total counts |
+| `instance.migrate_unpushed_commits` | 409 | Local branches or detached HEAD have commits unreachable from all local remote-tracking refs. The error names each and its commit count; no fetch or source changes |
+| `instance.migrate_stashes_present` | 409 | A planned retirement has stashes. The error names the count and leaves the source untouched |
+| `instance.migrate_branch_changed` | 409 | The checkout is not on the branch that Orbit records for the Instance |
+| `instance.database_unreachable` | 502 | The new container of a move could not reach the Instance's database server |
+| `instance.migrate_<step>_failed` | 502 | A step of a move failed, such as `instance.migrate_workspace_failed`. The checkout serves as before |
 | `instance.turn_running` | 409 | `instance:destroy` without `--force` while a T3 turn runs in the container |
 | `instance.t3_unready` | 502 | The T3 server did not answer within 30 seconds of its first start in a clone |
 | `instance.default_seed_moved` | 409 | A deployment of the default replaced the seed that a clone's create admitted, before the copy. The step's report names it; run the same command again |

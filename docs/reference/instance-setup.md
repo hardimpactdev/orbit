@@ -13,7 +13,7 @@ covers:
 
 # Instance setup and teardown
 
-[Instance containers](/reference/development-containers#processes) use the Project's development deploy steps to build the default, then install its development Process definitions. A clone inherits that workspace and installs its own Process records.
+[Instance containers](/reference/development-containers#processes) use the Project's development deploy steps to build the default, then install its development Process definitions. A clone inherits that workspace and installs its own Process records. Its workspace phase reads `.env` and the Process environment files from one private vault copy.
 
 Orbit activates the clone after reading T3's registration receipt.
 

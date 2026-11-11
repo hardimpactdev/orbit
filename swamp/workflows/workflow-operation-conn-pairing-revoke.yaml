@@ -89,6 +89,7 @@ jobs:
       inputs: {}
     writes: true
   - name: Read session inventory
+    writes: true
     labels:
       role: swamp
     queueTimeout: 30

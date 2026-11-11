@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Actions\Projects\CaptureProjectSourceFactsAction;
+use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
@@ -14,6 +16,8 @@ use App\Domain\Instances\Deployment\InstanceRuntimeDefinitions;
 use App\Domain\Instances\Deployment\ProductionDeployInput;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
+use App\Domain\Instances\InstanceContainer;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -45,17 +49,63 @@ final readonly class StartInstanceDeployAction
 
     public function execute(Instance $instance, string $triggeredBy, ?string $requestId, ?string $commit = null, ?int $callerNodeId = null): Operation
     {
+        return $this->start($instance, $triggeredBy, $requestId, $commit, $callerNodeId);
+    }
+
+    private function start(Instance $instance, string $triggeredBy, ?string $requestId, ?string $commit, ?int $callerNodeId, bool $automatic = false, bool $automaticDevelopment = false): Operation
+    {
         if ($commit !== null) {
             GitCommitSha::validate($commit);
         }
+        $instance = Instance::query()->with(['node.roles', 'project'])->findOrFail($instance->id);
+        if ($automatic) {
+            $this->writer->assertSwamp($instance, $automaticDevelopment);
+            $this->assertRepositoryIdentity($instance);
+        }
+        $configuration = $read = null;
+        if ($instance->runtime()->exists()) {
+            if (($existing = app(OperationIdempotency::class)->replay(OperationKinds::InstanceDeploy)) !== null) {
+                return $existing;
+            }
+            $this->intent->assertDevelopment($instance);
+            InstanceMigration::assertSettled($instance);
+            $configuration = $this->sourceConfiguration($instance);
+            $project = $instance->project;
+            $read = app(CaptureProjectSourceFactsAction::class)->read($project->repository_url, $project->source_access,
+                (string) $project->default_branch, $project->root, $project->type, $commit);
+        }
 
-        return DB::transaction(function () use ($instance, $triggeredBy, $requestId, $commit, $callerNodeId): Operation {
-            $instance = Instance::query()->with(['node', 'project'])->lockForUpdate()->findOrFail($instance->id);
+        return DB::transaction(function () use ($instance, $triggeredBy, $requestId, $commit, $callerNodeId, $automatic, $automaticDevelopment, $configuration, $read): Operation {
+            $instance = Instance::query()->with(['node.roles', 'project'])->lockForUpdate()->findOrFail($instance->id);
+            if ($automatic) {
+                $this->writer->assertSwamp($instance, $automaticDevelopment);
+            }
+            $container = $instance->runtime()->exists();
+            if ($container || $configuration !== null) {
+                if (($existing = app(OperationIdempotency::class)->replay(OperationKinds::InstanceDeploy)) !== null) {
+                    return $existing;
+                }
+                if (! $container || $read === null || $configuration !== $this->sourceConfiguration($instance)) {
+                    throw new ResourceOperationException('deployment.source_changed', 'The source configuration changed during deployment source capture.', 409);
+                }
+            }
+            if ($automatic) {
+                $this->assertRepositoryIdentity($instance);
+            }
             // A checkout default serializes its deployments with the checkout lock on the Node; a container default holds the Instance.
             $development = $instance->placedOnAppDev();
             $members = $development ? null : app(InstanceRuntimeDefinitions::class)->capture($instance);
-            if ($instance->runtime()->exists()) {
-                // A container default installs the Project's changed and new development definitions with each deployment.
+            if ($container) {
+                $this->intent->assertDevelopment($instance);
+                $facts = app(CaptureProjectSourceFactsAction::class);
+                $project = $instance->project;
+                if ($read['facts']['source_profile_error'] !== null) {
+                    throw new ResourceOperationException($read['facts']['source_profile_error'], 'The deployed source metadata is invalid or unsupported for a development Instance.', 422);
+                }
+                $facts->record($project, $read);
+                app(InstanceContainer::class)->assertPhp($project);
+                $commit = $read['head'];
+                // Render the runtime definitions only after capturing the deployed commit's facts.
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->refreshForContainer($instance);
             }
             $deployment = $this->intent->snapshot($instance);
@@ -100,10 +150,7 @@ final readonly class StartInstanceDeployAction
     /** Public pins validate the recorded Project identity before admitting the existing operation. */
     public function pinned(Instance $instance, string $triggeredBy, ?string $requestId, string $commit, ?int $callerNodeId = null): Operation
     {
-        $project = $instance->project()->firstOrFail();
-        if ($project->repository_identity !== GitRepositoryIdentity::derive($project->repository_url)) {
-            throw new ResourceOperationException('deployment.repository_mismatch', 'The Project repository identity does not match its origin.', 409);
-        }
+        $this->assertRepositoryIdentity($instance);
 
         return $this->execute($instance, $triggeredBy, $requestId, $commit, $callerNodeId);
     }
@@ -111,11 +158,22 @@ final readonly class StartInstanceDeployAction
     /** The HTTP boundary requires Gateway Node access before admitting automatic origin. */
     public function automatic(Instance $instance, Node $caller, ?string $requestId, string $commit, bool $development = false): Operation
     {
-        return DB::transaction(function () use ($instance, $caller, $requestId, $commit, $development): Operation {
-            $instance = Instance::query()->lockForUpdate()->findOrFail($instance->id);
-            $this->writer->assertSwamp($instance, $development);
+        return $this->start($instance, AutomaticDeployHistory::SwampTrigger, $requestId, $commit, $caller->id,
+            automatic: true, automaticDevelopment: $development);
+    }
 
-            return $this->pinned($instance, AutomaticDeployHistory::SwampTrigger, $requestId, $commit, $caller->id);
-        });
+    private function assertRepositoryIdentity(Instance $instance): void
+    {
+        $project = $instance->project()->firstOrFail();
+        if ($project->repository_identity !== GitRepositoryIdentity::derive($project->repository_url)) {
+            throw new ResourceOperationException('deployment.repository_mismatch', 'The Project repository identity does not match its origin.', 409);
+        }
+    }
+
+    /** @return array<string, mixed> */
+    private function sourceConfiguration(Instance $instance): array
+    {
+        return ['instance' => $instance->only(['project_id', 'node_id', 'root']), 'runtime_id' => $instance->runtime()->value('id'),
+            'project' => $instance->project->only(['repository_url', 'repository_identity', 'source_access', 'default_branch', 'root', 'type'])];
     }
 }

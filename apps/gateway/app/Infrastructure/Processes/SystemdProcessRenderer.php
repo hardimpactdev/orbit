@@ -51,7 +51,7 @@ final readonly class SystemdProcessRenderer
             throw new InvalidArgumentException('A Process user must name a non-root account for a Node systemd Process without a preset.');
         }
         $command = $this->stringList($runtimeConfig['command'] ?? null);
-        $environmentFile = $process->isVpDev() ? $target->environmentFile : ($runtimeConfig['environment_file'] ?? null);
+        $environmentFile = $process->isVpDev() && $target->container === null ? $target->environmentFile : ($runtimeConfig['environment_file'] ?? null);
 
         if (
             $command === []
@@ -65,8 +65,13 @@ final readonly class SystemdProcessRenderer
 
         $environmentProjection = $this->environmentProjection($target, $managedAccount, ! $process->isVpDev());
         if ($process->isVpDev()) {
-            $command = VpDevPreset::command();
-            $environmentProjection['commandPrefix'] = array_values(array_filter($environmentProjection['commandPrefix'], static fn (string $value): bool => ! str_starts_with($value, 'ORBIT_DEV_SERVER_PORT=')));
+            $command = VpDevPreset::command($target->container === null ? null : $target->instance?->vite_port);
+            if ($target->container === null) {
+                $environmentProjection['commandPrefix'] = array_values(array_filter($environmentProjection['commandPrefix'], static fn (string $value): bool => ! str_starts_with($value, 'ORBIT_DEV_SERVER_PORT=')));
+            } elseif ($target->routeDomain === null) {
+                $environmentProjection['directives'][] = 'Environment=ORBIT_DEV_SERVER_PORT='.$target->instance?->vite_port;
+                $environmentProjection['commandPrefix'] = [...($environmentProjection['commandPrefix'] === [] ? ['/usr/bin/env'] : $environmentProjection['commandPrefix']), 'ORBIT_DEV_SERVER_PORT='.$target->instance?->vite_port];
+            }
         }
         $environmentFileLine = is_string($environmentFile) && $environmentFile !== ''
             ? ['EnvironmentFile=-'.$this->escapeDirectivePath($environmentFile)]
@@ -93,7 +98,8 @@ final readonly class SystemdProcessRenderer
             ...$environmentFileLine,
             ...($this->managedEnvironment($process, $target) === [] ? [] : ['EnvironmentFile='.$this->environmentPath($process, $target)]),
             ...$environmentProjection['directives'],
-            ...($process->isVpDev() ? ['EnvironmentFile='.self::viteEnvironmentPath((int) $target->instance?->id), 'UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY'] : []),
+            ...($process->isVpDev() && $target->container === null ? ['EnvironmentFile='.self::viteEnvironmentPath((int) $target->instance?->id)] : []),
+            ...($process->isVpDev() ? ['UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY'] : []),
             'ExecStart='
                 .implode(
                     ' ',

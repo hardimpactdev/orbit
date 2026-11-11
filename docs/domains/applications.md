@@ -196,7 +196,7 @@ The name comes from `--name` or the checkout directory name. An explicit name eq
 
 Before it prepares the source, the Gateway assigns the Instance a [Vite port](/reference/assigned-vite-ports) and an [SSR port](/reference/assigned-ssr-ports) and reserves its Route domain. `--domain` sets an explicit domain. Otherwise the domain is generated from the Cluster or Node TLD, as [Routes](/reference/routes#select-a-domain-and-scope) describes. A `laravel-app` or `symfony-app` Instance gets one Route. Other Project types get no Route.
 
-The PHP version and whether the application is Laravel are Project facts, read with the template from the default branch when the Project is added or its source changes. A `monorepo` records no PHP version. The native root checks out the admitted branch, writes the rendered `.env`, runs the Project setup list, and then creates and starts the Project's development Processes. The Instance becomes active only after every step succeeds; a failed step keeps the Instance and marks it failed.
+The PHP version and whether the application is Laravel follow the [Project source facts](/reference/projects#project-types). The native root checks out the admitted branch, writes the rendered `.env`, runs the Project setup list, and then creates and starts the Project's development Processes. The Instance becomes active only after every step succeeds; a failed step keeps the Instance and marks it failed.
 
 An identical create for an active Instance with completed first setup skips source and setup effects. If a later explicit setup failed, create returns `instance.setup_step_failed`; use `instance:setup`. A failed initial setup keeps the source and resolved identity for an identical create retry. There is no automatic teardown or removal child.
 
@@ -232,7 +232,7 @@ A symlinked file or cache directory, two `APP_URL` lines, or an unclear cached v
 
 ## Project environment template
 
-The Gateway keeps one environment template per Project. It builds the template from the committed `.env.example` of the Project's application directory on the default branch. It records the template when the Project is added or its source changes, with any source access, and the template then follows each new default-branch head.
+The Gateway keeps one environment template per Project. It builds the template from the committed `.env.example` of the Project's application directory on the default branch. It records the template when the Project is added or its source changes, with any source access, and the template then follows each new default-branch head. A container default also captures the template from its [deployed commit](/reference/deployments#container-source-facts).
 
 ### When the Gateway checks
 
@@ -337,3 +337,7 @@ The Instance is the only runnable application model. Orbit keeps no conversion t
 ## Native source inspection
 
 Development registration and branch rename run from Node 209 through official SSH using captured checkout intent and pinned host keys. Git observations and environment-file protection are separate native steps. For registration the Gateway checks the read facts itself; for rename it records the terminal source result from the commits feed. In both, steps do not read intent or report progress through callbacks. Registration adopts the checkout in place. Rename records a branch that is already checked out and never changes Git HEAD.
+
+## Move a checkout Instance into a container
+
+[`instance:migrate`](/cli/instance/migrate) moves one development checkout Instance into an [Instance container](/reference/development-containers#migrate-a-checkout-instance) on its Node: its branch with the commits that were never pushed, its changed, untracked and ignored files, and its Route. Its database stays where it is. A Project's default Instance moves first, and a move that fails leaves the checkout Instance serving as before. The command is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.

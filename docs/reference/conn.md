@@ -161,6 +161,10 @@ Registering again replaces the stored session. The job registers on each server 
 
 ### Instance servers
 
+`GET /environments` supplies the clone’s Orbit row to Conn: `project_id`, `project_name`, `project_slug`, `instance_name`, `node_name`, and `instance_url` are flat fields beside `environment_id` and `instance_id`. Conn learns the Project and Instance from this Gateway record. Container T3 servers stay stock; they need no T3 change. The same record is returned by the MCP tool `conn-environment-list`.
+
+`instance_url` is the Instance’s own URL: HTTPS on its authoritative Route’s domain, or its first Route’s domain when none is authoritative, and `null` when it has no Route. It is separate from `url`, which reaches T3. Host environments return all six fields as `null`, as they do for `instance_id` and `power_state`.
+
 A clone of a container default runs its own T3 server. Its create flow registers it ([T3 registration](/reference/development-containers#t3-registration-and-pairing)): the run issues and checks the sessions in the container, and the Gateway records the server from the run's result through the plug-in point `InstanceLifecycleContribution`, which this extension contributes.
 
 - The record names the Instance and its Node, with the URL `http://<Node WireGuard address>:<T3 port>` and the label `<project> / <instance>`.
@@ -230,7 +234,7 @@ The objects:
   "node": {"id": 4, "name": "phone", "wireguard_ip": "10.44.0.77", "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"}},
   "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"},
   "settings": {"profile_id": 1, "version": 3, "settings": {"workspaces": []}, "sections": {"workspaces": {"version": 1, "updated_at": "2026-10-08T10:00:00+00:00", "updated_by": "phone"}}, "updated_at": "2026-10-08T10:00:00+00:00"},
-  "environment": {"environment_id": "env-beast", "label": "beast", "url": "http://10.44.0.30:3773", "server_version": "0.9.1", "registered_by": "beast", "registered_at": "2026-10-08T09:00:00+00:00", "admin_session_expires_at": "2026-11-07T09:00:00+00:00", "status": "registered", "instance_id": null, "power_state": null},
+  "environment": {"environment_id": "env-beast", "label": "beast", "url": "http://10.44.0.30:3773", "server_version": "0.9.1", "registered_by": "beast", "registered_at": "2026-10-08T09:00:00+00:00", "admin_session_expires_at": "2026-11-07T09:00:00+00:00", "status": "registered", "instance_id": null, "power_state": null, "project_id": null, "project_name": null, "project_slug": null, "instance_name": null, "node_name": null, "instance_url": null},
   "project": {"id": 3, "slug": "mealou", "name": "Mealou", "node_id": 7, "node_name": "beast"},
   "pairing": {"id": 7, "environment_id": "env-beast", "node_id": 4, "node_name": "phone", "client_label": "phone via Orbit k3j9x0qa", "issued_at": "2026-10-08T10:00:00+00:00", "expires_at": "2026-10-08T10:05:00+00:00", "revoked_at": null}
 }

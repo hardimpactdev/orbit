@@ -16,6 +16,7 @@ orbit route:destroy <route> [--yes] [--offline] [--json]
 | --- | --- | --- |
 | `--yes` | prompt | Confirm without prompting. Required without a terminal and with `--json`. |
 | `--offline` | off | Skip each Node that is not active or does not answer, and remove the rest. |
+| `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the final task as JSON. |
 
 ```bash

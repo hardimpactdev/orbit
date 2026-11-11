@@ -440,6 +440,7 @@ jobs:
         - init
         - --quiet
   - name: source-worktree
+    writes: true
     labels:
       role: swamp
     dependsOn:
