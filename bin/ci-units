@@ -141,9 +141,23 @@ def specificity(pattern):
     return (int(not any(c in pattern for c in '*?')), len(re.split(r'[*?]', pattern)[0]), -pattern.count('*'))
 
 
-def plan(paths, budget, fixtures, defaults):
+def inventory_changes(base, head):
+    """Compare only inventory entries, using the same ancestry as path selection."""
+    path = 'tools/tests/ci-fixture-cases.json'
+    def read(revision):
+        present = subprocess.check_output(['git', 'ls-tree', '--name-only', revision, '--', path],
+                                          cwd=ROOT, text=True, timeout=60).strip()
+        if not present:
+            return {}
+        return json.loads(subprocess.check_output(['git', 'show', f'{revision}:{path}'],
+                                                  cwd=ROOT, text=True, timeout=60))
+    before, after = read(base), read(head)
+    return sorted(file for file in before.keys() | after.keys() if before.get(file) != after.get(file))
+
+
+def plan(paths, budget, fixtures, defaults, inventory_changed=()):
     selected, unmapped = {}, []
-    all_fixtures = any(path in ('.github/ci/checks.toml', 'tools/tests/ci-fixture-cases.json', 'bin/ci-units', PRELOAD) for path in paths)
+    all_fixtures = any(path in ('.github/ci/checks.toml', 'bin/ci-units', PRELOAD) for path in paths)
     for path in paths:
         matched = False
         for file, fixture in fixtures.items():
@@ -157,6 +171,9 @@ def plan(paths, budget, fixtures, defaults):
             unmapped.append(path)
             for file in defaults:
                 selected.setdefault(file, (-1, 0, 0))
+    for file in inventory_changed:
+        if file in fixtures:
+            selected[file] = (2, len(file), 0)
     if all_fixtures:
         for file, fixture in fixtures.items():
             selected.setdefault(file, (-1, 0, 0))
@@ -507,7 +524,8 @@ def main():
         signal.signal(signal.SIGINT, lambda *_: CANCELLED.set())
         return run(units, budget, fixtures, args.times)
     base, paths = selection.changed_inputs(gate.resolve_base(args.base), args.head)
-    result = plan([p for p in paths if p], budget, fixtures, defaults)
+    inventory_changed = inventory_changes(base, args.head) if 'tools/tests/ci-fixture-cases.json' in paths else []
+    result = plan(paths, budget, fixtures, defaults, inventory_changed)
     if args.plan_json:
         costs = {name: cost for f in fixtures.values() for name, cost in units_for(f, budget)}
         selected = [unit for shard in result['shards'] for unit in shard['units']]

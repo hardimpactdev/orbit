@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampScheduleWorkflows;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -47,10 +48,9 @@ final class RekeyNodeAgentCommand extends Command
                     $secret = bin2hex(random_bytes(32));
                     $copy = $steps->executionCopy('orbit-control-inputs', $key, $secret);
 
-                    // Converge and rekey share one lock per Node.
                     return $operations->execute('node.agent_rekey', 'node', $nodeId, $nodeId,
                         ['_agent_rekey' => ['node_id' => $nodeId, 'ssh' => $ssh->forNode($node), 'verifier_hash' => hash('sha256', $secret), 'agent_key' => $copy]],
-                        'operator-recovery', null, lockKey: 'node-converge:node:'.$nodeId);
+                        'operator-recovery', null, lockKey: OperationStore::lockKey('node', $nodeId));
                 });
         } catch (Throwable) {
             if ($copy !== null) {

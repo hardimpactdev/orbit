@@ -31,7 +31,7 @@ With no scope flag, Orbit applies the base and every recorded role to repair dri
 
 ## How it works
 
-Access follows the node family's [shared authority rule](/cli/node) (`NodeAccessAuthorizer`). The target must be an active, managed Linux Node. A converge reserves the Node and its recorded VPN hub; another converge cannot use either until it finishes.
+Access follows the node family's [shared authority rule](/cli/node) (`NodeAccessAuthorizer`). The target must be an active, managed Linux Node. A converge holds the [shared Node admission lock](/reference/node-provisioning#converge-the-orbit-footprint), excluding role addition or convergence, enrollment and agent rekey on that Node. It also reserves its recorded VPN hub against another converge until settlement.
 
 Every run applies these phases in order, idempotently and within the selected scope:
 
@@ -58,5 +58,5 @@ A failed phase leaves the Operation failed with its failed step and error code. 
 | `node_access.required` | The shared authority rule refuses the caller. |
 | `node.converge_unsupported` | The Node is not active, managed and Linux. |
 | `validation.failed` | Both scope flags were supplied, or the role selection is empty, unknown or not assigned to the Node. |
-| `operation.target_busy` | Another converge reserves the Node or its hub. |
+| `operation.target_busy` | Node convergence, role addition or convergence, enrollment or agent rekey holds the Node, or another converge reserves its hub. |
 | `operation.native_failed` | A phase could not complete, including when the Node cannot be reached. The Operation identifies the failed step. In the `network` phase, the failed assertion names the cause: `node.hub_lan_unreachable` when the hub's [LAN endpoint](/reference/wireguard-endpoints#the-lan-endpoint) is not directly routed from the Node's `lan_ip` or does not answer SSH, `node.hub_lan_identity_mismatch` when the machine there does not have the hub's host key (in both cases no WireGuard file changed), `node.hub_switch_no_handshake` when a new hub endpoint got no handshake (the previous files are back), `node.hub_switch_load_failed` when `wg` did not load the configuration for the new hub endpoint (the previous files are back, with no wait for a handshake), `node.hub_switch_unpinned` when the Node could not pin its tunnel to the new endpoint (nothing changed), `vpn.endpoint_not_local` when the hub does not hold its public endpoint address, `vpn.hub_peer_missing` when a recorded peer is not on the hub's interface. |
