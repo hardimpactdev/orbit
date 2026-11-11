@@ -116,7 +116,7 @@ final readonly class ExpireOperationAction
      * Replace a provisional expiry once the exact native root has a terminal result.
      * The caller projects that terminal through its normal family projection, including a restoration that ended after the deadline.
      */
-    public function reopen(Operation $operation, string $runId, ?string $nativeStatus = null): Operation
+    public function reopen(Operation $operation, string $runId, string $nativeStatus): Operation
     {
         return DB::transaction(function () use ($operation, $runId, $nativeStatus): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
@@ -128,9 +128,7 @@ final readonly class ExpireOperationAction
             $restore = is_array($state['native_timeout_restore'] ?? null) ? $state['native_timeout_restore'] : [];
             $timeout = ValidatedData::object($state['native_timeout'] ?? []);
             unset($state['native_timeout'], $state['native_timeout_restore']);
-            if ($nativeStatus !== null) {
-                $state['native_timeout'] = [...$timeout, 'native_terminal_status' => $nativeStatus, 'native_terminal_observed_at' => now()->toISOString()];
-            }
+            $state['native_timeout'] = [...$timeout, 'native_terminal_status' => $nativeStatus, 'native_terminal_observed_at' => now()->toISOString()];
             if (($restore['native_failure'] ?? true) !== true) {
                 unset($state['native_failure']);
             }
@@ -140,31 +138,6 @@ final readonly class ExpireOperationAction
                 'status' => OperationStatus::Running, 'finished_at' => null, 'error_code' => null, 'failed_step' => null,
                 'cancel_requested_at' => ($restore['cancel_requested'] ?? true) === true ? $current->cancel_requested_at : null,
                 'state' => $state, 'result' => $result,
-            ]);
-
-            return $current;
-        });
-    }
-
-    /** Called only after the shared reader verifies the exact terminal native root identity. */
-    public function settle(Operation $operation, string $runId, string $status): Operation
-    {
-        if (! in_array($status, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
-            throw new \LogicException('A target hold requires terminal native proof.');
-        }
-
-        return DB::transaction(function () use ($operation, $runId, $status): Operation {
-            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-            if (! self::awaitsSettlement($current)) {
-                return $current;
-            }
-            app(DirectOperation::class)->assertRun($current, $runId);
-            $timeout = $current->state['native_timeout'] ?? [];
-            app(OperationStore::class)->change($current, ['lock_key' => null,
-                'state' => [...($current->state ?? []), 'native_timeout' => [
-                    ...(is_array($timeout) ? $timeout : []), 'native_terminal_status' => $status,
-                    'native_terminal_observed_at' => now()->toISOString(),
-                ]],
             ]);
 
             return $current;
