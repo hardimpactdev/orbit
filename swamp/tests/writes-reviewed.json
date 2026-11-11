@@ -224,7 +224,7 @@
    "answers": "read-only"
   },
   "node-artifact-fetch": {
-   "Check pinned artifact": "read-only",
+   "Check pinned artifact": "idempotent",
    "Verify artifact checksum": "read-only"
   },
   "node-caddy-package": {
@@ -240,7 +240,7 @@
    "cli_version": "unreviewed"
   },
   "node-network-hub": {
-   "Check the hub service": "read-only",
+   "Check the hub service": "idempotent",
    "Read the peers again": "read-only"
   },
   "node-network-peer": {
@@ -261,9 +261,9 @@
    "Sign the CSR": "idempotent"
   },
   "node-role-remove": {
-   "Check removed containers": "read-only",
-   "Check removed directories": "read-only",
-   "Check removed files": "read-only",
+   "Check removed containers": "idempotent",
+   "Check removed directories": "idempotent",
+   "Check removed files": "idempotent",
    "Read CI guests": "read-only"
   },
   "node-route-residue": {
@@ -338,8 +338,8 @@
    "server-database-check": "unreviewed"
   },
   "operation-instance-deploy-direct": {
-   "Check PHP runtime": "read-only",
-   "Check Process state": "read-only",
+   "Check PHP runtime": "idempotent",
+   "Check Process state": "idempotent",
    "Check the checkout lock": "unreviewed",
    "Check the container": "idempotent",
    "Check the local branch": "unreviewed",
@@ -349,14 +349,14 @@
    "List target directories": "unreviewed",
    "List untracked entries": "unreviewed",
    "Read Schedule group": "read-only",
-   "Read Schedule timers": "read-only",
-   "Read Vite manager CLI": "read-only",
+   "Read Schedule timers": "idempotent",
+   "Read Vite manager CLI": "idempotent",
    "Read Vite manager home": "read-only",
    "Read container state": "read-only",
    "Read current back": "read-only",
    "Read deployed commit": "unreviewed",
    "Read first-parent chain": "unreviewed",
-   "Read local PHP tuning": "read-only",
+   "Read local PHP tuning": "idempotent",
    "Read the branch ancestor": "unreviewed",
    "Read the checkout branch": "unreviewed",
    "Read the checkout commit": "unreviewed",
@@ -409,7 +409,7 @@
    "Inspect the Mac tunnel": "read-only",
    "Read WireGuard public key": "read-only",
    "Read the bootstrap account": "read-only",
-   "Read the host key": "read-only",
+   "Read the host key": "idempotent",
    "Read the platform": "read-only",
    "Verify managed access": "read-only"
   },
@@ -418,8 +418,8 @@
    "Check the new key": "read-only"
   },
   "operation-node-remove": {
-   "Check removed directories": "read-only",
-   "Check removed files": "read-only",
+   "Check removed directories": "idempotent",
+   "Check removed files": "idempotent",
    "Log in to departing Node": "unreviewed"
   },
   "operation-node-role-add": {
@@ -444,33 +444,33 @@
    "validate": "unreviewed"
   },
   "operation-process-control": {
-   "Check the container": "read-only",
+   "Check the container": "idempotent",
    "Check the listener": "unreviewed",
-   "Check the unit": "read-only"
+   "Check the unit": "idempotent"
   },
   "operation-process-create": {
    "Check required mounts": "read-only",
    "Check the account": "read-only",
-   "Check the container": "read-only",
+   "Check the container": "idempotent",
    "Check the listener": "unreviewed",
-   "Check the unit": "read-only"
+   "Check the unit": "idempotent"
   },
   "operation-process-destroy": {
-   "Check container removal": "read-only",
-   "Check the unit": "read-only",
-   "Check unit removal": "read-only"
+   "Check container removal": "idempotent",
+   "Check the unit": "idempotent",
+   "Check unit removal": "idempotent"
   },
   "operation-process-install-instance-definitions": {
    "result": "read-only"
   },
   "operation-process-start": {
-   "Check the container": "read-only",
+   "Check the container": "idempotent",
    "Check the listener": "unreviewed",
-   "Check the unit": "read-only"
+   "Check the unit": "idempotent"
   },
   "operation-process-stop": {
-   "Check the container": "read-only",
-   "Check the unit": "read-only"
+   "Check the container": "idempotent",
+   "Check the unit": "idempotent"
   },
   "operation-process-vite": {
    "directory": "idempotent",
@@ -482,7 +482,7 @@
    "Report": "read-only"
   },
   "operation-route-caddy": {
-   "Check the Caddyfile": "read-only",
+   "Check the Caddyfile": "idempotent",
    "Check the connection": "read-only",
    "Validate the Caddyfile": "unreviewed"
   },
@@ -514,15 +514,15 @@
    "Probe the site over TLS": "unreviewed"
   },
   "operation-schedule-control": {
-   "check_timer": "read-only"
+   "check_timer": "idempotent"
   },
   "operation-schedule-create": {
-   "check_files": "read-only",
-   "check_timer": "read-only"
+   "check_files": "idempotent",
+   "check_timer": "idempotent"
   },
   "operation-schedule-destroy": {
-   "check_files": "read-only",
-   "check_timer": "read-only",
+   "check_files": "idempotent",
+   "check_timer": "idempotent",
    "idle": "read-only"
   },
   "operation-task-idle-save": {
@@ -602,17 +602,17 @@
    "Wait for the guest agent": "read-only"
   },
   "operation-tool-manager-setup": {
-   "Check Composer manifest": "read-only",
-   "Check pinned APT packages": "read-only",
+   "Check Composer manifest": "idempotent",
+   "Check pinned APT packages": "idempotent",
    "Check the Tool Manager": "unreviewed",
    "Read DEB identities": "read-only",
    "Read manager version": "unreviewed",
-   "Read pinned APT state": "read-only",
+   "Read pinned APT state": "idempotent",
    "Read the account home": "read-only",
    "Verify SHA512 artifacts": "read-only"
   },
   "operation-tool-remove-209": {
-   "Check apt absence": "read-only",
+   "Check apt absence": "idempotent",
    "Check it is gone": "unreviewed",
    "Plan the removal": "unreviewed",
    "Read installed package": "unreviewed",
@@ -620,7 +620,7 @@
    "Read manager version": "unreviewed"
   },
   "operation-tool-write-209": {
-   "Check apt package": "read-only",
+   "Check apt package": "idempotent",
    "Check the candidate": "unreviewed",
    "Check the package": "unreviewed",
    "Read installed package": "unreviewed",
@@ -693,10 +693,10 @@
    "observe-before": "read-only"
   },
   "route-remove-check": {
-   "caddyfile": "read-only",
-   "certificates": "read-only",
-   "ingress": "read-only",
-   "lan": "read-only"
+   "caddyfile": "idempotent",
+   "certificates": "idempotent",
+   "ingress": "idempotent",
+   "lan": "idempotent"
   },
   "swamp-credential-monitor": {
    "access": "read-only",
