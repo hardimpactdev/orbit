@@ -15,6 +15,15 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
+  alt Project definition update
+    CLI->>GW: Read definition<br/>current complete spec
+    GW-->>CLI: Current specification<br/>environment values redacted
+    Note over CLI: Apply supplied fields<br/>keep omitted fields
+    CLI->>GW: Update definition<br/>complete specification
+    GW-->>CLI: Updated or refused<br/>validation result
+    %%> A later development container deploy applies the definition to its linked Processes; new clones inherit the edited definition.
+    %%> A captured vp-dev definition keeps its canonical command and preset metadata.
+  else Installed Process update
   CLI->>GW: process:update 418
   %%> Command:
   %%> - `orbit process:update 418`
@@ -138,4 +147,5 @@ sequenceDiagram
     GW-->>CLI: status + result
     %%> Returns:
     %%> - the current status, and the result once the task has ended
+  end
   end
