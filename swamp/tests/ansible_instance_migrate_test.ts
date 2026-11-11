@@ -1248,20 +1248,23 @@ Deno.test({
   },
 });
 
-for (const failures of [1, 9]) {
+for (const docker of [false, true]) for (const failures of [1, 9]) {
   Deno.test({
-    name: `bridge endpoint add with ${failures === 1 ? "transient" : "persistent"} missing-veth failure stays before the migration probe and downtime`,
+    name: `${docker ? "Docker" : "direct"} bridge endpoint add with ${failures === 1 ? "transient" : "persistent"} missing-veth failure stays before the migration probe and downtime`,
     ignore: !hasAnsible,
     fn() {
       const f = fixture();
       try {
         f.migrate.retire = [];
-        f.container.bridge_endpoints = [{host: "10.44.0.7", port: 5432, docker: false}];
+        f.container.bridge_endpoints = [{host: "10.44.0.7", port: 5432, docker}];
         f.migrate.databases = [{host: "10.44.0.7", port: 5432}];
         f.write();
         const state = f.state();
         state.bridgeVethFailures = failures;
+        state.bridgeProbe = {host: "10.44.0.7", port: 5432,
+          translatedHost: docker ? "172.17.0.2" : "10.44.0.7", translatedPort: docker ? 5433 : 5432};
         Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+        if (docker) Deno.writeTextFileSync(`${f.folder}/nat.txt`, "-A DOCKER -d 10.44.0.7/32 ! -i docker0 -p tcp -m tcp --dport 5432 -j DNAT --to-destination 172.17.0.2:5433\n");
         const before = Deno.readTextFileSync(`${f.checkout}/.env`);
         const result = f.run("container");
         assertEquals(result.ok, failures === 1, result.output);

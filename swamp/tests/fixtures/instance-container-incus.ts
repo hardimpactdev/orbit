@@ -262,6 +262,23 @@ if (family === "list") {
     save();
     Deno.exit(0);
   }
+  // Synthetic fleet targets have no listener on this machine. Model the NIC's published tuple and
+  // the bridge's post-DNAT tuple from the ACLs actually written, not just from the admitted intent.
+  // Localhost reach/refusal cases below still use real sockets.
+  if (command.some((arg) => arg.includes("/dev/tcp/$1/$2")) && state.bridgeProbe) {
+    const target = state.bridgeProbe;
+    if (command.at(-2) !== target.host || command.at(-1) !== String(target.port)) fail("Unexpected bridge probe");
+    const allows = (rule: Record<string, string>, host: string, port: number) =>
+      rule.action === "allow" && rule.state === "enabled" && rule.protocol === "tcp" &&
+      rule.destination === `${host}/32` && rule.destination_port === String(port);
+    const attached = state.containers[name].devices.find((device: string) => device.startsWith("eth0,security.acls="))
+      ?.slice("eth0,security.acls=".length).split(",") ?? [];
+    const nic = state["network-acls"].filter((acl: {name: string}) => attached.includes(acl.name));
+    const bridge = state["network-acls"].find((acl: {name: string}) => acl.name === "orbitinst0-egress");
+    const admitted = nic.some((acl: {egress: Record<string, string>[]}) => acl.egress.some((rule) => allows(rule, target.host, target.port))) &&
+      bridge?.egress.some((rule: Record<string, string>) => rule.source === "10.253.0.0/24" && allows(rule, target.translatedHost, target.translatedPort));
+    Deno.exit(admitted ? 0 : 1);
+  }
   const done = new Deno.Command(command[0], {
     args: command.slice(1).map((value) => command[0] === "git" && command[1] === "config" ? value : inside(name, value)),
     cwd: cwd === null ? undefined : inside(name, cwd),

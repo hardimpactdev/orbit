@@ -69,10 +69,11 @@ DENO_TESTS_ELSEWHERE = ('tests/metrics_exporter_firewall_test.ts', 'tests/native
 
 
 # Two balanced serial commands keep Instance-host Ansible contention within half the four-worker budget.
-# ci-shark-3 measured 328.1s and 503.7s; older Sabre cases regroup to 468s and 569s.
+# ci-shark-2 measured updates at 356s and ACL cases at 257s; keep their 613s together,
+# leaving the image/runtime group without the ACL cases that exhausted its shared budget.
 # Each command shares a 720s fixture budget across all Deno file isolates.
 INSTANCE_HOST_TEST_GROUPS = (
-    ('tests/ansible_instance_host_updates_test.ts',),
+    ('tests/ansible_instance_host_updates_test.ts', 'tests/ansible_instance_host_acl_test.ts'),
     ('tests/ansible_instance_host_test.ts', 'tests/ansible_instance_host_image_test.ts', 'tests/ansible_instance_host_runtime_test.ts'),
 )
 
