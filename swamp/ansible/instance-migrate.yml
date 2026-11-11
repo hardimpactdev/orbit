@@ -30,7 +30,7 @@
   hosts: migrate_node
   gather_facts: false
   become: true
-  tags: [container, quiesce, files, retire, restore]
+  tags: [container, quiesce, files, retire, restore-check, restore]
   vars:
     intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
     container: "{{ intent.container }}"

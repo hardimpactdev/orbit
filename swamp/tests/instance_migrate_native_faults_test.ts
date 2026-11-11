@@ -1,4 +1,4 @@
-/** The shipped migrate DAG as local control flow on the pin. Placement and machine tasks are fixtures; Ansible cases prove effects. */
+/** Pinned native DAG and real finish receipts. Placement and machine effects are local fixtures; Ansible proves the effects. */
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
 import { Swamp } from "../extensions/behaviors/node-worker/config.ts";
@@ -9,8 +9,8 @@ const source = new URL(
     import.meta.url,
 );
 const pin = Swamp.version;
-
 type RecordValue = Record<string, unknown>;
+type Mode = "failure" | "timeout" | "cancel" | "deadline" | "lost" | "unsafe";
 const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 const exists = (path: string) => {
     try {
@@ -21,10 +21,8 @@ const exists = (path: string) => {
     }
 };
 
-async function nativeFixture(
-    mode: "failure" | "timeout" | "cancel" | "deadline" | "lost",
-) {
-    const folder = Deno.makeTempDirSync({ prefix: "migrate-native-" });
+async function nativeFixture(mode: Mode) {
+    const folder = Deno.makeTempDirSync({ prefix: "orbit-ansible-" });
     const call = async (...args: string[]) => {
         const done = await new Deno.Command(binary!, {
             args: [...args, "--json"],
@@ -46,6 +44,49 @@ async function nativeFixture(
     assert(
         (await call("repo", "init", folder, "--tool", "none", "--no-vault")).ok,
     );
+    const models = `${folder}/extensions/models`;
+    Deno.mkdirSync(models, { recursive: true });
+    for (const name of ["assets.ts", "migrate_result.ts", "result.ts"]) {
+        Deno.copyFileSync(
+            new URL(
+                `../extensions/behaviors/operations/instance-dev-command/${name}`,
+                import.meta.url,
+            ),
+            `${models}/${name}`,
+        );
+    }
+    Deno.writeTextFileSync(
+        `${models}/route-proof.ts`,
+        `import { z } from "npm:zod@4.4.3";
+export const behavior = { type: "@fixture/route-proof", version: "2026.11.11.1", resources: { result: { schema: z.object({ready:z.boolean()}), lifetime:"1d", garbageCollection:10 } }, methods: {
+  result: { description: "Return the fixture Route receipt", arguments: z.object({}), async execute(_args: unknown, ctx: {writeResource(spec:string, name:string, value:unknown): Promise<unknown>}) { Deno.writeTextFileSync(${
+            JSON.stringify(folder + "/calls")
+        }, "restore-route-child\\n", {append: true}); const value = {ready: true}; await ctx.writeResource("result", "result", value); return value; } }
+} };`,
+    );
+    const route = JSON.parse(
+        (await call("workflow", "create", "restore-route-child")).stdout,
+    );
+    Deno.writeTextFileSync(
+        route.path,
+        stringify({
+            id: route.id,
+            name: route.name,
+            jobs: [{
+                name: "route",
+                steps: [{
+                    name: "result",
+                    task: {
+                        type: "behavior",
+                        behaviorType: "@fixture/route-proof",
+                        behaviorName: "route-proof",
+                        methodName: "result",
+                        inputs: {},
+                    },
+                }],
+            }],
+        }),
+    );
     const created = JSON.parse(
         (await call("workflow", "create", "migrate-native-faults")).stdout,
     );
@@ -59,23 +100,35 @@ async function nativeFixture(
             const name = String(step.name);
             delete step.labels;
             delete step.target;
-            if (name === "accepted") {
+            if (name === "accepted") continue;
+            if (name === "finish") {
+                ((step.task as RecordValue).inputs as RecordValue).folder =
+                    folder;
+                continue;
+            }
+            if (name === "restore-route") {
                 step.task = {
-                    type: "assert",
-                    expr: "steps.finish.outputs.exitCode == 0",
-                    severity: "high",
-                    message: "Fixture finish failed",
+                    type: "workflow",
+                    workflowIdOrName: route.name,
+                    inputs: {},
                 };
                 continue;
             }
             let run =
                 `printf '%s\\n' '${name}' >> '${folder}/calls'; touch '${folder}/${name}'`;
+            if (name === "workspace") {
+                run += "; printf '%s\\n' 'orbit-commit=" + "a".repeat(40) + "'";
+            }
             if (name === "container-processes") {
                 run += mode === "failure"
                     ? "; exit 42"
                     : mode === "timeout"
                     ? "; timeout 0.1 sleep 20"
                     : "; sleep 30";
+            }
+            if (name === "restore-check" && mode === "unsafe") {
+                run +=
+                    `; printf '%s' '{"error_code":"instance.migrate_restore_unsafe"}' > '${folder}/result.json'; exit 42`;
             }
             step.task = {
                 type: "behavior",
@@ -98,16 +151,29 @@ async function nativeFixture(
             intent: {
                 instance_id: 1,
                 container: { clone: null },
-                route_mutations: null,
+                route_mutations: {},
                 restore_only: restore,
                 restore_quiesced: restore,
             },
         });
+    const history = async () =>
+        JSON.parse(
+            (await call("workflow", "history", "get", created.name)).stdout,
+        );
+    const receipt = async () => {
+        const finish = (await history()).jobs.flatMap((
+            job: { steps: RecordValue[] },
+        ) => job.steps).find((step: RecordValue) => step.name === "finish");
+        assertEquals(finish.status, "succeeded");
+        return JSON.parse(finish.outputs.stdout);
+    };
     return {
         folder,
         call,
         created,
         input,
+        history,
+        receipt,
         cleanup: () => Deno.removeSync(folder, { recursive: true }),
     };
 }
@@ -117,7 +183,7 @@ for (
 ) {
     Deno.test({
         name:
-            `pinned migrate DAG ${mode}: native restore finishes or a restore-only run has no forward work`,
+            `pinned migrate ${mode}: real native finish proves restoration, including the restore Route child after a lost root`,
         ignore: !binary,
         async fn() {
             const f = await nativeFixture(mode);
@@ -184,20 +250,22 @@ for (
                         exists(`${f.folder}/restore`),
                         text(done.stdout) + text(done.stderr),
                     );
-                    assert(exists(`${f.folder}/finish`));
+                    const result = await f.receipt();
+                    assertEquals({
+                        moved: result.moved,
+                        restored: result.restored,
+                        ready: result.ready,
+                        error_code: result.error_code,
+                    }, {
+                        moved: false,
+                        restored: true,
+                        ready: false,
+                        error_code: "instance.migrate_processes_failed",
+                    });
                 } else {
                     assert(!exists(`${f.folder}/restore`));
-                    assert(!exists(`${f.folder}/finish`));
                     assert((await f.call("run", "doctor", "--fix")).ok);
-                    const history = JSON.parse(
-                        (await f.call(
-                            "workflow",
-                            "history",
-                            "get",
-                            f.created.name,
-                        )).stdout,
-                    );
-                    assertEquals(history.status, "interrupted");
+                    assertEquals((await f.history()).status, "interrupted");
                     Deno.writeTextFileSync(`${f.folder}/calls`, "");
                     const input = `${f.folder}/restore-input.json`;
                     Deno.writeTextFileSync(input, f.input(true));
@@ -213,8 +281,20 @@ for (
                         Deno.readTextFileSync(`${f.folder}/calls`).trim().split(
                             "\n",
                         ),
-                        ["input", "restore", "finish", "cleanup"],
+                        [
+                            "input",
+                            "restore-check",
+                            "restore-route-child",
+                            "restore",
+                            "cleanup",
+                        ],
                     );
+                    assertEquals(await f.receipt(), {
+                        instance_id: 1,
+                        moved: false,
+                        restored: true,
+                        ready: true,
+                    });
                 }
             } finally {
                 if (child && !finished) {
@@ -227,3 +307,38 @@ for (
         },
     });
 }
+
+Deno.test({
+    name:
+        "pinned restore ownership refusal prevents both the Route child and container removal, with the real unsafe receipt",
+    ignore: !binary,
+    async fn() {
+        const f = await nativeFixture("unsafe");
+        try {
+            const input = `${f.folder}/restore-input.json`;
+            Deno.writeTextFileSync(input, f.input(true));
+            const done = await f.call(
+                "workflow",
+                "run",
+                f.created.name,
+                "--input-file",
+                input,
+            );
+            assert(!done.ok, done.stdout + done.stderr);
+            assertEquals(
+                Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n"),
+                ["input", "restore-check", "cleanup"],
+            );
+            const result = await f.receipt();
+            assertEquals({
+                restored: result.restored,
+                error_code: result.error_code,
+            }, {
+                restored: false,
+                error_code: "instance.migrate_restore_unsafe",
+            });
+        } finally {
+            f.cleanup();
+        }
+    },
+});

@@ -43,6 +43,7 @@ use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -1354,6 +1355,8 @@ it('projects the native restored end state and steps across each post-quiesce ex
         'finished_at' => null, 'error_code' => null, 'state' => ['swamp_run_id' => $run]])->save();
     if ($expired) {
         app(ExpireOperationAction::class)->execute($operation);
+        $operation->refresh()->update(['lock_key' => null, 'state' => [...$operation->state,
+            'native_cancel_confirmed_at' => now()->toISOString()]]);
     }
     $result = ['instance_id' => $instance->id, 'moved' => false, 'restored' => true, 'ready' => false,
         'failed_step' => 'processes', 'error_code' => 'instance.migrate_processes_failed'];
@@ -1381,8 +1384,14 @@ it('projects the native restored end state and steps across each post-quiesce ex
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'read-token']);
     try {
-        $projected = app(SwampCommandStep::class)->projectTerminal($operation->refresh(), ['id' => $run],
-            ['job' => 'migrate', 'step' => 'finish'], atDeadline: true);
+        if ($expired) {
+            // Exercise the production selector after cancellation is confirmed, with no target lock.
+            app()->call([new ReconcileSwampOperations, 'handle']);
+            $projected = $operation->refresh();
+        } else {
+            $projected = app(SwampCommandStep::class)->projectTerminal($operation->refresh(), ['id' => $run],
+                ['job' => 'migrate', 'step' => 'finish'], atDeadline: true);
+        }
 
         expect($projected->result)->toBe($result)
             ->and($projected->error_code)->toBe('instance.migrate_processes_failed')
@@ -1400,7 +1409,7 @@ it('projects the native restored end state and steps across each post-quiesce ex
 })->with([
     'step failure' => ['step failure', 'failed', false],
     'step timeout' => ['step timeout', 'failed', false],
-    'Gateway deadline before finish' => ['deadline', 'cancelled', true],
+    'production reconciler after deadline and confirmed cancel without a target lock' => ['deadline', 'cancelled', true],
     'confirmed cancel' => ['cancel', 'cancelled', false],
     'lost worker' => ['lost worker', 'interrupted', false],
 ]);
@@ -1514,4 +1523,11 @@ it('keeps the original quiesce checkpoint when a restore worker is also lost', f
         ->and($retry->input['restore_operation_id'])->toBe($original->id)
         ->and(app(InstanceMigrateProjection::class)->input($retry)['execution_secrets']['model_environment']['key'])
         ->toBe('instance-migrate-model-'.$original->id);
+});
+
+it('renders FrankenPHP after the container network target without waiting for network-online', function (): void {
+    $instance = migrateCheckout(containerDefaultProject(ProjectType::LaravelApp, '8.5'), containerDefaultNode());
+    $operation = migrateStart($instance);
+    $content = $operation->input['container']['units'][0]['content'];
+    expect($content)->toContain("After=network.target\n")->not->toContain('network-online.target');
 });

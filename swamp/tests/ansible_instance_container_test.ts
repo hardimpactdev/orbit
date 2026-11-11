@@ -1075,9 +1075,16 @@ Deno.test({
         assert(call.includes("--no-block"), JSON.stringify(call));
       }
       assertEquals(calls.filter((call) => call[0] === "show").map((call) => call.at(-1)), ["orbit-frankenphp.service", worker.name]);
-      const tasks = Deno.readTextFileSync(new URL("tasks/instance-container-phase.yml", root));
-      assert(tasks.includes("['timeout', '5', 'systemctl', 'show', '--property=ActiveState', '--property=Job', '--', item]"));
-      assert(tasks.includes("retries: 10\n  delay: 1"));
+      // A unit whose job never settles must fail this phase, even though it remains active.
+      const state = f.state();
+      state.systemctl = [];
+      state.queued = { [worker.name]: 100 };
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const blocked = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: environments });
+      assert(!blocked.ok, blocked.output);
+      const reads = f.state().systemctl.filter((call: string[]) => call[0] === "show" && call.at(-1) === worker.name);
+      assert(reads.length > 1 && reads.length <= 11, JSON.stringify(reads));
+      assert(f.state().queued[worker.name] > 0, "Readiness must stop waiting before the queued job finishes.");
     } finally {
       f.cleanup();
     }
