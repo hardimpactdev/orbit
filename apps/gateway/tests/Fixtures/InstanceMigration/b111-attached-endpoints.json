@@ -1,0 +1,135 @@
+{
+    "acl_rules": {
+        "description": "Orbit Instance 1",
+        "egress": [
+            {
+                "action": "allow",
+                "destination": "10.44.0.7/32",
+                "protocol": "tcp",
+                "destination_port": "5432",
+                "state": "enabled"
+            },
+            {
+                "action": "allow",
+                "destination": "10.44.0.7/32",
+                "protocol": "tcp",
+                "destination_port": "6379",
+                "state": "enabled"
+            },
+            {
+                "action": "allow",
+                "destination": "10.44.0.3/32",
+                "protocol": "tcp",
+                "destination_port": "5434",
+                "state": "enabled"
+            }
+        ],
+        "ingress": [
+            {
+                "action": "allow",
+                "source": "10.253.0.1/32",
+                "protocol": "tcp",
+                "destination_port": "8080",
+                "state": "enabled"
+            }
+        ]
+    },
+    "firewall": [
+        {
+            "rule": "allow",
+            "interface_in": "orbitinst0",
+            "from_ip": "10.253.0.2",
+            "to_ip": "10.44.0.7",
+            "to_port": "5432",
+            "proto": "tcp",
+            "comment": "orbit:instance-1-database"
+        },
+        {
+            "rule": "allow",
+            "interface_in": "orbitinst0",
+            "from_ip": "10.253.0.2",
+            "to_ip": "10.44.0.7",
+            "to_port": "6379",
+            "proto": "tcp",
+            "comment": "orbit:instance-1-database-1"
+        },
+        {
+            "rule": "allow",
+            "interface_in": "orbitinst0",
+            "from_ip": "10.253.0.2",
+            "to_ip": "10.44.0.3",
+            "to_port": "5434",
+            "proto": "tcp",
+            "comment": "orbit:instance-1-database-3",
+            "route": "yes",
+            "interface_out": "orbit"
+        }
+    ],
+    "bridge_endpoints": [
+        {
+            "host": "10.44.0.7",
+            "port": 5432,
+            "docker": true
+        },
+        {
+            "host": "10.44.0.7",
+            "port": 6379,
+            "docker": true
+        },
+        {
+            "host": "10.44.0.3",
+            "port": 5434,
+            "docker": false
+        }
+    ],
+    "probes": [
+        {
+            "host": "10.44.0.7",
+            "port": 5432
+        },
+        {
+            "host": "10.44.0.7",
+            "port": 6379
+        },
+        {
+            "host": "10.44.0.3",
+            "port": 5434
+        },
+        {
+            "host": "10.44.0.7",
+            "port": 5432
+        }
+    ],
+    "node_bridge_endpoints": [
+        {
+            "host": "10.44.0.3",
+            "port": 5434,
+            "docker": false
+        },
+        {
+            "host": "10.44.0.7",
+            "port": 5432,
+            "docker": true
+        },
+        {
+            "host": "10.44.0.7",
+            "port": 6379,
+            "docker": true
+        }
+    ],
+    "bridge_ingress": [
+        {
+            "action": "allow",
+            "source": "10.253.0.1/32",
+            "protocol": "tcp",
+            "destination_port": "1024-65535",
+            "state": "enabled"
+        },
+        {
+            "action": "allow",
+            "protocol": "tcp",
+            "destination_port": "3773",
+            "state": "enabled"
+        }
+    ]
+}

@@ -38,6 +38,7 @@ function instance_payload(?array $removal = null): array
         'url' => 'https://dev.orbit.test',
         'removal' => $removal,
         'transfer' => null,
+        'attached_targets' => [],
         'deploy_steps' => [],
         'auto_deploy' => instance_auto_deploy_payload(),
     ];

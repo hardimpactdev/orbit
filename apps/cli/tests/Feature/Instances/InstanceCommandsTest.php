@@ -676,6 +676,43 @@ describe('instance:auto-deploy:enable and disable', function (): void {
 });
 
 describe('instance:show', function (): void {
+    it('shows attached SQL and Redis targets in human and JSON output without credentials', function (bool $json): void {
+        $sql = [
+            'kind' => 'database', 'driver' => 'pgsql', 'id' => 14, 'name' => 'food-catalog',
+            'node' => ['id' => 3, 'name' => 'services'], 'host' => '10.44.0.3', 'port' => 5434,
+            'database' => 'food_catalog', 'username' => 'catalog_reader', 'prefix' => 'FOOD_CATALOG',
+            'server' => ['id' => 9, 'name' => 'catalog-postgres'],
+        ];
+        $redis = [
+            'kind' => 'redis', 'driver' => 'redis', 'id' => 15, 'name' => 'cache',
+            'node' => ['id' => 2, 'name' => 'beast'], 'host' => '10.44.0.2', 'port' => 6379,
+            'database' => null, 'username' => null, 'prefix' => 'REDIS', 'server' => null,
+        ];
+        $payload = [...instance_payload(), 'attached_targets' => [
+            [...$sql, 'password' => 'attachment-password-sentinel', 'vault_key' => 'attachment-vault-sentinel'],
+            $redis,
+        ]];
+        MockClient::global([ShowInstanceRequest::class => instance_mock_response(payload: $payload), ListProcessesRequest::class => no_processes_response()]);
+
+        expect(Artisan::call('instance:show', ['instance' => '5', '--json' => $json]))->toBe(0);
+        $output = Artisan::output();
+        expect($output)->not->toContain('attachment-password-sentinel', 'attachment-vault-sentinel');
+        if ($json) {
+            expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['attached_targets'])->toBe([$sql, $redis]);
+        } else {
+            expect(instance_source_text($output))->toContain('Attached targets', 'pgsql', 'food-catalog', 'services', '10.44.0.3:5434', 'food_catalog', 'catalog_reader', 'FOOD_CATALOG', 'catalog-postgres', 'redis', 'cache', 'beast', '10.44.0.2:6379');
+        }
+    })->with([false, true]);
+
+    it('shows an empty attached target section and array when none are attached', function (): void {
+        MockClient::global([ShowInstanceRequest::class => instance_mock_response(), ListProcessesRequest::class => no_processes_response()]);
+
+        expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain('Attached targets', 'No attached targets.');
+        expect(Artisan::call('instance:show', ['instance' => '5', '--json' => true]))->toBe(0);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['attached_targets'])->toBe([]);
+    });
+
     it('shows an Instance as JSON', function (): void {
         MockClient::global([ShowInstanceRequest::class => instance_mock_response(), ListProcessesRequest::class => no_processes_response()]);
 

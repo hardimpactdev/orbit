@@ -168,3 +168,20 @@ The owned-resource deletion commands are `ai-router:destroy` and `vault:destroy`
 Automatic Gateway release commands use `gateway:auto-release:{status,enable,disable,resume}` and API operation IDs use `gateway-auto-release-*`. The HTTP paths stay under `/api/v1/gateway/release-automation`.
 
 Instance responses expose nullable `retained_git_path` and `retained_git_at` after [checkout migration](/cli/instance/migrate#retained-git-data). They identify retained Node-side Git data and the time it was retained.
+
+## Instance attached targets
+
+Instance records, including `GET /api/v1/instances/{instance}` and the MCP `instance-show` result, include `attached_targets`. It is an empty array when the Instance has no attached connections. The list reads Orbit's records without contacting a Node and uses the same attachments as [instance:migrate](/cli/instance/migrate), ordered by `DB` prefix first and then attachment ID.
+
+| Field | Meaning |
+| --- | --- |
+| `kind` | `database` for MySQL, PostgreSQL or SQLite; `redis` for Redis/Valkey |
+| `id`, `name` | Attached database connection ID and slug |
+| `driver` | Recorded driver: `mysql`, `pgsql`, `sqlite` or `redis` |
+| `node` | Target Node's `id` and `name`, or null for an external connection without a recorded Node; the managed server's Node takes precedence |
+| `host`, `port` | Recorded connection endpoint, as migrate uses it for network grants and probes; null for SQLite |
+| `database`, `username` | Recorded database or Redis index and user, or null when absent |
+| `prefix` | Environment prefix of this attachment |
+| `server` | Managed Database server's `id` and `name` (slug), or null |
+
+Each entry is one connection attachment. The server is its related identity, not an extra attachment. Passwords, secrets and vault keys are excluded.

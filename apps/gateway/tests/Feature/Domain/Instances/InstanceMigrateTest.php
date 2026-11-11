@@ -19,6 +19,7 @@ use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
+use App\Domain\Instances\InstanceAttachedTargets;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceRuntimePowerState;
@@ -473,11 +474,74 @@ function migrateServer(Instance $instance): array
 }
 
 describe('the databases of a move', function (): void {
+    it('keeps grants bridge endpoints and probes byte-identical to b111d0c009 with duplicate attachments', function (): void {
+        $node = containerDefaultNode();
+        $default = migrateCheckout(containerDefaultProject(), $node);
+        migrateServerDatabase($default, migrateDatabaseServer($node, 'cache', DatabaseDriver::Redis, 6379), 'REDIS');
+        $server = migrateDatabaseServer($node, 'pg', DatabaseDriver::Pgsql, 5432);
+        $database = migrateServerDatabase($default, $server);
+        $services = containerDefaultNode('Services', '10.44.0.3', false);
+        migrateServerDatabase($default, migrateDatabaseServer($services, 'catalog', DatabaseDriver::Pgsql, 5434), 'FOOD_CATALOG');
+        DatabaseConnectionTarget::query()->create([
+            'instance_id' => $default->id, 'prefix' => 'DB_ALIAS', 'database_connection_id' => $database->id, 'network' => 'wireguard',
+        ]);
+        migrateServerDatabase($default, $server, 'REPORTING');
+        $sqlite = DatabaseConnection::query()->create([
+            'slug' => 'workspace', 'driver' => DatabaseDriver::Sqlite, 'path' => $default->checkout_path.'/database.sqlite',
+        ]);
+        DatabaseConnectionTarget::query()->create([
+            'instance_id' => $default->id, 'prefix' => 'SQLITE', 'database_connection_id' => $sqlite->id, 'network' => 'wireguard',
+        ]);
+
+        $displayed = InstanceAttachedTargets::forInstance($default);
+        $operation = migrateStart($default);
+        $container = $operation->input['container'];
+        $host = app(InstanceHostIntent::class)->for($node);
+        $network = [
+            'acl_rules' => $container['acl_rules'],
+            'firewall' => $container['firewall'],
+            'bridge_endpoints' => $container['bridge_endpoints'],
+            'probes' => $operation->input['migrate']['databases'],
+            'node_bridge_endpoints' => $host['bridge_endpoints'],
+            'bridge_ingress' => $host['ingress'],
+        ];
+        $path = base_path('tests/Fixtures/InstanceMigration/b111-attached-endpoints.json');
+        if (getenv('ORBIT_FIXTURES') === 'record') {
+            file_put_contents($path, json_encode($network, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
+        }
+
+        $baseline = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+        expect(json_encode($network, JSON_THROW_ON_ERROR))->toBe(json_encode($baseline, JSON_THROW_ON_ERROR));
+
+        expect($displayed->pluck('id')->all())->toBe([2, 1, 3, 4, 5, 6])
+            ->and($displayed->pluck('database_connection_id')->all())->toBe([2, 1, 3, 2, 4, 5])
+            ->and($displayed->pluck('prefix')->all())->toBe(['DB', 'REDIS', 'FOOD_CATALOG', 'DB_ALIAS', 'REPORTING', 'SQLITE']);
+
+        $connections = $displayed->map(static fn (DatabaseConnectionTarget $target): DatabaseConnection => $target->databaseConnection);
+        $probes = $connections->reject(static fn (DatabaseConnection $connection): bool => $connection->driver === DatabaseDriver::Sqlite)
+            ->unique('id')->values()
+            ->map(static fn (DatabaseConnection $connection): array => ['host' => $connection->host, 'port' => $connection->port]);
+        expect($probes->all())->toBe($operation->input['migrate']['databases']);
+
+        $endpoints = $probes->unique(static fn (array $endpoint): string => $endpoint['host'].':'.$endpoint['port'])->values()->all();
+        $grants = array_map(static fn (array $grant): array => [
+            'host' => substr($grant['destination'], 0, -3), 'port' => (int) $grant['destination_port'],
+        ], $container['acl_rules']['egress']);
+        expect($endpoints)->toBe($grants);
+
+        $sqliteIds = $connections->filter(static fn (DatabaseConnection $connection): bool => $connection->driver === DatabaseDriver::Sqlite)
+            ->unique('id')->pluck('id')->values()->all();
+        expect($sqliteIds)->toBe($operation->input['sqlite_connection_ids']);
+    });
+
     it('leaves a database on its server and gives the container its way to every server of the Instance', function (): void {
         $node = containerDefaultNode();
         $default = migrateCheckout(containerDefaultProject(), $node);
         $valkey = migrateServerDatabase($default, migrateDatabaseServer($node, 'cache', DatabaseDriver::Redis, 6379), 'REDIS');
         $database = migrateServerDatabase($default, migrateDatabaseServer($node, 'pg', DatabaseDriver::Pgsql, 5432));
+        $services = containerDefaultNode('Services', '10.44.0.3', false);
+        $catalog = migrateServerDatabase($default, migrateDatabaseServer($services, 'catalog', DatabaseDriver::Pgsql, 5434), 'FOOD_CATALOG');
+        $shownTargets = InstanceData::fromModel($default)->toArray()['attached_targets'];
 
         $operation = migrateStart($default);
 
@@ -485,13 +549,20 @@ describe('the databases of a move', function (): void {
         $rule = ['rule' => 'allow', 'interface_in' => 'orbitinst0', 'from_ip' => '10.253.0.2', 'to_ip' => '10.44.0.7', 'proto' => 'tcp'];
         expect($container['acl_rules']['egress'])->toBe([
             ['action' => 'allow', 'destination' => '10.44.0.7/32', 'protocol' => 'tcp', 'destination_port' => '5432', 'state' => 'enabled'],
-            ['action' => 'allow', 'destination' => '10.44.0.7/32', 'protocol' => 'tcp', 'destination_port' => '6379', 'state' => 'enabled']])
+            ['action' => 'allow', 'destination' => '10.44.0.7/32', 'protocol' => 'tcp', 'destination_port' => '6379', 'state' => 'enabled'],
+            ['action' => 'allow', 'destination' => '10.44.0.3/32', 'protocol' => 'tcp', 'destination_port' => '5434', 'state' => 'enabled']])
             ->and($container['firewall'])->toEqual([[...$rule, 'to_port' => '5432', 'comment' => "orbit:instance-{$default->id}-database"],
-                [...$rule, 'to_port' => '6379', 'comment' => "orbit:instance-{$default->id}-database-{$valkey->id}"]])
+                [...$rule, 'to_port' => '6379', 'comment' => "orbit:instance-{$default->id}-database-{$valkey->id}"],
+                [...$rule, 'to_ip' => '10.44.0.3', 'to_port' => '5434', 'route' => 'yes', 'interface_out' => 'orbit', 'comment' => "orbit:instance-{$default->id}-database-{$catalog->id}"]])
             // The move proves each way from inside the container, `DB` first.
-            ->and($operation->input['migrate']['databases'])->toBe([['host' => '10.44.0.7', 'port' => 5432], ['host' => '10.44.0.7', 'port' => 6379]])
+            ->and($operation->input['migrate']['databases'])->toBe([
+                ['host' => '10.44.0.7', 'port' => 5432], ['host' => '10.44.0.7', 'port' => 6379], ['host' => '10.44.0.3', 'port' => 5434],
+            ])
+            ->and(array_column($shownTargets, 'id'))->toBe([$database->id, $valkey->id, $catalog->id])
+            ->and(array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port']], $shownTargets))
+            ->toBe($operation->input['migrate']['databases'])
             // No second database: the Instance keeps the one it has.
-            ->and(DatabaseConnection::query()->where('owner_instance_id', $default->id)->pluck('id')->all())->toEqualCanonicalizing([$valkey->id, $database->id]);
+            ->and(DatabaseConnection::query()->where('owner_instance_id', $default->id)->pluck('id')->all())->toEqualCanonicalizing([$valkey->id, $database->id, $catalog->id]);
     });
 
     it('still lets a clone of the moved default copy its database with a template copy on the same server', function (): void {

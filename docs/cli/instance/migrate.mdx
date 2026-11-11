@@ -27,6 +27,8 @@ The command moves one checkout Instance into an [Instance container](/reference/
 
 In a terminal, the CLI asks to confirm that the Instance goes down during the move and that its checkout leaves the live path after it, with No selected. Declining, Ctrl-C or end of input ends with `input.cancelled` and starts no move.
 
+The attached targets in [instance:show](/cli/instance/show) are the connections migrate reads: it grants and probes their network endpoints; SQLite files move with the checkout.
+
 ## What moves
 
 | Part | What Orbit does |
