@@ -10,6 +10,7 @@ use App\Http\Requests\Tools\ListToolsRequest;
 use App\Models\Process;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Routing\Route as RoutingRoute;
+use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Route;
 
 /** @return array<string, array<string, ServingNode>> */
@@ -123,6 +124,27 @@ function collection_access_policies(): array
     ];
 }
 
+/**
+ * GET routes that RequireNodeAccess does not guard. Each one authenticates in another named way.
+ *
+ * @return list<string>
+ */
+function collection_access_outside_node_access(): array
+{
+    return [
+        // routes/api/agent.php:11 requires the Node's agent secret; each read answers for the calling Node (ADR 0155).
+        'agent:realtime', 'agent:workspaces', 'agent:watch', 'agent:log-streams',
+        // routes/api/gateway.php:14 and :16 are public bootstrap reads: Gateway status and the root CA certificate.
+        'gateway:status', 'gateway:trust',
+        // routes/api/gateway.php:19 lets any active WireGuard peer read what the fleet should run (ADR 0202).
+        'gateway:desired-fleet-state',
+        // routes/api/operation.php:15 authorizes the peer against the run's participant bindings.
+        'operation:direct:show', 'operation:direct:private-material',
+        // routes/api/websocket.php:13 requires the WebSocket runtime secret.
+        'websocket:registry:snapshot',
+    ];
+}
+
 /** @return array{scope: ?ServingNode, method: ?ReflectionMethod} */
 function collection_access_metadata(RoutingRoute $route): array
 {
@@ -154,11 +176,26 @@ function collection_access_violations(array $routes, ?array $policies = null): a
 
     $violations = [];
     $checked = [];
+    $exempt = [];
+    $outside = collection_access_outside_node_access();
     foreach ($routes as $route) {
         if (! str_starts_with($route->uri(), 'api/v1/') || ! in_array('GET', $route->methods(), true)) {
             continue;
         }
         ['scope' => $scope, 'method' => $method] = collection_access_metadata($route);
+        $name = $route->getName() ?? $route->uri();
+        // The Router's effective list drops excluded middleware; Route::gatherMiddleware() keeps it.
+        $guarded = in_array(RequireNodeAccess::class, resolve(Router::class)->gatherRouteMiddleware($route), true);
+        if (! $guarded || $scope === null || $method === null) {
+            // Checked before the naming rule below, so no unguarded GET escapes by its name or action.
+            if (in_array($name, $outside, true)) {
+                $exempt[] = $name;
+            } else {
+                $violations[$name] = 'Missing Node access metadata or middleware.';
+            }
+
+            continue;
+        }
         // Cover every GET with collection admission (including detail/lookup reads), plus every :list or index GET.
         // A Collection scope admits any grant; only this named inventory records whether its rows are safe.
         if (! in_array($scope, [ServingNode::Collection, ServingNode::ProcessCollection], true)
@@ -166,11 +203,8 @@ function collection_access_violations(array $routes, ?array $policies = null): a
             continue;
         }
 
-        $name = $route->getName() ?? $route->uri();
         $checked[] = $name;
-        if (! in_array(RequireNodeAccess::class, $route->gatherMiddleware(), true) || $scope === null || $method === null) {
-            $violations[$name] = 'Missing Node access metadata or middleware.';
-        } elseif (! isset($declared[$name])) {
+        if (! isset($declared[$name])) {
             $violations[$name] = 'Classify this route by name as ownership-filtered or fleet-global by design, with evidence.';
         } elseif (count($declared[$name]) !== 1) {
             $violations[$name] = 'Classify this route in exactly one policy list.';
@@ -203,6 +237,9 @@ function collection_access_violations(array $routes, ?array $policies = null): a
     foreach (array_diff(array_keys($declared), $checked) as $name) {
         $violations[$name] = 'Remove this stale policy: its covered GET route no longer exists.';
     }
+    foreach (array_diff($outside, $exempt) as $name) {
+        $violations[$name] = 'Remove this stale exemption: the route is gone or RequireNodeAccess now guards it.';
+    }
 
     return $violations;
 }
@@ -212,6 +249,12 @@ final class CollectionAccessReviewController
     /** @return Collection<int, Process> */
     #[RequiresNodeAccess(ServingNode::Collection)]
     public function unfiltered(): Collection
+    {
+        return Process::query()->get();
+    }
+
+    /** @return Collection<int, Process> */
+    public function all(): Collection
     {
         return Process::query()->get();
     }
@@ -242,6 +285,33 @@ it('rejects a GET list with missing access metadata', function (): void {
 
     expect(collection_access_violations(Route::getRoutes()->getRoutes()))->toBe([
         'review:missing:list' => 'Missing Node access metadata or middleware.',
+    ]);
+});
+
+it('rejects an unguarded GET whatever its name or action', function (): void {
+    Route::get('api/v1/review-records', [CollectionAccessReviewController::class, 'all'])->name('review:records');
+    Route::get('api/v1/review-closure', static fn (): array => []);
+
+    expect(collection_access_violations(Route::getRoutes()->getRoutes()))->toBe([
+        'review:records' => 'Missing Node access metadata or middleware.',
+        'api/v1/review-closure' => 'Missing Node access metadata or middleware.',
+    ]);
+});
+
+it('rejects a covered route that excludes the access middleware', function (): void {
+    Route::get('api/v1/review-excluded', [CollectionAccessReviewController::class, 'unfiltered'])
+        ->middleware(RequireNodeAccess::class)->withoutMiddleware(RequireNodeAccess::class)->name('review:excluded');
+
+    expect(collection_access_violations(Route::getRoutes()->getRoutes()))->toBe([
+        'review:excluded' => 'Missing Node access metadata or middleware.',
+    ]);
+});
+
+it('rejects a stale exemption', function (): void {
+    $routes = array_values(array_filter(Route::getRoutes()->getRoutes(), static fn (RoutingRoute $route): bool => $route->getName() !== 'gateway:trust'));
+
+    expect(collection_access_violations($routes))->toBe([
+        'gateway:trust' => 'Remove this stale exemption: the route is gone or RequireNodeAccess now guards it.',
     ]);
 });
 
