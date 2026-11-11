@@ -82,6 +82,7 @@ final class ShowNodeCommand extends NodeCommand
             'Cluster' => $node->clusterName,
             'WireGuard' => $node->wireguardIp,
             'LAN' => $node->lanIp,
+            'Reboot hold' => $node->rebootHold ? 'yes' : 'no',
             'WireGuard public key' => $node->wireguardPublicKey,
             'DNS server override' => $node->dnsServerOverride,
             'TLD' => NodeOutput::tld($node->tld),

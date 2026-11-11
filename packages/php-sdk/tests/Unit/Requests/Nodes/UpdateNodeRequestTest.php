@@ -124,3 +124,13 @@ function node_update_fixture_connector(UpdateNodeRequest $request, array $record
 
     return $connector;
 }
+
+it('transports explicit reboot holds and clearing while omitting an unspecified hold', function (): void {
+    expect(new UpdateNodeRequest(nodeId: 2)->body()->all())->toBe([]);
+    foreach ([true, false] as $hold) {
+        $request = new UpdateNodeRequest(nodeId: 2, rebootHold: $hold);
+        expect($request->body()->all())->toBe(['reboot_hold' => $hold]);
+        $node = NodeResponse::fromGatewayData(['id' => 2, 'reboot_hold' => $hold], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+        expect($node->rebootHold)->toBe($hold)->and($node->toArray()['reboot_hold'])->toBe($hold);
+    }
+});

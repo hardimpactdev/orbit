@@ -293,3 +293,53 @@ it('confirms the swamp Node reboot from its uptime and alerts when no new boot a
     NodeFact::query()->where('node_id', $this->swamp->id)->update(['data' => ['uptime_seconds' => 600]]);
     expect(CheckFleetRebootConfirmation::bootedSince($this->swamp->id, CarbonImmutable::parse($pass->finished_at)))->toBeTrue();
 });
+
+it('admits a held task host read-only in nightly and selected operator passes and leaves its work unlocked', function (bool $nightly): void {
+    Queue::fake([StartAdmittedSwampRun::class]);
+    $this->beast->update(['reboot_hold' => true]);
+    $group = Task::query()->create(['title' => 'held work', 'brief' => 'b', 'status' => 'running']);
+    TaskVm::query()->create(['host_node_id' => $this->beast->id, 'group_id' => $group->id, 'name' => 'held-tvm',
+        'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.155', 'provider' => 'incus', 'capacity_pool' => 'task']);
+    Operation::query()->create(['kind' => 'tasks.turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'status' => 'running', 'input' => []]);
+    $operation = $nightly ? app(AdmitFleetRebootAction::class)->execute(window: true)
+        : Operation::query()->findOrFail($this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])
+            ->postJson('/api/v1/fleet/reboot', ['node_ids' => [$this->beast->id]])->assertAccepted()->json('data.id'));
+    expect($operation->input['intent']['nodes'][(string) $this->beast->id]['defer'])->toBe('operator_hold')
+        ->and($operation->input['intent']['order'])->toContain($this->beast->id)
+        ->and($operation->input['task_hosts'])->not->toContain($this->beast->id);
+    FleetReboot::refuseTaskWork($group);
+    $this->beast->update(['reboot_hold' => false]);
+    expect($operation->fresh()->input['intent']['nodes'][(string) $this->beast->id]['defer'])->toBe('operator_hold')
+        ->and(app(FleetReboot::class)->node($this->beast)['defer'])->toBe('tasks_busy');
+})->with(['nightly' => [true], 'operator node_ids' => [false]]);
+
+it('projects the admitted reboot hold for due, not-due and unreached Nodes and keeps held overdue alerts', function (): void {
+    $since = now()->subDays(4)->startOfSecond()->toIso8601String();
+    $ids = [$this->beast->id, $this->prod->id, $this->vpn->id];
+    $operation = Operation::query()->create(['kind' => 'fleet.reboot', 'target_type' => 'fleet', 'target_id' => 1,
+        'status' => 'running', 'state' => ['swamp_run_id' => 'held-run'], 'input' => ['intent' => ['order' => $ids,
+            'nodes' => array_fill_keys($ids, ['defer' => 'operator_hold'])], 'task_hosts' => []]]);
+    $projected = app(FleetRebootProjection::class)->apply($operation, ['run_id' => 'held-run', 'status' => 'succeeded',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'failure' => null, 'result' => ['nodes' => [
+            ['node_id' => $this->beast->id, 'outcome' => 'deferred', 'reason' => 'operator_hold', 'reboot_hold' => true,
+                'boot_id_before' => 'held-boot', 'kernel_before' => '7.0.0-42-generic', 'due_since' => $since],
+            ['node_id' => $this->prod->id, 'outcome' => 'not_due', 'reboot_hold' => true],
+        ]]]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])
+        ->getJson("/api/v1/operations/{$projected->id}")->assertOk()->assertJsonPath('data.result.nodes.0.reboot_hold', true)
+        ->assertJsonPath('data.result.nodes.0.reason', 'operator_hold');
+    expect(array_column($projected->result['nodes'], 'reboot_hold'))->toBe([true, true, true])
+        ->and($projected->result['nodes'][0])->toMatchArray(['reason' => 'operator_hold', 'boot_id_before' => 'held-boot', 'due_since' => $since])
+        ->and(FleetReboot::dueSince($this->beast->id)?->getTimestamp())->toBe(CarbonImmutable::parse($since)->getTimestamp())
+        ->and(FleetReboot::dueSince($this->prod->id))->toBeNull()
+        ->and(array_map(static fn (ReleaseAlert $alert): string => $alert->incident->key($alert->kind), $this->sent))
+        ->toBe(['reboot_overdue|fleet-node:'.$this->beast->id.'|due-'.CarbonImmutable::parse($since)->getTimestamp().'|fleet.reboot_overdue']);
+});
+
+it('keeps an idle held task host out of the pass task-work lock', function (): void {
+    Queue::fake([StartAdmittedSwampRun::class]);
+    $this->beast->update(['reboot_hold' => true]);
+    $operation = app(AdmitFleetRebootAction::class)->execute(nodeIds: [$this->beast->id]);
+    expect($operation->input['task_hosts'])->toBe([])
+        ->and($operation->input['intent']['nodes'][(string) $this->beast->id]['defer'])->toBe('operator_hold');
+});

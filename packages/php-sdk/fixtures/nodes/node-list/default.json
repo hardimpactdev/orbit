@@ -42,7 +42,8 @@
                         "failed_step": null,
                         "error_code": null
                     }
-                ]
+                ],
+                "reboot_hold": false
             },
             {
                 "id": 1,
@@ -81,7 +82,8 @@
                         "failed_step": null,
                         "error_code": null
                     }
-                ]
+                ],
+                "reboot_hold": false
             }
         ],
         "meta": {

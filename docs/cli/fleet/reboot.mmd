@@ -17,7 +17,8 @@ sequenceDiagram
   %%> Picks:
   %%> - every active Linux Node with a WireGuard address and a pinned host key, except task VMs
   %%> - in the rollout's groups, then the control path (`vpn` hub, Gateway, `swamp.orbit` Node), then the `swamp` Node
-  %%> - a task host with open task work is reported `deferred` (`tasks_busy`) and left out
+  %%> - a reboot hold is frozen as `defer: operator_hold`; a held Node is read but never drained or rebooted
+  %%> - a task host with open task work is read and reported `deferred` (`tasks_busy`)
   %%> Requirements:
   %%> - no other pass, no fleet rollout and no Gateway release runs; they refuse each other
   GW->>SW: Start run, full intent<br/>operation-fleet-reboot
@@ -27,8 +28,10 @@ sequenceDiagram
     SW->>N: Drain the Node<br/>drain phase
     %%> Why:
     %%> - after a failed Node: `skipped`; outside the window: `deferred`; no `/var/run/reboot-required`: `not_due`
+    %%> - a due held Node records boot ID, kernel and due time, then `deferred` (`operator_hold`); without a due reboot it stays `not_due`
     %%> - CI: stop each idle runner, frozen while read; a job still running after 15 min defers the Node
     %%> - task guests stop and are recorded parked; on the Gateway the scheduler stops and Horizon drains within 15 min
+    %%> - record `drain_started` before the first stop; rescue runs the existing Gateway and CI recovery only after that marker
     SW->>N: Reboot and wait for SSH<br/>reboot phase
     %%> Why:
     %%> - the swamp Node instead schedules its own reboot after the run ends: `scheduled`
@@ -48,6 +51,7 @@ sequenceDiagram
   alt every Node rebooted, scheduled, not due, deferred or skipped
     SW-->>GW: Run succeeded<br/>each Node's outcome
     %%> Result:
+    %%> - every Node result shows `reboot_hold` as admitted; held task hosts keep taking work
     %%> - the Gateway records parked task VMs; a Node due for more than 3 days raises `reboot_overdue`
   else a Node fails
     SW--xGW: Run failed<br/>NODE · error_code

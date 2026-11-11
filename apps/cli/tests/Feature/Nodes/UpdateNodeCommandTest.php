@@ -214,3 +214,19 @@ it('follows an apps folder Operation and prints its final receipt in JSON', func
         && $pending->headers()->get('Idempotency-Key') === 'update-proof');
     $mock->assertSent(ShowOperationRequest::class);
 });
+
+it('sets and clears a reboot hold through the existing Node update request', function (bool $hold): void {
+    node_update_profile();
+    $mock = MockClient::global(['*/api/v1/nodes/9' => MockResponse::make([
+        'data' => ['id' => 9, 'name' => 'beast', 'status' => 'active', 'reboot_hold' => $hold],
+        'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+    ])]);
+    $this->artisan('node:update', ['node' => '9', '--reboot-hold' => $hold ? 'true' : 'false', '--json' => true])
+        ->expectsOutputToContain('"reboot_hold":'.($hold ? 'true' : 'false'))->assertExitCode(0);
+    expect($mock->getLastRequest()?->body()->all())->toBe(['reboot_hold' => $hold]);
+})->with([true, false]);
+
+it('refuses malformed reboot hold options before sending a request', function (string $value): void {
+    $this->artisan('node:update', ['node' => '9', '--reboot-hold' => $value, '--json' => true])
+        ->expectsOutputToContain('node.reboot_hold_invalid')->assertExitCode(1);
+})->with(['', '1', 'yes', 'null']);

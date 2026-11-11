@@ -123,7 +123,7 @@ final class NodesController extends Controller
         $caller = $request->user();
         $update = $action->execute($node, $request->name(), $request->platform(), $request->settings(),
             $caller instanceof Node ? $caller : null, $request->attributes->getString('orbit.request_id'),
-            $request->hasLanIp(), $request->lanIp());
+            $request->hasLanIp(), $request->lanIp(), $request->rebootHold());
         $result = $update->result;
         if ($result instanceof Operation) {
             return response()->json([

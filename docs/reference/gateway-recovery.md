@@ -685,7 +685,9 @@ The order is the rollout's [risk groups](#rollout-set-and-order), then two more.
 | 5 | The control path: the `vpn` hub, the Gateway Node, and the Node of the Route that serves the Swamp address (`swamp.orbit`) |
 | 6 | The `swamp` Node |
 
-A task host with an open task Operation on one of its task VMs stays in the pass, but only to be read: it records since when it is due and then `deferred` with `tasks_busy`. While the pass runs, the Gateway holds new task work off every other task host it visits:
+Set a durable per-Node reboot hold with `orbit node:update NODE --reboot-hold=true`; clear it with `--reboot-hold=false`. The default is false. The existing Node update API and MCP accept the boolean `reboot_hold` field. Every Node read shows it. Admission freezes the hold as the existing `defer: operator_hold` intent value, ahead of task-busy deferral. Changes apply to the next pass. Both nightly passes and operator passes with `node_ids` respect the hold. No new intent key is required, so the Gateway and workflow ship in one release: migrate the database, load Swamp, then activate the Gateway. The `drain_started` marker is run-local state, and rescue skips undo when it is absent.
+
+A task host with an open task Operation on one of its task VMs stays in the pass, but only to be read: it records since when it is due and then `deferred` with `tasks_busy`. While the pass runs, the Gateway holds new task work off every other task host it visits that has no reboot hold:
 
 - task turns, checks, publishes, scripts and proofs for a group on such a host refuse with `409 tasks.host_rebooting`; the caller repeats the call after the pass;
 - task VM placement and the daily image refresh skip such a host.
@@ -699,6 +701,7 @@ The `drain` phase decides first whether the Node goes on:
 - After an earlier Node of the pass failed, the Node records `skipped` with `halted`. The phase reads that from the run folder.
 - Without `/var/run/reboot-required`, the Node records `not_due`.
 - A due Node records its boot ID, its kernel, its failed units and its due time.
+- A due held Node records `deferred` with `operator_hold` and ends before any drain or reboot. A held Node without a due reboot stays `not_due`. Every Node result includes the admitted `reboot_hold`, including in `operation:show`.
 - A busy task host then records `deferred` with `tasks_busy`. A Node whose drain, guest stops and reboot cannot end 45 minutes before 06:00 records `deferred` with `window`.
 
 Then the phase drains the Node:
@@ -707,7 +710,7 @@ On a CI runner host, the phase drains the runners every 20 seconds, for at most 
 
 On a task host, the phase stops each running task guest cleanly, within a minute, and records its name at once. The Gateway records those task VMs `parked`, and the next task call wakes them.
 
-When the drain fails, the phase starts the runners it stopped and, on the Gateway, the scheduler and Horizon again, before it records the failure. Stopped task guests stay parked.
+After the hold and window checks, the phase writes `drain_started` to the Node's run-folder record before the first CI, task guest or Gateway stop. Rescue runs undo only when this marker exists. If writing it fails, nothing has stopped yet and undo is skipped. Once a drain begins, failure keeps the existing recovery: start the Gateway scheduler and Horizon, and start every runner from the initial running inventory that is now stopped. Recovery does not depend on later record writes or on reading the stopped-runner list. Stopped task guests stay parked.
 
 On the Gateway Node, the phase stops the scheduler. Then it stops Horizon, which drains on stop, within the drain budget. The reboot ends what is left.
 
@@ -760,9 +763,9 @@ A reboot of the control path or of Node 209 can cut a Swamp run after the drain 
 
 ### What is reported
 
-The Operation result lists each Node in pass order with its outcome: `rebooted`, `scheduled`, `not_due`, `deferred` with `window`, `tasks_busy` or `ci_busy`, `skipped` with `halted` or `not_reached`, or `failed`. It also holds the kernel before and after, since when the reboot was due, the parked task guests, any newly failed units, the stopped CI runners with their freeze times, and the CI runs it re-ran.
+The Operation result lists each Node in pass order with its outcome: `rebooted`, `scheduled`, `not_due`, `deferred` with `operator_hold`, `window`, `tasks_busy` or `ci_busy`, `skipped` with `halted` or `not_reached`, or `failed`. It also holds the kernel before and after, since when the reboot was due, the parked task guests, any newly failed units, the stopped CI runners with their freeze times, and the CI runs it re-ran.
 
-Doctor reports `node.reboot_due` when the newest pass that read a Node found it due more than 3 days ago and did not reboot it. A record without a due time, such as `halted`, does not count; Doctor looks at the pass before it. When a pass ends with such a Node, the Gateway raises [`reboot_overdue`](#release-alerts) once.
+Doctor reports `node.reboot_due` when the newest pass that read a Node found it due more than 3 days ago and did not reboot it. A record without a due time, such as `halted`, does not count; Doctor looks at the pass before it. A reboot hold does not suppress this warning or alert: the owner still needs to see overdue fixes. When a pass ends with such a Node, the Gateway raises [`reboot_overdue`](#release-alerts) once.
 
 ## Limits
 

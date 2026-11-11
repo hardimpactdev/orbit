@@ -49,10 +49,14 @@ final readonly class FleetRebootProjection implements DirectOperationProjection
             $byNode[ValidatedData::integer($node['node_id'])] = array_intersect_key($node, array_flip(self::Fields));
         }
         $intent = ValidatedData::object($operation->input['intent'] ?? []);
+        // JSON object keys that are digits decode as integer keys, so read the admitted Node by its integer ID.
+        $admitted = is_array($intent['nodes'] ?? null) ? $intent['nodes'] : [];
         $nodes = [];
         foreach (ValidatedData::integerList($intent['order'] ?? []) as $id) {
             // A Node the pass did not reach, after a failed Node or a cut run, has no record.
-            $nodes[] = $byNode[$id] ?? ['node_id' => $id, 'outcome' => 'skipped', 'reason' => 'not_reached'];
+            // The admitted reason also shows the hold when the run never reached this Node.
+            $nodes[] = [...($byNode[$id] ?? ['node_id' => $id, 'outcome' => 'skipped', 'reason' => 'not_reached']),
+                'reboot_hold' => is_array($admitted[$id] ?? null) && ($admitted[$id]['defer'] ?? null) === 'operator_hold'];
         }
         $failed = array_find($nodes, static fn (array $node): bool => ($node['outcome'] ?? null) === 'failed');
         $result = ['nodes' => $nodes, ...($failed !== null ? ['error_code' => is_string($failed['error_code'] ?? null) ? $failed['error_code'] : 'fleet.reboot_failed'] : [])];
