@@ -29,6 +29,16 @@ class BuildPlanTest(unittest.TestCase):
                 self.assertTrue(plan.select([path], main=True)['gateway_release'])
         self.assertTrue(plan.select(['docs/reference/tasks.md', 'apps/gateway/app/Thing.php'])['gateway_release'])
 
+    def test_docs_contracts_follow_docs_sources_check_tools_and_charts(self):
+        for path in ('apps/docs/tests/Unit/CheckFlowsTest.php', 'apps/docs/tests/docs_flows_test.py',
+                     'apps/docs/composer.lock', 'apps/docs/phpunit.xml', 'apps/docs/app/Example.php',
+                     'bin/check-flows', 'bin/check-processes', 'bin/check-operation-kinds', 'bin/check-new-contract',
+                     'docs/cli/instance/container/create.mmd', 'docs/reference/pipeline/4-pr-and-ci.mmd'):
+            for main in (False, True):
+                with self.subTest(path=path, main=main):
+                    self.assertIn('docs', self.selected([path], main))
+        self.assertNotIn('docs', self.selected(['apps/web/src/main.ts']))
+
     def test_project_check_is_not_selected_by_ci(self):
         for paths in ([], ['README.md'], ['swamp/workflows/x.yaml'], ['apps/gateway/app/Thing.php']):
             self.assertNotIn('project-check', plan.select(paths)['jobs'], paths)

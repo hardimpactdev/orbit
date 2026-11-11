@@ -55,7 +55,7 @@ Pull requests and main pushes run the fast Swamp control checks. Selected shape 
 | CLI Pest suite | Run the complete CLI suite on `ubuntu-26.04` in one process with 1 GiB of PHP memory |
 | CLI build | Build the existing Linux and macOS CLI binaries through the reusable Orbit CLI Binary workflow |
 | CLI static analysis, PHP SDK static analysis, E2E static analysis | Run PHPStan for `apps/cli`, `packages/php-sdk` or `apps/e2e` |
-| Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint; run `bin/check-flows` on the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) |
+| Docs build | Generate API contracts and the documentation index, run strict documentation lint and the complete Docs Pest suite, including its Python contracts; run `bin/check-flows` on the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) |
 | Generated contracts | Check Operation kinds, their charts and workflow intent; generate OpenAPI, MCP tools and the web schema; check the recorded fixtures |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only and docs-only changes |
@@ -220,6 +220,14 @@ The [CI budget](#ci-budget) applies before any fixture returns to pull requests.
 Tests of bin scripts live beside their script. The shape job names the liveness and Node 209 source suites explicitly. It also runs every unit test in `swamp/tests` and in the automatic-deploy, Composer and JS maintenance and Project extension folders. Each file in `swamp/tests` is its own step, so the workers share the slow Ansible files. Three files stay out: `node_add_bootstrap_test.ts` runs in the validation group, `metrics_exporter_firewall_test.ts` stays out until it passes, and `native_host_method_test.ts` needs systemd and passwordless sudo, so it runs on a host. Test fixtures serve unit tests; they do not start Swamp or pull extensions.
 
 Each main SHA has its own concurrency group in both CI and the reusable Swamp workflow. Main runs complete independently. A shared group would replace an older pending run even with `cancel-in-progress: false`; that option protects only the running job. Pull requests share a group and cancel superseded runs.
+
+Docs build installs the locked Docs dev dependencies and Gateway runtime dependencies. It uses the existing PHP action and Bun 1.4.2 pin, installs only the API-types workspace, and generates OpenAPI, MCP tools and web types before building the Docs index and running Pest. Python 3, Git and Node come from `ubuntu-26.04`; no service or fleet operation is needed. Every `apps/docs/**`, `bin/check-*` and docs chart change selects this job. The complete Unit and Feature suites run with two workers and fail on an empty suite; the Python wrapper discovers every `*_test.py` file and rejects an empty collection. No Docs case is deferred to Main full set.
+
+The first local measurement at `6faf66c1da` took 13.34 seconds for 228 Pest tests with fourteen workers on Ubuntu 26.04, PHP 8.5.12 and Python 3.14.4. It exposed stale navigation fixtures and unprepared generated contracts. After preparing the generated inputs and repairing the navigation fixtures, all 228 tests passed with 768 assertions in 17.52 seconds of Pest time and 17.90 seconds wall time with two workers. The wrapper reached all 11 Python tests across three files. These are warm local measurements.
+
+A local install into empty vendor directories took 3.45 seconds for Docs dev packages and 3.18 seconds for Gateway runtime packages, with scripts disabled and warm Composer downloads. Contract generation took 1.61 seconds; web types took 0.82 seconds. Hosted PHP and Bun setup and cold downloads remain unmeasured.
+
+The job keeps its 120-second ceiling. Its table cost is a 70-second estimate: the previous 40 seconds plus about 28 seconds of measured local tests and setup, rounded up. Hosted evidence must replace this estimate. Budget PHP setup, dev-package extraction, Gateway runtime installation, the filtered Bun install and contract generation as well as Pest; download-cache misses add network time. Check the first hosted run against the two-minute job limit and the five-minute push-to-Required budget before claiming it fits. Check Linux process-adoption fixtures on slower runners; each unsized test has a two-second limit.
 
 Two checks guard the flow charts. Generated contracts requires a chart or a `docs/cli/flows-pending.txt` line for every kind. Docs build runs `bin/check-flows`. Their inputs are declared in the checks table.
 
