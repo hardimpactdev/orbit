@@ -8,6 +8,7 @@ use App\Data\Operations\OperationData;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\NativeRunCancellation;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -16,6 +17,7 @@ use App\Domain\Tasks\TaskOperations;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\CancelSwampRun;
+use App\Infrastructure\Swamp\NativeRunResult;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Infrastructure\Swamp\SwampRequestDeadline;
@@ -639,3 +641,65 @@ it('keeps generic late causality and safe steps without consulting a family end 
     'independent timeout' => ['failed', false, true, 124, 'tasks.script_failed', 'failed', 'tasks.script_failed'],
     'failure before cancellation' => ['cancelled', false, true, 42, 'tasks.script_failed', 'failed', 'tasks.script_failed'],
 ]);
+
+it('preserves independent native failures without a public code in generic late receipts', function (string $mode, bool $expired, bool $userCancel = true): void {
+    Queue::fake();
+    $operation = runningScript(minutes: $expired ? 20 : 1);
+    if ($userCancel) {
+        $operation->update(['cancel_requested_at' => now()]);
+    }
+    if ($expired) {
+        app(ExpireOperationAction::class)->execute($operation);
+    }
+    $operation->refresh()->update(['state' => [...$operation->state, 'native_cancel_confirmed_at' => now()->toISOString()]]);
+    $history = json_decode(file_get_contents(base_path('tests/Fixtures/instance-migrate/pinned-'.$mode.'.json')), true, flags: JSON_THROW_ON_ERROR);
+    $history['id'] = RUN;
+    $history['workflowName'] = 'operation-task-script';
+    $history['status'] = 'cancelled'; // Same independent-failure-before-later-cancel interleaving as the migrate regression.
+    $history['inputs'] = ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind];
+    reconcileSocket($operation, 'cancelled', onHistory: fn () => $history);
+    expect(NativeRunResult::cancelledFailure($history))->toBeFalse();
+    $settled = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => RUN], app(DirectOperation::class)->definition($operation->kind)['terminal_result']);
+    expect([$settled->status->value, $settled->error_code])->toBe(['failed', 'operation.native_failed']);
+})->with([
+    'independent 42 then user cancel' => ['failure', false],
+    'independent 124 then user cancel' => ['timeout', false],
+    'independent 42 before user cancel and expiry' => ['failure', true],
+    'independent 124 before user cancel and expiry' => ['timeout', true],
+    'independent 42 before deadline cancel' => ['failure', true, false],
+    'independent 124 before deadline cancel' => ['timeout', true, false],
+]);
+
+it('does not infer an independent native failure from cancellation without failed phases', function (bool $expired): void {
+    Queue::fake();
+    $operation = runningScript(minutes: $expired ? 20 : 1);
+    if ($expired) {
+        app(ExpireOperationAction::class)->execute($operation);
+    } else {
+        $operation->update(['cancel_requested_at' => now()]);
+    }
+    $operation->refresh()->update(['state' => [...$operation->state, 'native_cancel_confirmed_at' => now()->toISOString()]]);
+    reconcileSocket($operation, 'cancelled');
+
+    $settled = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => RUN], app(DirectOperation::class)->definition($operation->kind)['terminal_result']);
+
+    expect([$settled->status->value, $settled->error_code])->toBe($expired ? ['failed', 'operation.timed_out'] : ['cancelled', null]);
+})->with(['deadline cancel' => true, 'user cancel' => false]);
+
+it('reopens provisional expiry for an in-budget native cancellation without confirmed cancel', function (): void {
+    Queue::fake();
+    $operation = runningScript();
+    $completed = OperationRunBudgets::deadline($operation)->subSecond()->toISOString();
+    reconcileSocket($operation, 'cancelled', onHistory: function () use ($operation, $completed): array {
+        app(ExpireOperationAction::class)->execute(Operation::query()->findOrFail($operation->id));
+
+        return ['id' => RUN, 'workflowName' => 'operation-task-script', 'status' => 'cancelled',
+            'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+            'startedAt' => $operation->started_at->toISOString(), 'completedAt' => $completed, 'jobs' => []];
+    });
+
+    $settled = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => RUN], app(DirectOperation::class)->definition($operation->kind)['terminal_result']);
+
+    expect([$settled->status->value, $settled->error_code, $settled->result])->toBe(['cancelled', null, []])
+        ->and($settled->state['native_timeout']['native_terminal_status'])->toBe('cancelled');
+});
