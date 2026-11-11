@@ -5,6 +5,9 @@ description: "Prove the commands that a commit changes. Orbit picks the cases fr
 covers:
   - apps/gateway/app/Domain/Proof/ProofBatchPlan.php
   - apps/gateway/app/Domain/Proof/ProofShardVerdicts.php
+  - apps/gateway/app/Domain/Proof/ProofCommandProjection.php
+  - apps/gateway/app/Domain/Proof/ProofRunSettlement.php
+  - bin/ci-proof-run
 ---
 
 ```bash
@@ -59,7 +62,7 @@ Operator proofs use one VM per command through the task pool's FIFO admission. T
 
 Every run releases its VM after success or failure. If cleanup fails or a run never starts, normal group cancellation deletes the VM. One live or releasing VM holds one place until deletion is confirmed.
 
-Orbit reads the full case reports, checks the expected case identities and merges every VM’s verdicts into one report. A missing, duplicate or unexpected verdict fails. The proof closes after all runs end and passes only when every selected command has all its cases passed. A selection with no command passes without claiming a VM.
+Orbit reads the full case reports, checks the expected case identities and merges every VM’s verdicts into one report. A missing, duplicate or unexpected verdict prevents a pass. The proof closes after all runs end and passes only when every selected command has all its cases passed. A selection with no command passes without claiming a VM.
 
 ## The execution switch
 
@@ -69,11 +72,16 @@ Orbit reads the full case reports, checks the expected case identities and merge
 
 Each selected case ends `passed`, `failed` or `unrun`. A case that exceeds the budget is `failed`. A case is `unrun` when its setup could not start or the run stopped before it. Neither `failed` nor `unrun` counts as a pass. If the fleet never becomes ready, every selected case is `unrun`.
 
+A run reported as `interrupted` keeps that status and records `outcome: interrupted`. Its coverage is inconclusive, even when every recorded case passed. Orbit keeps completed batch reports when interruption prevents the final report. Completed verdicts stay as they are, including failed cases; missing cases remain `unrun`. After every run ends, the proof is `failed` if any completed case failed or any non-interrupted run did not pass. Otherwise a native interrupted run makes the proof `interrupted`, with `proof.run_interrupted`. Thus a concurrent interruption cannot hide a completed failure. Cancellation, admission interruption, workspace mismatch and timeouts keep their existing failure rules; Orbit does not infer native interruption from them.
+
+The CI summary and receipt preserve `interrupted` and the job exits nonzero. An interrupted outcome never passes, including with all passed rows. Malformed coverage or a nonzero CLI exit cannot pass either.
+
 The result names the commit, each case with its command, selection reason, verdict and duration, and the uncovered paths. The `program` of a case is the cases file and the case id, `swamp/proof/firewall/allow.cases.yaml#new-restricted-allow`; a `failed` or `unrun` case also carries its cause and the failed checks. The VM is destroyed after the run, so the evidence lasts only as long as a receipt store is not built; the verdicts stay in the result.
 
 | Outcome | Exit status |
 | --- | --- |
-| Every selected case passed, or nothing needed a proof. | `0` |
+| The proof completed with every selected case passed, or nothing needed a proof. | `0` |
+| Native execution was interrupted. | Nonzero; the coverage is inconclusive. |
 | A selected case failed or did not run. | Nonzero. The command names each such case and the receipt link. |
 | Orbit refused the request. | Nonzero, with the one-line error envelope. |
 | You pressed Ctrl-C. | `130`. |
@@ -97,6 +105,7 @@ The request answers at once with the proof Operation. The checks of the commit, 
 
 | Code | Meaning |
 | --- | --- |
+| `proof.run_interrupted` | Native execution stopped with inconclusive coverage, without a completed failure taking precedence. |
 | `proof.commit_invalid` | The commit is missing or is not a full lowercase SHA, and the CLI cannot prompt. |
 | `proof.commit_not_found` | The Orbit repository has no such commit. |
 | `proof.commit_untrusted` | The commit is not the head of a branch of the Orbit repository, nor the head of an open pull request with the label `run-proofs` and a maintainer's approval of exactly that commit. |

@@ -154,7 +154,7 @@ CI proofs join one FIFO admission queue. Its front takes every free usable CI pl
 
 A clean CLI exit is insufficient: the job requires a passing result with case verdicts for every selected command. A failed case, an unrun case, a missing result or a selected command with no verdict fails. A result with no selected command passes. A capacity message with no cases always fails; it has no successful skip classification.
 
-The job summary lists case verdicts and uncovered paths. The `proof-receipt` artifact records the commit, operation, selected commands, outcome and idempotency key. It excludes execution input and host settings. Reports use full Swamp output artifacts because native history summaries keep only 4 KiB.
+The job summary lists case verdicts and uncovered paths. The `proof-receipt` artifact records the commit, operation, selected commands, outcome and idempotency key. An `interrupted` outcome means inconclusive coverage and exits nonzero; [proof outcomes](/cli/proof/run#verdicts) define failure precedence. It excludes execution input and host settings. Reports use full Swamp output artifacts because native history summaries keep only 4 KiB.
 
 The job holds no secret. The runner's CLI acts as its enrolled Node from its WireGuard address, with an access grant to the Gateway. Only an active authenticated `ci-runner` Node gets the CI pool. The default labels are `self-hosted, hardimpact, orbit-shard`; `ORBIT_PROOF_RUNNER` can supply a JSON list of labels. The 195-minute job timeout covers two hours of admission, execution and cancellation.
 

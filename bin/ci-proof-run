@@ -92,7 +92,7 @@ def report(code, output, sha, key):
     selection_known = (isinstance(commands, list) and bool(commands)
                        and all(isinstance(command, str) and COMMAND.fullmatch(command) for command in commands))
     passed, lines = evaluate(code, output)
-    outcome = 'passed' if passed else 'failed'
+    outcome = 'passed' if passed else ('interrupted' if result.get('outcome') == 'interrupted' else 'failed')
     operation_id = None
     if isinstance(document, dict):
         for holder in (document, document.get('data'), document.get('operation')):

@@ -68,10 +68,10 @@ sequenceDiagram
   SW->>VM: Release the place
   %%> Delete after every outcome. Failed or missing cleanup schedules normal group cancellation. A live or releasing VM holds its place until confirmed deletion.
   SW-->>GW: Report verdicts<br/>full artifact
-  %%> Capture the full report, not its 4 KiB history tail. Identify command and file on each line. Missing, duplicate or unexpected case verdicts fail the shard; a missing expected case is unrun.
+  %%> Capture the full report, not its 4 KiB history tail. Identify command and file on each line. Missing, duplicate or unexpected case verdicts prevent a pass; a missing expected case is unrun.
   GW->>GW: Merge all shard verdicts
-  %%> Wait for every admitted child, require every expected case and every selected command, and close one proof result. Failed, cancelled, unrun and missing verdicts fail.
+  %%> Wait for every admitted child, require every expected case and every selected command, and close one proof result. Preserve a native interrupted shard as inconclusive interrupted coverage, even with all passed rows. A completed failed case or a non-interrupted child that did not pass takes precedence and fails the proof. Keep every case verdict, including synthesized unrun rows. Cancellation and admission interruption keep their existing failure semantics.
   GW-->>CLI: One merged report
   CLI->>CLI: Require the proof verdict
-  %%> The proof job is in Required checks. A selected command with a failed case or no verdict fails. No selected command passes. Capacity is only a bounded wait, never a successful no-case result.
+  %%> The proof job is in Required checks. A selected command with a failed case or no verdict fails. An interrupted result stays interrupted in the receipt and exits nonzero, including with all passed rows. Malformed coverage or a nonzero CLI exit never passes. No selected command passes. Capacity is only a bounded wait, never a successful no-case result.
   %%> A fork uses the outside proof's status on this exact head. A missing, pending or failed status fails Required checks; rerun the failed Required job after the approved outside proof succeeds.

@@ -52,5 +52,5 @@ sequenceDiagram
   %%> Prefix each line with its command, file and batch. The fixed capture reads the full artifact rather than the 4 KiB history summary.
   SW-->>GW: Native terminal result
   GW->>GW: Record all expected cases
-  %%> Failed, missing, duplicate or unassigned verdicts fail the shard. A missing case becomes unrun. A missing or failed delete schedules normal group cancellation. The parent closes one merged report after all shards end.
+  %%> Preserve native interrupted status and record outcome interrupted; it never passes, even with all passed rows. Otherwise failed, missing, duplicate or unassigned verdicts fail the shard. Keep recorded batch reports even if interruption prevents the final report. Keep completed case verdicts and synthesize missing cases as unrun. A missing or failed delete schedules normal group cancellation. The parent closes one merged report after all shards end.
   %%> A shard that reaches its run budget is timed out: it keeps the recorded verdicts of the batches that ended, and only the cases of the other batches are unrun.
