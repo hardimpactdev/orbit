@@ -61,7 +61,7 @@ enum NodeFactKind: string
             self::Host => [
                 'os' => ['required', 'string', 'max:64'],
                 'instance_bridge' => ['sometimes', 'nullable', 'array:error_code', 'required_array_keys:error_code'],
-                'instance_bridge.error_code' => ['sometimes', 'nullable', 'string', 'in:instance.container_endpoint_unresolved,instance.container_bridge_write_failed,instance.container_bridge_health_unreadable'],
+                'instance_bridge.error_code' => ['sometimes', 'nullable', 'string', 'in:instance.container_endpoint_unresolved,instance.container_bridge_write_failed,instance.container_bridge_health_unreadable,instance.bridge_command_timeout,instance.bridge_lock_timeout,instance.bridge_state_unresolved'],
                 'arch' => ['required', 'string', 'max:32'],
                 'filesystems' => ['present', 'array', 'list', 'max:64'],
                 'filesystems.*.mount' => ['required', 'string', 'starts_with:/', 'max:4096'],

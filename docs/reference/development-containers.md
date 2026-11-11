@@ -82,13 +82,19 @@ Create, clone and migrate add their endpoint rules before probing. These lifecyc
 
 Until then, an unguarded NIC can reach current and old translated endpoint tuples. Reuse of an old Docker address can expose a different service at that exact tuple. This permission lasts until host convergence removes it. Guarded NICs still require their own exact allow. ACL writes reread after an ETag conflict or a transient disappearing host-side veth, with at most five attempts and a one-second delay; exhaustion fails the phase.
 
-The host persists immutable Gateway endpoint records, named by published tuple and admission time. Readers deduplicate each tuple by its latest admission. Only host convergence compacts or removes records. A systemd oneshot refreshes resolved endpoint rules at boot after Docker and Incus, then every 15 seconds. It only adds rules, so a failed resolution never removes a working path.
+The host persists Gateway endpoint records, with immutable names formed from the published tuple and admission time. Admission and refresh stage each endpoint’s last exact translated tuple outside the active inventory. They commit its record only after the ACL allow is confirmed. A timed-out GET or ambiguous PUT gets one readback under the same lock; a confirmed rule commits its staged record, and an absent rule does not. An unreadable result reports `instance.bridge_state_unresolved`; refresh preserves that warning until a successful full convergence.
+
+The internal `--withdraw --reconcile` writer mode retains persisted translated tuples without resolving stopped Docker publications. Readers deduplicate each tuple by its latest admission. Host convergence and explicit writer withdrawal compact or remove records, retaining admissions at or after their captured time. A systemd oneshot refreshes resolved endpoint rules at boot after Docker and Incus, then every 15 seconds. It only adds rules, so a failed resolution never removes a working path.
 
 Gateway admission times are captured before reading targets. Owned ACL rules carry the same time in a strictly parsed description. Reattaching a tuple advances its rule’s stamp. Convergence preserves records and rules admitted at or after its capture, including admissions that arrive while it runs. Conditional ETag writes recheck this fence before deletion. An unknown description is never removed.
 
-The timer recovers missed Docker events and DNAT rules installed after a start event. systemd prevents overlapping refresh runs. An unchanged run writes nothing and sends no Incus write request. A Docker re-address heals after the next successful refresh; a host converge also removes the obsolete resolved tuple.
+The timer recovers missed Docker events and DNAT rules installed after a start event. Admission, refresh, host convergence and withdrawal hold one exclusive lock at `/var/lib/orbit/instance-bridge/writer.lock` before reading records, through the last record and ACL write. A refresh queued behind withdrawal reads the remaining records, so it cannot restore a removed endpoint.
 
-Refresh errors stay in the journal and `/var/lib/orbit/instance-bridge/health.json`. The agent reads only its named public error code into its `host` fact, on the existing 60-second observation interval. Doctor reports `node.instance_bridge_unhealthy`, including that error code, and clears it after a healthy observation. The host role checks the enabled, running timer and healthy state file at its end.
+Lock acquisition waits up to 30 seconds, allowing one full refresh, then returns `instance.bridge_lock_timeout` without applying the intent. Docker and NAT reads use the helper’s remaining budget: 30 seconds for refresh and 300 seconds for lifecycle work, including lock wait. Each Incus curl request keeps its five-second limit, with one request reserved for readback. A read timeout or curl exit 28 returns `instance.bridge_command_timeout` and releases the lock.
+
+Failure recording uses the held lock; a caller that cannot acquire it reports the error without waiting again. An unchanged run writes nothing and sends no Incus write request. A Docker re-address heals after the next successful refresh; a host converge also removes the obsolete resolved tuple.
+
+Refresh errors stay in the journal. A writer that acquired the lock also records its error in `/var/lib/orbit/instance-bridge/health.json`; a lock timeout leaves that file unchanged. The agent reads only its named public error code into its `host` fact, on the existing 60-second observation interval. Doctor reports `node.instance_bridge_unhealthy`, including that error code, and clears it after a healthy observation. The host role checks the enabled, running timer and healthy state file at its end.
 
 The converge creates no Instance. Each existing `app-dev` Node needs one converge of its Instance host role. It reconciles the attached-target union and moves existing NICs to the proxy ACL. Running containers keep working, with no restart.
 
@@ -1000,6 +1006,9 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |
 | `process.target_unavailable` | 503 | `process:logs` could not read a container Process's journal through Swamp |
+| `instance.bridge_lock_timeout` | 502 | The shared endpoint writer could not acquire its lock within 30 seconds; its intent was not applied |
+| `instance.bridge_command_timeout` | 502 | A Docker/NAT read exhausted the helper’s remaining budget, or an Incus request timed out |
+| `instance.bridge_state_unresolved` | 502 | A bounded ACL readback could not determine the result after a timeout or ambiguous write; retry convergence |
 | `instance.container_endpoint_unresolved` | 502 | A local Docker endpoint has no unique exact DNAT mapping; the phase refuses before probing or downtime |
 | `instance.container_network_unsafe` | 502 | The container NIC has no effective ACL or lacks its default egress reject. Orbit refuses to start it |
 | `instance.container_<phase>_failed` | 502 | A phase of a container default's create or deployment failed without a refusal, such as `instance.container_start_failed` |
