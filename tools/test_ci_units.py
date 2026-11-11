@@ -447,6 +447,20 @@ class PopulationTest(unittest.TestCase):
         self.assertEqual(len(result['deferred']), 25)
         self.assertEqual(result['capacity'], [{'file': 'swamp/cases.ts', 'seconds': 2650, 'shards': 7, 'workers': 28}])
 
+    def test_container_host_prepare_packs_completed_case_costs_individually(self):
+        budget, fixtures, defaults = units.configuration()
+        file = 'swamp/tests/ansible_task_container_host_prepare_test.ts'
+        fixture = fixtures[file]
+        planned_units = units.units_for(fixture, budget)
+        self.assertEqual(len(planned_units), len(fixture['cases']))
+        for name, cost in planned_units:
+            cases = units.case_names(name, fixtures)
+            self.assertEqual(len(cases), 1)
+            self.assertEqual(cost, fixture['case_costs'][cases[0]] + budget['slice_startup_seconds'])
+        result = units.plan(['swamp/ansible/tasks/task-container-host-prepare.yml'], budget, fixtures, defaults)
+        self.assertTrue(any(u.startswith(file) for s in result['shards'] for u in s['units']))
+        self.assertNotIn('capacity', result)
+
     def test_an_oversize_single_case_is_named_and_blocks_without_becoming_an_exclusion(self):
         f = fixture('swamp/large.ts', 180, cases=['unresolved large case'])
         result = planned(['swamp/large.ts'], [f])

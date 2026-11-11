@@ -963,7 +963,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_container_host_prepare_test.ts"
-cost = 474
+cost = 590
+slices = 10 # One measured case per unit; equal file shares underpriced paired cases.
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -976,6 +977,18 @@ inputs = [
   "swamp/ansible/tasks/task-vm-host-prepare.yml",
   "swamp/tests/fixtures/task-vm-host-incus.ts",
 ]
+
+[fixture.case_costs]
+  "a container host is refused before its container side changes: another Incus line, SCTP, subordinate IDs, a taken bridge" = 58 # completed body 56.209s, run 43011901748; maximum completed observation, rounded up plus 1s
+  "a copy that Incus shifted fails the phase and leaves no probe" = 50 # completed body 48.946s, run 43017688111; maximum completed observation, rounded up plus 1s
+  "a clone probe that a failed run left is removed before the next probe" = 54 # completed body 52.105s, run 43017688111; maximum completed observation, rounded up plus 1s
+  "a container host on a native pool gets the ARC cap now and after reboot, and keeps it when containers go" = 104 # completed body 102.375s, run 43017688111; maximum completed observation, rounded up plus 1s
+  "a container host gets its kernel side, bridge, project and clone check beside the VM side, then changes nothing" = 79 # completed body 77.221s, run 43017688111; maximum completed observation, rounded up plus 1s
+  "the container rule never raises a cap the host already runs" = 50 # completed body 48.892s, run 43013527963; maximum completed observation, rounded up plus 1s
+  "the container bridge gets DHCP and DNS input rules under its own catalog names" = 47 # completed body 45.777s, run 43017688111; maximum completed observation, rounded up plus 1s
+  "an Incus package removed with its config files left counts as missing and is installed" = 48 # completed body 46.508s, run 43017688111; maximum completed observation, rounded up plus 1s
+  "a small host caps the ARC at 1 GiB" = 48 # completed body 46.428s, run 43017688111; maximum completed observation, rounded up plus 1s
+  "a host without Incus installs the recipe's pinned packages, fetched by digest" = 52 # completed body 50.154s, run 43017688111; maximum completed observation, rounded up plus 1s
 
 [[fixture]]
 file = "swamp/tests/ansible_task_host_firewall_remove_test.ts"
