@@ -1724,6 +1724,8 @@ RESPONSE_OVERRIDES = {
     }}},
 }
 CTRL_DATA_OVERRIDES = {
+    'InstanceNodeServiceTargetsController@store': ('InstanceNodeServiceTargetData', False),
+    'InstanceNodeServiceTargetsController@destroy': ('OperationData', False),
     'InstanceDependenciesController@show': ('DependencyResultsData', False),
     'ProjectDependenciesController@show': ('DependencyResultsData', False),
     'InstanceDeploymentSourceController@head': ('DeploymentSourceHeadData', False),
@@ -1853,6 +1855,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     env_route = '/environment/' in path or ('/instances/' in path and ('/database-connections/' in path or '/websocket-apps/' in path))
     for p in params:
         sch, desc = PARAM_SCHEMAS.get(p, ({'type': 'string'}, ''))
+        if p == 'target' and route['name'] == 'instance:node-service:detach':
+            sch, desc = {'type': 'integer', 'minimum': 1}, 'Numeric Node service target attachment ID.'
         if p == 'entry' and route['name'].startswith('project:document:'):
             sch, desc = {'type': 'integer', 'minimum': 1}, 'Numeric Project Document entry ID.'
         if p == 'operation' and route['name'] == 'websocket:operation:show':

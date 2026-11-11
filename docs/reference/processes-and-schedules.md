@@ -3,8 +3,8 @@ title: "Processes and schedules"
 description: "How Orbit runs Processes for an Instance or a Node, and how a Project declares Process and Schedule definitions that production Instances copy."
 covers:
   - apps/gateway/app/{Actions,Data}/{Processes,ProjectDefinitions}/**
-  - apps/gateway/app/Domain/Processes/**
-  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
+  - apps/gateway/app/Domain/{Processes/**,Instances/InstanceNodeService*.php}
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_06_000000_create_instance_node_service_targets_table}.php
   - apps/gateway/app/Infrastructure/Processes/{RemoteProcessRuntimeManager,SystemdProcessRenderer,DockerProcessRenderer,NativeProcessAdmissionLock,NativeProcessRuntimeLease,SshProcessUserResolver}.php
   - apps/gateway/app/Http/{Controllers/Api/ProcessesController,Requests/Processes/*}.php
   - apps/gateway/app/Actions/Instances/InstantiateProjectRuntimeDefinitionsAction.php
@@ -69,6 +69,16 @@ An Instance Process serves one Instance. The Gateway derives its Node and system
 An Instance in a container runs its Processes as `orbit` units in the container. New Instances use the Project's development definitions; [migration](/cli/instance/migrate) moves an existing Instance's systemd Processes with their ids and desired states. Swamp reaches them through `incus exec` on the Node, never through the Node agent. [Instance containers](/reference/development-containers#processes) has the differences.
 
 A Node Process serves the Node itself, for example a shared Docker database. A systemd Process runs as the Node's managed user, with `/home/{managed user}` as its default working directory, unless `user` names another account. A Docker Process keeps the image's working directory unless an explicit directory is supplied. A Node Process reads no Instance environment file.
+
+### Node service target records
+
+An Instance can explicitly attach a standalone Docker Node Process through `POST /api/v1/instances/{instance}/node-service-targets`, using `process_id`, `host_env_key` and `port_env_key`. The Process must be active, desired running, on the Instance's own Node, and publish a TCP port on `0.0.0.0` or that Node's Instance bridge address. Supply `port` when the Process publishes several TCP ports. Orbit refuses infrastructure-reserved ports and Processes owned by another service. Attachment requires the same Node authority as database attachment.
+
+The record stores the Instance, Node, Process, TCP port and explicit environment key names. It grants no network access and changes no environment values. Repeating the same attachment returns the existing record; overlapping key names refuse with `instance.node_service_environment_conflict`. Attach is refused when the Instance already has a container runtime.
+
+`DELETE /api/v1/instances/{instance}/node-service-targets/{target}` takes the numeric attachment ID and returns a completed Operation after deleting the record. It refuses while any container runtime remains, including a retained failed-migration runtime; the record stays.
+
+`process.required_by_instance_node_service` refuses Process removal before runtime changes and names the dependent Instances. `process.node_service_ownership_conflict` likewise refuses a role or service claiming that Process. Detach dependent records before destroying or assigning the Process.
 
 ### Node account
 

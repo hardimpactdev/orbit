@@ -29,6 +29,8 @@ orbit node:add gateway <new-host>
 
 **Prepare the target.** It must not hold `app-dev`, `app-prod`, `database`, `analytics`, or `ingress`, which conflict with `gateway`. Install PHP-FPM and Caddy. Copy the Gateway checkout, `ORBIT_HOME` with the Orbit CA and Gateway SSH keys, and the Gateway `.env`. Both Nodes need recorded SSH management.
 
+Role admission also protects [Node Processes attached to Instances](/reference/processes-and-schedules#node-service-target-records): a role cannot claim a dependent Process before its attachments are removed. This check changes neither the existing role nor its Process runtime on refusal.
+
 **Move the assignment.**
 
 ```bash
