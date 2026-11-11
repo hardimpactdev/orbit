@@ -335,6 +335,8 @@ The Gateway runs every Node action through one runner, `AgentCommandRunner`. The
 
 A Gateway architecture check scans core and extension PHP for process, SSH, and agent transport dependencies. Only the command transports, Gateway control-plane processes, command rendering, and the excluded Tasks and private DNS paths may use those dependencies. New Node behavior must call `AgentCommandRunner`; adding another executor fails the check.
 
+The Gateway may read exactly two sources directly over pinned SSH: a container Process’s journal tail and its unit state. It uses the Node’s existing SSH account, with fixed argv built from the resolved Instance and Process’s validated ids and names; this grants no new identity or container access. A list groups all container Process states into one bounded call per Node. Every action stays a Swamp workflow.
+
 The `php.configure-runtime` command accepts exactly the six managed OPcache directives and two positive PHP size quantities at most 1 GiB. The upload limit must not exceed the POST limit. An absent FPM binary makes the command a no-op before any file write. It verifies all eight values with `php-fpm -i`, then reloads valid active masters when the module changes. See [request and upload limits](/reference/php-runtime#request-and-upload-limits).
 
 Development profile inspection and URL writing take the Node’s recorded managed username. Each command resolves the account and checks file ownership locally; the Gateway makes no separate account lookup for these actions.

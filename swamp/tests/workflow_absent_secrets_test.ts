@@ -71,7 +71,7 @@ Deno.test("a production and a checkout deployment read no key that only a contai
   }
 });
 
-Deno.test("a container process:start, stop and restart read no `read` section, which only a status or log read has", () => {
+Deno.test("a container process:start, stop and restart read no `read` section, which only a migrated Schedule log read has", () => {
   for (const kind of ["process.start", "process.stop", "process.restart"]) {
     assertEquals(failures("workflow-operation-process-container.yaml", {
       kind, execution_secrets: {}, intent: { control: { process_id: 41, name: "orbit-process-41-worker.service" }, container: {} },

@@ -3,7 +3,7 @@ import { behavior } from "../../extensions/behaviors/operations/process-commands
 /** Exercise the production emitter; derive native keys from its actual write arguments.
  * Pinned Swamp data_writer.ts uses type/model/method/spec/instance/field,
  * drops @ and replaces path separators with dashes. No Swamp account is used. */
-export async function processInspectionFixture(output: string) {
+export async function scheduleInspectionFixture(output: string) {
     const request = crypto.randomUUID();
     const modelId = crypto.randomUUID();
     const directory = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
@@ -51,6 +51,6 @@ export async function processInspectionFixture(output: string) {
 
 if (import.meta.main) {
     console.log(
-        JSON.stringify(await processInspectionFixture(Deno.args[0] ?? "")),
+        JSON.stringify(await scheduleInspectionFixture(Deno.args[0] ?? "")),
     );
 }
