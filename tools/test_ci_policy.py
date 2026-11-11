@@ -90,6 +90,8 @@ class RequiredGateTest(unittest.TestCase):
         needs['changes']['outputs'] = {'jobs': json.dumps(selection), 'gateway_release': 'false', 'fixture_shards': '[]', 'fixture_capacity': '[]'}
         rows = {name: {'name': name, 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1} for name in (
             'Swamp / Swamp shape gate', 'Swamp / Swamp workflow validate', 'Swamp / Swamp Deno tests', 'CI proof')}
+        rows['CI proof eligibility'] = {'name': 'CI proof eligibility', 'status': 'completed', 'conclusion': 'success',
+                                        'id': 2, 'run_attempt': 1, 'steps': []}
         for name, result in (results or {}).items():
             if name in needs:
                 needs[name]['result'] = result
@@ -220,6 +222,67 @@ class RequiredGateTest(unittest.TestCase):
             error, github, _ = self.run_required(proof_required=True, fork=True, **settings)
             self.assertIsNone(error)
             self.assertFalse(any('/statuses?' in call.args[0][-1] for call in github.call_args_list))
+
+    def test_intentionally_ineligible_proof_skips_without_waiting_when_blocking(self):
+        rows = [{'name': 'CI proof eligibility', 'status': 'completed', 'conclusion': 'success',
+                 'id': 1, 'run_attempt': 1, 'steps': [{'name': 'Skip ineligible proof', 'conclusion': 'success'}]},
+                {'name': 'CI proof', 'status': 'completed', 'conclusion': 'skipped', 'id': 2, 'run_attempt': 1}]
+        error, github, sleep = self.run_required(proof_required=True, snapshots=[rows])
+        self.assertIsNone(error)
+        self.assertEqual(github.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_failed_eligibility_and_unexpected_skip_fail_closed_without_waiting(self):
+        for result in ('failure', 'cancelled', 'skipped'):
+            error, github, sleep = self.run_required(proof_required=True, results={'CI proof eligibility': result, 'CI proof': 'skipped'})
+            self.assertEqual(error, f'Proof eligibility failed: {result}')
+            sleep.assert_not_called()
+        error, _, sleep = self.run_required(proof_required=True, results={'CI proof': 'skipped'})
+        self.assertIn('without ineligible metadata evidence', error)
+        sleep.assert_not_called()
+
+    def test_missing_or_stale_eligibility_evidence_fails_closed(self):
+        from unittest.mock import patch
+        proof = {'name': 'CI proof', 'status': 'completed', 'conclusion': 'skipped', 'id': 2, 'run_attempt': 2}
+        eligibility = {'name': 'CI proof eligibility', 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1,
+                       'steps': [{'name': 'Skip ineligible proof', 'conclusion': 'success'}]}
+        error, _, sleep = self.run_required(proof_required=True, snapshots=[[proof, eligibility]])
+        self.assertIn('same attempt', error)
+        sleep.assert_not_called()
+        with patch('time.monotonic', side_effect=[0, 0, 61]):
+            error, _, sleep = self.run_required(proof_required=True, snapshots=[[proof]])
+        self.assertEqual(error, 'Missing proof eligibility evidence')
+        sleep.assert_not_called()
+        eligibility['run_attempt'] = 2
+        error, github, sleep = self.run_required(proof_required=True, snapshots=[[proof], [proof, eligibility]])
+        self.assertIsNone(error)
+        self.assertEqual(github.call_count, 2)
+        sleep.assert_called_once_with(15)
+
+    def test_proof_preflight_is_selected_hosted_bounded_and_outside_required_dependencies(self):
+        caller = (ROOT / '.github/workflows/ci.yml').read_text()
+        preflight = caller.split('  proof-eligibility:\n', 1)[1].split('  proof-run:\n', 1)[0]
+        proof = caller.split('  proof-run:\n', 1)[1].split('  swamp:\n', 1)[0]
+        required = caller.split('  required:\n', 1)[1].split('  delivery:\n', 1)[0]
+        for condition in ("github.event_name == 'pull_request'", 'github.event.pull_request.head.repo.full_name == github.repository',
+                          "needs.changes.outputs.proof_run == 'true'"):
+            self.assertIn(condition, preflight)
+            self.assertIn(condition, proof)
+        self.assertIn('runs-on: ubuntu-26.04', preflight)
+        self.assertIn('timeout-minutes: 1', preflight)
+        self.assertIn('    needs: changes', preflight)
+        self.assertIn('ref: ${{ github.sha }}', preflight)
+        self.assertIn('persist-credentials: false', preflight)
+        self.assertNotIn('orbit proof:run', preflight)
+        self.assertIn('needs: [changes, proof-eligibility]', proof)
+        self.assertIn("needs.proof-eligibility.outputs.eligible == 'true'", proof)
+        self.assertIn("PROOF_CHECK_ELIGIBILITY: 'true'", proof)
+        self.assertIn('bin/ci-proof-eligibility', proof)
+        self.assertNotIn('proof-eligibility', required.split('needs: [', 1)[1].split(']', 1)[0])
+        outside = (ROOT / '.github/workflows/proof-outside.yml').read_text()
+        self.assertNotIn('PROOF_CHECK_ELIGIBILITY', outside)
+        self.assertIn('ref: ${{ github.sha }}', outside)
+        self.assertIn('pull_request_target:', outside)
 
     def test_units_use_one_pool_job_with_deno_parallelism(self):
         block = SOURCE.split('\n  tests:\n')[1]
