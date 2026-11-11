@@ -12,8 +12,9 @@ sequenceDiagram
   alt local input refused
     CLI--xCLI: Invalid input or cancelled<br/>No attach request
     %%> On failure:
-    %%> - instance.id_invalid refuses a non-positive Instance ID or a missing noninteractive Instance.
-    %%> - instance.node_service_process_required, instance.node_service_host_key_required and instance.node_service_port_key_required refuse missing required inputs in JSON or noninteractive mode, or an empty registry selection.
+    %%> - instance.id_invalid refuses an invalid supplied or missing noninteractive Instance ID, or an empty Instance list after the registry GET; no mutation request is sent.
+    %%> - instance.node_service_process_required refuses a missing noninteractive Process ID, or an empty Node Process list after its registry GET; no mutation request is sent.
+    %%> - instance.node_service_host_key_required and instance.node_service_port_key_required refuse omitted key names only in JSON or noninteractive mode.
     %%> - validation.failed refuses an invalid supplied Process ID or port, including an explicitly empty port.
     %%> - input.cancelled ends a cancelled terminal selection or text prompt before mutation.
     %%> - State stays unchanged. Invalid supplied IDs or port and missing noninteractive inputs send no request. Terminal cancellation or empty choices can follow registry reads.

@@ -14,7 +14,8 @@ sequenceDiagram
   alt local input refused
     CALL--xCALL: Refused or cancelled<br/>No delete request
     %%> On failure:
-    %%> - instance.id_invalid and instance.node_service_target_id_invalid refuse invalid numeric IDs or missing noninteractive IDs.
+    %%> - instance.id_invalid refuses an invalid supplied or missing noninteractive Instance ID, or an empty Instance list after the registry GET; no mutation request is sent.
+    %%> - instance.node_service_target_id_invalid refuses an invalid supplied attachment ID or an omitted attachment ID in JSON or noninteractive mode. An omitted terminal attachment ID is prompted, with validation retries before consent.
     %%> - instance.node_service_confirmation_required refuses a JSON or noninteractive call without --yes.
     %%> - input.cancelled ends a cancelled terminal selection, attachment-ID prompt or declined consent before mutation.
     %%> - State stays unchanged. Invalid supplied IDs, missing noninteractive IDs and missing noninteractive consent send no request. A terminal Instance selection can follow a registry read.
