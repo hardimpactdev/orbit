@@ -203,6 +203,7 @@ execute(stage)
 // It is analyzed, never executed. Keep it independent of the recognizer's ASTs.
 export const BRIDGE_WRITER = String.raw`import argparse
 import fcntl
+import ipaddress
 import json
 import subprocess
 import sys
@@ -238,19 +239,33 @@ def apply(root, incoming, reconcile=False, withdraw=False):
             return apply_locked(root, incoming, reconcile, withdraw, deadline)
         except (PolicyError, ValueError, OSError, subprocess.SubprocessError) as error:
             code = 'instance.bridge_state_unresolved' if unresolved_health(root) else failure_code(error)
-            write_file(root / 'health.json', {'error_code': code})
+            state_file(root, 'health', {'error_code': code})
             raise
 
 
 def apply_locked(root, incoming, reconcile, withdraw, deadline):
     records = json.loads((root / 'endpoints.json').read_text())
     api('orbitinst0-egress', records, 'etag', deadline)
-    write_file(root / 'endpoints.json', incoming)
-    write_file(root / 'health.json', {'error_code': None})
+    state_file(root, 'config', incoming)
+    state_file(root, 'health', {'error_code': None})
     return 1
 
 
-def write_file(path, value):
+def state_file(root, kind, value=None, host=None, port=None, capture=None, remove=False):
+    root = Path(root)
+    if kind in ('config', 'health', 'pending'):
+        path = root / {'config': 'config.json', 'health': 'health.json', 'pending': 'reconcile.pending'}[kind]
+    elif kind in ('endpoint', 'staged'):
+        host = str(ipaddress.IPv4Address(host))
+        if type(port) is not int or not 1 <= port <= 65535 or type(capture) is not int or capture < 0:
+            raise PolicyError('instance.container_bridge_write_failed')
+        directory = 'endpoints' if kind == 'endpoint' else '.staged'
+        path = root / directory / (host + '-' + str(port) + '-' + str(capture) + '.json')
+    else:
+        raise PolicyError('instance.container_bridge_write_failed')
+    if remove:
+        path.unlink(missing_ok=True)
+        return 1
     content = json.dumps(value, sort_keys=True) + '\n'
     if path.exists() and path.read_text() == content:
         return 0
@@ -358,44 +373,97 @@ export const bridgeContractViolations = [
     ],
 ] as const;
 
+// Analyze these sources only. Never execute a malicious writer fixture.
 export const bridgeInodeViolations = [
+    ["direct-lock-unlink", "    (root / 'writer.lock').unlink()\n"],
     ["computed-lock-unlink", "    (root / ('writer' + '.lock')).unlink()\n"],
     [
         "state-directory-cleanup",
         "    for path in root.iterdir():\n        path.unlink()\n",
     ],
-    ["helper-lock-unlink", "    remove(root / ('writer' + '.lock'))\n"],
-    ["helper-state-cleanup", "    clean(root)\n"],
+    [
+        "helper-lock-unlink",
+        "    remove(root / ('writer' + '.lock'))\n",
+        "def remove(path):\n    path.unlink()\n\n\n",
+    ],
+    [
+        "helper-state-cleanup",
+        "    clean(root)\n",
+        "def clean(directory):\n    for path in directory.iterdir():\n        path.unlink()\n\n\n",
+    ],
     [
         "lock-method-alias",
         "    remove_lock = (root / ('writer' + '.lock')).unlink\n    remove_lock()\n",
     ],
     ["directory-replacement", "    root.replace(root / 'other.json')\n"],
     [
-        "helper-atomic-lock-replacement",
+        "old-arbitrary-path-helper",
         "    write_file(root / ('writer' + '.lock'), {})\n",
     ],
-].map(([name, body]) =>
+    [
+        "helper-atomic-lock-replacement",
+        "    state_file(root, ('writer' + '.lock'), {})\n",
+    ],
+    [
+        "loop-carried-lock-unlink",
+        "    path = root / 'health.json'\n    for record in (1, 2):\n        path.unlink(missing_ok=True)\n        path = root / ('writer' + '.lock')\n",
+    ],
+    [
+        "match-lock-unlink",
+        "    path = root / 'health.json'\n    match incoming:\n        case _:\n            path = root / ('writer' + '.lock')\n            path.unlink()\n",
+    ],
+    [
+        "unused-destructive-helper",
+        "",
+        "def unused(path):\n    path.unlink()\n\n\n",
+    ],
+    ["direct-remove-call", "    remove(root)\n"],
+    ["rmtree-style-call", "    root.rmtree()\n"],
+    [
+        "custody-helper-alias",
+        "    mutate = state_file\n    mutate(root, 'health', {})\n",
+    ],
+    ["custody-helper-callback", "    list(map(state_file, []))\n"],
+    [
+        "unowned-temporary-cleanup",
+        "    with tempfile.TemporaryDirectory(dir=root) as directory:\n        pass\n",
+    ],
+    [
+        "external-command-escape",
+        "    subprocess.run(['rm', '-rf', str(root)])\n",
+    ],
+].map(([name, body, helper = ""]) =>
     [
         name,
-        BRIDGE_WRITER.replace(
-            "    records =",
-            body + "    records =",
-        ).replace(
-            "def unresolved_health",
-            `def remove(path):
-    path.unlink()
-
-
-def clean(directory):
-    for path in directory.iterdir():
-        remove(path)
-
-
-def unresolved_health`,
-        ),
+        BRIDGE_WRITER.replace("    records =", body + "    records =")
+            .replace("def unresolved_health", helper + "def unresolved_health"),
     ] as const
 );
+
+// Mutating the custody helper itself cannot extend its destructive authority.
+bridgeInodeViolations.push(...[
+    [
+        "custody-helper-destination",
+        BRIDGE_WRITER.replace(
+            "temporary.replace(path)",
+            "temporary.replace(root / 'writer.lock')",
+        ),
+    ],
+    [
+        "custody-helper-kind-escape",
+        BRIDGE_WRITER.replace(
+            "'health': 'health.json'",
+            "'health': 'writer.lock'",
+        ),
+    ],
+    [
+        "custody-helper-endpoint-validation",
+        BRIDGE_WRITER.replace(
+            "host = str(ipaddress.IPv4Address(host))",
+            "host = host",
+        ),
+    ],
+].map(([name, source]) => [name, source] as const));
 
 export const bridgeImportViolations = [
     [
@@ -441,26 +509,19 @@ ${
 
 export const BRIDGE_RECORD_MUTATIONS = BRIDGE_WRITER.replace(
     "    records =",
-    `    retiring = [(path, {}) for path in (root / 'endpoints').glob('*.json')]
-    with tempfile.TemporaryDirectory(prefix='.staged-', dir=root) as directory:
-        staged = []
-        for record in retiring:
-            path = Path(directory) / ('endpoint-' + str(deadline) + '.json')
-            write_file(path, {})
-            staged.append((path, {}))
+    `    retiring = json.loads((root / 'endpoints.json').read_text())
+    staged = [{'host': '10.44.0.7', 'port': 3306, 'admitted_at': 2}]
+    for endpoint in staged:
+        state_file(root, 'staged', endpoint, host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'])
 
-        def commit_confirmed(current):
-            for path, endpoint in staged:
-                active = root / 'endpoints' / path.name
-                active.parent.mkdir(parents=True, exist_ok=True)
-                path.replace(active)
-            for path, endpoint in retiring:
-                remove(path)
+    def commit_confirmed(current):
+        for endpoint in staged:
+            state_file(root, 'endpoint', endpoint, host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'])
+            state_file(root, 'staged', host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'], remove=True)
+        for endpoint in retiring:
+            state_file(root, 'endpoint', host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'], remove=True)
 
-        commit_confirmed({})
-    (root / 'reconcile.pending').unlink(missing_ok=True)
+    commit_confirmed({})
+    state_file(root, 'pending', remove=True)
     records =`,
-).replace(
-    "def unresolved_health",
-    "def remove(path):\n    path.unlink()\n\n\ndef unresolved_health",
 );

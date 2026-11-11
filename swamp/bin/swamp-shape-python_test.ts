@@ -541,7 +541,7 @@ Deno.test("bridge custody cannot be bypassed by a caller, descriptor or binding 
     })).some((row) => row.rule === "custom-control"));
 });
 
-Deno.test("bridge proof preserves the inode through computed paths and helper calls", async () => {
+Deno.test("bridge proof denies destructive calls outside the closed state helper", async () => {
     assertEquals(await bridgeScan(BRIDGE_RECORD_MUTATIONS), []);
     for (const [name, source] of bridgeInodeViolations) {
         assert(

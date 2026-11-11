@@ -293,7 +293,7 @@ Deno.test("bridge transaction contract is enforced by current and immutable base
     });
 });
 
-Deno.test("current and frozen bridge policy reject inode replacement and imported unlocked entry points", async () => {
+Deno.test("current and frozen bridge policy enforce closed state custody and import boundaries", async () => {
     await temporary(async (repo) => {
         await init(repo);
         await write(repo + "/.gitignore", "__pycache__/\n");
@@ -345,7 +345,7 @@ Deno.test("current and frozen bridge policy reject inode replacement and importe
         await write(source, BRIDGE_RECORD_MUTATIONS);
         await check(
             false,
-            "safe staged record commits and helper deletion remain supported",
+            "closed state helper stages, commits and withdraws records",
         );
         for (const [name, variant] of bridgeInodeViolations) {
             await write(source, variant);

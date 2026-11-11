@@ -562,7 +562,7 @@ def apply(root, incoming, reconcile=False, withdraw=False):
             return apply_locked(root, incoming, reconcile, withdraw, deadline)
         except (PolicyError, ValueError, OSError, subprocess.SubprocessError) as error:
             code = 'instance.bridge_state_unresolved' if unresolved_health(root) else failure_code(error)
-            write_file(root / 'health.json', {'error_code': code})
+            state_file(root, 'health', {'error_code': code})
             raise
 '''
 
@@ -592,8 +592,25 @@ def failure_code(error):
 '''
 
 
-BRIDGE_FILE = r'''
-def write_file(path, value):
+# The only destructive authority: fixed state leaves or canonical numeric endpoint
+# identities. Unlink cannot remove a directory; replacement uses a fresh regular
+# temporary file. Neither operation can name writer.lock or replace an ancestor.
+BRIDGE_STATE = r'''
+def state_file(root, kind, value=None, host=None, port=None, capture=None, remove=False):
+    root = Path(root)
+    if kind in ('config', 'health', 'pending'):
+        path = root / {'config': 'config.json', 'health': 'health.json', 'pending': 'reconcile.pending'}[kind]
+    elif kind in ('endpoint', 'staged'):
+        host = str(ipaddress.IPv4Address(host))
+        if type(port) is not int or not 1 <= port <= 65535 or type(capture) is not int or capture < 0:
+            raise PolicyError('instance.container_bridge_write_failed')
+        directory = 'endpoints' if kind == 'endpoint' else '.staged'
+        path = root / directory / (host + '-' + str(port) + '-' + str(capture) + '.json')
+    else:
+        raise PolicyError('instance.container_bridge_write_failed')
+    if remove:
+        path.unlink(missing_ok=True)
+        return 1
     content = json.dumps(value, sort_keys=True) + '\n'
     if path.exists() and path.read_text() == content:
         return 0
@@ -636,243 +653,6 @@ def api(name, value=None, etag=None, deadline=None):
         raise PolicyError(response.get('error', 'instance.container_bridge_write_failed'))
     return response['metadata'], tags[0] if tags else None
 '''
-
-
-def bridge_inode_preserved(functions):
-    """Fail closed on destructive effects whose path cannot preserve writer.lock.
-
-    A JSON/metadata leaf may be unlinked (directories fail without mutation).
-    Replacement additionally needs a source proved to be a regular file created
-    by the canonical atomic writer. Unknown paths, directory sweeps and indirect
-    helper arguments never become safe just because a nearby literal is safe.
-    """
-    empty = ('empty',)
-
-    def leaf(value):
-        return (value is not None and value[0] == 'path'
-                and (value[1].endswith('.json') or value[1] == 'reconcile.pending'))
-
-    def merge(a, b):
-        if a == b or b == empty:
-            return a
-        if a == empty:
-            return b
-        if a is None or b is None or a[0] != b[0]:
-            return None
-        if a[0] == 'sequence':
-            return ('sequence', merge(a[1], b[1]))
-        if a[0] == 'tuple' and len(a[1]) == len(b[1]):
-            return ('tuple', tuple(merge(x, y) for x, y in zip(a[1], b[1])))
-        if a[0] == 'path' and a[1] == b[1]:
-            return ('path', a[1], a[2] and b[2])
-        return None
-
-    class Proof:
-        valid = True
-
-        def __init__(self):
-            self.active = set()
-            self.closures = []
-
-        def bind(self, target, value, env):
-            if isinstance(target, ast.Name):
-                env[target.id] = value
-            elif isinstance(target, ast.Subscript):
-                if self.expr(target.value, env) is not None:
-                    self.valid = False
-            elif isinstance(target, (ast.Tuple, ast.List)):
-                values = value[1] if value is not None and value[0] == 'tuple' else [None] * len(target.elts)
-                for item, part in zip(target.elts, values):
-                    self.bind(item, part, env)
-
-        def function(self, function, args, closure=None):
-            if function.name in self.active:
-                self.valid = False
-                return None
-            self.active.add(function.name)
-            self.closures.append(set(closure or {}))
-            env = dict(closure or {})
-            env.update((parameter.arg, value) for parameter, value in zip(function.args.args, args))
-            deferred = []
-            result = self.block(function.body, env, deferred)
-            # Check callbacks with the final closure as well, so later rebinding
-            # or appends cannot turn a previously safe capture into lock cleanup.
-            for nested in deferred:
-                self.function(nested, [None] * len(nested.args.args), env)
-            self.active.remove(function.name)
-            self.closures.pop()
-            return result
-
-        def expr(self, node, env):
-            if node is None:
-                return None
-            if isinstance(node, ast.Lambda):
-                self.valid = False
-                return None
-            if isinstance(node, ast.NamedExpr):
-                value = self.expr(node.value, env)
-                self.bind(node.target, value, env)
-                return value
-            if isinstance(node, ast.Name):
-                return env.get(node.id)
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                return ('text', node.value)
-            if isinstance(node, ast.BinOp):
-                left, right = self.expr(node.left, env), self.expr(node.right, env)
-                if right is not None and right[0] == 'text':
-                    if isinstance(node.op, ast.Div):
-                        return ('path', right[1].rsplit('/', 1)[-1], False)
-                    if isinstance(node.op, ast.Add):
-                        return ('text', (left[1] if left is not None and left[0] == 'text' else '') + right[1])
-                return None
-            if isinstance(node, (ast.Tuple, ast.Dict)):
-                if any(isinstance(part, ast.Name) and env.get(part.id) is not None
-                       and env[part.id][0] == 'sequence' for part in ast.walk(node)):
-                    self.valid = False  # No opaque containers holding mutable path collections.
-                if isinstance(node, ast.Tuple):
-                    return ('tuple', tuple(self.expr(item, env) for item in node.elts))
-            if isinstance(node, (ast.List, ast.Set)):
-                item = empty
-                for part in node.elts:
-                    item = merge(item, self.expr(part, env))
-                return ('sequence', item)
-            if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
-                local = dict(env)
-                for generator in node.generators:
-                    sequence = self.expr(generator.iter, local)
-                    self.bind(generator.target, sequence[1] if sequence is not None and sequence[0] == 'sequence' else None, local)
-                    for test in generator.ifs:
-                        self.expr(test, local)
-                value = self.expr(node.elt, local)
-                return None if isinstance(node, ast.GeneratorExp) else ('sequence', value)
-            if isinstance(node, ast.Attribute):
-                value = self.expr(node.value, env)
-                if node.attr == 'name' and value is not None and value[0] == 'path':
-                    return ('text', value[1])
-                return None
-            if isinstance(node, ast.Call):
-                args = [self.expr(arg, env) for arg in node.args]
-                keyword_values = {keyword.arg: self.expr(keyword.value, env) for keyword in node.keywords}
-                aliased = any(isinstance(arg, ast.Name) and value is not None and value[0] == 'sequence'
-                              for arg, value in [*zip(node.args, args),
-                                                 *((item.value, keyword_values[item.arg]) for item in node.keywords)])
-                if aliased and not (isinstance(node.func, ast.Name) and node.func.id in {'len', 'min', 'max', 'any', 'all', 'sorted', 'tuple'}):
-                    self.valid = False
-                if isinstance(node.func, ast.Name):
-                    if node.func.id == 'Path':
-                        return args[0] if args and args[0] is not None and args[0][0] == 'path' else None
-                    if node.func.id == 'write_file':
-                        if len(args) != 2 or not leaf(args[0]):
-                            self.valid = False
-                        elif isinstance(node.args[0], ast.Name):
-                            env[node.args[0].id] = ('path', args[0][1], True)
-                        return None
-                    if node.func.id in functions:
-                        if any(isinstance(arg, ast.Name) and value is not None and value[0] == 'sequence'
-                               for arg, value in zip(node.args, args)):
-                            self.valid = False  # No mutable collection aliases across helpers.
-                        function = functions[node.func.id]
-                        values = dict(zip((arg.arg for arg in function.args.args), args))
-                        values.update(keyword_values)
-                        if function.name in {'api', 'writer_lock'}:
-                            return None  # Exact bodies are separately proved.
-                        return self.function(function, [values.get(arg.arg) for arg in function.args.args])
-                if isinstance(node.func, ast.Attribute):
-                    receiver = self.expr(node.func.value, env)
-                    method = node.func.attr
-                    if ast.unparse(node.func) == 'tempfile.TemporaryDirectory':
-                        # This context owns only its freshly created child directory.
-                        if (node.args or {item.arg for item in node.keywords} != {'prefix', 'dir'}
-                                or ast.unparse(next(item.value for item in node.keywords if item.arg == 'prefix')) != "'.staged-'"
-                                or ast.unparse(next(item.value for item in node.keywords if item.arg == 'dir')) != 'root'):
-                            self.valid = False
-                        return ('path', '', False)
-                    if ast.unparse(node.func).startswith('subprocess.'):
-                        # Only the exact ACL API transport and a NAT stdout read
-                        # may invoke a process; neither can unlink local lock state.
-                        nat = ast.parse("subprocess.check_output(['iptables-save', '-t', 'nat'], text=True, timeout=remaining(deadline))", mode='eval').body
-                        if ast.dump(node) != ast.dump(nat):
-                            self.valid = False
-                    if method == 'glob':
-                        if args == [('text', '*.json')]:
-                            return ('sequence', ('path', '.json', False))
-                    if method == 'append':
-                        if not (isinstance(node.func.value, ast.Name) and receiver is not None and receiver[0] == 'sequence' and len(args) == 1):
-                            self.valid = False
-                        elif node.func.value.id in self.closures[-1]:
-                            self.valid = False  # A callback cannot mutate captured path collections.
-                        else:
-                            env[node.func.value.id] = ('sequence', merge(receiver[1], args[0]))
-                    if method in {'extend', 'insert', 'pop', 'remove', 'clear', 'reverse', 'sort'}:
-                        self.valid = False
-                    if method == 'unlink' and not leaf(receiver):
-                        self.valid = False
-                    if method in {'replace', 'rename'} and not (leaf(receiver) and receiver[2] and len(args) == 1 and leaf(args[0])):
-                        self.valid = False
-                    if method in {'rmdir', 'symlink_to', 'hardlink_to', 'link_to', 'move', 'move_into', 'copy', 'copy_into', 'open', 'write_text', 'write_bytes'}:
-                        self.valid = False
-                return None
-            # Traverse every expression, including keyword values and predicates;
-            # an unrecognized expression never establishes path provenance.
-            for child in ast.iter_child_nodes(node):
-                self.expr(child, env)
-            return None
-
-        def block(self, statements, env, deferred):
-            result = empty
-            for node in statements:
-                if isinstance(node, ast.FunctionDef):
-                    for value in node.args.defaults + node.args.kw_defaults:
-                        self.expr(value, env)
-                    deferred.append(node)
-                elif isinstance(node, ast.Assign):
-                    value = self.expr(node.value, env)
-                    if value is not None and value[0] == 'sequence' and (isinstance(node.value, ast.Name) or len(node.targets) != 1):
-                        self.valid = False
-                    for target in node.targets:
-                        self.bind(target, value, env)
-                elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
-                    value = self.expr(node.value, env)
-                    self.bind(node.target, value if isinstance(node, ast.AnnAssign) else None, env)
-                elif isinstance(node, ast.Delete):
-                    for target in node.targets:
-                        self.bind(target, None, env)
-                elif isinstance(node, ast.For):
-                    sequence = self.expr(node.iter, env)
-                    self.bind(node.target, sequence[1] if sequence is not None and sequence[0] == 'sequence' else None, env)
-                    result = merge(result, self.block(node.body + node.orelse, env, deferred))
-                elif isinstance(node, ast.If):
-                    self.expr(node.test, env)
-                    before = dict(env)
-                    result = merge(result, self.block(node.body, env, deferred))
-                    other = dict(before)
-                    result = merge(result, self.block(node.orelse, other, deferred))
-                    env.update((key, merge(env.get(key), other.get(key))) for key in env.keys() | other.keys())
-                elif isinstance(node, ast.With):
-                    for item in node.items:
-                        value = self.expr(item.context_expr, env)
-                        if item.optional_vars:
-                            self.bind(item.optional_vars, value, env)
-                    result = merge(result, self.block(node.body, env, deferred))
-                elif isinstance(node, ast.Try):
-                    before = dict(env)
-                    result = merge(result, self.block(node.body + node.orelse, env, deferred))
-                    for handler in node.handlers:
-                        other = dict(before)
-                        result = merge(result, self.block(handler.body, other, deferred))
-                        env.update((key, merge(env.get(key), other.get(key))) for key in env.keys() | other.keys())
-                    result = merge(result, self.block(node.finalbody, env, deferred))
-                elif isinstance(node, ast.Return):
-                    result = merge(result, self.expr(node.value, env))
-                elif isinstance(node, (ast.While, ast.AsyncFor, ast.AsyncWith)):
-                    self.valid = False
-                else:
-                    self.expr(node, env)
-            return result
-
-    proof = Proof()
-    proof.function(functions['apply_locked'], [None] * len(functions['apply_locked'].args.args))
-    return proof.valid
 
 
 def bridge_writer_transaction(tree, sources):
@@ -934,7 +714,7 @@ def bridge_writer_transaction(tree, sources):
                 return refused()
 
     contracts = [ast.parse(source).body[0]
-                 for source in (BRIDGE_LOCK, BRIDGE_APPLY, BRIDGE_MAIN, BRIDGE_FAILURE, BRIDGE_FILE, BRIDGE_API)]
+                 for source in (BRIDGE_LOCK, BRIDGE_APPLY, BRIDGE_MAIN, BRIDGE_FAILURE, BRIDGE_STATE, BRIDGE_API)]
     if any(contract.name not in functions or ast.dump(functions[contract.name]) != ast.dump(contract)
            for contract in contracts):
         return refused()
@@ -957,7 +737,7 @@ def bridge_writer_transaction(tree, sources):
             if alias in imported:
                 return refused()
             imported[alias] = node
-    required = {'argparse', 'fcntl', 'json', 'subprocess', 'sys', 'time', 'contextmanager', 'Path'}
+    required = {'argparse', 'fcntl', 'json', 'subprocess', 'sys', 'time', 'ipaddress', 'tempfile', 'contextmanager', 'Path'}
     if not required <= imported.keys():
         return refused()
     # Literal constants are inert; all record/ACL/health work must remain in
@@ -977,7 +757,7 @@ def bridge_writer_transaction(tree, sources):
             continue
         if ast.dump(node) != ast.dump(entry) or node is not tree.body[-1]:
             return refused()
-    builtins = {'BlockingIOError', 'Exception', 'ValueError', 'OSError', 'SystemExit', 'print', 'str', 'isinstance', '__name__'}
+    builtins = {'BlockingIOError', 'Exception', 'ValueError', 'OSError', 'SystemExit', 'print', 'str', 'isinstance', 'type', 'int', '__name__'}
     reserved = set(functions) | set(imported) | constants | builtins | {'PolicyError'}
     if (set(functions) | set(imported) | constants) & builtins:
         return refused()
@@ -988,16 +768,25 @@ def bridge_writer_transaction(tree, sources):
     acquisition = next(node for node in ast.walk(candidate) if isinstance(node, ast.Call) and ast.unparse(node.func) == 'fcntl.flock')
     acquire_nodes = set(ast.walk(acquisition))
     main_nodes = set(ast.walk(functions['main']))
+    state_nodes = set(ast.walk(functions['state_file']))
+    api_nodes = set(ast.walk(functions['api']))
+    lock_nodes = set(ast.walk(candidate))
+    callable_names = {node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+    safe_builtins = {'all', 'any', 'bool', 'dict', 'enumerate', 'float', 'int', 'isinstance',
+                     'len', 'list', 'max', 'min', 'next', 'print', 'range', 'set', 'sorted',
+                     'str', 'tuple', 'zip', 'PolicyError', 'SystemExit'}
     module_members = {
         'argparse': {'ArgumentParser'}, 'fcntl': {'flock', 'LOCK_EX', 'LOCK_NB'},
         'ipaddress': {'IPv4Address'}, 'json': {'load', 'loads', 'dumps'}, 're': {'fullmatch'},
         'shlex': {'split'}, 'subprocess': {'run', 'check_output', 'SubprocessError', 'TimeoutExpired'},
-        'sys': {'stdin', 'stderr'}, 'tempfile': {'NamedTemporaryFile', 'TemporaryDirectory'},
+        'sys': {'stdin', 'stderr'}, 'tempfile': {'NamedTemporaryFile'},
         'time': {'monotonic'},
     }
-    effects = {'unlink', 'replace', 'rename', 'rmdir', 'symlink_to', 'hardlink_to', 'link_to',
-               'open', 'write_text', 'write_bytes', 'move', 'move_into', 'copy', 'copy_into',
-               'append', 'extend', 'insert', 'pop', 'remove', 'clear'}
+    destructive = {'unlink', 'remove', 'removedirs', 'rmdir', 'rmtree', 'rename', 'renames',
+                   'replace', 'move', 'move_into', 'copy', 'copy_into', 'copyfile', 'copytree',
+                   'symlink_to', 'hardlink_to', 'link_to', 'touch', 'write_text', 'write_bytes',
+                   'cleanup', 'truncate'}
+    effects = destructive | {'open', 'append', 'extend', 'insert', 'pop', 'clear'}
     for node in ast.walk(tree):
         if isinstance(node, (ast.Import, ast.ImportFrom)) and node not in tree.body:
             return refused()
@@ -1024,6 +813,12 @@ def bridge_writer_transaction(tree, sources):
             return refused()
         if isinstance(node, ast.Attribute):
             parent = parents.get(node)
+            # Deny every destructive effect, including dead/nested/control-flow
+            # sites. Only the exact semantic state helper owns these operations.
+            if node.attr in destructive and node not in state_nodes:
+                return refused()
+            if node.attr == 'open' and node not in state_nodes | lock_nodes:
+                return refused()
             if node.attr.startswith('_') or node.attr in effects and not (isinstance(parent, ast.Call) and parent.func is node):
                 return refused()
             if isinstance(node.value, ast.Name) and node.value.id in module_members:
@@ -1045,7 +840,9 @@ def bridge_writer_transaction(tree, sources):
                 return refused()
             if node.id == 'fcntl' and node not in acquire_nodes:
                 return refused()
-            if node.id in functions:
+            if node.id == 'type' and node not in state_nodes:
+                return refused()
+            if node.id in callable_names:
                 if not (isinstance(parent, ast.Call) and parent.func is node):
                     return refused()
                 enclosing = parent
@@ -1057,6 +854,27 @@ def bridge_writer_transaction(tree, sources):
                     return refused()
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {'eval', 'exec', 'globals', 'locals', 'vars', 'getattr', 'setattr', 'delattr', '__import__', 'open'}:
             return refused()
-    if not bridge_inode_preserved(functions):
-        return refused()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            if node.func.id not in callable_names | safe_builtins | {'Path', 'contextmanager'}:
+                if node not in state_nodes or node.func.id != 'type':
+                    return refused()
+            if node.func.id == 'state_file':
+                # This API accepts semantic state kinds, never an arbitrary path,
+                # callback or destination. Its exact body constructs every leaf.
+                if (not 2 <= len(node.args) <= 3 or any(isinstance(arg, ast.Starred) for arg in node.args)
+                        or not isinstance(node.args[1], ast.Constant)
+                        or node.args[1].value not in {'config', 'health', 'pending', 'endpoint', 'staged'}
+                        or any(item.arg not in {'host', 'port', 'capture', 'remove'} for item in node.keywords)):
+                    return refused()
+        if isinstance(node.func, ast.Attribute):
+            callee = ast.unparse(node.func)
+            if callee.startswith('tempfile.') and node not in state_nodes:
+                return refused()
+            if callee.startswith('subprocess.') and node not in api_nodes:
+                nat = ast.parse("subprocess.check_output(['iptables-save', '-t', 'nat'], text=True, timeout=remaining(deadline))", mode='eval').body
+                if ast.dump(node) != ast.dump(nat):
+                    return refused()
     return acquisition, None
