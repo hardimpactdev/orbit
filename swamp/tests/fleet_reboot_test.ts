@@ -37,7 +37,7 @@ Deno.test("the pass visits one Node at a time and the Gateway reads its report s
 
 Deno.test("each Node runs drain, reboot and check in order, each phase bounded and the drain longer than its budget", () => {
     const all = workflow("fleet-reboot-node").jobs[0].steps as Array<Record<string, any>>;
-    assertEquals(all.map((step) => step.name), ["drain", "reboot", "check", "mint", "rerun"]);
+    assertEquals(all.map((step) => step.name), ["drain", "reboot", "check", "mint", "rerun", "Record the Node"]);
     const steps = all.slice(0, 3);
     assertEquals(steps.map((step) => step.task.inputs.run.match(/^timeout (\d+) .* --tags (\w+) /).slice(1)), [["2400", "drain"], ["900", "reboot"], ["600", "check"]]);
     assertEquals(steps.slice(1).map((step) => step.dependsOn), [[{ step: "drain", condition: { type: "succeeded" } }], [{ step: "reboot", condition: { type: "succeeded" } }]]);

@@ -23,7 +23,7 @@ final readonly class FleetRebootProjection implements DirectOperationProjection
     public const array Outcomes = ['rebooted', 'scheduled', 'not_due', 'deferred', 'skipped', 'failed'];
 
     /** The record fields a Node's result keeps. */
-    private const array Fields = ['node_id', 'name', 'outcome', 'reason', 'step', 'error_code', 'kernel_before', 'kernel_after', 'due_since',
+    private const array Fields = ['node_id', 'name', 'outcome', 'reason', 'step', 'error_code', 'error_detail', 'kernel_before', 'kernel_after', 'due_since',
         'boot_id_before', 'parked', 'failed_units', 'drain_seconds', 'reboot_seconds', 'rebooted_at', 'ci_stopped', 'reran', 'rerun_refused',
         'rerun_pending', 'rerun_truncated', 'rerun_error'];
 
@@ -40,6 +40,7 @@ final readonly class FleetRebootProjection implements DirectOperationProjection
             'nodes.*.node_id' => ['required', 'integer', 'distinct'],
             'nodes.*.outcome' => ['required', 'in:'.implode(',', self::Outcomes)],
             'nodes.*.error_code' => ['nullable', 'string', 'max:100'],
+            'nodes.*.error_detail' => ['nullable', 'string', 'max:4096'],
         ]);
         if ($valid->fails()) {
             throw new ResourceOperationException('operation.result_invalid', 'Each visited Node needs one known outcome.', 422);

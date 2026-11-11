@@ -3,6 +3,7 @@ import * as ci from "../node/ci_host_spec.ts";
 import { clickhouseFiles } from "../analytics/clickhouse_files.ts";
 import { roleAddPlans } from "./role_add_plans.ts";
 import { convergeResult, ReportInput } from "./converge_result.ts";
+import { fleetRebootResult, FleetRebootResultInput } from "./fleet_reboot_result.ts";
 import { convergeInput } from "./converge_input.ts";
 
 const Path = z.string().regex(
@@ -28,12 +29,26 @@ type Context = {
 /** Swamp expressions cannot encode an object as JSON; large intents exceed env limits. */
 export const behavior = {
     type: "@nckrtl/ansible-input",
-    version: "2026.11.09.1",
+    version: "2026.11.11.1",
     resources: {
         input: { schema: Output, lifetime: "1d", garbageCollection: 10 },
         output: { schema: z.object({ stdout: z.string() }), lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
+        fleetRebootResult: {
+            description: "Record unreachable or cut fleet reboot phases from private Ansible callbacks on the controller",
+            arguments: FleetRebootResultInput,
+            async execute(raw: z.infer<typeof FleetRebootResultInput>, ctx: Context) {
+                try {
+                    const value = { stdout: JSON.stringify(await fleetRebootResult(raw)) };
+                    await ctx.writeResource("output", "output", value);
+                    return value;
+                } catch {
+                    // Parser and filesystem errors can quote private callback bytes or paths.
+                    throw new Error("fleet.reboot_record_failed");
+                }
+            },
+        },
         composeRole: {
             description:
                 "Compose role resources from Ansible observations in the private run folder",

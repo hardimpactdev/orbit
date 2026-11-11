@@ -3,7 +3,7 @@ title: "Orbit self-update"
 description: "The desired fleet state the Gateway serves for its commit, how orbit self-update replaces the CLI from it, and how the CLI learns that a newer release exists."
 covers:
   - apps/gateway/app/{Data,Infrastructure}/Fleet/**
-  - apps/gateway/app/Domain/Fleet/{Cli,Desired,Fleet,NodeCli,NodeFootprint,RecipeMaintenance,Release}*.php
+  - apps/gateway/app/Domain/Fleet/{Cli,Desired,FleetRelease,FleetRollout,FleetServing,NodeCli,NodeFootprint,RecipeMaintenance,Release}*.php
   - apps/gateway/app/Actions/Gateway/ShowDesiredFleetStateAction.php
   - apps/gateway/app/Http/Middleware/AnnounceDesiredCliVersion.php
   - apps/gateway/app/Console/Commands/ResolveDesiredFleetStateCommand.php

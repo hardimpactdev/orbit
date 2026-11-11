@@ -576,3 +576,10 @@ it('shows the failed native step and its safe detail in human and JSON operation
     Artisan::call('operation:show', ['operation' => '42', '--no-interaction' => true]);
     expect(Artisan::output())->toContain('create-mint', 'instance.git_mint_unavailable');
 });
+
+it('renders an unreachable fleet reboot failure and diagnostic from the recorded Gateway response', function (): void {
+    run_contract('operations/operation-show/fleet-reboot-unreachable', 'operation:show', ['operation' => '1'],
+        'operations/operation-show/fleet-reboot-unreachable.human.txt', 0);
+    run_contract('operations/operation-show/fleet-reboot-unreachable', 'operation:show', ['operation' => '1', '--json' => true],
+        'operations/operation-show/fleet-reboot-unreachable.json', 0);
+});
