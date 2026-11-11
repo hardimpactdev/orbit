@@ -77,6 +77,10 @@ orbit process:create queue \
 
 A production Process can be installed only after `instance:deploy` selects a release. Starting a Process uses the release selected by `current`; changing `current` does not restart an already running Process.
 
+Development definitions may name a supported runtime executable, such as `php`, `php8.5`, `vp` or `node`. Orbit resolves it when rendering a container Process. The same rule applies to the executable after supported `/usr/bin/env` options and assignments. Production definitions still require an absolute executable.
+
+When a development Instance captures definitions, a compatible direct Process with the same name becomes the definition’s copy. It keeps its ID and desired state. An incompatible Process or one linked to another definition returns `process.name_taken`.
+
 ## How it works
 
 <div className="flow-at" data-chart="process/create"></div>

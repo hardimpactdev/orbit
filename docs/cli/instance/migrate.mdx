@@ -125,6 +125,10 @@ Other absolute executable paths must be executable inside the container before d
 
 Each moved Process whose desired state is running must be active with no pending start or restart job. Orbit reads every running Process, waits five seconds once for the whole set, then requires each to remain active with no pending job, the same nonzero main process ID and the same restart count. This settling window catches immediate crashes and restart loops before the Route moves. A Process that fails this check reports `instance.migrate_processes_failed`, names the Process and triggers recovery.
 
+After a proven cutover, Orbit records each direct moved Process as a Project development definition and links the same Process row in the same transaction. New clones inherit those definitions. Later development deployments apply definition edits to linked copies. The definition stores supported runtime commands by name, such as `php8.5`, `vp` or `node`; Orbit resolves the name from the current runtime when it renders the unit. A supported `vp-dev` copy keeps its preset and uses each clone’s assigned port. An incompatible same-name definition refuses instead of being overwritten. Production definitions keep their existing scope.
+
+A cutover proven by the move result captures these definitions even if checkout retirement fails afterward. A failed preflight or a move restored to the checkout captures none. A one-time data repair applies the same rule to proven migrated defaults that still have direct Processes.
+
 ## Order
 
 A Project's default Instance moves first. A non-default Instance before its default refuses with `instance.default_not_migrated`.

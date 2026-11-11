@@ -35,6 +35,7 @@ sequenceDiagram
   %%> Result:
   %%> - the new unit or container rendered; secret environment values pushed to the vault key `process-update-operation-5130`
   %%> - the stored definition keeps the old spec until the run succeeds
+  %%> - development container definitions store supported command names and resolve them when rendering; capture adopts only a compatible unlinked same-name Process, keeping its id and desired state
   %%> - task #5130 recorded with the full intent
   GW->>SW: Start run, full intent<br/>operation-process-create
   %%> What it does:
