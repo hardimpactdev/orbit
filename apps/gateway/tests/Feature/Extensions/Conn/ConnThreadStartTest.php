@@ -9,13 +9,16 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\TaskVm;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -106,7 +109,7 @@ function threadCreate(Node $caller, Project $project, string $name, array $heade
 }
 
 describe('the Project list', function (): void {
-    it('lists the Projects whose ready container default runs on a Node the caller reaches', function (): void {
+    it('lists reachable Projects including defaults that are not ready', function (): void {
         threadDefault($this->beast, 'zeta');
         threadDefault($this->beast, 'alpha');
         threadDefault($this->beast, 'unseeded', seeded: false);
@@ -114,7 +117,7 @@ describe('the Project list', function (): void {
 
         $data = threadCall($this->phone, 'GET', 'projects')->assertOk()->json('data');
 
-        expect(array_column($data, 'slug'))->toBe(['alpha', 'zeta'])
+        expect(array_column($data, 'slug'))->toBe(['alpha', 'unseeded', 'zeta'])
             ->and($data[0])->toMatchArray(['name' => 'Alpha', 'node_id' => $this->beast->id, 'node_name' => 'beast']);
     });
 
@@ -318,7 +321,7 @@ describe('the Instance name check', function (): void {
     it('treats a pending create as taken even for the caller who can resume it', function (): void {
         $default = threadDefault($this->beast, 'tool');
         threadCreate($this->phone, $default->project, 'occupied');
-        $default->project->update(['type' => ProjectType::LaravelApp]);
+        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5', 'root' => 'public']);
         $this->beast->update(['tld' => 'test']);
         $laptop = threadNode('laptop', '10.44.0.78');
         $laptop->accessibleNodes()->attach($this->beast->id);
@@ -350,7 +353,7 @@ describe('the Instance name check', function (): void {
 
     it('answers invalid for each name format failure', function (string $name): void {
         $default = threadDefault($this->beast, 'tool');
-        $default->project->update(['type' => ProjectType::LaravelApp]);
+        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5', 'root' => 'public']);
         $this->beast->update(['tld' => 'test']);
 
         threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?".http_build_query(['name' => $name]))
@@ -361,7 +364,7 @@ describe('the Instance name check', function (): void {
 
     it('previews the Node TLD without creating a Route', function (): void {
         $default = threadDefault($this->beast, 'tool');
-        $default->project->update(['type' => ProjectType::LaravelApp]);
+        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5', 'root' => 'public']);
         $this->beast->update(['tld' => 'node.test']);
 
         threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=fix")
@@ -372,7 +375,7 @@ describe('the Instance name check', function (): void {
 
     it('previews the active Cluster TLD before the Node TLD', function (): void {
         $default = threadDefault($this->beast, 'tool');
-        $default->project->update(['type' => ProjectType::SymfonyApp]);
+        $default->project->update(['type' => ProjectType::SymfonyApp, 'php_version' => '8.5', 'root' => 'public']);
         $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'cluster.test', 'state' => 'active']);
         $this->beast->update(['cluster_id' => $cluster->id, 'tld' => 'node.test']);
 
@@ -384,7 +387,7 @@ describe('the Instance name check', function (): void {
 
     it('answers a null domain without a usable TLD', function (?string $tld): void {
         $default = threadDefault($this->beast, 'tool');
-        $default->project->update(['type' => ProjectType::LaravelApp]);
+        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5', 'root' => 'public']);
         $this->beast->update(['tld' => $tld]);
 
         threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=fix")
@@ -429,5 +432,252 @@ describe('the Instance name check', function (): void {
 
         threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=free")
             ->assertJsonPath('error.code', 'extension.disabled');
+    });
+});
+
+describe('the reachable Project directory', function (): void {
+    it('keeps unreachable defaults hidden when another Instance makes the Project reachable', function (): void {
+        $default = threadDefault($this->mini, 'hidden-default');
+        Instance::query()->create(['project_id' => $default->project_id, 'node_id' => $this->beast->id, 'name' => 'visible',
+            'checkout_path' => '/srv/visible', 'status' => InstanceState::Active]);
+
+        threadCall($this->phone, 'GET', 'projects')->assertOk()->assertJsonPath('data.0', [
+            'id' => $default->project_id, 'slug' => 'hidden-default', 'name' => 'Hidden-default',
+            'node_id' => null, 'node_name' => null, 'instance_domain_suffix' => null,
+            'cloneable' => false, 'cloneable_reason' => 'node_access.required',
+        ]);
+    });
+
+    it('lists a reachable Project without a default with nullable Node fields', function (): void {
+        $project = Project::query()->create(['name' => 'No default', 'slug' => 'no-default', 'type' => ProjectType::NodePackage,
+            'repository_url' => 'https://github.com/hardimpactdev/tool.git', 'default_branch' => 'main', 'root' => '.']);
+        Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->beast->id, 'name' => 'feature', 'checkout_path' => '/srv/feature']);
+
+        threadCall($this->phone, 'GET', 'projects')->assertOk()->assertJsonPath('data.0', [
+            'id' => $project->id, 'slug' => 'no-default', 'name' => 'No default',
+            'node_id' => null, 'node_name' => null, 'instance_domain_suffix' => null,
+            'cloneable' => false, 'cloneable_reason' => 'instance.default_missing',
+        ]);
+        threadCall($this->phone, 'GET', "projects/{$project->id}/instances/check?name=free")
+            ->assertConflict()->assertJsonPath('error.code', 'instance.default_missing');
+    });
+
+    it('shows Projects without any Instance to Gateway callers as project:list does', function (): void {
+        $project = Project::query()->create(['name' => 'Empty', 'slug' => 'empty', 'type' => ProjectType::NodePackage, 'repository_url' => 'https://github.com/hardimpactdev/tool.git']);
+        $this->beast->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+
+        threadCall($this->beast, 'GET', 'projects')->assertOk()->assertJsonPath('data.0.id', $project->id)
+            ->assertJsonPath('data.0.cloneable', false)->assertJsonPath('data.0.cloneable_reason', 'instance.default_missing')
+            ->assertJsonPath('data.0.node_id', null);
+    });
+
+    it('keeps checkout defaults visible but refuses the same Project in create and the name check', function (): void {
+        $project = Project::query()->create(['name' => 'Checkout', 'slug' => 'checkout', 'type' => ProjectType::NodePackage,
+            'repository_url' => 'https://github.com/hardimpactdev/tool.git', 'default_branch' => 'main', 'root' => '.']);
+        Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->beast->id, 'name' => 'default',
+            'checkout_path' => '/srv/checkout', 'status' => InstanceState::Active]);
+
+        $reason = threadCall($this->phone, 'GET', 'projects')->assertOk()
+            ->assertJsonPath('data.0.node_id', $this->beast->id)->assertJsonPath('data.0.cloneable', false)->json('data.0.cloneable_reason');
+
+        expect($reason)->toBe('instance.default_missing');
+        threadCall($this->phone, 'POST', "projects/{$project->id}/instances", ['name' => 'free'])
+            ->assertConflict()->assertJsonPath('error.code', $reason);
+        threadCall($this->phone, 'GET', "projects/{$project->id}/instances/check?name=free")
+            ->assertConflict()->assertJsonPath('error.code', $reason);
+    });
+
+    it('lists inactive and unseeded defaults with the same refusal as create', function (bool $seeded): void {
+        $default = threadDefault($this->beast, 'not-ready');
+        if ($seeded) {
+            $default->update(['status' => InstanceState::Reserved]);
+        } else {
+            $default->runtime()->update(['seed_commit' => null]);
+        }
+
+        $reason = threadCall($this->phone, 'GET', 'projects')->assertOk()
+            ->assertJsonPath('data.0.cloneable', false)->json('data.0.cloneable_reason');
+
+        expect($reason)->toBe('instance.default_missing');
+        threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'free'])
+            ->assertConflict()->assertJsonPath('error.code', $reason);
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=free")
+            ->assertConflict()->assertJsonPath('error.code', $reason);
+    })->with(['inactive seeded default' => true, 'unseeded default' => false]);
+
+    it('shares known source and placement refusals across list, create and name check', function (string $change, string $reason): void {
+        $default = threadDefault($this->beast, 'tool');
+        match ($change) {
+            'source' => $default->project->update(['source_access' => 'gh_cli']),
+            'defaults' => $default->project->update(['root' => null]),
+            'profile' => $default->project->update(['source_profile_error' => 'project.source_defaults_incomplete']),
+            'production' => $this->beast->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']),
+            'platform' => $this->beast->update(['platform' => 'macos']),
+            'app-dev' => $this->beast->roles()->where('role', RoleName::AppDev)->delete(),
+            'php' => $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => null]),
+        };
+
+        threadCall($this->phone, 'GET', 'projects')->assertOk()
+            ->assertJsonPath('data.0.cloneable', false)->assertJsonPath('data.0.cloneable_reason', $reason);
+        threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'free'])
+            ->assertJsonPath('error.code', $reason);
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=free")
+            ->assertJsonPath('error.code', $reason);
+    })->with([
+        ['source', 'operation.kind_unavailable'], ['defaults', 'project.source_defaults_incomplete'],
+        ['profile', 'project.source_defaults_incomplete'], ['production', 'instance.candidate_required'],
+        ['platform', 'instance.node_inactive'], ['app-dev', 'instance.node_not_app_dev'],
+        ['php', 'project.source_defaults_incomplete'],
+    ]);
+
+    it('shares model router refusals across the three handles', function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
+        {
+            public function assertReady(): void
+            {
+                throw new ResourceOperationException('ai_router.disabled', 'The model router is off.', 409);
+            }
+
+            public function origin(): string
+            {
+                return 'http://10.44.0.3:8318';
+            }
+
+            public function key(): string
+            {
+                return 'placeholder-model-key';
+            }
+        });
+
+        threadCall($this->phone, 'GET', 'projects')->assertOk()
+            ->assertJsonPath('data.0.cloneable', false)->assertJsonPath('data.0.cloneable_reason', 'ai_router.disabled');
+        threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'free'])
+            ->assertConflict()->assertJsonPath('error.code', 'ai_router.disabled');
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=free")
+            ->assertConflict()->assertJsonPath('error.code', 'ai_router.disabled');
+    });
+
+    it('refuses only live task VM Nodes without changing the default readiness rule', function (string $state, bool $cloneable): void {
+        $default = threadDefault($this->beast, 'tool');
+        TaskVm::query()->create(['node_id' => $this->beast->id, 'provider' => 'incus', 'name' => 'tvm-test',
+            'wireguard_ip' => '10.44.9.1', 'state' => $state]);
+
+        threadCall($this->phone, 'GET', 'projects')->assertOk()
+            ->assertJsonPath('data.0.cloneable', $cloneable)
+            ->assertJsonPath('data.0.cloneable_reason', $cloneable ? null : 'instance.task_vm_node');
+        if (! $cloneable) {
+            threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'free'])
+                ->assertConflict()->assertJsonPath('error.code', 'instance.task_vm_node');
+            threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=free")
+                ->assertConflict()->assertJsonPath('error.code', 'instance.task_vm_node');
+        }
+    })->with(['live' => ['ready', false], 'destroyed' => ['destroyed', true]]);
+
+    it('returns the shared domain suffix from the Cluster or Node TLD', function (bool $clustered): void {
+        $default = threadDefault($this->beast, 'tool');
+        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5']);
+        $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'cluster.test', 'state' => 'active']);
+        $this->beast->update(['tld' => 'node.test', 'cluster_id' => $clustered ? $cluster->id : null]);
+        $suffix = $clustered ? '.tool.cluster.test' : '.tool.node.test';
+        $writes = [];
+        DB::listen(function (QueryExecuted $query) use (&$writes): void {
+            if (preg_match('/\A\s*(insert|update|delete|replace)\b/i', $query->sql) === 1) {
+                $writes[] = $query->sql;
+            }
+        });
+
+        threadCall($this->phone, 'GET', 'projects')->assertOk()
+            ->assertJsonPath('data.0.cloneable', true)->assertJsonPath('data.0.cloneable_reason', null)
+            ->assertJsonPath('data.0.instance_domain_suffix', $suffix);
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=free")
+            ->assertOk()->assertJsonPath('data.domain', 'free'.$suffix);
+        expect($writes)->toBe([]);
+        Http::assertNothingSent();
+    })->with(['Cluster TLD' => true, 'Node TLD' => false]);
+
+    it('keeps non-web Projects cloneable with a null domain suffix', function (): void {
+        threadDefault($this->beast, 'tool');
+        $this->beast->update(['tld' => 'test']);
+
+        threadCall($this->phone, 'GET', 'projects')->assertOk()
+            ->assertJsonPath('data.0.cloneable', true)->assertJsonPath('data.0.instance_domain_suffix', null);
+    });
+
+    it('keeps queries bounded for 100 Projects on distinct Nodes', function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5']);
+        $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'test', 'state' => 'active']);
+        $this->beast->update(['cluster_id' => $cluster->id]);
+        threadCall($this->phone, 'GET', 'projects')->assertOk();
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        threadCall($this->phone, 'GET', 'projects')->assertOk()->assertJsonPath('data.0.cloneable', true);
+        $small = count(DB::getQueryLog());
+        DB::disableQueryLog();
+        $nodeRows = $projectRows = [];
+        for ($i = 1; $i < 100; $i++) {
+            $nodeRows[] = ['id' => 1000 + $i, 'name' => 'node-'.$i, 'status' => 'active', 'platform' => 'linux',
+                'architecture' => 'x86_64', 'wireguard_ip' => '10.50.0.'.$i, 'public_ssh_host' => '10.50.0.'.$i, 'user' => 'orbit', 'cluster_id' => $cluster->id];
+            $projectRows[] = ['id' => 1000 + $i, 'code' => 'Q'.chr(65 + intdiv($i, 26)).chr(65 + $i % 26), 'name' => 'Project '.$i, 'slug' => 'project-'.$i, 'type' => 'laravel-app',
+                'repository_url' => 'https://github.com/hardimpactdev/tool-'.$i.'.git', 'repository_identity' => 'github.com/hardimpactdev/tool-'.$i, 'default_branch' => 'main', 'root' => 'public',
+                'php_version' => '8.5', 'source_facts_captured_at' => now()];
+        }
+        Node::query()->insert($nodeRows);
+        Project::query()->insert($projectRows);
+        $roles = $instances = $runtimes = $edges = [];
+        for ($i = 1; $i < 100; $i++) {
+            $roles[] = ['node_id' => 1000 + $i, 'role' => 'app-dev', 'status' => 'active'];
+            $instances[] = ['id' => 1000 + $i, 'project_id' => 1000 + $i, 'node_id' => 1000 + $i, 'name' => 'default',
+                'checkout_path' => '/srv/project-'.$i, 'status' => 'active'];
+            $runtime = $default->runtime->getRawOriginal();
+            unset($runtime['id'], $runtime['created_at'], $runtime['updated_at']);
+            $runtimes[] = [...$runtime, 'instance_id' => 1000 + $i, 'node_id' => 1000 + $i, 'container_name' => 'instance-'.(1000 + $i)];
+            $edges[] = 1000 + $i;
+        }
+        NodeRole::query()->insert($roles);
+        Instance::query()->insert($instances);
+        InstanceRuntime::query()->insert($runtimes);
+        $this->phone->accessibleNodes()->attach($edges);
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+
+        $response = threadCall($this->phone, 'GET', 'projects')->assertOk()->assertJsonCount(100, 'data');
+        $large = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        expect(array_unique(array_column($response->json('data'), 'cloneable')))->toBe([true])
+            ->and($large)->toBeLessThanOrEqual($small + 1);
+    });
+
+    it('classifies an invalid default-branch alias before default or taken', function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        $default->project->update(['default_branch' => 'release/next']);
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=release%2Fnext")
+            ->assertOk()->assertJsonPath('data.available', false)->assertJsonPath('data.reason', 'invalid');
+    });
+
+    it('enforces the complete domain length while keeping the free name available', function (int $lastLabelLength, bool $valid): void {
+        $default = threadDefault($this->beast, 'tool');
+        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5']);
+        $tld = str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', $lastLabelLength);
+        $this->beast->update(['tld' => $tld]);
+        $name = str_repeat('x', 63);
+        $domain = $name.'.tool.'.$tld;
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name={$name}")
+            ->assertOk()->assertJsonPath('data.available', true)->assertJsonPath('data.reason', null)
+            ->assertJsonPath('data.domain', $valid ? $domain : null);
+        expect(strlen($domain))->toBe($valid ? 253 : 254);
+    })->with(['253 characters' => [56, true], '254 characters' => [57, false]]);
+
+    it('rejects a domain label over 63 characters while keeping the free name available', function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5', 'slug' => str_repeat('p', 64)]);
+        $this->beast->update(['tld' => 'test']);
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=free")
+            ->assertOk()->assertJsonPath('data.available', true)->assertJsonPath('data.domain', null);
     });
 });

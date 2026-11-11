@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Instances;
 
 use App\Data\Instances\CloneInstanceData;
+use App\Domain\Instances\InstanceName;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\SourceControl\GitBranchName;
 use App\Http\Requests\TopLevelJsonObjectInspector;
@@ -23,12 +24,7 @@ final class CloneInstanceRequest extends FormRequest
     {
         return [
             'node_id' => ['required', 'integer:strict', 'min:1', Rule::exists(new Node()->getTable(), 'id')],
-            'name' => [
-                'required',
-                'string',
-                'max:63',
-                'regex:/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/',
-            ],
+            'name' => InstanceName::rules(),
             'preview_name' => ['required', 'string', 'max:253'],
             'branch' => ['sometimes', 'string', 'max:255'],
             'sqlite_source_path' => [

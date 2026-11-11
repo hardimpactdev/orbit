@@ -35,9 +35,9 @@ describe('the generated Conn Instance name check contract', function (): void {
             ->and($tool['input_schema']['additionalProperties'])->toBeFalse();
     });
 
-    it('preserves both create schemas after extracting the shared name validator', function (): void {
+    it('preserves create and clone schemas after extracting the shared name validator', function (): void {
         $spec = json_decode((string) file_get_contents(dirname(base_path(), 2).'/docs/openapi.json'), true, flags: JSON_THROW_ON_ERROR);
-        foreach (['/api/v1/instances', '/api/v1/conn/projects/{project}/instances'] as $path) {
+        foreach (['/api/v1/instances', '/api/v1/conn/projects/{project}/instances', '/api/v1/instances/{candidate}/clone'] as $path) {
             $body = $spec['paths'][$path]['post']['requestBody']['content']['application/json']['schema'];
 
             expect($body['required'])->toContain('name')

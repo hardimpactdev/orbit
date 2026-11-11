@@ -22,7 +22,7 @@ The CLI calls `POST /api/v1/instances/{candidate}/clone`. The caller needs acces
 | Input | Meaning |
 | --- | --- |
 | `node_id` | Active Linux Node with an active `app-prod` role. A web Project also needs the Node's TLD. |
-| `name` | New production Instance name. |
+| `name` | New production Instance name, using the same [name format](/cli/instance) as development create. |
 | `preview_name` | Combined with the Node TLD into the private preview domain, such as `shop.com.prod.orbit`. |
 | `branch` | Repository branch for the target; defaults to the candidate's recorded branch. A missing branch is refused. |
 | `sqlite_source_path` | Absolute path to one SQLite database on the candidate that seeds the clone's own database. |

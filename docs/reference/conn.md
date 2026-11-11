@@ -181,7 +181,17 @@ Destroy keeps this contribution available while Conn is disabled. Admission capt
 
 Conn starts a thread in an Orbit Project in a new clone of the Project's default Instance ([Threads](/reference/development-containers#threads)). The [thread chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/thread.mmd) has the steps.
 
-`GET /projects` lists the Projects a thread can start in. Each one has a `default` Instance that runs in a container, is active and has a seed snapshot. That default runs on a Node the caller has node access to, and the entry names that Node.
+`GET /projects` (`conn-project-list`) lists the same reachable Projects as `project:list`, ordered by name and ID. A caller with Gateway access sees all Projects. Other callers see each Project with any Instance on a Node they can reach.
+
+Each entry keeps its Project fields and adds `instance_domain_suffix`, `cloneable` and `cloneable_reason`. The default's `node_id` and `node_name` are null when there is no default or the caller cannot reach its Node. A hidden default also has a null suffix.
+
+`cloneable` uses the same read-only admission check as Conn create and the name check. It requires a reachable, active container default with a seed snapshot, valid Project source defaults, supported development placement and PHP, and the clone's runtime contributions and model route. A refusal sets `cloneable: false` and `cloneable_reason` to the existing create error code. Conn can grey out that entry.
+
+`cloneable` does not cover host bridge and shared-folder readiness; create is the guard. It promises no capacity or later success. A read-only readiness method on `InstanceContainer` can join this check after the pending container changes land.
+
+`instance_domain_suffix` is `.<project-slug>.<effective-tld>` from a visible default's usable placement. It is null without a default, usable placement or TLD, or for a non-web Project. It can exist while the default is not ready to clone. The name check uses this same suffix and validates the complete domain.
+
+The list creates no records, including Activity rows.
 
 `GET /projects/{id}/branches?query=` (MCP `conn-project-branches`) reads remote branches with the Project's source access. It requires access to the ready default Instance, as create does; a Project without one fails with `instance.default_missing` (409). Each entry has `name`, `default`, `pull_request` (`null` or `{number, title, url}`), and `instance` (`null` or `{id, name}`). The optional `query` is a case-insensitive substring of at most 255 characters; leading or trailing spaces are refused. Arrays, control characters and over-long whitespace fail with `validation.failed` (422). The source read has a ten-second budget starting before credential acquisition, including authentication and git. An unreadable remote, including a read that exceeds that budget or 4 MiB of remote-head output, fails with `source.head_unavailable` (502).
 
@@ -193,15 +203,16 @@ One repository listing reads up to five pages of 100 open requests, with a separ
 
 If GitHub fails, returns malformed data, or has more than 500 open requests, all entries keep `pull_request: null` and `meta.pull_requests_unavailable` is `true`. Otherwise that marker is `false`. A non-GitHub source still lists readable branches with null pull requests and a false marker.
 
-`GET /projects/{id}/instances/check?name=fix-login-k3j9` checks a proposed clone name without reserving it. It uses the same Project access and ready-default requirements as create. The MCP tool is `conn-instance-name-check`.
+`GET /projects/{id}/instances/check?name=fix-login-k3j9` checks a proposed clone name without reserving it. It uses the same clone admission check as create. A missing default, checkout default, inactive default or missing seed still answers `instance.default_missing` (409), even though the Project can appear in the list. The MCP tool is `conn-instance-name-check`.
 
-- It answers 200 with `{name, available, reason, domain}`. An available name has `reason: null`.
+- It answers 200 with `{name, available, reason, domain}`. An available name has `reason: null`. Reasons are checked in order: `invalid`, then `default`, then `taken`.
 - `invalid` means the name is not a lowercase DNS label of 1–63 characters, with no leading or trailing hyphen. An empty string is invalid.
 - `default` means the name is `default` or the Project's default-branch alias.
 - `taken` means any Instance of the Project holds the name, on any Node and in any state, including the caller's own Instance.
 - `domain` previews `<name>.<project-slug>.<effective-tld>`. The default's placement selects the active Cluster TLD before the Node TLD.
 
 The domain is null for an invalid name, a non-web Project, or no usable domain.
+
 - Missing or non-string `name`, or an unknown query field, fails with `validation.failed` (422). Access is checked before the name.
 
 The check creates no records, including Activity rows. A later create can still refuse with `instance.name_taken`; create keeps its same-caller resume rule.
@@ -263,7 +274,7 @@ The objects:
   "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"},
   "settings": {"profile_id": 1, "version": 3, "settings": {"workspaces": []}, "sections": {"workspaces": {"version": 1, "updated_at": "2026-10-08T10:00:00+00:00", "updated_by": "phone"}}, "updated_at": "2026-10-08T10:00:00+00:00"},
   "environment": {"environment_id": "env-beast", "label": "beast", "url": "http://10.44.0.30:3773", "server_version": "0.9.1", "registered_by": "beast", "registered_at": "2026-10-08T09:00:00+00:00", "admin_session_expires_at": "2026-11-07T09:00:00+00:00", "status": "registered", "instance_id": null, "power_state": null, "project_id": null, "project_name": null, "project_slug": null, "instance_name": null, "node_name": null, "instance_url": null},
-  "project": {"id": 3, "slug": "mealou", "name": "Mealou", "node_id": 7, "node_name": "beast"},
+  "project": {"id": 3, "slug": "mealou", "name": "Mealou", "node_id": 7, "node_name": "beast", "instance_domain_suffix": ".mealou.test", "cloneable": true, "cloneable_reason": null},
   "pairing": {"id": 7, "environment_id": "env-beast", "node_id": 4, "node_name": "phone", "client_label": "phone via Orbit k3j9x0qa", "issued_at": "2026-10-08T10:00:00+00:00", "expires_at": "2026-10-08T10:05:00+00:00", "revoked_at": null}
 }
 ```

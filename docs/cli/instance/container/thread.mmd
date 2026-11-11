@@ -14,11 +14,11 @@ sequenceDiagram
   participant T3 as T3 server<br/>in the container
   CONN->>GW: List the Projects<br/>conn:project:list
   %%> What it returns:
-  %%> - each Project whose default Instance runs in a container, is active and has a seed snapshot, on a Node the device has node access to
+  %%> - each reachable Project, with cloneable and its refusal reason, the domain suffix, and the default's Node when the device can reach it
   GW-->>CONN: Projects · default's Node
   Note over CONN: Start a thread<br/>Orbit Project · message
   %%> What the user does:
-  %%> - picks an Orbit Project and writes the first message
+  %%> - picks a cloneable Orbit Project and writes the first message; unavailable Projects stay visible but are greyed out
   %%> What Conn proposes:
   %%> - an Instance name from the message with a short random suffix; the Instance is always a clone of the Project's default Instance on the default's Node, with a clone of its database
   %%> - Conn keeps the message, the name and each step it finished on the device, so a reload resumes the same thread start

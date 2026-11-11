@@ -41,7 +41,7 @@ Route::middleware([
             ->whereNumber('profile')
             ->name('conn:profile:settings:patch');
         Route::get('projects/{project}/branches', [ConnProjectBranchesController::class, 'index'])->whereNumber('project')->name('conn:project:branches');
-        Route::get('projects', [ConnProjectsController::class, 'index'])->name('conn:project:list');
+        Route::get('projects', [ConnProjectsController::class, 'index'])->withoutMiddleware(RecordCommandActivity::class)->name('conn:project:list');
         Route::get('projects/{project}/instances/check', [ConnProjectsController::class, 'checkInstanceName'])
             ->withoutMiddleware(RecordCommandActivity::class)->whereNumber('project')->name('conn:instance:name:check');
         Route::post('projects/{project}/instances', [ConnProjectsController::class, 'createInstance'])->whereNumber('project')->name('conn:instance:create');
