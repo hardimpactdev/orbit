@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # Infrastructure, not checks: explicit exceptions so new jobs cannot evade the table.
 NON_CHECKS = {'changes', 'gateway-release', 'required', 'cli-release', 'proof-run'}
 OTHER_DEPENDENCIES = {'required', 'cli-release', 'proof-run'}
-PROOF_GATE_TIMEOUT = "${{ vars.ORBIT_SLOW_CHECKS_BLOCKING != 'false' && vars.ORBIT_PROOF_BLOCKING != 'false' && needs.changes.outputs.proof_run == 'true' && 195 || 2 }}"
+PROOF_GATE_TIMEOUT = "${{ github.event_name == 'pull_request' && vars.ORBIT_SLOW_CHECKS_BLOCKING != 'false' && vars.ORBIT_PROOF_BLOCKING != 'false' && needs.changes.outputs.proof_run == 'true' && 195 || 2 }}"
 FIXTURES_CONDITION = "${{ !inputs.changed-only && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}"
 
 

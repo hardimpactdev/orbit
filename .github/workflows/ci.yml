@@ -651,7 +651,7 @@ jobs:
     if: always()
     needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, e2e-static, docs, api-reference, web, pi, agent, proof, gateway-release, changes, swamp]
     runs-on: ubuntu-26.04
-    timeout-minutes: ${{ vars.ORBIT_SLOW_CHECKS_BLOCKING != 'false' && vars.ORBIT_PROOF_BLOCKING != 'false' && needs.changes.outputs.proof_run == 'true' && 195 || 2 }}
+    timeout-minutes: ${{ github.event_name == 'pull_request' && vars.ORBIT_SLOW_CHECKS_BLOCKING != 'false' && vars.ORBIT_PROOF_BLOCKING != 'false' && needs.changes.outputs.proof_run == 'true' && 195 || 2 }}
     permissions:
       contents: read
       statuses: read
