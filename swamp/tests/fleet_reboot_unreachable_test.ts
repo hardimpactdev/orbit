@@ -161,7 +161,7 @@ Deno.test("the controller records phase failures after succeeded, failed and ski
     const record = steps.find((step) => step.name === "Record the Node");
     assertEquals(record.task.methodName, "fleetRebootResult");
     assertEquals(record.dependsOn.map((dependency: any) => dependency.step), ["drain", "reboot", "check", "mint", "rerun"]);
-    assertEquals(record.dependsOn.every((dependency: any) => JSON.stringify(dependency.condition) === JSON.stringify({ or: [{ type: "completed" }, { type: "skipped" }] })), true);
+    assertEquals(record.dependsOn.every((dependency: any) => JSON.stringify(dependency.condition) === JSON.stringify({ type: "or", conditions: [{ type: "completed" }, { type: "skipped" }] })), true);
 });
 
 

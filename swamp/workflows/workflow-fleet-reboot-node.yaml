@@ -114,11 +114,11 @@ jobs:
   - name: 'Record the Node'
     labels: {role: swamp}
     dependsOn:
-    - {step: 'drain', condition: {or: [{type: completed}, {type: skipped}]}}
-    - {step: 'reboot', condition: {or: [{type: completed}, {type: skipped}]}}
-    - {step: 'check', condition: {or: [{type: completed}, {type: skipped}]}}
-    - {step: 'mint', condition: {or: [{type: completed}, {type: skipped}]}}
-    - {step: 'rerun', condition: {or: [{type: completed}, {type: skipped}]}}
+    - {step: 'drain', condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+    - {step: 'reboot', condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+    - {step: 'check', condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+    - {step: 'mint', condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+    - {step: 'rerun', condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
     writes: true
     task:
       type: behavior
