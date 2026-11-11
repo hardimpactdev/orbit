@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/{Actions,Data}/{Processes,ProjectDefinitions}/**
   - apps/gateway/app/Domain/{Processes/**,Instances/InstanceNodeService*.php}
   - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_06_000000_create_instance_node_service_targets_table}.php
-  - apps/gateway/app/Infrastructure/Processes/{RemoteProcessRuntimeManager,SystemdProcessRenderer,DockerProcessRenderer,NativeProcessAdmissionLock,NativeProcessRuntimeLease,SshProcessUserResolver}.php
+  - apps/gateway/{app/Infrastructure/Processes/{RemoteProcessRuntimeManager,SystemdProcessRenderer,DockerProcessRenderer,NativeProcessAdmissionLock,NativeProcessRuntimeLease,SshProcessUserResolver,ContainerProcessInspection}.php,resources/processes/container-process-read.py}
   - apps/gateway/app/Http/{Controllers/Api/ProcessesController,Requests/Processes/*}.php
   - apps/gateway/app/Actions/Instances/InstantiateProjectRuntimeDefinitionsAction.php
   - apps/gateway/app/Http/{Controllers/Api/ProjectRuntimeDefinitionsController,Requests/ProjectDefinitions/*}.php

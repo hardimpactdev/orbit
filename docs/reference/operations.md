@@ -18,6 +18,8 @@ Swamp is the sole executor of task groups. The Gateway stores task state and run
 
 A long operation, such as an [Instance deploy or rollback](/reference/deployments#deploy-through-the-api), is a record in the Gateway database with named steps. Swamp runs it: the Gateway admits the intent, starts one native workflow, and projects the workflow's result into the record ([How an operation runs](#how-an-operation-runs)). The request that starts it answers `202 Accepted` with the record and returns at once. A client then follows the record until it ends. Nothing a client does, such as closing its connection, stops the operation. Only [cancel](#cancel-an-operation) does.
 
+Container Process journal tails and unit state reads create no Operation. They use the narrow [direct transport exception](/reference/node-agent#commands); Process actions still run as Operations.
+
 Not every recorded result is an operation. The Gateway records an automatic deploy's Activity entries and release alerts from the terminal result of its scheduled run, with no Operation; see [Instance releases](/reference/deployments).
 
 Instance deploy, rollback, [task provision](/reference/tasks#provision-an-external-group), [task checks](/reference/tasks#check-an-external-group), and [task turns](/reference/tasks#run-an-external-turn) are operations. Publication releases the VM; later task work waits for a fresh task place. Every other kind a command starts runs the same way; [Kinds and targets](#kinds-and-targets) lists the task and deploy kinds.

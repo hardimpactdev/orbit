@@ -1,7 +1,7 @@
 ---
 # One Process of an Instance container (docs/reference/development-containers.md#processes), the `process` tag of
 # instance-container.yml. `process_action` is start, stop or restart, which change the Process's `orbit-*` unit in the container
-# and check its state, or status or logs, which read the unit's state and its newest journal lines into `process_result`.
+# and check its state into `process_result`.
 - name: Name the Process command
   ansible.builtin.set_fact:
     as_root: "{{ ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
@@ -12,7 +12,7 @@
   ansible.builtin.assert:
     that:
       - process_unit is match('^orbit-process-[1-9][0-9]*-[a-z0-9-]+\.service$')
-      - process_action in ['start', 'stop', 'restart', 'status', 'logs']
+      - process_action in ['start', 'stop', 'restart']
     fail_msg: process.target_unsupported
     quiet: true
 
@@ -68,21 +68,9 @@
     fail_msg: "process.{{ process_action }}_failed"
     quiet: true
 
-# Newest entry first, as the Node agent reads a unit's journal; the Gateway puts them in time order and redacts them.
-- name: Read the unit's journal
-  when: process_action == 'logs'
-  ansible.builtin.command:
-    argv: >-
-      {{ as_root + ['journalctl', '--unit', process_unit, '--lines', (intent.read.lines | int | string), '--reverse',
-          '--output', 'short-iso', '--utc', '--no-pager', '--quiet'] }}
-    strip_empty_ends: false
-  register: process_journal
-  changed_when: false
-  no_log: true
-
 - name: Keep the result
   ansible.builtin.set_fact:
     process_result:
       state: "{{ process_state.stdout | trim or 'unknown' }}"
-      output: "{{ (process_journal.stdout | default(''))[:1048576] }}"
+      output: ""
   no_log: true

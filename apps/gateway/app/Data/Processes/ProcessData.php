@@ -37,9 +37,9 @@ final class ProcessData extends Data
         public ?int $memoryBytes = null,
         public ?string $user = null,
         public bool $restartOnDeploy = true,
-        /** ISO 8601 UTC completion time of the last container inspection, null before any inspection or for host Processes. */
+        /** ISO 8601 UTC completion time of the container state read attempt, null when migration prevents a read or for host Processes. */
         public ?string $observedAt = null,
-        /** Failure of the last container inspection, separate from the Process lifecycle error. */
+        /** Failure of the container state read, separate from the Process lifecycle error. */
         public ?string $runtimeErrorCode = null,
     ) {}
 

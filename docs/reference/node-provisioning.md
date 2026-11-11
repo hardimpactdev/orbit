@@ -18,6 +18,8 @@ An [Instance container](/reference/development-containers#processes) runs Franke
 
 Preparing an `app-dev` Node for [Instance containers](/reference/development-containers#prepare-a-node) keeps its existing checkout Instances. Each checkout moves only through [`instance:migrate`](/cli/instance/migrate), after the container host is ready. The role installs the profile's default-reject NIC policy from the admitted common ACL name. Before starting an image builder or clone probe, it uses the same [effective-NIC gate](/reference/development-containers#network) as Instance starts. It also replaces old bridge union ACL references on existing NICs with the common NIC ACL, retaining their reject defaults. Its read-only end check repeats the audit, including stopped containers. One converge applies this to an existing host without restarting its containers.
 
+Container Process journal and state reads use this Node’s existing SSH account and Incus access, under the [transport exception](/reference/node-agent#commands). They add no account, group membership or sudo rule.
+
 Bridge endpoint convergence uses the [shared endpoint writer](/reference/development-containers#prepare-a-node). If another writer owns its lock, the phase refuses immediately with `instance.bridge_busy`, leaving endpoint records, ACL rules and health unchanged. Retry after that writer finishes.
 
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.

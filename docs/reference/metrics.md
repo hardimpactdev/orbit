@@ -138,7 +138,7 @@ A Process list reads each Process's status from the Gateway's [view of the Node 
 
 In Prometheus, a systemd Process takes its state from `node_systemd_unit_state`. A missing unit is `inactive`. cAdvisor reports only running containers, so a Docker Process with a series is `running` and one without is `exited`. The Gateway caches this answer for 10 seconds.
 
-For container Processes, each list reads all units on a Node in one SSH call, with a two-second connection deadline and a four-second total call deadline. Twenty container Processes on one Node cost one SSH round trip and twenty local `incus exec` unit reads, without a workflow, Operation, vault copy or background refresh. Each remote batch has a three-second deadline. A Node failure affects only its Processes and does not fail the list.
+For container Processes, each list reads all units on a Node in one SSH call. The connection has two seconds and the whole call has four seconds. Twenty container Processes on one Node cost one SSH round trip and twenty local `incus exec` unit reads, without a workflow, Operation, vault copy or background refresh. Each remote batch has a three-second deadline. A Node failure affects only its Processes and does not fail the list.
 
 `runtime_status` is the returned unit state. `observed_at` is the ISO 8601 UTC time that the read attempt completed, and `runtime_error_code` is null on success or a public reason for `unknown`. A later successful read clears the reason. Host and checkout Processes keep their existing status sources and null observation fields.
 

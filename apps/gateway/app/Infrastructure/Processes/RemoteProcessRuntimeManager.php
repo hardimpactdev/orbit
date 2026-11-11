@@ -139,7 +139,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
     {
         $target = $this->targets->forInspection($process);
         if ($target->container !== null) {
-            return app(ContainerProcessInspection::class)->read($process, $target, 'status', 1)['state'];
+            return app(ContainerProcessInspection::class)->states([['instance' => $target->instance ?? throw new \LogicException('A container target requires an Instance.'), 'process' => $process]])[$process->id]['runtime_status'];
         }
         $status = $this->call($process, 'process.status', $this->artifact($process), 'status', 'process.status_failed');
 
@@ -150,7 +150,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
     {
         $target = $this->targets->forInspection($process);
         if ($target->container !== null) {
-            return LogReadLimit::journalInTimeOrder(app(ContainerProcessInspection::class)->read($process, $target, 'logs', $lines)['output']);
+            return app(ContainerProcessInspection::class)->logs($target->instance ?? throw new \LogicException('A container target requires an Instance.'), $process, $lines);
         }
         // Newest journal entry first, stopped after the byte limit, so the Node does bounded work; a container's
         // standard output and standard error in one stream, in the order it wrote them (ADR 0153).

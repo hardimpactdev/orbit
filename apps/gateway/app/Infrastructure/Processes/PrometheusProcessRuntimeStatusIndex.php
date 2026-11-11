@@ -5,13 +5,10 @@ declare(strict_types=1);
 namespace App\Infrastructure\Processes;
 
 use App\Domain\AgentView\AgentProcessView;
-use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\GrafanaPrometheusClient;
-use App\Jobs\Operations\RefreshContainerProcessStatus;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Process;
@@ -114,56 +111,22 @@ final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRunti
     }
 
     /**
-     * Keep the last completed inspection while the oldest due Processes queue their next reads.
-     *
      * @param  Collection<int, Process>  $processes
      * @return array<int, array{runtime_status: string, observed_at: ?string, runtime_error_code: ?string}>
      */
     private function containerStatuses(Collection $processes): array
     {
         $owners = $processes->filter(static fn (Process $process): bool => Instance::isMorphType($process->owner_type))->pluck('owner_id')->unique()->all();
-        if ($owners === []) {
-            return [];
-        }
-        $runtimes = InstanceRuntime::query()->whereIn('instance_id', $owners)->with('instance')->get()->keyBy('instance_id');
-        if ($runtimes->isEmpty()) {
-            return [];
-        }
-        $containers = $processes->filter(static fn (Process $process): bool => Instance::isMorphType($process->owner_type) && $runtimes->has($process->owner_id));
-        $last = ContainerProcessObservation::latest($containers->map(static fn (Process $process): int => $process->id)->values()->all());
-        $blocked = [];
-        foreach ($runtimes as $runtime) {
-            try {
-                InstanceMigration::assertSettled($runtime->instance);
-            } catch (ResourceOperationException $error) {
-                $blocked[$runtime->instance_id] = $error->errorCode;
-            }
-        }
-        $statuses = [];
-        $reads = 0;
-        foreach ($containers->sortBy(static fn (Process $process): string => $last[$process->id]['observed_at'] ?? '') as $process) {
-            if (isset($blocked[$process->owner_id])) {
-                $statuses[$process->id] = ['runtime_status' => 'unknown', 'observed_at' => null, 'runtime_error_code' => $blocked[$process->owner_id]];
-
-                continue;
-            }
-            $statuses[$process->id] = $last[$process->id] ?? ['runtime_status' => 'unknown', 'observed_at' => null, 'runtime_error_code' => null];
-            if ($reads < 4 && ContainerProcessObservation::due($last[$process->id] ?? null)) {
-                try {
-                    if (RefreshContainerProcessStatus::enqueue($process->id)) {
-                        $reads++;
-                    }
-                } catch (Throwable $error) {
-                    $failure = ContainerProcessObservation::failed($process->id, $error);
-                    if ($failure !== null) {
-                        $statuses[$process->id] = $failure;
-                        $reads++;
-                    }
-                }
+        $runtimes = InstanceRuntime::query()->whereIn('instance_id', $owners)->with('instance.node')->get()->keyBy('instance_id');
+        $pairs = [];
+        foreach ($processes as $process) {
+            if (Instance::isMorphType($process->owner_type) && ($runtime = $runtimes->get($process->owner_id)) !== null) {
+                $runtime->instance->setRelation('runtime', $runtime);
+                $pairs[] = ['instance' => $runtime->instance, 'process' => $process];
             }
         }
 
-        return $statuses;
+        return app(ContainerProcessInspection::class)->states($pairs);
     }
 
     #[\Override]
