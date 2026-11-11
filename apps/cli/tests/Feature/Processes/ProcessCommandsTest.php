@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Support\Console\ConsoleMode;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
@@ -26,6 +27,8 @@ use Orbit\Sdk\Requests\Projects\UpdateProcessDefinitionRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {
@@ -1715,3 +1718,140 @@ it('still follows HTTP 202 Process Operations on ordinary workload Nodes', funct
     'restart' => ['process:restart', ['process' => '12'], RestartProcessRequest::class],
     'destroy' => ['process:destroy', ['process' => '12', '--yes' => true], DestroyProcessRequest::class],
 ]);
+
+it('sends a natural definition keep-alive edit without command runtime or other defaults', function (): void {
+    $mock = MockClient::global([UpdateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope())]);
+
+    $this->artisan('process:update', ['name' => 'vp-dev', '--project' => '7', '--for' => 'development',
+        '--keep-alive' => true, '--json' => true])->assertExitCode(0);
+
+    expect((string) $mock->getLastPendingRequest()?->body())
+        ->toBe('{"name":"vp-dev","environments":["development"],"spec":{"keep_alive":true}}');
+    $mock->assertSentCount(1);
+    $mock->assertNotSent(ShowProcessDefinitionRequest::class);
+});
+
+it('sends only each explicitly supplied definition field', function (array $options, array $spec): void {
+    $mock = MockClient::global([UpdateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope())]);
+
+    $this->artisan('process:update', ['name' => 'queue', '--project' => '7', '--for' => 'production', '--json' => true, ...$options])
+        ->assertExitCode(0);
+
+    expect(json_decode((string) $mock->getLastPendingRequest()?->body(), true, flags: JSON_THROW_ON_ERROR))
+        ->toBe(['name' => 'queue', 'environments' => ['production'], 'spec' => $spec]);
+    $mock->assertSentCount(1);
+})->with([
+    'runtime' => [['--runtime' => 'docker'], ['runtime' => 'docker']],
+    'command' => [['--command' => ['/usr/bin/worker']], ['command' => ['/usr/bin/worker']]],
+    'image' => [['--image' => 'worker:1'], ['image' => 'worker:1']],
+    'directory' => [['--working-directory' => '/app'], ['working_directory' => '/app']],
+    'remaining environment map removes omitted keys' => [['--environment' => ['KEEP=actual=value']], ['environment' => ['KEEP' => 'actual=value']]],
+    'remaining ports' => [['--port' => ['8080:80']], ['ports' => ['8080:80']]],
+    'remaining volumes' => [['--volume' => ['cache:/cache:ro']], ['volumes' => [['source' => 'cache', 'target' => '/cache', 'read_only' => true]]]],
+    'restart' => [['--restart' => 'always'], ['restart_policy' => 'always']],
+]);
+
+it('clears only the requested definition field with the API clear form', function (string $option, string $field, mixed $value): void {
+    $mock = MockClient::global([UpdateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope())]);
+
+    $this->artisan('process:update', ['name' => 'queue', '--project' => '7', '--for' => 'development',
+        $option => true, '--json' => true])->assertExitCode(0);
+
+    expect((string) $mock->getLastPendingRequest()?->body())->toBe(json_encode([
+        'name' => 'queue', 'environments' => ['development'], 'spec' => [$field => $value],
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    $mock->assertSentCount(1);
+})->with([
+    'directory' => ['--clear-working-directory', 'working_directory', null],
+    'restart' => ['--clear-restart', 'restart_policy', null],
+    'keep alive' => ['--clear-keep-alive', 'keep_alive', null],
+    'restart on deploy' => ['--clear-restart-on-deploy', 'restart_on_deploy', null],
+    'environment file' => ['--clear-environment-file', 'environment_file', null],
+    'environment map' => ['--clear-environment', 'environment', (object) []],
+    'ports' => ['--clear-ports', 'ports', []],
+    'volumes' => ['--clear-volumes', 'volumes', []],
+    'required mount paths' => ['--clear-required-mount-paths', 'required_mount_paths', []],
+]);
+
+it('refuses conflicting definition set and clear options before a request', function (array $options): void {
+    $mock = MockClient::global([]);
+
+    [$exit, $output] = process_cli_display('process:update', [
+        'name' => 'queue', '--project' => '7', '--for' => 'development', '--json' => true, ...$options,
+    ]);
+
+    expect($exit)->toBe(1);
+    expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('process.option_invalid');
+    $mock->assertNothingSent();
+})->with([
+    [['--working-directory' => '/app', '--clear-working-directory' => true]],
+    [['--restart' => 'always', '--clear-restart' => true]],
+    [['--keep-alive' => true, '--clear-keep-alive' => true]],
+    [['--no-restart-on-deploy' => true, '--clear-restart-on-deploy' => true]],
+    [['--environment' => ['TOKEN=new'], '--clear-environment' => true]],
+    [['--port' => ['8080:80'], '--clear-ports' => true]],
+    [['--volume' => ['cache:/cache'], '--clear-volumes' => true]],
+]);
+
+it('keeps definition clear options out of installed Process updates', function (string $option): void {
+    $mock = MockClient::global([]);
+
+    [$exit, $output] = process_cli_display('process:update', ['name' => '41', $option => true, '--json' => true]);
+
+    expect($exit)->toBe(1);
+    expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('process.option_invalid');
+    $mock->assertNothingSent();
+})->with(['--clear-working-directory', '--clear-restart', '--clear-keep-alive', '--clear-restart-on-deploy',
+    '--clear-environment-file', '--clear-environment', '--clear-ports', '--clear-volumes', '--clear-required-mount-paths']);
+
+it('refuses an explicitly supplied redaction marker without a request', function (array $options, bool $definition): void {
+    $mock = MockClient::global([]);
+
+    [$exit, $output] = process_cli_display('process:update', [
+        'name' => $definition ? 'queue' : '41', '--json' => true,
+        ...($definition ? ['--project' => '7', '--for' => 'development'] : []), ...$options,
+    ]);
+
+    expect($exit)->toBe(1);
+    expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('process.redacted_value');
+    $mock->assertNothingSent();
+})->with([
+    [['--command' => ['/usr/bin/worker', '--api-token=[REDACTED]']]],
+    [['--environment' => ['TOKEN=[REDACTED]']]],
+    [['--working-directory' => '/app/[REDACTED]']],
+])->with(['definition' => true, 'installed' => false]);
+
+it('keeps an empty definition update specification an object', function (): void {
+    $mock = MockClient::global([UpdateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope())]);
+
+    $this->artisan('process:update', ['name' => 'queue', '--project' => '7', '--for' => 'development', '--json' => true])
+        ->assertExitCode(0);
+
+    expect((string) $mock->getLastPendingRequest()?->body())
+        ->toBe('{"name":"queue","environments":["development"],"spec":{}}');
+});
+
+it('preserves omission in an interactive definition update without optional field prompts', function (): void {
+    $mock = MockClient::global([UpdateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope())]);
+    $command = app(Kernel::class)->all()['process:update'];
+    $input = new ArrayInput([
+        'name' => 'queue', '--project' => '7', '--for' => 'development', '--keep-alive' => true,
+    ], $command->getDefinition());
+    $terminal = fopen('/dev/ptmx', 'r+');
+    $input->setStream($terminal);
+    $input->setInteractive(true);
+    $output = new BufferedOutput;
+    expect(ConsoleMode::detect($input, $output)->mayPrompt)->toBeTrue();
+
+    try {
+        $exit = $command->run($input, $output);
+    } finally {
+        fclose($terminal);
+    }
+
+    expect($exit)->toBe(0);
+    expect((string) $mock->getLastPendingRequest()?->body())
+        ->toBe('{"name":"queue","environments":["development"],"spec":{"keep_alive":true}}');
+    expect($output->fetch())->not->toContain('Command argument', 'Docker image');
+    $mock->assertNotSent(ShowProcessDefinitionRequest::class);
+});

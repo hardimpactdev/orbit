@@ -16,8 +16,10 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
   alt Project definition update
-    CLI->>GW: Update definition<br/>full or partial specification
+    CLI->>GW: Update definition<br/>only supplied fields
     Note over GW: Merge and validate<br/>refuse unsupported markers
+    %%> The CLI preserves omitted fields in interactive and noninteractive modes; it reads no definition and sends no marker.
+    %%> Explicit clear options send null scalars or empty collections. Supplied environment entries replace the map, removing unsent keys.
     %%> Changing runtime replaces the runtime specification; it requires the new runtime's command and fields.
     %%> Null clears scalar overrides; empty maps and lists clear collections. Preset command and metadata remain canonical.
     %%> Exact environment markers retain stored values per key; markers in other strings refuse with their field path.
