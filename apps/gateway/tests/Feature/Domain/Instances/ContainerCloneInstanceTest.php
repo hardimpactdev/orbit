@@ -2,16 +2,21 @@
 
 declare(strict_types=1);
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
+use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
+use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Processes\VpDevPreset;
+use App\Domain\Projects\ProjectEnvironmentTemplateRefresh;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
@@ -490,4 +495,68 @@ it('captures every attached server target once, including remote Redis, in the c
         ->and($intent['firewall'][0])->toMatchArray(['interface_in' => 'orbitinst0', 'from_ip' => '10.253.0.2', 'to_ip' => '10.44.0.7', 'to_port' => '3306'])
         ->and($intent['firewall'][1])->toMatchArray(['route' => 'yes', 'interface_in' => 'orbitinst0', 'interface_out' => 'orbit',
             'from_ip' => '10.253.0.2', 'to_ip' => '10.44.0.3', 'to_port' => '6379', 'proto' => 'tcp']);
+});
+
+it('resolves stock Laravel template references to the clone values in its file and dev Process environment', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    $project = $default->project;
+    $project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5', 'is_laravel' => true]);
+    $node->update(['tld' => 'beast.test']);
+    Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+    $example = file_get_contents(dirname(__DIR__, 6).'/swamp/tests/fixtures/laravel-stock.env.example');
+    $example .= <<<'ENV'
+
+VITE_APP_URL="${APP_URL}"
+VITE_LATER=${Z_LATER}
+Z_LATER="${VITE_APP_URL}/nested"
+PASSWORD=pa$$word
+HASH=$2y$10$abcdef
+PRICE=price$5
+ESCAPED="\${APP_NAME}"
+SINGLE='${APP_NAME}'
+ENV;
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($project, str_repeat('d', 40), 'fixture', $example);
+    app(InstanceEnvironmentStore::class)->seedForCreate($default, ['APP_NAME' => 'Default only']);
+    ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'dev', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'preset' => 'vp-dev', 'command' => VpDevPreset::definitionCommand()]]);
+
+    $operation = containerCreate($project, $node, 'references');
+    $clone = Instance::query()->findOrFail($operation->target_id);
+    $vault = vaultReadingSocket([]);
+    $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+    $workspace = json_decode(collect($vault->puts)->firstWhere('key', 'instance-create-processes-'.$operation->id)['value'], true, 512, JSON_THROW_ON_ERROR);
+    $file = $workspace['environment'];
+    $values = Dotenv::parse($file);
+    $domain = $clone->routes()->whereNull('web_root')->sole()->domain;
+
+    expect($values)->toMatchArray([
+        'APP_NAME' => 'Laravel', 'VITE_APP_NAME' => 'Laravel', 'MAIL_FROM_NAME' => 'Laravel',
+        'APP_URL' => 'https://'.$domain, 'VITE_APP_URL' => 'https://'.$domain,
+        'VITE_LATER' => 'https://'.$domain.'/nested',
+        'PASSWORD' => 'pa$$word', 'HASH' => '$2y$10$abcdef', 'PRICE' => 'price$5',
+        'ESCAPED' => '${APP_NAME}', 'SINGLE' => '${APP_NAME}',
+    ]);
+    expect($run['intent']['container']['processes'][0]['content'])
+        ->toContain('EnvironmentFile=-/srv/workspace/.env');
+    expect($file)->toBe(collect($vault->puts)->firstWhere('key', 'instance-create-environment-input-'.$operation->id)['value']);
+});
+
+it('keeps an undefined template reference literal in the file inherited by Processes', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('e', 40), 'fixture', 'VITE_UNDEFINED="${NOT_DEFINED}"');
+
+    $operation = containerCreate($default->project, $node, 'undefined');
+    $contents = app(DevelopmentCreateEnvironment::class)->content(Instance::query()->findOrFail($operation->target_id));
+
+    expect(Dotenv::parse($contents)['VITE_UNDEFINED'])->toBe('${NOT_DEFINED}');
+});
+
+it('refuses circular template references before rendering either consumer environment', function (): void {
+    $template = ['FIRST' => '${SECOND}', 'SECOND' => '${FIRST}'];
+
+    expect(fn () => app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($template, $template))
+        ->toThrow(ResourceOperationException::class, 'unavailable reference');
 });

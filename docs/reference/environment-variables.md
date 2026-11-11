@@ -95,6 +95,10 @@ The foreign-key check refuses a file with keys that neither stored configuration
 
 Create seeds encrypted values from its bounded source template before the native environment step. For a Laravel Instance with a Route, create stores `APP_URL` as `https://{{instance.domain}}`, so `.env` names the Instance's own domain, not the template's URL. When create owns a database (a copy of the default one, or one on `--database-server`), its `DB_*` keys replace the template's database keys in that seed. An owned SQL test database also gets `.env.testing`, rendered as `env:sync` renders it.
 
+When create seeds a Project template, Orbit resolves `${NAME}` references against that Instance’s final values, after its URL, application key and database values are set. References can name later keys and follow nested references; circular references fail with `env.reference_unavailable`. Double-quoted and unquoted references expand; single-quoted values and `\${NAME}` stay literal. Other dollar signs, including passwords and bcrypt hashes, stay literal. The stored result supplies both `.env` and the Process environment; systemd does not expand dotenv references.
+
+Undefined references stay literal, matching phpdotenv; Vite’s dotenv-expand would use an empty string without the inherited Process environment.
+
 The Gateway validates the exact create root, preparation ID, Project, Node and checkout. Clone reads its stored candidate snapshot. These steps run within their parent roots and admit no child Operation. Public synchronization still requires an active Instance.
 
 ## Where the file lives

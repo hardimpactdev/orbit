@@ -63,6 +63,45 @@ final readonly class InstanceEnvironmentRenderer
         return $rendered;
     }
 
+    /**
+     * Resolve only values from the Project template, after the Instance's overrides. Literal replacements
+     * are never scanned again. The stored result supplies both dotenv and systemd's EnvironmentFile.
+     *
+     * @param  array<string, string>  $values
+     * @param  array<string, string>  $template
+     * @return array<string, string>
+     */
+    public function resolveTemplateReferences(#[\SensitiveParameter] array $values, #[\SensitiveParameter] array $template): array
+    {
+        $resolved = array_diff_key($values, $template);
+        $visiting = [];
+        $resolve = function (string $key) use (&$resolve, &$resolved, &$visiting, $template): string {
+            if (array_key_exists($key, $resolved)) {
+                return $resolved[$key];
+            }
+            if (isset($visiting[$key])) {
+                $this->referenceUnavailable();
+            }
+            $visiting[$key] = true;
+            $value = preg_replace_callback('/(\\\\)?\$\{([A-Za-z0-9_.]+)\}/', function (array $match) use (&$resolve, $resolved, $template): string {
+                if ($match[1] !== '') {
+                    return substr($match[0], 1);
+                }
+
+                return array_key_exists($match[2], $template) || array_key_exists($match[2], $resolved)
+                    ? $resolve($match[2]) : $match[0];
+            }, $template[$key]) ?? throw new \LogicException('Template reference matching failed.');
+            unset($visiting[$key]);
+
+            return $resolved[$key] = $value;
+        };
+        foreach (array_keys($template) as $key) {
+            $resolve($key);
+        }
+
+        return array_replace($values, $resolved);
+    }
+
     /** Quote one value as a double-quoted dotenv value. */
     public static function quote(#[\SensitiveParameter] string $value): string
     {

@@ -140,7 +140,18 @@ final readonly class ProjectEnvironmentTemplateRefresh
         $values = [];
         foreach (new Parser()->parse($contents) as $entry) {
             $value = $entry->getValue();
-            $values[$entry->getName()] = $value->isDefined() ? $value->get()->getChars() : '';
+            $chars = $value->isDefined() ? $value->get()->getChars() : '';
+            $references = $value->isDefined() ? $value->get()->getVars() : [];
+            // Keep the parser's literal-reference distinction after removing the source quotes.
+            $preserved = '';
+            foreach (mb_str_split($chars) as $position => $char) {
+                if ($char === '$' && mb_substr($chars, $position + 1, 1) === '{'
+                    && ! in_array($position, $references, true)) {
+                    $preserved .= '\\';
+                }
+                $preserved .= $char;
+            }
+            $values[$entry->getName()] = $preserved;
         }
 
         return $values;

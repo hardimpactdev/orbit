@@ -33,7 +33,8 @@ final readonly class DevelopmentCreateEnvironment
                 $template[$entry['key']] = $entry['value'];
             }
         }
-        $values = [...$template, ...$this->store->values($instance)];
+        $stored = $this->store->values($instance);
+        $values = [...$template, ...$stored];
         if ($database !== null) {
             // The Instance's own database copy, attached under DB, replaces the template's database keys.
             $projected = app(DatabaseConnectionEnvProjection::class)->project($database, 'DB', 'wireguard', $instance->node);
@@ -52,6 +53,7 @@ final readonly class DevelopmentCreateEnvironment
         if ($project->is_laravel === true && ($values['APP_KEY'] ?? '') === '') {
             $values['APP_KEY'] = LaravelApplicationKey::generate();
         }
+        $values = $this->renderer->resolveTemplateReferences($values, array_intersect_assoc(array_diff_key($template, $stored), $values));
         $this->store->seedForCreate($instance, $values);
         $keys = array_keys($values);
         sort($keys, SORT_STRING);

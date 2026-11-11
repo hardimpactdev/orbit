@@ -51,6 +51,8 @@ The application directory contains `composer.json`, `artisan`, development [envi
 
 Registration never infers a nested root from source files. Configure the Project's root, or send an explicit Instance root override. An Instance can serve more directories of its checkout or release through [Routes with a web root](/reference/routes#serve-several-web-roots). Each one derives its application directory with the same rule and gets its own PHP-FPM pool and `APP_URL`.
 
+The Project's environment template comes from the application directory's `.env.example`. Create preserves literal values and resolves template references against the new Instance's own values; see [template rendering](/reference/environment-variables#parent-environment-steps).
+
 ## Setup and teardown steps
 
 A Project owns ordered [setup and teardown lists](/reference/instance-setup) for its development Instances. Each named command runs on the Instance's Node from the repository root. A setup step can also name a [Gateway-owned operation](/reference/instance-setup#gateway-owned-setup-steps), such as `@orbit/ci-caches`, which the Gateway renders before the step runs. Production Instances run neither list. Task workspaces clone from the Gateway mirror and run the Project's setup list on each creation. The [private package caches](/reference/compute-drivers#clone-and-set-up-every-workspace) and CI cache ref speed those steps; there is no per-Project template setting or build.
