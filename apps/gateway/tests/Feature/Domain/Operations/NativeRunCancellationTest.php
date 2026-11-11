@@ -351,7 +351,7 @@ it('expires an unbound Operation at its admission deadline', function (): void {
     expect($operation->refresh()->error_code)->toBe('operation.timed_out');
 });
 
-it('stops forwarding a cancel one hour after it was requested', function (): void {
+it('stops forwarding a cancel after one hour but still reads for a late native terminal', function (): void {
     Queue::fake();
     $operation = runningScript();
     app(ExpireOperationAction::class)->execute($operation);
@@ -360,7 +360,7 @@ it('stops forwarding a cancel one hour after it was requested', function (): voi
 
     reconcile();
 
-    expect($socket->frames)->toBe([])
+    expect(array_column($socket->frames, 'type'))->toContain('workflow.history.get')->not->toContain('workflow.cancel')
         ->and($operation->refresh()->state['native_cancel_confirmed_at'] ?? null)->toBeNull();
 });
 
@@ -391,3 +391,18 @@ it('forwards a cancellation recorded before native start confirmation once the r
         ->and($operation->state['native_cancel_confirmed_at'] ?? null)->not->toBeNull();
     expect(array_column($socket->frames, 'type'))->toContain('workflow.cancel');
 });
+
+it('projects a late native terminal after confirmed cancellation without a target lock for a non-migrate kind', function (?string $previousTerminal): void {
+    Queue::fake();
+    $operation = runningScript();
+    app(ExpireOperationAction::class)->execute($operation);
+    $operation->refresh()->update(['lock_key' => null, 'state' => [...$operation->state,
+        'native_cancel_confirmed_at' => now()->toISOString(),
+        'native_timeout' => [...$operation->state['native_timeout'], 'native_terminal_status' => $previousTerminal]]]);
+    reconcileSocket($operation, 'failed');
+
+    reconcile();
+
+    expect($operation->refresh()->error_code)->toBe('operation.native_failed')
+        ->and($operation->state['native_timeout']['native_terminal_status'])->toBe('failed');
+})->with([null, 'unproven']);

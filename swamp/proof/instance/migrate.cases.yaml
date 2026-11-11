@@ -1,3 +1,4 @@
+# Restore ownership is checked before any Route or container restore effect, including after a lost root.
 # Forced faults: phase failures/timeout/deadline/cancel retain native restored receipts. A killed pinned native root has no finish;
 # the restore-only admission reuses its frozen intent, restores host ownership and refuses after retirement starts.
 # Format: docs/reference/verification-cases.

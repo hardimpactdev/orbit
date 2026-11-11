@@ -107,8 +107,8 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
     }
 
     /**
-     * Unfinished Operations, those the Gateway timed out while Swamp has not proven their run ended, and timed-out ones with a
-     * cancel request Swamp has not confirmed.
+     * Unfinished Operations and every provisional expiry until native terminal projection or verified absence of a run.
+     * Cancellation confirmation and target locks do not prove that native restore and finish ended.
      *
      * @param  list<string>  $kinds
      * @return Builder<Operation>
@@ -117,10 +117,10 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
     {
         return Operation::query()->whereIn('kind', $kinds)->where(fn ($query) => $query
             ->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting])
-            ->orWhere(fn ($query) => $query->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')->whereNotNull('lock_key'))
             ->orWhere(fn ($query) => $query->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')
-                ->where('state->native_cancel_requested_at', '>', now()->subMinutes(NativeRunCancellation::ForwardMinutes)->toISOString())
-                ->whereNull('state->native_cancel_confirmed_at')->whereNull('state->native_timeout->native_terminal_status')));
+                ->whereNull('state->native_timeout->no_run_verified_at')
+                ->where(fn ($query) => $query->whereNull('state->native_timeout->native_terminal_status')
+                    ->orWhere('state->native_timeout->native_terminal_status', 'unproven'))));
     }
 
     private function reconcile(Operation $operation, SwampCommandStep $step, ExpireOperationAction $expire): Operation
@@ -137,7 +137,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         }
         if (! isset($operation->state['swamp_run_id'])) {
             $operation = $expire->execute($operation)->refresh();
-            if ($operation->error_code === 'swamp.start_uncertain' || ExpireOperationAction::awaitsSettlement($operation)) {
+            if ($operation->error_code === 'swamp.start_uncertain' || ExpireOperationAction::expiredUnsettled($operation)) {
                 $step->recoverUnbound($operation);
                 $operation->refresh();
             }

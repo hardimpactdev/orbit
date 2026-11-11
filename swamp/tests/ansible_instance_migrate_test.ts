@@ -219,7 +219,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
       Deno.writeTextFileSync(file, stringify(tasks));
     },
     run(phase: string, rawContainer = false) {
-      const playbook = !rawContainer && ["container", "quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
+      const playbook = !rawContainer && ["container", "quiesce", "files", "retire", "restore-check", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
       const done = new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
           "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/${playbook}`],
@@ -1391,9 +1391,11 @@ Deno.test({
       f.write({ restore_only: true, restore_quiesced: true });
       const before = f.state();
       const hostBefore = host();
-      const refused = f.run("restore");
-      assert(!refused.ok, refused.output);
-      assert(refused.output.includes("instance.migrate_restore_unsafe"), refused.output);
+      for (const phase of ["restore-check", "restore"]) {
+        const refused = f.run(phase);
+        assert(!refused.ok, refused.output);
+        assert(refused.output.includes("instance.migrate_restore_unsafe"), refused.output);
+      }
       assertEquals(f.state(), before);
       assertEquals(host(), hostBefore);
       assert(exists(f.rootfs));

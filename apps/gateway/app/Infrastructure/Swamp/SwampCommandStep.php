@@ -43,7 +43,7 @@ final readonly class SwampCommandStep
         $direct = app(DirectOperation::class);
         $workflow = $direct->definition($operation->kind)['workflow'] ?? null;
         $start = ['key' => 'operation:'.$operation->id, 'workflow' => $workflow];
-        $timedOut = ExpireOperationAction::awaitsSettlement($operation);
+        $timedOut = ExpireOperationAction::expiredUnsettled($operation);
         if ($workflow === null || ! $direct->usesNativeTerminal($operation) || isset($operation->state['swamp_run_id'])
             || (isset($operation->state['swamp_start']) && $operation->state['swamp_start'] !== $start)
             || (! $timedOut && ($operation->status !== OperationStatus::Running || $operation->error_code !== 'swamp.start_uncertain'
@@ -58,7 +58,7 @@ final readonly class SwampCommandStep
         if ($timedOut && ($reply['total'] ?? null) === 0 && $rows === []) {
             DB::transaction(function () use ($operation): void {
                 $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-                if (! ExpireOperationAction::awaitsSettlement($current) || isset($current->state['swamp_run_id'])
+                if (! ExpireOperationAction::expiredUnsettled($current) || isset($current->state['swamp_run_id'])
                     || $current->kind !== $operation->kind || $current->node_id !== $operation->node_id
                     || ($current->state['swamp_start'] ?? null) !== ($operation->state['swamp_start'] ?? null)) {
                     return;
@@ -90,12 +90,12 @@ final readonly class SwampCommandStep
         DB::transaction(function () use ($operation, $runId, $start): void {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if (isset($current->state['swamp_run_id'])
-                || (! ExpireOperationAction::awaitsSettlement($current) && ($current->status !== OperationStatus::Running
+                || (! ExpireOperationAction::expiredUnsettled($current) && ($current->status !== OperationStatus::Running
                     || $current->error_code !== 'swamp.start_uncertain' || ($current->state['swamp_start'] ?? null) !== $start))
                 || $current->node_id !== $operation->node_id || $current->kind !== $operation->kind) {
                 return;
             }
-            app(OperationStore::class)->change($current, ['dispatched_at' => now(), 'error_code' => ExpireOperationAction::awaitsSettlement($current) ? $current->error_code : null,
+            app(OperationStore::class)->change($current, ['dispatched_at' => now(), 'error_code' => ExpireOperationAction::expiredUnsettled($current) ? $current->error_code : null,
                 'state' => [...($current->state ?? []), 'swamp_run_id' => $runId]]);
         });
     }
