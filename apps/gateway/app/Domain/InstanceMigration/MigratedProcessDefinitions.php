@@ -88,7 +88,7 @@ final readonly class MigratedProcessDefinitions
                 ->whereHas('processes', static fn ($query) => $query->whereNull('source_definition_id')->where('status', '!=', 'removing'))
                 ->orderBy('id')->lockForUpdate()->toBase()->pluck('id');
             foreach ($ids as $id) {
-                $instanceId = (int) $id;
+                $instanceId = ValidatedData::integer($id);
                 $rows = DB::table('processes')->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instanceId)
                     ->whereNull('source_definition_id')->where('status', '!=', 'removing')->orderBy('id')->lockForUpdate()->get(['id', 'name']);
                 try {
@@ -107,7 +107,7 @@ final readonly class MigratedProcessDefinitions
                 foreach ($rows as $row) {
                     try {
                         DB::transaction(function () use ($instance, $row, $admitted): void {
-                            $process = Process::query()->lockForUpdate()->findOrFail($row->id);
+                            $process = Process::query()->whereKey($row->id)->lockForUpdate()->firstOrFail();
                             $unit = collect($admitted)->firstWhere('id', $process->id);
                             if (! is_array($unit) || ! is_string($unit['content'] ?? null) || $process->status !== LifecycleStatus::Active
                                 || $process->systemd_activation_hash !== hash('sha256', $unit['content'])) {
