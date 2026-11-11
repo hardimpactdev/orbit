@@ -14,6 +14,7 @@ use App\Domain\InstanceMigration\InstanceMigrationRoute;
 use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationIdempotency;
@@ -25,6 +26,7 @@ use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\DatabaseConnection;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
@@ -113,6 +115,7 @@ final readonly class StartInstanceMigrateAction
                             ->filter(static fn (?string $address): bool => is_string($address) && filter_var($address, FILTER_VALIDATE_IP) !== false)
                             ->unique()->values()->all(),
                         'wireguard_ranges' => [app(VpnSettings::class)->subnet()],
+                        'proxy_policy' => ['private_v4' => InstanceEgress::PrivateV4, 'private_domains' => app(PeerDnsPolicy::class)->domains()],
                     ],
                     'databases' => $reach, 'processes' => $sourceProcesses, 'firewall_prefix' => InstanceContainer::firewallPrefix($instance),
                     'retire' => $this->retire($instance, $default),

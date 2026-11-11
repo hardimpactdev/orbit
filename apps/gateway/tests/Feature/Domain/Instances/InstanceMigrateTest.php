@@ -24,6 +24,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceAttachedTargets;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
@@ -235,7 +236,8 @@ describe('the admission of a move', function (): void {
                 'application' => '/home/orbit/apps/tool/default',
                 'awake' => ['directory' => '/dev/shm/orbit/hibernation', 'path' => '/dev/shm/orbit/hibernation/app-instance-'.$default->id.'.awake'],
                 'environment' => ['targets' => [], 'node_addresses' => ['10.44.0.7', '10.44.0.7'],
-                    'fleet_addresses' => ['10.44.0.209', '10.44.0.7'], 'wireguard_ranges' => ['10.44.0.0/24']],
+                    'fleet_addresses' => ['10.44.0.209', '10.44.0.7'], 'wireguard_ranges' => ['10.44.0.0/24'],
+                    'proxy_policy' => ['private_v4' => InstanceEgress::PrivateV4, 'private_domains' => ['orbit']]],
                 'databases' => [], 'processes' => [], 'firewall_prefix' => 'orbit:instance-'.$default->id.'-',
                 'retire' => [['path' => '/home/orbit/apps/tool/default', 'mirror' => '/var/lib/orbit/instance-repositories/'.$default->id.'.git']]])
             ->and($operation->node_id)->toBe($node->id);
@@ -580,7 +582,7 @@ describe('the databases of a move', function (): void {
 
     it('uses attached target network selection and configured fleet addresses without copying credentials', function (): void {
         $node = containerDefaultNode();
-        $node->update(['lan_ip' => '192.168.50.7']);
+        $node->update(['lan_ip' => '192.168.50.7', 'tld' => 'private.test']);
         $default = migrateCheckout(containerDefaultProject(), $node);
         $database = migrateServerDatabase($default, migrateDatabaseServer($node, 'catalog', DatabaseDriver::Mysql, 3308), 'FOOD_CATALOG_DB');
         $default->databaseConnectionTargets()->update(['network' => 'lan']);
@@ -593,6 +595,7 @@ describe('the databases of a move', function (): void {
             'node_addresses' => ['10.44.0.7', '192.168.50.7', '10.44.0.7'],
             'fleet_addresses' => ['10.44.0.209', '10.44.0.7', '192.168.50.7'],
             'wireguard_ranges' => ['10.77.0.0/24'],
+            'proxy_policy' => ['private_v4' => InstanceEgress::PrivateV4, 'private_domains' => ['orbit', 'private.test']],
         ]);
         expect(json_encode($operation->input['migrate']['environment'], JSON_THROW_ON_ERROR))
             ->not->toContain($database->password, 'root-secret', 'username', 'password');

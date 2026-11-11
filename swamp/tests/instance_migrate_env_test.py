@@ -22,7 +22,9 @@ class InstanceMigrateEnvTest(unittest.TestCase):
         env.write_text(text)
         return guard.inspect_environment(str(self.root), targets, options.get('node_addresses', ['10.44.0.5']),
                                          options.get('fleet_addresses', ['10.44.0.5', '203.0.113.7']),
-                                         options.get('wireguard_ranges', ['10.44.0.0/24']))
+                                         options.get('wireguard_ranges', ['10.44.0.0/24']),
+                                         options.get('proxy_policy', {'private_v4': ['10.0.0.0/8', '127.0.0.0/8'],
+                                                                      'private_domains': ['orbit', 'private.test']}))
 
     def test_servauto_mysql_requires_exact_attached_endpoint(self):
         text = 'DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3308\nDB_PASSWORD=never-show-this\n'
@@ -64,7 +66,7 @@ class InstanceMigrateEnvTest(unittest.TestCase):
     def test_memcached_and_prefixed_mail_conventions(self):
         self.assertIn('MEMCACHED_HOST=localhost:11211', self.inspect('MEMCACHED_HOST=localhost\n')[0])
         self.assertEqual(self.inspect('CATALOG_MAIL_MAILER=log\nCATALOG_MAIL_HOST=localhost\n'), [])
-        self.assertIn('CATALOG_MAIL_HOST=localhost:25', self.inspect('CATALOG_MAIL_MAILER=smtp\nCATALOG_MAIL_HOST=localhost\n')[0])
+        self.assertIn('CATALOG_MAIL_HOST=localhost:2525', self.inspect('CATALOG_MAIL_MAILER=smtp\nCATALOG_MAIL_HOST=localhost\nCATALOG_MAIL_PORT=2525\n')[0])
 
     def test_ipv6_loopback_canonical_target_and_ipv4_mapped_loopback(self):
         refused = self.inspect('REDIS_HOST="::1"\n')
@@ -104,12 +106,12 @@ class InstanceMigrateEnvTest(unittest.TestCase):
                                       [{'host': 'EXAMPLE.test', 'port': 8080}]), [])
         self.assertEqual(len(self.inspect('SERVICE_HOST=example.test\nSERVICE_PORT=8080\n')), 1)
 
-    def test_redis_skip_requires_all_nonnetwork_consumers_to_be_explicit(self):
+    def test_nonredis_defaults_cannot_establish_that_redis_is_unused(self):
         unused = 'CACHE_STORE=file\nSESSION_DRIVER=database\nQUEUE_CONNECTION=sync\nREDIS_HOST=127.0.0.1\n'
-        self.assertEqual(self.inspect(unused), [])
+        self.assertEqual(len(self.inspect(unused)), 1)
         self.assertEqual(len(self.inspect(unused.replace('CACHE_STORE=file', 'CACHE_STORE=redis'))), 1)
         refused = self.inspect('REDIS_HOST=127.0.0.1\n')
-        self.assertIn('Redis consumer drivers are unknown', refused[0])
+        self.assertIn('cannot prove Redis is unused', refused[0])
         for wrong in ('CACHE_STORE=sqs\nSESSION_DRIVER=database\nQUEUE_CONNECTION=sync\n',
                       'CACHE_STORE=file\nSESSION_DRIVER=sync\nQUEUE_CONNECTION=sync\n',
                       'CACHE_STORE=file\nSESSION_DRIVER=database\nQUEUE_CONNECTION=cookie\n'):
@@ -118,7 +120,7 @@ class InstanceMigrateEnvTest(unittest.TestCase):
     def test_conflicting_cache_aliases_do_not_skip_redis(self):
         refused = self.inspect('CACHE_STORE=file\nCACHE_DRIVER=redis\nSESSION_DRIVER=file\nQUEUE_CONNECTION=sync\nREDIS_HOST=127.0.0.1\n')
         self.assertEqual(len(refused), 1)
-        self.assertIn('cache driver aliases disagree', refused[0])
+        self.assertIn('cannot prove Redis is unused', refused[0])
 
     def test_mapped_node_addresses_are_normalized_for_local_detection(self):
         refused = self.inspect('DB_CONNECTION=mysql\nDB_HOST=10.44.0.5\nDB_PORT=3308\n',
@@ -147,7 +149,85 @@ class InstanceMigrateEnvTest(unittest.TestCase):
     def test_malformed_private_quoting_cannot_hide_service_keys(self):
         found = self.inspect('PRIVATE="never-show-this\nMAIL_HOST=127.0.0.1\nMAIL_PORT=1025\n')
         self.assertEqual(len(found), 1)
-        self.assertIn('malformed dotenv quoting', found[0])
+        self.assertIn('.env:1: malformed or unsupported dotenv syntax', found[0])
+        self.assertNotIn('never-show-this', repr(found))
+
+    def test_broadcast_and_other_redis_consumers_keep_the_host_check(self):
+        defaults = 'CACHE_STORE=file\nSESSION_DRIVER=file\nQUEUE_CONNECTION=sync\nREDIS_HOST=127.0.0.1\n'
+        for consumer in ('BROADCAST_CONNECTION=redis', 'BROADCAST_DRIVER=redis',
+                         'BROADCAST_CONNECTION=log\nBROADCAST_DRIVER=redis',
+                         'BROADCAST_CONNECTION=log\nAPP_MAINTENANCE_STORE=redis',
+                         'BROADCAST_CONNECTION=log\nREVERB_SCALING_ENABLED=true',
+                         'BROADCAST_CONNECTION=log\nCUSTOM_STORE=redis',
+                         'BROADCAST_CONNECTION=log'):
+            with self.subTest(consumer=consumer):
+                found = self.inspect(defaults + consumer + '\n')
+                self.assertEqual(len(found), 1)
+                self.assertIn('REDIS_HOST=127.0.0.1:6379', found[0])
+                self.assertIn('cannot prove Redis is unused', found[0])
+
+    def test_sqlite_does_not_hide_other_selected_database_connections(self):
+        base = 'DB_CONNECTION=sqlite\nDB_HOST=127.0.0.1\n'
+        for selector in ('SESSION_CONNECTION=mysql', 'DB_QUEUE_CONNECTION=pgsql',
+                         'DB_CACHE_CONNECTION=mysql', 'DB_CACHE_LOCK_CONNECTION=pgsql',
+                         'QUEUE_FAILED_DATABASE=mysql', 'CUSTOM_CONNECTION=reporting',
+                         'SESSION_CONNECTION=${PRIVATE}'):
+            with self.subTest(selector=selector):
+                found = self.inspect(base + 'DB_PORT=3308\n' + selector + '\n')
+                self.assertEqual(len(found), 1)
+                self.assertIn('DB_HOST=127.0.0.1:3308', found[0])
+        self.assertIn('DB_HOST=127.0.0.1:5432', self.inspect(base + 'SESSION_CONNECTION=pgsql\n')[0])
+        self.assertEqual(self.inspect(base + 'SESSION_CONNECTION=sqlite\nDB_CACHE_CONNECTION=null\n'), [])
+        self.assertEqual(self.inspect(base + 'ANALYTICS_CONNECTION=sqlite\nANALYTICS_DATABASE=data.sqlite\n'), [])
+        self.assertIn('[unknown port]', self.inspect(base + 'SESSION_CONNECTION=mysql\nDB_CACHE_CONNECTION=pgsql\n')[0])
+
+    def test_public_http_publishers_use_the_supplied_proxy_policy(self):
+        for key in ('PUSHER', 'REVERB'):
+            self.assertEqual(self.inspect(f'{key}_HOST=api-eu.pusher.com\n{key}_PORT=443\n'), [])
+            self.assertEqual(len(self.inspect(f'{key}_HOST=127.0.0.1\n')), 1)
+        self.assertEqual(self.inspect('API_HOST=8.8.8.8\nAPI_PORT=8443\nAPI_SCHEME=https\n'), [])
+        self.assertEqual(len(self.inspect('API_HOST=8.8.8.8\nAPI_PORT=8443\nAPI_SCHEME=https\n',
+                                         proxy_policy={'private_v4': ['8.8.0.0/16'], 'private_domains': []})), 1)
+        for host in ('10.6.0.7', 'private.test', 'api.private.test', 'api.private.test.',
+                     'localhost', '10.44.0.5', '::1', '2001:4860:4860::8888'):
+            with self.subTest(host=host):
+                self.assertEqual(len(self.inspect(f'PUSHER_HOST={host}\nPUSHER_PORT=443\n')), 1)
+        for key in ('DB', 'REDIS', 'MAIL', 'MEMCACHED'):
+            with self.subTest(key=key):
+                self.assertEqual(len(self.inspect(f'{key}_HOST=api-eu.pusher.com\n{key}_PORT=443\n{key}_SCHEME=https\n')), 1)
+        self.assertEqual(len(self.inspect('API_HOST=api-eu.pusher.com\nAPI_PORT=443\n')), 1)
+        self.assertEqual(len(self.inspect('PUSHER_HOST=api-eu.pusher.com\nPUSHER_PORT=443\n', proxy_policy=None)), 1)
+
+    def test_known_listeners_and_browser_settings_are_not_outbound_services(self):
+        for stem in ('REVERB_SERVER', 'SERVER', 'PI_SERVER', 'VITE_PUSHER', 'VITE_REVERB'):
+            with self.subTest(stem=stem):
+                self.assertEqual(self.inspect(f'{stem}_HOST=0.0.0.0\n{stem}_PORT=8080\n'), [])
+        for stem in ('REVERB', 'PUSHER', 'DATABASE_SERVER'):
+            with self.subTest(stem=stem):
+                self.assertEqual(len(self.inspect(f'{stem}_HOST=0.0.0.0\n{stem}_PORT=8080\n')), 1)
+
+    def test_active_mail_requires_explicit_port_instead_of_guessing_the_app_default(self):
+        text = 'MAIL_MAILER=smtp\nMAIL_HOST=127.0.0.1\n'
+        for port in (25, 2525):
+            with self.subTest(port=port):
+                found = self.inspect(text, [{'host': '127.0.0.1', 'port': port}])
+                self.assertEqual(len(found), 1)
+                self.assertIn('[unknown port]', found[0])
+                self.assertIn('explicit mail port is required', found[0])
+                self.assertEqual(self.inspect(text + f'MAIL_PORT={port}\n', [{'host': '127.0.0.1', 'port': port}]), [])
+
+    def test_quoted_keys_and_escape_parity_reach_the_endpoint_check(self):
+        text = 'PRIVATE="path' + '\\' * 2 + '"\n"DB_HOST"=127.0.0.1\nDB_PORT=3308\n'
+        found = self.inspect(text)
+        self.assertEqual(len(found), 1)
+        self.assertIn('DB_HOST=127.0.0.1:3308', found[0])
+        self.assertNotIn('path', repr(found))
+
+    def test_unreadable_syntax_reports_only_the_file_and_line(self):
+        found = self.inspect('APP_NAME=app\nPRIVATE="never-show-this\\q"\nDB_HOST=127.0.0.1\n', path='apps/one/.env')
+        self.assertEqual(len(found), 1)
+        self.assertIn('apps/one/.env:2:', found[0])
+        self.assertNotIn('PRIVATE', repr(found))
         self.assertNotIn('never-show-this', repr(found))
 
     def test_multiline_private_values_do_not_forge_service_keys(self):

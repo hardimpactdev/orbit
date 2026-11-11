@@ -194,6 +194,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
       node_addresses: ["10.44.0.7"],
       fleet_addresses: ["10.44.0.7"],
       wireguard_ranges: ["10.44.0.0/24"],
+      proxy_policy: { private_v4: ["10.0.0.0/8", "127.0.0.0/8"], private_domains: ["orbit"] },
     },
     databases: [] as { host: string; port: number }[],
     processes: [] as { name: string; path: string; environment_directory: string; desired: string }[],
