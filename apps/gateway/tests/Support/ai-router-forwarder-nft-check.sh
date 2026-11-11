@@ -13,6 +13,8 @@ set -euo pipefail
 ruleset=$1 guard=$2 port=$3 user=$4 bridge=$5 address=$6 forwarder_port=$7
 table=$(sed -n 's/^table inet \([a-z_]*\) {$/\1/p' "$ruleset")
 socket_check="$(dirname "$0")/ai-router-forwarder-socket.py"
+# The probe runs as the forwarder user too, who cannot read the checkout: pass the source, not the path.
+socket_source=$(<"$socket_check")
 made_user=0
 if nft list table inet "$table" >/dev/null 2>&1; then
     echo "The table $table exists on this host already; run the check elsewhere." >&2
@@ -84,9 +86,9 @@ ready_directory=$(mktemp -d -t ofchk-ready.XXXXXX)
 mkfifo "$ready_directory/guard" "$ready_directory/forwarder"
 exec {guard_ready}<>"$ready_directory/guard"
 exec {forwarder_ready}<>"$ready_directory/forwarder"
-ip netns exec ofchkg python3 "$socket_check" listen "$guard" "$port" >"$ready_directory/guard" &
+ip netns exec ofchkg python3 -c "$socket_source" listen "$guard" "$port" >"$ready_directory/guard" &
 guard_server=$!
-python3 "$socket_check" listen "$address" "$forwarder_port" >"$ready_directory/forwarder" &
+python3 -c "$socket_source" listen "$address" "$forwarder_port" >"$ready_directory/forwarder" &
 forwarder_server=$!
 for descriptor in "$guard_ready" "$forwarder_ready"; do
     if ! read -r -t 2 -u "$descriptor" state || [[ $state != ready ]]; then
@@ -99,8 +101,8 @@ exec {forwarder_ready}>&-
 id -u "$user" >/dev/null 2>&1 || { useradd --system --no-create-home --shell /usr/sbin/nologin "$user"; made_user=1; }
 
 # Only the TCP handshake is under test. HTTP response scheduling and filesystem access are unrelated to the table.
-get() { python3 "$socket_check" connect "$@"; }
-container() { ip netns exec ofchkc python3 "$socket_check" connect "$@"; }
+get() { python3 -c "$socket_source" connect "$@"; }
+container() { ip netns exec ofchkc python3 -c "$socket_source" connect "$@"; }
 
 expect() {
     local want=$1 what=$2 code=0 got
@@ -119,7 +121,7 @@ expect dropped 'container to the guard, behind a FORWARD accept' container "$gua
 expect reached 'container to the forwarder, on the bridge' container "$address" "$forwarder_port"
 expect refused 'root to the guard' get "$guard" "$port"
 expect refused 'root to the forwarder, over lo' get "$address" "$forwarder_port"
-expect reached 'the forwarder user to the guard' runuser -u "$user" -- python3 "$socket_check" connect "$guard" "$port"
+expect reached 'the forwarder user to the guard' runuser -u "$user" -- python3 -c "$socket_source" connect "$guard" "$port"
 nft --file "$ruleset"
 expect dropped 'container to the guard, after loading the table again' container "$guard" "$port"
 expect refused 'root to the forwarder, after loading the table again' get "$address" "$forwarder_port"
