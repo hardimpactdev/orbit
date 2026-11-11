@@ -372,6 +372,7 @@ jobs:
       type: completed
   steps:
   - name: encode
+    writes: true
     labels:
       role: swamp
     task:

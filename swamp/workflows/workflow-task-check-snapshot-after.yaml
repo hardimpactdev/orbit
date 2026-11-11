@@ -280,6 +280,7 @@ jobs:
       condition:
         type: succeeded
   - name: local
+    writes: true
     labels:
       role: swamp
     task:

@@ -1,5 +1,127 @@
 {
- "maxUnreviewed": 219,
+ "maxUnreviewed": 218,
+ "nativeDataMethods": {
+  "@nckrtl/analytics-runtime#observe": "Compares supplied container observations and writes only Swamp metadata.",
+  "@nckrtl/analytics-runtime#plan": "Builds runtime intents and argv as Swamp metadata without executing them.",
+  "@nckrtl/artifact-fetch-policy#classify": "Classifies a supplied exit code and writes only the Swamp decision.",
+  "@nckrtl/caddy-public-input#prepare": "Validates and hashes supplied public Caddy text into a Swamp resource.",
+  "@nckrtl/conn-pairing#issue": "Reads the existing pairing reply and stores native sensitive fields; it issues no request.",
+  "@nckrtl/conn-revocation-plan#replies": "Reads saved revoke replies and writes only Swamp completion metadata.",
+  "@nckrtl/conn-revocation-plan#select": "Reads saved inventory and writes only the Swamp session selection.",
+  "@nckrtl/dependency-merge-data#inspect": "Reads saved PR metadata and writes only Swamp inspection data.",
+  "@nckrtl/dependency-merge-data#merged": "Reads saved PR and merge replies and writes only the Swamp receipt.",
+  "@nckrtl/development-deploy#cleanup": "Builds cleanup argv as Swamp data without running or deleting anything.",
+  "@nckrtl/firewall-plan#check": "Checks supplied UFW output and writes only the Swamp result.",
+  "@nckrtl/firewall-plan#plan": "Builds UFW argv from supplied output without executing it.",
+  "@nckrtl/instance-dev-command#create_result": "Combines supplied phase outcomes into a Swamp receipt.",
+  "@nckrtl/instance-dev-command#migrate_result": "Reads saved migration failure files and writes only the Swamp receipt.",
+  "@nckrtl/instance-route-workload#prepared": "Checks supplied workload outcomes and writes only Swamp readiness.",
+  "@nckrtl/instance-route-workload#verifyPool": "Compares supplied pool digests and writes only Swamp readiness.",
+  "@nckrtl/instance-source-command#branchAvailable": "Checks supplied worktree text and writes only Swamp branch availability.",
+  "@nckrtl/instance-source-command#cloneCandidate": "Checks supplied Git observations and writes only Swamp candidate metadata.",
+  "@nckrtl/instance-source-command#cloneResult": "Combines supplied clone observations into a Swamp receipt.",
+  "@nckrtl/instance-source-command#decode": "Decodes supplied JSON into a Swamp resource.",
+  "@nckrtl/instance-source-command#origin": "Compares supplied repository identities and writes only Swamp readiness.",
+  "@nckrtl/instance-source-command#provisioningResult": "Classifies supplied profile text and writes only Swamp provisioning metadata.",
+  "@nckrtl/instance-source-command#select": "Selects a branch from supplied refs without running Git.",
+  "@nckrtl/instance-t3#register": "Reads saved T3 replies and stores native sensitive sessions; it makes no T3 request.",
+  "@nckrtl/instance-vp-requirements#capture": "Selects requirements from supplied manifests and writes only Swamp metadata.",
+  "@nckrtl/instance-vp-requirements#cli": "Checks a supplied CLI version and writes only Swamp readiness.",
+  "@nckrtl/instance-vp-requirements#links": "Selects workspace paths from supplied lock text and writes only Swamp metadata.",
+  "@nckrtl/instance-vp-requirements#result": "Checks supplied installation outcomes and writes only Swamp readiness.",
+  "@nckrtl/instance-vp-requirements#verify": "Checks supplied inventory versions and writes only Swamp readiness.",
+  "@nckrtl/network-command#decideDns": "Compares supplied DNS observations and writes only the Swamp drift decision.",
+  "@nckrtl/network-command#key": "Validates supplied public keys and writes only Swamp key metadata.",
+  "@nckrtl/network-command#networkResult": "Checks supplied network observations and writes only the Swamp receipt.",
+  "@nckrtl/node-enrollment-plan#bind": "Binds supplied host observations into Swamp intent data without contacting Nodes.",
+  "@nckrtl/node-role-command#account": "Decodes supplied passwd and group lines into Swamp account metadata.",
+  "@nckrtl/node-role-converge-command#cli_native_result": "Shapes supplied CLI outcomes into a Swamp receipt.",
+  "@nckrtl/node-role-converge-command#cli_plan": "Selects publication from supplied CLI observations without executing it.",
+  "@nckrtl/node-tool-setup-assets#plan": "Builds manager resources and argv as Swamp data without fetching or executing them.",
+  "@nckrtl/node-worker-assets#credential_report": "Classifies supplied credential lists and certificate dates into Swamp alerts.",
+  "@nckrtl/orbit-deps#plan": "Reads Packagist and npm catalogs over HTTP GET and writes only the Swamp upgrade plan.",
+  "@nckrtl/orbit-gateway#prune_dependency_results": "Deletes only native Swamp data versions through the data repository API.",
+  "@nckrtl/orbit-gateway#refresh": "Reconciles supplied findings and native Swamp indexes without contacting the Gateway.",
+  "@nckrtl/php-monitor-command#prepare": "Selects a pool from supplied runtime observations and writes only Swamp metadata.",
+  "@nckrtl/process-command-assets#lifecycle": "Validates supplied Process intent and renders argv as Swamp data without executing it.",
+  "@nckrtl/project-maintenance-input#evidence": "Combines supplied GitHub observations and Swamp indexes into Swamp evidence.",
+  "@nckrtl/project-maintenance-input#routine": "Selects a routine request from supplied groups and writes only Swamp metadata.",
+  "@nckrtl/project-maintenance-input#schedule": "Reads source-owned project configuration and writes only the Swamp schedule result.",
+  "@nckrtl/project-maintenance-inspect#registries": "Reads registry releases and advisory queries, including the read-only npm bulk POST, into Swamp facts.",
+  "@nckrtl/project-maintenance-inspect#updates": "Selects updates from Swamp facts and writes only Swamp request metadata.",
+  "@nckrtl/route-mutation-command#dns": "Merges supplied DNS text into Swamp data without writing configuration files.",
+  "@nckrtl/route-mutation-command#lanApplied": "Checks supplied firewall outcomes and writes only Swamp readiness.",
+  "@nckrtl/route-mutation-command#lanChanges": "Selects firewall rule names from supplied observations as Swamp data.",
+  "@nckrtl/route-mutation-command#lanResult": "Checks supplied firewall outcomes and writes only the Swamp receipt.",
+  "@nckrtl/route-mutation-command#result": "Checks supplied Route contributions and writes only Swamp completion data.",
+  "@nckrtl/route-publication-command#caddy": "Composes and hashes supplied Caddy text into Swamp data without writing files.",
+  "@nckrtl/route-publication-command#php": "Composes supplied PHP pool text into Swamp data without writing files.",
+  "@nckrtl/route-publication-command#phpPlan": "Selects PHP versions from supplied configuration text into Swamp data.",
+  "@nckrtl/route-update-result#firewall": "Stores the supplied firewall readiness as Swamp data.",
+  "@nckrtl/route-update-result#phase": "Maps supplied child outcomes into Swamp phase data.",
+  "@nckrtl/schedule-run-assets#lifecycle": "Renders service and timer text into Swamp data without writing unit files.",
+  "@nckrtl/task-check-data#candidate": "Compares supplied commit identities and writes only Swamp candidate data.",
+  "@nckrtl/task-check-data#ci": "Classifies supplied exact-SHA CI observations into Swamp data.",
+  "@nckrtl/task-check-data#collect": "Collects supplied terminal observations into a Swamp resource.",
+  "@nckrtl/task-check-data#finish": "Combines supplied check and push observations into Swamp completion data.",
+  "@nckrtl/task-check-data#imported": "Compares supplied bundle identities and writes only Swamp verification data.",
+  "@nckrtl/task-check-data#minted": "Checks supplied credential descriptors and writes only Swamp verification data.",
+  "@nckrtl/task-check-data#observed": "Compares supplied CI and snapshot observations into Swamp data.",
+  "@nckrtl/task-check-data#pending": "Stores the pending check and its tags only in Swamp data.",
+  "@nckrtl/task-check-data#prepare": "Builds check argv as Swamp data without running commands.",
+  "@nckrtl/task-check-data#settle": "Updates check evidence and tags only in Swamp data.",
+  "@nckrtl/task-check-data#setup": "Summarizes supplied setup outcomes into Swamp data.",
+  "@nckrtl/task-check-data#snapshot": "Decodes supplied Git object identities into Swamp data.",
+  "@nckrtl/task-maintenance-input#age": "Checks supplied release dates and writes only Swamp verification data.",
+  "@nckrtl/task-maintenance-input#expo": "Checks supplied Expo catalog data and writes only Swamp verification data.",
+  "@nckrtl/task-maintenance-input#inspect": "Decodes supplied manifests and builds audit argv without executing it.",
+  "@nckrtl/task-maintenance-input#plan": "Builds proposed manifests and update argv as Swamp data without applying them.",
+  "@nckrtl/task-maintenance-input#read": "Selects configured maintenance paths from supplied intent as Swamp data.",
+  "@nckrtl/task-maintenance-input#release": "Reads public registry release catalogs over HTTP GET into Swamp data.",
+  "@nckrtl/task-maintenance-input#restore": "Builds restored manifest text and sync argv without writing files or executing it.",
+  "@nckrtl/task-maintenance-input#result": "Combines supplied checkout observations into a Swamp result.",
+  "@nckrtl/task-maintenance-input#synchronized": "Compares supplied lock versions and writes only Swamp verification data.",
+  "@nckrtl/task-maintenance-input#verify": "Compares supplied locks and audit reports and writes only Swamp verification data.",
+  "@nckrtl/task-provision-data#revoke": "Summarizes supplied token revoke outcomes; it performs no revoke request.",
+  "@nckrtl/task-publication-data#imported": "Compares supplied bundle identities and writes only Swamp verification data.",
+  "@nckrtl/task-publication-data#pushed": "Reads saved push replies and writes only the Swamp outcome.",
+  "@nckrtl/task-publication-data#verify": "Compares supplied workspace observations and writes only Swamp verification data.",
+  "@nckrtl/task-publication-data#written": "Reads the saved PR response and writes only Swamp publication metadata.",
+  "@nckrtl/task-repository-program#gate": "Checks supplied executable and snapshot observations and writes only Swamp data.",
+  "@nckrtl/task-repository-program#prepare": "Builds program argv as Swamp data without executing it.",
+  "@nckrtl/task-turn-data#checked": "Decodes a supplied check result and writes only Swamp candidate data.",
+  "@nckrtl/task-turn-data#difference": "Reads and redacts saved diff files into Swamp data without deleting them.",
+  "@nckrtl/task-turn-data#outcome": "Decodes a supplied turn receipt into Swamp outcome data.",
+  "@nckrtl/task-turn-data#prepare": "Builds prompt and Pi request JSON as Swamp data without sending it.",
+  "@nckrtl/task-turn-data#receipt": "Reads and redacts the saved receipt into Swamp data without deleting it.",
+  "@nckrtl/task-turn-data#result": "Combines supplied turn observations into a Swamp terminal result.",
+  "@nckrtl/task-turn-data#reviewPrompt": "Binds supplied review evidence into prompt data without sending it.",
+  "@nckrtl/task-turn-data#round": "Classifies a supplied review receipt into Swamp verdict data.",
+  "@nckrtl/task-turn-data#settle": "Combines supplied review and fix receipts into Swamp state.",
+  "@nckrtl/task-turn-data#snapshot": "Validates supplied Git identities and writes only Swamp snapshot data.",
+  "@nckrtl/task-turn-data#terminal": "Reads and redacts saved Pi events into Swamp data without deleting them.",
+  "@nckrtl/task-vm-lifecycle-input#observe": "Decodes supplied provider JSON into Swamp observations.",
+  "@nckrtl/task-vm-lifecycle-input#read": "Builds provider argv as Swamp data without executing it.",
+  "@nckrtl/task-vm-lifecycle-input#result": "Checks supplied provider observations and writes only the Swamp receipt.",
+  "@nckrtl/task-vm-workspace-input#read": "Serializes supplied workspace intent into Swamp data.",
+  "@nckrtl/task-vm-workspace-input#result": "Decodes supplied workspace observations into Swamp data.",
+  "@nckrtl/tool-remove-command#assets": "Builds removal argv as Swamp data without executing it.",
+  "@nckrtl/tool-remove-command#decide": "Checks supplied package observations and writes only the Swamp removal decision.",
+  "@nckrtl/tool-write-command#assets": "Builds package argv as Swamp data without executing it.",
+  "@nckrtl/tool-write-command#decide": "Checks supplied package observations and writes only the Swamp write decision.",
+  "@nckrtl/tool-write-command#manager_assets": "Builds manager version argv as Swamp data without executing it.",
+  "@nckrtl/tool-write-command#observe": "Decodes supplied package state and writes only Swamp observations.",
+  "@nckrtl/vault-sync-plan#account": "Reads saved CLI account data and writes only Swamp public metadata.",
+  "@nckrtl/vault-sync-plan#inventory": "Reads saved CLI inventory and writes only Swamp public metadata.",
+  "@nckrtl/vault-sync-plan#organization": "Reads saved organizations and writes only Swamp selection metadata.",
+  "@nckrtl/vault-sync-plan#plan": "Builds a cipher change plan from supplied inventory as Swamp data.",
+  "@nckrtl/vault-sync-plan#prepare": "Validates supplied configuration and stores only native sensitive fields.",
+  "@nckrtl/vault-sync-plan#probe": "Reads the saved probe identity and writes only Swamp metadata.",
+  "@nckrtl/vault-sync-plan#result": "Combines supplied cipher receipts into Swamp ledger data.",
+  "@nckrtl/vault-sync-plan#session": "Reads the saved CLI session into a native sensitive field.",
+  "@nckrtl/vault-sync-plan#setup": "Validates supplied account metadata and writes only the Swamp setup receipt.",
+  "@nckrtl/vault-sync-plan#writeReceipt": "Reads a saved cipher response and writes only the Swamp public receipt."
+ },
  "steps": {
   "cluster-router-prepare": {
    "account_command": "read-only",
@@ -11,7 +133,8 @@
   },
   "dependency-upgrade": {
    "fetch": "read-only",
-   "head": "read-only"
+   "head": "read-only",
+   "scan": "read-only"
   },
   "fleet-release-node": {
    "observer_check": "read-only",
@@ -27,6 +150,9 @@
   },
   "gateway-release-activate": {
    "Verify the Gateway": "unreviewed"
+  },
+  "horizon-new-dawn-detect": {
+   "enrolled": "read-only"
   },
   "instance-clone-candidate": {
    "candidate-branch": "unreviewed",
@@ -98,6 +224,7 @@
    "answers": "read-only"
   },
   "node-artifact-fetch": {
+   "Check pinned artifact": "read-only",
    "Verify artifact checksum": "read-only"
   },
   "node-caddy-package": {
@@ -113,6 +240,7 @@
    "cli_version": "unreviewed"
   },
   "node-network-hub": {
+   "Check the hub service": "read-only",
    "Read the peers again": "read-only"
   },
   "node-network-peer": {
@@ -133,6 +261,9 @@
    "Sign the CSR": "idempotent"
   },
   "node-role-remove": {
+   "Check removed containers": "read-only",
+   "Check removed directories": "read-only",
+   "Check removed files": "read-only",
    "Read CI guests": "read-only"
   },
   "node-route-residue": {
@@ -150,9 +281,6 @@
   },
   "operation-cluster-router": {
    "Probe the workloads": "unreviewed"
-  },
-  "operation-conn-pairing-revoke": {
-   "Read session inventory": "unreviewed"
   },
   "operation-database-connection-update": {
    "Check the index fits": "unreviewed"
@@ -210,6 +338,8 @@
    "server-database-check": "unreviewed"
   },
   "operation-instance-deploy-direct": {
+   "Check PHP runtime": "read-only",
+   "Check Process state": "read-only",
    "Check the checkout lock": "unreviewed",
    "Check the container": "idempotent",
    "Check the local branch": "unreviewed",
@@ -219,11 +349,14 @@
    "List target directories": "unreviewed",
    "List untracked entries": "unreviewed",
    "Read Schedule group": "read-only",
+   "Read Schedule timers": "read-only",
+   "Read Vite manager CLI": "read-only",
    "Read Vite manager home": "read-only",
    "Read container state": "read-only",
    "Read current back": "read-only",
    "Read deployed commit": "unreviewed",
    "Read first-parent chain": "unreviewed",
+   "Read local PHP tuning": "read-only",
    "Read the branch ancestor": "unreviewed",
    "Read the checkout branch": "unreviewed",
    "Read the checkout commit": "unreviewed",
@@ -245,7 +378,7 @@
   },
   "operation-instance-destroy": {
    "Check it is gone": "read-only",
-   "Check work is pushed": "read-only",
+   "Check work is pushed": "idempotent",
    "Read container removal": "read-only"
   },
   "operation-instance-rollback": {
@@ -276,6 +409,7 @@
    "Inspect the Mac tunnel": "read-only",
    "Read WireGuard public key": "read-only",
    "Read the bootstrap account": "read-only",
+   "Read the host key": "read-only",
    "Read the platform": "read-only",
    "Verify managed access": "read-only"
   },
@@ -284,6 +418,8 @@
    "Check the new key": "read-only"
   },
   "operation-node-remove": {
+   "Check removed directories": "read-only",
+   "Check removed files": "read-only",
    "Log in to departing Node": "unreviewed"
   },
   "operation-node-role-add": {
@@ -308,18 +444,33 @@
    "validate": "unreviewed"
   },
   "operation-process-control": {
-   "Check the listener": "unreviewed"
+   "Check the container": "read-only",
+   "Check the listener": "unreviewed",
+   "Check the unit": "read-only"
   },
   "operation-process-create": {
    "Check required mounts": "read-only",
    "Check the account": "read-only",
-   "Check the listener": "unreviewed"
+   "Check the container": "read-only",
+   "Check the listener": "unreviewed",
+   "Check the unit": "read-only"
+  },
+  "operation-process-destroy": {
+   "Check container removal": "read-only",
+   "Check the unit": "read-only",
+   "Check unit removal": "read-only"
   },
   "operation-process-install-instance-definitions": {
    "result": "read-only"
   },
   "operation-process-start": {
-   "Check the listener": "unreviewed"
+   "Check the container": "read-only",
+   "Check the listener": "unreviewed",
+   "Check the unit": "read-only"
+  },
+  "operation-process-stop": {
+   "Check the container": "read-only",
+   "Check the unit": "read-only"
   },
   "operation-process-vite": {
    "directory": "idempotent",
@@ -331,6 +482,7 @@
    "Report": "read-only"
   },
   "operation-route-caddy": {
+   "Check the Caddyfile": "read-only",
    "Check the connection": "read-only",
    "Validate the Caddyfile": "unreviewed"
   },
@@ -361,7 +513,16 @@
   "operation-route-update": {
    "Probe the site over TLS": "unreviewed"
   },
+  "operation-schedule-control": {
+   "check_timer": "read-only"
+  },
+  "operation-schedule-create": {
+   "check_files": "read-only",
+   "check_timer": "read-only"
+  },
   "operation-schedule-destroy": {
+   "check_files": "read-only",
+   "check_timer": "read-only",
    "idle": "read-only"
   },
   "operation-task-idle-save": {
@@ -441,13 +602,17 @@
    "Wait for the guest agent": "read-only"
   },
   "operation-tool-manager-setup": {
+   "Check Composer manifest": "read-only",
+   "Check pinned APT packages": "read-only",
    "Check the Tool Manager": "unreviewed",
    "Read DEB identities": "read-only",
    "Read manager version": "unreviewed",
+   "Read pinned APT state": "read-only",
    "Read the account home": "read-only",
    "Verify SHA512 artifacts": "read-only"
   },
   "operation-tool-remove-209": {
+   "Check apt absence": "read-only",
    "Check it is gone": "unreviewed",
    "Plan the removal": "unreviewed",
    "Read installed package": "unreviewed",
@@ -455,6 +620,7 @@
    "Read manager version": "unreviewed"
   },
   "operation-tool-write-209": {
+   "Check apt package": "read-only",
    "Check the candidate": "unreviewed",
    "Check the package": "unreviewed",
    "Read installed package": "unreviewed",
@@ -525,6 +691,12 @@
    "apply": "idempotent",
    "observe-after": "read-only",
    "observe-before": "read-only"
+  },
+  "route-remove-check": {
+   "caddyfile": "read-only",
+   "certificates": "read-only",
+   "ingress": "read-only",
+   "lan": "read-only"
   },
   "swamp-credential-monitor": {
    "access": "read-only",

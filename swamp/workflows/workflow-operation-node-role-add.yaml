@@ -332,6 +332,7 @@ jobs:
   dependsOn: [{job: tools_read, condition: {type: succeeded}}]
   steps:
   - name: Compose tools resources
+    writes: true
     labels: {role: swamp}
     task:
       type: behavior
@@ -494,6 +495,7 @@ jobs:
   dependsOn: [{job: publication_read, condition: {type: succeeded}}]
   steps:
   - name: Compose publications
+    writes: true
     labels: {role: swamp}
     task:
       type: behavior
