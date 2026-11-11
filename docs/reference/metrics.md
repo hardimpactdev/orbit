@@ -138,7 +138,9 @@ A Process list reads each Process's status from the Gateway's [view of the Node 
 
 In Prometheus, a systemd Process takes its state from `node_systemd_unit_state`. A missing unit is `inactive`. cAdvisor reports only running containers, so a Docker Process with a series is `running` and one without is `exited`. The Gateway caches this answer for 10 seconds.
 
-For a container Process, the latest completed `process.inspect` Operation supplies `runtime_status`, `observed_at` (its ISO 8601 UTC completion time) and `runtime_error_code`. After 30 seconds, lists keep that result and queue one new inspection without waiting for it. A never-inspected Process has `unknown` and a null observation time. A failed inspection replaces the previous state with `unknown` and its error code; a later successful inspection replaces that failure. Node and checkout Process status sources are unchanged, and their observation fields are null.
+For a container Process, the latest completed `process.inspect` Operation supplies `runtime_status`, `observed_at` (its ISO 8601 UTC completion time) and `runtime_error_code`. After 30 seconds, lists keep that result and queue one new inspection without waiting for it. A never-inspected Process has `unknown` and a null observation time. A failed inspection replaces the previous state with `unknown` and its error code; a later successful inspection replaces that failure.
+
+A refusal or exception before execution also records a failed inspection with its time and reason. Only evidence that this Process already has an inspection queued or running keeps the prior state; another busy-target refusal is a failure. Node and checkout Process status sources are unchanged, and their observation fields are null.
 
 Each list read queues at most four inspections, oldest observation first and never-inspected Processes first. A Process waits at least 30 seconds after its last outcome before another attempt, even after cache eviction or a Gateway restart. Already queued or running inspections do not use another slot. There is no periodic scheduler.
 

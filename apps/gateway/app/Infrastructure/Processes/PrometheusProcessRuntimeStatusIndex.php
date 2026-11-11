@@ -148,8 +148,18 @@ final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRunti
                 continue;
             }
             $statuses[$process->id] = $last[$process->id] ?? ['runtime_status' => 'unknown', 'observed_at' => null, 'runtime_error_code' => null];
-            if (ContainerProcessObservation::due($last[$process->id] ?? null) && $reads < 4 && RefreshContainerProcessStatus::enqueue($process->id)) {
-                $reads++;
+            if ($reads < 4 && ContainerProcessObservation::due($last[$process->id] ?? null)) {
+                try {
+                    if (RefreshContainerProcessStatus::enqueue($process->id)) {
+                        $reads++;
+                    }
+                } catch (Throwable $error) {
+                    $failure = ContainerProcessObservation::failed($process->id, $error);
+                    if ($failure !== null) {
+                        $statuses[$process->id] = $failure;
+                        $reads++;
+                    }
+                }
             }
         }
 

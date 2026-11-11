@@ -12,13 +12,15 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 /**
  * The status of a container Process (docs/reference/development-containers.md#processes). Neither Prometheus nor the Node agent sees a
@@ -27,16 +29,6 @@ use Illuminate\Support\Str;
  */
 final readonly class ContainerProcessObservation implements DirectOperationProjection
 {
-    public static function key(int $processId): string
-    {
-        return 'processes.container-status.'.$processId;
-    }
-
-    public static function remember(int $processId, string $status): void
-    {
-        Cache::put(self::key($processId), $status, PrometheusProcessRuntimeStatusIndex::ObservedSeconds);
-    }
-
     /**
      * The latest completed inspection and its completion time survive cache eviction.
      *
@@ -74,6 +66,28 @@ final readonly class ContainerProcessObservation implements DirectOperationProje
         return Operation::query()->where('lock_key', 'process-inspect:'.$processId)->exists();
     }
 
+    /**
+     * Persist failed admission in the same source as native inspection outcomes. Only an existing inspection of this Process is exempt.
+     *
+     * @return array{runtime_status: string, observed_at: ?string, runtime_error_code: string}|null
+     */
+    public static function failed(int $processId, Throwable $error): ?array
+    {
+        if ($error instanceof ResourceOperationException && $error->errorCode === 'operation.target_busy' && self::pending($processId)) {
+            return null;
+        }
+        $reason = $error instanceof ResourceOperationException ? $error->errorCode
+            : ($error instanceof ValidationException ? 'validation.failed' : 'process.status_failed');
+        $process = Process::query()->find($processId);
+        $instance = $process !== null && Instance::isMorphType($process->owner_type) ? Instance::query()->find($process->owner_id) : null;
+        $at = now();
+        Operation::query()->create(['kind' => 'process.inspect', 'target_type' => 'process', 'target_id' => $processId,
+            'node_id' => $instance?->node_id, 'status' => OperationStatus::Failed, 'input' => ['process_id' => $processId],
+            'result' => ['state' => 'unknown'], 'error_code' => $reason, 'started_at' => $at, 'finished_at' => $at, 'triggered_by' => 'observation']);
+
+        return ['runtime_status' => 'unknown', 'observed_at' => $at->toISOString(), 'runtime_error_code' => $reason];
+    }
+
     /** Starts one read of the Process's unit; a read that already runs for it answers instead. */
     public function admit(int $processId): void
     {
@@ -95,10 +109,8 @@ final readonly class ContainerProcessObservation implements DirectOperationProje
                     'intent' => ContainerProcessInspection::intent($process, $target, 'status', 1, (string) Str::uuid()),
                 ], 'observation', null, lockKey: 'process-inspect:'.$processId);
             }));
-        } catch (ResourceOperationException $error) {
-            if ($error->errorCode !== 'operation.target_busy') {
-                self::remember($processId, 'unknown');
-            }
+        } catch (Throwable $error) {
+            self::failed($processId, $error);
         }
     }
 
@@ -115,14 +127,10 @@ final readonly class ContainerProcessObservation implements DirectOperationProje
     {
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation->refresh();
-            $wasTerminal = $operation->status->terminal();
             $status = OperationStatus::from(ValidatedData::string($data['status']));
             $state = $status === OperationStatus::Succeeded
                 ? ValidatedData::string(ValidatedData::object($data['result'] ?? [])['state'] ?? 'unknown') : 'unknown';
             $projected = app(DirectOperation::class)->project($operation, $data, ['state' => $state]);
-            if (! $wasTerminal && $status->terminal()) {
-                self::remember($operation->target_id, $state);
-            }
 
             return $projected;
         });
