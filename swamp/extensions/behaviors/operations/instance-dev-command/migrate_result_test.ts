@@ -155,3 +155,24 @@ for (const status of ["pending", "unknown"]) {
         assertEquals([receipt.moved, receipt.restored, receipt.ready], [false, false, false]);
     });
 }
+
+Deno.test("a moved worker readiness failure keeps its Process name and restored outcome before cutover", () => {
+    const failure = { error_code: "instance.migrate_processes_failed", error_message: "Process orbit-process-70-worker.service did not stay active for 5 seconds." };
+    const phases = { ...moved, processes: "failed", seed: "skipped", route: "skipped", retire: "skipped", restore: "succeeded" };
+    assertEquals(result(defaultIntent, phases, workspace, null, failure), {
+        instance_id: 53, ready: false, moved: false, restored: true, commit,
+        failed_step: "processes", ...failure,
+    });
+});
+
+Deno.test("the receipt lists every projected Process command translation on success and restoration", () => {
+    const process_translations = [
+        { process_id: 70, process_name: "worker", from: "/usr/bin/php8.5", to: "/opt/orbit-runtime/current/php/8.5/bin/php" },
+        { process_id: 71, process_name: "vite", from: "/home/x/.vite-plus/bin/vp", to: "/opt/orbit-runtime/current/bin/vp" },
+    ];
+    const intent = { ...defaultIntent, migrate: { processes: process_translations.map((translation) => ({ translations: [translation] })) } };
+    assertEquals(result(intent, moved, workspace, null, null).process_translations, process_translations);
+    const phases = { ...moved, processes: "failed", seed: "skipped", route: "skipped", retire: "skipped", restore: "succeeded" };
+    const failed = result(intent, phases, workspace, null, { error_code: "instance.migrate_processes_failed" });
+    assertEquals([failed.moved, failed.restored, failed.process_translations], [false, true, process_translations]);
+});

@@ -126,7 +126,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   );
   Deno.chmodSync(`${folder}/bin/incus`, 0o755);
   Deno.copyFileSync(new URL("instance_migrate_links.py", root), `${folder}/instance_migrate_links.py`);
-  for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-schedules.yml", "instance-migrate-schedule-check.yml", "instance-migrate-link-result.yml", "instance-migrate-env-check.yml"]) {
+  for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-process-ready.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-schedules.yml", "instance-migrate-schedule-check.yml", "instance-migrate-link-result.yml", "instance-migrate-env-check.yml"]) {
     const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => {
       const transformed = transform(structuredClone(task));
       return name.startsWith("instance-migrate-schedule") ? scheduleHostPaths(transformed) : transformed;
@@ -242,7 +242,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
       proxy_policy: { private_v4: ["10.0.0.0/8", "127.0.0.0/8"], private_domains: ["orbit"] },
     },
     databases: [] as { host: string; port: number }[],
-    processes: [] as { name: string; path: string; environment_directory: string; desired: string }[],
+    processes: [] as { name: string; path: string; environment_directory: string; desired: string; executables: string[] }[],
     schedules: [] as MigrationSchedule[],
     firewall_prefix: `orbit:instance-${id}-`,
     retire: [{ path: checkout, mirror: `${folder}/mirror/${id}.git` }] as { path: string; mirror: string; common_of?: string }[],
@@ -276,8 +276,8 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     },
     run(phase: string, rawContainer = false, runId = folder.slice(folder.lastIndexOf("/") + 1), extraEnv: Record<string, string> = {}) {
       const playbook = !rawContainer && ["container", "quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
-      const done = new Deno.Command("ansible-playbook", {
-        args: ["-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
+      const done = new Deno.Command(phase === "processes" ? "timeout" : "ansible-playbook", {
+        args: [...(phase === "processes" ? ["120", "ansible-playbook"] : []), "-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
           "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/${playbook}`],
         env: {
           HOST_FIXTURE: folder,
@@ -949,7 +949,7 @@ function migrationProcesses(f: ReturnType<typeof fixture>, presetDesired: "runni
     const path = `${directory}/${name}`;
     Deno.writeTextFileSync(path, "old unit\n");
     Deno.writeTextFileSync(`${directory}/old.env`, "OLD_TOKEN=kept\n");
-    f.migrate.processes.push({ name, path, environment_directory: directory, desired });
+    f.migrate.processes.push({ name, path, environment_directory: directory, desired, executables: ["/opt/orbit-runtime/current/bin/node"] });
     const environment = `/etc/orbit/processes/${id}/vars.env`;
     const content = preset
       ? `[Service]\nUser=orbit\nWorkingDirectory=/srv/workspace\nEnvironmentFile=-/srv/workspace/.env\nEnvironmentFile=${environment}\nEnvironment=ORBIT_DEV_SERVER_PORT=5195\nExecStart=/opt/orbit-runtime/current/bin/vp dev --host=0.0.0.0 --port=5195 --strictPort --base=/__orbit/vite/\n`
@@ -1743,6 +1743,186 @@ for (const phase of ["quiesce", "workspace", "files", "processes", "seed"]) {
 }
 
 
+for (const fault of ["exit127", "restart", "pid", "job", "inactive", "never-active"]) {
+  Deno.test({
+    name: `migration refuses a moved Process with ${fault} before cutover and restores its host ownership`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        const host = migrationProcesses(f, "running");
+        const before = host();
+        const process = f.container.processes.find((process) => process.desired === "running")!;
+        if (fault === "exit127") process.content = "[Service]\nType=simple\nExecStart=/bin/sh -c 'exit 127'\nRestart=always\nRestartSec=1\n";
+        f.write();
+        f.build();
+        const state = f.state();
+        state.movedReadiness = {unit: process.name, fault, reads: []};
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+        const failed = f.run("processes");
+        assert(!failed.ok, failed.output);
+        const receipt = f.result();
+        assertEquals(receipt.error_code, "instance.migrate_processes_failed");
+        assert(receipt.error_message.includes(process.name), JSON.stringify(receipt));
+        const observed = f.state().movedReadiness;
+        if (fault !== "never-active") {
+          assertEquals(observed.reads.length, 2);
+          assert(observed.reads[1] - observed.reads[0] >= 5000, "the real settling window must elapse");
+        }
+        if (fault === "exit127") assertEquals(observed.exitStatus, 127);
+        assert(!exists(`${f.folder}/run/cutover-complete`));
+        assert(!exists(f.migrate.awake.path));
+        const restored = f.run("restore");
+        assert(restored.ok, restored.output);
+        assertEquals(f.result(), receipt, "restoration keeps the original named failure");
+        assertEquals(host(), before);
+        assertEquals(f.state().containers, {});
+        assert(exists(f.migrate.awake.path));
+        assert(exists(f.checkout));
+      } finally { f.cleanup(); }
+    },
+  });
+}
+
+Deno.test({
+  name: "only migration settles desired-running Processes; a stable Process passes with its PID and restart count unchanged",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      migrationProcesses(f, "stopped");
+      f.build();
+      const state = f.state();
+      state.movedReadiness = {unit: f.container.processes.find((process) => process.desired === "running")!.name, fault: "stable", reads: []};
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const passed = f.run("processes");
+      assert(passed.ok, passed.output);
+      const reads = f.state().movedReadiness.reads;
+      assertEquals(reads.length, 2);
+      assert(reads[1] - reads[0] >= 5000);
+      const calls = f.state().systemctl as string[][];
+      for (const process of f.container.processes.filter((process) => process.desired !== "running")) {
+        assert(!calls.some((call) => call[0] === "show" && call.includes(process.name)));
+      }
+      // The same container phase without a migration intent keeps its existing readiness check.
+      const intent = JSON.parse(Deno.readTextFileSync(`${f.folder}/run/intent.json`));
+      delete intent.migrate;
+      Deno.writeTextFileSync(`${f.folder}/run/intent.json`, JSON.stringify(intent));
+      const other = f.run("processes");
+      assert(other.ok, other.output);
+      assertEquals(f.state().movedReadiness.reads, reads);
+    } finally { f.cleanup(); }
+  },
+});
+
+for (const [removedAfterPrepare, customPath] of [[false, "/opt/custom/tool"], [false, "/opt/custom/vp"], [true, null]] as const) {
+  Deno.test({
+    name: `an unavailable moved Process executable ${customPath ?? "removed runtime"} refuses ${removedAfterPrepare ? "quiesce" : "container preparation"} before stopping any host writer`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        const host = migrationProcesses(f, "running");
+        const before = host();
+        const process = f.migrate.processes[0];
+        const path = customPath ?? process.executables[0];
+        if (removedAfterPrepare) {
+          const prepared = f.run("container");
+          assert(prepared.ok, prepared.output);
+        } else {
+          process.executables = [path];
+          f.write();
+        }
+        const state = f.state();
+        state.unavailableExecutables = [path];
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+        const refused = f.run(removedAfterPrepare ? "quiesce" : "container");
+        assert(!refused.ok, refused.output);
+        const receipt = f.result();
+        assertEquals(receipt.error_code, "instance.migrate_process_binary_unavailable");
+        assert(receipt.error_message.includes(process.name), JSON.stringify(receipt));
+        assert(receipt.error_message.includes(path), JSON.stringify(receipt));
+        assert(!exists(`${f.folder}/run/quiesced`));
+        assert(exists(f.migrate.awake.path));
+        assertEquals(host(), before);
+        assert(exists(f.checkout));
+        const restored = f.run("restore");
+        assert(restored.ok, restored.output);
+        assertEquals(host(), before);
+        assertEquals(f.state().containers, {});
+        assert(exists(f.migrate.awake.path));
+      } finally { f.cleanup(); }
+    },
+  });
+}
+
+Deno.test({
+  name: "the binary preflight names every unavailable Process and executable in one refusal",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const host = migrationProcesses(f, "running");
+      const before = host();
+      const first = f.migrate.processes[0];
+      const second = f.migrate.processes[1];
+      first.executables = ["/opt/custom/tool"];
+      second.executables = ["/opt/custom/vp"];
+      f.write();
+      const state = f.state();
+      state.unavailableExecutables = [first.executables[0], second.executables[0]];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const refused = f.run("container");
+      assert(!refused.ok, refused.output);
+      const receipt = f.result();
+      assertEquals(receipt.error_code, "instance.migrate_process_binary_unavailable");
+      for (const process of [first, second]) {
+        assert(receipt.error_message.includes(process.name), JSON.stringify(receipt));
+        assert(receipt.error_message.includes(process.executables[0]), JSON.stringify(receipt));
+      }
+      assertEquals(host(), before);
+      assert(exists(f.migrate.awake.path));
+      assert(!exists(`${f.folder}/run/quiesced`));
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "24 moved workers share one five-second settle window inside the 120-second process phase budget",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      migrationProcesses(f, "stopped");
+      const host = JSON.parse(Deno.readTextFileSync(`${f.folder}/host-processes.json`));
+      for (let id = 73; id < 96; id++) {
+        const name = `orbit-process-${id}-worker.service`;
+        const directory = `${f.folder}/host/${id}`;
+        Deno.mkdirSync(directory, {recursive: true});
+        const path = `${directory}/${name}`;
+        Deno.writeTextFileSync(path, "old unit\n");
+        f.migrate.processes.push({name, path, environment_directory: directory, desired: "running", executables: ["/bin/sleep"]});
+        f.container.processes.push({id, name, content: "[Service]\nUser=orbit\nExecStart=/bin/sleep infinity\n", environment: null, desired: "running"});
+        host[name] = {state: "started", enabled: true};
+      }
+      Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify(host));
+      f.write();
+      f.build();
+      const started = Date.now();
+      const passed = f.run("processes");
+      assert(passed.ok, passed.output);
+      assert(Date.now() - started < 120000, "the production process phase budget is fixed at 120 seconds");
+      assertEquals(passed.output.match(/Pausing for 5 seconds/g)?.length, 1, passed.output);
+      const samples = f.state().movedReadinessSamples as {unit: string; at: number}[];
+      const workers = f.container.processes.filter((process) => process.desired === "running");
+      assertEquals(workers.length, 24);
+      assertEquals(samples.length, 48);
+      assert(samples[24].at - samples[23].at >= 5000, "all initial samples precede the single settling window");
+      for (const worker of workers) assertEquals(samples.filter((sample) => sample.unit === worker.name).length, 2);
+    } finally { f.cleanup(); }
+  },
+});
+
 Deno.test("the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step", () => {
   const tasks = parse(Deno.readTextFileSync(new URL("tasks/instance-migrate-phase.yml", root))) as Task[];
   const names = [
@@ -1778,7 +1958,7 @@ Deno.test({
       git(f.checkout, "update-ref", "refs/remotes/origin/main", "HEAD");
       const sourceUnit = `${f.folder}/source.service`;
       Deno.writeTextFileSync(sourceUnit, "[Service]\nExecStart=/bin/true\n");
-      f.migrate.processes.push({ name: "writer.service", path: sourceUnit, environment_directory: `${f.folder}/source-env`, desired: "running" });
+      f.migrate.processes.push({ name: "writer.service", path: sourceUnit, environment_directory: `${f.folder}/source-env`, desired: "running", executables: ["/bin/true"] });
       const schedules = migrationSchedules(f, "enabled");
       Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify({ ...schedules.states, "writer.service": { state: "running", enabled: true } }));
       const before = Deno.readTextFileSync(`${f.folder}/host-processes.json`);
@@ -1846,7 +2026,7 @@ Deno.test({
       Deno.writeFileSync(`${f.checkout}/.env`, new Uint8Array([0xff, 0xfe]));
       const sourceUnit = `${f.folder}/source.service`;
       Deno.writeTextFileSync(sourceUnit, "[Service]\nExecStart=/bin/true\n");
-      f.migrate.processes.push({ name: "writer.service", path: sourceUnit, environment_directory: `${f.folder}/source-env`, desired: "running" });
+      f.migrate.processes.push({ name: "writer.service", path: sourceUnit, environment_directory: `${f.folder}/source-env`, desired: "running", executables: ["/bin/true"] });
       Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify({ "writer.service": { state: "running", enabled: true } }));
       const before = Deno.readTextFileSync(`${f.folder}/host-processes.json`);
       f.migrate.databases = [{ host: "127.0.0.1", port: 1 }];

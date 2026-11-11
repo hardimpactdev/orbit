@@ -68,7 +68,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         ], 'execution_secrets' => [
             ...($publication === null ? [] : ValidatedData::object($publication['execution_secrets'])),
             'process_environments' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-migrate-processes-'.$operation->id,
-                app(ContainerProcesses::class)->environments($instance, $container['processes'] ?? [])),
+                app(ContainerProcesses::class)->environments($instance, $container['processes'] ?? [], migrate: true)),
             'model_environment' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-migrate-model-'.$operation->id, $model),
         ]];
     }
@@ -185,7 +185,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                     $instance->update(['retained_git_path' => $result['retained_git_path'], 'retained_git_at' => $result['retained_git_at']]);
                 }
                 if ($moved) {
-                    app(ContainerProcesses::class)->complete($instance, ValidatedData::object($operation->input['container'])['processes'] ?? [], true, null);
+                    app(ContainerProcesses::class)->complete($instance, ValidatedData::object($operation->input['container'])['processes'] ?? [], true, null, migrate: true);
                     $schedules = ValidatedData::object($operation->input['migrate'])['schedules'] ?? [];
                     if (! is_array($schedules) || ! array_is_list($schedules)) {
                         throw new \InvalidArgumentException('The admitted Schedules must be a list.');

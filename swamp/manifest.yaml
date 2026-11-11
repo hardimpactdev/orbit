@@ -78,6 +78,7 @@ additionalFiles:
   - ansible/instance-migrate.yml
   - ansible/instance_migrate_links.py
   - ansible/tasks/instance-migrate-link-result.yml
+  - ansible/tasks/instance-migrate-process-ready.yml
   - ansible/schedule-logs.yml
   - ansible/tasks/instance-migrate-phase.yml
   - ansible/tasks/instance-migrate-schedules.yml
