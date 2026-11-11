@@ -114,7 +114,7 @@ sequenceDiagram
     SW--xGW: Run failed<br/>failed step, error_code
     Note over GW: Project native end state<br/>Drop restored runtime reservation
     %%> - after a Gateway deadline or confirmed cancel, read the native finish and step history; moved/restored/ready and the native error code decide the receipt and runtime ownership
-    %%> - only a run with no native end keeps `operation.timed_out`; a restored checkout has no container reservation, so Process commands reach the host
+    %%> - a native step failure keeps its own code; deadline-caused cancellation keeps failed/`operation.timed_out` with the native end state, while user cancellation is cancelled; a restored checkout has no container reservation, so Process commands reach the host
     %%> Retry:
     %%> - run the same command again; it starts with a new container
     %%> - a restore that failed keeps the reserved record and its address, and names the failed step
