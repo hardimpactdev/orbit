@@ -23,6 +23,7 @@ use App\Domain\Instances\InstanceFolderPlan;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Processes\VpDevPreset;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectSourceReader;
@@ -33,10 +34,13 @@ use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
+use App\Models\Process;
+use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\ProjectDevelopmentDeployStep;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
@@ -181,7 +185,7 @@ it('renders FrankenPHP as an orbit unit on the bridge address, with the Project\
         'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2', 'runtime_version' => 'r', 'agent_version' => 'a',
         'power_state' => InstanceRuntimePowerState::Stopped]);
 
-    $units = app(InstanceContainer::class)->units($instance, $runtime, '/srv/workspace');
+    $units = app(InstanceContainer::class)->units($instance, $runtime, '/srv/workspace', null);
 
     expect($units)->toHaveCount(1)
         ->and($units[0]['name'])->toBe('orbit-frankenphp.service')
@@ -348,3 +352,65 @@ it('keeps the source type rules when selecting PHP from Composer', function (Pro
     'Laravel package' => [ProjectType::LaravelPackage, '{"require":{"php":"^8.5","laravel/framework":"^13.0"}}', false, '8.5', false, null],
     'Node package without Composer' => [ProjectType::NodePackage, null, false, null, false, null],
 ]);
+
+describe('the container PHP runtime development SSR origin', function (): void {
+    it('uses the migrated default Vite port only for development with a vp-dev Process, without another Process read', function (bool $vpDev, bool $production): void {
+        $node = containerDefaultNode();
+        $node->update(['tld' => 'beast.test']);
+        Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+        $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+        $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
+        $operation = containerCreate($project, $node);
+        $instance = Instance::query()->findOrFail($operation->target_id);
+        $runtime = $instance->runtime()->firstOrFail();
+        $instance->update(['vite_port' => 5195]);
+        Process::query()->forceCreate(['owner_type' => 'instance', 'owner_id' => $instance->id, 'name' => 'dev',
+            'runtime' => 'systemd', 'working_directory' => '/srv/workspace', 'status' => 'active',
+            'runtime_config' => $vpDev ? ['preset' => 'vp-dev', 'command' => VpDevPreset::command()]
+                : ['command' => ['/usr/bin/env', 'node', 'worker.js']]]);
+        if ($production) {
+            $node->roles()->where('role', RoleName::AppDev)->delete();
+            $node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+        }
+
+        DB::enableQueryLog();
+        try {
+            $container = app(InstanceContainer::class)->intent($instance, $runtime);
+            $reads = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'from "processes"'));
+            expect($reads)->toHaveCount(2);
+            expect(DB::getQueryLog())->toHaveCount($production ? 15 : 16);
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+
+        $unit = $container['units'][0]['content'];
+        if ($vpDev && ! $production) {
+            expect($unit)->toContain("Environment=INERTIA_SSR_HOT_URL=http://127.0.0.1:5195\n");
+            expect($container['processes'][0]['content'])->toContain('"--port=5195"');
+        } else {
+            expect($unit)->not->toContain('INERTIA_SSR_HOT_URL');
+        }
+        expect(implode("\n", $container['environment']))->not->toContain('INERTIA_SSR_HOT_URL');
+        expect($instance->environmentValues()->where('env_key', 'INERTIA_SSR_HOT_URL')->exists())->toBeFalse();
+    })->with([
+        'migrated default with vp-dev' => [true, false],
+        'development without vp-dev' => [false, false],
+        'production with vp-dev' => [true, true],
+    ]);
+
+    it('adds no SSR environment key to a host checkout with vp-dev', function (): void {
+        $node = containerDefaultNode(listed: false);
+        $node->update(['tld' => 'beast.test']);
+        Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+        $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+        $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
+        ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'dev', 'environments' => ['development'],
+            'spec' => ['runtime' => 'systemd', 'preset' => 'vp-dev', 'command' => VpDevPreset::command()]]);
+
+        $operation = containerCreate($project, $node);
+
+        expect(containerIntentOf($operation))->toBeNull();
+        expect(json_encode($operation->input, JSON_THROW_ON_ERROR))->not->toContain('INERTIA_SSR_HOT_URL');
+    });
+});

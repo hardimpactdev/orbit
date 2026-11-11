@@ -709,3 +709,25 @@ it('uses the source key writer for a captured whole-value name without rescannin
         'VITE_APP_NAME='.InstanceEnvironmentRenderer::quote($name)."\n");
     expect(Dotenv::parse($contents)['VITE_APP_NAME'])->toBe($name);
 })->with(['Acme Shop', 'Acme # Shop']);
+
+it('gives the clone PHP runtime its own Vite SSR origin instead of the default port', function (): void {
+    $node = containerDefaultNode();
+    $node->update(['tld' => 'beast.test']);
+    Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+    $default = seededDefault($node);
+    $default->project->update(['type' => ProjectType::LaravelApp, 'php_version' => '8.5', 'root' => 'public']);
+    $default->update(['vite_port' => 5195]);
+    ProcessDefinition::query()->create(['project_id' => $default->project_id, 'name' => 'dev', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'preset' => 'vp-dev', 'command' => VpDevPreset::definitionCommand()]]);
+
+    $operation = containerCreate($default->project, $node, 'ssr-origin');
+    $clone = Instance::query()->findOrFail($operation->target_id);
+    $container = containerIntentOf($operation);
+
+    expect($clone->vite_port)->toBe(5173);
+    expect($container['units'][0]['content'])->toContain("Environment=INERTIA_SSR_HOT_URL=http://127.0.0.1:5173\n")
+        ->not->toContain('http://127.0.0.1:5195');
+    expect($container['processes'][0]['content'])->toContain('"--port=5173"');
+    expect($clone->environmentValues()->where('env_key', 'INERTIA_SSR_HOT_URL')->exists())->toBeFalse();
+});
