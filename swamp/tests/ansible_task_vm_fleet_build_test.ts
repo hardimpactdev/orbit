@@ -9,6 +9,7 @@ import {
   cleanupStockRoles,
   existingGatewayDns,
   prepareStockRoles,
+  productionGatewayDns,
   stockBaseTasks,
 } from "./_support/task_vm_stock_roles.ts";
 
@@ -552,5 +553,20 @@ Deno.test({
     );
     assertStringIncludes(result.second, "TASK [Read Gateway resolver policy]");
     assertStringIncludes(result.second, "skipping: [localhost]");
+  },
+});
+
+Deno.test({
+  name:
+    "production Gateway vars from main create no listener or catalog and change no resolver",
+  ignore: !hasAnsible,
+  async fn() {
+    const result = await productionGatewayDns();
+    assertEquals(result.status, "succeeded", result.output);
+    assertStringIncludes(result.output, "changed=0");
+    assertEquals(result.dnsDirectory, false);
+    assertEquals(result.listener, false);
+    assertEquals(result.socket, false);
+    assertEquals(result.calls.some((call) => call.state), false);
   },
 });

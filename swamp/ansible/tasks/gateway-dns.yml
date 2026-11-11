@@ -1,5 +1,6 @@
 ---
 - name: Install and prove the Gateway local private DNS before routing
+  when: rt.gateway_dns.listener is defined
   ansible.builtin.include_tasks: tasks/private-dns-listener.yml
   vars: { private_dns: "{{ rt.gateway_dns.listener }}" }
 - name: Write Gateway DNS unit
@@ -24,7 +25,7 @@
   when: dns_conditions.results[0].stat.exists and not dns_conditions.results[1].stat.exists
   block:
     - name: Read Gateway resolver policy
-      ansible.builtin.command: { argv: [resolvectl, "{{ item[0] }}", orbit], expand_argument_vars: false }
+      ansible.builtin.command: { argv: [resolvectl, "{{ item[0] }}", orbit] }
       loop: "{{ rt.gateway_dns.unit | regex_findall('ExecStart=/usr/bin/resolvectl (domain|default-route|dns) orbit ([^\\n]+)') }}"
       register: dns_state
       changed_when: false

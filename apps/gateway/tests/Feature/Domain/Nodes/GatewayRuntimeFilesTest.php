@@ -2,18 +2,23 @@
 
 declare(strict_types=1);
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\Nodes\GatewayPrivateDnsInput;
 use App\Domain\Nodes\GatewayRuntimeFiles;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
+use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Tests\Support\TestOrbitHome;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -82,7 +87,8 @@ it('runs the scheduler and, with a queue, Horizon as units unless the Node has t
     expect($names())->toBe(['orbit-agent-view.service', 'orbit-runtime-hibernator.timer']);
 });
 
-it('captures the shared local DNS listener and Gateway catalog before resolver routing', function (string $address, string $upstream, ?LifecycleStatus $vpnStatus): void {
+it('captures the shared local DNS listener and Gateway catalog before resolver routing', function (?LifecycleStatus $vpnStatus): void {
+    $address = '10.45.0.1';
     config(['orbit.gateway_checkout' => '/home/orbit/orbit/apps/gateway', 'orbit.home' => '/home/orbit/.orbit']);
     $node = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => $address,
         'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64']));
@@ -95,24 +101,19 @@ it('captures the shared local DNS listener and Gateway catalog before resolver r
 
     $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
 
-    $dns = app(NativeNodeRoleRuntimeInput::class)->capture($node, $role, ['gateway_dns' => ['address' => $upstream, 'domain' => 'orbit'], 'runtime' => null], $operation)['intent']['gateway_dns'];
+    $dns = app(NativeNodeRoleRuntimeInput::class)->capture($node, $role, ['gateway_dns' => app(GatewayPrivateDnsInput::class)->capture($node), 'runtime' => null], $operation)['intent']['gateway_dns'];
+    expect($dns)->toHaveKey('listener');
     $listener = $dns['listener'];
     $catalog = json_decode($listener['catalog'], true, flags: JSON_THROW_ON_ERROR);
 
     expect($dns['unit'])->toContain("ExecStart=/usr/bin/resolvectl dns orbit {$address}\n", 'ConditionPathExists=!/etc/wireguard/orbit.dns-link');
     expect($catalog['records']['gateway.orbit'])->toBe($address);
-    if ($vpnStatus === null) {
-        expect($catalog['records'])->toBe(['gateway.orbit' => $address])
-            ->and($catalog['suffixes'])->toBe([])
-            ->and($catalog['overrides'])->toBe([]);
-    } else {
-        expect($catalog['records']['reverb.orbit'])->toBe($address);
-    }
+    expect($catalog['records']['reverb.orbit'])->toBe($address);
     expect($listener['catalog_sha256'])->toBe(hash('sha256', $listener['catalog']))
         ->and($listener['address'])->toBe($address)
         ->and($listener['socket'])->toContain("ListenDatagram={$address}:53\n", "ListenStream={$address}:53\n")
         ->and($listener['service'])->toContain('Sockets=orbit-private-dns.socket', '"--catalog=/var/lib/orbit/private-dns/catalog.json"',
-            '"--upstream='.($vpnStatus !== null || $address === $upstream ? '127.0.0.55' : $upstream).':53"')
+            '"--upstream=127.0.0.55:53"')
         ->and(array_column($listener['files'], 'path'))->toContain($listener['release'].'/serve.php');
 
     if ($vpnStatus !== null) {
@@ -121,12 +122,12 @@ it('captures the shared local DNS listener and Gateway catalog before resolver r
             ->and($listener['socket'])->toBe($footprint['socket']);
     }
 })->with([
-    'production Gateway peer forwards to the fleet DNS' => ['10.44.0.2', '10.44.0.1', null],
-    'stock Gateway before its first VPN publication' => ['10.45.0.1', '10.45.0.1', LifecycleStatus::Provisioning],
-    'active colocated VPN keeps the same listener owner' => ['10.45.0.1', '10.45.0.1', LifecycleStatus::Active],
+    'nested fleet without a VPN Node' => [null],
+    'stock Gateway before its first VPN publication' => [LifecycleStatus::Provisioning],
+    'active colocated VPN keeps the same listener owner' => [LifecycleStatus::Active],
 ]);
 
-it('withdraws the Gateway listener only when no colocated VPN needs it', function (bool $vpn): void {
+it('withdraws the Gateway listener only when no colocated VPN needs it', function (bool $vpn, bool $separate): void {
     config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
     $node = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2',
         'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture',
@@ -136,14 +137,18 @@ it('withdraws the Gateway listener only when no colocated VPN needs it', functio
     if ($vpn) {
         $node->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
     }
+    if ($separate) {
+        $resolver = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'vpn', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.1', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture']));
+        $resolver->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+    }
     $capture = app(NativeNodeRoleRemovalInput::class);
     $before = $capture->publications($node, RoleName::Gateway);
     $plan = $capture->capture($node, $role, $before);
 
     $units = array_column(array_column($plan['stop_units'], 'input'), 'unit');
-    expect($units)->toBe($vpn ? ['orbit-gateway-dns.service'] : ['orbit-gateway-dns.service', 'orbit-private-dns.socket', 'orbit-private-dns.service']);
+    expect($units)->toBe(($vpn || $separate) ? ['orbit-gateway-dns.service'] : ['orbit-gateway-dns.service', 'orbit-private-dns.socket', 'orbit-private-dns.service']);
     expect(array_column(array_column($plan['remove_units'], 'input'), 'unit'))->toBe($units);
-})->with(['Gateway-only' => [false], 'Gateway and VPN' => [true]]);
+})->with(['Gateway-only' => [false, false], 'Gateway and VPN' => [true, false], 'production Gateway with separate VPN' => [false, true]]);
 
 it('captures Gateway DNS without a configured DNS server or a separate VPN Node', function (): void {
     config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
@@ -155,5 +160,59 @@ it('captures Gateway DNS without a configured DNS server or a separate VPN Node'
 
     $snapshot = app(NodeRoleDirectInput::class)->capture($node, $role, false);
 
-    expect($snapshot['gateway_dns'])->toBe(['operation' => 'converge', 'address' => '10.45.0.1', 'domain' => 'orbit']);
+    expect($snapshot['gateway_dns'])->toMatchArray(['operation' => 'converge', 'address' => '10.45.0.1', 'domain' => 'orbit'])
+        ->toHaveKey('listener');
+});
+
+it('keeps production Gateway runtime recipe and Ansible vars byte identical to main', function (): void {
+    config(['orbit.gateway_checkout' => '/home/orbit/orbit/apps/gateway', 'orbit.home' => '/home/orbit/.orbit',
+        'orbit.hibernation.sweep_seconds' => 600, 'orbit.gateway_queue.connection' => null,
+        'swamp.address' => 'swamp.orbit', 'swamp.ca_path' => '/fixture/ca.pem', 'swamp.run_token' => 'fixture',
+        'swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
+    $this->mock(LeafCertificateSigner::class, fn ($mock) => $mock->shouldReceive('rootCertificate')->andReturn("fixture root\n"));
+    $frame = null;
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('connect', 'close')->andReturnNull();
+    $socket->shouldReceive('isConnected')->andReturnTrue();
+    $socket->shouldReceive('send')->andReturnUsing(function (array $sent) use (&$frame): void {
+        $frame = $sent;
+    });
+    $socket->shouldReceive('receive')->andReturnUsing(static function () use (&$frame): array {
+        return [['type' => 'vault.put', 'id' => $frame['id'], 'payload' => ['data' => ['vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    });
+    app()->instance(WebSocketClient::class, $socket);
+    $node = Node::withoutEvents(static fn (): Node => Node::query()->create(['id' => 14, 'name' => 'gateway', 'public_ssh_host' => '94.237.46.255', 'wireguard_ip' => '10.44.0.2',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'gateway-fixture', 'agent_secret_hash' => str_repeat('a', 64),
+        'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64']));
+    $node->roles()->create(['id' => 1, 'role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $vpn = Node::withoutEvents(static fn (): Node => Node::query()->create(['id' => 1, 'name' => 'vpn', 'public_ssh_host' => '94.237.124.160', 'wireguard_ip' => '10.44.0.1',
+        'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'vpn-fixture']));
+    $vpn->roles()->create(['id' => 2, 'role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+    $control = Node::withoutEvents(static fn (): Node => Node::query()->create(['id' => 209, 'name' => 'swamp', 'public_ssh_host' => '80.47.233.206', 'wireguard_ip' => '10.44.0.15',
+        'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64']));
+    $control->roles()->create(['id' => 3, 'role' => RoleName::Swamp, 'status' => LifecycleStatus::Active]);
+    $operation = Operation::query()->create(['id' => 701, 'kind' => 'node.converge', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
+        'status' => 'running', 'input' => [], 'triggered_by' => 'test']);
+
+    $capture = app(NodeDesiredConvergeInput::class)->capture($node, ['gateway'], false, $operation, null);
+    $role = $capture['intent']['roles'][0];
+    $folder = TestOrbitHome::scratch('production-gateway-equality');
+    mkdir($folder, 0700, true);
+    file_put_contents($folder.'/intent.json', json_encode($capture['intent'], JSON_THROW_ON_ERROR));
+    file_put_contents($folder.'/plans.json', '{}');
+    $materializer = new Symfony\Component\Process\Process(['deno', 'eval',
+        'import { convergeInput } from '.json_encode('file://'.base_path('../../swamp/extensions/behaviors/operations/ansible-input/converge_input.ts'), JSON_THROW_ON_ERROR).'; await convergeInput(Deno.args[0], Deno.args[1], "/fixture/converge_tool.ts");',
+        $folder, base_path('../../swamp/ansible/build_vars.py')]);
+    $materializer->mustRun();
+    $hash = static fn (mixed $value): string => hash('sha256', json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    $actual = ['runtime_sha256' => $hash($role['runtime']), 'role_sha256' => $hash($role),
+        'recipe_sha256' => hash('sha256', $capture['intent']['recipe']), 'converge_sha256' => $hash($capture),
+        'ansible_vars_sha256' => hash_file('sha256', $folder.'/vars.yml'),
+        'role_ansible_vars_sha256' => hash_file('sha256', $folder.'/role-'.$role['assignment_id'].'/vars.yml'),
+        'gateway_dns' => $role['runtime']['gateway_dns']];
+    if (is_string($evidence = getenv('ORBIT_DNS_EQUALITY_EVIDENCE')) && $evidence !== '') {
+        file_put_contents($evidence, json_encode($actual, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
+    }
+    $golden = json_decode(file_get_contents(base_path('tests/Fixtures/production-gateway-converge-main.json')), true, flags: JSON_THROW_ON_ERROR);
+    expect($actual)->toBe($golden['output']);
 });

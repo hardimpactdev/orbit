@@ -8,9 +8,7 @@ use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\Nodes\Roles\RolePrerequisites;
@@ -56,8 +54,7 @@ final readonly class NodeRoleDirectInput
             'publication' => app(NodeRolePublicationInput::class)->capture($node, $role),
             'certificates' => app(NodeRoleCertificateInput::class)->captureForExecution($node, $role),
             'metrics_fleet' => app(NodeRoleMetricsInput::class)->capture($assignment),
-            'gateway_dns' => $role === RoleName::Gateway
-                ? ['operation' => 'converge', 'address' => app(GatewayPrivateDnsResolver::class)->vpnDnsAddress(app(VpnSettings::class)) ?? $node->wireguard_ip, 'domain' => app(VpnSettings::class)->domain()] : null,
+            'gateway_dns' => $role === RoleName::Gateway ? app(GatewayPrivateDnsInput::class)->capture($node) : null,
             'cli' => $this->cli->input($node), 'runtime' => $this->runtime->capture($node, $assignment)];
     }
 

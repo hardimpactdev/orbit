@@ -341,7 +341,7 @@ export async function existingGatewayDns() {
   try {
     Deno.mkdirSync(`${folder}/bin`);
     prepareStockRoles(folder);
-    // The production Gateway already has peer-managed DNS; the sentinel must suppress all resolver policy reads and writes.
+    // An isolated Gateway can retain a peer policy too; the sentinel still suppresses resolver policy reads and writes.
     Deno.writeTextFileSync(`${folder}/peer-dns-link`, "10.44.0.1\n");
     await operation(folder, 2);
     const first = Deno.readTextFileSync(`${folder}/role-2.output`);
@@ -364,3 +364,49 @@ export async function existingGatewayDns() {
 }
 
 if (import.meta.main) await operation(Deno.args[0], Number(Deno.args[1]));
+
+export async function productionGatewayDns() {
+  const folder = Deno.makeTempDirSync();
+  try {
+    Deno.mkdirSync(`${folder}/bin`);
+    prepareStockRoles(folder);
+    const golden = JSON.parse(Deno.readTextFileSync(
+      new URL(
+        "../../../apps/gateway/tests/Fixtures/production-gateway-converge-main.json",
+        import.meta.url,
+      ),
+    ));
+    const runtime = golden.output.gateway_dns;
+    Deno.writeTextFileSync(
+      `${folder}/dns-runtime.json`,
+      JSON.stringify(runtime),
+    );
+    Deno.writeTextFileSync(
+      `${folder}/units/orbit-gateway-dns.service`,
+      runtime.unit,
+    );
+    Deno.writeTextFileSync(`${folder}/peer-dns-link`, "10.44.0.1\n");
+    Deno.removeSync(`${folder}/private-dns`, { recursive: true });
+    await operation(folder, 2);
+    const exists = (path: string) => {
+      try {
+        Deno.statSync(path);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    return {
+      status: Deno.readTextFileSync(`${folder}/role-2.status`),
+      output: Deno.readTextFileSync(`${folder}/role-2.output`),
+      dnsDirectory: exists(`${folder}/private-dns`),
+      listener: exists(`${folder}/units/orbit-private-dns.service`),
+      socket: exists(`${folder}/units/orbit-private-dns.socket`),
+      calls: Deno.readTextFileSync(`${folder}/systemd.jsonl`).trim().split("\n")
+        .map((line) => JSON.parse(line)),
+    };
+  } finally {
+    cleanupStockRoles(folder);
+    Deno.removeSync(folder, { recursive: true });
+  }
+}

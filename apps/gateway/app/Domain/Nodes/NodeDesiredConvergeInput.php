@@ -33,10 +33,20 @@ final readonly class NodeDesiredConvergeInput
         $recipe = new RecipeLoader()->source();
         $copies = ['agent_verifier' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'node-converge-operation-'.$operation->id.'-agent-verifier', (string) $node->agent_secret_hash)];
         $plans = [];
+        $recipeJson = $recipe->json;
         foreach ($node->roles()->whereIn('role', $roles)->orderBy('id')->get() as $assignment) {
             $snapshot = app(NodeRoleDirectInput::class)->capture($node, $assignment, false);
             $plan = app(NativeNodeRoleAddInput::class)->capture($node, $assignment, $snapshot, [], $operation, true);
             $rolePlan = $plan['intent'];
+            $runtime = ValidatedData::object($rolePlan['runtime']);
+            $gatewayDns = $runtime['gateway_dns'];
+            if (is_array($gatewayDns) && isset($gatewayDns['listener'])) {
+                $localRecipe = ValidatedData::object(json_decode($recipeJson, true, flags: JSON_THROW_ON_ERROR));
+                $localRoles = ValidatedData::object($localRecipe['roles']);
+                $localRoles['gateway'] = [...ValidatedData::stringList($localRoles['gateway']), 'bind9-dnsutils'];
+                $localRecipe['roles'] = $localRoles;
+                $recipeJson = json_encode($localRecipe, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            }
             // A converge consumes only the target runtime, never role admission's publication/fleet plays.
             $rolePlan['publications'] = [];
             $rolePlan['exporters'] = [];
@@ -72,7 +82,7 @@ final readonly class NodeDesiredConvergeInput
         return ['intent' => ['node_id' => $node->id, 'user' => $node->user,
             'ssh' => app(SwampSshExecutionInput::class)->forNode($node), 'roles' => $plans, 'selected_roles' => $roles,
             'agent' => [...$agent, 'sha256' => $delivery->pin($node), 'url' => $delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null],
-            'cli' => app(CliConvergePlan::class)->nodeInput($node), 'kernel' => NodeKernelPolicy::intent(), 'updates' => NodeUpdatePolicy::for($node), 'recipe' => $recipe->json,
+            'cli' => app(CliConvergePlan::class)->nodeInput($node), 'kernel' => NodeKernelPolicy::intent(), 'updates' => NodeUpdatePolicy::for($node), 'recipe' => $recipeJson,
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']->forArchitecture('amd64')),
             'tools' => $tools, 'network' => $network], 'execution_secrets' => $copies];
     }

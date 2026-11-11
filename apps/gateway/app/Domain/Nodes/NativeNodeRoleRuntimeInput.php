@@ -10,11 +10,8 @@ use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Metrics\MetricsContainerPlan;
 use App\Domain\Processes\ProcessLifecycleInput;
 use App\Domain\Processes\ProcessOperationAdmission;
-use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\PrivateDnsAnswerCatalog;
-use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
 use App\Infrastructure\Nodes\NodeRoleRuntimeSource;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -50,18 +47,11 @@ final readonly class NativeNodeRoleRuntimeInput
         if ($assignment->role === RoleName::Gateway && $snapshot['gateway_dns'] !== null) {
             $dns = ValidatedData::object($snapshot['gateway_dns']);
             $domain = ValidatedData::string($dns['domain']);
-            $upstream = ValidatedData::string($dns['address']);
-            $address = ValidatedData::string($node->wireguard_ip);
+            $address = ValidatedData::string($dns['address']);
             $runtime['gateway_dns'] = ['unit' => "# Managed by Orbit.\n[Unit]\nDescription=Orbit Gateway DNS routing\nAfter=wg-quick@orbit.service\nConditionPathExists=/sys/class/net/orbit\nConditionPathExists=!/etc/wireguard/orbit.dns-link\n\n[Service]\nType=oneshot\nExecStart=/usr/bin/resolvectl domain orbit ~{$domain}\nExecStart=/usr/bin/resolvectl default-route orbit false\nExecStart=/usr/bin/resolvectl dns orbit {$address}\n\n[Install]\nWantedBy=wg-quick@orbit.service\n"];
-            $hub = $upstream === $address || $node->roles()->where('role', RoleName::Vpn)->exists();
-            $publication = $hub ? app(NodeConvergeInput::class)->dns() : ['records' => '', 'catalog' => json_encode([
-                'requesters' => [], ...(new PrivateDnsAnswerCatalog([ReservedPrivateHostname::Gateway => $address], []))->toPublished(),
-            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n"];
-            // Both roles converge the same footprint and fixed socket, including the first bootstrap before VPN publication.
-            $runtime['gateway_dns']['listener'] = app(NodeConvergeInput::class)->privateDns($node, [
-                'listener' => app(NodePrivateDnsListenerFootprint::class)->input($node, $hub ? null : $upstream.':53'),
-                'publication' => $publication,
-            ]);
+            if (isset($dns['listener'])) {
+                $runtime['gateway_dns']['listener'] = ValidatedData::object($dns['listener']);
+            }
             $runtime['files'][] = ['path' => '/etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf',
                 'ensure' => 'absent', 'content' => '', 'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
         }
