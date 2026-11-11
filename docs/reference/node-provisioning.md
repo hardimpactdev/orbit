@@ -961,4 +961,4 @@ Proof preparation installs the tested checkout's frozen observer pin on every ne
 
 The `ai-router-model-forwarder.yml` playbook, including its numeric packet-counter checks, is documented in [AI router](/reference/ai-router#container-model-forwarder).
 
-The container playbook preserves agent settings outside Orbit's managed JSON keys and Git workspace trust, and applies the [per-Instance limits](/reference/development-containers#inside-a-container).
+The container playbook preserves agent settings outside Orbit's managed JSON keys and Git workspace trust, and applies the [per-Instance limits](/reference/development-containers#inside-a-container). It writes the shared [container PHP settings](/reference/php-runtime#container-php): the memory limit and PHP Data Bridge.

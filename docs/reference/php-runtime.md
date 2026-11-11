@@ -111,7 +111,16 @@ php_admin_value[opcache.revalidate_freq] = 0
 
 A development Instance in a container uses no pool: FrankenPHP serves it in its container, from the static PHP build of its version in the runtime folder. See [the default Instance](/reference/development-containers#the-default-instance).
 
-Container PHP uses `memory_limit=1G`, matching the CI test limit. The container phase writes it to `/etc/orbit/php/conf.d/99-orbit-runtime.ini`, which the static PHP CLI and FrankenPHP both read.
+### Container PHP
+
+Container PHP has two settings, the same in every container. The container phase writes them to `/etc/orbit/php/conf.d/99-orbit-runtime.ini`, which the static PHP CLI and FrankenPHP both read. When the file changes in a running container, the phase restarts the container's running `orbit-*` units, because a running PHP read the settings at its start.
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| `memory_limit` | `1G` | It matches the CI test limit |
+| `auto_prepend_file` | `/opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php` | PHP loads [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge) before the app, so Conn shows a request's data without a package in the app |
+
+The bridge comes from the [runtime folder](/reference/development-containers#shared-folders), so one update on the Node reaches every container. It records web requests only: under the CLI it returns at once. FrankenPHP serves in classic mode, where each request gets a fresh PHP; the bridge stays off in FrankenPHP's worker mode. An app turns the bridge off with `collect.enabled: false` in a `php-data-bridge.json` beside its `composer.json`.
 
 ## Production runtime
 
