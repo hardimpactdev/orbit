@@ -73,7 +73,11 @@ sequenceDiagram
   SW->>SW: Check the containers run
   %%> A container already running makes `incus start` exit 1; the state check requires all three to be RUNNING.
   SW->>NT: Wait for cloud-init
-  %%> The boot and state mounts must finish before the checkout is applied. No Gateway API read belongs before migration.
+  %%> Cloud-init is disabled after the first build, so this alone does not wait for systemd boot.
+  SW->>NT: Wait for systemd boot
+  %%> - inside each container, waits up to 120 s for systemd to settle to running or degraded; the whole exec is bounded at 135 s
+  %%> - then requires each of apply's state mounts on Gateway and app-dev to be active; it starts no unit and reads no Gateway API
+  %%> - a timeout, another systemd state or an inactive required mount fails before apply, with the state or mount in the error
   SW->>NT: Apply the checkout<br/>migrate · restart services
   %%> What it does:
   %%> - runs the migrations and restarts the long-running services (Horizon, the scheduler, the agent-view subscriber) in the nested Gateway, so they run the checked-out code
@@ -88,7 +92,7 @@ sequenceDiagram
   %%> - calls `task-nested-ready` only after `task-nested-apply` succeeds, including its migrations and service checks
   %%> - waits at most 120 s for a healthy Doctor, then reads the nodes and checks their agents, the operator and Doctor through the nested Gateway API
   %%> - the mounted checkout serves the candidate immediately, while a restore returns the database to the base schema; an API read before migration can fail on a required candidate column
-  %%> - apply needs running containers, finished cloud-init and active state mounts; it needs no API readiness check
+  %%> - apply needs running containers, settled systemd boot and active state mounts; it needs no API readiness check
   %%> - the same order applies to every batch, replay and final restore; a failed migration or readiness check stops the cases
   loop each batch, in the order of swamp/proof/batches.yaml
     SW->>NT: Restore base<br/>a reboot · 5–16 s
