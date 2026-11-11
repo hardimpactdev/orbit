@@ -1,7 +1,7 @@
 ---
 title: "orbit instance:auto-deploy:enable"
 sidebarTitle: "instance:auto-deploy:enable"
-description: "Deploy each new commit of a production Instance's branch that passed the Project's merge check automatically."
+description: "Enable automatic deployment for a production Instance or a ready development container default."
 ---
 
 ```bash
@@ -10,7 +10,7 @@ orbit instance:auto-deploy:enable <instance> [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `instance` | yes | Numeric Instance ID of an active production Instance. |
+| `instance` | yes | Numeric ID of a production Instance or a ready development container default. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
@@ -24,7 +24,7 @@ In a terminal, an omitted Instance is chosen from an interactive list. A noninte
 
 The command turns automatic deployment on and resumes it after a manual deployment or a rollback paused it. It deploys nothing now and changes nothing on a Node: the Gateway records the setting, and a check of the branch runs for the Instance every minute. When the first-parent history of the branch holds a commit newer than the live one whose `merge_check` passed, the check deploys the newest such commit, which can be older than the branch head, with the same steps as [`instance:deploy`](/cli/instance/deploy). A red or pending commit never deploys. A failure before any deploy step ran is retried on the first check at least 10 minutes after the first failure and at least 20 after the second, and the third failure blocks the commit; any other failure blocks the commit at once. Automatic deployment keeps acting by itself after the command returns, so it is an `enable` and `disable` pair, not an `instance:update` option. See [Automatic deployments](/reference/deployments#automatic-deployments).
 
-Automatic deployment needs an active production Instance and, when the Project has a `merge_check`, a check the Gateway GitHub App can read. Before the Instance's first succeeded deployment the check reports `not_deployed` and deploys nothing. A development `default` Instance uses the [shared automatic policy](/reference/deployments#automatic-development-defaults), subject to its enabled and paused state, so this command refuses it with `deployment_config.unavailable`. Without a `merge_check`, enabling succeeds and warns that every commit deploys without a check. Enabling an Instance that already has automatic deployment on succeeds and moves the resume point to the newest deployment, so it also clears a pause.
+Automatic deployment needs an active production Instance and, when the Project has a `merge_check`, a check the Gateway GitHub App can read. Before the Instance's first succeeded deployment the check reports `not_deployed` and deploys nothing. A development default must run in a container and have a seed snapshot. Its Gateway minute tick checks only the Project default-branch head and requires the configured merge check to pass for that exact SHA. Checkout Instances and clones cannot enable automatic deployment. Without a `merge_check`, enabling succeeds and warns that every commit deploys without a check. Enabling an Instance that already has automatic deployment on succeeds and moves the resume point to the newest deployment, so it also clears a pause.
 
 A manual `instance:deploy` or `instance:rollback` pauses automatic deployment again, whether it succeeds or fails, and a rollback blocks the commit it moved away from. Enabling resumes from the commit that is live. The command starts no task.
 
@@ -44,3 +44,5 @@ The command prints a detail titled `Instance: <name>` with ID and the `Auto depl
 | `instance.auto_deploy_gate_unreadable` | The Project has a `merge_check` that the Gateway GitHub App cannot read: the Project reads through the GitHub CLI or is not on `github.com`. |
 | `http.404` | The Instance is unknown. |
 | `node_access.required` | The caller has no access grant to the Instance's Node. |
+
+Development disable and enable preserve per-commit failures and backoff. A manual development deployment resets that retry history; production keeps its existing pause and resume behavior.

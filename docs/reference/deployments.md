@@ -2,7 +2,9 @@
 title: "Instance releases"
 description: "How production Instances build releases and select current code, and how development defaults deploy in their checkout."
 covers:
-  - apps/gateway/app/Domain/{Instances/Deployment/**,Projects/*DeployStep*.php}
+  - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/ReadyContainerDefault.php,Projects/*DeployStep*.php}
+  - apps/gateway/app/Jobs/Instances/CheckDevelopmentDeployments.php
+  - apps/gateway/database/migrations/2027_02_04_000002_create_development_deploy_retries.php
   - apps/gateway/app/Actions/Instances/{StartInstanceDeployAction,StartInstanceRollbackAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
   - apps/gateway/app/Infrastructure/Instances/{DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram}.php
   - apps/agent/src/commands/{production,production_tests,production_home,production_home_tests,deploy_step,dev_deploy,dev_deploy_tests}.rs
@@ -331,9 +333,15 @@ A head the Gateway cannot read fails the tick for that Instance with `source.hea
 
 ### Automatic development defaults
 
-**Delivered state, 2026-11-11.** The independent development tick (#3331) was reverted. Development auto-deploy stays inside the shared `automatic-production-deploy` producer; whether it runs depends on the policy setting. It accepts checkout defaults and has no container-only gate. A Gateway release does not deploy development defaults. Use [`instance:deploy`](/cli/instance/deploy) on the container default to deploy explicitly and take a new seed after success. A clone starts from that default's last successfully deployed seed. An independent producer limited to container defaults remains planned.
+The Gateway decides automatic deployment for ready development container defaults. The existing `auto_deploy` switch controls selection, admission and Instance output. An active container default with a seed snapshot on an active app-dev Node is eligible; checkout Instances, clones, ambiguous placements and inactive Nodes or roles are not. No migration enables a default.
 
-While the shared producer is active, a default deploys its default branch's head. Its deployed commit is its `seed_commit`. A failed commit retries as the [failure rules](#failures-of-automatic-deployments) describe; for a default every failure is retryable. A new commit is eligible on the next active policy tick.
+The minute pre-check reads each eligible Project's default-branch head once and compares it with the container snapshot's seed. An unchanged default starts no Swamp run. The Gateway checks the configured merge check for the exact head SHA, accepting only completed GitHub Actions runs with success. It reads pending or red evidence again on later ticks. With no configured check, the head needs no check evidence. It admits an ordinary pinned `instance.deploy` after rechecking eligibility, the switch, source configuration and seed under the Instance lock. Swamp executes that deployment; it has no development policy tick or checkpoints.
+
+Retries belong to the admitted SHA, including failures without deployment history. The existing durable `development_deploy_retries` table preserves each SHA's stop state after history pruning. The first failure waits ten minutes; the second waits twenty; the third stops that SHA. Cancellation, interruption, start refusal and timeout count once. A new green SHA has its own retry state. Disable and enable preserve attempts; an admitted manual development deployment resets them. A successful deployment resets its SHA, and only the current container seed proves that the default is up to date. Repeated or late observations do not count an outcome twice or revive pre-reset evidence.
+
+A queued, running, waiting or cancelling Operation keeps its ordinary target hold. A timeout follows the existing Operation terminal and late-result rules. Pending Route publication remains an admission refusal; the tick performs no Route repair. The Route owner settles its publication. Production retains its separate Swamp policy, retry rules, pause and schedule.
+
+The [cutover plan](/solutions/development-auto-deploy-cutover) defines checkpoint preservation and the disabled release gate. A release does not authorize enabling development deployment or resuming the native schedule.
 
 ### Production Instances
 
@@ -442,11 +450,11 @@ To switch policy back:
 
 ### One policy writer during the trial
 
-Swamp decides production and default development automatic deployments. The code-owned writer is `swamp`; Instance list/show exposes it as `auto_deploy.policy_owner`. Swamp discovers eligible Instances with `GET /api/v1/instances?auto_deploy=true` and does nothing when the owner is `gateway`. The filter uses the same eligibility rule as automatic admission: automatic deployment enabled, active Instance, production placement, and an active `app-prod` role. An inactive or absent `app-prod` role refuses admission with `instance.auto_deploy_role_inactive`. The worker checks this rule again before effects. Unfiltered Instance listing still includes ineligible Instances. Automatic admission, publication, and event admission refuse with `instance.auto_deploy_policy_owner` under PHP ownership. The deploy and event workers check ownership again before effects.
+Swamp decides production automatic deployments; the Gateway decides development automatic deployments. The code-owned writer is `swamp`; Instance list/show exposes it as `auto_deploy.policy_owner`. Swamp discovers eligible Instances with `GET /api/v1/instances?auto_deploy=true` and does nothing when the owner is `gateway`. The filter uses the same eligibility rule as automatic admission: automatic deployment enabled, active Instance, production placement, and an active `app-prod` role. An inactive or absent `app-prod` role refuses admission with `instance.auto_deploy_role_inactive`. The worker checks this rule again before effects. Unfiltered Instance listing still includes ineligible Instances. Automatic admission, publication, and event admission refuse with `instance.auto_deploy_policy_owner` under PHP ownership. The deploy and event workers check ownership again before effects.
 
  There is no environment flag or runtime switch.
 
-The cutover release removes the PHP production policy loop. The development cutover also removes the PHP development scheduler and retry loop. Swamp discovers active default checkouts on app-dev Nodes through the public Node and Instance lists, without requiring the production auto-deploy flag. Deploy Swamp first: it stays idle until the Gateway reports Swamp ownership. Finish or cancel in-flight PHP work through its current owner before activating the Gateway release; existing `operation.target_busy` holds serialize admissions. Swamp reconstructs policy and retries from the public projection and Gateway history.
+The cutover release removes the PHP production policy loop. Development uses its independent Gateway minute pre-check and existing per-Instance flag. Swamp does not discover development defaults. Deploy Swamp first: it stays idle until the Gateway reports Swamp ownership. Finish or cancel in-flight PHP work through its current owner before activating the Gateway release; existing `operation.target_busy` holds serialize admissions. Swamp reconstructs policy and retries from the public projection and Gateway history.
 
  Alert deduplication starts in Swamp: the owner accepts one possible repeat alert at cutover. Orbit exposes no stored alert-key contract.
 
@@ -454,7 +462,7 @@ Publication updates only the public projection in `auto_deploy_state`, preserves
 
 Publication uses a short database transaction without the deployment host lock. The history version hashes the stored fields of retained deployment rows, including `caller_node_id`, without events or display names. Adding a deployment or finishing an existing deployment changes it, even when the newest ID stays the same. Renaming or removing a caller Node does not change it. The recorder writes the terminal history and rollback blocks in one transaction, with the Instance row locked and refreshed before changing policy state. It preserves a projection that publication already committed.
 
-It accepts only the cursor and history version Swamp observed, so a later manual action cannot be hidden by a stale publication. Resume admission remains Gateway-owned; Swamp executes deployment effects. Swamp owns selection, retries, gate caches, alert intents, and publication order; it must serialize ticks for each Instance.
+It accepts only the cursor and history version Swamp observed, so a later manual action cannot be hidden by a stale publication. Resume admission remains Gateway-owned; Swamp executes deployment effects. For production, Swamp owns selection, retries, gate caches, alert intents, and publication order; it must serialize ticks for each Instance.
 
 Event operations use a separate `instance_policy` target lock. A running deployment does not prevent a stall alert. The delivery step cannot resume after worker loss, because a webhook may already have left the Gateway. Replaying its admission key returns the same operation; it does not deliver twice. Inspect partial notifier receipts and uncertain outcomes instead of creating another event key.
 
@@ -631,9 +639,9 @@ When a development deploy runs, it leaves Process definitions, Route publication
 
 ### Automatic policy
 
-A development start explicitly refused by Swamp or unavailable before sending does not create deployment history. This includes a failed execution-copy vault synchronization with zero attempts and no result, which happens before workflow submission. The next scheduled policy observation releases that failed pending admission and may admit a fresh automatic deployment on a later tick. An uncertain start retains its pending intent until its outcome is known.
+A development start explicitly refused by Swamp or unavailable before sending does not create deployment history. This includes a failed execution-copy vault synchronization with zero attempts and no result, which happens before workflow submission. The Gateway accounts for that admitted SHA once and applies the same retry backoff before another ordinary deployment. An uncertain start retains its pending intent until its outcome is known.
 
-Policy checkpoints stay durable before and after keyed admission. When one tick writes a state resource several times, its native output contains only the last handle for that resource name. Earlier checkpoint handles are not duplicate method outputs.
+Development admission and retry accounting live in the Gateway database. There are no development policy checkpoints in Swamp.
 
 Swamp owns development discovery, branch checks, backoff, retry limits and admission. An `interrupted` Operation is terminal, like a failed Operation: after its deployment evidence is settled, the policy applies the normal failure backoff before admitting the branch head again. The existing automatic workflow keeps its minute cadence. Discovery uses the Gateway's canonical eligibility, including ambiguous or inactive role placement. Each native source action and Project command has its own timeout. The Gateway exposes records and projects the public decision; its PHP automatic-deploy command and scheduler entry are removed.
 

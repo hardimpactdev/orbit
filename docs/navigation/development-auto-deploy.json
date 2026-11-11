@@ -1,0 +1,11 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Solutions",
+      "pages": [
+        "solutions/development-auto-deploy-cutover"
+      ]
+    }
+  ]
+}
