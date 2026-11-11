@@ -8,7 +8,7 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use Illuminate\Database\Eloquent\Collection;
 
-/** The attachment inventory shared by Instance reads and migration grants. */
+/** The ordered attachment inventory for Instance reads. */
 final readonly class InstanceAttachedTargets
 {
     public const array Relations = [

@@ -473,6 +473,45 @@ function migrateServer(Instance $instance): array
 }
 
 describe('the databases of a move', function (): void {
+    it('keeps grants bridge endpoints and probes byte-identical to b111d0c009 with duplicate attachments', function (): void {
+        $node = containerDefaultNode();
+        $default = migrateCheckout(containerDefaultProject(), $node);
+        migrateServerDatabase($default, migrateDatabaseServer($node, 'cache', DatabaseDriver::Redis, 6379), 'REDIS');
+        $server = migrateDatabaseServer($node, 'pg', DatabaseDriver::Pgsql, 5432);
+        $database = migrateServerDatabase($default, $server);
+        $services = containerDefaultNode('Services', '10.44.0.3', false);
+        migrateServerDatabase($default, migrateDatabaseServer($services, 'catalog', DatabaseDriver::Pgsql, 5434), 'FOOD_CATALOG');
+        DatabaseConnectionTarget::query()->create([
+            'instance_id' => $default->id, 'prefix' => 'DB_ALIAS', 'database_connection_id' => $database->id, 'network' => 'wireguard',
+        ]);
+        migrateServerDatabase($default, $server, 'REPORTING');
+        $sqlite = DatabaseConnection::query()->create([
+            'slug' => 'workspace', 'driver' => DatabaseDriver::Sqlite, 'path' => $default->checkout_path.'/database.sqlite',
+        ]);
+        DatabaseConnectionTarget::query()->create([
+            'instance_id' => $default->id, 'prefix' => 'SQLITE', 'database_connection_id' => $sqlite->id, 'network' => 'wireguard',
+        ]);
+
+        $operation = migrateStart($default);
+        $container = $operation->input['container'];
+        $host = app(InstanceHostIntent::class)->for($node);
+        $network = [
+            'acl_rules' => $container['acl_rules'],
+            'firewall' => $container['firewall'],
+            'bridge_endpoints' => $container['bridge_endpoints'],
+            'probes' => $operation->input['migrate']['databases'],
+            'node_bridge_endpoints' => $host['bridge_endpoints'],
+            'bridge_ingress' => $host['ingress'],
+        ];
+        $path = base_path('tests/Fixtures/InstanceMigration/b111-attached-endpoints.json');
+        if (getenv('ORBIT_FIXTURES') === 'record') {
+            file_put_contents($path, json_encode($network, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
+        }
+
+        $baseline = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+        expect(json_encode($network, JSON_THROW_ON_ERROR))->toBe(json_encode($baseline, JSON_THROW_ON_ERROR));
+    });
+
     it('leaves a database on its server and gives the container its way to every server of the Instance', function (): void {
         $node = containerDefaultNode();
         $default = migrateCheckout(containerDefaultProject(), $node);
