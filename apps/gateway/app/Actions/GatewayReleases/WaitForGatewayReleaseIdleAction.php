@@ -14,8 +14,8 @@ use Illuminate\Support\Sleep;
 /** The release's pre-load DB guard, called by Swamp while the old Horizon still works. */
 final readonly class WaitForGatewayReleaseIdleAction
 {
-    /** SQL LIKE patterns: all deploy variants and every Conn and Process kind, including future ones. */
-    public const array BlockingKindPatterns = ['instance.create', 'instance.deploy%', 'conn.%', 'process.%'];
+    /** SQL LIKE patterns: Instance lifecycle work, all deploy variants, and every Conn and Process kind. */
+    public const array BlockingKindPatterns = ['instance.create', 'instance.deploy%', 'instance.migrate', 'instance.clone', 'instance.destroy', 'conn.%', 'process.%'];
 
     public const int WaitSeconds = 600;
 
