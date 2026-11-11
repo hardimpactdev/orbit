@@ -80,6 +80,7 @@
     bridge_network: "{{ container.network }}"
     bridge_cidr: "{{ container.bridge_cidr }}"
     bridge_endpoints: "{{ container.bridge_endpoints }}"
+    bridge_admitted_at: "{{ container.bridge_admitted_at }}"
     bridge_reconcile: false
 
 # A clone copies the default's seed snapshot, which the default took with its units stopped: a ZFS clone that needs no start of the

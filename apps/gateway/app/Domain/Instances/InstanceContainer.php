@@ -165,6 +165,7 @@ final readonly class InstanceContainer
      */
     public function intent(Instance $instance, InstanceRuntime $runtime, ?DatabaseConnection $database = null, string $branch = '', ?string $url = null): array
     {
+        $admittedAt = (int) now()->format('Uu');
         $instance->loadMissing(['project', 'node']);
         $project = $instance->project;
         $workspace = InstanceHostIntent::Workspace;
@@ -181,6 +182,7 @@ final readonly class InstanceContainer
             'image' => self::Image, 'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
             'acl' => $runtime->container_name,
             'bridge_cidr' => ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')),
+            'bridge_admitted_at' => $admittedAt,
             'bridge_endpoints' => array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port'], 'docker' => $target['docker']], $access),
             // The common NIC ACL keeps the ways to the model forwarder and egress proxy; this one lets the Node's Caddy reach
             // FrankenPHP, a clone's T3 clients reach T3, and the container reach each attached target.

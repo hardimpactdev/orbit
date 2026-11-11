@@ -1098,7 +1098,7 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 | Project, bridge | `containers.project`, `containers.network` | `orbit-instances`, `orbitinst0` at the first address of the Node's bridge |
 | Kernel modules, sysctl files | `orbit-task-containers` | None; `60-orbit-instances.conf` |
 | Subordinate IDs | 101,000,000 per place and the base | 65,536 for each of 201 containers, plus the task container need on a host that has both |
-| ACL egress | The VM bridge's rules | The NIC rejects by default and admits proxies and attached targets; the bridge passes egress |
+| ACL egress | The VM bridge's rules | Bridge and NIC reject by default; the bridge admits the Node’s endpoint union and proxies, each NIC its own targets and proxies |
 | ACL ingress | The VM bridge's rules | TCP ports 1024 to 65535 from the bridge address, and T3's port 3773 from any source |
 | Bridge DNS | dnsmasq answers on the bridge address | None: `raw.dnsmasq` is `port=0`, so dnsmasq serves DHCP only |
 | Profile | Root disk and `eth0` | Root disk, `eth0` with the common ACL and reject defaults, read-only idmapped shared folders, and proxy settings as `environment.*` keys |
@@ -1107,7 +1107,7 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 | Clone probe | Always | On a ZFS pool only; a directory pool makes full copies |
 | Error code | `task_vm.setup_failed` | `instance.host_unavailable` |
 
-The role repeats the [read-only NIC audit](/reference/development-containers#prepare-a-node) at its end. An unsafe NIC stops convergence before the bridge egress change.
+The role repeats the [read-only NIC audit](/reference/development-containers#prepare-a-node) at its end. An unsafe NIC fails convergence; bridge egress stays reject. No NIC may reference the bridge union ACL.
 
 The bridge ACL admits the Node's preview and development connections and T3's clients:
 
@@ -1128,7 +1128,8 @@ The branch then:
 1. requires the pool, and on a ZFS pool applies the ARC cap that the system part sized, in `/etc/modprobe.d/orbit-instances-zfs.conf`;
 1. installs each shared folder (`tasks/instance-folder.yml`);
 1. prepares the bridge, project and profile, and unsets a `restricted.devices.disk.paths` that a host still has;
-1. checks effective NIC ACLs of running and stopped containers, then passes bridge egress to their default-reject policies;
+1. reconciles the bridge endpoint union with egress default reject;
+1. audits every effective bridge NIC of running and stopped containers;
 1. runs the [egress proxy](/reference/development-containers#egress-and-dns) and its nftables table (`tasks/instance-egress.yml`);
 1. builds the image (`tasks/instance-image.yml`).
 

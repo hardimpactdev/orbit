@@ -77,6 +77,7 @@ final readonly class InstanceHostIntent
     /** @return array<string, mixed>|null */
     public function for(Node $node): ?array
     {
+        $admittedAt = (int) now()->format('Uu');
         if (! $this->applies($node)) {
             return null;
         }
@@ -110,6 +111,7 @@ final readonly class InstanceHostIntent
             // the egress proxy, their one way out (docs/reference/development-containers.md#egress-and-dns).
             'forwarder_port' => self::ModelForwarderPort,
             'ingress' => self::ingress($gateway),
+            'bridge_admitted_at' => $admittedAt,
             'bridge_endpoints' => app(InstanceContainer::class)->nodeEndpoints($node),
             'egress' => InstanceEgress::for(self::Network, $gateway, $cidr, $this->privateDns->domains()),
             'ids' => (self::Containers + 1) * self::IdMapSize + $taskIds,

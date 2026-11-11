@@ -158,6 +158,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     address: `10.253.0.${id}`,
     network: "orbitinst0",
     bridge_cidr: "10.253.0.0/24",
+    bridge_admitted_at: 1800000000000000,
     bridge_endpoints: [] as {host: string; port: number; docker: boolean}[],
     acl: `instance-${id}`,
     acl_rules: {

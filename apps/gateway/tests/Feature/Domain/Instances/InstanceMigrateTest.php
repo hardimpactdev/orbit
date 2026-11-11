@@ -50,6 +50,7 @@ use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use App\Support\ValidatedData;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -1237,6 +1238,24 @@ it('captures the Node endpoint union from the same attached targets as each NIC,
 
     expect($containers->nodeEndpoints($node))->toBe($want)
         ->and(app(InstanceHostIntent::class)->for($node)['bridge_endpoints'])->toBe($want);
+
+    foreach ([fn (): array => app(InstanceHostIntent::class)->for($node), fn (): array => $containers->intent($first, $first->runtime)] as $capture) {
+        $this->travelTo(now()->setTimestamp(1800000000)->microsecond(123456));
+        $readTargets = false;
+        DB::listen(function (QueryExecuted $query) use (&$readTargets): void {
+            if (! $readTargets && str_contains($query->sql, 'database_connection_targets')) {
+                $readTargets = true;
+                $this->travel(1)->seconds();
+            }
+        });
+
+        $captured = $capture();
+
+        expect($readTargets)->toBeTrue()
+            ->and($captured['bridge_admitted_at'])->toBe(1800000000123456)
+            ->and(now()->format('Uu'))->toBe('1800000001123456');
+    }
+
     DatabaseConnectionTarget::query()->where('instance_id', $first->id)->delete();
     expect($containers->nodeEndpoints($node))->toBe($want);
     DatabaseConnectionTarget::query()->where('instance_id', $second->id)->delete();

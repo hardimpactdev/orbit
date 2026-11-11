@@ -94,6 +94,7 @@ function fixture() {
     address: "10.253.0.2",
     network: "orbitinst0",
     bridge_cidr: "10.253.0.0/24",
+    bridge_admitted_at: 1800000000000000,
     bridge_endpoints: [] as {host: string; port: number; docker: boolean}[],
     acl: "instance-7",
     acl_rules: {
@@ -1007,7 +1008,7 @@ Deno.test({
       let result = f.run("container");
       assert(result.ok, result.output);
       const bridge = f.state()["network-acls"].find((acl: {name: string}) => acl.name === "orbitinst0-egress");
-      assertEquals(bridge.egress, [concurrent, {action: "allow", source: "10.253.0.0/24", destination: "10.44.0.7/32", protocol: "tcp", destination_port: "3306", state: "enabled"}]);
+      assertEquals(bridge.egress, [concurrent, {action: "allow", source: "10.253.0.0/24", destination: "10.44.0.7/32", protocol: "tcp", destination_port: "3306", state: "enabled", description: "orbit:endpoint:1800000000000000"}]);
       result = f.run("container");
       assert(result.ok, result.output);
       assertEquals(result.changed, 0, result.output);

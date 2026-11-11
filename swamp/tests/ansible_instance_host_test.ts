@@ -763,7 +763,7 @@ Deno.test({
     ignore: !hasAnsible,
     async fn() {
         const f = await fixture({pool: "dir"});
-        const endpoint = (host: string, port: string) => ({action: "allow", source: "10.253.0.0/24", destination: host + "/32", protocol: "tcp", destination_port: port, state: "enabled"});
+        const endpoint = (host: string, port: string) => ({action: "allow", source: "10.253.0.0/24", destination: host + "/32", protocol: "tcp", destination_port: port, state: "enabled", description: "orbit:endpoint:1800000000000000"});
         try {
             f.instances.bridge_endpoints = [{host: "10.44.0.7", port: 3306, docker: false}, {host: "10.44.0.3", port: 5434, docker: false}];
             f.write(f.instances);
@@ -772,7 +772,7 @@ Deno.test({
             const old = f.state();
             const bridge = old["network-acls"].find((acl: {name: string}) => acl.name === "orbitinst0-egress");
             const foreign = {action: "reject", destination: "192.0.2.0/24", state: "enabled"};
-            bridge.egress.push(endpoint("10.44.0.55", "5432"), foreign);
+            bridge.egress.push({...endpoint("10.44.0.55", "5432"), description: "orbit:endpoint:1799999999999999"}, foreign);
             old.instances.push({name: "legacy-stopped", project: "orbit-instances", status: "Stopped", devices: {eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true", "security.acls": "orbitinst0-egress,instance-legacy", "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject"}}});
             Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(old));
             result = await f.run();

@@ -7,6 +7,7 @@ The refresh only adds rules. Only host reconciliation removes endpoint rules or 
 import argparse
 import ipaddress
 import json
+import re
 import shlex
 import subprocess
 import sys
@@ -47,29 +48,54 @@ def resolve(endpoints, nat):
     return sorted(resolved)
 
 
-def endpoint_rule(host, port, cidr):
+def admission(value):
+    """Gateway epoch microseconds; one fixed representation in files and ACL descriptions."""
+    if type(value) is not int or re.fullmatch(r'[1-9][0-9]{15}', str(value)) is None:
+        raise PolicyError('instance.container_bridge_write_failed')
+    return value
+
+
+def rule_admission(rule):
+    description = rule.get('description')
+    match = re.fullmatch(r'orbit:endpoint:([1-9][0-9]{15})', description) if isinstance(description, str) else None
+    return int(match[1]) if match else None
+
+
+def endpoint_rule(host, port, cidr, admitted_at):
     return {'action': 'allow', 'source': cidr, 'destination': host + '/32', 'protocol': 'tcp',
-                'destination_port': str(port), 'state': 'enabled'}
+            'destination_port': str(port), 'state': 'enabled', 'description': 'orbit:endpoint:' + str(admission(admitted_at))}
 
 
-def plan(current, endpoints, cidr, baseline, reconcile):
-    desired = {'egress': [endpoint_rule(host, port, cidr) for host, port in endpoints], 'ingress': []}
+def owned_endpoint(rule, cidr):
+    row = {key: value for key, value in rule.items() if value != ''}
+    return (set(row) == {'action', 'source', 'destination', 'protocol', 'destination_port', 'state', 'description'}
+            and rule_admission(row) is not None and row['action'] == 'allow' and row['source'] == cidr
+            and row['protocol'] == 'tcp' and row['state'] == 'enabled'
+            and re.fullmatch(r'[0-9.]+/32', row['destination']) is not None
+            and row['destination_port'].isdigit())
+
+
+def same_endpoint(row, rule):
+    return all(row.get(key) == value for key, value in rule.items() if key != 'description')
+
+
+def plan(current, endpoints, cidr, baseline, capture=None):
+    desired = {'egress': [endpoint_rule(host, port, cidr, stamp) for (host, port), stamp in sorted(endpoints.items())], 'ingress': []}
     for direction in desired:
         desired[direction] += baseline.get(direction, [])
     changes = []
     for direction, wanted in desired.items():
         existing = current.get(direction, [])
         for rule in wanted:
-            if not any(all(row.get(key) == value for key, value in rule.items()) for row in existing):
+            stamp = rule_admission(rule)
+            if not any((owned_endpoint(row, cidr) and same_endpoint(row, rule) and rule_admission(row) >= stamp)
+                       if stamp is not None else all(row.get(key) == value for key, value in rule.items()) for row in existing):
                 changes.append(('add', direction, rule))
-    if reconcile:
+    if capture is not None:
         for raw in current.get('egress', []):
-            rule = {key: value for key, value in raw.items() if value != ''}
-            if (set(rule) == {'action', 'source', 'destination', 'protocol', 'destination_port', 'state'}
-                    and rule['action'] == 'allow' and rule['source'] == cidr and rule['protocol'] == 'tcp'
-                    and rule['state'] == 'enabled' and rule['destination'].endswith('/32')
-                    and rule['destination_port'].isdigit() and rule not in desired['egress']):
-                changes.append(('remove', 'egress', rule))
+            if (owned_endpoint(raw, cidr) and rule_admission(raw) < capture
+                    and not any(same_endpoint(raw, rule) for rule in desired['egress'])):
+                changes.append(('remove', 'egress', raw))
     return changes
 
 
@@ -99,21 +125,25 @@ def api(name, value=None, etag=None):
 
 
 def write_rules(name, resolved, config, reconcile):
+    capture = config['admitted_at'] if reconcile else None
     current, _ = api(name)
-    changes = plan(current, resolved, config['cidr'], config.get('baseline', {}), reconcile)
+    changes = plan(current, resolved, config['cidr'], config.get('baseline', {}), capture)
     changed = 0
     for action, direction, rule in changes:
         # Reread just before each conditional PUT. The If-Match binds the exact list we merged.
         current, etag = api(name)
-        def matches(row, rule=rule):
-            return all(row.get(key) == value for key, value in rule.items())
-        present = any(matches(row) for row in current.get(direction, []))
-        if present == (action == 'add'):
+        # Recheck ownership and freshness under this ETag, including same-tuple readmissions.
+        if (action, direction, rule) not in plan(current, resolved, config['cidr'], config.get('baseline', {}), capture):
             continue
         updated = {key: current.get(key, {} if key == 'config' else [] if key in ['egress', 'ingress'] else '')
                    for key in ['description', 'config', 'egress', 'ingress']}
-        updated[direction] = ([*updated[direction], rule] if action == 'add'
-                              else [row for row in updated[direction] if not matches(row)])
+        if action == 'add':
+            # A readmission must bump the ACL ETag even if its allow selectors are unchanged.
+            updated[direction] = [row for row in updated[direction]
+                                  if not (rule_admission(rule) is not None and owned_endpoint(row, config['cidr'])
+                                          and same_endpoint(row, rule))] + [rule]
+        else:
+            updated[direction] = [row for row in updated[direction] if row != rule]
         api(name, updated, etag)
         changed += 1
     return changed
@@ -134,24 +164,39 @@ def write_file(path, value):
 
 def apply(root, incoming, reconcile=False):
     config = incoming if incoming is not None else json.loads((root / 'config.json').read_text())
-    files = list((root / 'endpoints').glob('*.json'))
-    endpoints = (incoming['endpoints'] if incoming is not None
-                 else [json.loads(path.read_text()) for path in files])
-    nat = subprocess.check_output(['iptables-save', '-t', 'nat'], text=True) if any(row['docker'] for row in endpoints) else ''
-    resolved = resolve(endpoints, nat)  # Resolve the entire set before any file or ACL mutation.
-    changed = write_rules(config['network'] + '-egress', resolved, config, reconcile)
+    capture = admission(config['admitted_at'])
+    records = [(path, json.loads(path.read_text())) for path in (root / 'endpoints').glob('*.json')]
+    endpoints = {}
+    for _, row in records:
+        stamp = admission(row['admitted_at'])
+        if incoming is None or (reconcile and stamp >= capture):
+            key = (row['host'], row['port'])
+            if key not in endpoints or stamp > endpoints[key]['admitted_at']:
+                endpoints[key] = row
     if incoming is not None:
-        desired_files = set()
+        for row in incoming['endpoints']:
+            key = (row['host'], row['port'])
+            if key not in endpoints or capture > endpoints[key]['admitted_at']:
+                endpoints[key] = {**row, 'admitted_at': capture}
+    endpoints = list(endpoints.values())
+    nat = subprocess.check_output(['iptables-save', '-t', 'nat'], text=True) if any(row['docker'] for row in endpoints) else ''
+    resolved = {}
+    for endpoint in endpoints:  # Resolve the entire set before any file or ACL mutation.
+        for target in resolve([endpoint], nat):
+            resolved[target] = max(resolved.get(target, 0), endpoint['admitted_at'])
+    changed = 0
+    if incoming is not None:
         for endpoint in endpoints:
-            path = root / 'endpoints' / (endpoint['host'] + '-' + str(endpoint['port']) + '.json')
-            desired_files.add(path)
+            # Immutable names prevent read/unlink from deleting a concurrently readmitted tuple.
+            path = root / 'endpoints' / (endpoint['host'] + '-' + str(endpoint['port']) + '-' + str(endpoint['admitted_at']) + '.json')
             changed += write_file(path, endpoint)
-        if reconcile:
-            for path in files:
-                if path not in desired_files:
-                    path.unlink()
-                    changed += 1
-            changed += write_file(root / 'config.json', {key: value for key, value in config.items() if key != 'endpoints'})
+    changed += write_rules(config['network'] + '-egress', resolved, config, reconcile)
+    if incoming is not None and reconcile:
+        for path, endpoint in records:
+            if endpoint['admitted_at'] < capture:
+                path.unlink(missing_ok=True)
+                changed += 1
+        changed += write_file(root / 'config.json', {key: value for key, value in config.items() if key != 'endpoints'})
     # Only a full refresh/converge proves Node-wide health; a successful attach checks its own subset.
     if incoming is None or reconcile:
         changed += write_file(root / 'health.json', {'error_code': None})

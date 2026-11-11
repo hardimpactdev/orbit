@@ -21,7 +21,7 @@
          + (['--reconcile'] if bridge_reconcile else []) }}
     stdin: >-
       {{ {'network': bridge_network, 'cidr': bridge_cidr, 'endpoints': bridge_endpoints,
-          'baseline': bridge_baseline | default({})} | to_json }}
+          'admitted_at': bridge_admitted_at | int, 'baseline': bridge_baseline | default({})} | to_json }}
   register: bridge_rule_write
   failed_when: false
   changed_when: bridge_rule_write.rc == 0 and (bridge_rule_write.stdout | from_json).changed > 0

@@ -211,6 +211,7 @@
     bridge_network: "{{ instances.network }}"
     bridge_cidr: "{{ instances.cidr }}"
     bridge_endpoints: "{{ instances.bridge_endpoints }}"
+    bridge_admitted_at: "{{ instances.bridge_admitted_at }}"
     bridge_reconcile: true
     bridge_baseline:
       egress:
