@@ -554,7 +554,7 @@ Run this on the Gateway when the Gateway refuses the agent's reports because its
 php artisan orbit:node-agent-rekey <node-id> [--attempt=N]
 ```
 
-The command admits the task under the key `node-agent-rekey-<node>-<attempt>` through `OperationIdempotency::under`, as any keyed admission. The same attempt number returns the same task; a higher number makes a new key again. The Node must be an active, managed Linux Node with stored SSH host keys. Rekey and `node:converge` share one lock per Node. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/agent-rekey.mmd) shows the steps.
+The command admits the task under the key `node-agent-rekey-<node>-<attempt>` through `OperationIdempotency::under`, as any keyed admission. The same attempt number returns the same task; a higher number makes a new key again. The Node must be an active, managed Linux Node with stored SSH host keys. Rekey shares the [Node admission lock](/reference/node-provisioning#converge-the-orbit-footprint) with Node convergence, role addition or convergence and enrollment. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/agent-rekey.mmd) shows the steps.
 
 At admission the Gateway makes 32 random bytes as 64 hex characters. It writes the key to one vault copy, `node-agent-rekey-<node>-<attempt>`, and records only its SHA-256 verifier in the task.
 

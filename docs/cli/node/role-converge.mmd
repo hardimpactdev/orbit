@@ -28,7 +28,7 @@ sequenceDiagram
   Note over GW: Validate, claim the Node
   %%> Requirements:
   %%> - the same Node checks as for an add, and the role is `active`, `failed` at a `converge:` step, or `provisioning` for more than 11 minutes with no Operation holding the Node's role lock
-  %%> - one add or converge Operation per Node (`operation.target_busy`)
+  %%> - Node convergence, role addition or convergence, enrollment and agent rekey share one Node admission lock (`operation.target_busy`)
   %%> Result:
   %%> - an `active` role keeps its status; a `failed` or stale role is marked `provisioning` for the run
   %%> - a task is recorded with the full intent

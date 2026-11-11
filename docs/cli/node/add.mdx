@@ -72,6 +72,7 @@ A failed run retains the work it finished and does not roll back. A new Node sta
 | `node.invalid_linux_user`, `node.user_change_unsupported` | The managed user is not a valid Linux account name, or an existing Node's managed user cannot change. |
 | `node.ssh_host_key_scan_failed`, `node.bootstrap_account_unavailable`, `node.enrollment_failed` | The run could not read the host key, log in to the bootstrap account, or finish enrollment. When the hub's [LAN endpoint](/reference/wireguard-endpoints#the-lan-endpoint) is not directly routed from the Node's `lan_ip` or does not answer SSH, the `tunnel` step fails before any tunnel change and its failed assertion reads `node.hub_lan_unreachable`. When the machine there does not have the hub's host key, it reads `node.hub_lan_identity_mismatch`. When the Node already has a tunnel whose hub endpoint would move, it reads `node.hub_switch_by_converge`: run `node:converge` for it. |
 | `node.provisioning_busy` | Another lifecycle operation holds the Node's name lock. Nothing changes. |
+| `operation.target_busy` | Node convergence, role addition or convergence, enrollment or agent rekey holds the Node's shared admission lock. Nothing changes. |
 
 ## How it works
 

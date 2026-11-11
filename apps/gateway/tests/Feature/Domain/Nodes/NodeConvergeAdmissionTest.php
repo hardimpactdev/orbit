@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\AdmitNodeEnrollmentOperationAction;
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Nodes\StartNodeConvergeAction;
+use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Fleet\CliReleaseCatalog;
@@ -23,11 +25,13 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Fleet\StaticCliRelease;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
@@ -193,6 +197,118 @@ it('reserves the target and the recorded shared hub even for a base-only scope',
     expect($operation->input['_converge']['network'])->toBe(['hub_id' => $this->control->id]);
     expect(fn () => app(NodeNetworkReservation::class)->hold($this->control, fn () => null))->toThrow(ResourceOperationException::class, 'Another Operation owns the Node or VPN hub.');
     $this->postJson($this->url, ['base' => true])->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+});
+
+it('refuses app-dev role convergence while Node convergence holds the Node', function (bool $timedOut): void {
+    $this->node->update(['tld' => 'target.test']);
+    $role = $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $this->postJson($this->url, ['base' => true])->assertAccepted();
+    $operation = Operation::query()->sole();
+    if ($timedOut) {
+        $operation->update(['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out']);
+    }
+    $before = $role->refresh()->getAttributes();
+
+    expect(fn () => app(AdmitNodeRoleOperationAction::class)->add($this->node, RoleName::AppDev, true))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('operation.target_busy'));
+
+    expect(Operation::query()->count())->toBe(1)->and($role->refresh()->getAttributes())->toBe($before);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+})->with(['queued' => false, 'timed out with native hold' => true]);
+
+it('refuses Node convergence while app-dev role convergence holds the Node', function (): void {
+    $this->node->update(['tld' => 'target.test']);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    app(AdmitNodeRoleOperationAction::class)->add($this->node, RoleName::AppDev, true);
+
+    $this->postJson($this->url, ['base' => true])->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+
+    expect(Operation::query()->count())->toBe(1);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+});
+
+/** Admit the real enrollment snapshot, including its app-dev role work, with a local bootstrap-key fixture. */
+function admitLockTestEnrollment(Node $node, Node $control): Operation
+{
+    $control->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned',
+        'ssh_host_fingerprint' => 'SHA256:pinned', 'wireguard_public_key' => base64_encode(str_repeat('h', 32))])->saveQuietly();
+    $control->roles()->firstOrCreate(['role' => RoleName::Vpn], ['status' => 'active']);
+    $folder = sys_get_temp_dir().'/orbit-admission-lock-'.bin2hex(random_bytes(4));
+    File::ensureDirectoryExists($folder.'/wireguard');
+    file_put_contents($folder.'/wireguard/public.key', base64_encode(str_repeat('h', 32))."\n");
+    config(['orbit.home' => $folder]);
+    test()->beforeApplicationDestroyed(static fn () => File::deleteDirectory($folder));
+    $key = tmpfile();
+    fwrite($key, 'fixture-bootstrap-key');
+    test()->mock(SshKeyProvider::class, function ($mock) use ($key): void {
+        $mock->shouldReceive('privateKeyPath')->andReturn(stream_get_meta_data($key)['uri']);
+        $mock->shouldReceive('publicKey')->andReturn(config('swamp.ssh_public_key'));
+    });
+    try {
+        return app(AdmitNodeEnrollmentOperationAction::class)->execute(new ProvisionNodeData(
+            name: $node->name, publicSshHost: $node->public_ssh_host, roles: [RoleName::AppDev]));
+    } finally {
+        fclose($key);
+    }
+}
+
+it('refuses node.add role admission while Node convergence holds the Node', function (): void {
+    $this->node->update(['tld' => 'target.test']);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $this->postJson($this->url, ['base' => true])->assertAccepted();
+
+    expect(fn () => admitLockTestEnrollment($this->node, $this->control))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('operation.target_busy'));
+
+    expect(Operation::query()->count())->toBe(1);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+});
+
+it('keeps enrollment role work under its parent hold and refuses another Node admission', function (bool $role): void {
+    $this->node->update(['tld' => 'target.test']);
+    $assignment = $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $operation = admitLockTestEnrollment($this->node, $this->control);
+
+    expect($operation->kind)->toBe('node.add')
+        ->and($operation->input['intent']['roles'][0]['kind'])->toBe('node.role_converge')
+        ->and($operation->input['_node_enrollment']['role_snapshots'][0]['assignment_id'])->toBe($assignment->id)
+        ->and(Operation::query()->count())->toBe(1);
+    expect(fn () => $role
+        ? app(AdmitNodeRoleOperationAction::class)->add($this->node, RoleName::AppDev, true)
+        : app(StartNodeConvergeAction::class)->execute($this->node, true))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('operation.target_busy'));
+
+    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+})->with(['Node convergence' => false, 'role convergence' => true]);
+
+it('allows app-dev role convergence on a distinct Node during Node convergence', function (): void {
+    $this->postJson($this->url, ['base' => true])->assertAccepted();
+    $other = $this->node->replicate(['instance_bridge']);
+    $other->forceFill(['name' => 'other', 'wireguard_ip' => '10.44.0.8', 'public_ssh_host' => '10.44.0.8', 'tld' => 'other.test'])->saveQuietly();
+    $other->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+
+    $operation = app(AdmitNodeRoleOperationAction::class)->add($other, RoleName::AppDev, true);
+
+    expect($operation->target_id)->toBe($other->id)->and(Operation::query()->count())->toBe(2);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+});
+
+it('keeps convergence excluded while agent rekey holds the Node', function (): void {
+    $this->artisan('orbit:node-agent-rekey', ['node' => $this->node->id])->assertSuccessful();
+
+    $this->postJson($this->url, ['base' => true])->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+
+    expect(Operation::query()->sole()->kind)->toBe('node.agent_rekey');
+    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+});
+
+it('keeps agent rekey excluded while convergence holds the Node', function (): void {
+    $this->postJson($this->url, ['base' => true])->assertAccepted();
+
+    $this->artisan('orbit:node-agent-rekey', ['node' => $this->node->id])->assertFailed();
+
+    expect(Operation::query()->sole()->kind)->toBe('node.converge');
+    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
 });
 
 it('admits a fresh attempt after failure without trusting an earlier footprint digest', function (): void {
