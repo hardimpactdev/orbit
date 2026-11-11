@@ -119,7 +119,7 @@ const cloneStages = ['clone-container', 'clone-workspace', 'clone-t3', 'clone-re
 const cloneWorkflow = workflows.find((yaml) => /^name: operation-instance-create$/m.test(yaml)) ?? ''
 const cloneChart = readFileSync(`${dir}/instance/container/create.mmd`, 'utf8')
 const workflowStages = stepNames(cloneWorkflow, 'instance.create').filter((name) => cloneStages.includes(name))
-const chartStages = [...cloneChart.matchAll(/^\s*\w+->>\w+: [^\n]*<br\/>native (clone-[a-z0-9-]+)/gm)]
+const chartStages = [...cloneChart.matchAll(/^\s*\w+->>\w+: [^\n]*<br\/>native (clone-[a-z0-9-]+)(?=$|[ \t])/gm)]
   .map((m) => m[1]).filter((name) => cloneStages.includes(name))
 if ([workflowStages, chartStages].some((names) => names.join('\n') !== cloneStages.join('\n'))) {
   fail(`Conn clone stage contract: expected [${cloneStages.join(', ')}] in workflow and chart order; got workflow [${workflowStages.join(', ')}], chart [${chartStages.join(', ')}]`)
