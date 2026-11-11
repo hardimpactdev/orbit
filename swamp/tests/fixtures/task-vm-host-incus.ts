@@ -10,6 +10,9 @@ if (Deno.args[0] === "--daemon") {
 const settings = JSON.parse(Deno.readTextFileSync(`${folder}/state.json`));
 const configRemote = Deno.env.get("INCUS_REMOTE") ?? "";
 const args = [...Deno.args];
+// Incus takes both spellings of the global flag: "--project P" and "--project=P".
+const joinedProject = args.findIndex((arg) => arg.startsWith("--project="));
+if (joinedProject >= 0) args.splice(joinedProject, 1, "--project", args[joinedProject].slice(10));
 const projectIndex = args.indexOf("--project");
 const project = projectIndex >= 0 ? args[projectIndex + 1]
   : (args[0] === "query" ? new URLSearchParams(args.at(-1)?.split("?")[1]).get("project") : null) ?? "default";

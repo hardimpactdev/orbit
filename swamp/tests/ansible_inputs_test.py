@@ -85,6 +85,14 @@ class RoleAddPhasesTest(unittest.TestCase):
         self.jobs = {job['name']: job for job in self.workflow['jobs']}
         self.plays = yaml.safe_load((ANSIBLE / 'operation-node-role-add.yml').read_text())
 
+    def test_every_ansible_step_sends_its_failed_task_to_stderr(self):
+        # The Gateway reads a failed step's stderr for the Operation's detail; Ansible prints failures on stdout by default.
+        steps = [step for job in self.workflow['jobs'] for step in job['steps']
+                 if 'ansible-playbook' in str(step.get('task', {}).get('inputs', {}).get('run', ''))]
+        self.assertGreater(len(steps), 10)
+        for step in steps:
+            self.assertEqual(step['task']['inputs']['env'].get('ANSIBLE_DISPLAY_FAILED_STDERR'), '1', step['name'])
+
     def test_required_machine_phases_use_the_existing_ansible_entry_point(self):
         expected = {'phase_13': 'tools', 'analytics': 'analytics', 'swamp_runtime_job': 'swamp',
                     'phase_52': 'php', 'phase_56': 'dns', 'analytics_cleanup': 'cleanup'}
