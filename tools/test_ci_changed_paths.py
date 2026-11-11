@@ -18,10 +18,10 @@ class ChangedPathsTest(unittest.TestCase):
         self.env = {**os.environ, 'GIT_AUTHOR_NAME': 'CI test', 'GIT_AUTHOR_EMAIL': 'ci@example.test',
                     'GIT_COMMITTER_NAME': 'CI test', 'GIT_COMMITTER_EMAIL': 'ci@example.test'}
         self.git('init', '-q', '-b', 'main')
-        self.commit('README.md', 'initial')
+        self.commit('.github/ci/checks.toml', '[budget]\ndefault_cost = 30\n')
         self.fork = self.git('rev-parse', 'HEAD')
         self.git('branch', 'candidate')
-        self.commit('.github/ci/checks.toml', 'main-only CI change')
+        self.commit('.github/ci/checks.toml', '[budget]\ndefault_cost = 31\n')
         self.commit('swamp/ansible/instance-container.yml', 'main-only fixture input')
         self.git('checkout', '-q', 'candidate')
 
@@ -51,7 +51,7 @@ class ChangedPathsTest(unittest.TestCase):
         self.assertEqual([], fixtures['deferred'])
 
     def test_candidate_ci_change_still_selects_checks_and_fixtures(self):
-        self.commit('.github/ci/checks.toml', 'candidate CI change')
+        self.commit('.github/ci/checks.toml', '[budget]\ndefault_cost = 32\n')
         result = self.cli('ci-build-plan', '--base', 'main', '--head', 'candidate')
         self.assertTrue(result['jobs']['agent'])
         self.assertTrue(result['jobs']['gateway-tests'])
