@@ -3,6 +3,10 @@ import copy
 import importlib.util
 import io
 import json
+import os
+import shutil
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -265,6 +269,150 @@ class BridgePolicy(unittest.TestCase):
                         bridge.apply(root, intent(3, '10.44.0.7'), True)
                         self.assertEqual(json.loads((root / 'health.json').read_text())['error_code'], None)
                         self.assertEqual([row['destination'] for row in incus.current['egress']], ['10.44.0.7/32'])
+
+    def test_partial_removal_followed_by_refresh_never_resurrects_confirmed_withdrawal(self):
+        for delivered, readable in [(False, True), (True, True), (False, False)]:
+            with self.subTest(delivered=delivered, readable=readable), tempfile.TemporaryDirectory() as directory:
+                root, incus = Path(directory), Incus()
+                with patch.object(bridge, 'api', side_effect=incus.api):
+                    bridge.apply(root, intent(1, '10.44.0.7', '10.44.0.8', '10.44.0.3'), True)
+                    bridge.apply(root, intent(4, '10.44.0.9'))
+                failed = False
+                readbacks = 0
+
+                def remove_then_timeout(name, value=None, etag=None, deadline=None):
+                    nonlocal failed, readbacks
+                    if value is not None and not any(row['destination'] == '10.44.0.8/32' for row in value['egress']):
+                        self.assertFalse(any(row['destination'] == '10.44.0.7/32' for row in incus.current['egress']))
+                        if delivered:
+                            incus.api(name, value, etag)
+                        failed = True
+                        raise bridge.subprocess.TimeoutExpired('curl', 5)
+                    if value is None and failed:
+                        readbacks += 1
+                        if not readable:
+                            raise bridge.subprocess.TimeoutExpired('curl', 5)
+                    return incus.api(name, value, etag)
+
+                with patch.object(bridge, 'api', side_effect=remove_then_timeout):
+                    if delivered:
+                        bridge.apply(root, intent(3, '10.44.0.3'), True, withdraw=True)
+                    else:
+                        error = bridge.subprocess.TimeoutExpired if readable else bridge.PolicyError
+                        with self.assertRaises(error):
+                            bridge.apply(root, intent(3, '10.44.0.3'), True, withdraw=True)
+                self.assertEqual(readbacks, 1)
+                expected = {'10.44.0.3', '10.44.0.9'} | (set() if delivered else {'10.44.0.8'})
+                health = json.loads((root / 'health.json').read_text())
+                self.assertEqual(health['error_code'], None if delivered else
+                                 'instance.bridge_command_timeout' if readable else 'instance.bridge_state_unresolved')
+
+                with patch.object(bridge, 'api', side_effect=incus.api):
+                    bridge.apply(root, None)
+                    self.assertEqual({row['destination'] for row in incus.current['egress']}, {host + '/32' for host in expected})
+                    records = {json.loads(path.read_text())['host'] for path in (root / 'endpoints').glob('*.json')}
+                    self.assertEqual(records, expected)
+                    self.assertEqual(json.loads((root / 'health.json').read_text()), health)
+                    bridge.apply(root, intent(5, '10.44.0.3', '10.44.0.9'), True, withdraw=True)
+                    self.assertEqual(json.loads((root / 'health.json').read_text()), {'error_code': None})
+                    self.assertEqual({row['destination'] for row in incus.current['egress']}, {'10.44.0.3/32', '10.44.0.9/32'})
+
+    @unittest.skipUnless(shutil.which('ansible-playbook'), 'ansible-core 2.20.11 is required for executable proof')
+    def test_ansible_partial_withdrawal_then_refresh_keeps_confirmed_removal_and_failure_health(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = Path(__file__).parents[1] / 'ansible'
+            (root / 'bin').mkdir()
+            shutil.copy(Path(__file__).parent / 'fixtures/instance-bridge-curl.py', root / 'bin/curl')
+            (root / 'bin/curl').chmod(0o755)
+            shutil.copy(source / 'instance_bridge.py', root / 'instance_bridge.py')
+            acl = root / 'acl.json'
+            acl.write_text(json.dumps({'metadata': Incus().current, 'version': 0}))
+            env = {**os.environ, 'PATH': str(root / 'bin') + os.pathsep + os.environ['PATH'],
+                   'ORBIT_BRIDGE_FIXTURE': str(root), 'ANSIBLE_COLLECTIONS_PATH': str(root / 'collections')}
+            installed = root / 'libexec/orbit-instance-bridge'
+            state = root / 'state'
+
+            def run_helper(incoming, reconcile=False):
+                return subprocess.run([sys.executable, str(root / 'instance_bridge.py'), '--state-dir', str(state)]
+                                      + ['--intent'] + (['--reconcile'] if reconcile else []),
+                                      input=json.dumps(incoming), capture_output=True, text=True, env=env, timeout=30)
+
+            for incoming, reconcile in [(intent(1, '10.44.0.7', '10.44.0.8', '10.44.0.3'), True), (intent(4, '10.44.0.9'), False)]:
+                seeded = run_helper(incoming, reconcile)
+                self.assertEqual(seeded.returncode, 0, seeded.stdout + seeded.stderr)
+            tasks = (source / 'tasks/instance-bridge-rules.yml').read_text()
+            tasks = tasks.replace('/usr/local/libexec', str(root / 'libexec')).replace('/var/lib/orbit/instance-bridge', str(state))
+            tasks = tasks.replace(', owner: root, group: root', '')
+            tasks = '\n'.join(line for line in tasks.splitlines() if line.strip() not in ('owner: root', 'group: root')) + '\n'
+            (root / 'tasks.yml').write_text(tasks)
+            playbook = root / 'proof.json'
+            playbook.write_text(json.dumps([{'hosts': 'localhost', 'gather_facts': False,
+                                            'tasks': [{'ansible.builtin.include_tasks': str(root / 'tasks.yml')}]}]))
+
+            def withdraw(stamp, *hosts):
+                config = intent(stamp, *hosts)
+                variables = {'ansible_python_interpreter': sys.executable, 'bridge_network': config['network'],
+                             'bridge_cidr': config['cidr'], 'bridge_admitted_at': config['admitted_at'],
+                             'bridge_endpoints': config['endpoints'], 'bridge_reconcile': True, 'bridge_withdraw': True}
+                return subprocess.run(['ansible-playbook', '-i', 'localhost,', '--connection', 'local',
+                                       '--extra-vars', json.dumps(variables), str(playbook)],
+                                      capture_output=True, text=True, env=env, timeout=30)
+
+            (root / 'timeout-remove-b').touch()
+            refused = withdraw(3, '10.44.0.3')
+            self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
+            self.assertIn('instance.bridge_command_timeout', refused.stdout + refused.stderr)
+            refreshed = subprocess.run([sys.executable, str(installed), '--state-dir', str(state)],
+                                       capture_output=True, text=True, env=env, timeout=30)
+            self.assertEqual(refreshed.returncode, 0, refreshed.stdout + refreshed.stderr)
+            self.assertEqual({row['destination'] for row in json.loads(acl.read_text())['metadata']['egress']},
+                             {'10.44.0.3/32', '10.44.0.8/32', '10.44.0.9/32'})
+            self.assertEqual(json.loads((state / 'health.json').read_text()), {'error_code': 'instance.bridge_command_timeout'})
+            (root / 'timeout-remove-b').unlink()
+            completed = withdraw(5, '10.44.0.3', '10.44.0.9')
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertEqual(json.loads((state / 'health.json').read_text()), {'error_code': None})
+
+    def test_crash_after_confirmed_removal_cannot_be_reported_healthy_by_refresh(self):
+        incus = Incus()
+        with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'api', side_effect=incus.api):
+            root = Path(directory)
+            bridge.apply(root, intent(1, '10.44.0.7', '10.44.0.8'), True)
+
+            def crash_on_second_removal(name, value=None, etag=None, deadline=None):
+                if value is not None and not value['egress']:
+                    raise KeyboardInterrupt('writer terminated after removing A')
+                return incus.api(name, value, etag)
+
+            with patch.object(bridge, 'api', side_effect=crash_on_second_removal), self.assertRaises(KeyboardInterrupt):
+                bridge.apply(root, intent(2), True, withdraw=True)
+            self.assertEqual(json.loads((root / 'health.json').read_text()), {'error_code': None})
+
+            bridge.apply(root, None)
+
+            self.assertEqual([row['destination'] for row in incus.current['egress']], ['10.44.0.8/32'])
+            self.assertEqual(json.loads((root / 'health.json').read_text()), {'error_code': 'instance.bridge_state_unresolved'})
+
+    def test_withdrawal_of_an_unsaved_docker_tuple_refuses_before_acl_mutation(self):
+        incus = Incus()
+        with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'api', side_effect=incus.api):
+            root = Path(directory)
+            docker = {**intent(1), 'endpoints': [{'host': '10.44.0.7', 'port': 3306, 'docker': True}]}
+            with patch.object(bridge.subprocess, 'check_output', return_value=nat()):
+                bridge.apply(root, docker, True)
+            path = next((root / 'endpoints').glob('*.json'))
+            row = json.loads(path.read_text())
+            del row['translated']
+            bridge.write_file(path, row)
+            before = copy.deepcopy(incus.current)
+
+            with patch.object(bridge, 'api', side_effect=AssertionError('ACL touched before ownership was resolved')):
+                with self.assertRaisesRegex(bridge.PolicyError, 'instance.container_endpoint_unresolved'):
+                    bridge.apply(root, intent(2), True, withdraw=True)
+
+            self.assertEqual(incus.current, before)
+            self.assertTrue(path.exists())
 
     def test_timed_out_waiter_exits_and_never_applies_its_intent_after_holder_releases(self):
         incus = Incus()

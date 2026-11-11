@@ -18,7 +18,6 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-
 # instance-bridge-refresh.yml: TimeoutStartSec=30; wait for at least one full refresh.
 REFRESH_BUDGET_SECONDS = 30
 LOCK_WAIT_SECONDS = REFRESH_BUDGET_SECONDS
@@ -114,15 +113,17 @@ def plan(current, endpoints, cidr, baseline, capture=None):
 
 def api(name, value=None, etag=None, deadline=None):
     """Use the Incus API's ETag, so a concurrent write cannot replace another endpoint."""
-    argv = ['curl', '--silent', '--show-error', '--fail-with-body', '--max-time', str(CURL_TIMEOUT_SECONDS), '--include', '--unix-socket',
-            '/var/lib/incus/unix.socket', 'http://localhost/1.0/network-acls/' + name + '?project=default']
+    put = []
     if value is not None:
         if not isinstance(etag, str):
             raise PolicyError('instance.container_bridge_write_failed')
-        argv += ['--request', 'PUT', '--header', 'Content-Type: application/json',
-                 '--header', 'If-Match: ' + etag, '--data-binary', '@-']
+        put = ['--request', 'PUT', '--header', 'Content-Type: application/json',
+               '--header', 'If-Match: ' + etag, '--data-binary', '@-']
     timeout = CURL_TIMEOUT_SECONDS if deadline is None else min(CURL_TIMEOUT_SECONDS, remaining(deadline))
-    result = subprocess.run(argv, input=None if value is None else json.dumps(value).encode(),
+    result = subprocess.run(['curl', '--silent', '--show-error', '--fail-with-body', '--max-time', str(CURL_TIMEOUT_SECONDS),
+                             '--include', '--unix-socket', '/var/lib/incus/unix.socket',
+                             'http://localhost/1.0/network-acls/' + name + '?project=default', *put],
+                            input=None if value is None else json.dumps(value).encode(),
                             capture_output=True, check=False, timeout=timeout)
     if result.returncode == 28:
         raise PolicyError('instance.bridge_command_timeout')
@@ -272,6 +273,20 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
             if key not in endpoints or capture > endpoints[key]['admitted_at']:
                 endpoints[key] = {**row, 'admitted_at': capture}
     endpoints = list(endpoints.values())
+    retained = {(row['host'], row['port']) for row in endpoints}
+    retiring = []
+    if incoming is not None and reconcile:
+        for path, row in records:
+            key = (row['host'], row['port'])
+            if row['admitted_at'] >= capture or key in retained:
+                continue
+            previous = recorded[key]
+            target = previous.get('translated')
+            if target is None:
+                # A Docker record without a saved tuple cannot prove a partial removal. Fail before any ACL mutation.
+                host, port = resolve([previous], '')[0]
+                target = {'host': host, 'port': port}
+            retiring.append((path, target))
     nat = subprocess.check_output(['iptables-save', '-t', 'nat'], text=True, timeout=remaining(deadline)) if not withdraw and any(row['docker'] for row in endpoints) else ''
     resolved = {}
     for endpoint in endpoints:  # Resolve the entire set before any file or ACL mutation.
@@ -314,19 +329,35 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
                     active.parent.mkdir(parents=True, exist_ok=True)
                     path.replace(active)
                     changed += 1
+            for path, target in retiring:
+                if not path.exists():
+                    continue
+                wanted = endpoint_rule(target['host'], target['port'], config['cidr'], capture)
+                if ((target['host'], target['port']) not in resolved
+                        and any(owned_endpoint(rule, config['cidr']) and same_endpoint(rule, wanted)
+                                for rule in current.get('egress', []))):
+                    continue
+                # Persist incomplete convergence before changing refresh eligibility, including the crash window.
+                changed += write_file(root / 'reconcile.pending', {'admitted_at': capture})
+                path.unlink()
+                changed += 1
 
         acl_changed = write_rules(config['network'] + '-egress', resolved, config, reconcile, deadline, commit_confirmed)
         changed += acl_changed
     if incoming is not None and reconcile:
         for path, endpoint in records:
-            if endpoint['admitted_at'] < capture:
-                path.unlink(missing_ok=True)
+            if endpoint['admitted_at'] < capture and path.exists():
+                path.unlink()
                 changed += 1
         changed += write_file(root / 'config.json', {key: value for key, value in config.items() if key != 'endpoints'})
+        (root / 'reconcile.pending').unlink(missing_ok=True)
     # Only a full refresh/converge proves Node-wide health; a successful attach checks its own subset.
     if incoming is None or reconcile:
         health = root / 'health.json'
-        if reconcile or not unresolved_health(root):
+        if not reconcile and (root / 'reconcile.pending').exists():
+            if not health.exists() or json.loads(health.read_text()).get('error_code') is None:
+                changed += write_file(health, {'error_code': 'instance.bridge_state_unresolved'})
+        elif reconcile or not unresolved_health(root):
             changed += write_file(health, {'error_code': None})
     return changed
 
