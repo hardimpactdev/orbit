@@ -1437,6 +1437,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/frankenphp_proxy_test.ts"
+after_merge = true
+reason = "Requires the pinned FrankenPHP binary; hosted PR fixture setup does not install it. An ignored case is not passing coverage; run after merge with ORBIT_FRANKENPHP supplied."
 cost = 1
 inputs = [
   "apps/gateway/resources/instances/frankenphp.Caddyfile",
@@ -2073,6 +2075,31 @@ inputs = ["swamp/ansible/library/orbit_migrate_env.py"]
 file = "swamp/tests/ansible_task_vm_incus_test.py"
 cost = 30
 inputs = ["swamp/ansible/tasks/task-vm-incus.yml", "swamp/ansible/task-vm-role.yml", "swamp/ansible/tasks/task-vm-tools.yml"]
+
+[[fixture]]
+file = "swamp/tests/process_destroy_failed_cache_test.ts"
+cost = 30
+inputs = [
+  "swamp/workflows/workflow-operation-process-destroy.yaml",
+  "swamp/deno.json",
+  "swamp/deno.lock",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_schedule_logs_test.ts"
+cost = 30
+inputs = [
+  "swamp/ansible/schedule-logs.yml",
+  "swamp/ansible/library/orbit_schedule_journal.py",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/tests/fixtures/schedule-inspection-frame.php",
+  "apps/gateway/app/Infrastructure/AgentView/WebSocketClient.php",
+  "apps/gateway/app/Infrastructure/AgentView/StreamWebSocketClient.php",
+  "apps/gateway/app/Support/ValidatedData.php",
+]
 
 [all-checks]
 # Changes to the check machinery run each check job once, without an agent delivery.

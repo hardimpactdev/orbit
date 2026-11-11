@@ -354,10 +354,33 @@ def run_unit(step, environment, ceiling, shard_deadline=None):
         result = json.loads(receipt.read_text()) if code == 0 and receipt.exists() else {
             'status': 'FAILED', 'seconds': round(time.monotonic() - started, 3)}
         startup = Path(scratch) / 'startup.json'
+        case_receipt = None
         if startup.exists():
-            result.update(json.loads(startup.read_text()))
+            try:
+                case_receipt = json.loads(startup.read_text())
+            except (ValueError, OSError):
+                pass
+            if isinstance(case_receipt, dict):
+                result.update({key: case_receipt[key] for key in ('startup_seconds', 'registered', 'excluded', 'cases') if key in case_receipt})
         output.seek(0)
         captured = output.read()
+        if step.argv[0] == 'deno' and result['status'] == 'passed':
+            registered = case_receipt.get('registered') if isinstance(case_receipt, dict) else None
+            cases = case_receipt.get('cases') if isinstance(case_receipt, dict) else None
+            expected = json.loads(step.env.get('ORBIT_TEST_CASES', 'null'))
+            skipped = json.loads(step.env.get('ORBIT_TEST_SKIP', '[]'))
+            k, n = map(int, step.env.get('ORBIT_TEST_SLICE', '0/1').split('/'))
+            valid = (isinstance(registered, list) and bool(registered)
+                     and all(isinstance(name, str) for name in registered)
+                     and (expected is None or registered == expected)
+                     and all(name in registered for name in skipped))
+            selected = [name for name in registered if name not in skipped][k::n] if valid else []
+            valid = (valid and bool(selected) and isinstance(cases, list)
+                     and all(isinstance(row, dict) and row.get('status') == 'passed' for row in cases)
+                     and [row.get('name') for row in cases] == selected)
+            if not valid:
+                result['status'] = 'FAILED'
+                captured += '\nFixture lacks a valid receipt proving every selected Deno case passed (ignored and unrun cases fail).\n'
         if re.search(r'Ran 0 tests\b', captured):
             result['status'] = 'FAILED'
             captured += '\nFixture registered zero tests\n'

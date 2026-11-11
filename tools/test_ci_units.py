@@ -165,6 +165,10 @@ class TableTest(unittest.TestCase):
     def test_container_dependency_closure_selects_the_affected_files(self):
         budget, fixtures, defaults = units.configuration()
         for path, expected in [
+            ('swamp/workflows/workflow-operation-process-destroy.yaml', 'swamp/tests/process_destroy_failed_cache_test.ts'),
+            ('swamp/ansible/schedule-logs.yml', 'swamp/tests/ansible_schedule_logs_test.ts'),
+            ('swamp/ansible/library/orbit_schedule_journal.py', 'swamp/tests/ansible_schedule_logs_test.ts'),
+            ('apps/gateway/app/Infrastructure/AgentView/StreamWebSocketClient.php', 'swamp/tests/ansible_schedule_logs_test.ts'),
             ('swamp/ansible/tasks/instance-migrate-retire.yml', 'swamp/tests/ansible_instance_migrate_test.ts'),
             ('swamp/ansible/instance_bridge.py', 'swamp/tests/ansible_instance_container_test.ts'),
             ('swamp/tests/_support/instance_host.ts', 'swamp/tests/ansible_instance_host_image_test.ts'),
@@ -394,6 +398,25 @@ class PopulationTest(unittest.TestCase):
             self.assertEqual(result['status'], 'passed')
             self.assertEqual(result['cases'][0]['name'], 'restricted')
             self.assertEqual(result['cases'][0]['status'], 'passed')
+
+    @unittest.skipUnless(shutil.which('deno'), 'needs Deno')
+    def test_process_success_requires_every_selected_deno_case_to_complete(self):
+        for source, expected in [
+            ('Deno.exit(0);', 'FAILED'),
+            ('Deno.test.ignore("ignored", () => {});', 'FAILED'),
+            ('Deno.test("passed", () => {}); Deno.test.ignore("ignored", () => {});', 'FAILED'),
+            ('Deno.test("exit", () => Deno.exit(0));', 'FAILED'),
+            ('Deno.test("passed", () => {});', 'passed'),
+        ]:
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as scratch:
+                file = Path(scratch) / 'receipt_test.ts'
+                file.write_text(source)
+                name = 'swamp/receipt_test.ts'
+                original = units.gate.Step('shape', name, ['deno', 'test', '--no-check', '-A', str(file)])
+                step = units.unit_step(name, {name: fixture(name)}, {name: original}, Path('/collections'))
+                with contextlib.redirect_stdout(io.StringIO()):
+                    result = units.run_unit(step, os.environ.copy(), 10)
+                self.assertEqual(result['status'], expected, result)
 
     def test_fixture_hashes_do_not_gate_docs_or_unrelated_inputs(self):
         with tempfile.TemporaryDirectory() as scratch:
