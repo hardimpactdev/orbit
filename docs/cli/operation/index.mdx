@@ -9,7 +9,7 @@ covers:
 
 An [operation](/reference/operations) is a long piece of work, such as an Instance deploy or rollback, that Swamp runs as a native workflow. The Gateway records its intent, status and result. The command that starts it, such as [`instance:deploy`](/cli/instance/deploy) or [`instance:rollback`](/cli/instance/rollback), returns or stops following without stopping the operation. These commands find it again.
 
-Starting commands follow the parent Operation until its result arrives. Ctrl-C stops following and leaves the Operation running. Read it again with `operation:show`.
+Starting commands follow the parent Operation until its result arrives. Ctrl-C stops following and leaves the Operation running. Read it again with `operation:show`. The read shows `overdue_since` when the Operation passed its [soft run limit](/reference/operations#native-run-budgets); it keeps running until completion, cancellation or its hard limit.
 
 ## Commands
 

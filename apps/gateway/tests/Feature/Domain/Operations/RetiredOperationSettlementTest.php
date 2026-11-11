@@ -69,9 +69,9 @@ it('leaves an Operation of a registered kind to its own path', function (): void
     expect($operation->refresh()->status)->toBe(OperationStatus::Running)->and($operation->lock_key)->toBe('recipe_pr:2563');
 });
 
-it('gives a retired Operation with a bound run the history budget, 30 minutes without history', function (): void {
+it('gives a retired Operation with a bound run the hard history limit, 90 minutes without history', function (): void {
     $running = retiredKindOperation(minutes: 20, state: ['swamp_run_id' => 'ea55ab37-bcbe-4459-81dc-cbb397e7d870'], attempts: 1);
-    $over = retiredKindOperation(minutes: 31, state: ['swamp_run_id' => 'ea55ab37-bcbe-4459-81dc-cbb397e7d871'], attempts: 1, target: 7);
+    $over = retiredKindOperation(minutes: 91, state: ['swamp_run_id' => 'ea55ab37-bcbe-4459-81dc-cbb397e7d871'], attempts: 1, target: 7);
 
     passOverRetiredKinds();
 

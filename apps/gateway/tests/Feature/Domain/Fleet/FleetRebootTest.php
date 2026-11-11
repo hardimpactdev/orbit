@@ -247,7 +247,7 @@ it('keeps an unreachable Node failure and diagnostic, skips later Nodes and aler
         ->and(array_map(static fn (ReleaseAlert $alert): string => $alert->kind->value, $this->sent))->toBe(['reboot_halted']);
 
     $body = $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])
-        ->getJson("/api/v1/operations/{$projected->id}")->assertOk()->assertJsonPath('data.result.nodes.0.error_detail', $diagnostic)->json();
+        ->getJson("/api/v1/operations/{$projected->id}")->assertOk()->assertJsonPath('data.overdue_since', null)->assertJsonPath('data.result.nodes.0.error_detail', $diagnostic)->json();
     if (! $held) {
         $body['meta']['request_id'] = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
         $fixture = ['schema' => 1, 'request' => ShowOperationRequest::class,
@@ -287,7 +287,7 @@ it('marks every Node unknown and halts once when the root has no Node evidence',
 
     if ($status === 'interrupted' && ! $reportedUnknown) {
         $body = $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])
-            ->getJson("/api/v1/operations/{$projected->id}")->assertOk()->assertJsonPath('data.result.nodes.0.outcome', 'unknown')->json();
+            ->getJson("/api/v1/operations/{$projected->id}")->assertOk()->assertJsonPath('data.overdue_since', null)->assertJsonPath('data.result.nodes.0.outcome', 'unknown')->json();
         $body['meta']['request_id'] = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
         $fixture = ['schema' => 1, 'request' => ShowOperationRequest::class, 'route' => 'GET /api/v1/operations/{operation}', 'status' => 200, 'body' => $body];
         $path = base_path('../../packages/php-sdk/fixtures/operations/operation-show/fleet-reboot-interrupted.json');

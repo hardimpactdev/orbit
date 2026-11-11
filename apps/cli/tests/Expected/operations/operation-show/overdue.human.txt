@@ -1,0 +1,48 @@
+Loading operation...
+
+┌  Show operation
+│
+├  ● Loaded operation
+│
+└  Loaded operation.
+
+
+┌  Operation: 1
+│
+├  Kind               tasks.script
+│
+├  Target             task_group 42
+│
+├  Status             running
+│
+├  Error code         —
+│
+├  Current step       —
+│
+├  Step started       —
+│
+├  Step observed      —
+│
+├  Failed step        —
+│
+├  Error detail       —
+│
+├  Result             —
+│
+├  Cancel requested   —
+│
+├  Attempts           1
+│
+├  By                 —
+│
+├  Caller Node        —
+│
+├  Created            2026-11-11T10:00:00+00:00
+│
+├  Started            2026-11-11T10:00:00+00:00
+│
+├  Overdue since      2026-11-11T10:06:00.000000Z
+│
+└  Finished           —
+
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a846

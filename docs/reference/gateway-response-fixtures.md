@@ -13,6 +13,8 @@ covers:
 
 The `database-server-update` fixtures replay [`database:server:update --require-password`](/cli/database/server-update). The request uses PATCH and an explicit true field; its Operation fixture retains `database_server.close`, the persisted execution kind.
 
+The `operations/operation-show/overdue` fixture records a running Operation past its soft limit, with `overdue_since` and no cancel request. The CLI replays its `Overdue since` detail and JSON field. Terminal Operation fixtures keep `overdue_since: null` when no soft-limit alert was raised.
+
 The `operations/operation-show/fleet-reboot-unreachable` fixture records a failed Node with its redacted SSH diagnostic, a later halted Node and an unvisited Node. The `fleet-reboot-interrupted` fixture records unknown Node outcomes when the root delivered no Node report. The CLI replays both in human and JSON output. [Fleet reboot](/reference/gateway-recovery#one-node-of-the-pass) owns those outcomes.
 
 Node enrollment fixtures record the real HTTP 202 admission and a separate terminal Operation read. The CLI replays both, so a queued response cannot be mistaken for an active Node. Native identity observations supply the completion fixture.

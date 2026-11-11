@@ -590,3 +590,10 @@ it('renders unknown Node outcomes from an interrupted fleet reboot response', fu
     run_contract('operations/operation-show/fleet-reboot-interrupted', 'operation:show', ['operation' => '1', '--json' => true],
         'operations/operation-show/fleet-reboot-interrupted.json', 0);
 });
+
+it('shows an overdue Operation in human and JSON output without changing its status', function (): void {
+    run_contract('operations/operation-show/overdue', 'operation:show', ['operation' => '1'],
+        'operations/operation-show/overdue.human.txt', 0);
+    run_contract('operations/operation-show/overdue', 'operation:show', ['operation' => '1', '--json' => true],
+        'operations/operation-show/overdue.json', 0);
+});

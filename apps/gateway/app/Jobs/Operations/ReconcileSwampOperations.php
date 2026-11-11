@@ -29,7 +29,7 @@ use Throwable;
 
 /**
  * The one place that settles an Operation with its Swamp run. Every pass reads each open Operation against Swamp and projects
- * the ones whose run ended. It also expires an Operation at its budget, finds a run whose start confirmation was lost,
+ * the ones whose run ended. It also marks an Operation overdue at its soft limit, expires it at its hard limit, finds a run whose start confirmation was lost,
  * forwards a recorded cancel, and frees the target of a run that nothing proves ended. A failed read changes nothing; the
  * next pass reads again. The scheduler runs it every minute, and the event observer asks for a pass when a run ends.
  */
@@ -151,7 +151,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             $operation->refresh();
         }
 
-        return $operation;
+        return $expire->execute($operation);
     }
 
     /**

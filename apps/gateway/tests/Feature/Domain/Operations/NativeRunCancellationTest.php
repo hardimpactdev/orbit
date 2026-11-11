@@ -15,6 +15,7 @@ use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Jobs\Operations\ReconcileSwampOperations;
+use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
@@ -25,8 +26,8 @@ uses(LazilyRefreshDatabase::class);
 
 const RUN = 'ea55ab37-bcbe-4459-81dc-cbb397e7d870';
 
-/** A tasks.script of a group that started 20 minutes ago with a 360-second budget. */
-function runningScript(?string $run = RUN, int $minutes = 20): Operation
+/** A tasks.script of a group that started 40 minutes ago with a 360-second budget. */
+function runningScript(?string $run = RUN, int $minutes = 40): Operation
 {
     $group = Task::query()->create(['title' => 'Proof', 'brief' => 'Prove it', 'status' => TaskGroupStatus::Running]);
     $address = '10.44.0.'.(100 + $group->id);
@@ -287,7 +288,7 @@ it('leaves a run that is still going within its budget', function (): void {
     expect($operation->refresh()->status)->toBe(OperationStatus::Running);
 });
 
-it('expires a run that is still going at its budget and forwards the cancel in the same pass', function (): void {
+it('expires a run that is still going at its hard limit and forwards the cancel in the same pass', function (): void {
     $operation = runningScript();
     $socket = reconcileSocket($operation, 'running');
 
@@ -390,4 +391,18 @@ it('forwards a cancellation recorded before native start confirmation once the r
         ->and($operation->state['native_cancel_requested_at'] ?? null)->not->toBeNull()
         ->and($operation->state['native_cancel_confirmed_at'] ?? null)->not->toBeNull();
     expect(array_column($socket->frames, 'type'))->toContain('workflow.cancel');
+});
+
+it('marks a run overdue through reconciliation without forwarding a cancel', function (): void {
+    $operation = runningScript(minutes: 7);
+    $socket = reconcileSocket($operation, 'running');
+
+    reconcile();
+    reconcile();
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($operation->state)->toHaveKey('overdue_since')
+        ->and($operation->cancel_requested_at)->toBeNull()
+        ->and(array_column($socket->frames, 'type'))->not->toContain('workflow.cancel');
+    expect(Activity::query()->where('command', 'operation:overdue-alert')->count())->toBe(1);
 });

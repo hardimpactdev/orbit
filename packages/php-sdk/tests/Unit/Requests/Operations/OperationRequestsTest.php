@@ -245,3 +245,11 @@ it('preserves compact native step summaries in Operation JSON', function (): voi
     expect($operation->steps)->toBe($steps)->and($operation->toArray()['steps'])->toBe($steps);
     expect(OperationResponse::fromGatewayData(operation_payload(['steps' => []]), 'fixture-request')->toArray()['steps'])->toBe([]);
 });
+
+it('retains overdue_since through the typed Operation response', function (): void {
+    $response = OperationResponse::fromGatewayData(operation_payload(['status' => 'running', 'overdue_since' => '2026-11-11T10:06:00Z']), 'request');
+
+    expect($response->overdueSince)->toBe('2026-11-11T10:06:00Z')
+        ->and($response->toArray()['overdue_since'])->toBe('2026-11-11T10:06:00Z')
+        ->and($response->terminal())->toBeFalse();
+});

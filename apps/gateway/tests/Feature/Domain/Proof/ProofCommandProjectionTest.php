@@ -637,7 +637,7 @@ describe('a run that ends at its budget', function (): void {
         $file = 'swamp/proof/firewall/allow.cases.yaml';
         $batches = [['command' => 'firewall:allow', 'file' => $file, 'batch' => 'one', 'cases' => ['main']],
             ['command' => 'firewall:allow', 'file' => $file, 'batch' => 'two', 'cases' => ['deny']]];
-        $run->forceFill(['input' => [...$run->input, 'ci_pool' => true, 'assignments' => $batches, 'run_budget_seconds' => 600], 'started_at' => now()->subSeconds(601)])->save();
+        $run->forceFill(['input' => [...$run->input, 'ci_pool' => true, 'assignments' => $batches, 'run_budget_seconds' => 600], 'started_at' => now()->subSeconds(2401)])->save();
         $proof->update(['input' => [...$proof->input, 'selected_commands' => ['firewall:allow'], 'batches' => $batches]]);
         app(ProofBatchProjection::class)->applyChild($run, ...$child('one', PROOF_PASSED));
 

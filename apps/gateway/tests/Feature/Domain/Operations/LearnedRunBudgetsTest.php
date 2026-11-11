@@ -22,14 +22,13 @@ function learnedBudgetRun(string $kind, int $seconds, OperationStatus $status = 
         'sequence' => 2, 'attempts' => 1, 'started_at' => $finished->copy()->subSeconds($seconds), 'finished_at' => $finished]);
 }
 
-it('gives a kind whose only success was quick at least 15 minutes, so a larger run is not cancelled', function (): void {
-    // instance.migrate 16599 succeeded in 56 s; the learned budget of 120 s then cancelled migrate 16674 while its step still ran.
-    learnedBudgetRun('instance.migrate', 56);
+it('learns a two-minute soft limit from a quick success without a fifteen-minute floor', function (): void {
+    learnedBudgetRun('database.sqlite_seed', 56);
 
-    expect(OperationRunBudgets::historySeconds('instance.migrate'))->toBe(900);
+    expect(OperationRunBudgets::historySeconds('database.sqlite_seed'))->toBe(120);
 });
 
-it('keeps a learned budget above the floor at 1.5 times the longest success, rounded up to a minute', function (): void {
+it('keeps a learned budget at 1.5 times the longest success, rounded up to a minute', function (): void {
     learnedBudgetRun('database.sqlite_seed', 907);
 
     expect(OperationRunBudgets::historySeconds('database.sqlite_seed'))->toBe(1380);

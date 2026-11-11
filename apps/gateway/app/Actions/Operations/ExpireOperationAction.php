@@ -7,6 +7,7 @@ namespace App\Actions\Operations;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\NativeRunCancellation;
+use App\Domain\Operations\OperationOverdueAlerts;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -14,20 +15,26 @@ use App\Domain\Tasks\TaskVmAdmission;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
-/** Records Gateway budget expiry and a cancel request, and asks Swamp to stop the bound run; Swamp ends it. */
+/** Marks soft-limit overruns overdue; only the hard limit records expiry and asks Swamp to stop the bound run. */
 final readonly class ExpireOperationAction
 {
     public function execute(Operation $operation): Operation
     {
         $deadline = OperationRunBudgets::deadline($operation);
-        if ($operation->status->terminal() || $deadline === null || $deadline->isFuture() || ! DirectOperation::owns($operation)) {
+        $soft = OperationRunBudgets::softDeadline($operation);
+        if ($operation->status->terminal() || ! DirectOperation::owns($operation)
+            || (($deadline === null || $deadline->isFuture()) && ($soft === null || $soft->isFuture() || isset($operation->state['overdue_since'])))) {
             return $operation;
         }
 
         return DB::transaction(function () use ($operation): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            if ($current->status->terminal()) {
+                return $current;
+            }
+            app(OperationOverdueAlerts::class)->raise($current);
             $deadline = OperationRunBudgets::deadline($current);
-            if ($current->status->terminal() || $deadline === null || $deadline->isFuture()) {
+            if ($deadline === null || $deadline->isFuture()) {
                 return $current;
             }
             if (isset($current->input['capacity_request'])) {
@@ -39,14 +46,14 @@ final readonly class ExpireOperationAction
             $failure = $state['native_failure'] ?? null;
             $step = is_array($failure) && is_string($failure['failed_step'] ?? null) ? $failure['failed_step']
                 : ($current->failed_step ?? $current->current_step);
-            $seconds = OperationRunBudgets::seconds($current);
+            $seconds = OperationRunBudgets::hardSeconds($current);
             $state['native_timeout'] = ['budget_seconds' => $seconds, 'deadline' => $deadline->toISOString()];
             // What reopen() restores when the bound run turns out to have met its budget.
             $state['native_timeout_restore'] = ['cancel_requested' => $current->cancel_requested_at !== null,
                 'native_failure' => is_array($failure) && is_string($failure['detail'] ?? null)];
             if (! is_array($failure) || ! is_string($failure['detail'] ?? null)) {
                 $state['native_failure'] = ['failed_step' => $step,
-                    'detail' => "The Operation exceeded its {$seconds}-second run budget.", 'stderr_recorded' => false];
+                    'detail' => "The Operation exceeded its {$seconds}-second hard limit without a step transition.", 'stderr_recorded' => false];
             }
             app(OperationStore::class)->change($current, [
                 'status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'operation.timed_out',

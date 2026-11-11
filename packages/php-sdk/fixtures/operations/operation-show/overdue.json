@@ -1,0 +1,42 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Operations\\ShowOperationRequest",
+    "route": "GET /api/v1/operations/{operation}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "kind": "tasks.script",
+            "target_type": "task_group",
+            "target_id": 42,
+            "input": {
+                "run_budget_seconds": 360
+            },
+            "status": "running",
+            "sequence": 2,
+            "current_step": null,
+            "failed_step": null,
+            "error_code": null,
+            "result": null,
+            "cancel_requested": false,
+            "attempts": 1,
+            "triggered_by": null,
+            "caller_node_id": null,
+            "caller_node_name": null,
+            "created_at": "2026-11-11T10:00:00+00:00",
+            "started_at": "2026-11-11T10:00:00+00:00",
+            "finished_at": null,
+            "poll_after_seconds": 15,
+            "assistance": null,
+            "error": null,
+            "current_step_started_at": null,
+            "current_step_observed_at": null,
+            "steps": [],
+            "capacity_wait": null,
+            "overdue_since": "2026-11-11T10:06:00.000000Z"
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a846"
+        }
+    }
+}

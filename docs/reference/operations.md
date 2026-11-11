@@ -107,7 +107,7 @@ For example, `task_vm.image_refresh` has 10,800 seconds and `node.converge` 3,90
 
 A `tasks.script` and a `tasks.check` capture their budget at admission in `input.run_budget_seconds`, and the captured number is the Operation's run budget. Every script and every check captures the budget of its kind's history.
 
-The workflows set the captured number as the native `timeoutSec` of each of their SSH steps, so a step against a VM that is gone ends with the Operation.
+The workflows set the captured number as the native `timeoutSec` of each of their SSH steps. These native step limits still apply independently of the Gateway’s soft and hard limits.
 
 The other task VM workflows (`task-vm-workspace` and `task-maintenance-path`) limit their SSH steps to 3,900 seconds, the largest fixed budget of the Operations that call them.
 
@@ -125,7 +125,7 @@ A `proof.command` that older code admitted has no captured budget, for example o
 
 Otherwise, the Gateway uses the longest successful run of that kind completed in the last 14 days, multiplied by 1.5 and rounded up to a minute, with a minimum of one minute. It measures `started_at` to `finished_at` on succeeded Operations with a `swamp_run_id`. With no successful history, the budget is 30 minutes.
 
-The run budget is a soft limit. Passing it marks the Operation overdue, records `overdue_since` in API reads and `operation:show`, and raises one `operation.overdue` alert in Activity. The Operation keeps running. The reconciler caches each kind’s history budget for one pass.
+The run budget is a soft limit. Passing it marks the Operation overdue, records `overdue_since` in API reads and `operation:show`, and raises one `operation.overdue` alert in Activity (`operation:overdue-alert`) and through the [signed release webhook](/reference/gateway-recovery#webhook). The alert contains IDs, kind and limits, without inputs or output. The Operation keeps running. The reconciler caches each kind’s history budget for one pass.
 
 The hard limit is the greater of three times the soft limit and the soft limit plus 30 minutes. It counts from `current_step_observed_at`, the last observed step transition, or `started_at` when no step has been observed. A run that keeps changing steps can run beyond three times its soft limit. Only a run with no step transition for the hard limit is cancelled. This separates a slow run from a stuck run, so learned budgets need no 15-minute floor. Native step timeouts remain separate limits.
 

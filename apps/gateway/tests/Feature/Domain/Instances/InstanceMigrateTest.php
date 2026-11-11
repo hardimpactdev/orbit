@@ -1402,10 +1402,10 @@ it('projects the native restored end state across each post-quiesce exit', funct
     $worker = migrationWorker($instance);
     $operation = migrateStart($instance);
     $run = '0c69f6e8-bc50-4819-bcab-f3972557d2cc';
-    $started = now()->subHours(2)->toISOString();
+    $started = now()->subHours(5)->toISOString();
     $finished = now()->toISOString();
     $operation->forceFill(['status' => 'running', 'attempts' => 1, 'started_at' => $started,
-        'finished_at' => null, 'error_code' => null, 'cancel_requested_at' => $exit === 'cancel' ? now()->subHours(2)->addMinute() : null,
+        'finished_at' => null, 'error_code' => null, 'cancel_requested_at' => $exit === 'cancel' ? now()->subHours(5)->addMinute() : null,
         'state' => ['swamp_run_id' => $run]])->save();
     if ($expired) {
         app(ExpireOperationAction::class)->execute($operation);
@@ -1490,7 +1490,7 @@ it('review late restored history must preserve a newer migrate reservation', fun
     $worker = migrationWorker($instance);
     $operation = migrateStart($instance);
     $run = '0c69f6e8-bc50-4819-bcab-f3972557d2cc';
-    $started = now()->subHours(2)->toISOString();
+    $started = now()->subHours(5)->toISOString();
     $finished = now()->toISOString();
     $operation->forceFill(['status' => 'running', 'attempts' => 1, 'started_at' => $started,
         'finished_at' => null, 'error_code' => null, 'state' => ['swamp_run_id' => $run]])->save();
@@ -1567,7 +1567,7 @@ it('settles the real pinned decoder receipt with native abort or independent pha
     $run = $history['id'];
     $history['workflowName'] = 'operation-instance-migrate';
     $history['inputs'] = ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'instance.migrate'];
-    $history['startedAt'] = now()->subHours(2)->toISOString();
+    $history['startedAt'] = now()->subHours(5)->toISOString();
     $history['completedAt'] = now()->toISOString();
     $operation->forceFill(['status' => 'running', 'attempts' => 1, 'started_at' => $history['startedAt'],
         'cancel_requested_at' => $userCancel ? now()->subMinute() : null, 'state' => ['swamp_run_id' => $run]])->save();
@@ -1618,14 +1618,14 @@ it('settles the real pinned decoder receipt with native abort or independent pha
 it('fences a direct stale migrate projector by the runtime owner under the Instance lock', function (): void {
     $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
     $old = migrateStart($instance);
-    $old->forceFill(['status' => 'running', 'attempts' => 1, 'started_at' => now()->subHours(2), 'state' => ['swamp_run_id' => 'old-root']])->save();
+    $old->forceFill(['status' => 'running', 'attempts' => 1, 'started_at' => now()->subHours(5), 'state' => ['swamp_run_id' => 'old-root']])->save();
     app(ExpireOperationAction::class)->execute($old);
     $old->refresh()->update(['lock_key' => null]);
     $new = migrateStart($instance);
     $runtime = $instance->runtime()->firstOrFail();
 
     $settled = app(InstanceMigrateProjection::class)->apply($old->refresh(), ['run_id' => 'old-root', 'status' => 'failed',
-        'started_at' => now()->subHours(2)->toISOString(), 'finished_at' => now()->toISOString(),
+        'started_at' => now()->subHours(5)->toISOString(), 'finished_at' => now()->toISOString(),
         'result' => ['moved' => false, 'restored' => true, 'ready' => false]]);
 
     expect($settled->result)->toBe(['moved' => false, 'restored' => true, 'ready' => false])
@@ -1651,7 +1651,7 @@ it('adversarial late moved migration does not hold a write transaction during th
     $operation = migrateStart($instance);
     $t3 = migrateServer($instance);
     $root = '0c69f6e8-bc50-4819-bcab-f3972557d2cc';
-    $operation->update(['status' => 'running', 'attempts' => 1, 'started_at' => now()->subHours(2),
+    $operation->update(['status' => 'running', 'attempts' => 1, 'started_at' => now()->subHours(5),
         'state' => [...$operation->state, 'swamp_run_id' => $root]]);
     if ($expireBeforeRead) {
         app(ExpireOperationAction::class)->execute($operation);
@@ -1661,7 +1661,7 @@ it('adversarial late moved migration does not hold a write transaction during th
         'commit' => str_repeat('e', 40), 't3' => $t3];
     $history = ['id' => $root, 'workflowName' => 'operation-instance-migrate', 'status' => $nativeStatus,
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $node->id, 'kind' => 'instance.migrate'],
-        'startedAt' => now()->subHours(2)->toISOString(), 'completedAt' => now()->toISOString(),
+        'startedAt' => now()->subHours(5)->toISOString(), 'completedAt' => now()->toISOString(),
         'jobs' => [['name' => 'migrate', 'steps' => [['name' => 'finish', 'status' => 'succeeded',
             'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]]]]]];
     if ($nativeStatus === 'cancelled') {
@@ -1714,7 +1714,7 @@ it('review an already settled pre-fix timeout keeps a stale runtime but permits 
     $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
     $worker = migrationWorker($instance);
     $old = migrateStart($instance);
-    $old->update(['status' => 'failed', 'finished_at' => now()->subHours(2), 'error_code' => 'operation.timed_out',
+    $old->update(['status' => 'failed', 'finished_at' => now()->subHours(5), 'error_code' => 'operation.timed_out',
         'lock_key' => null, 'result' => ['error_code' => 'operation.timed_out'],
         'state' => ['native_timeout' => ['native_terminal_status' => 'cancelled']]]);
     $runtime = $instance->runtime()->firstOrFail();
@@ -1737,7 +1737,7 @@ function demandMigrate(Instance $instance): Operation
 {
     $operation = migrateStart($instance);
     $operation->update(['status' => 'failed', 'error_code' => 'operation.timed_out', 'attempts' => 1,
-        'started_at' => now()->subHours(2), 'finished_at' => now()->subHour(), 'lock_key' => null,
+        'started_at' => now()->subHours(5), 'finished_at' => now()->subHour(), 'lock_key' => null,
         'state' => ['swamp_run_id' => '0c69f6e8-bc50-4819-bcab-f3972557d2cc',
             'native_timeout' => ['budget_seconds' => 5100, 'deadline' => now()->subMinutes(35)->toISOString(), 'native_terminal_status' => 'unproven'],
             'native_timeout_restore' => ['cancel_requested' => false, 'native_failure' => false],
@@ -1752,7 +1752,7 @@ function demandMigrateHistory(Operation $operation, Closure $read): void
         'error_code' => 'instance.migrate_processes_failed'];
     $history = ['id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-instance-migrate', 'status' => 'cancelled',
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'instance.migrate'],
-        'startedAt' => now()->subHours(2)->toISOString(), 'completedAt' => now()->toISOString(),
+        'startedAt' => now()->subHours(5)->toISOString(), 'completedAt' => now()->toISOString(),
         'jobs' => [['name' => 'migrate', 'steps' => [
             ['name' => 'container-processes', 'status' => 'failed', 'error' => 'Command exited with code -1'],
             ['name' => 'finish', 'status' => 'succeeded', 'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]],
