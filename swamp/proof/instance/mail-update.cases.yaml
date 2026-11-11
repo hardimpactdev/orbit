@@ -1,0 +1,21 @@
+command: instance:mail:update
+chart: instance/mail-update
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+uncovered:
+  main: "Gateway and Ansible fixtures prove endpoint admission, two IPv4 listeners, private target rules and unchanged repeats; owner live proof sends one tagged mail without a Node converge."
+  conflict: "A foreign port listener or unit file skips setup and names the reason without stopping a Project Process."
+  refusals: "Checkout, production, missing Mailpit, lifecycle work and a stopped container start no setup."
+cases:
+  - id: invalid-id
+    batch: fresh-fleet
+    covers: []
+    summary: Reject a nonnumeric Instance locally.
+    act:
+      - cli:
+          run: [instance:mail:update, invalid]
+          forms: [json, human]
+          expect: {exit: 1, code: instance.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}

@@ -1,0 +1,45 @@
+sequenceDiagram
+  %% Development mail: install the private SMTP path and IPv4 loopback proxies.
+  %% status: draft
+  %% command: instance:mail:update
+  %% kind: instance.mail_update
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-dev Node<br/>Instance container
+  CLI->>GW: instance:mail:update 42
+  %%> Command:
+  %%> - `orbit instance:mail:update INSTANCE`
+  %%> - syntax: `<instance> [--json]`
+  Note over GW: Admit mail update
+  %%> When:
+  %%> - only a development container on the Node running the main Mailpit; hold its Instance lock
+  %%> On failure:
+  %%> - unsupported placement or unfinished lifecycle work starts no run
+  GW->>SW: Start run, full intent<br/>operation-instance-mail-update
+  GW-->>CLI: 202 Accepted<br/>Operation ID
+  SW->>N: Apply mail path and listeners<br/>Ansible mail phase
+  %%> When:
+  %%> - refuse a stopped container; never start it
+  %%> Why:
+  %%> - one reusable step admits the exact SMTP endpoint, merges the own ACL rule, and installs two loopback socket proxies
+  %%> On failure:
+  %%> - retain applied state for an idempotent retry; do not touch the workspace or application Processes
+  alt applied or unchanged
+    N-->>SW: Mail path result<br/>applied · unchanged · skipped
+    %%> When:
+    %%> - a foreign listener or unit file skips setup with a named reason, without stopping the Project's Process
+    SW-->>GW: Record mail result
+  else phase failed
+    N--xSW: Mail path failed
+    SW--xGW: Record failure
+  end
+  loop until terminal
+    CLI->>GW: operation:show<br/>Operation ID
+    GW-->>CLI: Status and result
+  end
