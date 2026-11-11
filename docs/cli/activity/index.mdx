@@ -86,6 +86,8 @@ Caddy gives up on a Gateway request after 600 seconds and sends the client a 504
 
 ## Redaction
 
+The `[REDACTED]` marker is reserved; [Process definition updates](/reference/processes-and-schedules#project-definitions) refuse strings containing it unless existing replay handling applies.
+
 The Gateway redacts `properties` before it stores a record, for every command:
 
 - A field is stored as `[REDACTED]` when any word of its name is `key`, `token`, `secret`, `password`, `passwd`, `passphrase`, `credential`, `bearer`, `pem`, `authorization`, or `cookie`, singular or plural. Words are split on case changes and separators, so `cliproxy_management_key`, `managementKEY`, `apiToken`, `X-Api-Key`, and `Set-Cookie` all match. The joined forms `apikey`, `appkey`, `authtoken`, `accesstoken`, and `privatekey` count too. `valkey_connection` does not match. A new field that matches this rule is redacted without a code change.
