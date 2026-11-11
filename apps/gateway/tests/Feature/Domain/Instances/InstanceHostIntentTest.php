@@ -94,7 +94,7 @@ describe('the container branch of the app-dev converge', function (): void {
         $intent = app(InstanceHostIntent::class)->for($node);
 
         expect(array_diff_key($intent, array_flip(['incus', 'image', 'folders', 'egress', 'ingress', 'profile_config', 'dev_ports', 'bridge_admitted_at'])))->toBe([
-            'project' => 'orbit-instances', 'network' => 'orbitinst0', 'pool' => 'orbit-instances', 'cidr' => '10.253.0.0/24',
+            'project' => 'orbit-instances', 'network' => 'orbitinst0', 'nic_acl' => 'orbitinst0-proxy', 'pool' => 'orbit-instances', 'cidr' => '10.253.0.0/24',
             'address' => '10.253.0.1/24', 'build_address' => '10.253.0.254', 'dhcp_range' => '10.253.0.2-10.253.0.253', 'stock' => 'ubuntu-26.04-instance-stock',
             'forwarder_port' => 8319, 'bridge_endpoints' => [], 'ids' => 201 * 65536, 'arc' => true,
         ])
@@ -152,7 +152,7 @@ describe('the container branch of the app-dev converge', function (): void {
         $intent = app(InstanceHostIntent::class)->for($node);
 
         // The task bridge holds the first /24 of the range, so the Instance bridge takes the next one.
-        expect($intent)->toMatchArray(['project' => 'orbit-instances', 'network' => 'orbitinst0', 'pool' => 'orbit-instances',
+        expect($intent)->toMatchArray(['project' => 'orbit-instances', 'network' => 'orbitinst0', 'nic_acl' => 'orbitinst0-proxy', 'pool' => 'orbit-instances',
             'cidr' => '10.253.1.0/24', 'ids' => 201 * 65536, 'arc' => false]);
     });
 

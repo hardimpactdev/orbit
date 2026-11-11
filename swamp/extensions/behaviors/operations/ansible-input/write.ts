@@ -155,6 +155,7 @@ export const behavior = {
                 const cloneArgv = container?.clone ? [
                     "python3", "-c", await Deno.readTextFile(ctx.extensionFile("scripts/instance_clone.py")),
                     JSON.stringify(container), await Deno.readTextFile(ctx.extensionFile("scripts/instance_clone_guest.py")),
+                    await Deno.readTextFile(ctx.extensionFile("ansible/instance_network.py")),
                     (args.intent.ssh_execution as { target: { user: string } }).target.user, privatePath,
                 ] : [];
                 const value = Output.parse({

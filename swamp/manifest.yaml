@@ -126,11 +126,11 @@ additionalFiles:
   - ansible/tasks/instance-host.yml
   - ansible/tasks/instance-network-check.yml
   - ansible/tasks/instance-network-nic-check.yml
-  - ansible/tasks/instance-network-device-check.yml
   - ansible/tasks/instance-network-move.yml
   - ansible/tasks/instance-network-move-nic.yml
   - ansible/tasks/instance-bridge-rules.yml
   - ansible/instance_bridge.py
+  - ansible/instance_network.py
   - ansible/tasks/instance-bridge-refresh.yml
   - ansible/tasks/instance-image.yml
   - ansible/tasks/task-container-host-prepare.yml

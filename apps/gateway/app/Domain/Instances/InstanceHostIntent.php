@@ -29,6 +29,8 @@ final readonly class InstanceHostIntent
 
     public const string Network = 'orbitinst0';
 
+    public const string NicAcl = self::Network.'-proxy';
+
     /** The Incus storage pool the Node provides: ZFS, so a copy is a clone, or `dir` on a nested proof Node. */
     public const string Pool = 'orbit-instances';
 
@@ -100,7 +102,7 @@ final readonly class InstanceHostIntent
         [$gateway, $last] = $subnet->usableRange();
 
         return [
-            'project' => self::Project, 'network' => self::Network, 'pool' => self::Pool, 'cidr' => $cidr,
+            'project' => self::Project, 'network' => self::Network, 'nic_acl' => self::NicAcl, 'pool' => self::Pool, 'cidr' => $cidr,
             'address' => $gateway.'/'.$subnet->prefixLength(),
             // The image build container takes the bridge's last address, which no Instance gets.
             'build_address' => $last,

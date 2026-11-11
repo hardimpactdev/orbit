@@ -186,6 +186,7 @@ describe('a clone of the container default', function (): void {
                 ['route' => 'yes', 'interface_in' => 'orbit', 'interface_out' => 'orbitinst0', 'to_ip' => '10.253.0.3', 'to_port' => '3773', 'proto' => 'tcp',
                     'rule' => 'allow', 'from_ip' => 'any', 'comment' => "orbit:instance-{$id}-t3"],
             ])
+            ->and($container['nic_acl'])->toBe('orbitinst0-proxy')
             ->and($container['acl_rules']['ingress'][1])->toBe(['action' => 'allow', 'protocol' => 'tcp', 'destination_port' => '3773', 'state' => 'enabled'])
             ->and(json_encode($operation->input))->not->toContain('placeholder-model-key');
     });

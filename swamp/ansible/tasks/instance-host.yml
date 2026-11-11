@@ -110,8 +110,8 @@
   changed_when: false
 
 - name: Create the common NIC ACL
-  when: instances.network ~ '-proxy' not in (instance_proxy_acls.stdout | from_json | map(attribute='name') | list)
-  ansible.builtin.command: { argv: [incus, network, acl, create, "{{ instances.network }}-proxy", --project, default] }
+  when: instances.nic_acl not in (instance_proxy_acls.stdout | from_json | map(attribute='name') | list)
+  ansible.builtin.command: { argv: [incus, network, acl, create, "{{ instances.nic_acl }}", --project, default] }
   changed_when: true
 
 - name: Converge the common NIC ACL
@@ -130,10 +130,10 @@
           destination_port: "{{ instances.egress.port | string }}"
           state: enabled
       ingress: "{{ instances.ingress }}"
-    proxy_now: "{{ instance_proxy_acls.stdout | from_json | selectattr('name', 'equalto', instances.network ~ '-proxy') | first | default({}) }}"
+    proxy_now: "{{ instance_proxy_acls.stdout | from_json | selectattr('name', 'equalto', instances.nic_acl) | first | default({}) }}"
   when: proxy_now.get('egress', []) != proxy_rules.egress or proxy_now.get('ingress', []) != proxy_rules.ingress
   ansible.builtin.command:
-    argv: [incus, network, acl, edit, "{{ instances.network }}-proxy", --project, default]
+    argv: [incus, network, acl, edit, "{{ instances.nic_acl }}", --project, default]
     stdin: "{{ proxy_rules | to_json }}"
   changed_when: true
 
@@ -184,7 +184,7 @@
         name: eth0
         network: "{{ instances.network }}"
         security.port_isolation: 'true'
-        security.acls: "{{ instances.network }}-proxy"
+        security.acls: "{{ instances.nic_acl }}"
         security.acls.default.egress.action: reject
         security.acls.default.ingress.action: reject
       orbit-runtime:

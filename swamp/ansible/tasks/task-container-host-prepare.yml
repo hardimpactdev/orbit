@@ -182,11 +182,30 @@
       register: container_probe_leftover
       changed_when: false
       failed_when: container_probe_leftover.rc != 0 and 'not found' not in container_probe_leftover.stderr
-    - name: Make the clone probe and its copy, and start the copy once
+    - name: Make the clone probe and its copy
       ansible.builtin.command: { argv: "{{ probe + item }}" }
       loop:
         - [init, "{{ container_host.alias }}", orbit-clone-probe, --config, security.idmap.isolated=true]
         - [copy, orbit-clone-probe, orbit-clone-probe-copy]
+      changed_when: false
+    - name: Guard the Instance clone probe before starting it
+      when: container_host.kind == 'instances'
+      block:
+        - name: Read the clone probe's effective devices
+          ansible.builtin.command:
+            argv: [incus, query, --, "/1.0/instances/orbit-clone-probe-copy?project={{ container_host.project }}"]
+          register: probe_nic_read
+          changed_when: false
+        - name: Check every effective Instance clone probe NIC
+          ansible.builtin.include_tasks: instance-network-nic-check.yml
+          vars:
+            network_container: "{{ probe_nic_read.stdout | from_json }}"
+            network_name: "{{ container_host.network }}"
+            network_failure: instance.container_network_unsafe
+            expected_network_device: eth0
+    - name: Start and stop the clone probe copy once
+      ansible.builtin.command: { argv: "{{ probe + item }}" }
+      loop:
         - [start, orbit-clone-probe-copy]
         - [stop, --force, orbit-clone-probe-copy]
       changed_when: false

@@ -1,10 +1,23 @@
 ---
-# Shared effective-device selection for the host audit and the start guard. Incus replaces whole profile devices.
+# The native clone and Ansible use the same gate. Expanded devices include profile inheritance and local overrides.
+- name: Check the effective NIC gates on the Instance bridge
+  tags: [always]
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_network.py') }}"
+      - "{{ network_name }}"
+      - "{{ expected_network_device | default('') }}"
+    stdin: "{{ network_container | to_json }}"
+  register: network_nic_check
+  changed_when: false
+  failed_when: false
+
 - name: Refuse an unsafe effective NIC on the Instance bridge
   tags: [always]
-  when: >-
-    network_device.value.get('type', '') == 'nic'
-    and (network_device.value.get('network', '') == network_name or network_device.value.get('parent', '') == network_name)
-  ansible.builtin.include_tasks: instance-network-device-check.yml
-  loop: "{{ network_container.expanded_devices | dict2items }}"
-  loop_control: { loop_var: network_device, label: "{{ network_container.name }}/{{ network_device.key }}" }
+  ansible.builtin.assert:
+    that: network_nic_check.rc == 0
+    fail_msg: >-
+      {{ network_failure if expected_network_device is defined else network_failure ~ ': ' ~ network_nic_check.stdout }}
+    quiet: true

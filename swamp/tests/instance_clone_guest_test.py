@@ -123,6 +123,7 @@ class CloneGuestTest(unittest.TestCase):
                         "clone.py",
                         json.dumps(container),
                         "guest-source",
+                        "network-check-source",
                         "orbit",
                         folder,
                         "workspace",
