@@ -37,6 +37,10 @@ final class ProcessData extends Data
         public ?int $memoryBytes = null,
         public ?string $user = null,
         public bool $restartOnDeploy = true,
+        /** ISO 8601 UTC completion time of the last container inspection, null before any inspection or for host Processes. */
+        public ?string $observedAt = null,
+        /** Failure of the last container inspection, separate from the Process lifecycle error. */
+        public ?string $runtimeErrorCode = null,
     ) {}
 
     public static function fromModel(
@@ -44,6 +48,8 @@ final class ProcessData extends Data
         string $runtimeStatus,
         ?float $cpu = null,
         ?int $memoryBytes = null,
+        ?string $observedAt = null,
+        ?string $runtimeErrorCode = null,
     ): self {
         $failedStep = $process->getAttribute('failed_step');
         $errorCode = $process->getAttribute('error_code');
@@ -62,6 +68,8 @@ final class ProcessData extends Data
             desiredState: $process->desired_state->value,
             status: $process->status->value,
             runtimeStatus: $runtimeStatus,
+            observedAt: $observedAt,
+            runtimeErrorCode: $runtimeErrorCode,
             failedStep: ValidatedData::nullableString($failedStep),
             errorCode: ValidatedData::nullableString($errorCode),
             cpu: $cpu,
