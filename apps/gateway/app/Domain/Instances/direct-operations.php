@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\DatabaseServers\DatabaseDestroyRun;
-use App\Domain\Instances\Deployment\InstanceDeployProjection;
+use App\Domain\Instances\Deployment\InstanceDeployProjectionRouter;
 use App\Domain\Instances\Deployment\InstanceRollbackProjection;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
@@ -80,7 +80,7 @@ return [
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-deploy-operation-[1-9][0-9]*-credential$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-environment-(?:testing-)?[1-9][0-9]*$']],
-        'projection' => InstanceDeployProjection::class,
+        'projection' => InstanceDeployProjectionRouter::class,
     ],
     // The link read back after the swap is the end check; every step runs on Node 209 over official SSH.
     'instance.rollback' => ['workflow' => 'operation-instance-rollback', 'workflow_inputs' => true,

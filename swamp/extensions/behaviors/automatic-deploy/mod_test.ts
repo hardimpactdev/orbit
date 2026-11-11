@@ -562,37 +562,3 @@ Deno.test("development and production entry points never discover each other's t
         await behavior.methods.development.execute({ instances: [] }, context)
     );
 });
-
-Deno.test("production interruption history uses the shared ten, twenty, three retry rule", async () => {
-    const f = new PolicyFixture();
-    f.gateway.observation.gate = null;
-    for (const count of [1, 2, 3]) {
-        f.gateway.row({
-            status: "interrupted",
-            commit: B,
-            triggered_by: "swamp:auto-deploy",
-            caller_node_id: 9,
-            failed_step: null,
-            error_code: "operation.native_failed",
-        });
-        assertEquals(
-            await f.tick(),
-            count === 3 ? "commit_failed" : "backing_off",
-        );
-        if (count < 3) {
-            f.advance(count === 1 ? 9 : 19);
-            assertEquals(await f.tick(), "backing_off");
-            f.advance(1);
-            assertEquals(await f.tick(), "started");
-            // The next fixture row is that admitted Operation's terminal history.
-            const op = f.gateway.observation.holder!;
-            op.status = "interrupted";
-            op.result = {
-                deployment_id: f.gateway.observation.history.at(-1)!.id + 1,
-            };
-            f.gateway.observation.holder = null;
-        }
-    }
-    f.gateway.chain([A, B, "c".repeat(40)]);
-    assertEquals(await f.tick(), "started");
-});

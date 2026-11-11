@@ -331,7 +331,7 @@ Development tests only the current head, not older green ancestors. Each later t
 
 The `auto_deploy` flag has the same meaning for development and production: on permits automatic deployment; off excludes selection and admission. A new container default starts with it on when creation succeeds and records its first seed. An expand-only data migration enables existing ready container defaults; it changes neither checkout Instances nor production settings.
 
-Turn automatic deployment off for one ready container default with `orbit instance:auto-deploy:disable <instance>`. Turn it back on with `orbit instance:auto-deploy:enable <instance>`. Disabling does not cancel a deployment already running, but queued automatic work rechecks the flag before execution. Manual deployment remains available. Both commands refuse a checkout Instance with `instance.auto_deploy_container_default_required`: a user's working tree is never an automatic deployment target.
+Turn automatic deployment off for one ready container default with `orbit instance:auto-deploy:disable <instance>`. Turn it back on with `orbit instance:auto-deploy:enable <instance>`. Disabling does not cancel a deployment already running, but queued automatic work rechecks the flag before execution. Turning the flag off and on preserves the per-commit retry clock and attempt count, including pending and retained failures. Only an actual manual deployment history row resets that accounting. Manual deployment remains available. Both commands refuse a checkout Instance with `instance.auto_deploy_container_default_required`: a user's working tree is never an automatic deployment target.
 
 Before rolling code back past the ready-container eligibility fix:
 
@@ -346,7 +346,7 @@ Rolling code back restores the old unsafe eligibility; reversing only the data m
 
 Each admitted request counts once against its pinned commit. A failed, cancelled, interrupted, timed-out or fenced request uses one failure total: retry after 10 minutes, then 20 minutes, then stop after three failures. Cancellation counts even before execution; otherwise repeated cancellation could retry one head without limit. Production also counts cancellation as failure, but blocks it immediately under its lasting-failure rule. `deployment.paused` settles without counting. A successful Operation proves `up_to_date` only when the current container seed matches.
 
-The matrix below covers every outcome and intent state. `R` means settle and apply that retry total unless a later manual deployment resets it; `S` means settle without counting, then deploy if the seed differs; `D` means deploy when green and due. `M` means clear pending intent, discard accounting before the newer manual deployment, then evaluate the current seed and head. Every terminal cell permits a newer green head after settlement while the Instance is eligible and automatic deployment is on.
+The matrix below crosses terminal outcomes and selected transitions with all five intent states. Named follow-ups below record the remaining transition coverage. `R` means settle and apply that retry total unless a later manual deployment resets it; `S` means settle without counting, then deploy if the seed differs; `D` means deploy when green and due. `M` means clear pending intent, discard accounting before the newer manual deployment, then evaluate the current seed and head. Every terminal cell permits a newer green head after settlement while the Instance is eligible and automatic deployment is on.
 
 Gateway target exclusion still applies: a timed-out run holds its target until native settlement or the Gateway's 60-minute hold limit. A running cancellation request stays nonterminal until Swamp ends it. A finished Swamp run also stays busy or deploying while its Gateway projection is unfinished; reconciliation or budget expiry must end the Operation first.
 
@@ -367,8 +367,15 @@ Gateway target exclusion still applies: a timed-out run holds its target until n
 | `manual-superseded` | Original terminal row plus a newer manual deployment row; current seed may differ | M | M | M after receipt | M | M after receipt |
 | `ineligible-before-execution` | Worker refuses: failed Operation, normally no row; `deployment.paused` does not count | Skip; D without evidence on recovery | Keep intent while skipped; S for paused, R otherwise on recovery | Keep key while skipped; receipt then S for paused, R otherwise | Keep admitted identity; S for paused, R otherwise on recovery | Keep admitted identity; receipt then S for paused, R otherwise |
 | `ineligible-after-execution` | Native outcome may settle; no row until projection; removed runtime can leave expiry responsible | Skip; evaluate history when eligible again | Keep admitted identity; reconcile when eligible again | Keep admitted identity; read receipt when eligible again | Keep admitted identity; reconcile when eligible again | Keep admitted identity; read receipt when eligible again |
+| `toggle-after-failures` | Real enable response and automatic history after one, two or three failures | Preserve 10/20-minute clock and stop after three | Settle once; preserve accounting | Receipt then settle once | Settle original intent once | Receipt for original key; settle once |
+| `toggle-pending` / `toggle-running` | Real enable watermark; queued or running Operation, normally no row yet | Busy; preserve recorded and retained failures | Deploying; preserve intent and failures | Receipt then deploying | Deploying under original identity | Original receipt then deploying |
+| `manual-running` | Normally no manual row yet; Operation holds target | Busy | Settle old result, then busy | Receipt then settle, then busy | Settle original result, then busy | Original receipt then settle, then busy |
+| `interleaved-heads` | Old timed-out Operation, lazy late running row, newer automatic head queued, running or succeeded | Preserve old pin once; busy or up to date for newer head | Settle old intent once | Receipt then settle once | Settle original identity once | Original receipt then settle once |
+| `merge-check-changed` | Current gate changes before selection; admitted commit is frozen | Read current gate | Keep admitted work | Keep admitted key | Keep original identity | Keep original key |
 | `replay` | Same Operation and row; no second admission. Real path: `replays one development admission while queued, while running and after success` | Same outcome once | Same outcome once | Receipt, same outcome once | Original receipt, same outcome once | Original receipt, same outcome once |
 | `refused-before-admission` | No Operation or row | D; no attempt yet | Impossible: no ID exists | Resolve absent key, then R | Impossible: no ID exists | Resolve original key, then R |
+
+Development policy owns its decoder, outcome classification and receipt handling in a separate module. Production policy retains its original decoder and decisions. The Gateway selects the production or development projector at one router; development terminal rules never run through the production projector. Production guard fixtures compare the production receipts, history and retry decisions against the same harness on `orbit-main`.
 
 Policy tests are named `matrix <stem> / <intent>` in `development_test.ts`, with intents `none`, `id`, `key`, `stale-id`, and `stale-key`. The two stale forms are separate tests of the same old-commit rule. Tests check the same head and a newer green head where eligible. Cells without a pending intent reuse history or retained evidence from settlement; without either, there is no known attempt to count. The timeout and start-refusal tests cover both row shapes; the interruption test covers old null and new pinned SHAs.
 
@@ -376,7 +383,24 @@ Replay uses the underlying terminal outcome, so it never adds a second failure. 
 
 The `matrix original-command <status> / stale-key` tests exercise original command recovery through the real Gateway client. The `matrix reconciled-success / id` and `/ key` tests prove that a receipt read which advances the seed cannot redeploy that SHA.
 
+Remaining named transition follow-ups: `rename-destroy-identity` (404, rename recovery and replacement identity across selection, admission and execution), `gate-rename-after-admission` (configured check renamed while queued or running), and `interleaved-heads-other-terminals` (older non-timeout outcomes reconciling after a newer admission). Admission freezes the selected SHA and check verdict; the worker rechecks eligibility, not GitHub checks. Green-to-red check reruns after admission do not cancel admitted work.
+
 History is created lazily by [InstanceDeployProjection](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Instances/Deployment/InstanceDeployProjection.php) and exposed unchanged by [InstanceDeploymentData](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Data/Instances/InstanceDeploymentData.php). [CancelOperationAction](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Actions/Operations/CancelOperationAction.php) distinguishes unstarted cancellation from a running cancel request; [InstanceDeploymentRecorder](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Instances/Deployment/InstanceDeploymentRecorder.php) maps native cancellation to failed history and preserves interruption. [ExpireOperationAction](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Actions/Operations/ExpireOperationAction.php) owns the finite timeout hold.
+
+#### Production regression guard
+
+The production guard pins `orbit-main` at `63229342f25fc1acec6463c059c43f356d1622e2`. `ProductionDeployGuardTest.php` records real production admission, cancellation, expiry and projection through public receipt/history DTOs. The TypeScript harness crosses each end state and pinned, unpinned or absent history with all five intent forms. It also consumes the Gateway's real projected rows. Each cell compares complete receipts, history, state, decisions and production request paths at 0, 10 and 20 minutes, then against a newer head at 30 minutes. The committed golden keeps a SHA-256 of each complete snapshot and readable decisions; it also pins production policy source.
+
+Regenerate both goldens only on a detached checkout of that baseline. Copy the candidate guard tests and harness there unchanged, with the existing goldens. Install the Gateway dependencies in that checkout, then run:
+
+```bash
+cd apps/gateway
+ORBIT_PRODUCTION_GOLDEN_OUTPUT=tests/Fixtures/production-deploy-orbit-main.json vendor/bin/pest tests/Feature/Domain/Instances/ProductionDeployGuardTest.php
+cd ../../swamp
+ORBIT_GENERATE_PRODUCTION_GOLDEN=1 deno test -A extensions/behaviors/automatic-deploy/production_guard_test.ts
+```
+
+Copy `apps/gateway/tests/Fixtures/production-deploy-orbit-main.json` and `swamp/extensions/behaviors/automatic-deploy/production_guard.golden.json` back to the candidate. The copied TypeScript files are `production_guard_fixture.ts` and `production_guard_test.ts` under `swamp/extensions/behaviors/automatic-deploy/`; the Gateway test is under `tests/Feature/Domain/Instances/`. Regeneration must never run against candidate production sources. The real toggle fixture is separate: run `UPDATE_DEVELOPMENT_TOGGLE_FIXTURE=1 vendor/bin/pest tests/Feature/Domain/Instances/DevelopmentDeployPrecheckTest.php --filter='exports real off on'` in the candidate Gateway, then format its emitted JSON with Deno.
 
 ### Production Instances
 

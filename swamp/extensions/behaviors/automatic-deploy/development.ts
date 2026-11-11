@@ -13,7 +13,7 @@ import {
     RowSchema,
     sha,
     terminalOperation,
-} from "./policy.ts";
+} from "./development-policy.ts";
 
 export const DevelopmentState = z.object({
     sequence: z.number().int().nonnegative().default(0),
@@ -232,8 +232,10 @@ export async function tickDevelopment(
                 }
                 return operationId;
             };
+            // The enable watermark resumes production pause policy; it is not
+            // evidence of a manual deployment and must never erase attempts.
             const manual = Math.max(
-                instance.auto_deploy.resumed_after,
+                0,
                 ...history.filter((r) =>
                     r.kind === "deploy" && !isAutomaticDeployment(r)
                 ).map((r) => r.id),

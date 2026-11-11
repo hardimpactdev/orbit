@@ -81,7 +81,7 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             $text = static fn (mixed $value, int $limit): ?string => $value === null ? null : mb_strcut(ValidatedData::string($value), 0, $limit, 'UTF-8');
             $facts = ['deployment_id' => $historyId, 'release' => $text(ValidatedData::object($payload['release'] ?? [])['name'] ?? null, 128),
                 'selected_release' => $text(ValidatedData::object($payload['selected_release'] ?? [])['name'] ?? null, 128),
-                'commit' => $text($this->development($locked) && $status !== 'succeeded' ? InstanceDeploymentIntent::commit($locked) : ($payload['commit'] ?? null), 64), 'failed_step' => $text($payload['failed_step'] ?? null, 255)];
+                'commit' => $text($payload['commit'] ?? null, 64), 'failed_step' => $text($payload['failed_step'] ?? null, 255)];
             if (isset($payload['warnings'])) {
                 $facts['warnings'] = ValidatedData::integer($payload['warnings']);
             }
@@ -111,13 +111,6 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             } elseif (! InstanceDeploymentIntent::development($variant) && $facts['selected_release'] !== null && ($payload['selection_confirmed'] ?? false) === true) {
                 $instance->update(['checkout_path' => ValidatedData::string($admitted['home']).'/releases/'.$facts['selected_release']]);
             }
-            if (InstanceDeploymentIntent::development($variant) && $status === 'succeeded'
-                && ($instance->auto_deploy_state['head'] ?? null) === $facts['commit']) {
-                $instance->auto_deploy_state = [...($instance->auto_deploy_state ?? []),
-                    'result' => AutomaticDeployResult::UpToDate->value, 'commit' => $facts['commit'],
-                    'since' => now()->toIso8601String(), 'error_code' => null, 'message' => null];
-                $instance->save();
-            }
             if (is_array($payload['php_identity'] ?? null)) {
                 $instance->forceFill(ValidatedData::object($payload['php_identity']))->saveOrFail();
             }
@@ -144,19 +137,17 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
         if (! is_int($id)) {
             return;
         }
-        $operation->update(['result' => [...($operation->result ?? []), 'deployment_id' => $id]]);
         $this->history->recordNative(InstanceDeployment::query()->where('instance_id', $operation->target_id)->findOrFail($id), 'failed', $operation->error_code,
-            ['release' => null, 'selected_release' => null, 'commit' => InstanceDeploymentIntent::commit($operation), 'failed_step' => 'admission']);
+            ['release' => null, 'selected_release' => null, 'commit' => null, 'failed_step' => 'admission']);
     }
 
-    /** An expired run leaves any existing history row failed and names it in the receipt. */
+    /** A production deployment recorded its running row at admission; the expired run leaves it failed. */
     public function timedOut(Operation $operation): void
     {
         $id = $operation->state['deployment_id'] ?? null;
         if (! is_int($id)) {
             return;
         }
-        $operation->update(['result' => [...($operation->result ?? []), 'deployment_id' => $id]]);
         $this->history->recordNative(InstanceDeployment::query()->where('instance_id', $operation->target_id)->findOrFail($id), 'failed', 'operation.timed_out',
             ['release' => $this->development($operation) ? null : InstanceDeploymentIntent::releaseName($operation), 'selected_release' => null,
                 'commit' => InstanceDeploymentIntent::commit($operation), 'failed_step' => null]);

@@ -40,6 +40,9 @@ function fixture() {
         checks: Check[] = [];
     const writes: { name: string; version: number }[] = [];
     const operationReads: number[] = [];
+    const operations = new Map<number, Operation>();
+    const receipts = new Map<string, Operation>();
+    let holderId: number | null = null;
     const source = { head: B };
     let holder = false,
         lost = false,
@@ -65,8 +68,11 @@ function fixture() {
         else if (path.includes("/deployment-source/checks?")) {
             data = { gate: instance.auto_deploy.gate, runs: checks };
         } else if (path.includes("/operations?")) {
-            data = holder && path.endsWith(operation.status)
-                ? [{ ...operation, target_type: "instance", target_id: 7 }]
+            const active = holderId === null
+                ? operation
+                : operations.get(holderId)!;
+            data = holder && path.endsWith(active.status)
+                ? [{ ...active, target_type: "instance", target_id: 7 }]
                 : [];
         } else if (path === "/api/v1/routes/3" && method === "PATCH") {
             data = { id: 200, status: repairStatus };
@@ -99,9 +105,11 @@ function fixture() {
             if (lost) throw new Error("Lost admission reply");
             return Promise.resolve(structuredClone(operation));
         },
-        receipt: () => {
+        receipt: (_id: number, _commit: string, key: string) => {
             receiptReads++;
-            return Promise.resolve(structuredClone(operation));
+            return Promise.resolve(
+                structuredClone(receipts.get(key) ?? operation),
+            );
         },
         resolve: () => {
             throw new Error("An existing receipt must not be fenced");
@@ -116,7 +124,7 @@ function fixture() {
                         kind: "route.update",
                         status: repairStatus,
                     }
-                    : structuredClone(operation),
+                    : structuredClone(operations.get(id) ?? operation),
             );
         },
     };
@@ -158,6 +166,12 @@ function fixture() {
         writes,
         operation,
         operationReads,
+        operations,
+        receipts,
+        heldBy: (id: number) => {
+            holderId = id;
+            holder = true;
+        },
         run,
         emitted,
         busy: () => {
@@ -1702,6 +1716,387 @@ for (const intent of matrixIntents) {
             await f.run("2026-10-31T05:11:00.000Z");
             assertEquals(f.starts.length, before + 1);
             assertEquals(f.starts.at(-1)?.endsWith(f.source.head), true);
+        }
+    });
+}
+
+// This fixture is emitted and asserted by the real Gateway disable/enable API
+// test in DevelopmentDeployPrecheckTest.php, including the actual history DTO.
+const toggleCells = JSON.parse(
+    Deno.readTextFileSync(
+        new URL("./fixtures/development-toggle.json", import.meta.url),
+    ),
+) as {
+    failures: number;
+    disabled: { enabled: boolean; development_eligible: boolean; gate: null };
+    enabled: {
+        enabled: boolean;
+        development_eligible: boolean;
+        gate: null;
+        resumed_after: number;
+    };
+    history: Row[];
+}[];
+async function realToggle(f: ReturnType<typeof fixture>, recorded: number) {
+    const cell = toggleCells[recorded];
+    const before = structuredClone(f.memory.get("development-7"));
+    Object.assign(f.instance.auto_deploy, cell.disabled);
+    await f.run();
+    assertEquals(f.memory.get("development-7"), before);
+    assertEquals(f.starts, []);
+    Object.assign(f.instance.auto_deploy, cell.enabled);
+}
+for (const intent of matrixIntents) {
+    for (const count of [1, 2, 3]) {
+        for (const evidence of ["recorded", "mixed"] as const) {
+            Deno.test(`matrix toggle-after-${count}-failures-${evidence} / ${intent}`, async () => {
+                const f = fixture();
+                const recorded = evidence === "recorded" ? count : count - 1;
+                f.history.push(
+                    ...structuredClone(toggleCells[recorded].history),
+                );
+                const pending = matrixPending(intent);
+                f.memory.set("development-7", {
+                    pending,
+                    unrecorded_failures: !pending && evidence === "mixed"
+                        ? [{
+                            key: "settled-no-row",
+                            commit: B,
+                            deployment_id: null,
+                            manual_after: 0,
+                            finished_at: now,
+                        }]
+                        : [],
+                });
+                Object.assign(f.operation, {
+                    status: "failed",
+                    attempts: 1,
+                    error_code: "operation.native_failed",
+                    result: evidence === "recorded"
+                        ? { deployment_id: count }
+                        : null,
+                });
+                await realToggle(f, recorded);
+                await f.run();
+                // Settle a saved intent, then apply the same count on the next tick.
+                await f.run();
+                assertEquals(f.starts, []);
+                assertEquals(f.memory.get("development-7")?.pending, null);
+                assertEquals(
+                    f.memory.get("development-7")?.result,
+                    count === 3 ? "commit_failed" : "backing_off",
+                );
+                assertEquals(
+                    (f.memory.get("development-7")
+                        ?.unrecorded_failures as unknown[]).length,
+                    evidence === "mixed" ? 1 : 0,
+                );
+                const due = count === 1
+                    ? "2026-10-31T05:10:00.000Z"
+                    : "2026-10-31T05:20:00.000Z";
+                await f.run(
+                    count === 1
+                        ? "2026-10-31T05:09:59.999Z"
+                        : "2026-10-31T05:19:59.999Z",
+                );
+                assertEquals(f.starts, []);
+                f.operation.status = "queued";
+                await f.run(due);
+                assertEquals(f.starts.length, count === 3 ? 0 : 1);
+                if (count === 3) {
+                    await f.run("2026-11-01T05:00:00.000Z");
+                    assertEquals(f.starts, []);
+                }
+                // A genuine manual row resets both retained and recorded failures.
+                f.memory.set("development-7", {
+                    ...f.memory.get("development-7"),
+                    pending: null,
+                });
+                f.history.push({
+                    ...failed(4, true),
+                    caller_node_id: null,
+                    status: "succeeded",
+                    commit: A,
+                    error_code: null,
+                    failed_step: null,
+                });
+                f.operation.status = "queued";
+                const beforeManual = f.starts.length;
+                await f.run("2026-11-01T05:01:00.000Z");
+                assertEquals(f.starts.length, beforeManual + 1);
+                assertEquals(
+                    f.memory.get("development-7")?.unrecorded_failures,
+                    [],
+                );
+                assertEquals(
+                    (f.memory.get("development-7")?.pending as {
+                        manual_after: number;
+                    }).manual_after,
+                    4,
+                );
+            });
+        }
+    }
+    for (const status of ["queued", "running"] as const) {
+        Deno.test(`matrix toggle-${status === "queued" ? "pending" : "running"} / ${intent}`, async () => {
+            const f = fixture();
+            f.history.push(...structuredClone(toggleCells[2].history));
+            const pending = matrixPending(intent);
+            f.memory.set("development-7", { pending });
+            Object.assign(f.operation, {
+                status,
+                attempts: status === "queued" ? 0 : 1,
+            });
+            f.holder();
+            await realToggle(f, 2);
+            await f.run();
+            assertEquals(f.starts, []);
+            assertEquals(
+                f.memory.get("development-7")?.result,
+                pending ? "deploying" : "busy",
+            );
+            assertEquals(
+                f.memory.get("development-7")?.pending,
+                pending ? { ...pending, operation_id: 100 } : null,
+            );
+            // The third failure has no row: worker refusal or expiry. It still
+            // counts after a toggle, and a new green head remains independent.
+            Object.assign(f.operation, {
+                status: "failed",
+                error_code: status === "queued"
+                    ? "swamp.start_refused"
+                    : "operation.timed_out",
+                result: null,
+            });
+            f.holder(false);
+            if (!pending) {
+                // Without an intent the terminal Operation is not discoverable;
+                // supply its real pinned history as the third failure instead.
+                f.history.push(structuredClone(toggleCells[3].history[0]));
+            }
+            await f.run();
+            await f.run("2026-10-31T06:30:00.000Z");
+            assertEquals(f.starts, []);
+            assertEquals(
+                f.memory.get("development-7")?.result,
+                "commit_failed",
+            );
+            assertEquals(
+                (f.memory.get("development-7")
+                    ?.unrecorded_failures as unknown[]).length,
+                pending ? 1 : 0,
+            );
+            greenHead(f, "c".repeat(40));
+            f.operation.status = "queued";
+            await f.run("2026-10-31T06:31:00.000Z");
+            assertEquals(f.starts.length, 1);
+            assertEquals(f.starts[0].endsWith(f.source.head), true);
+        });
+    }
+}
+
+for (const intent of matrixIntents) {
+    Deno.test(`matrix manual-running / ${intent}`, async () => {
+        const f = fixture();
+        const pending = matrixPending(intent);
+        f.history.push(...structuredClone(toggleCells[2].history));
+        f.memory.set("development-7", { pending });
+        const previous = {
+            ...f.operation,
+            status: "failed",
+            result: { deployment_id: 2 },
+        };
+        f.operations.set(100, previous);
+        if (pending) f.receipts.set(pending.key, previous);
+        // Development history is lazy: a running manual deploy has no row yet.
+        const manual: Operation = {
+            ...f.operation,
+            id: 200,
+            status: "running",
+            triggered_by: "operator",
+            caller_node_id: null,
+        };
+        f.operations.set(manual.id, manual);
+        f.heldBy(manual.id);
+        await f.run();
+        await f.run();
+        assertEquals(f.starts, []);
+        assertEquals(f.memory.get("development-7")?.result, "busy");
+        assertEquals(f.history.length, 2);
+        assertEquals(f.memory.get("development-7")?.unrecorded_failures, []);
+        // Only completed manual history resets the old automatic failures.
+        manual.status = "succeeded";
+        f.history.push({
+            ...failed(3, true),
+            status: "succeeded",
+            commit: A,
+            failed_step: null,
+            error_code: null,
+            caller_node_id: null,
+        });
+        f.holder(false);
+        await f.run();
+        assertEquals(f.starts.length, 1);
+        assertEquals(
+            (f.memory.get("development-7")?.pending as { manual_after: number })
+                .manual_after,
+            3,
+        );
+    });
+    for (const stage of ["queued", "running", "succeeded"] as const) {
+        Deno.test(`matrix interleaved-heads-${stage} / ${intent}`, async () => {
+            const f = fixture();
+            const C = "c".repeat(40), D = "d".repeat(40);
+            greenHead(f, C);
+            const pending = matrixPending(intent);
+            const old: Operation = {
+                ...f.operation,
+                status: "failed",
+                error_code: "operation.timed_out",
+                result: null,
+            };
+            f.operations.set(old.id, old);
+            if (pending) f.receipts.set(pending.key, old);
+            f.memory.set("development-7", {
+                pending,
+                unrecorded_failures: pending ? [] : [{
+                    key: "older-terminal",
+                    commit: B,
+                    deployment_id: null,
+                    manual_after: 0,
+                    finished_at: now,
+                }],
+            });
+            const newer: Operation = {
+                ...f.operation,
+                id: 101,
+                status: stage,
+                input: { commit: C },
+                result: stage === "succeeded" ? { deployment_id: 2 } : null,
+            };
+            f.operations.set(newer.id, newer);
+            if (stage !== "succeeded") f.heldBy(newer.id);
+            else {
+                f.instance.seed_commit = C;
+                f.history.push({
+                    ...failed(2),
+                    status: "succeeded",
+                    commit: C,
+                    error_code: null,
+                    failed_step: null,
+                });
+            }
+            await f.run();
+            assertEquals(f.starts, []);
+            assertEquals(
+                f.memory.get("development-7")?.result,
+                stage === "succeeded" ? "up_to_date" : "busy",
+            );
+            // After expiry, late projection starts history lazily but sees the
+            // terminal Operation and returns without finishing that row. It
+            // cannot replace retained pinned failure evidence with a running row.
+            f.history.push({
+                ...failed(1),
+                status: "running",
+                commit: null,
+                finished_at: null,
+                error_code: null,
+                failed_step: null,
+            });
+            await f.run();
+            assertEquals(f.starts, []);
+            if (stage !== "succeeded") {
+                f.holder(false);
+                newer.status = "succeeded";
+                newer.result = { deployment_id: 2 };
+                f.instance.seed_commit = C;
+                f.history.push({
+                    ...failed(2),
+                    status: "succeeded",
+                    commit: C,
+                    error_code: null,
+                    failed_step: null,
+                });
+                await f.run();
+                assertEquals(
+                    f.memory.get("development-7")?.result,
+                    "up_to_date",
+                );
+            }
+            greenHead(f, D);
+            f.operation.id = 102;
+            f.operation.status = "queued";
+            f.operation.input.commit = D;
+            await f.run();
+            assertEquals(f.starts.length, 1);
+            assertEquals(f.starts[0].endsWith(D), true);
+            assertEquals(f.history.filter((r) => r.id === 1).length, 1);
+            assertEquals(
+                (f.memory.get("development-7")?.unrecorded_failures as {
+                    commit: string;
+                }[]).filter((r) => r.commit === B).length,
+                1,
+            );
+        });
+    }
+    Deno.test(`matrix merge-check-changed / ${intent}`, async () => {
+        for (const previous of [null, "Old checks"]) {
+            const f = fixture();
+            const pending = matrixPending(intent);
+            f.memory.set("development-7", { pending });
+            f.instance.auto_deploy.gate = previous;
+            f.checks.push({
+                name: "Old checks",
+                head_sha: B,
+                app: "github-actions",
+                status: "completed",
+                conclusion: "success",
+            });
+            // Observe the old configuration first, while quiet or already admitted.
+            if (!pending) f.source.head = A;
+            await f.run();
+            assertEquals(
+                f.memory.get("development-7")?.result,
+                pending ? "deploying" : "up_to_date",
+            );
+            f.source.head = B;
+            f.instance.auto_deploy.gate = "Required checks";
+            await f.run();
+            assertEquals(f.starts, []);
+            assertEquals(
+                f.memory.get("development-7")?.result,
+                pending ? "deploying" : "gate_pending",
+            );
+            if (pending) {
+                // A green verdict admitted earlier is frozen even if its rerun
+                // turns red. The next selection reads the current gate again.
+                f.checks.push({
+                    name: "Required checks",
+                    head_sha: B,
+                    app: "github-actions",
+                    status: "completed",
+                    conclusion: "failure",
+                });
+                f.operation.status = "running";
+                await f.run();
+                assertEquals(
+                    f.memory.get("development-7")?.result,
+                    "deploying",
+                );
+                assertEquals(
+                    f.requests.filter((r) => r.path.includes("/checks?"))
+                        .length,
+                    0,
+                );
+                f.operation.status = "failed";
+                await f.run();
+                await f.run();
+                assertEquals(
+                    f.memory.get("development-7")?.result,
+                    "gate_failed",
+                );
+                assertEquals(f.starts, []);
+            }
         }
     });
 }

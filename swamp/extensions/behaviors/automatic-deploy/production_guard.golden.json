@@ -1,0 +1,3560 @@
+{
+    "success/pinned/none": {
+        "sha256": "6bdd8e1dc88e2a8b853e21f050cba56ce293c04a502b5d59440f890a5a9f3f71",
+        "decisions": [
+            "up_to_date",
+            "up_to_date",
+            "up_to_date",
+            "started"
+        ]
+    },
+    "success/pinned/id": {
+        "sha256": "00555218106f05491fc3f88daf727a7780d664f9b8a1a837bfc265649c868f8b",
+        "decisions": [
+            "up_to_date",
+            "up_to_date",
+            "up_to_date",
+            "started"
+        ]
+    },
+    "success/pinned/key": {
+        "sha256": "63ba332955bf5cd6d53e5ae8efa5e77ce3f865f6b6437667b7f2f0de98af0bdd",
+        "decisions": [
+            "up_to_date",
+            "up_to_date",
+            "up_to_date",
+            "started"
+        ]
+    },
+    "success/pinned/stale-id": {
+        "sha256": "f3de127c130e48f8a133bdae2c1576676e8b5ea2b137afb21a920cce86a9e420",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "success/pinned/stale-key": {
+        "sha256": "a9cd7fab1cd532cf4088e1a1993bc9f4e2e878caad0279ad69c7d3e6a6b6d1b5",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "success/unpinned/none": {
+        "sha256": "d3e8c9843b02578c4558fc6f35190a3616e14b7ea1800b06d3bda6ad0a234bdf",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "success/unpinned/id": {
+        "sha256": "7f108eca695e24c43f79517ae6e40dab1952cf5a88b4e55b4c7f4fe4a94414de",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "success/unpinned/key": {
+        "sha256": "96b793d3263cbb14bb463ff2ec4d191119ca27b2bfdbade978cf3808cf87ca00",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "success/unpinned/stale-id": {
+        "sha256": "7f108eca695e24c43f79517ae6e40dab1952cf5a88b4e55b4c7f4fe4a94414de",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "success/unpinned/stale-key": {
+        "sha256": "96b793d3263cbb14bb463ff2ec4d191119ca27b2bfdbade978cf3808cf87ca00",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "success/absent/none": {
+        "sha256": "c57fb60610c25a6e11f5dfdd78997746b2f71da8f8d1bc94fbc808e36989fb61",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "success/absent/id": {
+        "sha256": "d0621f495caf2621380495e962bed070b29b2a19d9d366e43b66a626caff3fe2",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "success/absent/key": {
+        "sha256": "6c1b997ce4a1b84dd18e4acc5af40f8bec63bc7f4879414939c496a6ad44eef8",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "success/absent/stale-id": {
+        "sha256": "d0621f495caf2621380495e962bed070b29b2a19d9d366e43b66a626caff3fe2",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "success/absent/stale-key": {
+        "sha256": "6c1b997ce4a1b84dd18e4acc5af40f8bec63bc7f4879414939c496a6ad44eef8",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "failure/pinned/none": {
+        "sha256": "b3b3accb6fabab01dd05949d407ce587e3df59bba51a3f7ba474ad2ecdd29a5c",
+        "decisions": [
+            "backing_off",
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "failure/pinned/id": {
+        "sha256": "54f8f9469c018520c2446f330effaed0fd2ce0cbfc1ec2528ffa22b4bb8a3299",
+        "decisions": [
+            "backing_off",
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "failure/pinned/key": {
+        "sha256": "8394d589045bd645cbc9dfba3134bc01f568394559355b0b65b1432aa36e7874",
+        "decisions": [
+            "backing_off",
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "failure/pinned/stale-id": {
+        "sha256": "e12f602f6e6bea123c3306a2e529673eee3b4eb26b56036147b21f679b251659",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "failure/pinned/stale-key": {
+        "sha256": "00f6ea86be9a8bdea377e6719eea28a7413af31344a6ba6a6caac54168fe2537",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "failure/unpinned/none": {
+        "sha256": "3ec4ca8140f5967dfb17c29d29c8bce8f83c3d88ed9da90529e4f1a4648919d2",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "failure/unpinned/id": {
+        "sha256": "de50647109d98b8f49a95f9a63dfbddf99cade0b3e3cfe7586e5347b86feb662",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "failure/unpinned/key": {
+        "sha256": "7c148f11a49d3fa1702f771a0192b64e9c2a731bdd1fc8756cea98730ea7a678",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "failure/unpinned/stale-id": {
+        "sha256": "de50647109d98b8f49a95f9a63dfbddf99cade0b3e3cfe7586e5347b86feb662",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "failure/unpinned/stale-key": {
+        "sha256": "7c148f11a49d3fa1702f771a0192b64e9c2a731bdd1fc8756cea98730ea7a678",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "failure/absent/none": {
+        "sha256": "adac903a2d38a35f3033116dee306d988c4ab0552aae5bd921fdbccde3bcf401",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "failure/absent/id": {
+        "sha256": "b9c8dc1e2aca800716437240141adad45a8f350562da729810a69e0ba8fc6ed0",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "failure/absent/key": {
+        "sha256": "bcca11c185b9bc9e46ff7c6be40b4b354f722c76e4af24ba0ecfab8e5c95b78c",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "failure/absent/stale-id": {
+        "sha256": "b9c8dc1e2aca800716437240141adad45a8f350562da729810a69e0ba8fc6ed0",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "failure/absent/stale-key": {
+        "sha256": "bcca11c185b9bc9e46ff7c6be40b4b354f722c76e4af24ba0ecfab8e5c95b78c",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "failure/retry2/none": {
+        "sha256": "c21ed514bef7cbc6adabed494721cb8cdfea21979de056ef03f9514a479a9c37",
+        "decisions": [
+            "backing_off",
+            "backing_off",
+            "started",
+            "deploying"
+        ]
+    },
+    "failure/retry2/id": {
+        "sha256": "fce139245556d6deeb2987371640ebcc0ec62234a83707819e99b2552d14777b",
+        "decisions": [
+            "backing_off",
+            "backing_off",
+            "started",
+            "deploying"
+        ]
+    },
+    "failure/retry2/key": {
+        "sha256": "f44f60b0fd0889e995d08774c3670ac84e50a9ea354460693ffca3ef5ba1a4a7",
+        "decisions": [
+            "backing_off",
+            "backing_off",
+            "started",
+            "deploying"
+        ]
+    },
+    "failure/retry2/stale-id": {
+        "sha256": "d9a5e79104407aa2ec999e10769bdeb637f560bdb8765493f9b7d2c9d9abe650",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "failure/retry2/stale-key": {
+        "sha256": "5a6aa822ad57c17365576199fcb675a5c0e5c6727f5dfff527315bf6f26464a9",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "failure/retry3/none": {
+        "sha256": "628bb5567644e41fa664d607a3179cdef24572c7368069e6e33c88be0876ecb3",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "failure/retry3/id": {
+        "sha256": "d2507a9ba6a573b2693dc33f83f4577c1981672c7543e4e6a75d0fa441d38e27",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "failure/retry3/key": {
+        "sha256": "5fa463bd4bf6a5387b04f036551187acccc1ecbf8878bb7b7c2177843a3472af",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "failure/retry3/stale-id": {
+        "sha256": "cf6da4d7571556a87a2d10fb9d8490e32451f9a01af3f863f1f48d155c21bb84",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "failure/retry3/stale-key": {
+        "sha256": "595da61b118fadb2da4fe9a77aa2f25780d398a188a0aeb0cfedacb99281c147",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "lasting-failure/pinned/none": {
+        "sha256": "99157f3c5547804d2180fe23f0ea01973590e824646e1993156f00d082ef6f88",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "lasting-failure/pinned/id": {
+        "sha256": "1e659167b59a62dff96df5e39367a4fc16f678b1cf9dc2bb1ad75036519775a2",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "lasting-failure/pinned/key": {
+        "sha256": "e407b5c4d9c4ed8df67bc5b2aea1ef9c92ba8bd3162641bdfb2657cffd46452f",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "lasting-failure/pinned/stale-id": {
+        "sha256": "d8e23a92d34352cb1f0825d6437b70baa72d6825182e0e7b025f06353da9672e",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "lasting-failure/pinned/stale-key": {
+        "sha256": "94076bdd2fa37b5349325480b3b56392f0baac1c539309dcfb71cdd1250e95b9",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "lasting-failure/unpinned/none": {
+        "sha256": "5d323f2a8a227891227147aa2ee4a2fb721d3458339cc80cc5861632f1a64d06",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "lasting-failure/unpinned/id": {
+        "sha256": "10989300fa7c8f16de9d12b0962a6b28e99f37911cb3f500008939f7909b1b2c",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "lasting-failure/unpinned/key": {
+        "sha256": "efd5ce5ddfc6f1b96aa93824a47227358b147e7e24629221b1df686863a551bb",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "lasting-failure/unpinned/stale-id": {
+        "sha256": "10989300fa7c8f16de9d12b0962a6b28e99f37911cb3f500008939f7909b1b2c",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "lasting-failure/unpinned/stale-key": {
+        "sha256": "efd5ce5ddfc6f1b96aa93824a47227358b147e7e24629221b1df686863a551bb",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "lasting-failure/absent/none": {
+        "sha256": "113528e0ef2d796cb09b6ca54adc661ab2074991c3d2794e375b5fc7ac486171",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "lasting-failure/absent/id": {
+        "sha256": "0d58d8e44b4847bb35650e5555dc5819c0c93b769942d7c662cc5b2922329d00",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "lasting-failure/absent/key": {
+        "sha256": "9a0e903ee04cced7968927a747ea51ee9ab5cd41c6a5f5a427fc0692b499dda1",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "lasting-failure/absent/stale-id": {
+        "sha256": "0d58d8e44b4847bb35650e5555dc5819c0c93b769942d7c662cc5b2922329d00",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "lasting-failure/absent/stale-key": {
+        "sha256": "9a0e903ee04cced7968927a747ea51ee9ab5cd41c6a5f5a427fc0692b499dda1",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "start-refusal/pinned/none": {
+        "sha256": "3279c31b9666f1e82fb5968e0b049138e917545d37b610b393f7d6e2bb811dc3",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "start-refusal/pinned/id": {
+        "sha256": "50d761a8069e68f8d8e00637bc2fddbca060fad7dd35af23674cba472ed69495",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "start-refusal/pinned/key": {
+        "sha256": "5271a798d6a456f9d1e25e74d6a9dd72b1cfbca12b830fc00dd95f29353929a1",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "start-refusal/pinned/stale-id": {
+        "sha256": "f6a71d986e89bafab83b7ba183b1f049545ed416c1096a6b7fed3bf161185691",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "start-refusal/pinned/stale-key": {
+        "sha256": "4beea1a71ef95694672832dd36f2d1a86011bf8e1e7364a81a17a08a78211ec5",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "start-refusal/unpinned/none": {
+        "sha256": "16cb2b15022c43a990f4e0e75f9345ffb9e4aa0100c41b7ab83244d50f50ec9c",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "start-refusal/unpinned/id": {
+        "sha256": "7c5e8b0f72eda3abe8448a26ee834151aa36d2462e1d8b5a5149be4976f9ba87",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "start-refusal/unpinned/key": {
+        "sha256": "0c01c412a39eaef48185ee3de41861c0d4ec2c56f2f6543a7a7621a23d521d29",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "start-refusal/unpinned/stale-id": {
+        "sha256": "7c5e8b0f72eda3abe8448a26ee834151aa36d2462e1d8b5a5149be4976f9ba87",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "start-refusal/unpinned/stale-key": {
+        "sha256": "0c01c412a39eaef48185ee3de41861c0d4ec2c56f2f6543a7a7621a23d521d29",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "start-refusal/absent/none": {
+        "sha256": "efd1a6f4b7647e2d8657223197c96a53fa7a6e4cc79dd5d1ae35619a266f7601",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "start-refusal/absent/id": {
+        "sha256": "077d29df627af8c71584a683164b841b9bfcfec15d7b6546c4b1b4b8f2f463ef",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "start-refusal/absent/key": {
+        "sha256": "377a917fbed5321d49c87b304634d5d85fac3465f46c418ce537a146c4136b0b",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "start-refusal/absent/stale-id": {
+        "sha256": "077d29df627af8c71584a683164b841b9bfcfec15d7b6546c4b1b4b8f2f463ef",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "start-refusal/absent/stale-key": {
+        "sha256": "377a917fbed5321d49c87b304634d5d85fac3465f46c418ce537a146c4136b0b",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "queued-cancel/pinned/none": {
+        "sha256": "b63ed02d69ae6c702fd45260c33bb1aa65a80051f8bbdfe38259d9fa818810a2",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "queued-cancel/pinned/id": {
+        "sha256": "b9e264ed47f76be7ceb780280214d5e2dc92f58b67af9e345dc43e3be9cd48b0",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "queued-cancel/pinned/key": {
+        "sha256": "518069819390d7a0f16e5ccdac9aad765df9d714749aad1f9451af3be830c14b",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "queued-cancel/pinned/stale-id": {
+        "sha256": "831e658264d581b0be7dd0d325975d0bd26650546b11bd5aff028b2e8932e94f",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "queued-cancel/pinned/stale-key": {
+        "sha256": "c1d5312cfc8af7aa2da3f5a61514001be472c55e2ffd4c0c5ace25dda3588106",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "queued-cancel/unpinned/none": {
+        "sha256": "8a69e23216426d0dc515ff361c5dc3675f9726a4701317d729a98e45e64fea1f",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "queued-cancel/unpinned/id": {
+        "sha256": "9990c53c94a59982b2644dc0d804547954717b00d0f52e10b5aefcabc568d798",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "queued-cancel/unpinned/key": {
+        "sha256": "941b07ed956e4f59f2041b695294ba8e692457c5b3656029b5f156efb10e67c9",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "queued-cancel/unpinned/stale-id": {
+        "sha256": "9990c53c94a59982b2644dc0d804547954717b00d0f52e10b5aefcabc568d798",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "queued-cancel/unpinned/stale-key": {
+        "sha256": "941b07ed956e4f59f2041b695294ba8e692457c5b3656029b5f156efb10e67c9",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "queued-cancel/absent/none": {
+        "sha256": "604c1df6b820fb36a468f5fa4988352679b51fff6e7552b211dc154cf7db4f26",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "queued-cancel/absent/id": {
+        "sha256": "39979efe40c62d4367a7e24309b6028dd71b86507a3064354299a15456a3b045",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "queued-cancel/absent/key": {
+        "sha256": "35fbfc0ff48045127d02dcf90e91ede3377c363de2b71a21fcf7ce6d35b3e438",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "queued-cancel/absent/stale-id": {
+        "sha256": "39979efe40c62d4367a7e24309b6028dd71b86507a3064354299a15456a3b045",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "queued-cancel/absent/stale-key": {
+        "sha256": "35fbfc0ff48045127d02dcf90e91ede3377c363de2b71a21fcf7ce6d35b3e438",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "cancellation-request/pinned/none": {
+        "sha256": "131cded7459ff3272870709a4ebb7b02cc6a1266b530756b91e9f060010ec8fe",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "busy"
+        ]
+    },
+    "cancellation-request/pinned/id": {
+        "sha256": "4a1488ea73e899fcfaa39699808af0d2d8df90a9a58a7accad7dbc74b57a159c",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "cancellation-request/pinned/key": {
+        "sha256": "bcd3cca404514cc8dc5504fb4bb2ef21307d9e67c9a5f389ad21023c18e53684",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "cancellation-request/pinned/stale-id": {
+        "sha256": "4a1488ea73e899fcfaa39699808af0d2d8df90a9a58a7accad7dbc74b57a159c",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "cancellation-request/pinned/stale-key": {
+        "sha256": "bcd3cca404514cc8dc5504fb4bb2ef21307d9e67c9a5f389ad21023c18e53684",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "cancellation-request/unpinned/none": {
+        "sha256": "56aa69882fa995abb38b0d6957731a1ec76580b70c7eb83987dfe4f4c7b06b88",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "busy"
+        ]
+    },
+    "cancellation-request/unpinned/id": {
+        "sha256": "6ee3159451cd3626000a57c29c8c747ff7026795bfdfe0592586d0c0e3da93b8",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "cancellation-request/unpinned/key": {
+        "sha256": "059677e043456439413a5ad305deb38ab3b172b74ebd35deeb232f4bfcd8853c",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "cancellation-request/unpinned/stale-id": {
+        "sha256": "6ee3159451cd3626000a57c29c8c747ff7026795bfdfe0592586d0c0e3da93b8",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "cancellation-request/unpinned/stale-key": {
+        "sha256": "059677e043456439413a5ad305deb38ab3b172b74ebd35deeb232f4bfcd8853c",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "cancellation-request/absent/none": {
+        "sha256": "cdb346af16f8f0f58a97246a0197740bd378776db5de419c8810d722ebbce8d8",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "busy"
+        ]
+    },
+    "cancellation-request/absent/id": {
+        "sha256": "2fbf51a7111c09eb5a2347556d2096438e5cd2466d814391645c575b0c9accba",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "cancellation-request/absent/key": {
+        "sha256": "fa0c7b6cd5079bdc44f0bb11d695a2df01a3382266cfad36cf50f8636a8a7309",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "cancellation-request/absent/stale-id": {
+        "sha256": "2fbf51a7111c09eb5a2347556d2096438e5cd2466d814391645c575b0c9accba",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "cancellation-request/absent/stale-key": {
+        "sha256": "fa0c7b6cd5079bdc44f0bb11d695a2df01a3382266cfad36cf50f8636a8a7309",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projection-unfinished/pinned/none": {
+        "sha256": "131cded7459ff3272870709a4ebb7b02cc6a1266b530756b91e9f060010ec8fe",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "busy"
+        ]
+    },
+    "projection-unfinished/pinned/id": {
+        "sha256": "4a1488ea73e899fcfaa39699808af0d2d8df90a9a58a7accad7dbc74b57a159c",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projection-unfinished/pinned/key": {
+        "sha256": "bcd3cca404514cc8dc5504fb4bb2ef21307d9e67c9a5f389ad21023c18e53684",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projection-unfinished/pinned/stale-id": {
+        "sha256": "4a1488ea73e899fcfaa39699808af0d2d8df90a9a58a7accad7dbc74b57a159c",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projection-unfinished/pinned/stale-key": {
+        "sha256": "bcd3cca404514cc8dc5504fb4bb2ef21307d9e67c9a5f389ad21023c18e53684",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projection-unfinished/unpinned/none": {
+        "sha256": "56aa69882fa995abb38b0d6957731a1ec76580b70c7eb83987dfe4f4c7b06b88",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "busy"
+        ]
+    },
+    "projection-unfinished/unpinned/id": {
+        "sha256": "6ee3159451cd3626000a57c29c8c747ff7026795bfdfe0592586d0c0e3da93b8",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projection-unfinished/unpinned/key": {
+        "sha256": "059677e043456439413a5ad305deb38ab3b172b74ebd35deeb232f4bfcd8853c",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projection-unfinished/unpinned/stale-id": {
+        "sha256": "6ee3159451cd3626000a57c29c8c747ff7026795bfdfe0592586d0c0e3da93b8",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projection-unfinished/unpinned/stale-key": {
+        "sha256": "059677e043456439413a5ad305deb38ab3b172b74ebd35deeb232f4bfcd8853c",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projection-unfinished/absent/none": {
+        "sha256": "cdb346af16f8f0f58a97246a0197740bd378776db5de419c8810d722ebbce8d8",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "busy"
+        ]
+    },
+    "projection-unfinished/absent/id": {
+        "sha256": "2fbf51a7111c09eb5a2347556d2096438e5cd2466d814391645c575b0c9accba",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projection-unfinished/absent/key": {
+        "sha256": "fa0c7b6cd5079bdc44f0bb11d695a2df01a3382266cfad36cf50f8636a8a7309",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projection-unfinished/absent/stale-id": {
+        "sha256": "2fbf51a7111c09eb5a2347556d2096438e5cd2466d814391645c575b0c9accba",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projection-unfinished/absent/stale-key": {
+        "sha256": "fa0c7b6cd5079bdc44f0bb11d695a2df01a3382266cfad36cf50f8636a8a7309",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "running-cancel/pinned/none": {
+        "sha256": "f4bd92ef1f1a1963a6342132b734c1246a83a8b502722f658ae2a12bbe7aa501",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "running-cancel/pinned/id": {
+        "sha256": "e47fa222895f4c0725ed7601de1f7004af1a75d0098e175cf31deabb270bed25",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "running-cancel/pinned/key": {
+        "sha256": "9e15d0b1a753f36fda991b5511591227e0608a27cf5f11b1ceefe3249b6d63ca",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "running-cancel/pinned/stale-id": {
+        "sha256": "f387c89b8cfe06c738cb75dfab4625adea0e7e807b06ca4d1b233996c7ca48fc",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "running-cancel/pinned/stale-key": {
+        "sha256": "1149c9a0678c400cad18faeb949b1417393a90803ff44e3a82e96b458a62c108",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "running-cancel/unpinned/none": {
+        "sha256": "8b6909029daa42a642a6d9679ba5d3e75ff8fe4f044e28cb00ee137d56a95136",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "running-cancel/unpinned/id": {
+        "sha256": "4e4796e21203420abf2e4cd184e67121337d8ffedbfd96f28c505d9ea1ff623e",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "running-cancel/unpinned/key": {
+        "sha256": "bb4efa0347a024ee0f7925b78fcdacac446582afb4ef1332a96291f33c0190d7",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "running-cancel/unpinned/stale-id": {
+        "sha256": "4e4796e21203420abf2e4cd184e67121337d8ffedbfd96f28c505d9ea1ff623e",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "running-cancel/unpinned/stale-key": {
+        "sha256": "bb4efa0347a024ee0f7925b78fcdacac446582afb4ef1332a96291f33c0190d7",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "running-cancel/absent/none": {
+        "sha256": "f6cb401d86f4a620eeaedaa47980931edd8318d11b1a53d659dea898fa9e8824",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "running-cancel/absent/id": {
+        "sha256": "338cc3c782104e39e742ac853d2e5eac366913694661e0efff85aacc9b9a5d71",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "running-cancel/absent/key": {
+        "sha256": "08c7d5b29c48029c09e022327acfc5a45f72d97113a33a1703dc69094934f14a",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "running-cancel/absent/stale-id": {
+        "sha256": "338cc3c782104e39e742ac853d2e5eac366913694661e0efff85aacc9b9a5d71",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "running-cancel/absent/stale-key": {
+        "sha256": "08c7d5b29c48029c09e022327acfc5a45f72d97113a33a1703dc69094934f14a",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "interruption/pinned/none": {
+        "sha256": "8ed3e69ea4a1d72bcac85eefb42ad692c84fca40cc81b57f98c5b4289212c8ca",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "interruption/pinned/id": {
+        "sha256": "05119a165fee2881fbab1aa83ea1c0fdd5ee733c402506557afb6c8be5d289e4",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "interruption/pinned/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "interruption/pinned/stale-id": {
+        "sha256": "05119a165fee2881fbab1aa83ea1c0fdd5ee733c402506557afb6c8be5d289e4",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "interruption/pinned/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "interruption/unpinned/none": {
+        "sha256": "8ed3e69ea4a1d72bcac85eefb42ad692c84fca40cc81b57f98c5b4289212c8ca",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "interruption/unpinned/id": {
+        "sha256": "05119a165fee2881fbab1aa83ea1c0fdd5ee733c402506557afb6c8be5d289e4",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "interruption/unpinned/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "interruption/unpinned/stale-id": {
+        "sha256": "05119a165fee2881fbab1aa83ea1c0fdd5ee733c402506557afb6c8be5d289e4",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "interruption/unpinned/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "interruption/absent/none": {
+        "sha256": "0904cc73981f56ec30a5c340f36135ca1c5033764bc69ed4477df0314cc07210",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "interruption/absent/id": {
+        "sha256": "57752caecf7642ac25034912e9df32ff0eb9ad348805bbba910ffd5837fbd143",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "interruption/absent/key": {
+        "sha256": "0911cffb1e19c5e923d04f95f2c566002e42d0d71dd053892d65c39f0dc5d9c6",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "interruption/absent/stale-id": {
+        "sha256": "57752caecf7642ac25034912e9df32ff0eb9ad348805bbba910ffd5837fbd143",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "interruption/absent/stale-key": {
+        "sha256": "0911cffb1e19c5e923d04f95f2c566002e42d0d71dd053892d65c39f0dc5d9c6",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "timeout/pinned/none": {
+        "sha256": "aa13e659204659648841addd43be9b9e2f6965fe6b9e377a2dcaec04b39a9c44",
+        "decisions": [
+            "backing_off",
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "timeout/pinned/id": {
+        "sha256": "432e819e982a704a61e733d84bfee2e6f97ac0fc52c59c1b5b68e95e85104da2",
+        "decisions": [
+            "backing_off",
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "timeout/pinned/key": {
+        "sha256": "3a2abb6476572aba4e09027e4f78cd2df2ea00b95c789453c66efb93cc5f3a4e",
+        "decisions": [
+            "backing_off",
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "timeout/pinned/stale-id": {
+        "sha256": "546243daadfd3c03009e739a0667f23c0a3045b5638e0da7a9682986dd3ccfd6",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "timeout/pinned/stale-key": {
+        "sha256": "7198da7011f1f2d16b53677d9addd5b4d5a250c099529ebe0c10dc1353e9a54f",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "timeout/unpinned/none": {
+        "sha256": "b6735aa9d4ca56369b25bed8580c99fd65b4abbc0b57d04bb9a9816a727d3656",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "timeout/unpinned/id": {
+        "sha256": "1551bb78be7b2d9f58b81e4aa83b58a71c289e532d14ba97a62a1e24d8db7fd7",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "timeout/unpinned/key": {
+        "sha256": "75688b81dd207aa63ade43c21dfccf4b6fb1dc4bdb06ee02faff35f9b2fbc92d",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "timeout/unpinned/stale-id": {
+        "sha256": "1551bb78be7b2d9f58b81e4aa83b58a71c289e532d14ba97a62a1e24d8db7fd7",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "timeout/unpinned/stale-key": {
+        "sha256": "75688b81dd207aa63ade43c21dfccf4b6fb1dc4bdb06ee02faff35f9b2fbc92d",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "timeout/absent/none": {
+        "sha256": "e291a985d963b85125538f4c89f5667b0c06c8bb5c3c1e3ae8e6e588fc7a2a45",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "timeout/absent/id": {
+        "sha256": "028f3319fa4ec969a2bee34e9b1cffd7552b5d81aa5a8c4e521827237eca2d86",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "timeout/absent/key": {
+        "sha256": "a4c8671ea1fdb09b979fd0747a2eed033c9ad2f843718548ef5952082fcbb637",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "timeout/absent/stale-id": {
+        "sha256": "028f3319fa4ec969a2bee34e9b1cffd7552b5d81aa5a8c4e521827237eca2d86",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "timeout/absent/stale-key": {
+        "sha256": "a4c8671ea1fdb09b979fd0747a2eed033c9ad2f843718548ef5952082fcbb637",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "absent-admission/absent/none": {
+        "sha256": "f77252d45b4efc57e01b213167c1b116ca053a83bc557d986880d26fd01c84dc",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "absent-admission/absent/id": {
+        "sha256": "a22269b3fcf829153db03ebe842daeb367a4ecb91abdc67914ef77c31004573f",
+        "decisions": [
+            null,
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "absent-admission/absent/key": {
+        "sha256": "3d81be4d7e4fee39d7f63bd70bc28bdf02e6ff7e1ae32fe3c6b8dcaac695d0ce",
+        "decisions": [
+            null,
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "absent-admission/absent/stale-id": {
+        "sha256": "7e3ee647b963ae258fb1491d6b3d7659623dee74033893c51bcf9224bad598cc",
+        "decisions": [
+            null,
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "absent-admission/absent/stale-key": {
+        "sha256": "958a4c97544d60a16490ff8836c109fdde684088985acdd0442abf6b04926402",
+        "decisions": [
+            null,
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "paused/pinned/none": {
+        "sha256": "9044e08bd8027d01b4d57457ff517de4c7456fd19eb69a0d963394b9edd8ab91",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "paused/pinned/id": {
+        "sha256": "8af5398ca097096fd7ff0008168270f47aefd11fee7aaf10c6862c6eb60e7f06",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "paused/pinned/key": {
+        "sha256": "71b14ae5c4fd852a2339ca91d459b265b740115caa36e602354ec96243bd061c",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "paused/pinned/stale-id": {
+        "sha256": "73e45afe9f6c78a7072d8796fdb02e9eed447de2c870a0f853b5125b2028ad32",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "paused/pinned/stale-key": {
+        "sha256": "50cf02b958ca8ba90ee156ebc4119042fb27d8051a565add86570b3cf16f68e9",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "paused/unpinned/none": {
+        "sha256": "5185312dbd342c2a151010b188419cf91e1866a16b0099db8b2403f8a5095225",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "paused/unpinned/id": {
+        "sha256": "7928b258f4c2d4cc5a07e1dff6eeaff4b45c38085e5a7833249c7a8ff96a1437",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "paused/unpinned/key": {
+        "sha256": "4341236aad7c0987f4714f36ed80c6121d5571aba2dffcefb8209839c3e6ccab",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "paused/unpinned/stale-id": {
+        "sha256": "7928b258f4c2d4cc5a07e1dff6eeaff4b45c38085e5a7833249c7a8ff96a1437",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "paused/unpinned/stale-key": {
+        "sha256": "4341236aad7c0987f4714f36ed80c6121d5571aba2dffcefb8209839c3e6ccab",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "paused/absent/none": {
+        "sha256": "1de184ea25df3f8603544d9018f5203a1e4bed77781ca482ca7e3b0a2faace4c",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "paused/absent/id": {
+        "sha256": "ce134df07a3fdbb278547c25830526cf7b87941a5363de0b5e589b2e52a68b75",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "paused/absent/key": {
+        "sha256": "bcf585b8ba2828d00914d1c901e019131302fcde46b90881339ad74c136d9754",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "paused/absent/stale-id": {
+        "sha256": "17cf5fcaae36ef3bce6635041c60c4b0d3670c6a763a82cbfb9d011aa28442b5",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "paused/absent/stale-key": {
+        "sha256": "a4da06535b5a150184c70b7233ff44ff056e51f4261a63de6833ff16eab82efe",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "legacy-null-failure/pinned/none": {
+        "sha256": "aa37f198f9beaf4977b1eaedb4809d801092df697a9e2b25e783f386a8f08b2c",
+        "decisions": [
+            "backing_off",
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "legacy-null-failure/pinned/id": {
+        "sha256": "843ec67e64b03a45625b51161b50c5b36101fa7045b59c0fbe3723d02a806082",
+        "decisions": [
+            "backing_off",
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "legacy-null-failure/pinned/key": {
+        "sha256": "f5f070e49a6a1e48f12c2c6a3af47c7dc9df0e859d690b8670debec5adfb2e29",
+        "decisions": [
+            "backing_off",
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "legacy-null-failure/pinned/stale-id": {
+        "sha256": "f035ba4640d9724476f0db174d0330f5325e4d6c354b8372ffccd9f4b62d8f07",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "legacy-null-failure/pinned/stale-key": {
+        "sha256": "26bf62d1066c85a62c54b3a06a098d5b06c54542cc5105700ddd4df34cc992f8",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "legacy-null-failure/unpinned/none": {
+        "sha256": "3f4c24fdf6d151010ea0af2ef9abdce1c9fe76a92cff13b3b99d03848637a3b1",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "legacy-null-failure/unpinned/id": {
+        "sha256": "6f4efb585a61ba8e1ec8b30717f160038acdbd78996bff7be26b0aef7761dbfa",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "legacy-null-failure/unpinned/key": {
+        "sha256": "472d8c1f405da0da507226366044522e36e0b2d59098f44490113610695eb516",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "legacy-null-failure/unpinned/stale-id": {
+        "sha256": "6f4efb585a61ba8e1ec8b30717f160038acdbd78996bff7be26b0aef7761dbfa",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "legacy-null-failure/unpinned/stale-key": {
+        "sha256": "472d8c1f405da0da507226366044522e36e0b2d59098f44490113610695eb516",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "legacy-null-failure/absent/none": {
+        "sha256": "bcafacac9834c20ae3b7a04bcc398b9feefe805b526e136565743012b50226af",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "legacy-null-failure/absent/id": {
+        "sha256": "59f9999e8f9ba31916e4cd4651aa5ebbe7b7478bd7bd58b0b9c80bc2c752bdee",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "legacy-null-failure/absent/key": {
+        "sha256": "ea83226c37978468974933e1ffd708621c44a54b354a5490d023e158acd7307e",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "legacy-null-failure/absent/stale-id": {
+        "sha256": "59f9999e8f9ba31916e4cd4651aa5ebbe7b7478bd7bd58b0b9c80bc2c752bdee",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "legacy-null-failure/absent/stale-key": {
+        "sha256": "ea83226c37978468974933e1ffd708621c44a54b354a5490d023e158acd7307e",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "replay/pinned/none": {
+        "sha256": "b3b3accb6fabab01dd05949d407ce587e3df59bba51a3f7ba474ad2ecdd29a5c",
+        "decisions": [
+            "backing_off",
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "replay/pinned/id": {
+        "sha256": "54f8f9469c018520c2446f330effaed0fd2ce0cbfc1ec2528ffa22b4bb8a3299",
+        "decisions": [
+            "backing_off",
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "replay/pinned/key": {
+        "sha256": "8394d589045bd645cbc9dfba3134bc01f568394559355b0b65b1432aa36e7874",
+        "decisions": [
+            "backing_off",
+            "started",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "replay/pinned/stale-id": {
+        "sha256": "e12f602f6e6bea123c3306a2e529673eee3b4eb26b56036147b21f679b251659",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "replay/pinned/stale-key": {
+        "sha256": "00f6ea86be9a8bdea377e6719eea28a7413af31344a6ba6a6caac54168fe2537",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "replay/unpinned/none": {
+        "sha256": "3ec4ca8140f5967dfb17c29d29c8bce8f83c3d88ed9da90529e4f1a4648919d2",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "replay/unpinned/id": {
+        "sha256": "de50647109d98b8f49a95f9a63dfbddf99cade0b3e3cfe7586e5347b86feb662",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "replay/unpinned/key": {
+        "sha256": "7c148f11a49d3fa1702f771a0192b64e9c2a731bdd1fc8756cea98730ea7a678",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "replay/unpinned/stale-id": {
+        "sha256": "de50647109d98b8f49a95f9a63dfbddf99cade0b3e3cfe7586e5347b86feb662",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "replay/unpinned/stale-key": {
+        "sha256": "7c148f11a49d3fa1702f771a0192b64e9c2a731bdd1fc8756cea98730ea7a678",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "replay/absent/none": {
+        "sha256": "adac903a2d38a35f3033116dee306d988c4ab0552aae5bd921fdbccde3bcf401",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "replay/absent/id": {
+        "sha256": "b9c8dc1e2aca800716437240141adad45a8f350562da729810a69e0ba8fc6ed0",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "replay/absent/key": {
+        "sha256": "bcca11c185b9bc9e46ff7c6be40b4b354f722c76e4af24ba0ecfab8e5c95b78c",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "replay/absent/stale-id": {
+        "sha256": "b9c8dc1e2aca800716437240141adad45a8f350562da729810a69e0ba8fc6ed0",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "replay/absent/stale-key": {
+        "sha256": "bcca11c185b9bc9e46ff7c6be40b4b354f722c76e4af24ba0ecfab8e5c95b78c",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "replay/retry2/none": {
+        "sha256": "c21ed514bef7cbc6adabed494721cb8cdfea21979de056ef03f9514a479a9c37",
+        "decisions": [
+            "backing_off",
+            "backing_off",
+            "started",
+            "deploying"
+        ]
+    },
+    "replay/retry2/id": {
+        "sha256": "fce139245556d6deeb2987371640ebcc0ec62234a83707819e99b2552d14777b",
+        "decisions": [
+            "backing_off",
+            "backing_off",
+            "started",
+            "deploying"
+        ]
+    },
+    "replay/retry2/key": {
+        "sha256": "f44f60b0fd0889e995d08774c3670ac84e50a9ea354460693ffca3ef5ba1a4a7",
+        "decisions": [
+            "backing_off",
+            "backing_off",
+            "started",
+            "deploying"
+        ]
+    },
+    "replay/retry2/stale-id": {
+        "sha256": "d9a5e79104407aa2ec999e10769bdeb637f560bdb8765493f9b7d2c9d9abe650",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "replay/retry2/stale-key": {
+        "sha256": "5a6aa822ad57c17365576199fcb675a5c0e5c6727f5dfff527315bf6f26464a9",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "replay/retry3/none": {
+        "sha256": "628bb5567644e41fa664d607a3179cdef24572c7368069e6e33c88be0876ecb3",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "replay/retry3/id": {
+        "sha256": "d2507a9ba6a573b2693dc33f83f4577c1981672c7543e4e6a75d0fa441d38e27",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "replay/retry3/key": {
+        "sha256": "5fa463bd4bf6a5387b04f036551187acccc1ecbf8878bb7b7c2177843a3472af",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "replay/retry3/stale-id": {
+        "sha256": "cf6da4d7571556a87a2d10fb9d8490e32451f9a01af3f863f1f48d155c21bb84",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "replay/retry3/stale-key": {
+        "sha256": "595da61b118fadb2da4fe9a77aa2f25780d398a188a0aeb0cfedacb99281c147",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "refused-before-admission/absent/none": {
+        "sha256": "248c9cd0113195ab555975b2f027aebcbc3c6d78d3f6b930e2169d558f3b0dbd",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "refused-before-admission/absent/id": {
+        "sha256": "79c2350b58abc4777df5b1409136788aa8248d232219fda85f895a84febdba40",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "refused-before-admission/absent/key": {
+        "sha256": "f82cb414f6fc3cecad795d5eeb9472c611de92ee15af9d75bab50a3246f785a7",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "refused-before-admission/absent/stale-id": {
+        "sha256": "79c2350b58abc4777df5b1409136788aa8248d232219fda85f895a84febdba40",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "refused-before-admission/absent/stale-key": {
+        "sha256": "f82cb414f6fc3cecad795d5eeb9472c611de92ee15af9d75bab50a3246f785a7",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/success/projected/none": {
+        "sha256": "8c9c0fdb7775f883e1151e8ae8585a0ee01df736eb3297a2c06ac24406821145",
+        "decisions": [
+            "up_to_date",
+            "up_to_date",
+            "up_to_date",
+            "started"
+        ]
+    },
+    "projected:pinned/success/projected/id": {
+        "sha256": "ae8da05644c934ebc1822bd80874497e2e83acef4a50853d4788274ab3766092",
+        "decisions": [
+            "up_to_date",
+            "up_to_date",
+            "up_to_date",
+            "started"
+        ]
+    },
+    "projected:pinned/success/projected/key": {
+        "sha256": "8f382826429678ece2b7d6bc14182f913807f53db2c275410d76589b71e323c1",
+        "decisions": [
+            "up_to_date",
+            "up_to_date",
+            "up_to_date",
+            "started"
+        ]
+    },
+    "projected:pinned/success/projected/stale-id": {
+        "sha256": "d8f960b8623e50ae8241636364abf96cdccefb5bba085c3e08d370ad3cfcbf48",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/success/projected/stale-key": {
+        "sha256": "fc624da72af435486996e77ea65dc8be5ff66783cb4368c71f8f397ba4d28c75",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/failure/projected/none": {
+        "sha256": "91ec55803625b71b74b1c273b895cd488126400b1a91a2144198f7f64896d4a6",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/failure/projected/id": {
+        "sha256": "ab258a58d9e741c251c8ee04aadac48520c9675f02b324c37813e50a186aa59d",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/failure/projected/key": {
+        "sha256": "a4fae03fd1802925b56ee2bf44392413d00e50cde80154a831d6717524e08813",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/failure/projected/stale-id": {
+        "sha256": "4b0d4bb6089f0c80f95e4e978feb81dad953ccb8baf7543fa572f7012261918d",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/failure/projected/stale-key": {
+        "sha256": "4240379da6524b7ad27708e6f1ce91dff5a0046fd7e3918a60598cec0adfc7cf",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/failure/retry2/none": {
+        "sha256": "3ff54ea874ff5d35abafbf4142307f60c01e35076d6b526031eebdebc84d6b87",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/failure/retry2/id": {
+        "sha256": "1d821c11662935885d1acb3d2b911b42c7937e70733f966c63defb8522eebbf6",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/failure/retry2/key": {
+        "sha256": "c379da34d2b87bd66ca89fc879aa3f26815c65610552de4a3cf9fa703798069a",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/failure/retry2/stale-id": {
+        "sha256": "202078fb4b7cbb5518449facca64d8585b3ca8bf24b27048d10bcccf482905d4",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/failure/retry2/stale-key": {
+        "sha256": "68bd25a8534b68ecab14546df433289ffacf24be19c55e1214ebf0e9406e5c5f",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/failure/retry3/none": {
+        "sha256": "8f8ca7323401025bdec899a8f3ed560f2e421982c4cccc86e1cec8ec6eb66468",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/failure/retry3/id": {
+        "sha256": "d2c3c567ff8871e485385d4ccafabea52256fc517e4edb74f5ac0b696015f965",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/failure/retry3/key": {
+        "sha256": "cad1f5cc7f659142586e1fb27bf8bc0cf2f4bb6bf987ff33f346a5153a77cea1",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/failure/retry3/stale-id": {
+        "sha256": "30a429fe965ec6514b3887ff93af42331b2f2736c1bdc60a245077304176bc32",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/failure/retry3/stale-key": {
+        "sha256": "ec4a45954ee160127da44667a6664b325cfa3b5785137debab21390aeabc27fb",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/legacy-null-failure/projected/none": {
+        "sha256": "91ec55803625b71b74b1c273b895cd488126400b1a91a2144198f7f64896d4a6",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/legacy-null-failure/projected/id": {
+        "sha256": "ab258a58d9e741c251c8ee04aadac48520c9675f02b324c37813e50a186aa59d",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/legacy-null-failure/projected/key": {
+        "sha256": "a4fae03fd1802925b56ee2bf44392413d00e50cde80154a831d6717524e08813",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/legacy-null-failure/projected/stale-id": {
+        "sha256": "4b0d4bb6089f0c80f95e4e978feb81dad953ccb8baf7543fa572f7012261918d",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/legacy-null-failure/projected/stale-key": {
+        "sha256": "4240379da6524b7ad27708e6f1ce91dff5a0046fd7e3918a60598cec0adfc7cf",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/legacy-null-failure/retry2/none": {
+        "sha256": "3ff54ea874ff5d35abafbf4142307f60c01e35076d6b526031eebdebc84d6b87",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/legacy-null-failure/retry2/id": {
+        "sha256": "1d821c11662935885d1acb3d2b911b42c7937e70733f966c63defb8522eebbf6",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/legacy-null-failure/retry2/key": {
+        "sha256": "c379da34d2b87bd66ca89fc879aa3f26815c65610552de4a3cf9fa703798069a",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/legacy-null-failure/retry2/stale-id": {
+        "sha256": "202078fb4b7cbb5518449facca64d8585b3ca8bf24b27048d10bcccf482905d4",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/legacy-null-failure/retry2/stale-key": {
+        "sha256": "68bd25a8534b68ecab14546df433289ffacf24be19c55e1214ebf0e9406e5c5f",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/legacy-null-failure/retry3/none": {
+        "sha256": "8f8ca7323401025bdec899a8f3ed560f2e421982c4cccc86e1cec8ec6eb66468",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/legacy-null-failure/retry3/id": {
+        "sha256": "d2c3c567ff8871e485385d4ccafabea52256fc517e4edb74f5ac0b696015f965",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/legacy-null-failure/retry3/key": {
+        "sha256": "cad1f5cc7f659142586e1fb27bf8bc0cf2f4bb6bf987ff33f346a5153a77cea1",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/legacy-null-failure/retry3/stale-id": {
+        "sha256": "30a429fe965ec6514b3887ff93af42331b2f2736c1bdc60a245077304176bc32",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/legacy-null-failure/retry3/stale-key": {
+        "sha256": "ec4a45954ee160127da44667a6664b325cfa3b5785137debab21390aeabc27fb",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/start-refusal/projected/none": {
+        "sha256": "2d79e88f40115d36ebb490a8d35b309a85b9fafdeaa728b6288ce035c069fd13",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/start-refusal/projected/id": {
+        "sha256": "26cb91a7d381b8a1e6dd6a24a24e62251c813891e1821ecbd2138d32d081a417",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/start-refusal/projected/key": {
+        "sha256": "c667eb6149b57e55c0ea4db844deebe8f01305cbb74974f9a84ca1436556c972",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/start-refusal/projected/stale-id": {
+        "sha256": "26cb91a7d381b8a1e6dd6a24a24e62251c813891e1821ecbd2138d32d081a417",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/start-refusal/projected/stale-key": {
+        "sha256": "c667eb6149b57e55c0ea4db844deebe8f01305cbb74974f9a84ca1436556c972",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/queued-cancel/projected/none": {
+        "sha256": "38cbaf7cb5b24fc6e9b6eb7883144f0a25e33774cb09a3e3a8fc43d8a038e982",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/queued-cancel/projected/id": {
+        "sha256": "ca26e36e4b945cd3255ddb9bc8272e690c6406ff2652b90c462b90d15fdaff7e",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/queued-cancel/projected/key": {
+        "sha256": "6656c51ef1288862b862f6a51ca3492b909cc681b9dcece3b4632247baa67088",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/queued-cancel/projected/stale-id": {
+        "sha256": "ca26e36e4b945cd3255ddb9bc8272e690c6406ff2652b90c462b90d15fdaff7e",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/queued-cancel/projected/stale-key": {
+        "sha256": "6656c51ef1288862b862f6a51ca3492b909cc681b9dcece3b4632247baa67088",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/cancellation-request/projected/none": {
+        "sha256": "171dd2ce375f64b7cd0ce4bba26aad84e0dcfafce6eb9ca929971df9d8a6b650",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "busy"
+        ]
+    },
+    "projected:pinned/cancellation-request/projected/id": {
+        "sha256": "6442219e8003a5de6eca00cbc15fa26ec171dff2ced118501d7820d440dafc4a",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/cancellation-request/projected/key": {
+        "sha256": "a67d370c3cc0bb0c8acd044f68be701cc9f0ebdb9c2c6c747dbaf4751a49b93d",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/cancellation-request/projected/stale-id": {
+        "sha256": "6442219e8003a5de6eca00cbc15fa26ec171dff2ced118501d7820d440dafc4a",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/cancellation-request/projected/stale-key": {
+        "sha256": "a67d370c3cc0bb0c8acd044f68be701cc9f0ebdb9c2c6c747dbaf4751a49b93d",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/projection-unfinished/projected/none": {
+        "sha256": "171dd2ce375f64b7cd0ce4bba26aad84e0dcfafce6eb9ca929971df9d8a6b650",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "busy"
+        ]
+    },
+    "projected:pinned/projection-unfinished/projected/id": {
+        "sha256": "6442219e8003a5de6eca00cbc15fa26ec171dff2ced118501d7820d440dafc4a",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/projection-unfinished/projected/key": {
+        "sha256": "a67d370c3cc0bb0c8acd044f68be701cc9f0ebdb9c2c6c747dbaf4751a49b93d",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/projection-unfinished/projected/stale-id": {
+        "sha256": "6442219e8003a5de6eca00cbc15fa26ec171dff2ced118501d7820d440dafc4a",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/projection-unfinished/projected/stale-key": {
+        "sha256": "a67d370c3cc0bb0c8acd044f68be701cc9f0ebdb9c2c6c747dbaf4751a49b93d",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/running-cancel/projected/none": {
+        "sha256": "e2d99e666b6da43426e286c151d3f5027a4baaa233669689e1d0368e594a2f6f",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/running-cancel/projected/id": {
+        "sha256": "45629a40643fd6397cc80d722f7c02ca777933b53614492288f075ffc45af6bb",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/running-cancel/projected/key": {
+        "sha256": "1438665f433b6b7846e4623472c947fe1564ca31ca7016706e804488c25306dc",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/running-cancel/projected/stale-id": {
+        "sha256": "2c520f5cb3133c019e4ef9a7782ad9a63f66dc1dac4aaff17743b4202c828997",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/running-cancel/projected/stale-key": {
+        "sha256": "f9e57be66fced195a7e7453666060a2b293e90f950dec0dd2c85661bfdb7b948",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/running-cancel/retry2/none": {
+        "sha256": "034a1d404534665af938fae051bbe547b98ac199522dd8699cd0b3eb45cdf204",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/running-cancel/retry2/id": {
+        "sha256": "db24289ac8852a020a25de4d8e49a7978222d03202bffe5313cb8e5ecb9e3899",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/running-cancel/retry2/key": {
+        "sha256": "8536a3c407f6f5019025d6540f6f7f741ff3782341517a119d43491002ad704f",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/running-cancel/retry2/stale-id": {
+        "sha256": "a95ec5110c850194857e92d6ac84918ac50ea262f64ecea6f048e2b0fdda7c38",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/running-cancel/retry2/stale-key": {
+        "sha256": "8b5a636436b87b08f67586d8a3f92beff44f358cc5c98b76829385d49b21354d",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/running-cancel/retry3/none": {
+        "sha256": "dc339a6f4fb84453ca9cd9dd109681a2bd162d445adba7334266c6fac03a4dfa",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/running-cancel/retry3/id": {
+        "sha256": "1cedcbde5321f37a1041a4b6bab7234025ace862fca4b71fcb038d1bac204c20",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/running-cancel/retry3/key": {
+        "sha256": "02a47f442eabf098519e2883bcf016ea4686c5be469f2d998b7a2e13e28265a3",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/running-cancel/retry3/stale-id": {
+        "sha256": "a52a3f6cd8208b5a0a13d8b0f7e63cd5ce91f688f0c0268e3637bab7c46b5f19",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/running-cancel/retry3/stale-key": {
+        "sha256": "213bf4a02fec68834da3759474b00a05468f39f2a9867f8a383548aa49bec7e5",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/interruption/projected/none": {
+        "sha256": "8ed3e69ea4a1d72bcac85eefb42ad692c84fca40cc81b57f98c5b4289212c8ca",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:pinned/interruption/projected/id": {
+        "sha256": "05119a165fee2881fbab1aa83ea1c0fdd5ee733c402506557afb6c8be5d289e4",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:pinned/interruption/projected/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:pinned/interruption/projected/stale-id": {
+        "sha256": "05119a165fee2881fbab1aa83ea1c0fdd5ee733c402506557afb6c8be5d289e4",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:pinned/interruption/projected/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:pinned/timeout/projected/none": {
+        "sha256": "950f4fa9f0cadba6478b299491f0e23a39fd74e46a8414f44a2af33c6f719e10",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/timeout/projected/id": {
+        "sha256": "26953ca05565b2d3bcf95f268340e531d0cfd4865ba6b7ceeca008f5a32ca126",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/timeout/projected/key": {
+        "sha256": "e32bf736a09d67bd840e80668d78075428e74b5b011c23e2fc8c913f009f310a",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/timeout/projected/stale-id": {
+        "sha256": "26953ca05565b2d3bcf95f268340e531d0cfd4865ba6b7ceeca008f5a32ca126",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/timeout/projected/stale-key": {
+        "sha256": "e32bf736a09d67bd840e80668d78075428e74b5b011c23e2fc8c913f009f310a",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/timeout/retry2/none": {
+        "sha256": "ac162c6b59eb0b88f1f8ad8f8eaa27fdfd2cd52e4ea8ed116494c379b2a81315",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/timeout/retry2/id": {
+        "sha256": "9dd1fdded8a940cd4dcae5f4b661c806f946edf490cfdbeef213d10f7781f67f",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/timeout/retry2/key": {
+        "sha256": "8be13f16019f898185feb8a386ffdf1b082b8ea4700b5202758d440a27aa119b",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/timeout/retry2/stale-id": {
+        "sha256": "9dd1fdded8a940cd4dcae5f4b661c806f946edf490cfdbeef213d10f7781f67f",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/timeout/retry2/stale-key": {
+        "sha256": "8be13f16019f898185feb8a386ffdf1b082b8ea4700b5202758d440a27aa119b",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/timeout/retry3/none": {
+        "sha256": "086214df6c069f6d1d4fd0b07ada57d876bee4c903f6fbce27b17898baf0eeb5",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:pinned/timeout/retry3/id": {
+        "sha256": "dafa81848d14c40defade9b6700abed232831b318a8d8ad8755312f449e34f7c",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/timeout/retry3/key": {
+        "sha256": "d2360fbf26a007581c99a3f7da29c2319cc58ea8290568f5fb12a3d5cf28d246",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/timeout/retry3/stale-id": {
+        "sha256": "dafa81848d14c40defade9b6700abed232831b318a8d8ad8755312f449e34f7c",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/timeout/retry3/stale-key": {
+        "sha256": "d2360fbf26a007581c99a3f7da29c2319cc58ea8290568f5fb12a3d5cf28d246",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/paused/projected/none": {
+        "sha256": "f79b3bd75dac9250c2863bfbc5e9ceb91094d801aaebc9703b184e741b249eba",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:pinned/paused/projected/id": {
+        "sha256": "39829675332880ec4c3b055aabb3678637cd008ef3883c27035c6ea06832071b",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/paused/projected/key": {
+        "sha256": "05890bea7137b2a8d8e48b27ad4174da6628391fa123ba741a193b63f9524f7b",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/paused/projected/stale-id": {
+        "sha256": "39829675332880ec4c3b055aabb3678637cd008ef3883c27035c6ea06832071b",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:pinned/paused/projected/stale-key": {
+        "sha256": "05890bea7137b2a8d8e48b27ad4174da6628391fa123ba741a193b63f9524f7b",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:unpinned/success/projected/none": {
+        "sha256": "4de9c167c86d0cf481b66ec168a01ffa040434e12cfae204873697d2bc119594",
+        "decisions": [
+            "up_to_date",
+            "up_to_date",
+            "up_to_date",
+            "started"
+        ]
+    },
+    "projected:unpinned/success/projected/id": {
+        "sha256": "fa5c4b7a850e854f289706a14e6125d705326fdc2385110f6a540bdf596c6839",
+        "decisions": [
+            "up_to_date",
+            "up_to_date",
+            "up_to_date",
+            "started"
+        ]
+    },
+    "projected:unpinned/success/projected/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/success/projected/stale-id": {
+        "sha256": "d3730f682dc085c5e7c94a6d5c3193d2558f14b802119ca2737057f0698d9785",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/success/projected/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/failure/projected/none": {
+        "sha256": "58ece03f802ee2c2a6d50944d8759ff49d3af86a3a830ecd2e9eb6d4674b4736",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:unpinned/failure/projected/id": {
+        "sha256": "b746bd646ba436115b2787816f946e56fd76d53ce1d8ad5cbe668c01ca1ad054",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:unpinned/failure/projected/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/failure/projected/stale-id": {
+        "sha256": "c80ceafbe58e1a6e07eccafa8ed35f69a2202df19fec69372b9eb8f5f3affec7",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/failure/projected/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/failure/retry2/none": {
+        "sha256": "d5dbb276dcd50a70a2d266d29af30d17cda5ffd1d600bb16359a914d164cf9f6",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:unpinned/failure/retry2/id": {
+        "sha256": "37bdff7ce025500cfd7c102508ad245fcf6618ee87a37e1da06f463a5ab8675b",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:unpinned/failure/retry2/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/failure/retry2/stale-id": {
+        "sha256": "ef2c066dbb0fd4bd280893b7a10ba2cb6a5f82794c960f4e6fd0da5396d8b46f",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/failure/retry2/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/failure/retry3/none": {
+        "sha256": "33372551b77db4216986ee61e2aef91739ab25c2fbdcaef81fcb7f749d141844",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:unpinned/failure/retry3/id": {
+        "sha256": "71c4bf6b4809c391552ed1a22c04a2188f85e82d1e9c434f1d3837a5daf0ef64",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:unpinned/failure/retry3/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/failure/retry3/stale-id": {
+        "sha256": "e1558158e07dbf6d533b9e598a8ff5b9f8a56d52ed2baa7321378647c6301e75",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/failure/retry3/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/legacy-null-failure/projected/none": {
+        "sha256": "f0bdd4667361c70827ba06e47b7656715dca8809b75f430dd58101a3148a33b4",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/legacy-null-failure/projected/id": {
+        "sha256": "a513891438567f9fe465ca91b6632f96de5fe8d61ee73abcface0224dd453a4b",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:unpinned/legacy-null-failure/projected/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/legacy-null-failure/projected/stale-id": {
+        "sha256": "a513891438567f9fe465ca91b6632f96de5fe8d61ee73abcface0224dd453a4b",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:unpinned/legacy-null-failure/projected/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/start-refusal/projected/none": {
+        "sha256": "b03ab9909599fc2605447cb48f63268370c650667f636913c9060efeb45799a4",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/start-refusal/projected/id": {
+        "sha256": "1026aded35c7a08d3c9e487e394e294f954bf15974a671cd6bb31ff32acfac4c",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:unpinned/start-refusal/projected/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/start-refusal/projected/stale-id": {
+        "sha256": "1026aded35c7a08d3c9e487e394e294f954bf15974a671cd6bb31ff32acfac4c",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:unpinned/start-refusal/projected/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/queued-cancel/projected/none": {
+        "sha256": "9501a13af9a194db31e287cdf3bbb07c2b290791cb2e55daed3d6e10770aa7d9",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/queued-cancel/projected/id": {
+        "sha256": "1ecfcbbbf74903fbeca3a5323955750c78a8dcce4592e353d8e2f429b16feb1a",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:unpinned/queued-cancel/projected/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/queued-cancel/projected/stale-id": {
+        "sha256": "1ecfcbbbf74903fbeca3a5323955750c78a8dcce4592e353d8e2f429b16feb1a",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:unpinned/queued-cancel/projected/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/cancellation-request/projected/none": {
+        "sha256": "8084b6826106faeb944d1af4f1affc228262ada43891d2ab1988099658493fb3",
+        "decisions": [
+            "busy",
+            "busy",
+            "busy",
+            "busy"
+        ]
+    },
+    "projected:unpinned/cancellation-request/projected/id": {
+        "sha256": "069ecd25c6cedde72b62fc003b3ef494de302a3080664ebd7fc8f78c545af9a3",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/cancellation-request/projected/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/cancellation-request/projected/stale-id": {
+        "sha256": "069ecd25c6cedde72b62fc003b3ef494de302a3080664ebd7fc8f78c545af9a3",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/cancellation-request/projected/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/projection-unfinished/projected/none": {
+        "sha256": "8084b6826106faeb944d1af4f1affc228262ada43891d2ab1988099658493fb3",
+        "decisions": [
+            "busy",
+            "busy",
+            "busy",
+            "busy"
+        ]
+    },
+    "projected:unpinned/projection-unfinished/projected/id": {
+        "sha256": "069ecd25c6cedde72b62fc003b3ef494de302a3080664ebd7fc8f78c545af9a3",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/projection-unfinished/projected/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/projection-unfinished/projected/stale-id": {
+        "sha256": "069ecd25c6cedde72b62fc003b3ef494de302a3080664ebd7fc8f78c545af9a3",
+        "decisions": [
+            "deploying",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/projection-unfinished/projected/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/running-cancel/projected/none": {
+        "sha256": "661b97d7545c1496f11897e1886ac704c0591fd16bd02373ebae76a653e1c006",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:unpinned/running-cancel/projected/id": {
+        "sha256": "78eb6e4ccb831196b1753aaa4dfaaaa1c3ea55200bb51e7614df4404baca8f08",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:unpinned/running-cancel/projected/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/running-cancel/projected/stale-id": {
+        "sha256": "8d3f4b4e4358396714ac32644b6b9f53c7820a219490db11346da78ed6c9c4fc",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/running-cancel/projected/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/running-cancel/retry2/none": {
+        "sha256": "2a9a2e914dec7cfa9e6cf61dda701779b69c47187259b6adacf259481ffa1447",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:unpinned/running-cancel/retry2/id": {
+        "sha256": "9ead12a7c1aecda01bb2983dfcd86eb55449f36836d4ac95b50794878477c8eb",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:unpinned/running-cancel/retry2/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/running-cancel/retry2/stale-id": {
+        "sha256": "99e66da3f8be42fdd757ff9bc86d974e82a0f1fc97dbf2c74720ebc696077dff",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/running-cancel/retry2/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/running-cancel/retry3/none": {
+        "sha256": "4c9b7b94759349a75f5f6951ce1fa83f39b6dc1b33060ed0e31c814e2685b736",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:unpinned/running-cancel/retry3/id": {
+        "sha256": "cbc97535c91c1f10008fe9c7bf76817d2c56ca937f2df3800f736240ddaf0310",
+        "decisions": [
+            "commit_failed",
+            "commit_failed",
+            "commit_failed",
+            "started"
+        ]
+    },
+    "projected:unpinned/running-cancel/retry3/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/running-cancel/retry3/stale-id": {
+        "sha256": "733afb3302d170001a96d5d3d92695b46b88cbffbd4ae019620fdbfb6d883cca",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/running-cancel/retry3/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/interruption/projected/none": {
+        "sha256": "8ed3e69ea4a1d72bcac85eefb42ad692c84fca40cc81b57f98c5b4289212c8ca",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/interruption/projected/id": {
+        "sha256": "05119a165fee2881fbab1aa83ea1c0fdd5ee733c402506557afb6c8be5d289e4",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/interruption/projected/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/interruption/projected/stale-id": {
+        "sha256": "05119a165fee2881fbab1aa83ea1c0fdd5ee733c402506557afb6c8be5d289e4",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/interruption/projected/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/timeout/projected/none": {
+        "sha256": "e795cad18a3e30c681a2473387bc4ef264e8d4c39e7f8840cafd8bcc70e3be92",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/timeout/projected/id": {
+        "sha256": "058d4ba6122687e9652ada23b31fb981608aff91f6fc0a5e856d6e6657caf2a6",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:unpinned/timeout/projected/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/timeout/projected/stale-id": {
+        "sha256": "058d4ba6122687e9652ada23b31fb981608aff91f6fc0a5e856d6e6657caf2a6",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:unpinned/timeout/projected/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/paused/projected/none": {
+        "sha256": "21f963c8704be303ee462de04dc8eead8081b27a690f40241a13c283fc5d7f31",
+        "decisions": [
+            "started",
+            "deploying",
+            "deploying",
+            "deploying"
+        ]
+    },
+    "projected:unpinned/paused/projected/id": {
+        "sha256": "a924224dd86e59b00e1e2162b8b24e9c522117a33373be7ef09467913a7c7c1f",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:unpinned/paused/projected/key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "projected:unpinned/paused/projected/stale-id": {
+        "sha256": "a924224dd86e59b00e1e2162b8b24e9c522117a33373be7ef09467913a7c7c1f",
+        "decisions": [
+            "failed",
+            "failed",
+            "failed",
+            "failed"
+        ]
+    },
+    "projected:unpinned/paused/projected/stale-key": {
+        "sha256": "9a21fd76409a319ed4b7e32e1b12db82d06e79c1dcd5db090fe3d557978d383d",
+        "decisions": [
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable",
+            "gateway.read_unavailable"
+        ]
+    },
+    "$production-policy-source": {
+        "sha256": "5fea6d15cf9ba0cd3e2d987f86046008c54ef2c46c6951c9960fa03e55d42cc1"
+    }
+}

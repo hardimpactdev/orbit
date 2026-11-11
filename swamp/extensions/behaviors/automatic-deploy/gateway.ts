@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { developmentAdmissions } from "./development-gateway.ts";
 import {
     type DevelopmentContext,
     type Emit,
@@ -30,7 +31,7 @@ export type Http = (
 const productionNode = (roles: string[]) =>
     roles.includes("app-prod") && !roles.includes("app-dev");
 const Envelope = z.object({ data: z.unknown() });
-const OperationSchema = z.object({
+export const OperationSchema = z.object({
     id: z.number().int().positive(),
     target_type: z.string(),
     target_id: z.number().int().positive(),
@@ -89,7 +90,7 @@ const InstanceSchema = z.object({
 /** Only documented Gateway routes. There are no direct git, GitHub, SQL, or manual-start paths. */
 export class GatewayClient implements Gateway {
     constructor(private http: Http) {}
-    private async request(
+    async request(
         method: "GET" | "POST" | "PUT" | "PATCH",
         path: string,
         body?: unknown,
@@ -170,39 +171,11 @@ export class GatewayClient implements Gateway {
         return tickDevelopment(
             this.http,
             context,
-            {
-                checks: (id, commit, name) => this.checks(id, commit, name),
-                deploy: (id, commit, key) => this.deploy(id, commit, key, true),
-                receipt: (id, commit, key) =>
-                    this.reconcileDevelopmentAdmission(
-                        (development) =>
-                            this.receipt(id, commit, key, development),
-                    ),
-                resolve: (id, commit, key) =>
-                    this.reconcileDevelopmentAdmission(
-                        (development) =>
-                            this.resolve(id, commit, key, development),
-                    ),
-                operation: (id) => this.operation(id),
-            },
+            developmentAdmissions(this),
             now,
             emit,
             filter,
         );
-    }
-    /** Recover an existing request under its original command identity; never start through it. */
-    private async reconcileDevelopmentAdmission<T>(
-        read: (development: boolean) => Promise<T>,
-    ): Promise<T> {
-        try {
-            return await read(true);
-        } catch (error) {
-            if (
-                !(error instanceof PolicyError) ||
-                error.code !== "operation.idempotency_conflict"
-            ) throw error;
-            return await read(false);
-        }
     }
     async discover(filter: number[] = []): Promise<number[]> {
         // Both list endpoints return complete arrays, without pagination.
@@ -416,14 +389,11 @@ export class GatewayClient implements Gateway {
         instance: number,
         commit: string,
         key: string,
-        development = false,
     ): Promise<Operation | null> {
         const receipt = await this.read(
-            `/api/v1/instances/${instance}/deploy/automatic${
-                development ? "/development" : ""
-            }/receipt?request_key=${encodeURIComponent(key)}&commit=${
-                encodeURIComponent(commit)
-            }`,
+            `/api/v1/instances/${instance}/deploy/automatic/receipt?request_key=${
+                encodeURIComponent(key)
+            }&commit=${encodeURIComponent(commit)}`,
             ReceiptSchema,
         );
         return this.receiptOperation(instance, commit, key, receipt);
@@ -432,14 +402,11 @@ export class GatewayClient implements Gateway {
         instance: number,
         commit: string,
         key: string,
-        development = false,
     ): Promise<Operation> {
         const parsed = ReceiptSchema.safeParse(
             await this.request(
                 "POST",
-                `/api/v1/instances/${instance}/deploy/automatic${
-                    development ? "/development" : ""
-                }/resolve`,
+                `/api/v1/instances/${instance}/deploy/automatic/resolve`,
                 { request_key: key, commit },
             ),
         );
@@ -530,14 +497,11 @@ export class GatewayClient implements Gateway {
         instance: number,
         commit: string,
         key: string,
-        development = false,
     ): Promise<Operation> {
         const receipt = OperationSchema.safeParse(
             await this.request(
                 "POST",
-                `/api/v1/instances/${instance}/deploy/automatic${
-                    development ? "/development" : ""
-                }`,
+                `/api/v1/instances/${instance}/deploy/automatic`,
                 { commit },
                 key,
             ),

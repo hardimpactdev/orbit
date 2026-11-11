@@ -1,0 +1,173 @@
+[
+    {
+        "failures": 0,
+        "disabled": {
+            "enabled": false,
+            "gate": null,
+            "development_eligible": false
+        },
+        "enabled": {
+            "enabled": true,
+            "gate": null,
+            "development_eligible": true,
+            "resumed_after": 0
+        },
+        "history": []
+    },
+    {
+        "failures": 1,
+        "disabled": {
+            "enabled": false,
+            "gate": null,
+            "development_eligible": false
+        },
+        "enabled": {
+            "enabled": true,
+            "gate": null,
+            "development_eligible": true,
+            "resumed_after": 1
+        },
+        "history": [
+            {
+                "id": 1,
+                "instance_id": 7,
+                "kind": "deploy",
+                "release": null,
+                "branch": null,
+                "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "started_at": "2026-10-31T05:00:00+00:00",
+                "finished_at": "2026-10-31T05:00:00+00:00",
+                "duration_seconds": null,
+                "status": "failed",
+                "failed_step": "Check out in the container",
+                "error_code": "operation.native_failed",
+                "selected_release": null,
+                "triggered_by": "orbit:auto-deploy",
+                "caller_node_id": 9,
+                "caller_node_name": "development-toggle-node"
+            }
+        ]
+    },
+    {
+        "failures": 2,
+        "disabled": {
+            "enabled": false,
+            "gate": null,
+            "development_eligible": false
+        },
+        "enabled": {
+            "enabled": true,
+            "gate": null,
+            "development_eligible": true,
+            "resumed_after": 2
+        },
+        "history": [
+            {
+                "id": 2,
+                "instance_id": 7,
+                "kind": "deploy",
+                "release": null,
+                "branch": null,
+                "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "started_at": "2026-10-31T05:00:00+00:00",
+                "finished_at": "2026-10-31T05:00:00+00:00",
+                "duration_seconds": null,
+                "status": "failed",
+                "failed_step": "Check out in the container",
+                "error_code": "operation.native_failed",
+                "selected_release": null,
+                "triggered_by": "orbit:auto-deploy",
+                "caller_node_id": 9,
+                "caller_node_name": "development-toggle-node"
+            },
+            {
+                "id": 1,
+                "instance_id": 7,
+                "kind": "deploy",
+                "release": null,
+                "branch": null,
+                "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "started_at": "2026-10-31T05:00:00+00:00",
+                "finished_at": "2026-10-31T05:00:00+00:00",
+                "duration_seconds": null,
+                "status": "failed",
+                "failed_step": "Check out in the container",
+                "error_code": "operation.native_failed",
+                "selected_release": null,
+                "triggered_by": "orbit:auto-deploy",
+                "caller_node_id": 9,
+                "caller_node_name": "development-toggle-node"
+            }
+        ]
+    },
+    {
+        "failures": 3,
+        "disabled": {
+            "enabled": false,
+            "gate": null,
+            "development_eligible": false
+        },
+        "enabled": {
+            "enabled": true,
+            "gate": null,
+            "development_eligible": true,
+            "resumed_after": 3
+        },
+        "history": [
+            {
+                "id": 3,
+                "instance_id": 7,
+                "kind": "deploy",
+                "release": null,
+                "branch": null,
+                "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "started_at": "2026-10-31T05:00:00+00:00",
+                "finished_at": "2026-10-31T05:00:00+00:00",
+                "duration_seconds": null,
+                "status": "failed",
+                "failed_step": "Check out in the container",
+                "error_code": "operation.native_failed",
+                "selected_release": null,
+                "triggered_by": "orbit:auto-deploy",
+                "caller_node_id": 9,
+                "caller_node_name": "development-toggle-node"
+            },
+            {
+                "id": 2,
+                "instance_id": 7,
+                "kind": "deploy",
+                "release": null,
+                "branch": null,
+                "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "started_at": "2026-10-31T05:00:00+00:00",
+                "finished_at": "2026-10-31T05:00:00+00:00",
+                "duration_seconds": null,
+                "status": "failed",
+                "failed_step": "Check out in the container",
+                "error_code": "operation.native_failed",
+                "selected_release": null,
+                "triggered_by": "orbit:auto-deploy",
+                "caller_node_id": 9,
+                "caller_node_name": "development-toggle-node"
+            },
+            {
+                "id": 1,
+                "instance_id": 7,
+                "kind": "deploy",
+                "release": null,
+                "branch": null,
+                "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "started_at": "2026-10-31T05:00:00+00:00",
+                "finished_at": "2026-10-31T05:00:00+00:00",
+                "duration_seconds": null,
+                "status": "failed",
+                "failed_step": "Check out in the container",
+                "error_code": "operation.native_failed",
+                "selected_release": null,
+                "triggered_by": "orbit:auto-deploy",
+                "caller_node_id": 9,
+                "caller_node_name": "development-toggle-node"
+            }
+        ]
+    }
+]

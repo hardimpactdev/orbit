@@ -13,7 +13,7 @@ use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
-use App\Domain\Instances\Deployment\InstanceDeployProjection;
+use App\Domain\Instances\Deployment\InstanceDeployProjectionRouter;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
@@ -355,7 +355,7 @@ it('records a running container but no seed when a deployment fails after the co
     $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
         'status' => OperationStatus::Running, 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)], 'state' => ['swamp_run_id' => 'run-1']]);
 
-    app(InstanceDeployProjection::class)->apply($operation, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+    app(InstanceDeployProjectionRouter::class)->apply($operation, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
         'finished_at' => now()->toIso8601String(), 'result' => ['steps' => [ContainerDeployOutcome::ResultStep => ['stdout' => '{"error_code":"deployment.checkout_dirty"}']],
             'summary' => ['failed_steps' => ['Check out in the container']]]]);
 
@@ -383,7 +383,7 @@ it('settles a failed automatic observation only after a successful manual deploy
     $step = $container ? 'Read the container result' : 'Read the checkout commit';
     $stdout = $container ? json_encode(['commit' => $commit], JSON_THROW_ON_ERROR) : $commit;
 
-    app(InstanceDeployProjection::class)->apply($operation, ['status' => $succeeded ? 'succeeded' : 'failed', 'run_id' => 'manual-run',
+    app(InstanceDeployProjectionRouter::class)->apply($operation, ['status' => $succeeded ? 'succeeded' : 'failed', 'run_id' => 'manual-run',
         'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [
             'steps' => [$step => ['stdout' => $stdout]], 'summary' => ['failed_steps' => $succeeded ? [] : ['Run dev deploy steps-0']]]]);
 
@@ -410,7 +410,7 @@ it('records the seed commit and a running container after a deployment passes, a
     $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
         'status' => OperationStatus::Running, 'triggered_by' => 'swamp:auto-deploy', 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)], 'state' => ['swamp_run_id' => 'run-1']]);
 
-    app(InstanceDeployProjection::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [
+    app(InstanceDeployProjectionRouter::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [
         'steps' => ['Read the container result' => ['stdout' => json_encode(['commit' => $commit], JSON_THROW_ON_ERROR)]], 'summary' => ['failed_steps' => []]]]);
 
     $runtime = InstanceRuntime::query()->where('instance_id', $instance->id)->firstOrFail();
@@ -438,7 +438,7 @@ it('records the admitted SHA in terminal development failure history without cha
     if ($status === 'interrupted') {
         app(FailNativeOperationAction::class)->execute($operation, 'terminal-run', OperationStatus::Interrupted);
     } else {
-        app(InstanceDeployProjection::class)->apply($operation, ['status' => $status, 'run_id' => 'terminal-run',
+        app(InstanceDeployProjectionRouter::class)->apply($operation, ['status' => $status, 'run_id' => 'terminal-run',
             'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => []]);
     }
 
@@ -529,7 +529,7 @@ it('replays one development admission while queued, while running and after succ
     $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'replay-run']]);
     $this->postJson($path, ['commit' => $commit])->assertAccepted()->assertJsonPath('data.id', $id)->assertJsonPath('data.status', 'running');
 
-    app(InstanceDeployProjection::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'replay-run',
+    app(InstanceDeployProjectionRouter::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'replay-run',
         'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [
             'steps' => [ContainerDeployOutcome::ResultStep => ['stdout' => json_encode(['commit' => $commit], JSON_THROW_ON_ERROR)]], 'summary' => ['failed_steps' => []]]]);
 
@@ -537,7 +537,7 @@ it('replays one development admission while queued, while running and after succ
     expect(Operation::query()->count())->toBe(1)->and($instance->deployments()->count())->toBe(1);
 });
 
-it('leaves retry classification to policy when alerting an interrupted deployment', function (): void {
+it('keeps the existing recovery advice when alerting an interrupted deployment', function (): void {
     $instance = deployDefault(container: false);
     $deployment = $instance->deployments()->create(['kind' => 'deploy', 'status' => 'interrupted', 'commit' => str_repeat('b', 40),
         'triggered_by' => 'swamp:auto-deploy', 'started_at' => now(), 'finished_at' => now(), 'error_code' => 'operation.native_failed']);
@@ -555,6 +555,5 @@ it('leaves retry classification to policy when alerting an interrupted deploymen
 
     (new AutomaticDeployAlerts($notifier))->failed($instance, $deployment);
 
-    expect($notifier->summary)->toContain('Automatic retries follow the deployment retry policy.')
-        ->not->toContain('does not deploy automatically again');
+    expect($notifier->summary)->toContain('does not deploy automatically again');
 });

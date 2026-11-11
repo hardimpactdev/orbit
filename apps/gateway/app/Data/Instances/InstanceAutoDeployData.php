@@ -11,6 +11,7 @@ use App\Models\Instance;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
+use Spatie\LaravelData\Optional;
 
 /**
  * Automatic deployment of an Instance ([Automatic deployments](/reference/deployments#automatic-deployments)):
@@ -37,7 +38,7 @@ final class InstanceAutoDeployData extends Data
         public array $blocked,
         public ?string $historyVersion,
         public bool $eligible,
-        public bool $developmentEligible,
+        public bool|Optional $developmentEligible,
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -55,7 +56,7 @@ final class InstanceAutoDeployData extends Data
 
         return new self(
             eligible: $eligible,
-            developmentEligible: $developmentDefault,
+            developmentEligible: $placement === 'production' ? new Optional : $developmentDefault,
             resumedAfter: $instance->auto_deploy_resumed_after,
             blocked: $history === null ? [] : array_values(array_unique([...$automatic->blocked(), ...$history->rolledAway])),
             historyVersion: $history?->version,
@@ -63,7 +64,9 @@ final class InstanceAutoDeployData extends Data
             policyOwner: app(AutomaticDeployPolicyWriter::class)->value,
             gate: $gate,
             warning: $enabled && $gate === null
-                ? 'Project '.$instance->project->name.' has no merge check configured; every moved head deploys until one is set.'
+                ? ($placement === 'production'
+                    ? 'The Project has no merge_check, so every new commit on the branch deploys without a check.'
+                    : 'Project '.$instance->project->name.' has no merge check configured; every moved head deploys until one is set.')
                 : null,
             result: $enabled ? self::string($state['result'] ?? null) : null,
             commit: $enabled ? self::string($state['commit'] ?? null) : null,

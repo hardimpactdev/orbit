@@ -19,6 +19,7 @@ use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Jobs\Instances\CheckDevelopmentDeployments;
 use App\Models\Activity;
 use App\Models\Instance;
+use App\Models\InstanceDeployment;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
@@ -197,15 +198,18 @@ it('shares container eligibility across automatic admission discovery and Instan
             ->and(InstanceData::fromModel($instance)->autoDeploy->enabled)->toBeFalse();
     }
     expect(InstanceData::fromModel($container)->autoDeploy->developmentEligible)->toBeTrue();
-    foreach ([$checkout, $unseeded, $production, $disabledProduction] as $instance) {
+    foreach ([$checkout, $unseeded] as $instance) {
         expect(InstanceData::fromModel($instance)->autoDeploy->developmentEligible)->toBeFalse();
+    }
+    foreach ([$production, $disabledProduction] as $instance) {
+        expect(InstanceData::fromModel($instance)->autoDeploy->toArray())->not->toHaveKey('development_eligible');
     }
     expect(InstanceData::fromModel($disabledProduction)->autoDeploy->eligible)->toBeFalse();
     $production->node->roles()->update(['status' => 'failed']);
     expect(AutomaticDeployPolicyWriter::Swamp->eligibilityRefusal($production->fresh()))->toBe(AutomaticDeployPolicyWriter::InactiveRole);
 });
 
-it('exposes the same configured merge check and ungated warning for development and production', function (): void {
+it('exposes the configured merge check and placement-specific ungated warnings', function (): void {
     foreach ([RoleName::AppDev, RoleName::AppProd] as $role) {
         $instance = developmentTickDefault(role: $role);
         $instance->update(['auto_deploy' => true]);
@@ -214,7 +218,9 @@ it('exposes the same configured merge check and ungated warning for development 
         expect($automatic->gate)->toBe('Required checks')->and($automatic->warning)->toBeNull();
         $instance->project->update(['merge_check' => null]);
         expect(InstanceData::fromModel($instance)->autoDeploy->warning)
-            ->toBe('Project '.$instance->project->name.' has no merge check configured; every moved head deploys until one is set.');
+            ->toBe($role === RoleName::AppDev
+                ? 'Project '.$instance->project->name.' has no merge check configured; every moved head deploys until one is set.'
+                : 'The Project has no merge_check, so every new commit on the branch deploys without a check.');
     }
 });
 
@@ -394,4 +400,56 @@ it('settles a matching default publication through the Route owner without a dev
     app(DevelopmentDeployPrecheck::class)->check();
 
     expect($instance->fresh()->development_projection_pending)->toBeFalse()->and($socket->frames)->toBe([]);
+});
+
+it('exports real off on responses and history for the development toggle matrix', function (): void {
+    $instance = developmentTickDefault();
+    Node::withoutEvents(fn () => $instance->node->update(['wireguard_ip' => '10.44.0.7']));
+    $instance->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.7']);
+    $path = '/api/v1/instances/'.$instance->id;
+    $cells = [];
+    foreach (range(0, 3) as $failures) {
+        if ($failures > 0) {
+            InstanceDeployment::query()->create([
+                'instance_id' => $instance->id,
+                'kind' => 'deploy',
+                'status' => 'failed',
+                'commit' => str_repeat('b', 40),
+                'triggered_by' => 'orbit:auto-deploy',
+                'caller_node_id' => $instance->node_id,
+                'failed_step' => 'Check out in the container',
+                'error_code' => 'operation.native_failed',
+                'started_at' => '2026-10-31T05:00:00+00:00',
+                'finished_at' => '2026-10-31T05:00:00+00:00',
+            ]);
+        }
+        $disabled = $this->postJson($path.'/auto-deploy/disable')->assertOk()->json('data.auto_deploy');
+        $enabled = $this->postJson($path.'/auto-deploy/enable')->assertOk()->json('data.auto_deploy');
+        $history = $this->getJson($path.'/deployments')->assertOk()->json('data');
+        // Normalize only identities/names, never policy fields or row outcomes.
+        $ids = array_reverse(array_column($history, 'id'));
+        foreach ($history as &$row) {
+            $row['id'] = array_search($row['id'], $ids, true) + 1;
+            $row['instance_id'] = 7;
+            $row['caller_node_id'] = 9;
+            $row['caller_node_name'] = 'development-toggle-node';
+        }
+        unset($row);
+        $cells[] = [
+            'failures' => $failures,
+            'disabled' => array_intersect_key($disabled, array_flip(['enabled', 'development_eligible', 'gate'])),
+            'enabled' => array_merge(array_intersect_key($enabled, array_flip(['enabled', 'development_eligible', 'gate'])), [
+                'resumed_after' => $enabled['resumed_after'] === 0 ? 0 : array_search($enabled['resumed_after'], $ids, true) + 1,
+            ]),
+            'history' => $history,
+        ];
+        expect($instance->fresh()->auto_deploy)->toBeTrue()
+            ->and($instance->deployments()->count())->toBe($failures);
+    }
+    $fixture = base_path('../../swamp/extensions/behaviors/automatic-deploy/fixtures/development-toggle.json');
+    if (getenv('UPDATE_DEVELOPMENT_TOGGLE_FIXTURE') === '1') {
+        file_put_contents($fixture, json_encode($cells, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
+    }
+    expect($cells)->toBe(json_decode(file_get_contents($fixture), true, flags: JSON_THROW_ON_ERROR));
 });

@@ -22,7 +22,7 @@ export function isAutomaticDeployment(origin: DeploymentOrigin): boolean {
 export const RowSchema = z.object({
     id: z.number().int().positive(),
     kind: z.enum(["deploy", "rollback"]),
-    status: z.enum(["running", "succeeded", "failed", "interrupted"]),
+    status: z.enum(["running", "succeeded", "failed"]),
     commit: sha.nullable(),
     triggered_by: nullable,
     caller_node_id: CallerNodeIdSchema,
@@ -77,23 +77,6 @@ export interface Check {
     app: string | null;
     status: string | null;
     conclusion: string | null;
-}
-/** The configured check must prove this exact commit through completed GitHub Actions runs. */
-export function mergeCheckResult(
-    checks: Check[],
-    commit: string,
-    name: string,
-): "pending" | "passed" | "failed" {
-    const runs = checks.filter((r) => r.name === name);
-    return !runs.length
-        ? "pending"
-        : runs.some((r) => r.app !== "github-actions" || r.head_sha !== commit)
-        ? "failed"
-        : runs.some((r) => r.status !== "completed")
-        ? "pending"
-        : runs.every((r) => r.conclusion === "success")
-        ? "passed"
-        : "failed";
 }
 export interface Gateway {
     observe(instance: number): Promise<Observation>;
@@ -234,29 +217,11 @@ const lastingCodes = new Set([
     "deployment_config.unavailable",
 ]);
 export const transient = (r: Row) =>
-    (r.status === "interrupted" ||
-        ["operation", "preparation", "environment"].includes(
-            r.failed_step ?? "",
-        )) &&
+    ["operation", "preparation", "environment"].includes(r.failed_step ?? "") &&
     !lastingCodes.has(r.error_code ?? "");
-export const terminalOperation = (status: string) =>
-    ["succeeded", "failed", "cancelled", "interrupted"].includes(status);
-export const failureStatus = (status: string) =>
-    ["failed", "cancelled", "interrupted"].includes(status);
-export const eligibleFailure = (r: Row) =>
-    isAutomaticDeployment(r) && failureStatus(r.status) && r.commit !== null &&
+const eligibleFailure = (r: Row) =>
+    isAutomaticDeployment(r) && r.status === "failed" && r.commit !== null &&
     r.error_code !== "deployment.paused";
-/** One retry clock and limit for both environments; production can also block lasting failures. */
-export function automaticRetry(
-    attempts: number,
-    last: string,
-    now: string,
-): "commit_failed" | "backing_off" | null {
-    if (attempts >= 3) return "commit_failed";
-    return Date.parse(now) < Date.parse(last) + 600_000 * 2 ** (attempts - 1)
-        ? "backing_off"
-        : null;
-}
 const milliseconds = (t: string) => Date.parse(t);
 
 async function gateRead<T>(read: () => Promise<T>): Promise<T> {
@@ -406,7 +371,9 @@ export async function tick(
     }
     if (
         state.intent && receipt &&
-        terminalOperation(receipt.status)
+        ["succeeded", "failed", "cancelled", "interrupted"].includes(
+            receipt.status,
+        )
     ) {
         const intent = state.intent;
         const row = history.find((r) => r.id === receipt.result?.deployment_id);
@@ -543,9 +510,7 @@ export async function tick(
                         ...new Set([
                             ...state.blocked,
                             ...[...failures].filter(([, f]) =>
-                                f.lasting ||
-                                automaticRetry(f.attempts, f.last, now) ===
-                                    "commit_failed"
+                                f.lasting || f.attempts >= 3
                             )
                                 .map(([c]) => c),
                         ]),
@@ -590,17 +555,31 @@ export async function tick(
                                 examined++
                             ) {
                                 if (!blocked.includes(candidate.sha)) {
-                                    const check = mergeCheckResult(
-                                        await gateRead(() =>
-                                            gateway.checks(
-                                                instance,
-                                                candidate!.sha,
-                                                observation.gate!,
-                                            )
-                                        ),
-                                        candidate.sha,
-                                        observation.gate,
+                                    const runs = (await gateRead(() =>
+                                        gateway.checks(
+                                            instance,
+                                            candidate!.sha,
+                                            observation.gate!,
+                                        )
+                                    )).filter((r) =>
+                                        r.name === observation.gate
                                     );
+                                    const check = !runs.length
+                                        ? "pending"
+                                        : runs.some((r) =>
+                                                r.app !== "github-actions" ||
+                                                r.head_sha !== candidate!.sha
+                                            )
+                                        ? "failed"
+                                        : runs.some((r) =>
+                                                r.status !== "completed"
+                                            )
+                                        ? "pending"
+                                        : runs.every((r) =>
+                                                r.conclusion === "success"
+                                            )
+                                        ? "passed"
+                                        : "failed";
                                     if (candidate.sha === walk.head) {
                                         headState = check;
                                     }
@@ -667,8 +646,9 @@ export async function tick(
         const failure = failures.get(selected);
         if (
             failure &&
-            automaticRetry(failure.attempts, failure.last, now) ===
-                "backing_off"
+            milliseconds(now) <
+                milliseconds(failure.last) +
+                    600_000 * 2 ** (failure.attempts - 1)
         ) return "backing_off";
         // Ordinals never reset at a manual deploy; an old idempotency key must never be reused.
         const attempt = Math.max(
