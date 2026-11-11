@@ -1,0 +1,24 @@
+---
+# Only a role input with local DNS ownership selects this wrapper. The shared role playbook stays unchanged.
+- name: Prepare Gateway local private DNS
+  hosts: role_node
+  become: true
+  gather_facts: false
+  tags: [node]
+  tasks:
+    - name: Install and prove the local listener before shared resolver routing
+      when: intent.runtime.gateway_dns.listener is defined
+      ansible.builtin.include_tasks: tasks/private-dns-listener.yml
+      vars: { private_dns: "{{ intent.runtime.gateway_dns.listener }}" }
+- name: Apply the shared role
+  ansible.builtin.import_playbook: operation-node-role-add.yml
+- name: Withdraw Gateway local private DNS after shared resolver routing
+  hosts: role_node
+  become: true
+  gather_facts: false
+  tags: [node]
+  tasks:
+    - name: Withdraw the recorded local listener
+      when: intent.runtime.gateway_dns.withdraw is defined
+      ansible.builtin.include_tasks: tasks/private-dns-withdraw.yml
+      vars: { private_dns_withdraw: "{{ intent.runtime.gateway_dns.withdraw }}" }

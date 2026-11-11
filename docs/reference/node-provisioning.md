@@ -875,7 +875,9 @@ Every hub render excludes Nodes in `Removing` state, including concurrent enroll
 
 Enrollment and Node removal publish private DNS only on an active Node with an active VPN assignment. Gateway-only Nodes receive no fleet DNS publication.
 
-When no separate active or provisioning VPN holder exists, the Gateway runtime [installs the shared local listener and its baseline catalog](/reference/private-dns#the-gateway-machine) before resolver routing. A separate VPN holder keeps the Gateway runtime, recipe and resolver inputs unchanged, so stock-bootstrap repair has no side effect on a working production Gateway. Colocated Gateway and VPN roles use one listener footprint. Fleet publication keeps the VPN owner selection. Saved footprint listener runs refuse a target without an active VPN role.
+When no separate active or provisioning VPN holder exists, the Gateway runtime [installs the shared local listener and its baseline catalog](/reference/private-dns#the-gateway-machine) before resolver routing. A separate VPN holder keeps the Gateway runtime, recipe and resolver inputs unchanged, so stock-bootstrap repair has no side effect on a working production Gateway. Colocated Gateway and VPN roles use one listener footprint.
+
+Confirmed local ownership is recorded; if a separate VPN joins later, the next Gateway converge routes DNS to it and withdraws the recorded local listener. Fleet publication keeps the VPN owner selection. Saved footprint listener runs refuse a target without an active VPN role.
 
 If the existing worker cache is empty, owned by root and mode `0755`, converge
 replaces it with a private `0700` cache for the configured Node user. It refuses

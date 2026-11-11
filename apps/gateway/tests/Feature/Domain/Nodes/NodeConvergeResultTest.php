@@ -2,8 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\GatewayPrivateDnsInput;
+use App\Domain\Nodes\GatewayPrivateDnsState;
+use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NodeConvergeProjection;
 use App\Domain\Nodes\NodeConvergeResult;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -126,4 +130,54 @@ it('rolls back Tool projection if the terminal evidence belongs to another run',
     $observations = $this->tools->map(fn (Tool $tool): array => ['id' => $tool->id, 'status' => 'installed', 'installed_version' => '2.3.4'])->all();
     expect(fn () => app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'run_id' => 'another-run', 'result' => converge_receipt(null, $observations)]))->toThrow(ResourceOperationException::class, 'another Swamp run');
     expect($this->tools[0]->refresh()->installed_version)->toBe('1.0.0')->and($this->operation->refresh()->status)->toBe(OperationStatus::Running);
+});
+
+it('withdraws recorded Gateway DNS ownership after a separate VPN joins and leaves role removal clean', function (): void {
+    config(['orbit.gateway_checkout' => '/home/orbit/orbit/apps/gateway', 'orbit.home' => '/home/orbit/.orbit',
+        'swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
+    Node::withoutEvents(fn (): bool => $this->node->update(['architecture' => 'x86_64', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture']));
+    $gateway = $this->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->node->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+    $dns = app(GatewayPrivateDnsInput::class);
+    $state = app(GatewayPrivateDnsState::class);
+    $local = $dns->capture($this->node);
+    expect($local)->toHaveKey('listener');
+    expect($state->owned($this->node->id))->toBeFalse();
+    $input = $this->operation->input;
+    $input['_converge']['intent']['roles'] = [['runtime' => ['gateway_dns' => $local]]];
+    $this->operation->update(['input' => $input]);
+    $observations = $this->tools->map(fn (Tool $tool): array => ['id' => $tool->id, 'status' => 'installed', 'installed_version' => '1.0.0'])->all();
+    app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'result' => converge_receipt(null, $observations)]);
+    expect($state->owned($this->node->id))->toBeTrue();
+
+    $vpn = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'vpn', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'wireguard_ip' => '10.44.0.1', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'vpn-fixture']));
+    $vpn->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+    $withdraw = $dns->capture($this->node);
+    expect($withdraw)->toHaveKey('withdraw')->not->toHaveKey('listener')
+        ->and($withdraw['address'])->toBe('10.44.0.1')
+        ->and($withdraw['withdraw']['units'])->toBe(['orbit-private-dns.socket', 'orbit-private-dns.service']);
+    $operation = Operation::query()->create(['kind' => 'node.converge', 'target_type' => 'node_footprint', 'target_id' => $this->node->id, 'node_id' => $this->node->id,
+        'status' => 'running', 'input' => ['_converge' => ['intent' => ['tools' => [], 'roles' => [['runtime' => ['gateway_dns' => $withdraw]]]]]], 'state' => ['swamp_run_id' => 'withdraw-run']]);
+    $native = [...$this->native, 'run_id' => 'withdraw-run'];
+    app(NodeConvergeProjection::class)->apply($operation, [...$native, 'result' => converge_receipt()]);
+    expect($state->owned($this->node->id))->toBeFalse()
+        ->and($dns->capture($this->node))->toBe(['operation' => 'converge', 'address' => '10.44.0.1', 'domain' => 'orbit']);
+
+    $gateway->update(['status' => 'removing']);
+    $removal = app(NativeNodeRoleRemovalInput::class);
+    $plan = $removal->capture($this->node, $gateway, $removal->publications($this->node, RoleName::Gateway));
+    expect(array_column(array_column($plan['stop_units'], 'input'), 'unit'))->toBe(['orbit-gateway-dns.service']);
+});
+
+it('retains recorded Gateway DNS ownership when the withdrawal phase fails', function (): void {
+    $state = app(GatewayPrivateDnsState::class);
+    $state->record($this->node->id, ['gateway_dns' => ['listener' => []]]);
+    $input = $this->operation->input;
+    $input['_converge']['intent']['roles'] = [['runtime' => ['gateway_dns' => ['withdraw' => []]]]];
+    $this->operation->update(['input' => $input]);
+
+    app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'status' => 'failed', 'result' => converge_receipt('roles')]);
+
+    expect($state->owned($this->node->id))->toBeTrue();
 });

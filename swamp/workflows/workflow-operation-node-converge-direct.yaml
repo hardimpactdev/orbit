@@ -286,10 +286,11 @@ jobs:
           behaviorName: node-converge-converge-roles
           methodName: execute
           inputs:
-            run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags roles \"$ORBIT_ANSIBLE/operation-node-converge.yml\" > \"$ORBIT_RUN/roles.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/roles-meta.json\"\nexit \"$code\""
+            run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags roles \"$ORBIT_ANSIBLE/$ORBIT_PLAYBOOK\" > \"$ORBIT_RUN/roles.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/roles-meta.json\"\nexit \"$code\""
             env:
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}'
+              ORBIT_PLAYBOOK: '${{ "playbook" in inputs.intent ? inputs.intent.playbook : "operation-node-converge.yml" }}'
               ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
   -
     name: tools

@@ -1,8 +1,4 @@
 ---
-- name: Install and prove the Gateway local private DNS before routing
-  when: rt.gateway_dns.listener is defined
-  ansible.builtin.include_tasks: tasks/private-dns-listener.yml
-  vars: { private_dns: "{{ rt.gateway_dns.listener }}" }
 - name: Write Gateway DNS unit
   ansible.builtin.copy:
     dest: /etc/systemd/system/orbit-gateway-dns.service

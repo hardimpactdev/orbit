@@ -13,7 +13,7 @@ use App\Models\Node;
 /** Desired fleet state decides whether the Gateway must serve its own private DNS. */
 final readonly class GatewayPrivateDnsInput
 {
-    public function __construct(private GatewayPrivateDnsResolver $resolver, private VpnSettings $settings) {}
+    public function __construct(private GatewayPrivateDnsResolver $resolver, private VpnSettings $settings, private GatewayPrivateDnsState $state) {}
 
     public function requiresLocalListener(Node $gateway): bool
     {
@@ -38,6 +38,12 @@ final readonly class GatewayPrivateDnsInput
                 'listener' => app(NodePrivateDnsListenerFootprint::class)->input($gateway),
                 'publication' => app(NodeConvergeInput::class)->dns(),
             ]);
+        } elseif ($this->state->owned($gateway->id) && ! $gateway->roles()->where('role', RoleName::Vpn)->exists()) {
+            $dns['withdraw'] = ['resolver_address' => $address, 'local_address' => $gateway->wireguard_ip,
+                'units' => ['orbit-private-dns.socket', 'orbit-private-dns.service'],
+                'files' => ['/etc/systemd/system/orbit-private-dns.socket', '/etc/systemd/system/orbit-private-dns.service',
+                    '/var/lib/orbit/private-dns/catalog.json', '/var/lib/orbit/private-dns/catalog.json.loaded'],
+                'releases' => '/var/lib/orbit/private-dns/releases'];
         }
 
         return $dns;

@@ -85,6 +85,12 @@ The Gateway uses the fleet VPN resolver when another active or provisioning Node
 
 When no separate VPN holder exists, the Gateway role installs the shared private-DNS listener and a catalog rendered from the Gateway database before routing the private VPN domain to its own WireGuard address. The Gateway decides this from desired fleet state and passes the listener into the converge input; host probes do not select the policy. It proves that `gateway.orbit` answers and the listener loaded the catalog before applying resolver routing.
 
+Only a local DNS installation or withdrawal selects an additional wrapper playbook. Every existing Ansible file used by a Gateway with a separate VPN resolver stays unchanged. Shipping the additional files in the manifest has no host effect.
+
+The Gateway records local listener ownership after its machine phase succeeds. When a separate VPN resolver joins later, an owned Gateway switches resolver routing first, then disables and removes its local listener units, release and catalog. The ownership record is cleared only after withdrawal succeeds. A failed withdrawal keeps the record for retry. A Gateway that never installed a listener receives no withdrawal input. Role removal also uses this record, including when a VPN joined before the next converge; a colocated VPN keeps the shared listener.
+
+Check mode skips listener activation and live readiness probes. It does not prove an unapplied listener or a loaded catalog.
+
 A Gateway that also holds `vpn` uses the same footprint, `orbit-private-dns.socket` and `orbit-private-dns.service` as VPN publication. Convergence never adds a second listener. Every other query stays on the uplink resolvers when the Gateway is outside the managed peer policy, so package mirrors, GitHub and ACME remain reachable while private DNS is down.
 
 The unit `orbit-gateway-dns.service` applies the route whenever the tunnel starts. It sets the routing domain and turns off the link's default DNS route before it sets the server, so the link never routes every name. A failure there never fails the tunnel. When `/etc/wireguard/orbit.dns-link` exists, the machine is a managed peer, and the step leaves the peer's policy in place.

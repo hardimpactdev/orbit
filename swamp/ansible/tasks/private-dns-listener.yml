@@ -19,6 +19,7 @@
   loop_control: { label: "{{ item.path }}" }
   register: private_dns_files
 - name: Test the private DNS release before activation
+  when: not ansible_check_mode
   ansible.builtin.command:
     argv: [timeout, "30", /usr/bin/php8.5, "{{ private_dns.release }}/serve.php", --self-test]
   changed_when: false
@@ -42,6 +43,7 @@
   loop_control: { label: "{{ item.name }}" }
   register: private_dns_units
 - name: Start the single private DNS socket
+  when: not ansible_check_mode
   ansible.builtin.systemd:
     name: orbit-private-dns.socket
     enabled: true
@@ -49,11 +51,13 @@
     daemon_reload: "{{ private_dns_units is changed }}"
 # The socket holds queries across a listener restart. Catalog-only changes are loaded without a restart.
 - name: Start the private DNS listener
+  when: not ansible_check_mode
   ansible.builtin.systemd:
     name: orbit-private-dns.service
     enabled: true
     state: "{{ 'restarted' if private_dns_units is changed or private_dns_files is changed else 'started' }}"
 - name: Prove the local Gateway DNS answer before routing
+  when: not ansible_check_mode
   ansible.builtin.command:
     argv: [timeout, "5", dig, "@{{ private_dns.address }}", +short, +time=1, +tries=1, gateway.orbit, A]
   register: private_dns_answer
@@ -62,6 +66,7 @@
   retries: 5
   delay: 1
 - name: Read the loaded local private DNS catalog
+  when: not ansible_check_mode
   ansible.builtin.command:
     argv: [timeout, "5", cat, /var/lib/orbit/private-dns/catalog.json.loaded]
   register: private_dns_loaded

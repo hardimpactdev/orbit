@@ -34,12 +34,16 @@ final readonly class NodeDesiredConvergeInput
         $copies = ['agent_verifier' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'node-converge-operation-'.$operation->id.'-agent-verifier', (string) $node->agent_secret_hash)];
         $plans = [];
         $recipeJson = $recipe->json;
+        $playbook = null;
         foreach ($node->roles()->whereIn('role', $roles)->orderBy('id')->get() as $assignment) {
             $snapshot = app(NodeRoleDirectInput::class)->capture($node, $assignment, false);
             $plan = app(NativeNodeRoleAddInput::class)->capture($node, $assignment, $snapshot, [], $operation, true);
             $rolePlan = $plan['intent'];
             $runtime = ValidatedData::object($rolePlan['runtime']);
             $gatewayDns = $runtime['gateway_dns'];
+            if (is_array($gatewayDns) && (isset($gatewayDns['listener']) || isset($gatewayDns['withdraw']))) {
+                $playbook = 'operation-node-converge-local-dns.yml';
+            }
             if (is_array($gatewayDns) && isset($gatewayDns['listener'])) {
                 $localRecipe = ValidatedData::object(json_decode($recipeJson, true, flags: JSON_THROW_ON_ERROR));
                 $localRoles = ValidatedData::object($localRecipe['roles']);
@@ -84,6 +88,6 @@ final readonly class NodeDesiredConvergeInput
             'agent' => [...$agent, 'sha256' => $delivery->pin($node), 'url' => $delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null],
             'cli' => app(CliConvergePlan::class)->nodeInput($node), 'kernel' => NodeKernelPolicy::intent(), 'updates' => NodeUpdatePolicy::for($node), 'recipe' => $recipeJson,
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']->forArchitecture('amd64')),
-            'tools' => $tools, 'network' => $network], 'execution_secrets' => $copies];
+            'tools' => $tools, 'network' => $network, ...($playbook === null ? [] : ['playbook' => $playbook])], 'execution_secrets' => $copies];
     }
 }

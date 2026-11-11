@@ -5,11 +5,13 @@ declare(strict_types=1);
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Nodes\GatewayPrivateDnsInput;
+use App\Domain\Nodes\GatewayPrivateDnsState;
 use App\Domain\Nodes\GatewayRuntimeFiles;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\NodeRoleDirectInput;
+use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -127,7 +129,7 @@ it('captures the shared local DNS listener and Gateway catalog before resolver r
     'active colocated VPN keeps the same listener owner' => [LifecycleStatus::Active],
 ]);
 
-it('withdraws the Gateway listener only when no colocated VPN needs it', function (bool $vpn, bool $separate): void {
+it('withdraws the Gateway listener only when no colocated VPN needs it', function (bool $vpn, bool $separate, bool $owned): void {
     config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
     $node = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2',
         'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture',
@@ -141,14 +143,20 @@ it('withdraws the Gateway listener only when no colocated VPN needs it', functio
         $resolver = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'vpn', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.1', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture']));
         $resolver->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
     }
+    if ($owned) {
+        app(GatewayPrivateDnsState::class)->record($node->id, ['gateway_dns' => ['listener' => []]]);
+    }
     $capture = app(NativeNodeRoleRemovalInput::class);
     $before = $capture->publications($node, RoleName::Gateway);
     $plan = $capture->capture($node, $role, $before);
 
     $units = array_column(array_column($plan['stop_units'], 'input'), 'unit');
-    expect($units)->toBe(($vpn || $separate) ? ['orbit-gateway-dns.service'] : ['orbit-gateway-dns.service', 'orbit-private-dns.socket', 'orbit-private-dns.service']);
+    expect($units)->toBe(($vpn || ! $owned) ? ['orbit-gateway-dns.service'] : ['orbit-gateway-dns.service', 'orbit-private-dns.socket', 'orbit-private-dns.service']);
     expect(array_column(array_column($plan['remove_units'], 'input'), 'unit'))->toBe($units);
-})->with(['Gateway-only' => [false, false], 'Gateway and VPN' => [true, false], 'production Gateway with separate VPN' => [false, true]]);
+    NodeRoleRemovalProjection::recordCleanup(['node_id' => $node->id, 'role' => 'gateway']);
+    expect(app(GatewayPrivateDnsState::class)->owned($node->id))->toBeFalse();
+})->with(['Gateway-only' => [false, false, true], 'Gateway and VPN' => [true, false, true],
+    'production Gateway with separate VPN' => [false, true, false], 'owned listener with a newly enrolled VPN' => [false, true, true]]);
 
 it('captures Gateway DNS without a configured DNS server or a separate VPN Node', function (): void {
     config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
@@ -215,4 +223,17 @@ it('keeps production Gateway runtime recipe and Ansible vars byte identical to m
     }
     $golden = json_decode(file_get_contents(base_path('tests/Fixtures/production-gateway-converge-main.json')), true, flags: JSON_THROW_ON_ERROR);
     expect($actual)->toBe($golden['output']);
+    expect($capture['intent'])->not->toHaveKey('playbook');
+    foreach ($golden['ansible_files'] as $path => $digest) {
+        expect(hash_file('sha256', base_path('../../'.$path)), $path)->toBe($digest);
+    }
+    $vpn->roles()->delete();
+    $local = app(NodeDesiredConvergeInput::class)->capture($node, ['gateway'], false, $operation, null);
+    expect($local['intent']['playbook'])->toBe('operation-node-converge-local-dns.yml')
+        ->and($local['intent']['roles'][0]['playbook'])->toBe('operation-node-role-add-local-dns.yml');
+    app(GatewayPrivateDnsState::class)->record($node->id, $local['intent']['roles'][0]['runtime']);
+    $vpn->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+    $withdraw = app(NodeDesiredConvergeInput::class)->capture($node, ['gateway'], false, $operation, null);
+    expect($withdraw['intent']['playbook'])->toBe('operation-node-converge-local-dns.yml')
+        ->and($withdraw['intent']['roles'][0]['runtime']['gateway_dns'])->toHaveKey('withdraw');
 });

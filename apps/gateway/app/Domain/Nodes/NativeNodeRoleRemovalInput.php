@@ -109,7 +109,7 @@ final readonly class NativeNodeRoleRemovalInput
         }
         if ($assignment->role === RoleName::Gateway) {
             $units[] = 'orbit-gateway-dns.service';
-            if (app(GatewayPrivateDnsInput::class)->requiresLocalListener($node)
+            if (app(GatewayPrivateDnsState::class)->owned($node->id)
                 && ! $node->roles()->where('role', RoleName::Vpn)->exists()) {
                 $units = [...$units, 'orbit-private-dns.socket', 'orbit-private-dns.service'];
             }
