@@ -7,6 +7,8 @@ const ansible = fileURLToPath(new URL("../ansible/", import.meta.url));
 const source = parse(await Deno.readTextFile(`${ansible}operation-fleet-reboot.yml`)) as any[];
 const workflow = parse(await Deno.readTextFile(new URL("../workflows/workflow-fleet-reboot-node.yaml", import.meta.url))) as any;
 const steps = workflow.jobs[0].steps as any[];
+// The workflow names the Node's installed venv. A test resolves ansible-playbook from PATH, where the shape gate puts its pinned tools.
+const installedPlaybook = "/opt/orbit/ansible/venv/bin/ansible-playbook";
 const fixture = fileURLToPath(new URL("fixtures/fleet-reboot-ssh.py", import.meta.url));
 const diagnostic = "ssh: connect to host 192.0.2.9 port 22: Connection timed out";
 const recordPath = (folder: string, id = 9, position = 0) => `${folder}/result-${String(position).padStart(3, "0")}-${id}.json`;
@@ -47,7 +49,7 @@ async function phase(path: string, failures: number, held = false, name = "drain
     const step = steps.find((step) => step.name === name);
     const env = Object.fromEntries(Object.entries(step.task.inputs.env).filter(([, value]) => typeof value === "string" && !value.includes("${{"))) as Record<string, string>;
     const result = await new Deno.Command("sh", {
-        args: ["-c", step.task.inputs.run.replace("/opt/orbit/ansible/venv/bin/ansible-playbook", "ansible-playbook").replace('"$ORBIT_ANSIBLE/operation-fleet-reboot.yml"', '"$ORBIT_RUN/play.json"')],
+        args: ["-c", step.task.inputs.run.replace('"$ORBIT_ANSIBLE/operation-fleet-reboot.yml"', '"$ORBIT_RUN/play.json"').replace(installedPlaybook, "ansible-playbook")],
         stdout: "piped", stderr: "piped",
         env: { ...env, ANSIBLE_CONFIG: `${ansible}ansible.cfg`, ANSIBLE_FORKS: "2", ORBIT_RUN: path, ORBIT_NODE_ID: "9", ORBIT_POSITION: "0",
             REBOOT_SSH_FIXTURE: path, ANSIBLE_COLLECTIONS_PATH: Deno.env.get("ANSIBLE_COLLECTIONS_PATH") ?? "/opt/orbit/ansible/collections",
@@ -192,7 +194,7 @@ for (const name of ["drain", "reboot"]) {
             const step = steps.find((step) => step.name === name);
             const env = Object.fromEntries(Object.entries(step.task.inputs.env).filter(([, value]) => typeof value === "string" && !value.includes("${{"))) as Record<string, string>;
             const result = await new Deno.Command("sh", {
-                args: ["-c", step.task.inputs.run.replace("/opt/orbit/ansible/venv/bin/ansible-playbook", "ansible-playbook").replace('"$ORBIT_ANSIBLE/operation-fleet-reboot.yml"', '"$ORBIT_RUN/play.json"')], stdout: "piped", stderr: "piped",
+                args: ["-c", step.task.inputs.run.replace('"$ORBIT_ANSIBLE/operation-fleet-reboot.yml"', '"$ORBIT_RUN/play.json"').replace(installedPlaybook, "ansible-playbook")], stdout: "piped", stderr: "piped",
                 env: { ...env, ANSIBLE_CONFIG: `${ansible}ansible.cfg`, ANSIBLE_FORKS: "2", ORBIT_RUN: path, ORBIT_NODE_ID: "9", REBOOT_SSH_FIXTURE: path,
                     ANSIBLE_COLLECTIONS_PATH: Deno.env.get("ANSIBLE_COLLECTIONS_PATH") ?? "/opt/orbit/ansible/collections" },
             }).output();

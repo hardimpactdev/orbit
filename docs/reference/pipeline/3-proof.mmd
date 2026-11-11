@@ -22,7 +22,7 @@ sequenceDiagram
   %%> - a proof child claims a place as any task provision does (Nick, 2026-11-07: docs/cli/task/start.mmd); the claim starts the VM, fetches the PR head onto the warm checkout and starts the containers from `base`, in under 30 s
   %%> Built, not yet passed live:
   %%> - the command `orbit proof COMMAND` ([chart](/cli/proof/proof)): the Gateway finds the VM by the calling Node and admits the operation `proof.verify`; Swamp starts `proof-fleet-verify` with this VM as input, with `restore_first` and `final_restore` set; `proof:run` is the CI path on a VM of its own
-  %%> - built: the cases file format, the runner and the Swamp workflows `proof-fleet-verify` and `proof-fleet-verify-batch`, which run the batches and the cases below, and `proof-fleet-restore`, which restores and starts `base`, checks readiness and applies the checkout before every batch but the first
+  %%> - built: the cases file format, the runner and the Swamp workflows `proof-fleet-verify` and `proof-fleet-verify-batch`, which run the batches and the cases below, and `proof-fleet-restore`, which restores and starts `base`, applies the checkout and checks readiness before every batch but the first
   %%> - the runner finds the fleet by the guest names `nested-gateway`, `nested-app-dev` and `nested-app-prod`; no environment setting is needed
   Note over GW: Authorize<br/>mint tokens
   %%> Decided by the orchestrator, for Nick's review (2026-11-07):
@@ -62,13 +62,23 @@ sequenceDiagram
   end
   SW->>NT: Restore the base snapshot<br/>a reboot · 5–16 s
   %%> What it does:
-  %%> - restores the task's Incus snapshot `base` (stage 2) of the three containers in parallel, then starts them
-  %%> - ready when the Gateway answers, every Node agent sends a fresh heartbeat and Doctor is healthy; every restore has a 45 s limit, and readiness then waits at most 120 s for a healthy Doctor; a restore that fails or is not healthy in time stops the run
+  %%> - restores the task's Incus snapshot `base` (stage 2) of the three containers in parallel; every restore has a 45 s limit
+  %%> - a failed restore stops the run before any case
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
   %%> - a container snapshot holds no memory, so the restore is a reboot: no guest clock to set, no NFS server to restart, no stale TCP state; the operator peer comes back from the hub's peer file (stage 2)
   %%> - measured on shark: the 16 firewall:allow cases passed on containers, each batch restore 14–16 s to healthy; on the VM copies the same cases passed 0 (the Gateway hung on its NFS checkout after the stateful restore)
   %%> - Reverb starts after the Gateway API answers, as in stage 2, so a restored fleet accepts realtime connections about 5 s after the reboot
-  SW->>NT: Apply the code<br/>migrate · restart services
+  SW->>NT: Start the containers
+  SW->>NT: Read the container state
+  SW->>SW: Check the containers run
+  %%> A container already running makes `incus start` exit 1; the state check requires all three to be RUNNING.
+  SW->>NT: Wait for cloud-init
+  %%> Cloud-init is disabled after the first build, so this alone does not wait for systemd boot.
+  SW->>NT: Wait for systemd boot
+  %%> - inside each container, waits up to 120 s for systemd to settle to running or degraded; the whole exec is bounded at 135 s
+  %%> - then requires each of apply's state mounts on Gateway and app-dev to be active; it starts no unit and reads no Gateway API
+  %%> - a timeout, another systemd state or an inactive required mount fails before apply, with the state or mount in the error
+  SW->>NT: Apply the checkout<br/>migrate · restart services
   %%> What it does:
   %%> - runs the migrations and restarts the long-running services (Horizon, the scheduler, the agent-view subscriber) in the nested Gateway, so they run the checked-out code
   %%> - before discovery and cases, the shared runner installs the checkout's pinned Ansible collections, renders its Swamp grants and reloads them; the restored base can lack a new callback or vault key pattern
@@ -77,10 +87,17 @@ sequenceDiagram
   %%> - the code itself needs no step: the nested containers have the task VM's checkout as a disk device (stage 2), and PHP reads changed files on the next request
   %%> - also runs after every restore below: the restored containers boot the state of `base`, whose database may predate the checkout's migrations
   %%> - after each restore, the candidate runner prepares the Gateway and observers in two Ansible runs from its frozen pin; every batch and direct case requires preparation and new reports, even if an older workflow skips setup ([runner chart](https://github.com/hardimpactdev/orbit/blob/main/docs/reference/pipeline/3-proof-runner.mmd)); failure stops cases as infrastructure
+  SW->>NT: Check readiness<br/>Doctor · nodes · operator
+  %%> What it does:
+  %%> - calls `task-nested-ready` only after `task-nested-apply` succeeds, including its migrations and service checks
+  %%> - waits at most 120 s for a healthy Doctor, then reads the nodes and checks their agents, the operator and Doctor through the nested Gateway API
+  %%> - the mounted checkout serves the candidate immediately, while a restore returns the database to the base schema; an API read before migration can fail on a required candidate column
+  %%> - apply needs running containers, settled systemd boot and active state mounts; it needs no API readiness check
+  %%> - the same order applies to every batch, replay and final restore; a failed migration or readiness check stops the cases
   loop each batch, in the order of swamp/proof/batches.yaml
     SW->>NT: Restore base<br/>a reboot · 5–16 s
     %%> What it does:
-    %%> - one restore per batch, followed by the apply step; skipped when the fleet is still at `base`, as for the first batch
+    %%> - one restore per batch, followed by the apply step and readiness; skipped when the fleet is still at `base`, as for the first batch
     %%> - 45 s limit, as for every restore; a failed restore stops the run
       opt the batch declares a start state
       SW->>NT: Set up the batch<br/>its declared start state
@@ -137,7 +154,7 @@ sequenceDiagram
   %%> Why:
   %%> - the author keeps developing on a clean fleet that already runs the latest code; nothing switches back
   %%> Built, not yet passed live:
-  %%> - the Swamp workflow `proof-fleet-verify` runs this restore in its job `finish`, with the child `proof-fleet-restore` (restore and start, readiness, apply), after the batches end, also when a case failed or a step stopped the run
+  %%> - the Swamp workflow `proof-fleet-verify` runs this restore in its job `finish`, with the child `proof-fleet-restore` (restore and start, cloud-init, apply the checkout, readiness), after the batches end, also when a case failed or a step stopped the run
   %%> - it belongs to the author's own command: it runs when the intent sets `final_restore`; the proof in CI (stage 4) destroys its VM and leaves it unset
   %%> - `orbit proof COMMAND` sets `final_restore`; it also sets `restore_first`, which makes the workflow restore `base` before the first batch, because the author's fleet may have moved (CI leaves it unset: its VM has just taken `base`)
   %%> - it has the 45 s limit of every restore; one that fails or is not healthy in time fails the run, and the verdicts of the cases stay in the report

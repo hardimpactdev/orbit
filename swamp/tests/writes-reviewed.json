@@ -641,7 +641,8 @@
   },
   "proof-fleet-restore": {
    "Read the container state": "read-only",
-   "Wait for cloud-init": "read-only"
+   "Wait for cloud-init": "read-only",
+   "Wait for systemd boot": "read-only"
   },
   "proof-fleet-verify": {
    "Check the main verdicts": "read-only",
