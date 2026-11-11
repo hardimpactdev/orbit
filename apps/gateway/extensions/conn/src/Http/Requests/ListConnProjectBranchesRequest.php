@@ -17,7 +17,7 @@ final class ListConnProjectBranchesRequest extends FormRequest
         $caller = $this->user();
         $project = $this->route('project');
         assert($caller instanceof Node && $project instanceof Project);
-        $projects->default($caller, $project);
+        $projects->readableDefault($caller, $project);
 
         return true;
     }

@@ -57,8 +57,7 @@ final readonly class ConnThreadProjects
     /** Readiness precedes access. Refusals never identify a hidden Node. */
     public function default(Node $caller, Project $project): Instance
     {
-        $default = Instance::query()->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)
-            ->with(['runtime', 'node.roles', 'node.liveTaskVm'])->first();
+        $default = $this->defaultInstance($project);
         $result = $this->checks($project, $default, $this->access->accessibleNodeIds($caller), $this->runtimeRefusals());
         if ($result['refusal'] !== null) {
             throw $result['refusal'];
@@ -66,6 +65,23 @@ final readonly class ConnThreadProjects
         assert($default instanceof Instance);
 
         return $default;
+    }
+
+    /** Branch reads need a reachable ready default, without the clone's source, placement or runtime requirements. */
+    public function readableDefault(Node $caller, Project $project): Instance
+    {
+        $default = $this->defaultInstance($project);
+        if ($default !== null) {
+            $this->assertNodeAccess($default, $this->access->accessibleNodeIds($caller));
+        }
+
+        return $this->admission->readyDefault($project, $default);
+    }
+
+    private function defaultInstance(Project $project): ?Instance
+    {
+        return Instance::query()->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)
+            ->with(['runtime', 'node.roles', 'node.liveTaskVm'])->first();
     }
 
     /**
