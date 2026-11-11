@@ -296,14 +296,15 @@ it('records a completed child while its parent is running and deduplicates paren
     }
 })->with(['tasks.prep', 'tasks.prep_fix', 'tasks.build', 'tasks.review_round'])->with([false, true]);
 
-it('keeps the previous transcript when native cancellation skips finalization', function (bool $expired): void {
+it('keeps the transcript and distinguishes deadline cancellation from user cancellation', function (bool $expired, bool $userCancel): void {
     [$group, $thread, $operation] = recordedTaskWorld();
     $root = '986bc349-54dc-4dea-9f22-76e3353d1cc0';
-    $operation->update(['state' => ['swamp_run_id' => $root, ...($expired ? ['native_timeout' => []] : [])],
+    $operation->update(['state' => ['swamp_run_id' => $root, ...($expired ? ['native_timeout' => [], 'native_timeout_restore' => ['cancel_requested' => $userCancel]] : [])],
         'input' => ['group_id' => $group->id, 'thread_id' => $thread->id],
         'started_at' => $expired ? now()->subHours(2) : now()->subMinute(), 'dispatched_at' => $expired ? now()->subHours(2) : now()->subMinute(),
         'status' => $expired ? OperationStatus::Failed : OperationStatus::Running,
-        'error_code' => $expired ? 'operation.timed_out' : null, 'lock_key' => 'task-group:'.$group->id]);
+        'error_code' => $expired ? 'operation.timed_out' : null, 'cancel_requested_at' => $userCancel ? now()->subMinutes(2) : null,
+        'lock_key' => 'task-group:'.$group->id]);
     $result = ['state' => 'failed', 'transcript' => [['id' => 'partial', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Saved before disconnect', 'at' => '']]];
     $history = ['id' => $root, 'workflowName' => 'operation-task-turn', 'status' => 'cancelled',
         'startedAt' => now()->subHours(2)->toISOString(), 'completedAt' => now()->toISOString(),
@@ -356,14 +357,18 @@ it('keeps the previous transcript when native cancellation skips finalization', 
         $selector = app(DirectOperation::class)->definition('tasks.turn')['terminal_result'];
         $reader->projectTerminal($operation, ['id' => $root], $selector);
         expect($thread->refresh()->tokens)->toBe(100);
-        expect($operation->refresh()->status)->toBe($expired ? OperationStatus::Failed : OperationStatus::Cancelled);
+        expect($operation->refresh()->status)->toBe($expired && ! $userCancel ? OperationStatus::Failed : OperationStatus::Cancelled)
+            ->and($operation->error_code)->toBe($expired && ! $userCancel ? 'operation.timed_out' : null);
+        if ($expired) {
+            expect($operation->state['native_timeout']['native_terminal_status'])->toBe('cancelled');
+        }
         expect($operation->lock_key)->toBeNull();
         $this->getJson('/api/v1/tasks/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Recorded answer')->assertJsonPath('data.state', 'done');
         Http::assertNothingSent();
     } finally {
         app(SwampConnection::class)->release();
     }
-})->with([false, true]);
+})->with(['user cancellation' => [false, true], 'deadline cancellation' => [true, false], 'user request predates expiry' => [true, true]]);
 
 it('loads a root turn capture from its recorded result artifact before projecting', function (): void {
     [$group, $thread, $operation] = recordedTaskWorld();

@@ -112,6 +112,15 @@ final readonly class ExpireOperationAction
         return $operation->status === OperationStatus::Failed && $operation->error_code === 'operation.timed_out' && $operation->lock_key !== null;
     }
 
+    /** A native cancellation after expiry keeps its timeout meaning unless the user already asked to cancel. */
+    public static function deadlineCancellation(Operation $operation): bool
+    {
+        $timeout = $operation->state['native_timeout'] ?? null;
+
+        return is_array($timeout) && ($timeout['cancel_requested_before_deadline']
+            ?? $operation->state['native_timeout_restore']['cancel_requested'] ?? false) !== true;
+    }
+
     /**
      * Replace a provisional expiry once the exact native root has a terminal result.
      * The caller projects that terminal through its normal family projection, including a restoration that ended after the deadline.
@@ -128,7 +137,8 @@ final readonly class ExpireOperationAction
             $restore = is_array($state['native_timeout_restore'] ?? null) ? $state['native_timeout_restore'] : [];
             $timeout = ValidatedData::object($state['native_timeout'] ?? []);
             unset($state['native_timeout'], $state['native_timeout_restore']);
-            $state['native_timeout'] = [...$timeout, 'native_terminal_status' => $nativeStatus, 'native_terminal_observed_at' => now()->toISOString()];
+            $state['native_timeout'] = [...$timeout, 'cancel_requested_before_deadline' => ($restore['cancel_requested'] ?? false) === true,
+                'native_terminal_status' => $nativeStatus, 'native_terminal_observed_at' => now()->toISOString()];
             if (($restore['native_failure'] ?? true) !== true) {
                 unset($state['native_failure']);
             }

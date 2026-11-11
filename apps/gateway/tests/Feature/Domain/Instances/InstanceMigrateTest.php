@@ -1358,7 +1358,11 @@ it('projects the native restored end state and steps across each post-quiesce ex
             'native_cancel_confirmed_at' => now()->toISOString()]]);
     }
     $result = ['instance_id' => $instance->id, 'moved' => false, 'restored' => true, 'ready' => false,
-        'failed_step' => 'processes', 'error_code' => 'instance.migrate_processes_failed'];
+        'failed_step' => 'processes', 'error_code' => $exit === 'deadline-only' ? 'operation.timed_out' : 'instance.migrate_processes_failed'];
+    $nativeResult = $result;
+    if ($exit === 'deadline-only') {
+        unset($nativeResult['error_code']);
+    }
     $history = ['id' => $run, 'workflowName' => 'operation-instance-migrate', 'status' => $nativeStatus,
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'instance.migrate'],
         'startedAt' => $started, 'completedAt' => $finished, 'jobs' => [['name' => 'migrate', 'steps' => [
@@ -1367,7 +1371,7 @@ it('projects the native restored end state and steps across each post-quiesce ex
                 'error' => $exit === 'step timeout' ? 'Command exited with code 124' : $exit],
             ['name' => 'restore', 'status' => 'succeeded', 'startedAt' => $finished, 'completedAt' => $finished],
             ['name' => 'finish', 'status' => 'succeeded', 'startedAt' => $finished, 'completedAt' => $finished,
-                'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]],
+                'outputs' => ['stdout' => json_encode($nativeResult, JSON_THROW_ON_ERROR)]],
         ]]]];
     $frame = [];
     $socket = Mockery::mock(WebSocketClient::class);
@@ -1393,7 +1397,7 @@ it('projects the native restored end state and steps across each post-quiesce ex
         }
 
         expect($projected->result)->toBe($result)
-            ->and($projected->error_code)->toBe('instance.migrate_processes_failed')
+            ->and($projected->error_code)->toBe($result['error_code'])
             ->and($projected->lock_key)->toBeNull()
             ->and($instance->runtime()->exists())->toBeFalse()
             ->and($worker->refresh()->systemd_activation_hash)->toBe('old-host-hash')
@@ -1408,6 +1412,8 @@ it('projects the native restored end state and steps across each post-quiesce ex
 })->with([
     'step failure' => ['step failure', 'failed', false],
     'step timeout' => ['step timeout', 'failed', false],
+    'native step failure after expiry' => ['late step failure', 'failed', true],
+    'deadline-caused native cancellation with restored end state' => ['deadline-only', 'cancelled', true],
     'production reconciler after deadline and confirmed cancel without a target lock' => ['deadline', 'cancelled', true],
     'confirmed cancel' => ['cancel', 'cancelled', false],
     'lost worker' => ['lost worker', 'interrupted', false],
