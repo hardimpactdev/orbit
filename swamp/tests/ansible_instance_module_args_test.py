@@ -12,14 +12,18 @@ from unittest import mock
 import yaml
 from ansible.module_utils import basic
 from ansible.module_utils.common.arg_spec import ModuleArgumentSpecValidator
+from ansible.parsing.dataloader import DataLoader
 from ansible.parsing.mod_args import ModuleArgsParser
-from ansible.plugins.loader import init_plugin_loader, module_loader
+from ansible.playbook.play_context import PlayContext
+from ansible.playbook.task import Task
+from ansible.plugins.loader import action_loader, init_plugin_loader, module_loader
+from ansible.template import Templar
 
 ANSIBLE = Path(__file__).resolve().parents[1] / 'ansible'
 FILES = sorted({*ANSIBLE.rglob('*.yml'), *ANSIBLE.rglob('*.yaml')})
 # Controller actions have no AnsibleModule spec. Their action plugins still need runtime proof.
 CONTROLLER = {'ansible.builtin.assert', 'ansible.builtin.debug', 'ansible.builtin.fail', 'ansible.builtin.include_tasks',
-              'ansible.builtin.set_fact', 'ansible.builtin.import_tasks', 'ansible.builtin.meta',
+              'ansible.builtin.set_fact', 'ansible.builtin.import_tasks', 'ansible.builtin.meta', 'ansible.builtin.pause',
               'ansible.builtin.import_playbook', 'ansible.builtin.reboot', 'ansible.builtin.fetch', 'ansible.builtin.script',
               'ansible.builtin.wait_for_connection', 'ansible.builtin.include_vars', 'ansible.builtin.include_role', 'ansible.builtin.import_role', 'ansible.builtin.add_host', 'ansible.builtin.group_by'}
 # The shell action runs the command module, with its arguments.
@@ -133,8 +137,27 @@ class ModuleArgumentsTest(unittest.TestCase):
         self.assertLessEqual({'community.general.ufw', 'ansible.posix.sysctl', 'ansible.builtin.apt', 'community.general.modprobe',
                               'ansible.builtin.systemd_service'}, checked)
 
+    def test_migration_pause_runs_as_a_controller_action(self):
+        tasks = yaml.safe_load((ANSIBLE / 'tasks/instance-migrate-process-ready.yml').read_text())
+        _, module, arguments = next(call for call in calls(tasks) if call[0] == 'Let all moved Processes settle before cutover')
+        self.assertIn(module, CONTROLLER)
+        loader = DataLoader()
+        task = Task.load({module: arguments}, loader=loader)
+        action = action_loader.get(module, task=task, connection=mock.Mock(), play_context=PlayContext(),
+                                   loader=loader, templar=Templar(loader=loader))
+        # Exercise the pinned action's argument validation without waiting or running a remote module.
+        with mock.patch('ansible.plugins.action.pause.display.prompt_until', return_value=b'') as prompt, \
+                mock.patch.object(action, '_execute_module', side_effect=AssertionError('pause must run on the controller')):
+            result = action.run(task_vars={})
+        prompt.assert_called_once()
+        self.assertEqual(prompt.call_args.kwargs['seconds'], 5)
+        self.assertEqual(result['rc'], 0)
+        self.assertFalse(result['changed'])
+
     def test_the_check_refuses_what_the_real_module_refuses(self):
         specs = {}
+        with self.assertRaisesRegex(AssertionError, 'no such module in the pinned collections'):
+            errors_of('ansible.builtin.orbit_missing_module', {}, specs)
         rule = {'rule': 'allow', 'interface_in': '{{ bridge }}', 'proto': 'tcp', 'to_port': '3128', 'comment': 'orbit:instances-egress'}
 
         self.assertEqual(errors_of('community.general.ufw', rule, specs), [])

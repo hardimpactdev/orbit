@@ -650,7 +650,88 @@ contexts:
           parent: orbitinst0
           security.acls: ' orbitinst0-egress , instance-8 '
     item: {key: inherited, value: *inherited_nic}
+  moved-process-ready:
+    moved_process_ready:
+      rc: 0
+      stdout_lines: [ActiveState=active, Job=, MainPID=1742, NRestarts=0]
+  moved-process-restarted:
+    moved_process_ready:
+      rc: 0
+      stdout_lines: [NRestarts=12, MainPID=2851, Job=, ActiveState=active]
+  moved-process-command-failed:
+    moved_process_ready:
+      rc: 1
+      stdout_lines: [ActiveState=active, Job=, MainPID=1742, NRestarts=0]
+  moved-process-starting:
+    moved_process_ready:
+      rc: 0
+      stdout_lines: [ActiveState=activating, Job=, MainPID=1742, NRestarts=0]
+  moved-process-job-pending:
+    moved_process_ready:
+      rc: 0
+      stdout_lines: [ActiveState=active, 'Job=42 /org/freedesktop/systemd1/job/42', MainPID=1742, NRestarts=0]
+  moved-process-no-pid:
+    moved_process_ready:
+      rc: 0
+      stdout_lines: [ActiveState=active, Job=, MainPID=0, NRestarts=0]
+  moved-process-invalid-pid:
+    moved_process_ready:
+      rc: 0
+      stdout_lines: [ActiveState=active, Job=, MainPID=1742invalid, NRestarts=0]
+  moved-process-missing-restarts:
+    moved_process_ready:
+      rc: 0
+      stdout_lines: [ActiveState=active, Job=, MainPID=1742]
+  moved-process-invalid-restarts:
+    moved_process_ready:
+      rc: 0
+      stdout_lines: [ActiveState=active, Job=, MainPID=1742, NRestarts=0invalid]
 cases:
+- file: tasks/instance-migrate-process-ready.yml
+  task: Wait for the moved Processes to finish starting
+  field: until
+  context: moved-process-ready
+  expected: true
+- file: tasks/instance-migrate-process-ready.yml
+  task: Wait for the moved Processes to finish starting
+  field: until
+  context: moved-process-restarted
+  expected: true
+- file: tasks/instance-migrate-process-ready.yml
+  task: Wait for the moved Processes to finish starting
+  field: until
+  context: moved-process-command-failed
+  expected: false
+- file: tasks/instance-migrate-process-ready.yml
+  task: Wait for the moved Processes to finish starting
+  field: until
+  context: moved-process-starting
+  expected: false
+- file: tasks/instance-migrate-process-ready.yml
+  task: Wait for the moved Processes to finish starting
+  field: until
+  context: moved-process-job-pending
+  expected: false
+- file: tasks/instance-migrate-process-ready.yml
+  task: Wait for the moved Processes to finish starting
+  field: until
+  context: moved-process-no-pid
+  expected: false
+- file: tasks/instance-migrate-process-ready.yml
+  task: Wait for the moved Processes to finish starting
+  field: until
+  context: moved-process-invalid-pid
+  expected: false
+- file: tasks/instance-migrate-process-ready.yml
+  task: Wait for the moved Processes to finish starting
+  field: until
+  context: moved-process-missing-restarts
+  expected: false
+- file: tasks/instance-migrate-process-ready.yml
+  task: Wait for the moved Processes to finish starting
+  field: until
+  context: moved-process-invalid-restarts
+  expected: false
 - file: tasks/instance-network-move-nic.yml
   task: Replace the bridge union ACL on an effective NIC without opening it
   field: ansible.builtin.command.argv
@@ -1347,6 +1428,10 @@ cases:
   context: ufw-deleted
   expected: true
 non_command_output:
+- file: tasks/instance-migrate-schedule-check.yml
+  task: Explain a foreign obsolete Schedule file
+  field: when
+  reason: Checks ownership markers in slurp file contents, not command output.
 - file: instance-container-destroy.yml
   task: Write the phase refusal
   field: ansible.builtin.copy.content
