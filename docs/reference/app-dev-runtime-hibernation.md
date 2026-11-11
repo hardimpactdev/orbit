@@ -84,10 +84,12 @@ Caddy on the Instance's Node checks for the awake marker on every request. When 
 
 The Gateway answers with a progress page, status 401, headers `X-Orbit-Runtime-Activation-State: pending` and `Retry-After: 1`, and then starts the wake. Caddy shows the page and does not pass the request on. The page polls the original path once a second and loads it when the state header is gone. That load is the first application request.
 
+Sleep leaves the Caddy handler and assigned Vite port in place. When startup keeps the same port, a wake publishes nothing. If preparation reassigns the port, the wake submits one [Caddy publication](/reference/caddy-configuration#native-publication). The page stays pending while that Operation waits for the Node hold and runs.
+
 The wake runs in this order:
 
 1. When the cold marker exists, restore dependencies with `composer install --no-interaction --prefer-dist` and `vp install --frozen-lockfile`. This uses the cold wake timeout.
-2. Submit one [Caddy publication](/reference/caddy-configuration#native-publication) for a `vp-dev` Process that needs preparation. Keep the page pending until that Operation succeeds.
+2. Prepare each `vp-dev` Process. Publish a reassigned port before starting it.
 3. Start every desired-running Process.
 4. Wait until each one runs. A `vp-dev` Process must answer on its [assigned Vite port](/reference/assigned-vite-ports).
 5. Clear the cold marker and write the awake marker.

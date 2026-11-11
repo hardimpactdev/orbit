@@ -2,14 +2,23 @@
 
 declare(strict_types=1);
 
+use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
+use App\Actions\Operations\StartOperationAction;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationRunBudgets;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
+use App\Domain\Operations\RoutePublicationHolds;
+use App\Domain\Processes\ProcessOperationAdmission;
+use App\Domain\Processes\VpDevPreset;
 use App\Domain\Routes\NativeCaddyPublicationProjection;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentContract;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Jobs\Operations\PromoteRouteWrites;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
 use App\Models\Node;
@@ -18,6 +27,7 @@ use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
@@ -26,10 +36,10 @@ use Tests\Support\SwampNodeFixture;
 uses(LazilyRefreshDatabase::class);
 
 /** The real wake/lifecycle path, with only agent execution and queued native dispatch replaced. */
-function hibernatedViteCheckout(): array
+function hibernatedViteCheckout(bool $reassign = true): array
 {
     test()->freezeTime();
-    Queue::fake([StartAdmittedSwampRun::class]);
+    Queue::fake([StartAdmittedSwampRun::class, PromoteRouteWrites::class]);
     Http::preventStrayRequests();
     SwampNodeFixture::ensure();
     $node = Node::withoutEvents(fn (): Node => Node::query()->create([
@@ -44,12 +54,12 @@ function hibernatedViteCheckout(): array
         'checkout_path' => '/home/orbit/apps/wake-fixture/default', 'branch' => 'main', 'root' => 'public', 'vite_port' => 5173,
         'status' => 'active', 'provisioning_step' => 'active', 'first_setup_pending' => false]);
     Process::query()->create(['owner_type' => 'instance', 'owner_id' => $instance->id, 'name' => 'vite', 'runtime' => 'systemd',
-        'runtime_config' => ['preset' => 'vp-dev'], 'desired_state' => 'running', 'status' => 'active', 'keep_alive' => false]);
+        'runtime_config' => ['preset' => 'vp-dev', 'command' => VpDevPreset::command()], 'desired_state' => 'running', 'status' => 'active', 'keep_alive' => false]);
     $route = Route::query()->create(['kind' => 'app', 'project_id' => $project->id, 'node_id' => $node->id, 'provenance' => 'explicit',
         'publication' => 'private', 'domain' => 'wake-fixture.test', 'status' => 'pending']);
     $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => 'active', 'sites_published' => true]);
-    $state = (object) ['started' => false, 'awake' => false, 'events' => [], 'exception' => null];
+    $state = (object) ['started' => false, 'awake' => false, 'events' => [], 'exception' => null, 'occupiedPort' => $reassign ? 5173 : null];
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldReceive('run')->andReturnUsing(function (Node $node, string $command, array $input = []) use ($state): array {
         // A removed command must fail here exactly as it does in the deployed runner.
@@ -59,7 +69,7 @@ function hibernatedViteCheckout(): array
         }
         switch ($command) {
             case 'vite.select-port':
-                return ['port' => $input['preferred']];
+                return ['port' => $input['preferred'] === $state->occupiedPort ? $input['preferred'] + 1 : $input['preferred']];
             case 'vite.check-listener':
                 return ['owned' => $state->started, 'ready' => $state->started];
             case 'vite.set-traffic':
@@ -69,6 +79,12 @@ function hibernatedViteCheckout(): array
             case 'hibernation.times':
                 return ['times' => []];
             case 'hibernation.marker':
+                if ($input['operation'] === 'remove') {
+                    $state->awake = false;
+                    $state->events[] = 'asleep';
+
+                    return [];
+                }
                 expect($state->started)->toBeTrue();
                 expect($input['path'])->toBe(RuntimeHibernation::awakePath('app-instance-'.test()->wakeInstanceId));
                 $state->awake = true;
@@ -76,10 +92,12 @@ function hibernatedViteCheckout(): array
 
                 return [];
             case 'process.control':
-                expect($input['operation'])->toBe('start');
-                expect(Operation::query()->sole()->status->value)->toBe('succeeded');
-                $state->started = true;
-                $state->events[] = 'start';
+                if ($input['operation'] === 'start' && $state->occupiedPort !== null) {
+                    expect(Operation::query()->where('kind', 'route.caddy_converge')->where('input->wake_instance_id', test()->wakeInstanceId)
+                        ->latest('id')->firstOrFail()->status->value)->toBe('succeeded');
+                }
+                $state->started = $input['operation'] === 'start';
+                $state->events[] = $input['operation'];
 
                 return [];
             case 'process.status':
@@ -104,7 +122,7 @@ function viteWakePoll(Instance $instance, string $uri = '/'): TestResponse
 /** Projects the same native publication result the shared terminal reader supplies. */
 function finishWakePublication(string $status): Operation
 {
-    $operation = Operation::query()->sole();
+    $operation = Operation::query()->where('kind', 'route.caddy_converge')->where('input->wake_instance_id', test()->wakeInstanceId)->latest('id')->firstOrFail();
     $runId = 'c2a77e95-f547-4429-8661-5c4c65b2040b';
     $operation->forceFill(['status' => 'running', 'started_at' => now(), 'state' => ['swamp_run_id' => $runId]])->save();
 
@@ -116,6 +134,90 @@ function finishWakePublication(string $status): Operation
 }
 
 describe('host-checkout Vite wake', function (): void {
+    it('starts Vite with no publication when the assigned port is unchanged', function (): void {
+        [$instance, $state] = hibernatedViteCheckout(reassign: false);
+
+        viteWakePoll($instance)->assertUnauthorized();
+
+        expect($state->started)->toBeTrue()->and($state->awake)->toBeTrue();
+        expect($instance->refresh()->vite_port)->toBe(5173);
+        test()->assertDatabaseCount('operations', 0);
+        Queue::assertNothingPushed();
+    });
+
+    it('leaves the Caddy handler and assigned port unchanged when the sweep sleeps Vite', function (): void {
+        [$instance, $state] = hibernatedViteCheckout(reassign: false);
+        $state->started = true;
+        $before = app(NodeCaddyfileRenderer::class)->render($instance->node)->content;
+
+        app(SweepIdleAppDevRuntimesAction::class)->execute();
+
+        expect(app(NodeCaddyfileRenderer::class)->render($instance->node)->content)->toBe($before)
+            ->and($instance->refresh()->vite_port)->toBe(5173)
+            ->and($state->started)->toBeFalse()->and($state->awake)->toBeFalse();
+        Queue::assertNothingPushed();
+    });
+
+    it('keeps a reassigned-port wake pending behind the existing Node holder and renders current state after release', function (string $kind): void {
+        [$instance, $state] = hibernatedViteCheckout();
+        $holder = app(StartOperationAction::class)->execute($kind, 'instance', $instance->id + 1, $instance->node_id,
+            ['route_mutations' => ['forward' => ['publications' => [['node_id' => $instance->node_id, 'serves_routes' => true]]]]], 'test', null);
+        Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+
+        viteWakePoll($instance)->assertUnauthorized()->assertHeader('X-Orbit-Runtime-Activation-State', 'pending');
+        $wake = Operation::query()->where('kind', 'route.caddy_converge')->sole();
+        expect($wake->status)->toBe(OperationStatus::Waiting)
+            ->and(OperationRunBudgets::deadline($wake))->toBeNull()
+            ->and($state->started)->toBeFalse();
+        expect(DB::table('route_publication_holds')->where('node_id', $instance->node_id)->value('operation_id'))->toBe($holder->id);
+        viteWakePoll($instance)->assertUnauthorized();
+        Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+        test()->assertDatabaseCount('operations', 2);
+
+        // The earlier holder lands a Route change before the wake's queued run can render anything.
+        $instance->routes()->sole()->update(['web_root' => 'assets/public']);
+        app(OperationStore::class)->change($holder, ['status' => OperationStatus::Succeeded, 'finished_at' => now()]);
+        (new PromoteRouteWrites)->handle(app(RoutePublicationHolds::class));
+
+        expect($wake->refresh()->status)->toBe(OperationStatus::Queued);
+        expect(DB::table('route_publication_holds')->where('node_id', $instance->node_id)->value('operation_id'))->toBe($wake->id);
+        $input = app(DirectOperation::class)->workflowInputs($wake);
+        expect($input['intent']['caddy_publication']['caddy']['content'])->toContain('/home/orbit/apps/wake-fixture/default/assets/public', '127.0.0.1:5174');
+        Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+        finishWakePublication('succeeded');
+        viteWakePoll($instance)->assertUnauthorized();
+        expect($state->started)->toBeTrue()->and($state->awake)->toBeTrue();
+    })->with(['Route update' => ['route.update'], 'Instance migration' => ['instance.migrate']]);
+
+    it('keeps a later Vite port publication behind the wake and renders its new port at the wake run', function (): void {
+        [$instance, $state] = hibernatedViteCheckout();
+        $other = $instance->replicate();
+        $other->fill(['name' => 'other', 'checkout_path' => '/home/orbit/apps/wake-fixture/other', 'vite_port' => 5180])->save();
+        $process = Process::query()->create(['owner_type' => 'instance', 'owner_id' => $other->id, 'name' => 'vite', 'runtime' => 'systemd',
+            'runtime_config' => ['preset' => 'vp-dev', 'command' => VpDevPreset::command()], 'desired_state' => 'running', 'status' => 'active']);
+        $route = Route::query()->create(['kind' => 'app', 'project_id' => $other->project_id, 'node_id' => $other->node_id, 'provenance' => 'explicit',
+            'publication' => 'private', 'domain' => 'other-wake-fixture.test', 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $other->id, 'position' => 0]);
+        $route->update(['status' => 'active', 'sites_published' => true]);
+        viteWakePoll($instance)->assertUnauthorized();
+        $wake = Operation::query()->sole();
+        $state->occupiedPort = 5180;
+
+        $change = app(ProcessOperationAdmission::class)->execute($process, 'start');
+
+        expect($other->refresh()->vite_port)->toBe(5181)
+            ->and($change->status)->toBe(OperationStatus::Waiting);
+        expect(DB::table('route_publication_holds')->where('node_id', $instance->node_id)->value('operation_id'))->toBe($wake->id);
+        $input = app(DirectOperation::class)->workflowInputs($wake);
+        expect($input['intent']['caddy_publication']['caddy']['content'])->toContain('other-wake-fixture.test', '127.0.0.1:5181')
+            ->not->toContain('127.0.0.1:5180');
+        Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+        finishWakePublication('succeeded');
+        (new PromoteRouteWrites)->handle(app(RoutePublicationHolds::class));
+        expect($change->refresh()->status)->toBe(OperationStatus::Queued);
+        Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+    });
+
     it('starts Vite and writes the awake marker only after native publication succeeds', function (): void {
         [$instance, $state] = hibernatedViteCheckout();
 
@@ -126,7 +228,7 @@ describe('host-checkout Vite wake', function (): void {
         $operation = Operation::query()->sole();
         expect($operation->kind)->toBe('route.caddy_converge');
         $input = app(DirectOperation::class)->workflowInputs($operation);
-        expect($input['intent']['caddy_publication']['caddy']['content'])->toContain('reverse_proxy 127.0.0.1:5173');
+        expect($input['intent']['caddy_publication']['caddy']['content'])->toContain('reverse_proxy 127.0.0.1:5174');
         finishWakePublication('succeeded');
 
         viteWakePoll($instance)->assertUnauthorized();

@@ -695,6 +695,8 @@ Only one operation publishes private Caddy, DNS, or Metrics configuration at a t
 
 Route writes also hold their Nodes (decided by the orchestrator, for Nick's review, 2026-11-06). When the Gateway admits a Route write (`route:create`, `route:update`, `route:destroy`, `route:target:set`, `instance:create`, `instance:destroy`, `instance:clone`, `instance:transfer` or `instance:migrate`), it records one hold for each Node that serves the Route's site, through Caddy or PHP. The task keeps the hold until it reaches a terminal state.
 
+Standalone Caddy convergence and native Process operations that publish a Vite port use the same admission and Node hold. Standalone Caddy convergence renders current state when its queued start runs under the hold. A wake needs this publication only after a port reassignment; the progress page stays pending while it waits.
+
 A second Route write that needs a held Node is admitted with status `waiting`. It starts no Swamp run and gets no 409. It starts when every Node it needs is free, oldest first. A newer write also waits behind an older waiting one that shares a Node. Its time budget counts from its start, and an operator can cancel it while it waits.
 
 When a waiting `instance:create`, `instance:clone` or `route:create` gains its Nodes, the Gateway renders its whole Caddyfiles again from the current site catalog and its admitted Route. It keeps the admitted Instance, Route and certificate identities. The previous writer commits its accepted sites and releases its hold in the same transaction, so the next render includes them.

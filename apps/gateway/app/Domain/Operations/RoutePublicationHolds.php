@@ -30,7 +30,8 @@ final class RoutePublicationHolds
 {
     /** @var list<string> */
     private const array Kinds = ['instance.create', 'instance.destroy', 'instance.clone', 'instance.transfer', 'instance.migrate',
-        'route.create', 'route.update', 'route.destroy', 'route.target_set'];
+        'route.create', 'route.update', 'route.destroy', 'route.target_set', 'route.caddy_converge',
+        'process.create', 'process.update', 'process.start', 'process.restart'];
 
     /** A timed-out write that Swamp never confirmed stopped gives its Nodes back after this long. */
     private const int UnconfirmedMinutes = 15;
@@ -95,6 +96,10 @@ final class RoutePublicationHolds
     {
         if (! self::tracks($operation->kind)) {
             return [];
+        }
+        if ($operation->node_id !== null && ($operation->kind === 'route.caddy_converge'
+            || isset($operation->input['vite_plan']))) {
+            return [$operation->node_id];
         }
         $nodes = [];
         self::collect($operation->input, $nodes);

@@ -23,5 +23,6 @@ interface VitePortRuntime
 
     public function prepare(Process $process, Instance $instance): void;
 
-    public function project(Instance $instance): void;
+    /** Sleep leaves the handler in place; only a changed port needs publication. */
+    public function project(Instance $instance, bool $portChanged): void;
 }

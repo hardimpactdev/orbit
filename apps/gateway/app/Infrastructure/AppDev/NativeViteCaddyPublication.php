@@ -8,7 +8,6 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Models\Instance;
 use App\Models\Operation;
 use Illuminate\Contracts\Cache\Repository;
@@ -18,11 +17,13 @@ final readonly class NativeViteCaddyPublication
 {
     public function __construct(private StartOperationAction $operations, private Repository $cache) {}
 
-    public function publish(Instance $instance): void
+    public function publish(Instance $instance, bool $portChanged): void
     {
         $id = $this->cache->get($this->key($instance));
+        if ($id === null && ! $portChanged) {
+            return;
+        }
         if (! is_int($id)) {
-            app(NativeCaddyPublicationInput::class)->forNode($instance->node);
             $operation = $this->operations->execute('route.caddy_converge', 'node_route_projection', $instance->node_id, $instance->node_id,
                 ['reason' => 'Vite runtime wake', 'wake_instance_id' => $instance->id, 'wake_vite_port' => $instance->vite_port], 'runtime-activation', null);
             $this->cache->forever($this->key($instance), $operation->id);
@@ -50,7 +51,11 @@ final readonly class NativeViteCaddyPublication
         if ($operation !== null && ! $operation->status->terminal() && ($deadline === null || $deadline->isFuture())) {
             return;
         }
-        $this->forget($instance);
+        if ($operation !== null && ($operation->status !== OperationStatus::Succeeded
+            || ($operation->input['wake_vite_port'] ?? null) !== $instance->vite_port)) {
+            // The failed publication still owes the port change, even though the next allocation keeps that new port.
+            $this->cache->forever($this->key($instance), 'retry');
+        }
     }
 
     public function forget(Instance $instance): void
