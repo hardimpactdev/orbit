@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Operations\ExpireOperationAction;
+use App\Actions\Operations\ReadOperationAction;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\DirectOperation;
@@ -31,6 +32,7 @@ use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\RateLimiter;
 use Symfony\Component\Yaml\Yaml;
 
 uses(LazilyRefreshDatabase::class);
@@ -243,6 +245,39 @@ describe('native proof interruption', function (): void {
             ->and($proof->error_code)->toBe('proof.cases_failed');
         Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
     })->with(['absent', 'partial', 'complete']);
+
+    it('reads completed failure evidence before a status read closes an interrupted proof', function (bool $batchOnly): void {
+        Queue::fake();
+        [$proof, [[$run]]] = proofRuns(['firewall:allow']);
+        RateLimiter::clear('swamp-read');
+        RateLimiter::clear('swamp-read:operation:'.$run->id);
+        $file = $run->input['file'];
+        $assignment = ['command' => 'firewall:allow', 'file' => $file, 'batch' => 'one', 'cases' => ['deny']];
+        $run->update(['input' => [...$run->input, 'assignments' => [$assignment]]]);
+        $proof->update(['input' => [...$proof->input, 'batches' => [$assignment], 'selected_commands' => ['firewall:allow']]]);
+        $batch = '6b69badf-4f06-4f2e-82d7-21b62c1f5871';
+        $history = ['id' => PROOF_RUN_ID, 'workflowName' => 'operation-proof-run', 'status' => 'interrupted',
+            'startedAt' => now()->subMinute()->toISOString(), 'completedAt' => now()->toISOString(),
+            'inputs' => ['operation_id' => $run->id, 'node_id' => $run->node_id, 'kind' => 'proof.command'],
+            'jobs' => $batchOnly ? [] : [['name' => 'prove', 'steps' => [['name' => 'Report', 'status' => 'succeeded',
+                'outputs' => ['stdout' => "firewall:allow\t{$file}\tone\t".PROOF_FAILED]]]]]];
+        $histories = [PROOF_RUN_ID => $history];
+        if ($batchOnly) {
+            $histories[$batch] = ['id' => $batch, 'workflowName' => 'proof-fleet-verify', 'status' => 'failed',
+                'completedAt' => now()->toISOString(), 'inputs' => ['intent' => $assignment],
+                'jobs' => [['name' => 'report', 'steps' => [['name' => 'report', 'status' => 'succeeded', 'outputs' => ['stdout' => PROOF_FAILED]]]]]];
+        }
+        expect($run->state[ProofBatchProjection::BatchReports] ?? [])->toBe([]);
+        withProofSwamp(proofSwampSocket($batchOnly ? [$batch => PROOF_RUN_ID] : [], $histories), function () use ($run): void {
+            app(ReadOperationAction::class)->execute($run);
+            // A later subscriber cannot repair evidence after the first terminal projection, so the read must retain it.
+            app(SwampCommandStep::class)->projectTerminal($run->refresh(), ['id' => PROOF_RUN_ID], app(DirectOperation::class)->definition('proof.command')['terminal_result']);
+        });
+        expect($run->refresh()->status)->toBe(OperationStatus::Interrupted)
+            ->and($run->result['outcome'])->toBe('interrupted')
+            ->and($run->result['cases'][0])->toMatchArray(['case' => 'deny', 'verdict' => 'failed', 'cause' => 'assertion', 'failed' => ['ufw']]);
+        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.cases_failed');
+    })->with([false, true]);
 
     it('cancels an interrupted unclaimed group without retaining a VM even with keep_failed', function (): void {
         Queue::fake();

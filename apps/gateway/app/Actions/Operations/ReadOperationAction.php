@@ -56,6 +56,11 @@ final readonly class ReadOperationAction
             return $operation->refresh();
         }
         try {
+            if ($operation->kind === 'proof.command' && $receipt['status'] === OperationStatus::Interrupted) {
+                // A diagnostic-only failure would lose completed case reports before the subscriber can record them.
+                return app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => 'interrupted'], $definition['terminal_result'] ?? throw new \LogicException('Proof commands require a full terminal result.'));
+            }
+
             return $this->failures->execute($operation, $runId, $receipt['status'], $receipt['failure'], $receipt['finished_at']);
         } catch (ResourceOperationException $exception) {
             if (! in_array($exception->errorCode, ['operation.run_mismatch', 'operation.run_unbound'], true)) {
