@@ -58,6 +58,11 @@ describe('instance contract', function (): void {
         run_instance_contract('instances/instance-show/default', 'instance:show', ['instance' => '1', '--json' => true], 'instances/instance-show/default.json', 0);
     });
 
+    it('renders attached targets from the recorded Instance response', function (): void {
+        run_instance_contract(['instances/instance-show/attached-targets', 'processes/process-list/instance'], 'instance:show', ['instance' => '1'], 'instances/instance-show/attached-targets.human.txt', 0);
+        run_instance_contract('instances/instance-show/attached-targets', 'instance:show', ['instance' => '1', '--json' => true], 'instances/instance-show/attached-targets.json', 0);
+    });
+
     it('renders the candidate-required refusal', function (): void {
         $arguments = ['project' => '1', 'node' => '3', 'name' => 'release-name'];
         run_instance_contract('instances/instance-create/candidate-required', 'instance:create', $arguments, 'instances/instance-create/candidate-required.human.txt', 1);

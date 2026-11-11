@@ -31,6 +31,8 @@ Fetching Processes...
 │
 └  URL               https://dev.acme.test
 
+Attached targets
+No attached targets.
  ┌───────┬───────────────┬───────────────┬────────┐
  │ ROUTE │ DOMAIN        │ WEB ROOT      │ STATUS │
  ├───────┼───────────────┼───────────────┼────────┤

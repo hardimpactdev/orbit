@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
+use App\Domain\Instances\InstanceAttachedTargets;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Models\Instance;
 use App\Models\Node;
@@ -21,7 +22,7 @@ final readonly class ListInstancesAction
     public function handle(Node $consumer, bool $automaticDeploy = false): Collection
     {
         return Instance::query()
-            ->with(['project', 'node.roles', 'routes.targets'])
+            ->with(['project', 'node.roles', 'routes.targets', ...InstanceAttachedTargets::Relations])
             ->when(
                 ! $this->access->hasGatewayAuthority($consumer),
                 fn ($query) => $query->whereIn('node_id', $this->access->accessibleNodeIds($consumer)),

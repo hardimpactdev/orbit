@@ -1,7 +1,7 @@
 ---
 title: "orbit instance:show"
 sidebarTitle: "instance:show"
-description: "Show one Instance with its source, Routes, deploy steps, automatic deployment, removal progress, and Processes."
+description: "Show one Instance with its source, Routes, deploy steps, automatic deployment, removal progress, attached targets, and Processes."
 ---
 
 ```bash
@@ -22,7 +22,7 @@ orbit instance:show 12
 
 In a terminal, an omitted Instance is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `instance.id_invalid` and sends no request, and so is a value that is not a positive integer.
 
-Showing the Instance and its tables reads Orbit's records and contacts no Node, so it works while a Node is unreachable. Human output is a detail followed by up to three tables.
+Showing the Instance and its tables reads Orbit's records and contacts no Node, so it works while a Node is unreachable. Human output is a detail followed by an Attached targets section and the related tables.
 
 The detail is titled `Instance: <name>` and has the fields ID, Project (by slug), Node (by name), Status, Source layout, Checkout, Vite port, SSR port, Root override, Effective root, Selected branch, Deployment branch (production only), Branch override, Domain and URL. A missing value shows `—`, including the [assigned SSR port](/reference/assigned-ssr-ports) when none is assigned. The detail also holds these groups:
 
@@ -30,7 +30,9 @@ The detail is titled `Instance: <name>` and has the fields ID, Project (by slug)
 - For a production Instance, Production user and Production home. A production Instance and a development `default` Instance show `Auto deploy`: `off`, `on, without a merge check`, or `on, after <merge check> passes`. Only while automatic deployment is on do these appear: `Auto deploy state`, the result of the last [automatic deployment check](/reference/deployments#automatic-deployments) with the first 12 characters of its commit; `Auto deploy paused`, the reason, the deployment and the command that resumes it, until it is resumed; and `Auto deploy error`, the error code.
 - While a removal is recorded: Removal mode (`normal` or `forced`), Removal progress (`2/5 completed; 3 remaining`), Removal step, Removal failed step and Removal error code.
 
-The tables follow in this order:
+The `Attached targets` section lists each attached database connection, including Redis/Valkey, with its kind, name, Node, endpoint, database and username where present, and attachment prefix. A connection on a managed Database server also names that server. An empty section says `No attached targets.`. It reads the same attachments as [instance:migrate](/cli/instance/migrate), with the `DB` prefix first and then attachment ID. It never includes passwords or vault keys.
+
+The remaining tables follow in this order:
 
 - The Instance's Routes, ordered by ID, with Route, Domain, Web root and Status, when it has any. A Route without a web root shows `Instance root`. See [Serve several web roots](/reference/routes#serve-several-web-roots).
 - For a production Instance, its deploy steps with Name, Phase, Command and Timeout (seconds), in phase and placement order, or `No deploy steps found.`.
@@ -38,7 +40,7 @@ The tables follow in this order:
 
 In a terminal, the Processes table is a selector. Enter prints the log tail of the highlighted Process, as `process:logs` does, which reads the Process's Node, and the command ends with that command's exit status. Escape and Ctrl-C end the command with `input.cancelled`. A terminal too narrow for the selector gets the table as labeled records instead. Without a terminal the table is printed.
 
-With `--json`, stdout holds the full Instance record, without the Processes: its `project` and `node` objects, the fields above under their JSON keys, `route` for the Instance's own Route and `routes` for all of them, `deploy_steps`, `auto_deploy`, `ssr_port`, and `removal`, which is null or an object with the progress of the removal.
+With `--json`, stdout holds the full Instance record, without the Processes: its `project` and `node` objects, the fields above under their JSON keys, `route` for the Instance's own Route and `routes` for all of them, `deploy_steps`, `auto_deploy`, `ssr_port`, `attached_targets` (an empty array when none), and `removal`, which is null or an object with the progress of the removal.
 
 ## Errors
 

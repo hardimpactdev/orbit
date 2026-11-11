@@ -28,6 +28,8 @@ The list shows what Orbit has recorded for each Instance. It does not contact an
 
 With `--json`, stdout holds `{"instances": [...], "request_id": ...}`, with an empty list when none is visible. Each Instance is the full record: its `project` and `node` objects with `id`, `name` and `slug`, the table fields under their JSON keys (`selected_branch`, `branch_override`, `effective_root`, `vite_port`, `domain`, `url`, `status`), the checkout and production fields, `route`, `routes`, `deploy_steps`, `auto_deploy`, the [assigned SSR port](/reference/assigned-ssr-ports) as `ssr_port` (null when none is assigned), and `removal`, which is null or an object with `operation_id`, `name`, `force`, `status`, `current_step`, `total`, `completed`, `remaining`, `failed_step` and `error_code`. A missing value shows `—`. An empty list says `No Instances found.`. The human output ends with the request ID.
 
+The JSON Instance records include `attached_targets`, with the same fields and order as [instance:show](/cli/instance/show), or an empty array when none.
+
 ## Errors
 
 | Code | Meaning |

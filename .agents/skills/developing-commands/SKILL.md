@@ -94,3 +94,5 @@ Inspect the whole previous-exception chain when a timed test reports a migration
 A Process preset moved into a container needs the shared container ingress and Route projection as well as its unit. Keep its assigned port in the shared intent so deployment rebuilds preserve access, and use container controls after cutover instead of the Node preset preparation.
 
 Gateway releases admit refresh jobs only after verification and the new Horizon start. A command from a new release can serialize a job class that old workers cannot load. Keep the pre-load Operation guard separate from the Horizon drain: Swamp runs can outlive the queue job that started them.
+
+For an attachment read, reuse the operation's ordered inventory and eager-load its identity graph. Project public fields explicitly, and compare query counts with one attachment and several on distinct Nodes.
