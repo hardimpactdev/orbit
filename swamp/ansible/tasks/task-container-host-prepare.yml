@@ -121,17 +121,65 @@
       {{ container_restrictions_unset | default([]) | select('in', (container_project_after.stdout | from_json).config) | list }}
   changed_when: true
 
-- name: Read the container images
+- name: Read the image daemon identity
   ansible.builtin.command:
-    argv: [incus, --project, "{{ container_host.project }}", image, list, --format, json]
-  register: container_images
+    argv: [incus, query, /1.0]
+  environment:
+    INCUS_REMOTE: local
+  register: container_image_daemon
   changed_when: false
 
-- name: Copy the stock Ubuntu container image
-  when: container_host.alias not in (container_images.stdout | from_json | map(attribute='aliases') | flatten | map(attribute='name') | list)
-  ansible.builtin.command:
-    argv: [incus, image, copy, images:ubuntu/26.04/cloud, "local:", --alias, "{{ container_host.alias }}", --target-project, "{{ container_host.project }}"]
-  changed_when: true
+- name: Require the image daemon PID
+  ansible.builtin.assert:
+    that: (container_image_daemon.stdout | from_json).environment.server_pid | int > 0
+    fail_msg: "{{ container_host.fail }}: cannot identify the image daemon"
+
+- name: Read the image daemon environment
+  ansible.builtin.slurp:
+    src: "/proc/{{ (container_image_daemon.stdout | from_json).environment.server_pid }}/environ"
+  register: container_image_environment
+  no_log: true
+
+- name: Select the image daemon directory and socket
+  ansible.builtin.set_fact:
+    container_image_directory: "{{ daemon_directory }}"
+    container_image_socket: >-
+      {{ (daemon_environment | regex_findall('(?:^|\x00)INCUS_SOCKET=([^\x00]*)') | first) | default(daemon_directory ~ '/unix.socket', true) }}
+  vars:
+    daemon_environment: "{{ container_image_environment.content | b64decode }}"
+    daemon_directory: >-
+      {{ (daemon_environment | regex_findall('(?:^|\x00)INCUS_DIR=([^\x00]*)') | first) | default('/var/lib/incus', true) }}
+  no_log: true
+
+- name: Require absolute image daemon paths
+  ansible.builtin.assert:
+    that:
+      - container_image_directory is match('^/')
+      - container_image_socket is match('^/')
+    fail_msg: "{{ container_host.fail }}: cannot locate the image daemon"
+
+- name: Read the image daemon through its local socket
+  ansible.builtin.uri:
+    url: http://localhost/1.0
+    unix_socket: "{{ container_image_socket }}"
+    return_content: true
+    timeout: 10
+  register: container_image_local_daemon
+
+- name: Require the same image daemon
+  ansible.builtin.assert:
+    that: >-
+      container_image_local_daemon.json.metadata.environment.server_pid | int ==
+      (container_image_daemon.stdout | from_json).environment.server_pid | int
+    fail_msg: "{{ container_host.fail }}: image daemon directory mismatch"
+
+- name: Reconcile the independent stock container image
+  orbit_incus_images:
+    project: "{{ container_host.project }}"
+    alias: "{{ container_host.alias }}"
+    archive_directory: "{{ container_image_directory }}/images"
+    socket: "{{ container_image_socket }}"
+    failure_code: "{{ container_host.fail }}"
 
 # The container bridge has its own catalog names: the withdrawal of a bridge's rules deletes them by comment.
 - name: Allow container DHCP requests to the host
@@ -172,18 +220,27 @@
 # isolated container, started once, must have written under 8 MiB. The probe leaves nothing behind, so it reports no change.
 - name: Prove that a copy is a clone
   when: container_host.probe
+  environment:
+    INCUS_REMOTE: local
+    INCUS_SOCKET: "{{ container_image_socket }}"
   vars:
     probe: [incus, --project, "{{ container_host.project }}"]
     probe_names: [orbit-clone-probe, orbit-clone-probe-copy]
   block:
-    - name: Remove a leftover clone probe
-      ansible.builtin.command: { argv: "{{ probe + ['delete', '--force', '--', item] }}" }
-      loop: "{{ probe_names }}"
-      register: container_probe_leftover
+    - name: Read existing clone probes
+      ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances?project={{ container_host.project }}&recursion=1"] }
+      register: container_probe_existing
       changed_when: false
-      failed_when: container_probe_leftover.rc != 0 and 'not found' not in container_probe_leftover.stderr
+    - name: Refuse a prior clone probe
+      ansible.builtin.assert:
+        that: item not in (container_probe_existing.stdout | from_json | map(attribute='name') | list)
+        fail_msg: >-
+          {{ container_host.fail }}: instance {{ container_host.project }}/{{ item }} requires an operator;
+          see /solutions/incus-shared-image-refresh#operator-cleanup
+      loop: "{{ probe_names }}"
     - name: Make the clone probe and its copy
       ansible.builtin.command: { argv: "{{ probe + item }}" }
+      register: container_probe_created
       loop:
         - [init, "{{ container_host.alias }}", orbit-clone-probe, --config, security.idmap.isolated=true]
         - [copy, orbit-clone-probe, orbit-clone-probe-copy]
@@ -225,7 +282,9 @@
   always:
     - name: Remove the clone probe
       ansible.builtin.command: { argv: "{{ probe + ['delete', '--force', '--', item] }}" }
-      loop: "{{ probe_names | reverse | list }}"
+      loop: >-
+        {{ (container_probe_created.results | default([])) | selectattr('rc', 'defined') |
+           selectattr('rc', 'equalto', 0) | map(attribute='item.2') | reverse | list }}
       register: container_probe_removed
       changed_when: false
       failed_when: container_probe_removed.rc != 0 and 'not found' not in container_probe_removed.stderr

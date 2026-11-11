@@ -231,7 +231,12 @@ class TableTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             path = Path(scratch) / 'checks.toml'
             source = (ROOT / '.github/ci/checks.toml').read_text()
-            source = source.replace('a new image definition is built, takes the stable alias and replaces the old image', 'renamed case no longer in source')
+            entry = next(f for f in tomllib.loads(source)['fixture']
+                         if f['file'] == 'swamp/tests/ansible_instance_host_image_test.ts')
+            excluded = entry['after_merge_cases'][0]
+            changed = source.replace(json.dumps(excluded), json.dumps('renamed case no longer in source'))
+            self.assertNotEqual(source, changed)
+            source = changed
             path.write_text(source)
             with self.assertRaisesRegex(ValueError, 'every after_merge_cases name must be registered'):
                 units.configuration(path)

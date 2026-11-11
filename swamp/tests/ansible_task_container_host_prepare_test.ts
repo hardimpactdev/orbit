@@ -1,6 +1,7 @@
 /** Run the shipped host phase of a task container host against a stateful Incus boundary, including a second unchanged run. */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
+import { stockImageDaemon, stockImageTask } from "./_support/stock_image.ts";
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
@@ -49,6 +50,7 @@ function local(name: string, folder: string): Task[] {
 }
 
 function transform(task: Task, folder: string): Task[] {
+  stockImageTask(task, folder);
   if ("block" in task) return [task];
   if (task["ansible.builtin.include_tasks"] === "artifact-fetch.yml") {
     delete task["ansible.builtin.include_tasks"];
@@ -111,6 +113,7 @@ function fixture(
     sctpLoaded = false,
     arc = "0",
     native = false,
+    stockOnly = false,
   }: {
     memory?: number;
     // The ARC cap the host runs before the phase; 0 is no cap.
@@ -123,6 +126,7 @@ function fixture(
     subids?: number;
     sctp?: string;
     sctpLoaded?: boolean;
+    stockOnly?: boolean;
   } = {},
 ) {
   const folder = Deno.makeTempDirSync();
@@ -159,6 +163,7 @@ function fixture(
     zfs_pool_name: native ? "data/orbit-tasks" : "orbit-tasks",
   };
   Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify(state));
+  const stopDaemon = stockImageDaemon(folder);
   const scripts: Record<string, string> = {
     incus: `exec '${Deno.execPath()}' run -A '${
       new URL("fixtures/task-vm-host-incus.ts", import.meta.url).pathname
@@ -176,11 +181,13 @@ function fixture(
     Deno.writeTextFileSync(`${folder}/bin/${name}`, `#!/bin/sh\n${body}\n`);
     Deno.chmodSync(`${folder}/bin/${name}`, 0o755);
   }
+  const stockTasks = load("task-container-host-prepare.yml");
   const source = JSON.stringify([{
     ...play,
     hosts: "localhost",
     become: false,
-    tasks: local("task-vm-host-prepare.yml", folder),
+    tasks: stockOnly ? stockTasks.slice(stockTasks.findIndex((t) => t.name === "Read the image daemon identity"),
+      stockTasks.findIndex((t) => t.name === "Allow container DHCP requests to the host")).flatMap((task) => transform(task, folder)) : local("task-vm-host-prepare.yml", folder),
   }])
     .replaceAll("/etc/modprobe.d/orbit-task-vm-zfs.conf", `${folder}/arc.conf`)
     .replaceAll("/sys/module/zfs/parameters/zfs_arc_max", `${folder}/arc`)
@@ -221,7 +228,9 @@ function fixture(
       incus: { line: "7.0", packages },
     },
   };
-  Deno.writeTextFileSync(`${folder}/intent.json`, JSON.stringify({ host }));
+  Deno.writeTextFileSync(`${folder}/intent.json`, JSON.stringify(stockOnly ? {
+    container_host: {...host.containers, pool: host.pool, probe: false, fail: "task_vm.setup_failed"},
+  } : { host }));
   return {
     folder,
     run() {
@@ -239,6 +248,8 @@ function fixture(
         ],
         env: {
           HOST_FIXTURE: folder,
+          INCUS_REMOTE: "",
+          INCUS_SOCKET: "",
           DATASETS: "",
           WRITTEN: written,
           INSTALLED: installed,
@@ -247,6 +258,7 @@ function fixture(
           ANSIBLE_NOCOLOR: "1",
           ANSIBLE_HOME: `${folder}/home`,
           ANSIBLE_LOCAL_TEMP: `${folder}/tmp`,
+          ANSIBLE_LIBRARY: new URL("library", root).pathname,
         },
       }).outputSync();
       return {
@@ -269,7 +281,7 @@ function fixture(
         return false;
       }
     },
-    cleanup: () => Deno.removeSync(folder, { recursive: true }),
+    cleanup: () => { stopDaemon(); Deno.removeSync(folder, { recursive: true }); },
   };
 }
 
@@ -372,22 +384,18 @@ Deno.test({
           .config["restricted.networks.access"],
         "orbittask0",
       );
-      const imageCopy = f.calls().find((c) =>
-        c[0] === "image" && c.includes("ubuntu-26.04-ct")
+      const publication = f.calls().find((c) =>
+        c.includes("publish") && c.includes("orbit-stock-build")
       )!;
-      assertEquals(imageCopy, [
-        "image",
-        "copy",
-        "images:ubuntu/26.04/cloud",
-        "local:",
+      assertEquals(publication, [
+        "--project", "orbit-task-containers", "publish", "orbit-stock-build",
         "--alias",
-        "ubuntu-26.04-ct",
-        "--target-project",
-        "orbit-task-containers",
+        "orbit-stock-candidate", "user.orbit.stock-build=ubuntu-26.04-ct",
       ]);
       // The clone probe is an isolated container whose copy starts once, and nothing of it stays.
       const probe = f.calls().filter((c) =>
         c.includes("orbit-task-containers") &&
+        !c.includes("orbit-stock-build") &&
         ["init", "copy", "start", "stop"].includes(c[2])
       ).map((c) => c.slice(2));
       assertEquals(probe, [
@@ -567,38 +575,20 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a clone probe that a failed run left is removed before the next probe",
+  name: "a prior clone probe refuses with its exact name and recipe instead of being deleted",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
-      const state = f.state();
-      state.instances = [
-        {
-          name: "orbit-clone-probe",
-          project: "orbit-task-containers",
-          status: "Stopped",
-        },
-        {
-          name: "orbit-clone-probe-copy",
-          project: "orbit-task-containers",
-          status: "Running",
-        },
-      ];
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const instances = [{name: "orbit-clone-probe", project: "orbit-task-containers", status: "Stopped"}];
+      stockState(f, { instances });
       const result = f.run();
-      assert(result.ok, result.output);
-      const deletes = f.calls().filter((c) => c[2] === "delete").map((c) =>
-        c.at(-1)
-      );
-      assertEquals(deletes.slice(0, 2), [
-        "orbit-clone-probe",
-        "orbit-clone-probe-copy",
-      ]);
-      assertEquals(f.state().instances, []);
-    } finally {
-      f.cleanup();
-    }
+      assert(!result.ok, result.output);
+      assertStringIncludes(result.output, "orbit-clone-probe");
+      assertStringIncludes(result.output, "/solutions/incus-shared-image-refresh#operator-cleanup");
+      assertEquals(f.state().instances, instances);
+      assert(!f.calls().some((c) => c.includes("delete") && c.includes("orbit-clone-probe")));
+    } finally { f.cleanup(); }
   },
 });
 
@@ -689,4 +679,755 @@ Deno.test({
       f.cleanup();
     }
   },
+});
+
+const stockProject = "orbit-task-containers";
+const stockAlias = "ubuntu-26.04-ct";
+const stockRow = (fingerprint = "b".repeat(64)) => ({
+    fingerprint,
+    project: stockProject,
+    aliases: [{ name: stockAlias }],
+    auto_update: false,
+    update_source: null,
+    properties: { "user.orbit.stock-build": stockAlias },
+});
+const stockState = (
+    f: ReturnType<typeof fixture>,
+    patch: Record<string, unknown>,
+) => Deno.writeTextFileSync(
+    `${f.folder}/state.json`,
+    JSON.stringify({ ...f.state(), ...patch }),
+);
+const stockDeletes = (f: ReturnType<typeof fixture>) =>
+    f.calls().filter((c) => c[2] === "image" && c[3] === "delete");
+
+const recipePath = "/solutions/incus-shared-image-refresh";
+const adoptionSource = () => {
+    const page = Deno.readTextFileSync(
+        new URL(
+            "../../docs/solutions/incus-shared-image-refresh.md",
+            import.meta.url,
+        ),
+    );
+    const code = page.match(
+        /### Adoption recipe[\s\S]*?```python\n([\s\S]*?)\n```/,
+    );
+    assert(code, "the shipped adoption recipe must exist");
+    return code[1];
+};
+function adopt(
+    f: ReturnType<typeof fixture>,
+    overrides: Partial<
+        Record<
+            | "node"
+            | "socket"
+            | "project"
+            | "alias"
+            | "fingerprint"
+            | "retention"
+            | "snapshot",
+            string
+        >
+    > = {},
+) {
+    const values = {
+        node: "fixture-node",
+        socket: `${f.folder}/unix.socket`,
+        project: stockProject,
+        alias: stockAlias,
+        fingerprint: "b".repeat(64),
+        retention: "operator-retain-stock",
+        snapshot: `${f.folder}/before.json`,
+        ...overrides,
+    };
+    const result = new Deno.Command("python3", {
+        args: [
+            "-c",
+            adoptionSource(),
+            values.node,
+            values.socket,
+            values.project,
+            values.alias,
+            values.fingerprint,
+            values.retention,
+            values.snapshot,
+        ],
+        env: {
+            HOST_FIXTURE: f.folder,
+            PATH: `${f.folder}/bin:${Deno.env.get("PATH")}`,
+        },
+    }).outputSync();
+    return {
+        ok: result.success,
+        output: new TextDecoder().decode(result.stdout) +
+            new TextDecoder().decode(result.stderr),
+    };
+}
+function healthy(f: ReturnType<typeof fixture>) {
+    const selected = stockRow();
+    Deno.writeTextFileSync(
+        `${f.folder}/images/${selected.fingerprint}`,
+        "archive",
+    );
+    stockState(f, { images: [selected] });
+    return selected;
+}
+
+Deno.test({
+    name:
+        "fresh stock publication is independent and a healthy repeat retains all caches without changes",
+    ignore: !hasAnsible,
+    fn() {
+        const f = fixture({ stockOnly: true });
+        try {
+            let result = f.run();
+            assert(result.ok, result.output);
+            const selected = f.state().images.find((
+                i: { aliases: { name: string }[] },
+            ) => i.aliases.some((a) => a.name === stockAlias));
+            assert(selected.fingerprint !== "a".repeat(64));
+            assertEquals(selected.update_source, null);
+            assertEquals(selected.auto_update, false);
+            assertEquals(
+                selected.properties["user.orbit.stock-build"],
+                stockAlias,
+            );
+            assert(f.has(`images/${selected.fingerprint}`));
+            assertEquals(f.state().instances, []);
+            assert(
+                f.state().images.some((i: { cached?: boolean }) => i.cached),
+            );
+            assertEquals(stockDeletes(f), []);
+            const before = f.state().images;
+            result = f.run();
+            assert(result.ok, result.output);
+            assertStringIncludes(result.output, "changed=0");
+            assertEquals(f.state().images, before);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+for (
+    const resource of [
+        "builder",
+        "candidate",
+        "retirement",
+        "unaliased publication",
+    ]
+) {
+    Deno.test({
+        name:
+            `a prior ${resource} refuses with exact resource and recipe even with copied stock properties`,
+        ignore: !hasAnsible,
+        fn() {
+            for (const marked of [true, false]) {
+                if (resource === "unaliased publication" && !marked) continue;
+                const f = fixture({ stockOnly: true });
+                try {
+                    const selected = healthy(f);
+                    const properties = marked
+                        ? { "user.orbit.stock-build": stockAlias }
+                        : {};
+                    const name = resource === "builder"
+                        ? "orbit-stock-build"
+                        : resource === "candidate"
+                        ? "orbit-stock-candidate"
+                        : "orbit-stock-retiring";
+                    const foreign = {
+                        ...stockRow("f".repeat(64)),
+                        properties,
+                        aliases: resource === "unaliased publication"
+                            ? []
+                            : [{ name }, { name: "personal-keep" }],
+                    };
+                    const images = resource === "builder"
+                        ? [selected]
+                        : [selected, foreign];
+                    const instances = resource === "builder"
+                        ? [{
+                            name,
+                            project: stockProject,
+                            config: {
+                                ...properties,
+                                "volatile.base_image": "a".repeat(64),
+                            },
+                        }]
+                        : [];
+                    stockState(f, { images, instances });
+                    const result = f.run();
+                    assert(!result.ok, result.output);
+                    assertStringIncludes(
+                        result.output,
+                        resource === "unaliased publication"
+                            ? foreign.fingerprint
+                            : name,
+                    );
+                    assertStringIncludes(
+                        result.output,
+                        recipePath + "#operator-cleanup",
+                    );
+                    assertEquals(f.state().images, images);
+                    assertEquals(f.state().instances, instances);
+                    assert(
+                        !f.calls().some((c) =>
+                            c.includes("delete") || c.includes("init") ||
+                            c.includes("publish") || c.includes("PUT")
+                        ),
+                    );
+                } finally {
+                    f.cleanup();
+                }
+            }
+        },
+    });
+}
+
+Deno.test({
+    name:
+        "unmarked selected stock refuses with its full fingerprint and adoption recipe",
+    ignore: !hasAnsible,
+    fn() {
+        const f = fixture({ stockOnly: true });
+        try {
+            const image = { ...healthy(f), properties: {} };
+            stockState(f, { images: [image] });
+            const result = f.run();
+            assert(!result.ok, result.output);
+            assertStringIncludes(result.output, image.fingerprint);
+            assertStringIncludes(
+                result.output,
+                recipePath + "#adopt-a-pinned-legacy-stock-image",
+            );
+            assertEquals(f.state().images, [image]);
+            assertEquals(stockDeletes(f), []);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name:
+        "replacement refuses an old selected record without a retention alias and never deletes it",
+    ignore: !hasAnsible,
+    fn() {
+        const f = fixture({ stockOnly: true });
+        try {
+            const selected = stockRow();
+            stockState(f, { images: [selected] });
+            const result = f.run();
+            assert(!result.ok, result.output);
+            assertStringIncludes(result.output, selected.fingerprint);
+            assertStringIncludes(result.output, recipePath);
+            assertEquals(f.state().images, [selected]);
+            assert(
+                !f.calls().some((c) =>
+                    c.includes("delete") || c.includes("init")
+                ),
+            );
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name:
+        "a copied stock statement on a healthy selected image never licenses any deletion",
+    ignore: !hasAnsible,
+    fn() {
+        const f = fixture({ stockOnly: true });
+        try {
+            const selected = healthy(f);
+            const cached = {
+                fingerprint: "a".repeat(64),
+                project: stockProject,
+                aliases: [],
+                cached: true,
+                update_source: { server: "https://images.example" },
+            };
+            const images = [selected, cached, {
+                ...cached,
+                project: "default",
+            }];
+            stockState(f, { images });
+            const result = f.run();
+            assert(result.ok, result.output);
+            assertStringIncludes(result.output, "changed=0");
+            assertEquals(f.state().images, images);
+            assertEquals(stockDeletes(f), []);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name:
+        "a failed current publication removes only its current builder and leaves the exact interrupted image for operator cleanup",
+    ignore: !hasAnsible,
+    fn() {
+        const f = fixture({ stockOnly: true });
+        try {
+            stockState(f, { publish_alias_failure: true });
+            let result = f.run();
+            assert(!result.ok, result.output);
+            const orphan = f.state().images.find((
+                i: { properties?: Record<string, string> },
+            ) => i.properties?.["user.orbit.stock-build"] === stockAlias);
+            assert(orphan);
+            assertEquals(f.state().instances, []);
+            assertEquals(stockDeletes(f), []);
+            const images = f.state().images;
+            stockState(f, { publish_alias_failure: false });
+            result = f.run();
+            assert(!result.ok, result.output);
+            assertStringIncludes(result.output, orphan.fingerprint);
+            assertStringIncludes(
+                result.output,
+                recipePath + "#operator-cleanup",
+            );
+            assertEquals(f.state().images, images);
+            assertEquals(stockDeletes(f), []);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name:
+        "a missing current publication archive fails without deleting any image or cache",
+    ignore: !hasAnsible,
+    fn() {
+        const f = fixture({ stockOnly: true });
+        try {
+            stockState(f, { publish_missing_archive: true });
+            const result = f.run();
+            assert(!result.ok, result.output);
+            assertStringIncludes(result.output, "archive");
+            assertStringIncludes(result.output, recipePath);
+            assertEquals(f.state().instances, []);
+            assertEquals(stockDeletes(f), []);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+for (
+    const [setting, value] of [["socket_server_pid", 1], [
+        "cli_server_pid",
+        2147483647,
+    ]] as const
+) {
+    Deno.test({
+        name:
+            `stock daemon identity refuses ${setting} mismatch before mutation`,
+        ignore: !hasAnsible,
+        fn() {
+            const f = fixture({ stockOnly: true });
+            try {
+                stockState(f, { [setting]: value });
+                const result = f.run();
+                assert(!result.ok, result.output);
+                assert(
+                    !f.calls().some((c) =>
+                        c.includes("init") || c.includes("delete") ||
+                        c.includes("publish")
+                    ),
+                );
+            } finally {
+                f.cleanup();
+            }
+        },
+    });
+}
+
+Deno.test({
+    name:
+        "stock image commands use the approved local socket despite a same-PID default remote",
+    ignore: !hasAnsible,
+    fn() {
+        const f = fixture({ stockOnly: true });
+        try {
+            const remote = f.state();
+            Deno.writeTextFileSync(
+                `${f.folder}/remote-state.json`,
+                JSON.stringify(remote),
+            );
+            stockState(f, { default_remote: true });
+            const result = f.run();
+            assert(result.ok, result.output);
+            assertEquals(JSON.parse(f.read("remote-state.json")), remote);
+            assert(
+                f.state().images.some((i: { aliases: { name: string }[] }) =>
+                    i.aliases.some((a) => a.name === stockAlias)
+                ),
+            );
+            const targets = f.read("targets").trim().split("\n").map((line) =>
+                JSON.parse(line)
+            );
+            assert(
+                targets.every((target) =>
+                    !target.remote && target.configRemote === "local"
+                ),
+            );
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name:
+        "the explicit fingerprint adoption recipe snapshots and retains legacy stock before one property set and ordinary convergence",
+    ignore: !hasAnsible,
+    fn() {
+        const f = fixture({ stockOnly: true });
+        try {
+            const old = {
+                ...healthy(f),
+                properties: { personal: "keep" },
+                update_source: { server: "https://images.example" },
+                aliases: [{ name: stockAlias }, { name: "personal-keep" }],
+            };
+            const other = { ...old, project: "default" };
+            stockState(f, { images: [old, other] });
+            let result = adopt(f);
+            assert(result.ok, result.output);
+            const snapshot = JSON.parse(f.read("before.json"));
+            assertEquals(snapshot.image, old);
+            assertEquals(snapshot.fingerprint, old.fingerprint);
+            assertEquals(
+                Deno.statSync(`${f.folder}/before.json`).mode! & 0o777,
+                0o600,
+            );
+            const adopted = f.state().images.find((i: { project: string }) =>
+                i.project === stockProject
+            );
+            assertEquals(adopted.properties, {
+                personal: "keep",
+                "user.orbit.stock-build": stockAlias,
+            });
+            assertEquals(adopted.aliases, [...old.aliases, {
+                name: "operator-retain-stock",
+            }]);
+            assertEquals(
+                f.calls().filter((c) => c.includes("set-property")).length,
+                1,
+            );
+            assert(
+                f.calls().findIndex((c) => c.includes("set-property")) >
+                    f.calls().findIndex((c) =>
+                        c.includes("operator-retain-stock")
+                    ),
+            );
+            result = f.run();
+            assert(result.ok, result.output);
+            const retained = f.state().images.find((
+                i: { fingerprint: string; project: string },
+            ) => i.fingerprint === old.fingerprint &&
+                i.project === stockProject
+            );
+            assertEquals(retained.aliases, [{ name: "personal-keep" }, {
+                name: "operator-retain-stock",
+            }]);
+            assertEquals(
+                f.state().images.find((i: { project: string }) =>
+                    i.project === "default"
+                ),
+                other,
+            );
+            assertEquals(stockDeletes(f), []);
+            result = f.run();
+            assert(result.ok, result.output);
+            assertStringIncludes(result.output, "changed=0");
+            assertEquals(
+                f.calls().filter((c) => c.includes("set-property")).length,
+                1,
+            );
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name:
+        "the image fixture routes explicit remote prefixes ahead of the local environment",
+    ignore: !hasAnsible,
+    fn() {
+        const f = fixture({ stockOnly: true });
+        try {
+            const old = { ...healthy(f), properties: {} };
+            stockState(f, { images: [old] });
+            const local = f.state();
+            Deno.writeTextFileSync(`${f.folder}/remote-state.json`, JSON.stringify(local));
+            const result = new Deno.Command(`${f.folder}/bin/incus`, {
+                args: ["--project", stockProject, "image", "alias", "create", "other:retain-stock", old.fingerprint],
+                env: { HOST_FIXTURE: f.folder, INCUS_REMOTE: "local", INCUS_SOCKET: `${f.folder}/unix.socket` },
+            }).outputSync();
+            assert(result.success, new TextDecoder().decode(result.stderr));
+            assertEquals(f.state(), local);
+            const remote = JSON.parse(f.read("remote-state.json"));
+            assertEquals(remote.images, [{ ...old, aliases: [...old.aliases, { name: "retain-stock" }] }]);
+            assertEquals(JSON.parse(f.read("targets")).remote, true);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+for (const [input, value] of [
+    ["retention", "other:retain-stock"],
+    ["alias", "other:stock"],
+    ["project", "other:project"],
+    ["fingerprint", `other:${"b".repeat(64)}`],
+    ["retention", "stock/retain"],
+    ["alias", "stock/alias"],
+    ["project", "stock/project"],
+    ["retention", "--retain"],
+    ["alias", "-stock"],
+    ["project", "-project"],
+    ["retention", "retain stock"],
+    ["alias", "stock\n"],
+    ["project", ""],
+    ["fingerprint", "B".repeat(64)],
+    ["fingerprint", "b".repeat(63)],
+    ["fingerprint", "b".repeat(65)],
+] as const) {
+    Deno.test({
+        name: `the adoption recipe refuses nonlocal ${input} ${JSON.stringify(value)} before snapshot or changes`,
+        ignore: !hasAnsible,
+        fn() {
+            const f = fixture({ stockOnly: true });
+            try {
+                const old = {
+                    ...healthy(f),
+                    project: input === "project" ? value : stockProject,
+                    aliases: [{ name: input === "alias" ? value : stockAlias }],
+                    properties: {},
+                };
+                stockState(f, { images: [old] });
+                const local = f.state();
+                Deno.writeTextFileSync(`${f.folder}/remote-state.json`, JSON.stringify(local));
+                const result = adopt(f, { [input]: value });
+                assertEquals({
+                    snapshot: f.has("before.json"),
+                    local: f.state(),
+                    remote: JSON.parse(f.read("remote-state.json")),
+                }, { snapshot: false, local, remote: local }, result.output);
+                assert(!result.ok, result.output);
+                assertStringIncludes(result.output, `Refused ${input} ${JSON.stringify(value)}`);
+                assert(!f.has("calls"), "invalid inputs must refuse before any Incus command");
+            } finally {
+                f.cleanup();
+            }
+        },
+    });
+}
+
+Deno.test({
+    name:
+        "the adoption recipe refuses mismatched approval tuples or existing metadata without mutation",
+    ignore: !hasAnsible,
+    fn() {
+        const cases = [
+            { node: "other-node" },
+            { socket: "/not-a-fixture-socket" },
+            { project: "default" },
+            { alias: "other-alias" },
+            { fingerprint: "b" },
+            { fingerprint: "f".repeat(64) },
+            { retention: stockAlias },
+            { snapshot: "relative.json" },
+            { snapshot: "occupied" },
+            { retention: "personal-keep" },
+            { node: "marked" },
+            { node: "missing-archive" },
+        ];
+        for (const supplied of cases) {
+            const f = fixture({ stockOnly: true });
+            try {
+                const old = {
+                    ...healthy(f),
+                    properties: supplied.node === "marked"
+                        ? { "user.orbit.stock-build": "foreign" }
+                        : {},
+                    aliases: [{ name: stockAlias }, { name: "personal-keep" }],
+                };
+                stockState(f, { images: [old] });
+                const overrides: NonNullable<Parameters<typeof adopt>[1]> = {
+                    ...supplied,
+                };
+                if (overrides.snapshot === "occupied") {
+                    overrides.snapshot = `${f.folder}/occupied`;
+                    Deno.writeTextFileSync(overrides.snapshot, "keep");
+                }
+                if (overrides.node === "marked") delete overrides.node;
+                if (overrides.node === "missing-archive") {
+                    delete overrides.node;
+                    Deno.removeSync(`${f.folder}/images/${old.fingerprint}`);
+                }
+                const result = adopt(f, overrides);
+                assert(!result.ok, result.output);
+                assertEquals(f.state().images, [old]);
+                assert(
+                    !f.has("calls") || !f.calls().some((c) =>
+                        c.includes("set-property") || c.includes("create") ||
+                        c.includes("delete")
+                    ),
+                );
+            } finally {
+                f.cleanup();
+            }
+        }
+    },
+});
+
+Deno.test({
+    name:
+        "the adoption recipe refuses interrupted resources and preserves every unrelated alias",
+    ignore: !hasAnsible,
+    fn() {
+        for (
+            const collision of [
+                "orbit-stock-build",
+                "orbit-stock-candidate",
+                "orbit-stock-retiring",
+                "orphan",
+            ]
+        ) {
+            const f = fixture({ stockOnly: true });
+            try {
+                const old = { ...healthy(f), properties: {} };
+                const foreign = {
+                    ...stockRow("f".repeat(64)),
+                    aliases: collision === "orphan"
+                        ? []
+                        : [{ name: collision }, { name: "personal-keep" }],
+                };
+                const instances = collision === "orbit-stock-build"
+                    ? [{
+                        name: collision,
+                        config: { "user.orbit.stock-build": stockAlias },
+                    }]
+                    : [];
+                const images = collision === "orbit-stock-build"
+                    ? [old]
+                    : [old, foreign];
+                stockState(f, { images, instances });
+                const result = adopt(f);
+                assert(!result.ok, result.output);
+                assertEquals(f.state().images, images);
+                assertEquals(f.state().instances, instances);
+                assert(
+                    !f.calls().some((c) =>
+                        c.includes("set-property") || c.includes("delete") ||
+                        c.includes("create")
+                    ),
+                );
+            } finally {
+                f.cleanup();
+            }
+        }
+    },
+});
+
+Deno.test({
+    name:
+        "explicit adoption can restore its saved metadata before or after replacement while retaining both images",
+    ignore: !hasAnsible,
+    fn() {
+        const f = fixture({ stockOnly: true });
+        const native = (...args: string[]) => {
+            const result = new Deno.Command(`${f.folder}/bin/incus`, {
+                args: ["--project", stockProject, ...args],
+                env: {
+                    HOST_FIXTURE: f.folder,
+                    INCUS_REMOTE: "local",
+                    INCUS_SOCKET: `${f.folder}/unix.socket`,
+                },
+            }).outputSync();
+            assert(result.success, new TextDecoder().decode(result.stderr));
+        };
+        try {
+            const old = {
+                ...healthy(f),
+                properties: { personal: "keep" },
+                update_source: { server: "https://images.example" },
+            };
+            const other = { ...old, project: "default" };
+            stockState(f, { images: [old, other] });
+            let result = adopt(f);
+            assert(result.ok, result.output);
+            native(
+                "image",
+                "unset-property",
+                old.fingerprint,
+                "user.orbit.stock-build",
+            );
+            native("image", "alias", "delete", "operator-retain-stock");
+            assertEquals(f.state().images, [old, other]);
+            result = adopt(f, { snapshot: `${f.folder}/second-before.json` });
+            assert(result.ok, result.output);
+            result = f.run();
+            assert(result.ok, result.output);
+            const selected = f.state().images.find((
+                i: { project: string; aliases: { name: string }[] },
+            ) => i.project === stockProject && i.aliases.some((a) => a.name === stockAlias));
+            native(
+                "image",
+                "alias",
+                "create",
+                "operator-retain-new",
+                selected.fingerprint,
+            );
+            native(
+                "query",
+                "--request",
+                "PUT",
+                "--data",
+                JSON.stringify({ target: old.fingerprint }),
+                "--",
+                `/1.0/images/aliases/${stockAlias}?project=${stockProject}`,
+            );
+            native(
+                "image",
+                "unset-property",
+                old.fingerprint,
+                "user.orbit.stock-build",
+            );
+            native("image", "alias", "delete", "operator-retain-stock");
+            assertEquals(
+                f.state().images.find((
+                    i: { project: string; fingerprint: string },
+                ) => i.project === stockProject &&
+                    i.fingerprint === old.fingerprint
+                ),
+                old,
+            );
+            assertEquals(
+                f.state().images.find((i: { project: string }) =>
+                    i.project === "default"
+                ),
+                other,
+            );
+            assert(
+                f.state().images.some((i: { fingerprint: string }) =>
+                    i.fingerprint === selected.fingerprint
+                ),
+            );
+            assertEquals(stockDeletes(f), []);
+            // Software rollback is required before resuming writers; the new reconciler still refuses this unmarked record.
+            result = f.run();
+            assert(!result.ok, result.output);
+            assertStringIncludes(result.output, old.fingerprint);
+        } finally {
+            f.cleanup();
+        }
+    },
 });

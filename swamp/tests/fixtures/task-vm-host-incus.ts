@@ -1,17 +1,43 @@
 /** Stateful Incus boundary for the real host-preparation Ansible tasks. No live host commands. */
 const folder = Deno.env.get("HOST_FIXTURE")!;
-const file = `${folder}/state.json`;
+if (Deno.args[0] === "--daemon") {
+  Deno.serve({ path: `${folder}/unix.socket`, onListen: () => console.log(`ready ${Deno.pid}`) }, () => {
+    const current = JSON.parse(Deno.readTextFileSync(`${folder}/state.json`));
+    return Response.json({ metadata: { environment: { server_pid: current.socket_server_pid ?? Deno.pid } } });
+  });
+  await new Promise(() => {});
+}
+const settings = JSON.parse(Deno.readTextFileSync(`${folder}/state.json`));
+const configRemote = Deno.env.get("INCUS_REMOTE") ?? "";
+const args = [...Deno.args];
+const projectIndex = args.indexOf("--project");
+const project = projectIndex >= 0 ? args[projectIndex + 1]
+  : (args[0] === "query" ? new URLSearchParams(args.at(-1)?.split("?")[1]).get("project") : null) ?? "default";
+if (projectIndex >= 0) args.splice(projectIndex, 2);
+// Incus parses explicit image targets before applying the environment's default remote/socket.
+const targetIndex = args[0] === "image"
+  ? (args[1] === "alias" ? 3
+    : ["set-property", "unset-property", "delete", "show", "info", "list"].includes(args[1]) ? 2 : -1) : -1;
+const target = targetIndex >= 0 ? args[targetIndex] : undefined;
+const explicitRemote = target?.includes(":") ? target.split(":", 1)[0] : undefined;
+const remote = explicitRemote !== undefined ? explicitRemote !== "local"
+  : settings.default_remote && configRemote !== "local";
+const file = `${folder}/${remote ? "remote-state" : "state"}.json`;
 const state = JSON.parse(Deno.readTextFileSync(file));
 state.profiles ??= {};
 state.instances ??= [];
-const args = [...Deno.args];
-Deno.writeTextFileSync(`${folder}/calls`, JSON.stringify(args) + "\n", {
+Deno.writeTextFileSync(`${folder}/calls`, JSON.stringify(Deno.args) + "\n", {
   append: true,
 });
-const projectIndex = args.indexOf("--project");
-const project = projectIndex >= 0 ? args[projectIndex + 1] : "default";
-if (projectIndex >= 0) args.splice(projectIndex, 2);
+Deno.writeTextFileSync(`${folder}/targets`, JSON.stringify({
+  args: Deno.args, remote: Boolean(remote), configRemote, socket: Deno.env.get("INCUS_SOCKET") ?? "",
+}) + "\n", { append: true });
+if (explicitRemote !== undefined) args[targetIndex] = target!.slice(explicitRemote.length + 1);
 const [family, action, name] = args;
+const owned = (image: {project?: string; fingerprint: string}) => image.project === undefined || image.project === project;
+const archive = (fingerprint: string) => `${folder}/images/${fingerprint}`;
+const digest = async (value: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))))
+  .map((byte) => byte.toString(16).padStart(2, "0")).join("");
 const input = async () =>
   JSON.parse(await new Response(Deno.stdin.readable).text());
 const fail = (message: string) => {
@@ -84,7 +110,7 @@ if (family === "query") {
   const [resource, item] = route.split("/");
   const rows = state[resource];
   if (
-    item && Array.isArray(rows) &&
+    resource !== "images" && item && Array.isArray(rows) &&
     !rows.find((r: { name: string }) => r.name === item)
   ) {
     fail(`${resource} not found`);
@@ -92,9 +118,20 @@ if (family === "query") {
   if (path === "/1.0") {
     console.log(
       JSON.stringify({
-        environment: { server_version: state.server_version ?? "7.0.1" },
+        environment: { server_version: state.server_version ?? "7.0.1", server_name: state.server_name ?? "fixture-node", server_pid: state.cli_server_pid ?? Number(Deno.readTextFileSync(`${folder}/daemon.pid`)) },
       }),
     );
+  } else if (resource === "images") {
+    const alias = decodeURIComponent(path.split("?")[0].split("/").at(-1)!);
+    const bodyIndex = args.indexOf("--data");
+    const body = bodyIndex < 0 ? {} : JSON.parse(args[bodyIndex + 1]);
+    const method = args[args.indexOf("--request") + 1];
+    if (method === "PUT") {
+      for (const image of state.images.filter(owned)) image.aliases = image.aliases.filter((a: {name: string}) => a.name !== alias);
+      state.images.find((image: {fingerprint: string}) => owned(image) && image.fingerprint === body.target).aliases.push({name: alias});
+    } else if (method === "POST") {
+      state.images.find((image: {fingerprint: string}) => owned(image) && image.fingerprint === body.target).aliases.push({name: body.name});
+    } else throw new Error("Unexpected image query");
   } else if (resource === "instances") {
     const expanded = state.instances.map((row: { project: string; devices?: Record<string, Record<string, string>> }) => {
       const devices = structuredClone(state.profiles[row.project]?.devices ?? {});
@@ -169,38 +206,71 @@ if (family === "query") {
 } else if (family === "profile" && action === "edit") {
   state.profiles[project] = await input();
 } else if (family === "image" && action === "list") {
-  console.log(JSON.stringify(state.images));
+  console.log(JSON.stringify(args.includes("--all-projects") ? state.images : state.images.filter(owned)));
 } else if (family === "image" && action === "copy") {
   state.images.push({
     fingerprint: `fp-${args[args.indexOf("--alias") + 1]}`,
     aliases: [{ name: args[args.indexOf("--alias") + 1] }],
     source: args[2],
     vm: args.includes("--vm"),
+    project: args.includes("--target-project") ? args[args.indexOf("--target-project") + 1] : project,
+    update_source: {server: "https://images.example"},
+    auto_update: false,
   });
 } else if (family === "image" && action === "alias") {
   const [, , verb, alias, fingerprint] = args;
-  for (const image of state.images) {
+  if (verb === "create" && state.images.filter(owned).some((image: {aliases: {name: string}[]}) => image.aliases.some((a) => a.name === alias))) fail("Image alias already exists");
+  for (const image of state.images.filter(owned)) {
     image.aliases = image.aliases.filter((a: { name: string }) =>
       a.name !== alias
     );
   }
   if (verb === "create") {
     state.images.find((i: { fingerprint: string }) =>
-      i.fingerprint === fingerprint
+      owned(i) && i.fingerprint === fingerprint
     ).aliases.push({ name: alias });
   }
+} else if (family === "image" && ["set-property", "unset-property"].includes(action)) {
+  const image = state.images.find((row: {fingerprint: string}) => owned(row) && row.fingerprint === name);
+  if (!image) fail("Image not found");
+  image.properties ??= {};
+  for (const arg of args.slice(3)) {
+    if (action === "set-property") {
+      const [key, value] = pair(arg);
+      image.properties[key] = value;
+    } else delete image.properties[arg];
+  }
 } else if (family === "image" && action === "delete") {
+  if (state.delete_failure === name) fail("Injected image deletion failure");
   state.images = state.images.filter((i: { fingerprint: string }) =>
-    i.fingerprint !== name
+    !owned(i) || i.fingerprint !== name
   );
+  if (!state.images.some((i: {fingerprint: string}) => i.fingerprint === name)) {
+    try { Deno.removeSync(archive(name)); } catch { /* no archive */ }
+  }
 } else if (family === "publish") {
   const alias = args[args.indexOf("--alias") + 1];
+  const fingerprint = state.publish_fingerprint ?? await digest(`${alias}-${state.publications ?? 0}`);
+  if (state.images.some((i: {fingerprint: string}) => owned(i) && i.fingerprint === fingerprint)) fail("The image already exists");
+  state.publications = (state.publications ?? 0) + 1;
+  const source = state.images.find((i: {fingerprint: string}) => owned(i) && i.fingerprint === instance(action)?.config?.["volatile.base_image"]);
+  const properties = {...source?.properties, ...Object.fromEntries(args.slice(2).filter((arg) => arg.includes("=")).map(pair))};
   // An image is the container's files as they are, its machine-id too.
   state.images.push({
-    fingerprint: `fp-${alias}`,
-    aliases: [{ name: alias }],
+    fingerprint,
+    project,
+    aliases: [],
+    properties,
+    auto_update: false,
+    update_source: null,
     machine_id: instance(action)?.machine_id,
   });
+  if (!state.publish_missing_archive) Deno.writeTextFileSync(archive(fingerprint), "published archive");
+  // Incus commits image creation before the separate alias request.
+  if (state.publish_builder_owner) instance(action).config["user.orbit.stock-build"] = state.publish_builder_owner;
+  Deno.writeTextFileSync(file, JSON.stringify(state));
+  if (state.publish_alias_failure) fail("Injected publication alias assignment failure");
+  state.images.at(-1).aliases.push({name: alias});
 } else if (family === "exec") {
   if (!instance(action)) fail("Instance not found");
   const command = args.slice(args.indexOf("--") + 1);
@@ -229,7 +299,23 @@ if (family === "query") {
     ),
   ));
 } else if (family === "init") {
-  state.instances.push({ name: args[2], project, status: "Stopped" });
+  let source = state.images.find((i: {fingerprint: string; aliases: {name: string}[]}) => owned(i) && i.aliases.some((a) => a.name === action));
+  if (action === "images:ubuntu/26.04/cloud") {
+    const fingerprint = state.upstream_fingerprint ?? "a".repeat(64);
+    source = state.images.find((i: {fingerprint: string}) => owned(i) && i.fingerprint === fingerprint);
+    if (!source) {
+      source = {fingerprint, project, aliases: [], cached: true, update_source: {server: "https://images.example"}, auto_update: false};
+      state.images.push(source);
+      Deno.writeTextFileSync(archive(fingerprint), "upstream archive");
+    }
+    try {
+      if (!Deno.statSync(archive(fingerprint)).isFile) fail("Missing upstream archive");
+    } catch {
+      fail("Missing upstream archive");
+    }
+  }
+  const config = Object.fromEntries(args.flatMap((arg, index) => arg === "--config" ? [pair(args[index + 1])] : []));
+  state.instances.push({ name: args[2], project, status: "Stopped", config: {...config, "volatile.base_image": source?.fingerprint} });
 } else if (family === "copy") {
   if (!instance(action)) fail("Instance not found");
   state.instances.push({ name, project, status: "Stopped" });

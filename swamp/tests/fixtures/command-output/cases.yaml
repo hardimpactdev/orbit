@@ -495,14 +495,18 @@ contexts:
   seed-snapshots:
     seed_snapshots:
       stdout: '[{"name":"seed-abc123"},{"name":"other"}]'
-  retired-images:
-    instances:
-      image:
-        alias: orbit-instance-aaaaaaaaaaaa
-    image_built:
-      stdout: '[{"fingerprint": "current", "aliases": [{"name": "orbit-instance-aaaaaaaaaaaa"}]}, {"fingerprint": "old", "aliases":
-        [{"name": "orbit-instance"}, {"name": "orbit-instance-bbbbbbbbbbbb"}]}, {"fingerprint": "foreign", "aliases": [{"name":
-        "orbit-instance-cccccccccccc"}, {"name": "keep-me"}]}, {"fingerprint": "unnamed", "aliases": []}]'
+  # Recorded on Beast with Incus 7.0.2: neither INCUS_DIR nor INCUS_SOCKET
+  # exists in /proc/<server_pid>/environ. Omit every unrelated variable;
+  # the allowlisted projection is empty, base64-encoded as slurp returns it.
+  image-daemon-defaults:
+    container_image_environment:
+      content: ''
+  # Constructed from the documented NUL-separated /proc environ format,
+  # not recorded on a host: INCUS_DIR=/srv/incus-fixture\0 followed by
+  # INCUS_SOCKET=/run/incus-fixture.socket\0, base64-encoded for slurp.
+  image-daemon-overrides:
+    container_image_environment:
+      content: SU5DVVNfRElSPS9zcnYvaW5jdXMtZml4dHVyZQBJTkNVU19TT0NLRVQ9L3J1bi9pbmN1cy1maXh0dXJlLnNvY2tldAA=
   hub-endpoint-absent:
     hub_switch_read:
       stdout: 'absent
@@ -1294,12 +1298,26 @@ cases:
   context: seed-snapshots
   expected:
   - seed-abc123
-- file: tasks/instance-image.yml
-  task: Select the image, the image of the stable alias, and the images the new one replaced
-  field: ansible.builtin.set_fact.image_retired
-  context: retired-images
-  expected:
-  - old
+- file: tasks/task-container-host-prepare.yml
+  task: Select the image daemon directory and socket
+  field: vars.daemon_directory
+  context: image-daemon-defaults
+  expected: /var/lib/incus
+- file: tasks/task-container-host-prepare.yml
+  task: Select the image daemon directory and socket
+  field: ansible.builtin.set_fact.container_image_socket
+  context: image-daemon-defaults
+  expected: /var/lib/incus/unix.socket
+- file: tasks/task-container-host-prepare.yml
+  task: Select the image daemon directory and socket
+  field: vars.daemon_directory
+  context: image-daemon-overrides
+  expected: /srv/incus-fixture
+- file: tasks/task-container-host-prepare.yml
+  task: Select the image daemon directory and socket
+  field: ansible.builtin.set_fact.container_image_socket
+  context: image-daemon-overrides
+  expected: /run/incus-fixture.socket
 - file: tasks/node-converge-hub-switch.yml
   task: Decide whether the hub endpoint changes
   field: ansible.builtin.set_fact.hub_switch_present
@@ -1428,6 +1446,14 @@ cases:
   context: ufw-deleted
   expected: true
 non_command_output:
+- file: tasks/task-container-host-prepare.yml
+  task: Require absolute image daemon paths
+  field: ansible.builtin.assert.that[0]
+  reason: Validates that the selected daemon directory is an absolute path; does not parse command output.
+- file: tasks/task-container-host-prepare.yml
+  task: Require absolute image daemon paths
+  field: ansible.builtin.assert.that[1]
+  reason: Validates that the selected daemon socket is an absolute path; does not parse command output.
 - file: tasks/instance-migrate-schedule-check.yml
   task: Explain a foreign obsolete Schedule file
   field: when

@@ -143,6 +143,7 @@ additionalFiles:
   - ansible/instance_network.py
   - ansible/tasks/instance-bridge-refresh.yml
   - ansible/tasks/instance-image.yml
+  - ansible/library/orbit_incus_images.py
   - ansible/tasks/task-container-host-prepare.yml
   - ansible/task-vm-start.yml
   - ansible/tasks/task-vm-boot.yml
