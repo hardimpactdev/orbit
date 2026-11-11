@@ -169,14 +169,15 @@ final readonly class InstanceContainer
     public function intent(Instance $instance, InstanceRuntime $runtime, ?DatabaseConnection $database = null, string $branch = '', ?string $url = null): array
     {
         $admittedAt = (int) now()->format('Uu');
-        $instance->loadMissing(['project', 'node']);
+        $instance->loadMissing(['project', 'node.roles']);
         $project = $instance->project;
         $workspace = InstanceHostIntent::Workspace;
         $application = self::application($instance);
-        $gateway = Ipv4Subnet::from(ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')))->usableRange()[0];
+        $gateway = Ipv4Subnet::from(ValidatedData::string($instance->node->instance_bridge))->usableRange()[0];
         $environment = InstanceImage::environment($gateway);
         $access = $this->databaseAccesses($instance, $runtime, $database);
         $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url);
+        $vitePort = app(ContainerProcesses::class)->vitePort($instance);
 
         return [
             'instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
@@ -194,7 +195,7 @@ final readonly class InstanceContainer
                     'destination_port' => (string) $target['port'], 'state' => 'enabled'], $access),
                 'ingress' => [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
                     'destination_port' => (string) self::WebPort, 'state' => 'enabled'],
-                    ...(($vitePort = app(ContainerProcesses::class)->vitePort($instance)) === null ? [] : [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
+                    ...($vitePort === null ? [] : [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
                         'destination_port' => (string) $vitePort, 'state' => 'enabled']]),
                     ...($clone === null ? [] : [['action' => 'allow', 'protocol' => 'tcp', 'destination_port' => (string) InstanceHostIntent::T3Port, 'state' => 'enabled']]),
                     // An agent's development servers: only the Node's Caddy reaches them, and it serves them only on a private Route.
@@ -210,7 +211,7 @@ final readonly class InstanceContainer
             // the egress proxy (docs/reference/development-containers.md#egress-and-dns).
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.self::path($project),
                 ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment)],
-            'units' => $this->units($instance, $runtime, $application),
+            'units' => $this->units($instance, $runtime, $application, $vitePort),
             'web_config' => $this->webConfig($instance, $runtime),
             // `php` on every PATH in the container is the Project's static build, so `composer` runs for `agent` and `orbit` alike.
             'php' => $this->php($project),
@@ -393,10 +394,11 @@ final readonly class InstanceContainer
 
     /**
      * FrankenPHP, in classic mode, as `orbit` from the runtime folder, for a web-serving Project with a PHP version.
+     * The container's validated vp-dev port also directs PHP's development SSR requests to its own Vite server.
      *
      * @return list<array{name: string, content: string}>
      */
-    public function units(Instance $instance, InstanceRuntime $runtime, string $application): array
+    public function units(Instance $instance, InstanceRuntime $runtime, string $application, ?int $vitePort): array
     {
         $project = $instance->project;
         $version = $project->php_version;
@@ -406,6 +408,8 @@ final readonly class InstanceContainer
         $path = self::path($project);
         $php = InstanceHostIntent::RuntimeFolder.'/current/php/'.$version.'/bin';
         $config = self::FrankenPhpConfig;
+        $hotUrl = $vitePort !== null && $instance->placementEnvironment() === 'development'
+            ? "\nEnvironment=INERTIA_SSR_HOT_URL=http://127.0.0.1:{$vitePort}" : '';
 
         return [['name' => self::FrankenPhpUnit, 'content' => <<<UNIT
             # Managed by Orbit.
@@ -420,7 +424,7 @@ final readonly class InstanceContainer
             UMask=0007
             WorkingDirectory={$application}
             Environment=HOME=/home/orbit
-            Environment=PATH={$path}
+            Environment=PATH={$path}{$hotUrl}
             ExecStart={$php}/frankenphp run --config {$config} --adapter caddyfile
             Restart=always
             RestartSec=2

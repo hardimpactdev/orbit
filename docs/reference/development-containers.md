@@ -533,6 +533,20 @@ A container Instance's Processes come from the Project's development Process def
 | Environment | The workspace's `.env`, then the definition's own values in `/etc/orbit/processes/<id>/<sha256>.env`, root only, mode 0600. The values come only from the run's vault copy |
 | Runtime | systemd only. Docker definitions refuse with `process.target_unsupported`. New preset definitions are unsupported; migration captures supported `vp-dev` definitions for clone and deployment rendering |
 
+For a development Instance with a `vp-dev` Process, Orbit sets `INERTIA_SSR_HOT_URL=http://127.0.0.1:<vite_port>` in the PHP web runtime unit, `orbit-frankenphp.service`. It uses that Instance's own Vite port, including a migrated default's retained port and a clone's assigned port. Orbit owns this value. It is absent without a `vp-dev` Process, on production Instances and on host checkouts. It is not an application `.env` value or a stored environment record, and `env:sync` does not see it. It directs Inertia's development SSR requests to Vite inside the container; it does not change `public/hot`.
+
+The setting has four limits:
+
+- inertia-laravel reads `config('inertia.ssr.hot_url')`. Its package default maps the environment key, but Laravel's shallow config merge means an app's own `ssr` block replaces that default. Such an app needs this line in the `ssr` block of `config/inertia.php`:
+
+  ```php
+  'hot_url' => env('INERTIA_SSR_HOT_URL'),
+  ```
+
+- `config:cache` freezes the value at cache time.
+- Command-line `php artisan` processes do not inherit the PHP unit's environment.
+- Units render on create, clone, migrate and default deploys. Existing defaults get the key at their next deploy. Existing clones need recreation.
+
 The create run installs and starts the units after the deploy steps. A unit whose desired state is stopped is installed, not started.
 
 A clone records its own Processes from the same definitions, with its own ids, units and environment files. Its seed holds the default's units, still enabled. So before the copy first starts, Orbit removes every `orbit-*` link in `multi-user.target.wants`, the default's Process units and their `/etc/orbit/processes/<id>` folders. It also writes the copy's own `/etc/machine-id` from its Incus UUID. The clone boots with none of the default's units; each later phase enables the units it sets up. The clone's `processes` phase checks again: it stops and removes every `orbit-process-*` unit and `/etc/orbit/processes/<id>` folder it does not own before it starts its own.
