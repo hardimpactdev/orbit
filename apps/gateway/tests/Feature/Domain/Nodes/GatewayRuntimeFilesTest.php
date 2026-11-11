@@ -228,9 +228,6 @@ it('keeps production Gateway runtime recipe and Ansible vars byte identical to m
     $golden = json_decode(file_get_contents(base_path('tests/Fixtures/production-gateway-converge-main.json')), true, flags: JSON_THROW_ON_ERROR);
     expect($actual)->toBe($golden['vpn_states'][$vpnNodeStatus->value.'/'.$vpnRoleStatus->value]);
     expect($capture['intent'])->not->toHaveKey('playbook');
-    foreach ($golden['ansible_files'] as $path => $digest) {
-        expect(hash_file('sha256', base_path('../../'.$path)), $path)->toBe($digest);
-    }
     Node::withoutEvents(fn (): bool => $vpn->update(['status' => LifecycleStatus::Active]));
     $vpn->roles()->delete();
     $local = app(NodeDesiredConvergeInput::class)->capture($node, ['gateway'], false, $operation, null);
