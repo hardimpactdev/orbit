@@ -162,6 +162,8 @@ Swamp source lives under `swamp/`. Its check inputs are declared in the same tab
 
 The Swamp shape job runs `bin/swamp-shape-gate --only control`. Scheduled and manual full-fixture runs use `--only shape`. The script runs the gate, Python analyzer, frozen-base policy and validation CI regression tests through Deno. It also runs pinned `ansible-lint` against the Node enrollment, role, development create, Route and task VM playbooks and checks the private Ansible input builder, the enrollment playbook contract and the waits of a nested fleet against a stub `incus`. The firewall regression test evaluates changed shapes, rule order and unchanged state through the pinned Ansible engine. The artifact tests cover candidate order, transport-only fallback, checksum rejection, cache reuse and staging cleanup.
 
+The bridge writer fixture executes the shipped Ansible task against a temporary ACL boundary. It checks immediate busy refusal, partial withdrawal followed by refresh, failure health and successful recovery. Its fixture input map includes the shipped task and fake curl boundary. It performs no live Incus operation.
+
 The task VM Incus tests require the SSH user's client config before parallel fleet work and preserve it on a second converge with zero changes.
 
 The gate also validates Instance task arguments against the real pinned Ansible module specifications, because fixture modules cannot reject arguments on the real modules' behalf.

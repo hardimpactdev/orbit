@@ -507,6 +507,23 @@ class BridgePolicy(unittest.TestCase):
                             bridge.fcntl.flock(contender, bridge.fcntl.LOCK_EX | bridge.fcntl.LOCK_NB)
                         self.assertEqual((root / 'writer.lock').stat().st_ino, inode)
 
+    def test_expired_helper_budget_refuses_before_record_or_acl_work(self):
+        incus = Incus()
+        with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'api', side_effect=incus.api):
+            root = Path(directory)
+            bridge.apply(root, intent(1, '10.44.0.7'), True)
+            before = {str(path): path.read_bytes() for path in root.rglob('*.json') if path.name != 'health.json'}
+            with patch.object(bridge.time, 'monotonic', side_effect=[0, 301]), \
+                    patch.object(bridge, 'api') as api, patch.object(bridge.subprocess, 'check_output') as nat:
+                with self.assertRaisesRegex(bridge.PolicyError, 'instance.bridge_command_timeout'):
+                    bridge.apply(root, intent(2, '10.44.0.8'))
+                api.assert_not_called()
+                nat.assert_not_called()
+            self.assertEqual({str(path): path.read_bytes() for path in root.rglob('*.json') if path.name != 'health.json'}, before)
+            self.assertEqual(json.loads((root / 'health.json').read_text()), {'error_code': 'instance.bridge_command_timeout'})
+            with (root / 'writer.lock').open('a') as contender:
+                bridge.fcntl.flock(contender, bridge.fcntl.LOCK_EX | bridge.fcntl.LOCK_NB)
+
     def test_cli_reports_busy_without_a_second_acquire_or_health_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
