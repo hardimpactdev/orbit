@@ -7,6 +7,7 @@ namespace App\Infrastructure\Processes;
 use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\AppDev\SsrEndpoint;
 use App\Domain\Instances\ContainerProcessCommands;
+use App\Domain\Instances\Environment\VpDevEnvironment;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -151,7 +152,8 @@ final readonly class SystemdProcessRenderer
             }
         }
 
-        return $environment;
+        return $target->instance === null ? $environment
+            : app(VpDevEnvironment::class)->project($target->instance, $environment, $target->routeDomain);
     }
 
     private function isReservedEnvironmentName(string $name): bool

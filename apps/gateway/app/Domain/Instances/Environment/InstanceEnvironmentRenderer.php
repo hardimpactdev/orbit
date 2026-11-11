@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Environment;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Instance;
 
 final readonly class InstanceEnvironmentRenderer
 {
@@ -21,6 +22,8 @@ final readonly class InstanceEnvironmentRenderer
         if (! in_array($context->environment, ['development', 'production'], true)) {
             $this->referenceUnavailable();
         }
+
+        $values = $this->values($context, $values);
 
         if (
             $context->routeDomain === ''
@@ -61,6 +64,14 @@ final readonly class InstanceEnvironmentRenderer
         }
 
         return $rendered;
+    }
+
+    /** @param array<string, string> $values
+     * @return array<string, string>
+     */
+    public function values(InstanceEnvironmentContext $context, #[\SensitiveParameter] array $values): array
+    {
+        return app(VpDevEnvironment::class)->project(Instance::query()->findOrFail($context->instanceId), $values, $context->routeDomain);
     }
 
     /** Quote one value as a double-quoted dotenv value. */

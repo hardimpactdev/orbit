@@ -52,6 +52,7 @@ final readonly class DevelopmentCreateEnvironment
         if ($project->is_laravel === true && ($values['APP_KEY'] ?? '') === '') {
             $values['APP_KEY'] = LaravelApplicationKey::generate();
         }
+        $values = $this->renderer->values($this->context($instance), $values);
         $this->store->seedForCreate($instance, $values);
         $keys = array_keys($values);
         sort($keys, SORT_STRING);

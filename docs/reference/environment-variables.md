@@ -91,6 +91,17 @@ The admission freezes the environment, account and application path from stored 
 
 The foreign-key check refuses a file with keys that neither stored configuration nor Orbit's previous owned-key set includes. A missing file is allowed. The raw file limit remains 1 MiB. Production synchronization refreshes the config cache, PHP-FPM and opted-in Processes after the file writes, in that order. Swamp records each refresh action separately. A failed action fails the Operation with `env.runtime_refresh_failed`; the written files remain in place. Development synchronization only writes the files.
 
+## Orbit-managed development keys
+
+Every development Instance with a `vp-dev` Process gets these Orbit-managed keys in its `.env` and Process environment, for defaults and clones, in containers and host checkouts.
+
+| Key | Value and reason |
+| --- | --- |
+| `INERTIA_SSR_HOT_URL` | `http://127.0.0.1:<vite_port>` lets Laravel reach Vite's development SSR renderer without public DNS or the proxy path prefix. |
+| `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` | The Instance's Route hostnames let stock Vite configurations accept requests through Orbit's proxy. |
+
+Orbit replaces hand-set values on the next render or synchronization. The values use the current Vite port and Route domains, with the primary domain first and other domains in Route ID order, separated by commas without schemes or ports. Removing the `vp-dev` Process removes both keys on the next render or synchronization. Production Instances get neither key. `INERTIA_SSR_URL` remains the application's production render-server setting.
+
 ## Parent environment steps
 
 Create seeds encrypted values from its bounded source template before the native environment step. For a Laravel Instance with a Route, create stores `APP_URL` as `https://{{instance.domain}}`, so `.env` names the Instance's own domain, not the template's URL. When create owns a database (a copy of the default one, or one on `--database-server`), its `DB_*` keys replace the template's database keys in that seed. An owned SQL test database also gets `.env.testing`, rendered as `env:sync` renders it.

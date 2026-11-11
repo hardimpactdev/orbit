@@ -159,6 +159,8 @@ A preset configures a development Instance Process. It sets the command, the run
 | --- | --- |
 | `vp-dev` | Runs VitePlus on an [assigned Vite port](/reference/assigned-vite-ports). The default restart policy is `on-failure`. |
 
+An Instance with a `vp-dev` Process receives [Orbit-managed development keys](/reference/environment-variables#orbit-managed-development-keys) for Laravel's development SSR renderer and Vite's host check.
+
 A preset needs a development Instance target. The Gateway refuses a Node target with `validation.failed` on `target_type`, and any other Instance with `process.preset_target_invalid`. An Instance has at most one Process of each preset. Another name for the same preset fails with `process.preset_exists`. The same request again returns the existing Process and keeps its desired state. A Process name alone never selects a preset.
 
 A supported `vp-dev` Process also moves during [Instance migration](/cli/instance/migrate). It keeps its preset identity, assigned port and desired state, uses the shared runtime in the container, and follows the ordinary container Process controls after cutover.
