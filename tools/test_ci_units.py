@@ -688,7 +688,7 @@ class WorkflowTest(unittest.TestCase):
 
     def test_required_stays_red_when_whole_file_capacity_is_exceeded(self):
         source = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:\n', 1)[1]
-        code = textwrap.dedent(source.split("          python3 - <<'PYTHON'\n", 1)[1].split('          selected =', 1)[0])
+        code = textwrap.dedent(source.split("          python3 - <<'PYTHON'\n", 1)[1].split('          # Shared', 1)[0])
         needs = {'changes': {'result': 'success', 'outputs': {'fixture_capacity': '[{"file":"migration","shards":11}]',
                                                            'fixture_shards': '[]'}}, 'fixtures': {'result': 'success'}}
         with patch.dict(os.environ, {'NEEDS': json.dumps(needs)}):
@@ -699,7 +699,7 @@ class WorkflowTest(unittest.TestCase):
         # Exercise Required's actual inline rule before its unchanged build-selection checks.
         source = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:\n', 1)[1]
         self.assertIn('changes, swamp, fixtures]', source)
-        code = textwrap.dedent(source.split("          python3 - <<'PYTHON'\n", 1)[1].split('          selected =', 1)[0])
+        code = textwrap.dedent(source.split("          python3 - <<'PYTHON'\n", 1)[1].split('          # Shared', 1)[0])
         for shards in ([], [{'name': '01', 'units': ['a']} ]):
             for result in ('success', 'skipped', 'failure', 'cancelled'):
                 needs = {'changes': {'result': 'success', 'outputs': {'fixture_shards': json.dumps(shards), 'fixture_capacity': '[]'}}, 'fixtures': {'result': result}}
@@ -711,7 +711,7 @@ class WorkflowTest(unittest.TestCase):
                     else:
                         with self.assertRaisesRegex(SystemExit, 'Required fixtures failed'):
                             exec(code, {})
-        self.assertIn("expected = (set(needs) - {'changes'}) | {'proof-run'}", source)
+        self.assertIn("runpy.run_path('bin/ci-delivery')['validate'](needs)", source)
 
 
 if __name__ == '__main__':

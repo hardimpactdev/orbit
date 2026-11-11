@@ -8,14 +8,14 @@ SOURCE = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
 
 
 class RequiredGateTest(unittest.TestCase):
-    def test_main_push_dispatches_cli_release_after_required_checks_without_a_variable_gate(self):
+    def test_main_push_dispatches_cli_release_after_delivery_without_a_variable_gate(self):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
         block = caller.split('  cli-release:\n', 1)[1]
         condition = next(line.strip() for line in block.splitlines() if line.startswith('    if:'))
-        self.assertEqual(condition, "if: always() && needs.required.result == 'success' && github.event_name == 'push' && "
-                                    "github.ref == 'refs/heads/main'")
-        self.assertIn('    needs: required\n', block)
-        # Only Required's own result gates the dispatch. The implicit success() would also skip it when an unselected test
+        self.assertEqual(condition, "if: always() && needs.delivery.result == 'success' && github.ref == 'refs/heads/main' && "
+                                    "contains(fromJSON('[\"push\", \"workflow_dispatch\"]'), github.event_name)")
+        self.assertIn('    needs: delivery\n', block)
+        # Only delivery's own result gates the dispatch. The implicit success() would also skip it when an unselected test
         # job in Required's needs was skipped at job level (main 4e4cf83d, d9d10a93, 02f630f8 dispatched no release).
         skippable = [name for name in ('gateway-tests', 'cli-tests')
                      if "if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['" + name + "']) != 'false' }}" in caller]
@@ -49,7 +49,7 @@ class RequiredGateTest(unittest.TestCase):
     def test_there_is_no_merge_queue_trigger_or_handling(self):
         # PRs merge straight into main after their gate (2026-11-05); no workflow, action or job reads a queue event.
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
-        self.assertIn('    name: Required checks\n    if: always()', caller)
+        self.assertIn("    if: always() && github.ref != 'refs/heads/main'", caller)
         for source in [caller, SOURCE]:
             self.assertNotIn('merge_group', source)
             self.assertIn('github.event.pull_request.base.sha || github.event.before', source)
@@ -118,7 +118,7 @@ class RequiredGateTest(unittest.TestCase):
 
     def test_one_always_reporting_gate_requires_swamp_statically_and_waits_only_for_proof(self):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
-        self.assertEqual(caller.count('    name: Required checks\n'), 1)
+        self.assertIn("name: ${{ github.ref == 'refs/heads/main' && 'PR required checks' || 'Required checks' }}", caller)
         block = caller.split('  required:\n', 1)[1]
         self.assertIn('    if: always()', block)
         jobs = block.split('needs: [', 1)[1].split(']', 1)[0].split(', ')

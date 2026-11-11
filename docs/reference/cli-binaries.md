@@ -18,11 +18,11 @@ The standalone `orbit` binary runs the CLI on a machine without PHP or Composer.
 
 ## Published releases
 
-Every `main` commit whose `Required checks` passed gets a GitHub release on [hardimpactdev/orbit](https://github.com/hardimpactdev/orbit/releases). The release holds the CLI binaries. When the agent source changed since the previous release, the release also holds the [`orbit-agent`](/reference/node-agent#releases).
+Every `main` commit whose `Main delivery checks` passed gets a GitHub release on [hardimpactdev/orbit](https://github.com/hardimpactdev/orbit/releases). The release holds the CLI binaries. When the agent source changed since the previous release, the release also holds the [`orbit-agent`](/reference/node-agent#releases).
 
-On a push to `main`, CI's `Start the CLI release` job dispatches `Orbit CLI Release`, `.github/workflows/orbit-cli-release.yml`, as soon as `Required checks` passes. This does not depend on `ORBIT_SLOW_CHECKS_BLOCKING`, and a test job that the change did not select, so CI skipped it, does not stop it. The release workflow confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A pull-request run never starts a release.
+On a push or manual CI run on `main`, CI's `Start the CLI release` job dispatches `Orbit CLI Release`, `.github/workflows/orbit-cli-release.yml`, as soon as `Main delivery checks` passes. This does not depend on `ORBIT_SLOW_CHECKS_BLOCKING`, and a test job that the change did not select, so CI skipped it, does not stop it. The release workflow confirms that the commit is on the first-parent history of `main` and that its latest trusted `ci.yml` main run has a successful `Main delivery checks` job on that exact SHA, then builds and publishes. A pull-request run never starts a release.
 
-The release workflow also starts when a `CI` run on `main` succeeds, from a push or a manual dispatch. Runs for the same commit run in sequence. A later run checks the existing release and changes nothing when its commit and assets match. The release appears a few minutes after `Required checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
+The release workflow also starts when a `CI` run on `main` completes, including a red fixture result, from a push or a manual dispatch. Runs for the same commit run in sequence. A later run checks the existing release and changes nothing when its commit and assets match. The release appears a few minutes after `Main delivery checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
 
 Releases are public, need no login, and do not expire. A published release is never replaced.
 
@@ -92,12 +92,12 @@ The Gateway, a Node installer, and `orbit self-update` rely on these rules. They
 | Checksums URL | `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/SHA256SUMS` |
 | Provenance URL | `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/provenance.sigstore.json` |
 | Signing identity | Certificate SAN `https://github.com/hardimpactdev/orbit/.github/workflows/orbit-cli-release.yml@refs/heads/main`, OIDC issuer `https://token.actions.githubusercontent.com` |
-| Commits with a release | Commits on the first-parent history of `main` with a successful `Required checks` run. A side commit never has one |
+| Commits with a release | Commits on the first-parent history of `main` with a successful `Main delivery checks` run. A side commit never has one |
 | Immutability | A published asset never changes. The tag points at `C`, and the release appears with all its assets at once |
 
 `bin/orbit-cli-release-version --tag C` prints the tag and refuses a shallow clone.
 
-A release appears once `Required checks` is green and the release workflow has built and published it, usually a few minutes later; other CI jobs may still run. Until then every CLI URL above returns 404. Gateway deployment uses the frozen agent and proceeds independently of CLI publication. A client treats a 404 as "not published yet" and checks again later. It does not install a different version instead. Only the Gateway can name another release: when a commit's release stays missing for 30 minutes, its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit.
+A release appears once `Main delivery checks` is green and the release workflow has built and published it, usually a few minutes later; other CI jobs may still run. Until then every CLI URL above returns 404. Gateway deployment uses the frozen agent and proceeds independently of CLI publication. A client treats a 404 as "not published yet" and checks again later. It does not install a different version instead. Only the Gateway can name another release: when a commit's release stays missing for 30 minutes, its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit.
 
 ### Find the release for a commit
 
@@ -164,7 +164,7 @@ The publish step then fails with the error `Release refused for a non-tip commit
 
 ## Pull-request builds
 
-CI calls `Orbit CLI Binary`, `.github/workflows/orbit-cli-binary.yml`, only when the plan selects `cli` from the [checks table](https://github.com/hardimpactdev/orbit/blob/main/.github/ci/checks.toml). Each target has the table's two-minute timeout. These packaging checks are part of `Required checks`. Each PR has one concurrency group, and a newer run cancels its superseded run.
+CI calls `Orbit CLI Binary`, `.github/workflows/orbit-cli-binary.yml`, only when the plan selects `cli` from the [checks table](https://github.com/hardimpactdev/orbit/blob/main/.github/ci/checks.toml). Each target has the table's two-minute timeout. These packaging checks are part of `Required checks` on PRs and `Main delivery checks` on main. Each PR has one concurrency group, and a newer run cancels its superseded run.
 
 The workflow also runs on `workflow_dispatch`. The release workflow calls the same `workflow_call` entry for its commit and always builds both targets, without a PR concurrency group. PR binary artifacts stay for 7 days; release-transfer and manual-build artifacts stay for 30 days.
 
@@ -214,7 +214,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### Separate workflows
 
-Packaging time and artifacts stay out of the quality checks in `ci.yml`, so a packaging failure never hides a test failure, and the reverse. The release workflow waits for the `CI` run instead of joining it, so it can publish only what `Required checks` accepted. Both release paths reuse one build workflow, so a pull request tests the same steps that publish a release.
+Packaging time and artifacts stay out of the quality checks in `ci.yml`, so a packaging failure never hides a test failure, and the reverse. The release workflow verifies the main delivery job without waiting for duplicate main fixtures. Its summary links source CI and the independent fixture report, so pending or red fixtures stay visible. [Delivery dependencies](/reference/implementation-loop#ci) lists the exact jobs. PR Required checks still blocks on fixtures and capacity. Both release paths reuse one build workflow, so a pull request tests the same steps that publish a release.
 
 The release workflow runs from `main` with a token that can write releases. Only the publish job holds that token and the OIDC token that signs the release, and it runs only the workflow's own scripts from `main`. The build jobs run the release commit's code with a read-only token. A pull request's code never runs in the release workflow.
 

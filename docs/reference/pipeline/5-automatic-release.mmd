@@ -16,7 +16,7 @@ sequenceDiagram
   %%> Built:
   %%> - the Gateway looks every five minutes while automatic releases are on, and reads CI through its GitHub App; the merges of those five minutes go out in one release of the newest green commit
   %%> What it accepts:
-  %%> - a run of `ci.yml` on `main`, with `Required checks` and `Gateway release inputs` green; there is no merge queue, so a red main commit is never released and main is fixed forward
+  %%> - a run of `ci.yml` on `main`, with `Main delivery checks`, its main `Required checks` result and `Gateway release inputs` green; duplicate main fixtures and Main full set report independently and never block delivery
   %%> - a run from a fork, a PR or another workflow does not count
   Note over GW: Admit the release<br/>one at a time
   %%> Requirements:
