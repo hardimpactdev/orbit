@@ -100,3 +100,7 @@ For an attachment read, reuse the operation's ordered inventory and eager-load i
 A Node hold orders publication runs but cannot make an earlier whole-file capture current. Refresh a waiting create's publication after it gains the hold, before dispatch, and preserve its admitted resource and certificate identities. Commit accepted catalog state and release the hold in the same transaction. A writer whose hold starts after its run needs a separate design: promotion cannot change frozen run inputs.
 
 An inline Route publication must complete its Instance projection mark in the same terminal transaction as the seed. A later policy receipt cannot prove a create or migration that publishes no separate Route update.
+
+A family that defers work behind an Operation settles it atomically at the first terminal row transition, including a bound native start failure and expiry. Lock its target, queue against the recorded runtime or fail deferred work explicitly when admission stays closed, and keep its terminal result. Keep family settlement out of shared timeout and cancel selection rules. Enumerate the terminal paths and test another kind’s renewed cancel after a lockless timeout.
+
+Classify a no-start failure at the submission boundary, including execution-copy preparation, instead of enumerating error codes in a projection. Terminal settlement must fail any deferred work when its target was deleted, including when its resource record was also deleted; guard destructive admission with the existing lifecycle rule before side effects and under the target lock.

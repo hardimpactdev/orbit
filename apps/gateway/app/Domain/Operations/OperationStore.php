@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
+use App\Domain\InstanceMigration\InstanceMigrateProjection;
+use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -108,6 +110,9 @@ final readonly class OperationStore
             $current = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
             $operation->setRawAttributes($current->getAttributes(), true);
             $operation->forceFill([...$changes, 'sequence' => $current->sequence + 1])->save();
+            if ($operation->kind === InstanceMigration::Kind && ! $current->status->terminal() && $operation->status->terminal()) {
+                app(InstanceMigrateProjection::class)->terminal($operation, $current);
+            }
         });
         $this->broadcaster->changed($operation, $before !== $operation->status || $cancelRequested);
         // The terminal state frees the Nodes of a Route write; a timed-out one keeps them until Swamp confirms that its run stopped.

@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentInstanceCreateProjection}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
-  - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections}.php
+  - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network}.py}
   - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/{notes/**,frankenphp.Caddyfile}}
@@ -352,7 +352,9 @@ The default Instance is the clone source of its Project on the Node. Orbit build
 
 A successful create or checkout migration completes the default’s Route projection when it records the seed. Manual deployment is then available without waiting for an automatic-deployment tick. A failed or restored migration keeps its previous projection state.
 
-A stale projection mark is repaired only for an active default on an active app-dev Node, with a container seed. Its own Route must be active and published, with no failure, placement transition, replacement or target-set change. No unfinished Instance or Route publication and no retained publication hold may remain. A non-web Project without a Route counts as complete.
+A stale projection mark is repaired only for an active default on an active app-dev Node, with a container seed. Its own Route is selected from its targets, with authoritative Routes ordered by id and a Route without a web root preferred, as for deploy admission. This includes cluster Routes without a direct Node placement. The selected Route must belong to the same Project and have no web root.
+
+All Routes targeting the Instance must be active and published, with no failure, placement transition, replacement or target-set change. No unfinished Instance or Route publication and no retained publication hold may remain. A non-web Project without a Route counts as complete.
 
 After that, [`instance:deploy`](/cli/instance/deploy) explicitly deploys the default branch. Automatic deployment depends on the [shared producer and policy setting](/reference/deployments#automatic-development-defaults). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
 
@@ -493,7 +495,9 @@ The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/c
 - **Route.** Orbit points the Route at FrankenPHP in the container.
 - **Retirement.** Orbit moves the whole old checkout to retention and records its path and time. It deletes no Git metadata. The default's checkout stays until its last worktree has moved.
 
-A failed move leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) has the steps.
+Registered Schedule timers keep their UUID, calendar, timeout and enabled or paused state. Their commands enter the container. [Schedule migration](/reference/schedules#checkout-migration) defines refusals, rollback and retained logs.
+
+A failed move before cutover leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) has the steps.
 
 #### Migration symlinks
 

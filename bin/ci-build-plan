@@ -176,10 +176,11 @@ def select(paths, main=False, selection=None):
     swamp_checks = {name: 'swamp-' + name in selected for name in SWAMP_CHECKS}
     jobs['swamp'] = any(swamp_checks.values())
     jobs['web'] |= main
+    docs_only = selected == {'docs'}
     swamp_only = bool(paths) and all(path.startswith('swamp/') for path in paths)
     if selection is None and (ROOT / SELECTION).is_file():
         selection = (ROOT / SELECTION).read_text()
-    return {'jobs': jobs, 'swamp_checks': swamp_checks, 'gateway_release': main or not swamp_only,
+    return {'jobs': jobs, 'swamp_checks': swamp_checks, 'gateway_release': main or (not swamp_only and not docs_only),
             'proof_run': proof_run(paths, selection)}
 
 

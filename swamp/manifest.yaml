@@ -15,6 +15,7 @@ additionalFiles:
   - ansible/tasks/proof-gateway-release.yml
   - proof/cli-release.json
   - ansible/library/orbit_artifact.py
+  - ansible/library/orbit_schedule_journal.py
   - ansible/library/orbit_static_php.py
   - ansible/library/orbit_migrate_env.py
   - ansible/tasks/artifact-fetch.yml
@@ -78,7 +79,12 @@ additionalFiles:
   - ansible/instance_migrate_links.py
   - ansible/tasks/instance-migrate-link-result.yml
   - ansible/tasks/instance-migrate-process-ready.yml
+  - ansible/schedule-logs.yml
   - ansible/tasks/instance-migrate-phase.yml
+  - ansible/tasks/instance-migrate-schedules.yml
+  - ansible/tasks/instance-migrate-schedule-check.yml
+  - ansible/templates/instance-migrate-schedule.j2
+  - extensions/behaviors/operations/processes-schedules/unit-templates.json
   - ansible/tasks/instance-migrate-discard.yml
   - ansible/tasks/instance-migrate-retire.yml
   - ansible/tasks/instance-migrate-retirement-check.yml

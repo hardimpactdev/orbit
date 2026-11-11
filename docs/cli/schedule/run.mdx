@@ -8,6 +8,8 @@ description: "Run the Schedule once now, as a task, and follow it until it ends.
 orbit schedule:run <uuid> [--idempotency-key=KEY] [--json]
 ```
 
+During checkout migration, a Node-timer Schedule run returns a waiting Operation. [Schedule migration](/reference/schedules#checkout-migration) describes its release after cutover or rollback.
+
 ## How it works
 
 <div className="flow-at" data-chart="schedule/run"></div>

@@ -32,6 +32,7 @@ sequenceDiagram
   %%> With `--force`:
   %%> - also deletes dirty or unpublished source, and a checkout with its linked worktrees
   %%> - it never waives the source identity checks, and it is not consent
+  %%> - migration ownership still applies: a running migration or an unsettled reserved runtime refuses with `instance.lifecycle_busy`, before cleanup and again under the Instance admission lock
   Note over CLI: Confirm removal
   %%> What it does:
   %%> - asks for default-No consent before sending the removal request

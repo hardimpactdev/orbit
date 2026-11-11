@@ -23,6 +23,13 @@
     node_archive: "{{ container.mirror | dirname }}/migrate-{{ container.instance_id }}-{{ run_id }}"
     container_archive: "/srv/.orbit-migrate-{{ run_id }}"
 
+# Cutover already made the container the runtime. Its Schedules must follow even when the later Git retirement refuses.
+- name: Publish the moved Instance's Schedules before retiring Git data
+  when: phase == 'retire'
+  ansible.builtin.include_tasks:
+    file: instance-migrate-schedules.yml
+    apply: { tags: [always] }
+
 # Check every planned retirement before any Node change, and again before any checkout in the batch goes.
 - name: Check all planned retirements
   when: phase in ['container', 'quiesce', 'retire']
@@ -46,6 +53,15 @@
         that: checkout_branch.rc == 0 and checkout_branch.stdout | trim == migrate.branch
         fail_msg: instance.migrate_branch_changed
         quiet: true
+
+# Validate every Schedule before changing any writer; all general checkout preflights still run before stopping timers.
+- name: Check the Instance's Schedules before downtime
+  when: phase == 'quiesce'
+  ansible.builtin.include_tasks:
+    file: instance-migrate-schedules.yml
+    apply: { tags: [always] }
+  vars:
+    schedule_phase: check
 
 # This source scan is only an early refusal. The final rule runs on the exact copied tree inside the container.
 - name: Check checkout links before downtime
@@ -151,6 +167,14 @@
     ansible_connection: local
     ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
+- name: Stop the Instance's Schedules after all preflight checks
+  when: phase == 'quiesce'
+  ansible.builtin.include_tasks:
+    file: instance-migrate-schedules.yml
+    apply: { tags: [always] }
+  vars:
+    schedule_phase: stop
+
 # The same Process ids are about to run in the container. Disable host boot links before copying, so a Node reboot cannot start
 # a second writer. A failed move restores desired state only after its container is gone. A recorded but uninstalled unit skips.
 - name: Read the old Process unit files
@@ -174,6 +198,12 @@
     enabled: "{{ item.item.desired == 'running' }}"
   loop: "{{ source_process_files.results | default([]) }}"
   loop_control: { label: "{{ item.item.name }}" }
+
+- name: Restore the Instance's Schedules after removing the failed container
+  when: phase == 'restore'
+  ansible.builtin.include_tasks:
+    file: instance-migrate-schedules.yml
+    apply: { tags: [always] }
 
 # The container already serves at retire, even if checkout removal later refuses. Retire only this Instance's disabled units.
 - name: Remove the old Process units and environment folders
