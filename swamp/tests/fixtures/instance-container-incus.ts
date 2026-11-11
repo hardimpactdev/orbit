@@ -37,7 +37,7 @@ if (args[0] === "query") {
   const [route, query = ""] = args.at(-1)!.slice(5).split("?");
   const parts = route.split("/");
   if (parts[0] === "network-acls") {
-    console.log(JSON.stringify(state["network-acls"]));
+    console.log(JSON.stringify(parts[1] ? state["network-acls"].find((acl: {name: string}) => acl.name === parts[1]) : state["network-acls"]));
   } else if (parts[0] === "storage-pools") {
     console.log(JSON.stringify(Object.keys(state.containers).map((name) => ({ name, type: "container" }))));
   } else if (parts[0] === "instances") {
@@ -56,21 +56,40 @@ if (args[0] === "query") {
         JSON.stringify(container.snapshots.map((name: string) => ({ name }))),
       );
     } else {
-      const eth0: Record<string, string> = {};
+      const devices: Record<string, Record<string, string>> = { eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true"} };
       for (const device of container.devices ?? []) {
-        if (!device.startsWith("eth0,")) continue;
-        const equal = device.indexOf("=", 5);
-        eth0[device.slice(5, equal)] = device.slice(equal + 1);
+        const comma = device.indexOf(",");
+        const equal = device.indexOf("=", comma);
+        const name = device.slice(0, comma);
+        devices[name] ??= {};
+        devices[name][device.slice(comma + 1, equal)] = device.slice(equal + 1);
       }
+      Object.assign(devices, container.added ?? {});
       console.log(JSON.stringify({ name: parts[1], status: container.status, query, devices: container.added ?? {},
-        expanded_devices: { eth0 }, config: { "volatile.uuid": container.uuid } }));
+        expanded_devices: devices, config: { "volatile.uuid": container.uuid } }));
     }
   } else fail(`Unexpected query ${route}`);
   Deno.exit(0);
 }
 if (args[0] === "network" && args[1] === "acl") {
   const project = take("--project");
-  if (args[2] === "create") {
+  if (args[2] === "rule") {
+    if (state.bridgeVethFailures > 0) {
+      state.bridgeVethFailures--;
+      save();
+      fail('Failed updating bridge NIC ACL: Unknown or missing host side veth device ""');
+    }
+    if (state.etagConflicts > 0) {
+      state.etagConflicts--;
+      save();
+      fail("412 Precondition Failed: ETag mismatch");
+    }
+    const [, , , action, name, direction, ...properties] = args;
+    const acl = state["network-acls"].find((acl: {name: string}) => acl.name === name);
+    const rule = Object.fromEntries(properties.map((value) => { const equal = value.indexOf("="); return [value.slice(0, equal), value.slice(equal + 1)]; }));
+    if (action === "add") acl[direction].push(rule);
+    else acl[direction] = acl[direction].filter((value: Record<string, string>) => !Object.entries(rule).every(([key, want]) => value[key] === want));
+  } else if (args[2] === "create") {
     state["network-acls"].push({ name: args[3], description: "", egress: [], ingress: [] });
   } else if (args[2] === "delete") {
     if (project !== "default") fail("ACLs must be removed from default");

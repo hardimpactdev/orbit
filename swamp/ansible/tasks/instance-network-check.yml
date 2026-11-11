@@ -7,6 +7,9 @@
 
 - name: Require an egress gate on each NIC of the Instance bridge
   ansible.builtin.include_tasks: instance-network-nic-check.yml
+  vars:
+    network_name: "{{ instances.network }}"
+    network_failure: instance.host_unavailable
   loop: "{{ instance_network_containers.stdout | from_json }}"
   loop_control: { loop_var: network_container, label: "{{ network_container.name }}" }
 

@@ -66,11 +66,16 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   const folder = Deno.makeTempDirSync();
   const apps = Deno.makeTempDirSync({ dir: "/var/tmp" });
   for (const path of ["bin", "tasks", "home", "run", "markers"]) Deno.mkdirSync(`${folder}/${path}`);
+  Deno.mkdirSync(`${folder}/templates`);
+  Deno.copyFileSync(new URL("templates/instance-bridge-rules.j2", root), `${folder}/templates/instance-bridge-rules.j2`);
+  for (const shared of ["instance-network-nic-check.yml", "instance-network-device-check.yml", "instance-bridge-rules.yml"]) {
+    Deno.copyFileSync(new URL(`tasks/${shared}`, root), `${folder}/tasks/${shared}`);
+  }
   Deno.mkdirSync(`${folder}/library`);
   Deno.copyFileSync(new URL("fixtures/instance-migrate-systemd.py", import.meta.url), `${folder}/library/orbit_migrate_systemd.py`);
   Deno.writeTextFileSync(`${folder}/host-processes.json`, "{}");
   Deno.writeTextFileSync(`${folder}/process-environments.json`, "{}");
-  Deno.writeTextFileSync(`${folder}/state.json`, "{}");
+  Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({"network-acls": [{name: "orbitinst0-egress", egress: [], ingress: []}]}));
   Deno.writeTextFileSync(
     `${folder}/bin/incus`,
     `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-migrate-incus.ts", import.meta.url).pathname}' "$@"\n`,
@@ -148,6 +153,8 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     root_disk_size: "40GiB",
     address: `10.253.0.${id}`,
     network: "orbitinst0",
+    bridge_cidr: "10.253.0.0/24",
+    bridge_endpoints: [] as {host: string; port: number}[],
     acl: `instance-${id}`,
     acl_rules: {
       description: `Orbit Instance ${id}`,
@@ -372,7 +379,7 @@ Deno.test({
       const restored = f.run("restore");
       assert(restored.ok, restored.output);
       assertEquals(f.state().containers, {});
-      assertEquals(f.state()["network-acls"], []);
+      assertEquals(f.state()["network-acls"].filter((acl: {name: string}) => acl.name !== "orbitinst0-egress"), []);
       assertEquals(f.ufw(), []);
       assertEquals(processes(), before);
       assertEquals(Deno.statSync(f.migrate.awake.path).mtime?.getTime(), markerBefore);
@@ -536,7 +543,7 @@ Deno.test({
       // .env came as it was; the path into the checkout points into the workspace now.
       assertEquals(f.read(".env"), `APP_KEY=base64:kept\nDB_DATABASE=${f.rootfs}/srv/workspace/database/database.sqlite\n`);
       // The way to the database server came with the container.
-      assertEquals(f.state()["network-acls"][0].egress, f.container.acl_rules.egress);
+      assertEquals(f.state()["network-acls"].find((acl: {name: string}) => acl.name === f.container.acl).egress, f.container.acl_rules.egress);
       assertEquals(f.ufw().map((line) => JSON.parse(line).comment), ["orbit:instance-7-database"]);
       // The move uses create's resource limits and full root device, even for an image-based migration.
       assertEquals(f.state().containers["instance-7"].config, ["security.idmap.isolated=true", "limits.cpu=4", "limits.memory=8GiB", "limits.processes=4096"]);
@@ -626,7 +633,7 @@ Deno.test({
       const restore = f.run("restore");
       assert(restore.ok, restore.output);
       assertEquals(f.state().containers, {});
-      assertEquals(f.state()["network-acls"], []);
+      assertEquals(f.state()["network-acls"].filter((acl: {name: string}) => acl.name !== "orbitinst0-egress"), []);
       assertEquals(f.ufw(), []);
       assert(!exists(f.container.mirror));
       assert(!exists(f.rootfs));
@@ -709,7 +716,7 @@ Deno.test({
       const restore = f.run("restore");
       assert(restore.ok, restore.output);
       assertEquals(f.state().containers, {});
-      assertEquals(f.state()["network-acls"], []);
+      assertEquals(f.state()["network-acls"].filter((acl: {name: string}) => acl.name !== "orbitinst0-egress"), []);
       assertEquals(f.ufw(), []);
       assert(exists(f.migrate.awake.path));
       assertEquals(git(f.checkout, "status", "--porcelain"), status);
@@ -1235,3 +1242,33 @@ Deno.test({
     }
   },
 });
+
+for (const failures of [1, 9]) {
+  Deno.test({
+    name: `bridge endpoint add with ${failures === 1 ? "transient" : "persistent"} missing-veth failure stays before the migration probe and downtime`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        f.migrate.retire = [];
+        f.container.bridge_endpoints = [{host: "10.44.0.7", port: 5432}];
+        f.write();
+        const state = f.state();
+        state.bridgeVethFailures = failures;
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+        const before = Deno.readTextFileSync(`${f.checkout}/.env`);
+        const result = f.run("container");
+        assertEquals(result.ok, failures === 1, result.output);
+        assert(exists(f.migrate.awake.path));
+        assert(!exists(`${f.folder}/run/quiesced`));
+        assertEquals(Deno.readTextFileSync(`${f.checkout}/.env`), before);
+        const calls = Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+        const writes = calls.filter((call) => call.includes("rule") && call.includes("add"));
+        assertEquals(writes.length, failures === 1 ? 2 : 5);
+        const probe = calls.findIndex((call) => call.includes("exec 3<>\"/dev/tcp/$1/$2\""));
+        if (failures === 1) assert(probe > calls.findIndex((call) => call === writes.at(-1)));
+        else assertEquals(probe, -1, "a failed bridge admission must not probe or quiesce");
+      } finally { f.cleanup(); }
+    },
+  });
+}

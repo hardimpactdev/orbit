@@ -1,0 +1,50 @@
+---
+- name: Read the bridge ACL for endpoint reconciliation
+  tags: [always]
+  ansible.builtin.command: { argv: [incus, query, --, "/1.0/network-acls/{{ bridge_network }}-egress?project=default"] }
+  register: bridge_acl_read
+  changed_when: false
+
+- name: Compute exact bridge rule mutations
+  tags: [always]
+  ansible.builtin.set_fact:
+    bridge_rule_plan: "{{ lookup('ansible.builtin.template', '../templates/instance-bridge-rules.j2') | from_json }}"
+  vars:
+    bridge_current: "{{ bridge_acl_read.stdout | from_json }}"
+    bridge_base_rules: "{{ bridge_baseline | default({}) }}"
+
+# Incus rule add/remove GET the current list and PUT with its ETag. Retry the whole read/check/mutate once per attempt,
+# so a competing add of the same endpoint becomes a no-op and a different endpoint can never be overwritten.
+- name: Apply an exact bridge rule with bounded ETag conflict retry
+  tags: [always]
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import json
+        import os
+        import subprocess
+        acl = os.environ["ORBIT_BRIDGE_ACL"]
+        direction = os.environ["ORBIT_RULE_DIRECTION"]
+        action = os.environ["ORBIT_RULE_ACTION"]
+        rule = json.loads(os.environ["ORBIT_RULE"])
+        current = json.loads(subprocess.check_output(["incus", "query", "--", "/1.0/network-acls/" + acl + "?project=default"]))
+        present = any(all(existing.get(key) == value for key, value in rule.items()) for existing in current[direction])
+        if present != (action == "add"):
+            subprocess.run(["incus", "network", "acl", "rule", action, acl, direction, "--project", "default",
+                            *[key + "=" + value for key, value in rule.items()]], check=True)
+            print("changed")
+  environment:
+    ORBIT_BRIDGE_ACL: "{{ bridge_network }}-egress"
+    ORBIT_RULE_DIRECTION: "{{ item.direction }}"
+    ORBIT_RULE_ACTION: "{{ item.action }}"
+    ORBIT_RULE: "{{ item.rule | to_json }}"
+  loop: "{{ bridge_rule_plan.changes }}"
+  loop_control: { label: "{{ item.action }} {{ item.direction }} {{ item.rule }}" }
+  register: bridge_rule_write
+  changed_when: "'changed' in bridge_rule_write.stdout_lines"
+  # Retry ETag conflicts and a transient disappearing veth; every other failure stops the phase at once.
+  until: bridge_rule_write.rc == 0 or ('412' not in bridge_rule_write.stderr and 'ETag' not in bridge_rule_write.stderr and 'precondition' not in bridge_rule_write.stderr | lower and 'Unknown or missing host side veth device' not in bridge_rule_write.stderr)
+  retries: 4
+  delay: 1

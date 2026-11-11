@@ -110,6 +110,7 @@ final readonly class InstanceHostIntent
             // the egress proxy, their one way out (docs/reference/development-containers.md#egress-and-dns).
             'forwarder_port' => self::ModelForwarderPort,
             'ingress' => self::ingress($gateway),
+            'bridge_endpoints' => app(InstanceContainer::class)->nodeEndpoints($node),
             'egress' => InstanceEgress::for(self::Network, $gateway, $cidr, $this->privateDns->domains()),
             'ids' => (self::Containers + 1) * self::IdMapSize + $taskIds,
             // A task VM host sizes the ARC for its task side, or keeps the Node's own (task-vm-host-prepare.yml): the Instance side

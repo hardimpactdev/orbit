@@ -136,8 +136,26 @@ if (family === "query") {
 } else if (family === "project" && action === "unset") {
   const row = state.projects.find((r: { name: string }) => r.name === name);
   for (const key of args.slice(3)) delete row.config[key];
+} else if (family === "config" && action === "device" && ["set", "override"].includes(name)) {
+  const row = instance(args[3]);
+  const device = args[4];
+  row.devices ??= {};
+  const before = row.devices[device] ?? state.profiles[project].devices[device];
+  row.devices[device] = {...before, ...Object.fromEntries(args.slice(5).map(pair))};
+  if (!row.devices[device]["security.acls"] || row.devices[device]["security.acls.default.egress.action"] !== "reject") fail("NIC move opened its gate");
 } else if (family === "network" && action === "acl") {
-  if (name === "create") {
+  if (name === "rule") {
+    if (state.etagConflicts > 0) {
+      state.etagConflicts--;
+      Deno.writeTextFileSync(file, JSON.stringify(state));
+      fail("412 Precondition Failed: ETag mismatch");
+    }
+    const [, , , action, aclName, direction, ...properties] = args;
+    const acl = state["network-acls"].find((acl: {name: string}) => acl.name === aclName);
+    const rule = Object.fromEntries(properties.map(pair));
+    if (action === "add") acl[direction].push(rule);
+    else acl[direction] = acl[direction].filter((value: Record<string, string>) => !Object.entries(rule).every(([key, want]) => value[key] === want));
+  } else if (name === "create") {
     state["network-acls"].push({ name: args[3], config: {} });
   } else {
     Object.assign(

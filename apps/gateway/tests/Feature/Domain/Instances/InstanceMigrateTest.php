@@ -1215,3 +1215,29 @@ describe('Processes moving into the container', function (): void {
             ->and($instance->runtime()->exists())->toBeFalse();
     });
 });
+
+it('captures the Node endpoint union from the same attached targets as each NIC, deduplicates it and excludes other Nodes', function (): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject();
+    $first = migrateCheckout($project, $node);
+    $second = migrateCheckout($project, $node, 'second');
+    $otherNode = containerDefaultNode('other-host', '10.44.0.99');
+    $other = migrateCheckout($project, $otherNode, 'other');
+    $containers = app(InstanceContainer::class);
+    foreach ([$first, $second, $other] as $instance) {
+        $containers->reserve($instance, $instance->node);
+    }
+    $sql = migrateDatabaseServer($node, 'union-sql', DatabaseDriver::Pgsql, 5432);
+    migrateServerDatabase($first, $sql);
+    migrateServerDatabase($second, $sql);
+    migrateServerDatabase($second, migrateDatabaseServer($node, 'union-cache', DatabaseDriver::Redis, 6379), 'REDIS');
+    migrateServerDatabase($other, migrateDatabaseServer($otherNode, 'other-sql', DatabaseDriver::Pgsql, 5434));
+    $want = [['host' => '10.44.0.7', 'port' => 5432], ['host' => '10.44.0.7', 'port' => 6379]];
+
+    expect($containers->nodeEndpoints($node))->toBe($want)
+        ->and(app(\App\Domain\Instances\InstanceHostIntent::class)->for($node)['bridge_endpoints'])->toBe($want);
+    DatabaseConnectionTarget::query()->where('instance_id', $first->id)->delete();
+    expect($containers->nodeEndpoints($node))->toBe($want);
+    DatabaseConnectionTarget::query()->where('instance_id', $second->id)->delete();
+    expect($containers->nodeEndpoints($node))->toBe([]);
+});

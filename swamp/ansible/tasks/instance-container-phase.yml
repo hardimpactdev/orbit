@@ -66,10 +66,21 @@
         argv: >-
           {{ incus_project + ['init', container.image, container.name, '--config', 'security.idmap.isolated=true',
               '--device', 'eth0,ipv4.address=' ~ container.address,
-              '--device', 'eth0,security.acls=' ~ container.network ~ '-egress,' ~ container.acl,
+              '--device', 'eth0,security.acls=' ~ container.network ~ '-proxy,' ~ container.acl,
               '--device', 'eth0,security.acls.default.egress.action=reject',
               '--device', 'eth0,security.acls.default.ingress.action=reject'] + resource_args }}
       changed_when: true
+
+# Lifecycle mutations only add; removal belongs to host reconciliation from current Gateway intent.
+- name: Admit the attached target endpoints at the bridge
+  tags: [container, clone]
+  when: phase in ['container', 'clone']
+  ansible.builtin.include_tasks: instance-bridge-rules.yml
+  vars:
+    bridge_network: "{{ container.network }}"
+    bridge_cidr: "{{ container.bridge_cidr }}"
+    bridge_endpoints: "{{ container.bridge_endpoints }}"
+    bridge_reconcile: false
 
 # A clone copies the default's seed snapshot, which the default took with its units stopped: a ZFS clone that needs no start of the
 # default. The copy takes its own address and ACL; T3 is published on the Node's WireGuard address in NAT mode, so T3 sees its
@@ -97,7 +108,7 @@
         argv: >-
           {{ incus_project + ['copy', container.clone.source ~ '/' ~ container.clone.snapshot, container.name,
               '--device', 'eth0,ipv4.address=' ~ container.address,
-              '--device', 'eth0,security.acls=' ~ container.network ~ '-egress,' ~ container.acl,
+              '--device', 'eth0,security.acls=' ~ container.network ~ '-proxy,' ~ container.acl,
               '--device', 'eth0,security.acls.default.egress.action=reject',
               '--device', 'eth0,security.acls.default.ingress.action=reject'] + resource_args }}
       changed_when: true
@@ -172,25 +183,28 @@
   loop: "{{ container.firewall }}"
   loop_control: { label: "{{ item.comment }}" }
 
-# A missing local ACL falls back to the profile's common proxy-only gate. An explicit override that removes every effective ACL
-# must never start: the bridge delegates egress to the NIC, so it cannot substitute for this check.
-- name: Check the container's effective egress gate before starting it
+# Both independent ACLs reject by default. Validate all effective bridge NICs, including copied local extra devices.
+- name: Check the container's effective egress gates before starting it
   tags: [container, clone, start]
   when: phase in ['container', 'clone', 'start']
   block:
-    - name: Read the container's effective NIC
+    - name: Read the container's effective devices
       ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
       register: container_nic_read
       changed_when: false
-    - name: Refuse a NIC without a default-reject ACL
-      vars:
-        nic: "{{ (container_nic_read.stdout | from_json).expanded_devices.eth0 }}"
+    - name: Require the expected Instance bridge NIC
       ansible.builtin.assert:
         that:
-          - nic.get('security.acls', '') | trim | length > 0
-          - nic.get('security.acls.default.egress.action', '') == 'reject'
+          - (container_nic_read.stdout | from_json).expanded_devices.get('eth0', {}).get('network', '') == container.network
         fail_msg: instance.container_network_unsafe
         quiet: true
+    - name: Check every effective bridge NIC
+      ansible.builtin.include_tasks: instance-network-nic-check.yml
+      vars:
+        network_container: "{{ container_nic_read.stdout | from_json }}"
+        network_name: "{{ container.network }}"
+        network_failure: instance.container_network_unsafe
+        expected_network_device: eth0
 
 - name: Start the container
   tags: [container, clone, start]

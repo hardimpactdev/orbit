@@ -179,6 +179,8 @@ final readonly class InstanceContainer
             'root_disk_pool' => InstanceHostIntent::Pool, 'root_disk_size' => '40GiB',
             'image' => self::Image, 'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
             'acl' => $runtime->container_name,
+            'bridge_cidr' => ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')),
+            'bridge_endpoints' => array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port']], $access),
             // The common NIC ACL keeps the ways to the model forwarder and egress proxy; this one lets the Node's Caddy reach
             // FrankenPHP, a clone's T3 clients reach T3, and the container reach each attached target.
             'acl_rules' => ['description' => 'Orbit Instance '.$instance->id,
@@ -321,6 +323,23 @@ final readonly class InstanceContainer
         }
 
         return array_values($paths);
+    }
+
+    /** The Node's target union, using the same endpoint source as each container's NIC policy.
+     *
+     * @return list<array{host: string, port: int}>
+     */
+    public function nodeEndpoints(Node $node): array
+    {
+        $endpoints = [];
+        foreach (InstanceRuntime::query()->where('node_id', $node->id)->with('instance')->orderBy('id')->get() as $runtime) {
+            foreach ($this->databaseAccesses($runtime->instance, $runtime, null) as $access) {
+                $endpoints[$access['host'].':'.$access['port']] = ['host' => $access['host'], 'port' => $access['port']];
+            }
+        }
+        ksort($endpoints);
+
+        return array_values($endpoints);
     }
 
     /**

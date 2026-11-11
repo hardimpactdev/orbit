@@ -50,8 +50,13 @@ function fixture() {
   const runId = crypto.randomUUID();
   Deno.mkdirSync(`${folder}/bin`);
   Deno.mkdirSync(`${folder}/tasks`);
+  Deno.mkdirSync(`${folder}/templates`);
+  Deno.copyFileSync(new URL("templates/instance-bridge-rules.j2", root), `${folder}/templates/instance-bridge-rules.j2`);
+  for (const shared of ["instance-network-nic-check.yml", "instance-network-device-check.yml", "instance-bridge-rules.yml"]) {
+    Deno.copyFileSync(new URL(`tasks/${shared}`, root), `${folder}/tasks/${shared}`);
+  }
   Deno.mkdirSync(`${folder}/home`);
-  Deno.writeTextFileSync(`${folder}/state.json`, "{}");
+  Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({"network-acls": [{name: "orbitinst0-egress", egress: [], ingress: []}]}));
   Deno.writeTextFileSync(
     `${folder}/bin/incus`,
     `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${
@@ -84,6 +89,8 @@ function fixture() {
     root_disk_size: "40GiB",
     address: "10.253.0.2",
     network: "orbitinst0",
+    bridge_cidr: "10.253.0.0/24",
+    bridge_endpoints: [] as {host: string; port: number}[],
     acl: "instance-7",
     acl_rules: {
       description: "Orbit Instance 7",
@@ -166,10 +173,10 @@ Deno.test({
         assertEquals(f.result(), { commit: phase === "workspace" || phase === "seed" ? head : null });
       }
       const state = f.state();
-      assertEquals(state["network-acls"], [{ name: "instance-7", ...f.container.acl_rules }]);
+      assertEquals(state["network-acls"].find((acl: {name: string}) => acl.name === "instance-7"), { name: "instance-7", ...f.container.acl_rules });
       assertEquals(state.containers["instance-7"].devices, [
         "eth0,ipv4.address=10.253.0.2",
-        "eth0,security.acls=orbitinst0-egress,instance-7",
+        "eth0,security.acls=orbitinst0-proxy,instance-7",
         "eth0,security.acls.default.egress.action=reject",
         "eth0,security.acls.default.ingress.action=reject",
         "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB",
@@ -348,7 +355,7 @@ Deno.test({
       }
       const state = f.state();
       assertEquals(state.containers["instance-8"].source, `instance-7/seed-${seed}`);
-      assertEquals(state.containers["instance-8"].devices, ["eth0,ipv4.address=10.253.0.3", "eth0,security.acls=orbitinst0-egress,instance-8", "eth0,security.acls.default.egress.action=reject", "eth0,security.acls.default.ingress.action=reject", "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB"]);
+      assertEquals(state.containers["instance-8"].devices, ["eth0,ipv4.address=10.253.0.3", "eth0,security.acls=orbitinst0-proxy,instance-8", "eth0,security.acls.default.egress.action=reject", "eth0,security.acls.default.ingress.action=reject", "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB"]);
       assertEquals(state.containers["instance-8"].added, {
         t3: { type: "proxy", settings: ["listen=tcp:10.44.0.7:3800", "connect=tcp:10.253.0.3:3773", "nat=true"] },
       });
@@ -939,9 +946,52 @@ for (const damage of ["missing ACL", "permissive default"]) {
         Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
         const result = f.run("start");
         assert(!result.ok, result.output);
-        assertEquals(f.result(), { error_code: "instance.container_network_unsafe" });
+        assertEquals(f.result(), { error_code: "instance.container_network_unsafe" }, result.output);
         assertEquals(f.state().containers["instance-7"].status, "Stopped");
       } finally { f.cleanup(); }
     },
   });
 }
+
+Deno.test({
+  name: "start refuses an unguarded extra bridge NIC beside guarded eth0",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      assert(f.run("container").ok);
+      const state = f.state();
+      state.containers["instance-7"].status = "Stopped";
+      state.containers["instance-7"].devices.push("eth1,type=nic", "eth1,network=orbitinst0");
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const result = f.run("start");
+      assert(!result.ok, result.output);
+      assertEquals(f.result(), {error_code: "instance.container_network_unsafe"}, result.output);
+      assertEquals(f.state().containers["instance-7"].status, "Stopped");
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "first attach adds an exact bridge endpoint, retries ETag conflicts and repeats without changes",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.bridge_endpoints = [{host: "10.44.0.7", port: 3306}];
+      f.write();
+      const state = f.state();
+      state.etagConflicts = 1;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      let result = f.run("container");
+      assert(result.ok, result.output);
+      const bridge = f.state()["network-acls"].find((acl: {name: string}) => acl.name === "orbitinst0-egress");
+      assertEquals(bridge.egress, [{action: "allow", source: "10.253.0.0/24", destination: "10.44.0.7/32", protocol: "tcp", destination_port: "3306", state: "enabled"}]);
+      result = f.run("container");
+      assert(result.ok, result.output);
+      assertEquals(result.changed, 0, result.output);
+      const calls = Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+      assertEquals(calls.filter((call) => call.includes("rule") && call.includes("add")).length, 2);
+    } finally { f.cleanup(); }
+  },
+});

@@ -1,11 +1,10 @@
 ---
-- name: Refuse an Instance bridge NIC without a default-reject ACL
-  when: network_device.value.get('network', '') == instances.network or network_device.value.get('parent', '') == instances.network
-  ansible.builtin.assert:
-    that:
-      - network_device.value.get('security.acls', '') | trim | length > 0
-      - network_device.value.get('security.acls.default.egress.action', '') == 'reject'
-    fail_msg: "instance.host_unavailable: {{ network_container.name }}/{{ network_device.key }} needs an effective ACL with default egress reject"
-    quiet: true
+# Shared effective-device selection for the host audit and the start guard. Incus replaces whole profile devices.
+- name: Refuse an unsafe effective NIC on the Instance bridge
+  tags: [always]
+  when: >-
+    network_device.value.get('type', '') == 'nic'
+    and (network_device.value.get('network', '') == network_name or network_device.value.get('parent', '') == network_name)
+  ansible.builtin.include_tasks: instance-network-device-check.yml
   loop: "{{ network_container.expanded_devices | dict2items }}"
   loop_control: { loop_var: network_device, label: "{{ network_container.name }}/{{ network_device.key }}" }

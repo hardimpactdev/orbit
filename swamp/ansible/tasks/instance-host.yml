@@ -104,12 +104,39 @@
 # `shift` on a disk whose source falls under `restricted.devices.disk.paths`, so the project sets no path list: the profile is
 # the one place that names the two folders, and the create flow's device list is the only guard on host paths.
 # Containers get no DNS: the egress proxy resolves every name.
+- name: Read the common NIC ACL
+  ansible.builtin.command: { argv: [incus, query, --, "/1.0/network-acls?project=default&recursion=1"] }
+  register: instance_proxy_acls
+  changed_when: false
+
+- name: Create the common NIC ACL
+  when: instances.network ~ '-proxy' not in (instance_proxy_acls.stdout | from_json | map(attribute='name') | list)
+  ansible.builtin.command: { argv: [incus, network, acl, create, "{{ instances.network }}-proxy", --project, default] }
+  changed_when: true
+
+- name: Converge the common NIC ACL
+  vars:
+    proxy_rules:
+      description: Orbit Instance proxy boundary
+      egress:
+        - { action: allow, destination: "{{ instances.address.split('/')[0] }}/32", protocol: tcp, destination_port: "{{ instances.forwarder_port | string }}", state: enabled }
+        - { action: allow, destination: "{{ instances.address.split('/')[0] }}/32", protocol: tcp, destination_port: "{{ instances.egress.port | string }}", state: enabled }
+      ingress: "{{ instances.ingress }}"
+    proxy_now: "{{ instance_proxy_acls.stdout | from_json | selectattr('name', 'equalto', instances.network ~ '-proxy') | first | default({}) }}"
+  when: proxy_now.get('egress', []) != proxy_rules.egress or proxy_now.get('ingress', []) != proxy_rules.ingress
+  ansible.builtin.command:
+    argv: [incus, network, acl, edit, "{{ instances.network }}-proxy", --project, default]
+    stdin: "{{ proxy_rules | to_json }}"
+  changed_when: true
+
 - name: Prepare the Instance bridge, project and profile
   ansible.builtin.include_tasks: task-container-host-prepare.yml
   vars:
     container_host: *instance_host
     container_acl_name: "{{ instances.network }}-egress"
     container_dns: false
+    # Endpoint mutations use ETags; never replace the existing shared list with an admission-time snapshot.
+    container_acl_preserve: true
     # This common ACL also lives on each NIC: the ways out are the model forwarder, which the image's nftables admits
     # only for `agent`, and the egress proxy, both on the bridge's own address.
     container_acl_rules:
@@ -137,10 +164,9 @@
       raw.dnsmasq: port=0
       security.acls: "{{ instances.network }}-egress"
       security.acls.default.ingress.action: reject
-      # Egress is switched to allow below, only after the profile and every effective NIC policy pass their check.
+      security.acls.default.egress.action: reject
     container_network_args: >-
-      {{ (container_network_config | dict2items | map(attribute='key') | zip(container_network_config.values()) | map('join', '=') | list)
-         + ['security.acls.default.egress.action=reject'] }}
+      {{ container_network_config | dict2items | map(attribute='key') | zip(container_network_config.values()) | map('join', '=') | list }}
     # Every process in a container gets the runtime folder's environment and the egress proxy: `incus exec` sessions, units and login
     # shells alike.
     container_profile_config: "{{ instances.profile_config }}"
@@ -151,7 +177,7 @@
         name: eth0
         network: "{{ instances.network }}"
         security.port_isolation: 'true'
-        security.acls: "{{ instances.network }}-egress"
+        security.acls: "{{ instances.network }}-proxy"
         security.acls.default.egress.action: reject
         security.acls.default.ingress.action: reject
       orbit-runtime:
@@ -168,16 +194,22 @@
       limits.virtual-machines: '0'
     container_restrictions_unset: [restricted.devices.disk.paths]
 
-# The profile above also protects the image builder and a NIC without an Instance ACL. Inspect running AND stopped containers
-# in every project before removing the bridge's independent egress reject. A failed check leaves the old bridge policy intact.
-- name: Check every Instance bridge NIC before passing egress
-  ansible.builtin.include_tasks: instance-network-check.yml
+# Move whole local NIC definitions only after the proxy ACL exists, retaining the effective reject defaults.
+- name: Move existing NICs off the bridge union ACL
+  ansible.builtin.include_tasks: instance-network-move.yml
 
-- name: Pass bridge egress to the default-reject NIC policies
-  when: (instance_network_check.stdout | from_json).config.get('security.acls.default.egress.action') != 'allow'
-  ansible.builtin.command:
-    argv: [incus, network, set, "{{ instances.network }}", --project, default, security.acls.default.egress.action=allow]
-  changed_when: true
+- name: Reconcile the bridge endpoint union from Gateway intent
+  ansible.builtin.include_tasks: instance-bridge-rules.yml
+  vars:
+    bridge_network: "{{ instances.network }}"
+    bridge_cidr: "{{ instances.cidr }}"
+    bridge_endpoints: "{{ instances.bridge_endpoints }}"
+    bridge_reconcile: true
+    bridge_baseline:
+      egress:
+        - { action: allow, destination: "{{ instances.address.split('/')[0] }}/32", protocol: tcp, destination_port: "{{ instances.forwarder_port | string }}", state: enabled }
+        - { action: allow, destination: "{{ instances.address.split('/')[0] }}/32", protocol: tcp, destination_port: "{{ instances.egress.port | string }}", state: enabled }
+      ingress: "{{ instances.ingress }}"
 
 - name: Run the egress proxy
   ansible.builtin.include_tasks: instance-egress.yml
@@ -251,10 +283,10 @@
 - name: Check every Instance bridge NIC at the end of the role
   ansible.builtin.include_tasks: instance-network-check.yml
 
-- name: Require bridge egress delegation and unchanged ingress isolation
+- name: Require bridge default reject and unchanged ingress isolation
   ansible.builtin.assert:
     that:
-      - (instance_network_check.stdout | from_json).config['security.acls.default.egress.action'] == 'allow'
+      - (instance_network_check.stdout | from_json).config['security.acls.default.egress.action'] == 'reject'
       - (instance_network_check.stdout | from_json).config['security.acls.default.ingress.action'] == 'reject'
     fail_msg: instance.host_unavailable
     quiet: true

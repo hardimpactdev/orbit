@@ -1,0 +1,25 @@
+{# Only host reconciliation withdraws endpoint-shaped rules. All writes preserve unrelated rules. #}
+{%- set ns = namespace(want=[], changes=[]) -%}
+{%- for endpoint in bridge_endpoints -%}
+  {%- set rule = {'action': 'allow', 'source': bridge_cidr, 'destination': endpoint.host ~ '/32',
+                  'protocol': 'tcp', 'destination_port': endpoint.port | string, 'state': 'enabled'} -%}
+  {%- if rule not in ns.want -%}{%- set ns.want = ns.want + [rule] -%}{%- endif -%}
+{%- endfor -%}
+{%- for direction in ['egress', 'ingress'] -%}
+  {%- for rule in (ns.want if direction == 'egress' else []) + bridge_base_rules.get(direction, []) -%}
+    {%- set ns.changes = ns.changes + [{'action': 'add', 'direction': direction, 'rule': rule}] -%}
+  {%- endfor -%}
+{%- endfor -%}
+{%- if bridge_reconcile -%}
+  {%- for raw in bridge_current.egress | default([]) -%}
+    {%- set rule = raw | dict2items | rejectattr('value', 'equalto', '') | items2dict -%}
+    {%- if rule.get('action') == 'allow' and rule.get('state') == 'enabled' and rule.get('protocol') == 'tcp'
+        and rule.get('source') == bridge_cidr and rule.get('destination', '') is match('^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+/32$')
+        and rule.get('destination_port', '') is match('^[0-9]+$')
+        and rule.keys() | list | difference(['action', 'source', 'destination', 'protocol', 'destination_port', 'state']) == []
+        and rule not in ns.want -%}
+      {%- set ns.changes = ns.changes + [{'action': 'remove', 'direction': 'egress', 'rule': rule}] -%}
+    {%- endif -%}
+  {%- endfor -%}
+{%- endif -%}
+{{ {'changes': ns.changes} | to_json }}

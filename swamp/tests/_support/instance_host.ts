@@ -99,11 +99,16 @@ const replacements = (folder: string): [string, string][] => [
 
 function writeTasks(folder: string) {
     Deno.mkdirSync(`${folder}/tasks`, { recursive: true });
+    Deno.mkdirSync(`${folder}/templates`, { recursive: true });
+    Deno.copyFileSync(new URL("templates/instance-bridge-rules.j2", root), `${folder}/templates/instance-bridge-rules.j2`);
     for (
         const name of [
             "instance-host.yml",
             "instance-network-check.yml",
-            "instance-network-nic-check.yml",
+            "instance-network-nic-check.yml", "instance-network-device-check.yml",
+            "instance-network-move.yml",
+            "instance-network-move-nic.yml",
+            "instance-bridge-rules.yml",
             "instance-egress.yml",
             "instance-folder.yml",
             "instance-vite-plus-home.yml",
@@ -390,6 +395,7 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
         network: "orbitinst0",
         pool: "orbit-instances",
         cidr: "10.253.0.0/24",
+        bridge_endpoints: [] as {host: string; port: number}[],
         address: "10.253.0.1/24",
         build_address: "10.253.0.254",
         dhcp_range: "10.253.0.2-10.253.0.253",
