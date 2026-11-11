@@ -108,6 +108,25 @@ The agent routes `agent:watch` and `agent:facts` are internal: only `orbit-agent
 
 `instance:register` lists two success answers: 201 with the Instance when the Gateway registers at once, and 202 with the Operation of the run that protects `.env`. The [Node agent](/reference/node-agent#facts) page owns their meaning.
 
+Project Process definition updates use `PUT /api/v1/projects/{project}/process-definitions/{name}`. The body requires `name`, `environments` and a `spec` object; fields inside `spec` are optional. An absent specification key keeps its stored value. A different runtime replaces the runtime specification and requires its command and other required fields.
+
+| Specification field | Removal or default |
+| --- | --- |
+| `working_directory` | Null removes the override: Docker uses its image's working directory; systemd uses its owner's default. |
+| `restart_policy` | Null restores `never`. |
+| `keep_alive`, `restart_on_deploy` | Null restores `false` and `true`, respectively. Explicit false remains supported. |
+| `environment_file` | Null restores the owner's default environment file. |
+| `environment` | An empty object clears the map. To remove one key, send the remaining map. |
+| `ports`, `volumes`, `required_mount_paths` | An empty list clears the field. To remove one item, send the remaining list. |
+| `runtime`, `command`, Docker `image` | Required fields cannot be cleared. |
+| Captured `preset`, `preset_version`, canonical command | Cannot be changed or cleared. |
+
+A sent environment value equal to `[REDACTED]` keeps the stored value for that key, as before; an unknown key refuses. A supplied environment map replaces the whole map, so keys not sent are removed.
+
+Every other supplied string containing `[REDACTED]` anywhere in `spec`, including nested values and strings that contain the marker, refuses. The validation error names the field path: send only the fields you want to change and omit redacted fields. An old client replaying redacted command arguments receives a refusal without changing the row. Existing environment replay keeps its request, result and response behavior. Supplied maps and lists replace the whole collection; send the remaining members to remove one, using environment markers only for retained keys.
+
+The generator resolves class constants in `Rule::in` and preserves integer enum values. Nullable scalar enums include null. The captured preset schema accepts `preset: vp-dev` and integer `preset_version: 1`; it publishes no empty enum. [Project definitions](/reference/processes-and-schedules#project-definitions) describe ownership and application of edits.
+
 A form-request rule `present` marks that property required, as `required` does.
 
 Requests that inspect raw JSON also declare their body fields in `rules()`. The generated bodies include the Instance branch and shared paths, deploy-step fields, database connection patches, and Node settings. A keyed array rule such as `array:path` publishes a closed JSON object, and nullable objects and members keep their null type. The generator resolves the shared database rules' regex constants and translates their whole-string anchors for JSON Schema, so invalid connection fields remain invalid in OpenAPI and MCP. The raw JSON checks still enforce object shape and the domain rules at runtime.

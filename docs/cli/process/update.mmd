@@ -15,6 +15,15 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
+  alt Project definition update
+    CLI->>GW: Update definition<br/>full or partial specification
+    Note over GW: Merge and validate<br/>refuse unsupported markers
+    %%> Changing runtime replaces the runtime specification; it requires the new runtime's command and fields.
+    %%> Null clears scalar overrides; empty maps and lists clear collections. Preset command and metadata remain canonical.
+    %%> Exact environment markers retain stored values per key; markers in other strings refuse with their field path.
+    GW-->>CLI: Updated or refused<br/>validation result
+    %%> A later default development container deploy applies the definition to its linked Processes; new clones inherit it.
+  else Installed Process update
   CLI->>GW: process:update 418
   %%> Command:
   %%> - `orbit process:update 418`
@@ -138,4 +147,5 @@ sequenceDiagram
     GW-->>CLI: status + result
     %%> Returns:
     %%> - the current status, and the result once the task has ended
+  end
   end
