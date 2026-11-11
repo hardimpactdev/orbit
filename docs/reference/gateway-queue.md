@@ -49,8 +49,7 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 | Command | Every | Queue | Unique for |
 | --- | --- | --- | --- |
 | `gateway:swamp-reader:check` | hour | `problems` | 300 seconds |
-| `orbit:auto-deploy` | minute | `tasks` | 600 seconds |
-| `gateway:release:auto` | minute | `tasks` | 120 seconds |
+| `gateway:release:auto` | 5 minutes | `tasks` | 300 seconds |
 | `orbit:vault-sync` | minute | `tasks` | 900 seconds |
 | `orbit:activity-finalize-interrupted` | 5 minutes | `tasks` | 600 seconds |
 | `horizon:snapshot` | 5 minutes | `tasks` | 300 seconds |

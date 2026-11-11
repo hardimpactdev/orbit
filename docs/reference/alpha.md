@@ -21,19 +21,19 @@ Follow the guides in this order. Record the source commit on each machine.
 
 | Step | Guide | Required observation |
 | --- | --- | --- |
-| Install the CLI and Gateway | [Quickstart](/quickstart#install-orbit) | Composer platform checks pass and the Gateway services start. |
-| Connect the CLI | [Quickstart](/quickstart#connect-the-cli) | A trusted HTTPS request to `gateway:status` succeeds. |
-| Add one development Node | [Quickstart](/quickstart#add-a-development-node) | The Node and its `app-dev` role become active over WireGuard. |
-| Serve an application | [Quickstart](/quickstart#open-the-page) | Private DNS resolves the returned hostname, and HTTPS serves the expected page. |
+| Install the CLI and Gateway | [Quickstart](/quickstart#your-agents-part) | Composer platform checks pass and the Gateway services start. |
+| Connect the CLI | [Quickstart](/quickstart#your-agents-part) | A trusted HTTPS request to `gateway:status` succeeds. |
+| Add one development Node | [Quickstart](/quickstart#your-agents-part) | The Node and its `app-dev` role become active over WireGuard. |
+| Serve an application | [Quickstart](/quickstart#your-agents-part) | Private DNS resolves the returned hostname, and HTTPS serves the expected page. |
 | Recover an update | [Gateway recovery](/reference/gateway-recovery) | A restored disposable Gateway reads its saved state and serves the same application through the same fleet. |
 
 A documentation build or an automated test does not prove the Gateway installation, the first application, or the recovery on fresh machines. Only a run from fresh machines with no Orbit state proves them. The Node step is proven in use, as [What is proven](#what-is-proven) explains.
 
 Run `bin/bootstrap` only in a source checkout. In a Gateway [release](/reference/gateway-recovery#release-layout) it refuses, because a release is immutable; deploy another commit instead. Bootstrap writes the development Gateway key to `ORBIT_HOME/gateway.app-key` with `bin/gateway-app-key`, and keeps a key that exists. A nonempty `APP_KEY` in the environment [takes precedence](/reference/gateway-recovery#preserve-a-complete-state-set). `--with-bun` and `--with-rust` also install the locked dependencies of the [Bun and Rust projects](/reference/bun-and-rust-projects).
 
-Bootstrap also installs the [merge driver for generated files](/contributor-guide#merging-generated-files). Contributors who merge branches need the Docs and Gateway Composer dependencies and the web dependencies (`--with-bun`); a source alpha trial does not need to merge branches.
+Generated files stay out of feature branches. See [Generated artifacts](/reference/implementation-loop#generated-artifacts).
 
-Composer installs run one project at a time because concurrent installs can corrupt their shared download cache. Composer still downloads packages concurrently within each install. CI uses `--dependencies-only` when it needs only the installed projects: this installs the [pre-push docs gate](/contributor-guide) but stops before the merge driver and the Gateway key. A source alpha trial needs the normal bootstrap instead.
+Composer installs run one project at a time because concurrent installs can corrupt their shared download cache. Composer still downloads packages concurrently within each install. CI uses `--dependencies-only` when it needs only the installed projects: this installs the [pre-push docs gate](/contributor-guide) but stops before writing the Gateway key. A source alpha trial needs the normal bootstrap instead.
 
 ## Limits
 

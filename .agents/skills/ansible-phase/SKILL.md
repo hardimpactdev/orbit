@@ -46,7 +46,7 @@ The `node.role_add` flow provides these shared parts:
 
 ## Decisions as templates
 
-A decision that is more than a `when` becomes a Jinja template, read with `lookup('ansible.builtin.template', 'name.j2')` and decoded with `from_json`. It reads vars, reads no state of its own and prints one JSON object. Examples: [`firewall-rule.j2`](../../../swamp/ansible/templates/firewall-rule.j2) (the `ufw` changes a rule needs, in order) and [`route-withdraw.j2`](../../../swamp/ansible/templates/route-withdraw.j2) (the files a Route withdrawal writes, from three-way merges of captured states).
+A Jinja decision template is read with `lookup('ansible.builtin.template', 'name.j2')` and decoded with `from_json`. It reads vars, reads no state of its own and prints one JSON object. For decisions expressed directly as tasks, see [`firewall.yml`](../../../swamp/ansible/tasks/firewall.yml) and [`route-withdraw.yml`](../../../swamp/ansible/route-withdraw.yml).
 
 - A macro returns text. Return JSON with `to_json` and decode it with `from_json`; compare `'true'` and `'false'`, not booleans.
 - Keep state in a `namespace`, and change it inside the loop (`{% set ns.x = ... %}`). A plain `{% set %}` inside a `for` does not leave the loop.
