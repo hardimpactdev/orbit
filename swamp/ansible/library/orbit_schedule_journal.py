@@ -38,6 +38,7 @@ truncated:
   returned: always
 '''
 LIMIT = 4 * 1024 * 1024
+TRANSPORT_LIMIT = 8 * 1024 * 1024 - 16 * 1024
 # JSON can escape each message byte as six ASCII bytes; framing adds a fixed allowance.
 RECORD_LIMIT = 6 * LIMIT + 1024
 
@@ -49,7 +50,7 @@ def format_entry(record):
     pid = record.get('SYSLOG_PID') or record.get('_PID')
     if pid:
         identifier += f'[{pid}]'
-    message = record.get('MESSAGE', '')
+    message = record.get('MESSAGE') or ''
     if isinstance(message, list):
         message = bytes(message).decode('utf-8', errors='replace')
     message = message.replace('\n', '\n    ')
@@ -59,10 +60,12 @@ def format_entry(record):
 def read_entries(executable, schedule_id, lines):
     argv = [executable, f'_SYSTEMD_UNIT=orbit-schedule-{schedule_id}.service', '+',
             f'SYSLOG_IDENTIFIER=orbit-schedule-{schedule_id}', '--lines', str(lines), '--reverse',
-            '--output=json', '--output-fields=__REALTIME_TIMESTAMP,_HOSTNAME,SYSLOG_IDENTIFIER,_COMM,SYSLOG_PID,_PID,MESSAGE',
+            '--output=json', '--all', '--output-fields=__REALTIME_TIMESTAMP,_HOSTNAME,SYSLOG_IDENTIFIER,_COMM,SYSLOG_PID,_PID,MESSAGE',
             '--no-pager', '--quiet']
     entries = []
     size = 0
+    transport_size = len(json.dumps(json.dumps({'state': 'active', 'output': '', 'truncated': False},
+                                               ensure_ascii=False), ensure_ascii=False).encode('utf-8'))
     truncated = False
     process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     try:
@@ -76,11 +79,15 @@ def read_entries(executable, schedule_id, lines):
                 break
             entry = format_entry(json.loads(raw))
             entry_size = len(entry.encode('utf-8'))
-            if size + entry_size > LIMIT:
+            # The inspection JSON is itself a string in vault.read-secret's JSON response.
+            # Subtract the two encodings' quotes; the remaining content costs add across whole entries.
+            entry_transport_size = len(json.dumps(json.dumps(entry, ensure_ascii=False), ensure_ascii=False).encode('utf-8')) - 6
+            if size + entry_size > LIMIT or transport_size + entry_transport_size > TRANSPORT_LIMIT:
                 truncated = True
                 break
             entries.append(entry)
             size += entry_size
+            transport_size += entry_transport_size
         if not truncated and process.wait(timeout=5) != 0:
             raise ValueError('The Schedule journal could not be read.')
     finally:

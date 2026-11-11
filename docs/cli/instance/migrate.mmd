@@ -22,6 +22,8 @@ sequenceDiagram
   %%> What it asks:
   %%> - the Instance goes down during the move, and its old checkout moves to retention after it; `--force` answers yes
   Note over GW: Validate, reserve runtime<br/>address · T3 port
+  %%> If it never starts:
+  %%> - cancellation or admission expiry frees the new reservation and releases deferred Schedule fires under the Instance lock; an uncertain start keeps its reservation
   %%> Requirements:
   %%> - the Instance is an active checkout Instance on an `app-dev` Node of the build list, else `instance.migrate_unsupported`
   %%> - a non-default Instance needs its Project's default Instance in a container first, else `instance.default_not_migrated`

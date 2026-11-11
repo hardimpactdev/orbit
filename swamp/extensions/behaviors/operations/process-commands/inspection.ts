@@ -5,8 +5,12 @@ export const InspectionArgs = z.object({
     request: z.string().uuid(),
 }).strict();
 export const Inspection = z.object({
-    // A byte-bounded journal can expand sixfold inside its private JSON string.
-    value: z.string().max(6 * 4 * 1024 * 1024 + 1024).meta({
+    // The inspection JSON is itself a string in a vault.read-secret response.
+    // Leave 16 KiB for that response's envelope under the Gateway's 8 MiB frame bound.
+    value: z.string().refine(
+        (value) => new TextEncoder().encode(JSON.stringify(value)).length <= 8 * 1024 * 1024 - 16 * 1024,
+        "The serialized inspection exceeds the Gateway transport budget.",
+    ).meta({
         sensitive: true,
         vaultName: "orbit-control-inputs",
     }),

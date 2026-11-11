@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Hibernation\ActivateInstanceRuntimeAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceMigrateAction;
+use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\ReadOperationAction;
 use App\Data\Instances\InstanceData;
@@ -1986,6 +1987,46 @@ describe('migrate registered Schedule timers', function (): void {
             ->and($fire->input['working_directory'])->toBe($instance->checkout_path);
         Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
     });
+
+    it('settles an unstarted migration and releases its deferred fires on cancellation or expiry', function (string $terminal): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        expect($migration->status)->toBe(OperationStatus::Queued);
+        $this->travel(11)->minutes();
+
+        $ended = $terminal === 'cancelled' ? app(CancelOperationAction::class)->execute($migration)
+            : app(ExpireOperationAction::class)->execute($migration);
+
+        expect($ended->status)->toBe($terminal === 'cancelled' ? OperationStatus::Cancelled : OperationStatus::Failed)
+            ->and($ended->lock_key)->toBeNull();
+        expect($instance->runtime()->exists())->toBeFalse();
+        expect($fire->refresh()->status)->toBe(OperationStatus::Queued)
+            ->and($fire->input['working_directory'])->toBe($instance->checkout_path)
+            ->and(isset($fire->input['deferred_instance_migration']))->toBeFalse();
+        Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+        app(CancelOperationAction::class)->execute($fire);
+        expect(migrateStart($instance)->input['had_runtime_reservation'])->toBeFalse();
+    })->with(['cancelled', 'expired']);
+
+    it('keeps the reservation and deferred fires when cancellation or expiry cannot disprove a native start', function (string $terminal): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        $migration->forceFill(['status' => OperationStatus::Running])->save();
+        $this->travel(11)->minutes();
+
+        $terminal === 'cancelled' ? app(CancelOperationAction::class)->execute($migration)
+            : app(ExpireOperationAction::class)->execute($migration);
+
+        expect($instance->runtime()->exists())->toBeTrue();
+        expect($fire->refresh()->status)->toBe(OperationStatus::Waiting);
+        Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+    })->with(['cancelled', 'expired']);
 
     it('records extensionless interpreter operands as paths for remote containment checks', function (string $command, string $path): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());

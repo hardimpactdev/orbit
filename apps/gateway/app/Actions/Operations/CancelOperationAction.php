@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Operations;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationUnstartedTerminal;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
@@ -30,12 +31,16 @@ final readonly class CancelOperationAction
             if ($operation->status->terminal()) {
                 return;
             }
-            if (in_array($operation->status, [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting], true)
-                && ! isset($operation->state['swamp_run_id']) && $operation->attempts === 0
-                && ! ($operation->status === OperationStatus::Running && isset($operation->state['swamp_start']))) {
+            if (DirectOperation::unstarted($operation)) {
                 $this->store->change($operation, ['cancel_requested_at' => $operation->cancel_requested_at ?? now(),
                     'status' => OperationStatus::Cancelled, 'finished_at' => now(), 'error_code' => null,
                     'current_step' => null, 'failed_step' => null, 'lock_key' => null]);
+                if (DirectOperation::owns($operation)) {
+                    $projection = app(DirectOperation::class)->projection($operation);
+                    if ($projection instanceof DirectOperationUnstartedTerminal) {
+                        $projection->unstartedTerminal($operation);
+                    }
+                }
             } elseif ($operation->cancel_requested_at === null) {
                 $this->store->change($operation, ['cancel_requested_at' => now()]);
             }

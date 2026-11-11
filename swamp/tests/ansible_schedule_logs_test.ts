@@ -8,16 +8,28 @@ const id = "123e4567-e89b-42d3-a456-426614174000";
 const prefix = "2026-11-10T03:00:00+0000 node scheduler[17]: ";
 const entry = (message: string) => `${prefix}${message.replaceAll("\n", "\n    ")}\n`;
 
-function fixture(messages: string[]) {
+function fixture(messages: (string | number[] | null)[], lines = 17) {
   const folder = Deno.makeTempDirSync();
-  Deno.writeTextFileSync(`${folder}/intent.json`, JSON.stringify({ schedule: { id }, read: { lines: 17 } }));
+  Deno.writeTextFileSync(`${folder}/intent.json`, JSON.stringify({ schedule: { id }, read: { lines } }));
   Deno.writeTextFileSync(`${folder}/messages.json`, JSON.stringify(messages));
   Deno.writeTextFileSync(`${folder}/journalctl`, `#!/usr/bin/python3
 import json,sys
 from pathlib import Path
 Path(${JSON.stringify(`${folder}/args.json`)}).write_text(json.dumps(sys.argv[1:]))
 try:
-    for message in json.loads(Path(${JSON.stringify(`${folder}/messages.json`)}).read_text()):
+    messages = json.loads(Path(${JSON.stringify(`${folder}/messages.json`)}).read_text())
+    for message in messages[:int(sys.argv[sys.argv.index('--lines') + 1])]:
+        raw = bytes(message) if isinstance(message, list) else message.encode('utf-8') if message is not None else None
+        if raw is not None:
+            if '--all' not in sys.argv and len(raw) > 4096:
+                message = None
+            else:
+                try:
+                    message = raw.decode('utf-8')
+                    if any(byte < 32 and byte not in (9, 10) for byte in raw):
+                        message = list(raw)
+                except UnicodeDecodeError:
+                    message = list(raw)
         print(json.dumps({'__REALTIME_TIMESTAMP': '1794279600000000', '_HOSTNAME': 'node', 'SYSLOG_IDENTIFIER': 'scheduler', 'SYSLOG_PID': '17', 'MESSAGE': message}, ensure_ascii=False), flush=True)
     Path(${JSON.stringify(`${folder}/fully-read`)}).touch()
 except BrokenPipeError:
@@ -59,7 +71,7 @@ Deno.test({
       assertEquals(f.run(), { state: "active", output: entry("old service\ncontinued") + entry("private-schedule-output"), truncated: false });
       assertEquals(JSON.parse(Deno.readTextFileSync(`${f.folder}/args.json`)), [
         `_SYSTEMD_UNIT=orbit-schedule-${id}.service`, "+", `SYSLOG_IDENTIFIER=orbit-schedule-${id}`,
-        "--lines", "17", "--reverse", "--output=json",
+        "--lines", "17", "--reverse", "--output=json", "--all",
         "--output-fields=__REALTIME_TIMESTAMP,_HOSTNAME,SYSLOG_IDENTIFIER,_COMM,SYSLOG_PID,_PID,MESSAGE", "--no-pager", "--quiet",
       ]);
     } finally { f.cleanup(); }
@@ -105,6 +117,41 @@ Deno.test({
     try {
       assertEquals(f.run(), { state: "active", output: "", truncated: true });
       assertFalse([...Deno.readDirSync(f.folder)].some((entry) => entry.name === "fully-read"));
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "Schedule journal reads long fields with --all and handles null and non-UTF-8 byte-array messages",
+  ignore: !hasAnsible,
+  fn() {
+    const long = "private-schedule-output" + "x".repeat(5_000);
+    const f = fixture([long, null, [104, 105, 255, 10, 120]]);
+    try {
+      assertEquals(f.run(), {
+        state: "active", output: entry("hi�\nx") + entry("") + entry(long), truncated: false,
+      });
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "Schedule journal bounds double JSON encoding and crosses the Gateway's real framed client",
+  ignore: !hasAnsible,
+  fn() {
+    const messages = Array.from({ length: 800 }, (_, index) => `${index}:` + "\\".repeat(3_000));
+    const f = fixture(messages, 800);
+    try {
+      const result = f.run();
+      assertEquals(result.truncated, true);
+      const read = new Deno.Command("php", {
+        args: [new URL("fixtures/schedule-inspection-frame.php", import.meta.url).pathname, `${f.folder}/result.json`],
+      }).outputSync();
+      assert(read.success, new TextDecoder().decode(read.stderr));
+      const observed = JSON.parse(new TextDecoder().decode(read.stdout));
+      assert(observed.frame_bytes < 8 * 1024 * 1024);
+      assert(observed.entries > 0 && observed.entries < 800);
+      assertEquals(result.output, messages.slice(0, observed.entries).reverse().map(entry).join(""));
     } finally { f.cleanup(); }
   },
 });

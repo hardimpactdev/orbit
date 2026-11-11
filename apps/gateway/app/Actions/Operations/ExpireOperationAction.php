@@ -6,6 +6,7 @@ namespace App\Actions\Operations;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationTimeout;
+use App\Domain\Operations\DirectOperationUnstartedTerminal;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
@@ -36,6 +37,7 @@ final readonly class ExpireOperationAction
                 return $current;
             }
             $state = $current->state ?? [];
+            $unstarted = DirectOperation::unstarted($current);
             $failure = $state['native_failure'] ?? null;
             $step = is_array($failure) && is_string($failure['failed_step'] ?? null) ? $failure['failed_step']
                 : ($current->failed_step ?? $current->current_step);
@@ -55,6 +57,15 @@ final readonly class ExpireOperationAction
                 'result' => [...($current->result ?? []), 'error_code' => 'operation.timed_out'],
             ]);
             $projection = app(DirectOperation::class)->projection($current);
+            if ($unstarted && $projection instanceof DirectOperationUnstartedTerminal) {
+                app(OperationStore::class)->change($current, ['lock_key' => null,
+                    'state' => [...($current->state ?? []), 'native_timeout' => [
+                        ...$state['native_timeout'], 'native_terminal_status' => 'unstarted',
+                    ]]]);
+                $projection->unstartedTerminal($current);
+
+                return $current;
+            }
             if ($projection instanceof DirectOperationTimeout) {
                 $projection->timedOut($current);
             }
