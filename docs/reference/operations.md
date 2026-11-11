@@ -28,7 +28,7 @@ Production deployments include a `process_restart` step after PHP refresh. It re
 
 Native terminal projection reads Swamp history and any private result material outside the state transaction. Result writes lock and recheck the admitted run, and each family commits its domain state with its result. Remote cleanup runs after that commit.
 
-Removing a [Node service target record](/reference/processes-and-schedules#node-service-target-records) returns an already completed `instance.node_service_detach` Operation. This record-only operation works after a successful migration and performs no network, environment or runtime change. It still refuses an active lifecycle operation or an unfinished failed migration with a retained runtime.
+Removing a [Node service target record](/reference/processes-and-schedules#node-service-target-records) returns an `instance.node_service_detach` Operation. Checkout removal completes immediately. For a container, the Operation withdraws the selected access first; its confirmed terminal success and record deletion commit together. Failure retains the attachment for retry, including after partial withdrawal. Environment values and the Process stay unchanged. Admission still refuses an active lifecycle operation or an unfinished failed migration with a retained runtime.
 
 ## Instance failure alerts
 

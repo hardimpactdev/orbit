@@ -405,6 +405,8 @@ A container reaches only what this table lists. Everything else is dropped by it
 
 The NIC filters the published target address before Docker's DNAT. The bridge forwarding hook sees the translated tuple, so its exact allow uses the current DNAT destination for a local Docker target. An unguarded NIC can reach that exact private service tuple, but no other Docker-private service.
 
+[`instance:node-service:detach`](/cli/instance/node-service-detach) withdraws only the selected attachment's access before deleting its record. Another attachment using the same endpoint keeps its shared grants. Withdrawal uses saved translated tuples, so a stopped Docker service does not block cleanup. A failed withdrawal retains the record for retry; environment values and the Process stay unchanged. Recording an attachment alone does not provision access.
+
 For a target on another Node, Orbit also adds the exact route allowance from the container's address through WireGuard; Incus masquerades the bridge source to the Node's address. A profile-only NIC can reach the two proxies, but no attached target. Before starting, the native clone, container phases, image builder and host clone probe use the same check of every effective NIC on the Instance bridge. A missing ACL, a missing default egress reject, a reference to the bridge union ACL, or an unexpected extra NIC refuses with `instance.container_network_unsafe`.
 
 **F10, current ingress limit.** The bridge admits TCP 1024–65535 from its gateway address and TCP 3773 from any source. The NIC combines that common ACL with its own ACL as a union: a live scratch default admitted the Node on 8080, 3773 and 5173, although its own ACL named only 8080.
