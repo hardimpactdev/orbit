@@ -4,6 +4,8 @@ sidebarTitle: "instance:migrate"
 description: "Move a development checkout Instance into an Instance container. A temporary command: it goes when the last checkout Instance has moved."
 covers:
   - swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts
+  - swamp/ansible/tasks/instance-migrate-process-ready.yml
+  - apps/gateway/app/Domain/Instances/ContainerProcesses.php
 ---
 
 ```bash
@@ -105,6 +107,8 @@ Orbit prepares the container and probes every attached target before downtime. I
 
 Nobody works in the checkout during the move. Orbit shows the wake page on the Route, and starts no deployment and no wake of the Instance until the move has ended.
 
+Orbit maps Process executables by name to the container runtime. `phpX.Y` uses that PHP version; `php` uses the Project’s PHP version. A version absent from the runtime refuses with `instance.migrate_process_binary_unavailable`. The runtime recipe supplies the other available commands, including `node`, `npm`, `npx`, `vp`, `bun`, `composer`, `deno` and `rg`. For `/usr/bin/env COMMAND`, Orbit maps `COMMAND`. Other executable paths must be executable inside the container before downtime, or the same code names the Process and unavailable path. Preset `vp-dev` keeps its preset mapping. Host Process records stay unchanged until cutover succeeds.
+
 Each moved Process whose desired state is running must be active with no pending start or restart job. Orbit waits five seconds, then requires it to remain active with no pending job, the same nonzero main process ID and the same restart count. This settling window catches immediate crashes and restart loops before the Route moves. A Process that fails this check reports `instance.migrate_processes_failed`, names the Process and triggers recovery.
 
 ## Order
@@ -157,6 +161,7 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `instance.migrate_unpushed_commits` | A planned retirement has local branches or a detached HEAD with commits unreachable from every local remote-tracking ref. The error names each branch or detached HEAD and its commit count. The source stays untouched. |
 | `instance.migrate_stashes_present` | A planned retirement has stashes. The error names the count and leaves the source untouched. |
 | `instance.database_unreachable` | The new container could not reach the database server's port. |
+| `instance.migrate_process_binary_unavailable` | A Process executable or PHP version is unavailable in the container. The error names the Process and path; the checkout keeps serving. |
 | `instance.migrate_<step>_failed` | A step of the move failed, such as `instance.migrate_workspace_failed`. The checkout serves as before, except after `instance.migrate_retire_failed`. |
 | `http.404` | The Instance is unknown. |
 | `node_access.required` | The caller has no access grant to the Instance's Node. |

@@ -727,6 +727,8 @@ Swamp keeps its own Git evidence before and after a turn, with a temporary index
 
 The plan's [decisions](/solutions/development-container-runtime#decided) record the choices behind this contract.
 
+Migration checks executable availability before downtime and requires moved running Processes to settle before cutover. The [`instance:migrate` contract](/cli/instance/migrate) defines the runtime command mapping, readiness window and recovery.
+
 ## Nested fleet
 
 A Project setting turns on a nested fleet. Its Instance containers then run a fleet of Incus containers nested inside them. Orbit uses it for its command proofs: a Gateway, an `app-dev` and an `app-prod` Node. Other Projects leave it off and keep the kernel surface of [Inside a container](#inside-a-container).
@@ -850,6 +852,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.migrate_stashes_present` | 409 | A planned retirement has stashes. The error names the count and leaves the source untouched |
 | `instance.migrate_branch_changed` | 409 | The checkout is not on the branch that Orbit records for the Instance |
 | `instance.database_unreachable` | 502 | The new container of a move could not reach the Instance's database server |
+| `instance.migrate_process_binary_unavailable` | 409 | A moved Process needs an unavailable PHP version or executable path. The error names the Process and path; the checkout keeps serving |
 | `instance.migrate_<step>_failed` | 502 | A step of a move failed, such as `instance.migrate_workspace_failed`. The checkout serves as before |
 | `instance.turn_running` | 409 | `instance:destroy` without `--force` while a T3 turn runs in the container |
 | `instance.t3_unready` | 502 | The T3 server did not answer within 30 seconds of its first start in a clone |

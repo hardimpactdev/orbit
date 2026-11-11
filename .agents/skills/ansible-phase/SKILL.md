@@ -151,3 +151,5 @@ FrankenPHP's `trusted_proxies` does not translate native PHP CGI variables. Matc
 Native speed paths must use the same effective-NIC start gate as the Ansible phase. Carry the common NIC ACL name in Gateway intent for every writer; a network union ACL must never be attached to a NIC.
 
 A container Process must not pull in `network-online.target`: wait-online can remain pending inside an Incus guest while its network already serves. Keep the host renderer's network policy separate. Start container units with systemd's `--no-block`, then use bounded per-unit readiness reads inside the phase timeout; a timeout must not strand a synchronous unit-start command.
+
+A migration readiness check must prove Process stability before cutover: sample active state, empty Job, MainPID and NRestarts, allow a fixed settling window, then compare. Keep that check in the migration path; a shared container phase also serves create, deploy, start and inspection. Preserve the named Process failure through restore.

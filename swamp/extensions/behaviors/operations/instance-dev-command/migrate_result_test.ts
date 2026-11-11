@@ -154,3 +154,12 @@ for (const status of ["pending", "unknown"]) {
         assertEquals([receipt.moved, receipt.restored, receipt.ready], [false, false, false]);
     });
 }
+
+Deno.test("a moved worker readiness failure keeps its Process name and restored outcome before cutover", () => {
+    const failure = { error_code: "instance.migrate_processes_failed", error_message: "Process orbit-process-70-worker.service did not stay active for 5 seconds." };
+    const phases = { ...moved, processes: "failed", seed: "skipped", route: "skipped", retire: "skipped", restore: "succeeded" };
+    assertEquals(result(defaultIntent, phases, workspace, null, failure), {
+        instance_id: 53, ready: false, moved: false, restored: true, commit,
+        failed_step: "processes", ...failure,
+    });
+});

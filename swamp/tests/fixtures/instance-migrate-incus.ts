@@ -32,6 +32,33 @@ if (args.includes("delete") && args[0] === "--project") {
   Deno.removeSync(`${folder}/containers/${name}`, { recursive: true });
   Deno.exit(0);
 }
+// The container image and mounted runtime, never this host's executable paths.
+if (args[0] === "exec" && args.includes("test") && args.includes("-x")) {
+  const state = JSON.parse(Deno.readTextFileSync(file));
+  const path = args.at(-1)!;
+  Deno.exit((state.unavailableExecutables ?? []).includes(path) || path === "/opt/custom/tool" ? 1 : 0);
+}
+// systemd's show boundary for migration's stability check. The first sample is active; the next can expose an immediate
+// exit-127 restart loop, a recovered restart, a replaced PID or a queued job. No host service manager is contacted.
+if (args.includes("systemctl") && args.includes("show") && args.includes("--property=MainPID")) {
+  const state = JSON.parse(Deno.readTextFileSync(file));
+  const unit = args.at(-1)!;
+  const sample = state.movedReadiness;
+  const selected = sample?.unit === unit;
+  if (selected) sample.reads.push(Date.now());
+  const later = selected && sample.reads.length > 1;
+  const fault = selected ? sample.fault : "stable";
+  const crash = later && fault === "exit127";
+  state.systemctl ??= [];
+  state.systemctl.push(args.slice(args.indexOf("systemctl") + 1));
+  if (crash) sample.exitStatus = 127;
+  Deno.writeTextFileSync(file, JSON.stringify(state));
+  console.log(`ActiveState=${crash || fault === "never-active" ? "activating" : later && fault === "inactive" ? "inactive" : "active"}`);
+  console.log(later && fault === "job" ? "Job=123" : "Job=");
+  console.log(`MainPID=${crash || fault === "never-active" ? 0 : later && fault === "pid" ? 102 : 101}`);
+  console.log(`NRestarts=${crash || later && fault === "restart" ? 1 : 0}`);
+  Deno.exit(0);
+}
 const done = await new Deno.Command(Deno.execPath(), {
   args: ["run", "-A", new URL("instance-container-incus.ts", import.meta.url).pathname, ...Deno.args],
   stdin: "inherit",

@@ -11,6 +11,7 @@ use App\Domain\Processes\VpDevPreset;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
+use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Instance;
 use App\Models\Process;
 use App\Support\ValidatedData;
@@ -24,7 +25,7 @@ use Illuminate\Support\Collection as SupportCollection;
  */
 final readonly class ContainerProcesses
 {
-    public function __construct(private ProcessTargetResolver $targets, private SystemdProcessRenderer $systemd) {}
+    public function __construct(private ProcessTargetResolver $targets, private SystemdProcessRenderer $systemd, private RecipeImageBuilds $recipes) {}
 
     /**
      * The `processes` of the container intent, in id order. `environment` names the unit's own environment file, or null when its
@@ -117,6 +118,8 @@ final readonly class ContainerProcesses
             $this->assertPreset($process, $instance, $port);
             $config['command'] = VpDevPreset::command($port);
             $config['environment_file'] ??= InstanceContainer::application($instance).'/.env';
+        } elseif ($instance->checkout_path !== InstanceContainer::workspaceOnNode($instance)) {
+            $config['command'] = $this->migrateCommand($process, $instance);
         }
         array_walk_recursive($config, static function (mixed &$value) use ($checkout): void {
             if (is_string($value)) {
@@ -129,6 +132,35 @@ final readonly class ContainerProcesses
         }
 
         return $placed;
+    }
+
+    /** Map only the projected migration copy. The recipe owns command names and PHP versions; host records stay unchanged.
+     * @return list<string>
+     */
+    private function migrateCommand(Process $process, Instance $instance): array
+    {
+        $command = ValidatedData::stringList($process->runtime_config['command']);
+        $index = ($command[0] ?? null) === '/usr/bin/env' ? 1 : 0;
+        $path = $command[$index] ?? '';
+        $name = basename($path);
+        $folders = $this->recipes->currentRecipe()->instances;
+        if (preg_match('/^php(?<version>[0-9]+[.][0-9]+)?$/', $name, $match) === 1) {
+            $version = $match['version'] ?? $instance->project->php_version;
+            if (! is_string($version) || ($folders?->php[$version]->artifact ?? null) === null) {
+                throw new ResourceOperationException('instance.migrate_process_binary_unavailable',
+                    "Process [{$process->id}:{$process->name}] executable [{$path}] requires PHP [{$version}], which the container runtime does not ship.", 409);
+            }
+            $command[$index] = InstanceHostIntent::RuntimeFolder.'/current/php/'.$version.'/bin/php';
+        } else {
+            foreach ($folders?->runtime ?? [] as $part) {
+                if (array_key_exists($name, $part->bin)) {
+                    $command[$index] = InstanceHostIntent::RuntimeFolder.'/current/bin/'.$name;
+                    break;
+                }
+            }
+        }
+
+        return $command;
     }
 
     /**
@@ -217,7 +249,7 @@ final readonly class ContainerProcesses
     }
 
     /** The host units that migration stops, restores on failure and retires after cutover.
-     * @return list<array{name:string,path:string,environment_directory:string,desired:string}>
+     * @return list<array{name:string,path:string,environment_directory:string,desired:string,executables:list<string>}>
      */
     public function source(Instance $instance): array
     {
@@ -225,13 +257,16 @@ final readonly class ContainerProcesses
         $port = $this->vitePort($instance, $records);
         $units = [];
         foreach ($records as $process) {
-            if (array_key_exists('preset', $process->runtime_config)) {
-                $this->assertPreset($process, $instance, $port);
+            $placed = $this->placed($process, $instance, $port);
+            $command = ValidatedData::stringList($placed->runtime_config['command']);
+            $executables = [$command[0]];
+            if ($command[0] === '/usr/bin/env') {
+                $executables[] = $command[1] ?? '';
             }
             $target = $this->targets->forInspection($process);
             $units[] = ['name' => $this->systemd->unitName($process), 'path' => $this->systemd->unitPath($process),
                 'environment_directory' => dirname($this->systemd->environmentPath($process, $target)),
-                'desired' => $process->desired_state->value];
+                'desired' => $process->desired_state->value, 'executables' => $executables];
         }
 
         return $units;

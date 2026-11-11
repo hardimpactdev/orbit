@@ -101,6 +101,33 @@
         fail_msg: instance.database_unreachable
         quiet: true
 
+# The Gateway mapped host command names to this container's runtime. Check its actual executables before any writer stops.
+# Repeat immediately before quiesce, so a removed runtime or image program still refuses without downtime.
+- name: Check moved Process executables before downtime
+  when: phase in ['container', 'quiesce']
+  block:
+    - name: Read executable availability inside the container
+      ansible.builtin.command:
+        argv: "{{ as_root + ['test', '-x', item.1] }}"
+        expand_argument_vars: false
+      loop: "{{ migrate.processes | subelements('executables') }}"
+      loop_control: { label: "{{ item.0.name }}: {{ item.1 }}" }
+      register: migrate_binaries
+      changed_when: false
+      failed_when: false
+    - name: Name an unavailable Process executable
+      when: migrate_binaries.results | default([]) | rejectattr('rc', 'equalto', 0) | list | length > 0
+      vars:
+        unavailable: "{{ migrate_binaries.results | rejectattr('rc', 'equalto', 0) | first }}"
+      ansible.builtin.set_fact:
+        migrate_refusal_code: instance.migrate_process_binary_unavailable
+        migrate_refusal_message: "Process {{ unavailable.item.0.name }} executable [{{ unavailable.item.1 }}] is unavailable in the container."
+    - name: Refuse an unavailable Process executable
+      ansible.builtin.assert:
+        that: migrate_binaries.results | default([]) | rejectattr('rc', 'equalto', 0) | list | length == 0
+        fail_msg: instance.migrate_process_binary_unavailable
+        quiet: true
+
 # Run-local recovery checkpoint, written before the first host writer can stop. A failed probe never writes it.
 - name: Record that quiesce began
   when: phase == 'quiesce'
