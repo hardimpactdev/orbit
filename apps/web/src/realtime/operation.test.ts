@@ -27,6 +27,7 @@ const operation = (overrides: Partial<Operation> = {}): Operation => ({
     created_at: null,
     started_at: null,
     finished_at: null,
+    overdue_since: null,
     poll_after_seconds: 2,
     capacity_wait: null,
     ...overrides,

@@ -100,7 +100,7 @@ def dependencies(job):
     return [needs] if isinstance(needs, str) else needs
 
 
-def budget_errors(workflows, checks):
+def budget_errors(workflows, checks, fixture_budget):
     errors = []
 
     def reject(name, rule):
@@ -121,6 +121,12 @@ def budget_errors(workflows, checks):
                    'swamp/validate': 'swamp-validate', 'swamp/tests': 'swamp-tests'}.get(label, name)
             if caller is None and name in NON_CHECKS:
                 expected = 195 if name == 'proof-run' else PROOF_GATE_TIMEOUT if name == 'required' else 2
+            elif label == 'fixtures':
+                if 'shard_ceiling_seconds' not in fixture_budget:
+                    reject(label, 'no entry in .github/ci/checks.toml')
+                    expected = None
+                else:
+                    expected = math.ceil(fixture_budget['shard_ceiling_seconds'] / 60)
             elif key not in checks:
                 reject(label, 'no entry in .github/ci/checks.toml')
                 expected = None
@@ -163,17 +169,19 @@ class CiBudgetTest(unittest.TestCase):
         self.workflows = {name: yaml.safe_load((ROOT / '.github/workflows' / name).read_text())
                           for name in ('ci.yml', 'orbit-cli-binary.yml', 'swamp-shape.yml')}
         with (ROOT / '.github/ci/checks.toml').open('rb') as source:
-            self.checks = tomllib.load(source)['check']
+            table = tomllib.load(source)
+            self.checks = table['check']
+            self.fixture_budget = table['budget']
 
     def test_every_reachable_job_obeys_its_table_and_dependency_budget(self):
-        self.assertEqual([], budget_errors(self.workflows, self.checks))
+        self.assertEqual([], budget_errors(self.workflows, self.checks, self.fixture_budget))
 
     def assert_rejected(self, workflows, name, rule, checks=None):
-        errors = budget_errors(workflows, self.checks if checks is None else checks)
+        errors = budget_errors(workflows, self.checks if checks is None else checks, self.fixture_budget)
         self.assertTrue(any(error.startswith(name + ':') and rule in error for error in errors), errors)
 
     def test_budget_rejects_missing_excessive_and_different_timeouts_in_both_workflow_levels(self):
-        for file, job, label in (('ci.yml', 'docs', 'docs'), ('orbit-cli-binary.yml', 'build', 'cli/build'),
+        for file, job, label in (('ci.yml', 'docs', 'docs'), ('ci.yml', 'fixtures', 'fixtures'), ('orbit-cli-binary.yml', 'build', 'cli/build'),
                                  ('swamp-shape.yml', 'tests', 'swamp/tests')):
             for limit, rule in ((None, 'missing timeout'), (5, 'exceeds 4'), (3, 'must equal ceiling')):
                 with self.subTest(job=label, timeout=limit):
@@ -208,7 +216,16 @@ class CiBudgetTest(unittest.TestCase):
         checks['docs']['ceiling'] = 121
         changed = copy.deepcopy(self.workflows)
         changed['ci.yml']['jobs']['docs']['timeout-minutes'] = 3
-        self.assertEqual([], budget_errors(changed, checks))
+        self.assertEqual([], budget_errors(changed, checks, self.fixture_budget))
+
+    def test_fixture_ceiling_is_required_and_its_dependency_cannot_form_a_chain(self):
+        self.assertEqual(240, self.fixture_budget['shard_ceiling_seconds'])
+        self.assertLess(self.fixture_budget['shard_deadline_seconds'], self.fixture_budget['shard_ceiling_seconds'])
+        errors = budget_errors(self.workflows, self.checks, {})
+        self.assertIn('fixtures: no entry in .github/ci/checks.toml', errors)
+        changed = copy.deepcopy(self.workflows)
+        changed['ci.yml']['jobs']['fixtures']['needs'] = 'docs'
+        self.assert_rejected(changed, 'fixtures', 'dependencies must be')
 
     def test_only_blocking_selected_proof_can_extend_the_gate(self):
         for name in NON_CHECKS:
@@ -221,7 +238,8 @@ class CiBudgetTest(unittest.TestCase):
 
     def test_full_fixtures_cannot_enter_the_pr_path(self):
         changed = copy.deepcopy(self.workflows)
-        changed['swamp-shape.yml']['jobs']['fixtures'].pop('if')
+        self.assertNotIn('fixtures', changed['swamp-shape.yml']['jobs'])
+        changed['swamp-shape.yml']['jobs']['fixtures'] = {'runs-on': 'ubuntu-26.04', 'timeout-minutes': 180}
         self.assert_rejected(changed, 'swamp/fixtures', 'must be unreachable')
 
     def test_checks_start_after_the_plan_and_never_recompute_scope(self):

@@ -12,7 +12,7 @@ orbit operation:show <operation> [--json]
 | --- | --- | --- |
 | `operation` | yes | Numeric operation ID. |
 
-JSON returns the parent record, as `GET /api/v1/operations/{operation}` does. The command exits `0` for any status; read `status` for the outcome.
+JSON returns the parent record, as `GET /api/v1/operations/{operation}` does. The command exits `0` for any status; read `status` for the outcome. `overdue_since` records the existing deadline when a bound Operation times out. Human output shows `Overdue since`. This [reporting-only addition](/reference/operations#native-run-budgets) does not ship the final soft/hard-limit design or change cancellation timing.
 
 
 ```bash

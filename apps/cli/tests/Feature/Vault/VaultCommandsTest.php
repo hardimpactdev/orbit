@@ -536,6 +536,7 @@ function vault_cli_operation_json(string $kind): array
         'finished_at' => null,
         'poll_after_seconds' => null,
         'capacity_wait' => null,
+        'overdue_since' => null,
         'request_id' => vault_cli_request_id(),
     ];
 }

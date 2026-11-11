@@ -51,6 +51,7 @@ final class OperationData extends Data
         public ?string $currentStepObservedAt = null,
         public array|Optional $steps = new Optional,
         public ?TaskPlaceWaitData $capacityWait = null,
+        public ?string $overdueSince = null,
     ) {}
 
     /** Public reads retain domain results without returning the execution plan. */
@@ -147,6 +148,7 @@ final class OperationData extends Data
                 ? ['code' => $operation->error_code, 'detail' => $failure['detail'],
                     ...($operation->error_code !== 'operation.timed_out' ? ['stderr_recorded' => ($failure['stderr_recorded'] ?? false) === true] : [])] : null,
             capacityWait: app(TaskPlaces::class)->waitOf($operation),
+            overdueSince: is_string($operation->state['overdue_since'] ?? null) ? $operation->state['overdue_since'] : null,
         );
     }
 }

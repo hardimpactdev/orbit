@@ -21,6 +21,7 @@ covers:
 | Records, Node preparation, egress and DNS | Built |
 | Default create and deploy, clone, forced non-default destroy, checkout migration | Built on the build-list Nodes |
 | Task containers, nested-fleet parity, sleep/wake and production containers | Planned |
+| Dedicated workspace volumes and explicit package workspace links | [Draft specification](#workspace-volumes-draft); not implemented or proved |
 
 Every development Instance runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
 
@@ -229,6 +230,130 @@ For the agent folder, Orbit then restarts T3 in each running container, one afte
 The CLI self-updaters are off: `DISABLE_AUTOUPDATER=1` in the T3 unit, which Claude Code inherits, and `check_for_update_on_startup = false` in the image's Codex configuration. The T3 server has no self-updater; it runs from the read-only folder.
 
 The OS packages of the image change rarely. The Node's patch run of ADR 0250 upgrades them in each running container from the Node; a sleeping container gets the upgrade when it next wakes.
+
+## Workspace volumes (draft)
+
+**Agreed direction; not implemented or proved.** The delivered workspace remains inside the container root, as the lifecycle sections below describe. This section owns the draft contract for separate workspace volumes. Accepted policies remain unimplemented. Other details are marked as recommendations.
+
+Incus supports custom filesystem volumes and disk hotplug. Ownership under Orbit's isolated ID maps remains unproven. Neither the existing read-only runtime mounts nor two users sharing one container's workspace prove that a volume can be writable across these maps.
+
+### Agreed boundary
+
+The workspace belongs to its Instance. Only an explicit package link gives another Instance access to it.
+
+- Each Instance owns one filesystem workspace volume separate from its container root. A default Instance owns one too.
+- Each clone owns a cloned volume. The flow explicitly copies the workspace volume and rebinds its disk before first start. `incus copy` alone is insufficient.
+- An app Instance can explicitly link a package Instance's workspace on the same Node. Both Instances can edit it, with live changes visible in both directions.
+- Defaults and unrelated Instances remain independent. There are no implicit package links.
+- Container roots, homes, T3 state and caches outside linked workspaces stay private. The [shared software folders](#shared-folders) remain read-only.
+- Dependencies inside a linked workspace belong to that explicit sharing. No additional writable state is shared.
+
+The owned workspace stays at `/srv/workspace`, owned `agent:work`, with directories mode 2770 and default group ACLs. The [existing account values](#inside-a-container) stay: `agent` uid/gid 2750, `orbit` uid/gid 1000 and `work` gid 2760. Tools can narrow modes; [Who runs what](#who-runs-what) describes their correction.
+
+Containers keep distinct isolated ID maps. Sharing cannot require privileged containers, identical host ID ranges, world access, new sudo grants or removal of the user boundary. Refuse a mapping that cannot preserve isolation.
+
+No rename to `~/apps` or `~/packages` is agreed. `/srv/packages/<vendor>/<name>` remains a proposal for package mounts, with no approved alias.
+
+### Proposed ownership and references
+
+**Recommendation, pending review.** Keep the Instance as lifecycle owner. Give its workspace an identity independent of container names, paths and storage location. The Gateway records ownership and consumer references. Swamp applies the captured intent and returns its result. No new runtime manager is needed.
+
+| Record | Required meaning |
+| --- | --- |
+| Owned workspace | Workspace identity, owning Instance id, Node, Incus project, pool and custom filesystem volume name |
+| Package link | Consumer Instance id, selected owner workspace identity, mount target and read-write access |
+| Seed or backup manifest | Exact root and workspace snapshots, Instance and workspace identity mapping, links and database recovery material |
+
+Clone provenance records the source workspace and exact snapshot. It grants no ongoing source access. A link references the owner's workspace; it does not resolve a branch, slug or whichever Instance is currently called `default`.
+
+An Instance owns exactly one workspace, and a volume has exactly one owner. Multiple consumers can reference it without becoming co-owners. Reverse references include admitted but unfinished links, so a pending attach cannot race owner removal. A package's own links do not mount transitively in consumers.
+
+Reject self-links, duplicate or overlapping mount targets, targets over `/srv/workspace`, and targets that hide existing files. Resolve names from recorded package identity and reject ambiguity. A path is never the ownership key.
+
+A link exposes the whole workspace according to file permissions, including `.git`, dependencies and readable `.env` files. It filters no source files. It creates no database grants, network access or package-manager configuration. Composer or Node resolves the mounted path through the consuming Project's own files.
+
+### Clone links and proposed seeds
+
+**Agreed policy; not implemented.** Clones NEVER inherit package links automatically. The caller explicitly selects each link. Selecting the same owner deliberately keeps its live files; selecting a package clone uses that clone's independent volume.
+
+Cloning an app neither recursively clones its package graph nor retargets existing consumers. A copied package-manager path authorizes no mount and no fallback to another package.
+
+**Recommended mechanics, pending review.** Prepare root and workspace together:
+
+1. Capture one seed identity with the default's root and owned workspace snapshots. Stop writers for the entire capture interval.
+2. Reserve the clone's workspace identity and explicitly copy the admitted volume snapshot. Copy the matching container root without starting it.
+3. Remove inherited workspace and package devices, including devices from profiles. Bind `/srv/workspace` to the clone's own volume and add only explicitly admitted links.
+4. Verify effective devices and ownership before any app, agent or T3 starts. Recheck on resume, then continue existing clone preparation and identity rules.
+
+Never combine newer workspace data with an older root just because their Git commit matches. SQLite comes with the workspace; server databases still use the [database family](#clone-the-database). Retain the seed pair until both parts are copied or the clone is abandoned.
+
+A failed clone stays stopped with its owned resources recorded. Resume reuses a verified complete destination volume and never overwrites possible edits by cloning again. Unknown binding or completion state requires recovery before start. An inherited source binding must never be used temporarily.
+
+Explicit abandonment deletes only the failed Instance's container and volume after checking references. It never deletes a source or linked owner's data. A lost result cannot make an unverified copy ready. Later source edits leave an independent clone unchanged.
+
+### Writable links and proposed mount path
+
+**Agreed policy; not implemented or proved.** An explicitly linked package workspace is writable from BOTH the owning package Instance and consuming app Instance. Both `agent` and `orbit` can create, edit, delete and rename files through `work`. Changes are live and visible in both directions and to every other explicit consumer.
+
+The link permits edits to the selected package, including files outside the app's own checkout. Neither another attachment nor consumer writes may break owner or other explicit consumer access. Preserve numeric guest ownership, default ACLs and group permissions across distinct isolated maps. This support remains UNPROVEN.
+
+Keep `/srv/workspace` owned `agent:work`, mode 2770. A file belongs to its creating user under the group policy. Do not relabel every file as `agent` or recursively shift owners for each mount.
+
+Recommend `/srv/packages/<vendor>/<name>` outside the consumer's own workspace. It needs an unambiguous package naming rule. Aliases and renaming home directories stay outside this slice.
+
+Admission requires an explicit owner, authorization to its workspace and the same Node as the consumer. Refuse cross-node links before changing records or devices. Do not substitute a network filesystem, sync process, copy or implicit move.
+
+A link survives owner sleep because the volume supplies its files. Edits appear through every explicit link. A mount does not promise that a language runtime or watcher reloads them, or that an already open file observes a replacement.
+
+**Agreed unlink policy; not implemented.** Unlink explicitly names the consumer and owner workspace. It removes only that link. It never deletes package files, removes another owner or rebinds to another Instance. Removal lists blocking links and refuses until the caller explicitly unlinks them. This draft assigns no command syntax.
+
+**Recommended mechanics, pending review.** Attach succeeds only when the persistent device and running consumer's mount match the admitted owner and read-write access. A stopped consumer receives the same check before start. Detach removes the device and mount before releasing the reference. Repeating the requested state changes nothing.
+
+Successful detach prevents new path lookups. An open descriptor can retain an inode after unmount, so hotplug alone does not promise revocation. Recommend refusing busy detach without lazy unmount. Explicitly stop affected processes or the consumer, then detach again.
+
+A failed attach or detach retains its pending reference and actual-device evidence until resume reconciles both sides. Report failure instead of claiming success. Remount and restart must preserve numeric ownership, default ACLs, group permissions and read-write access. Check mutations in both directions again without breaking other consumers.
+
+### Backup, migration and removal
+
+**Agreed policy; not implemented.** Back up and restore each linked component together offline. Refuse individual linked moves and referenced-owner deletion, including force. Require explicit unlink before removal. Never unlink implicitly or remove another owner. These policies must work before links are enabled.
+
+**Recommended mechanics, pending review.** Reuse lifecycle admission and saved Operation intent, with no separate graph scheduler. Capture the complete connected component of explicit links in both directions. Include consumers of an owner and every owner a consumer depends on. Stabilize that link set against attach, detach, create and removal.
+
+Quiesce all writers, including agents, app Processes, deploys and every explicit consumer. Refuse a consistent backup if a writer or database cannot be quiesced. Within that interval, snapshot each owned workspace once, every participating root, and database recovery points through the database family.
+
+One manifest records topology, ownership, read-write bindings, ACLs, snapshot identities and database material. A container snapshot or export alone is incomplete. Mark a backup complete only after all parts are durable and verified. Partial artifacts are unusable. Resume prior running states after capture or failure when safe; expose failed restarts for recovery.
+
+Restore the whole component offline into isolated destinations. Map saved owners and consumers to restored identities. Restore volumes before binding containers. Validate the manifest, permissions and same-node links before any restored Instance starts or is published.
+
+Refuse partial restore into live shared owners, which would roll back files for consumers outside the restore. A matching name never authorizes rebinding an existing Instance. Failed restore retains its manifest and staged resources without publishing part of the graph. Resume finishes it; explicit abandonment removes only staged destinations.
+
+A move between Nodes refuses any incoming or outgoing reference, including pending or unresolved links. List blockers before downtime. Unlink explicitly first, without substituting a package. Coordinated movement of a component is later work.
+
+An unlinked move keeps root and workspace together as one stopped unit. Preserve logical ownership and check destination maps and bindings before cutover. Keep source data until destination verification and recorded cutover succeed. Never allow both copies to write. Keep the existing rules for placing a Project and its default.
+
+Before cutover, recovery resumes the source. After cutover, recovery finishes destination cleanup without reverting newer data. Unknown cutover keeps both copies stopped until reconciled.
+
+Converting today's workspace from the container root needs separate authorization. Stop writers, stage and verify the dedicated volume, then bind it and record ownership at cutover. Retain source data until cutover is known. Failure before cutover keeps the old binding. This does not reopen checkout migration safety work.
+
+Owner removal refuses incoming references or actual foreign mounts, even with force. Name consumers and require explicit unlink. Never cascade removal, rebind to a default or delete a mounted owner's volume.
+
+Consumer removal refuses outgoing links. After explicit unlink, remove only the consumer's root and workspace through the existing flow. A failure keeps its removal identity and unresolved references. Resume accepts owned resources already absent.
+
+Workspace lifetime follows its owner. Stop, sleep and unlink retain data. Successful explicit destruction deletes owned workspace data and snapshots after references clear; other owners and independent clones remain. Incus must retain backing storage required by independent clones.
+
+Backups retain their manifest and data until explicit backup removal, with no automatic expiry introduced here. Resources from failed clone, move, removal and restore stay recorded with owner, Operation and location until recovery or explicit cleanup. Never silently collect unknown volumes. Existing retained Git and T3 history policies remain in [Destroy](#destroy).
+
+### Proof required before implementation
+
+First authorize a small disposable proof separately. Check distinct isolated maps with `agent` uid/gid 2750, `orbit` uid/gid 1000 and `work` gid 2760. Verify `/srv/workspace` ownership `agent:work`, mode 2770 and default group ACLs.
+
+As both users in the owner and every explicit consumer, create, edit, delete and rename files in both directions. Verify numeric host and guest ownership, ACL inheritance, setgid and group permissions after each mutation. Neither consumer writes nor subsequent attachments may break owner or other consumer access.
+
+Verify default and unrelated workspace isolation, independent volume clones and explicit rebinding before first start. Prove that app clones never inherit package links. Check hot attach, explicit unlink, busy detach, remount and restart, preserving ownership and access.
+
+Inject clone failures and lost results; prove scoped cleanup without source loss. Prove linked-move and referenced-owner removal refusals, and no implicit unlink or removal. Back up and restore a complete component offline, including partial-failure recovery, then repeat ownership and mutation checks.
+
+Failure to preserve ownership blocks this design. It does not authorize weaker isolation. No live proof has run for this proposal.
 
 ## Environment notes
 
