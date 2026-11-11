@@ -7,6 +7,7 @@ namespace App\Domain\Analytics;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Processes\ProcessOwnershipClaim;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -31,6 +32,7 @@ final readonly class AnalyticsStorageProcessGuard
     {
         $postgres = $this->process($postgresProcessId, 'analytics.postgres_process_missing');
         $clickhouse = $this->process($clickhouseProcessId, 'analytics.clickhouse_process_missing');
+        app(ProcessOwnershipClaim::class)->assertClaimable($postgres, $clickhouse);
 
         $this->assertOnDatabaseNode($postgres);
         $this->assertOnDatabaseNode($clickhouse);

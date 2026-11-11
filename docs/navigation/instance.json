@@ -41,6 +41,7 @@
             "cli/instance/deployment-show",
             "cli/instance/database-add",
             "cli/instance/database-remove",
+            "cli/instance/node-service-detach",
             "cli/instance/websocket-add",
             "cli/instance/websocket-remove",
             "cli/instance/analytics-enable",

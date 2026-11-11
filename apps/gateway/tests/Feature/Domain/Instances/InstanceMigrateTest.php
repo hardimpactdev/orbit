@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Actions\Hibernation\ActivateInstanceRuntimeAction;
+use App\Actions\Instances\AttachInstanceNodeServiceTargetAction;
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceMigrateAction;
+use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\ReadOperationAction;
@@ -16,6 +18,9 @@ use App\Actions\Schedules\ShowScheduleLogsAction;
 use App\Data\Instances\InstanceData;
 use App\Data\Operations\OperationData;
 use App\Data\Schedules\AddScheduleData;
+use App\Domain\Analytics\AnalyticsRoleSettings;
+use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
+use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Certificates\LeafCertificateSigner;
@@ -30,6 +35,7 @@ use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
+use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceAttachedTargets;
@@ -94,6 +100,8 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
+use Orbit\Extensions\AiRouter\Domain\AiRouterProcess;
+use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 uses(LazilyRefreshDatabase::class);
@@ -3765,4 +3773,209 @@ describe('migrated development Process definitions', function (): void {
         expect(DB::table('vite_port_assignments')->where('instance_id', $second->id)->value('port'))->toBe(5174);
     });
 
+});
+
+it('keeps a migrated attached Node Process standalone when another service claims it', function (string $claim): void {
+    $node = containerDefaultNode();
+    $node->forceFill(['ssh_host_fingerprint' => 'fixture-fingerprint'])->save();
+    $instance = migrateCheckout(containerDefaultProject(), $node);
+    $name = match ($claim) {
+        'analytics collector' => PlausibleProcess::NAME,
+        'ai-router collector' => AiRouterProcess::NAME,
+        default => 'mailpit',
+    };
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => $name,
+        'runtime' => 'docker', 'runtime_config' => ['image' => 'axllent/mailpit', 'ports' => ['0.0.0.0:1025:1025/tcp']],
+        'desired_state' => 'running', 'status' => 'active']);
+    $target = app(AttachInstanceNodeServiceTargetAction::class)->execute($instance, $process->id, 'tcp', 1025, 'MAIL_HOST', 'MAIL_PORT');
+    migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+    expect($instance->refresh()->runtime)->not->toBeNull();
+    $claimNode = $node;
+    $settings = null;
+    if ($claim !== 'ai-router collector') {
+        if ($claim !== 'analytics collector') {
+            $claimNode = containerDefaultNode('analytics', '10.44.0.10');
+            $claimNode->forceFill(['ssh_host_fingerprint' => 'fixture-fingerprint'])->save();
+        }
+        $storageNode = containerDefaultNode('storage', '10.44.0.8');
+        $storageNode->roles()->create(['role' => RoleName::Database, 'status' => 'active']);
+        $postgres = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $storageNode->id, 'name' => 'postgres',
+            'runtime' => 'docker', 'runtime_config' => ['image' => 'postgres:16', 'ports' => ['10.44.0.8:5432:5432']],
+            'desired_state' => 'running', 'status' => 'active']);
+        $clickhouse = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $storageNode->id, 'name' => 'clickhouse',
+            'runtime' => 'docker', 'runtime_config' => ['image' => 'clickhouse/clickhouse-server:26', 'ports' => ['10.44.0.8:9000:9000']],
+            'desired_state' => 'running', 'status' => 'active']);
+        $settings = new AnalyticsRoleSettings($claim === 'analytics postgres' ? $process->id : $postgres->id,
+            $claim === 'analytics clickhouse' ? $process->id : $clickhouse->id);
+    }
+    $processBefore = $process->refresh()->getRawOriginal();
+    $runtimeBefore = $instance->runtime->refresh()->getRawOriginal();
+    $operationsBefore = Operation::query()->count();
+    $rolesBefore = $claimNode->roles()->get()->toArray();
+    Queue::fake();
+    Illuminate\Support\Facades\Process::preventStrayProcesses();
+
+    try {
+        if ($claim === 'ai-router collector') {
+            app(AiRouterState::class)->enable($node->id, 'cache', 'https://router.example.com', 'fixture-key', 'fixture-read', 'fixture-control');
+        } else {
+            app(AdmitNodeRoleOperationAction::class)->add($claimNode, RoleName::Analytics, analytics: $settings);
+        }
+        test()->fail('A service must not adopt a Process that still serves an attached Instance.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe('process.node_service_ownership_conflict');
+        expect($exception->getMessage())->toBe("Process [{$name}] is attached to Instance [tool/default] (id {$instance->id}). Detach those Node service targets before claiming ownership of the Process.");
+    }
+
+    expect($process->refresh()->getRawOriginal())->toEqual($processBefore);
+    expect($instance->runtime->refresh()->getRawOriginal())->toEqual($runtimeBefore);
+    expect($claimNode->roles()->get()->toArray())->toBe($rolesBefore);
+    expect(app(AnalyticsRoleSettingsRepository::class)->find($claimNode))->toBeNull();
+    expect(app(AiRouterState::class)->enabled())->toBeFalse();
+    expect(app(AiRouterState::class)->nodeId())->toBeNull();
+    expect(Operation::query()->count())->toBe($operationsBefore);
+    $this->assertDatabaseHas('instance_node_service_targets', ['id' => $target->id, 'process_id' => $process->id, 'instance_id' => $instance->id]);
+    Illuminate\Support\Facades\Process::assertNothingRan();
+    Http::assertNothingSent();
+    Queue::assertNothingPushed();
+})->with(['analytics collector', 'analytics postgres', 'analytics clickhouse', 'ai-router collector']);
+
+/** @return array{Instance, Process, int} */
+function migrateNodeServiceRecord(Node $node, Project $project, string $instanceName = 'default', ?Process $process = null): array
+{
+    $instance = migrateCheckout($project, $node, $instanceName);
+    $instance->update(['starting_commit' => str_repeat('c', 40)]);
+    $process ??= Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => AiRouterProcess::NAME,
+        'runtime' => 'docker', 'runtime_config' => ['image' => 'axllent/mailpit', 'ports' => ['0.0.0.0:1025:1025/tcp']],
+        'desired_state' => 'running', 'status' => 'active']);
+    $target = test()->postJson("/api/v1/instances/{$instance->id}/node-service-targets",
+        ['process_id' => $process->id, 'host_env_key' => 'MAIL_HOST', 'port_env_key' => 'MAIL_PORT'])->assertOk()->json('data.id');
+
+    return [$instance, $process, $target];
+}
+
+function migrateNodeServiceThroughApi(Instance $instance): void
+{
+    $id = test()->postJson("/api/v1/instances/{$instance->id}/migrate")->assertAccepted()->json('data.id');
+    migrateEnd(Operation::query()->findOrFail($id), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false,
+        'commit' => str_repeat('d', 40), ...($instance->name === 'default' ? [] : ['t3' => migrateServer($instance)])]);
+}
+
+it('releases a migrated default Node service record for Process cleanup without changing shared attachments', function (string $cleanup): void {
+    $node = containerDefaultNode();
+    $node->accessibleNodes()->attach($node);
+    $node->forceFill(['ssh_host_fingerprint' => 'fixture-fingerprint'])->save();
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    $project = containerDefaultProject();
+    [$instance, $process, $target] = migrateNodeServiceRecord($node, $project);
+    [$sibling, , $shared] = migrateNodeServiceRecord($node, $project, 'consumer', $process);
+    $uri = "/api/v1/instances/{$instance->id}/node-service-targets";
+    $other = $this->postJson($uri, ['process_id' => $process->id, 'host_env_key' => 'SECOND_HOST', 'port_env_key' => 'SECOND_PORT'])
+        ->assertOk()->json('data.id');
+    $unrelated = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'other-mail',
+        'runtime' => 'docker', 'runtime_config' => ['image' => 'axllent/mailpit', 'ports' => ['0.0.0.0:1026:1025/tcp']],
+        'desired_state' => 'running', 'status' => 'active']);
+    $unrelatedTarget = $this->postJson($uri, ['process_id' => $unrelated->id, 'host_env_key' => 'OTHER_HOST', 'port_env_key' => 'OTHER_PORT'])
+        ->assertOk()->json('data.id');
+    $unrelatedBefore = $unrelated->refresh()->getRawOriginal();
+    app(InstanceEnvironmentStore::class)->seedForCreate($instance, ['MAIL_MAILER' => 'log', 'MAIL_HOST' => '127.0.0.1', 'MAIL_PORT' => '1025']);
+    migrateNodeServiceThroughApi($instance);
+    $runtimeBefore = $instance->runtime()->firstOrFail()->getRawOriginal();
+    $processBefore = $process->refresh()->getRawOriginal();
+    $environmentBefore = app(InstanceEnvironmentStore::class)->values($instance->refresh());
+    Queue::fake();
+    Illuminate\Support\Facades\Process::preventStrayProcesses();
+
+    $this->deleteJson($uri.'/'.$target)->assertAccepted()->assertJsonPath('data.status', 'succeeded')
+        ->assertJsonPath('data.result.detached', true);
+
+    $this->assertDatabaseMissing('instance_node_service_targets', ['id' => $target]);
+    $this->assertDatabaseHas('instance_node_service_targets', ['id' => $shared, 'instance_id' => $sibling->id]);
+    $this->assertDatabaseHas('instance_node_service_targets', ['id' => $other, 'instance_id' => $instance->id]);
+    expect($instance->runtime()->firstOrFail()->getRawOriginal())->toEqual($runtimeBefore);
+    expect($process->refresh()->getRawOriginal())->toEqual($processBefore);
+    expect(app(InstanceEnvironmentStore::class)->values($instance))->toBe($environmentBefore);
+    $this->deleteJson('/api/v1/processes/'.$process->id)->assertConflict()
+        ->assertJsonPath('error.code', 'process.required_by_instance_node_service');
+    $this->deleteJson($uri.'/'.$other)->assertAccepted();
+    $this->deleteJson('/api/v1/processes/'.$process->id)->assertConflict()
+        ->assertJsonPath('error.code', 'process.required_by_instance_node_service');
+    $this->deleteJson("/api/v1/instances/{$sibling->id}/node-service-targets/{$shared}")->assertAccepted();
+    Http::assertNothingSent();
+    Illuminate\Support\Facades\Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    if ($cleanup === 'ownership') {
+        app(AiRouterState::class)->enable($node->id, 'cache', 'https://router.example.com', 'fixture-key', 'fixture-read', 'fixture-control');
+        expect(app(AiRouterState::class)->nodeId())->toBe($node->id);
+        expect($process->refresh()->getRawOriginal())->toEqual($processBefore);
+    } else {
+        $this->deleteJson('/api/v1/processes/'.$process->id)->assertAccepted()->assertJsonPath('data.kind', 'process.destroy');
+        expect($process->refresh()->status)->toBe(LifecycleStatus::Removing);
+    }
+    $this->assertDatabaseHas('instance_node_service_targets', ['id' => $unrelatedTarget, 'process_id' => $unrelated->id]);
+    expect($unrelated->refresh()->getRawOriginal())->toEqual($unrelatedBefore);
+})->with(['destroy', 'ownership']);
+
+it('retains default destruction boundaries after attaching and migrating a Node service record', function (bool $force): void {
+    $node = containerDefaultNode();
+    $node->accessibleNodes()->attach($node);
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    [$instance, $process, $target] = migrateNodeServiceRecord($node, containerDefaultProject());
+    migrateNodeServiceThroughApi($instance);
+    $runtimeBefore = $instance->runtime()->firstOrFail()->getRawOriginal();
+    $processBefore = $process->refresh()->getRawOriginal();
+    $before = Operation::query()->count();
+
+    $this->deleteJson("/api/v1/instances/{$instance->id}", ['force' => $force])->assertStatus(503)
+        ->assertJsonPath('error.code', 'operation.kind_unavailable');
+
+    expect(Operation::query()->count())->toBe($before);
+    expect($instance->refresh()->status)->toBe(InstanceState::Active);
+    expect($instance->runtime()->firstOrFail()->getRawOriginal())->toEqual($runtimeBefore);
+    expect($process->refresh()->getRawOriginal())->toEqual($processBefore);
+    $this->assertDatabaseHas('instance_node_service_targets', ['id' => $target]);
+    $this->deleteJson("/api/v1/instances/{$instance->id}/node-service-targets/{$target}")->assertAccepted()->assertJsonPath('data.status', 'succeeded');
+    $this->assertDatabaseMissing('instance_node_service_targets', ['id' => $target]);
+})->with([false, true]);
+
+it('removes only the migrated non-default attachment on successful forced Instance destruction', function (): void {
+    $node = containerDefaultNode();
+    $node->accessibleNodes()->attach($node);
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    $project = containerDefaultProject();
+    [$default, $process, $shared] = migrateNodeServiceRecord($node, $project);
+    migrateNodeServiceThroughApi($default);
+    [$instance, , $target] = migrateNodeServiceRecord($node, $project, 'feature', $process);
+    migrateNodeServiceThroughApi($instance);
+    $processBefore = $process->refresh()->getRawOriginal();
+    $defaultRuntimeBefore = $default->runtime()->firstOrFail()->getRawOriginal();
+    $this->deleteJson("/api/v1/instances/{$instance->id}")->assertConflict()->assertJsonPath('error.code', 'instance.container_destroy_force_required');
+    $destroyId = $this->deleteJson("/api/v1/instances/{$instance->id}", ['force' => true])->assertAccepted()->json('data.id');
+    $destroy = Operation::query()->findOrFail($destroyId);
+    $this->assertDatabaseHas('instance_node_service_targets', ['id' => $target]);
+    $this->deleteJson("/api/v1/instances/{$instance->id}/node-service-targets/{$target}")->assertConflict()
+        ->assertJsonPath('error.code', 'instance.lifecycle_busy');
+    $destroy->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'destroy-run'], 'finished_at' => null])->save();
+    $frame = [];
+    $socket = $this->mock(WebSocketClient::class);
+    $socket->shouldReceive('connect', 'close')->andReturnNull();
+    $socket->shouldReceive('isConnected')->andReturnTrue();
+    $socket->shouldReceive('send')->atLeast()->once()->withArgs(fn (array $message): bool => $message['type'] === 'vault.delete')
+        ->andReturnUsing(function (array $message) use (&$frame): void {
+            $frame = $message;
+        });
+    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame): array {
+        return [['id' => $frame['id'], 'type' => 'vault.delete', 'payload' => ['data' => []]]];
+    });
+
+    app(DevelopmentInstanceDestroyProjection::class)->apply($destroy, ['status' => 'succeeded', 'run_id' => 'destroy-run',
+        'result' => [], 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String()]);
+
+    $this->assertDatabaseMissing('instances', ['id' => $instance->id]);
+    $this->assertDatabaseMissing('instance_runtimes', ['instance_id' => $instance->id]);
+    $this->assertDatabaseMissing('instance_node_service_targets', ['id' => $target]);
+    $this->assertDatabaseHas('instance_node_service_targets', ['id' => $shared, 'instance_id' => $default->id]);
+    expect($process->refresh()->getRawOriginal())->toEqual($processBefore);
+    expect($default->runtime()->firstOrFail()->getRawOriginal())->toEqual($defaultRuntimeBefore);
 });

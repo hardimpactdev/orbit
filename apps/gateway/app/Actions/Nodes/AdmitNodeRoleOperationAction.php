@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageProcessGuard;
+use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NativeNodeRoleAddInput;
 use App\Domain\Nodes\NativeNodeRoleRelocateInput;
@@ -26,6 +27,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Processes\ProcessOwnershipClaim;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -79,6 +81,7 @@ final readonly class AdmitNodeRoleOperationAction
                 throw new RoleAssignmentException("Role [{$role->value}] is already assigned; explicit convergence is required.");
             }
             if ($role === RoleName::Analytics) {
+                app(ProcessOwnershipClaim::class)->forNode($node->id, PlausibleProcess::NAME);
                 $analytics ??= $this->analytics->find($node);
                 if ($analytics === null) {
                     throw new ResourceOperationException('analytics.settings_missing', 'The analytics role requires its storage Processes.', 422);

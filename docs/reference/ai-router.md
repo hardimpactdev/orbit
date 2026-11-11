@@ -53,6 +53,8 @@ orbit ai-router:setup --node=beast --cache-connection=ai-router-cache --cliproxy
 
 The collector Node must be an active Linux Node with a WireGuard address. Otherwise setup fails with `ai_router.node_invalid`.
 
+An existing collector Process used by an Instance's Node service target refuses ownership with `process.node_service_ownership_conflict`. The error names every dependent Instance. The claim check and all owner settings are stored in one immediate SQLite transaction, so a concurrent attachment cannot commit between them. A failed setting write rolls back the whole claim. Setup preserves Process configuration and runtime when admission refuses; detach dependent targets before assigning that Process to the AI router.
+
 `--cliproxy-url` is the CLIProxyAPI Management API origin, as the collector Node sees it. With task VMs off, use `http://127.0.0.1:8317` when CLIProxyAPI runs on that Node.
 
 Task VMs never call this URL. They call the [task VM guard](#task-vm-guard) on the router's Node, which reaches the router on loopback at the port of this URL. So the URL needs a port, and nothing else ties it to the task VM configuration.

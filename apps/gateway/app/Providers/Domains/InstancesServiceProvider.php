@@ -17,6 +17,7 @@ use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
 use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Instances\InstanceDestroyTeardownSecret;
+use App\Domain\Instances\InstanceNodeServiceProcessRemovalGuard;
 use App\Domain\Instances\InstanceOperationAlerts;
 use App\Domain\Instances\Logs\InstanceLogReader;
 use App\Domain\Instances\NativeInstanceProvisioningSetup;
@@ -25,6 +26,7 @@ use App\Domain\Instances\ProductionRepositoryBinding;
 use App\Domain\Instances\Queue\InstanceQueueReader;
 use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Operations\OperationSecretSource;
+use App\Domain\Processes\ProcessRemovalGuard;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Dependencies\WebSocketSwampDependencyReader;
@@ -68,6 +70,7 @@ final class InstancesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->tag([InstanceNodeServiceProcessRemovalGuard::class], ProcessRemovalGuard::class);
         $this->app->tag([NativeInstanceProvisioningSetup::class, InstanceDestroyTeardownSecret::class], OperationSecretSource::class);
         $this->app->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
             static fn (int $limit): WebSocketClient => new StreamWebSocketClient($limit, $limit),

@@ -12,12 +12,13 @@ use App\Http\Controllers\Api\InstanceDeploymentSourceController;
 use App\Http\Controllers\Api\InstanceDeployStepsController;
 use App\Http\Controllers\Api\InstanceLogsController;
 use App\Http\Controllers\Api\InstanceLogStreamsController;
+use App\Http\Controllers\Api\InstanceMigrationsController;
+use App\Http\Controllers\Api\InstanceNodeServiceTargetsController;
 use App\Http\Controllers\Api\InstanceQueueController;
 use App\Http\Controllers\Api\InstanceReleasesController;
 use App\Http\Controllers\Api\InstanceRollbacksController;
 use App\Http\Controllers\Api\InstancesController;
 use App\Http\Controllers\Api\InstanceSetupController;
-use App\Http\Controllers\Api\InstanceMigrationsController;
 use App\Http\Controllers\Api\InstanceTransfersController;
 use App\Http\Controllers\Api\ProjectLifecycleStepsController;
 use App\Http\Controllers\Api\ResolveDirectoryInstanceController;
@@ -143,6 +144,10 @@ Route::middleware([
         'deployments/{deployment}',
         [InstanceDeploymentsController::class, 'show'],
     )->name('instance:deployment:show');
+    Route::post('instances/{instance}/node-service-targets', [InstanceNodeServiceTargetsController::class, 'store'])
+        ->whereNumber('instance')->name('instance:node-service:attach');
+    Route::delete('instances/{instance}/node-service-targets/{target}', [InstanceNodeServiceTargetsController::class, 'destroy'])
+        ->whereNumber(['instance', 'target'])->name('instance:node-service:detach');
     Route::put(
         'instances/{instance}/database-connections/{database_connection}',
         [DatabaseConnectionAttachmentsController::class, 'store'],

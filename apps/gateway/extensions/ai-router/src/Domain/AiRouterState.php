@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\AiRouter\Domain;
 
+use App\Domain\Processes\ProcessOwnershipClaim;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
 use App\Domain\Shared\ResourceOperationException;
+use Illuminate\Support\Facades\DB;
 
 final readonly class AiRouterState
 {
@@ -72,14 +74,17 @@ final readonly class AiRouterState
         string $readToken,
         string $controlToken,
     ): void {
-        $scope = $this->scope();
-        $this->settings->put($scope, AiRouterSettings::Enabled, '1');
-        $this->settings->put($scope, AiRouterSettings::NodeId, (string) $nodeId);
-        $this->settings->put($scope, AiRouterSettings::CacheConnection, $cacheConnection);
-        $this->settings->put($scope, AiRouterSettings::RouterUrl, $routerUrl);
-        $this->settings->put($scope, AiRouterSettings::ManagementKey, $managementKey, SettingValueProtection::Secret);
-        $this->settings->put($scope, AiRouterSettings::ReadToken, $readToken, SettingValueProtection::Secret);
-        $this->settings->put($scope, AiRouterSettings::ControlToken, $controlToken, SettingValueProtection::Secret);
+        DB::transaction(function () use ($nodeId, $cacheConnection, $routerUrl, $managementKey, $readToken, $controlToken): void {
+            app(ProcessOwnershipClaim::class)->forNode($nodeId, AiRouterProcess::NAME);
+            $scope = $this->scope();
+            $this->settings->put($scope, AiRouterSettings::Enabled, '1');
+            $this->settings->put($scope, AiRouterSettings::NodeId, (string) $nodeId);
+            $this->settings->put($scope, AiRouterSettings::CacheConnection, $cacheConnection);
+            $this->settings->put($scope, AiRouterSettings::RouterUrl, $routerUrl);
+            $this->settings->put($scope, AiRouterSettings::ManagementKey, $managementKey, SettingValueProtection::Secret);
+            $this->settings->put($scope, AiRouterSettings::ReadToken, $readToken, SettingValueProtection::Secret);
+            $this->settings->put($scope, AiRouterSettings::ControlToken, $controlToken, SettingValueProtection::Secret);
+        });
     }
 
     public function disable(): void

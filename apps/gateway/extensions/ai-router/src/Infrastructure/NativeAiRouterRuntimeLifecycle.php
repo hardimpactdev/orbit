@@ -8,6 +8,7 @@ use App\Actions\Processes\CreateProcessAction;
 use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Processes\UpdateProcessAction;
 use App\Data\Processes\UpdateProcessData;
+use App\Domain\Processes\ProcessOwnershipClaim;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
@@ -32,6 +33,7 @@ final readonly class NativeAiRouterRuntimeLifecycle implements AiRouterRuntimeLi
         #[SensitiveParameter]
         array $environment,
     ): void {
+        app(ProcessOwnershipClaim::class)->forNode($node->id, AiRouterProcess::NAME);
         $revision = $this->delivery->pin($node);
         $existing = Process::query()->where('owner_type', Node::class)
             ->where('owner_id', $node->id)->where('name', AiRouterProcess::NAME)->first();

@@ -38,6 +38,8 @@ For managed PostgreSQL 18, create exactly one canonical `plausible-db` connectio
 
 Assign the role with `orbit node:role:add NODE analytics --postgres-process=ID --clickhouse-process=ID`. In a terminal, the CLI asks for a missing Process. The role is a singleton. It conflicts with `gateway` and combines with `database`, so one services Node can hold both. It cannot be assigned during `node:add`, and it cannot be relocated.
 
+Assignment also refuses an existing `plausible` or selected storage Process used by an Instance's Node service target. `process.node_service_ownership_conflict` names the dependent Instances before role settings, Process configuration or runtime changes. Detach those targets before assigning the Process to Analytics.
+
 Assignment refuses a storage Process that does not fit:
 
 | Error code | Cause |

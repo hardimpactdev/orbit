@@ -9,6 +9,8 @@ covers:
 
 `instance:migrate` is POST `/api/v1/instances/{instance}/migrate`. It returns an Operation receipt; the [command page](/cli/instance/migrate) defines its prerequisites and failure behavior.
 
+Node service target attachment returns typed `InstanceNodeServiceTarget` data. Detach takes a positive integer `target` path parameter and returns typed `Operation` data. Detach is record-only, including after successful migration: it performs no network, environment or runtime change. The generated MCP tools use these same schemas; [Node service target records](/reference/processes-and-schedules#node-service-target-records) defines the record-only behavior.
+
 Schedule log streams use POST, PUT and DELETE under `/api/v1/schedules/{schedule}/log-streams`. The Schedule selector is a UUID. These viewer leases share the [live log contract](/reference/live-logs) with Instance and Process streams.
 
 `database:server:update` is PATCH `/api/v1/database-servers/{database_server}`. It requires JSON `{"require_password":true}`; the generated schema fixes this field to true. The operation receipt keeps kind `database_server.close`. See [Database servers](/reference/database-servers#close-an-adopted-server).
