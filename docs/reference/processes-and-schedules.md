@@ -191,9 +191,11 @@ An Instance on `app-prod` with no selected release accepts a stopped Process. A 
 
 The Gateway exposes these Process endpoints.
 
+Without a target, the list returns only Processes on Nodes the caller may reach, including their Instance-owned Processes. [Gateway authority](/cli/node#authority) permits the fleet-wide list.
+
 | Request | Result |
 | --- | --- |
-| `GET /api/v1/processes` | Only Processes on Nodes the caller may reach, including their Instance-owned Processes. [Gateway authority](/cli/node#authority) permits the fleet-wide list. The response includes desired state, runtime status, `keep_alive`, `restart_on_deploy`, `cpu`, and `memory_bytes`. `target_type` and `target_id` limit the list to one owner. |
+| `GET /api/v1/processes` | The Processes with desired state, runtime status, `keep_alive`, `restart_on_deploy`, `cpu`, and `memory_bytes`. `target_type` and `target_id` limit the list to one owner. |
 | `POST /api/v1/processes` | Creates one Process. |
 | `PATCH /api/v1/processes/{process}` | Replaces the specification and reconverges the runtime of the same Process. A Valkey [Database server](/reference/database-servers#update-a-valkey-servers-image) follows its image-update rule and validation order, keeping its ACL command, mounts and health check. |
 | `POST /api/v1/processes/{process}/start`, `/stop`, `/restart` | Changes the runtime and stores the desired state: `running` after start and restart, `stopped` after stop. |
