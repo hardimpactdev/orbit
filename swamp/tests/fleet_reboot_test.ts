@@ -371,3 +371,80 @@ for (const due of [true, false]) {
         } finally { await Deno.remove(folder, { recursive: true }); }
     });
 }
+
+
+for (const scenario of ["held observation", "held record", "Gateway partial stop", "CI partial stop",
+    "Gateway already stopped", "Gateway Horizon already stopped", "Gateway timeout"]) {
+    Deno.test(`the drain rescue restores only its recorded stops after ${scenario} fails`, async () => {
+        const folder = await Deno.makeTempDir();
+        try {
+            for (const part of ["tasks", "files", "library", "bin"]) await Deno.mkdir(`${folder}/${part}`);
+            const state = { units: { "schedule.service": scenario === "Gateway already stopped" ? "inactive" : "active",
+                    "horizon.service": scenario.includes("already stopped") ? "inactive" : "active" },
+                horizon_timeout: scenario === "Gateway timeout",
+                runners: { "ci-a": "Running", "ci-b": "Running", "ci-external": "Running", "ci-parked": "Stopped" } };
+            await Deno.writeTextFile(`${folder}/state.json`, JSON.stringify(state));
+            const fixture = fileURLToPath(new URL("fixtures/fleet-reboot-host.py", import.meta.url));
+            await Deno.copyFile(fixture, `${folder}/library/orbit_reboot_systemd.py`);
+            for (const tool of ["systemctl", "incus"]) {
+                await Deno.writeTextFile(`${folder}/bin/${tool}`, `#!/bin/sh\nexec python3 '${fixture}' ${tool} "$@"\n`);
+                await Deno.chmod(`${folder}/bin/${tool}`, 0o755);
+            }
+            await Deno.writeTextFile(`${folder}/bin/pgrep`, "#!/bin/sh\nexit 1\n");
+            await Deno.chmod(`${folder}/bin/pgrep`, 0o755);
+            await Deno.copyFile(`${ansible}files/fleet-reboot-ci-drain.sh`, `${folder}/files/fleet-reboot-ci-drain.sh`);
+            const transform = (value: unknown): any => {
+                if (typeof value === "string") return value.replaceAll("/run/orbit-fleet-reboot-ci-stops", `${folder}/ci-stops`);
+                if (Array.isArray(value)) return value.map(transform);
+                if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, child]) =>
+                    [key === "ansible.builtin.systemd_service" ? "orbit_reboot_systemd" : key, transform(child)]));
+                return value;
+            };
+            for await (const file of Deno.readDir(`${ansible}tasks`)) {
+                if (file.name.startsWith("fleet-reboot-")) {
+                    await Deno.writeTextFile(`${folder}/tasks/${file.name}`, JSON.stringify(transform(parse(await Deno.readTextFile(`${ansible}tasks/${file.name}`)))));
+                }
+            }
+            const phase = transform(structuredClone(plays.find((p) => p.name === "Drain the Node")!.tasks.find((t) => t.name === "Drain the Node")!));
+            phase.block = phase.block.map((task: Task) => {
+                if (task.name === "Read the boot state") return scenario === "held observation"
+                    ? { name: task.name, "ansible.builtin.fail": { msg: "Observation failed" } }
+                    : { name: task.name, "ansible.builtin.set_fact": { boot: { due: true, due_since: "2026-11-06T03:00:00Z",
+                        kernel: "7.0.0-42-generic", boot_id: "before", failed_units: [] } } };
+                if (task.name === "Record a Node that waits" && scenario === "held record") {
+                    return { name: task.name, "ansible.builtin.fail": { msg: "Record write failed" } };
+                }
+                return task;
+            });
+            if (scenario.includes("already stopped") || scenario === "Gateway timeout") {
+                phase.block.push({ name: "Fail after drain", "ansible.builtin.fail": { msg: "Drain failed" } });
+            }
+            const record = `${folder}/result.json`;
+            const result = await play(folder, { run: folder, record_path: record, phase: "drain", halted: false,
+                record: "{{ lookup('ansible.builtin.file', record_path, errors='ignore') | default('{}', true) | from_json }}",
+                target: { node_id: 9, name: "fixture", defer: scenario.startsWith("held") ? "operator_hold" : null,
+                    task_project: null, ci_project: scenario === "CI partial stop" ? "orbit-ci" : null,
+                    gateway: scenario === "CI partial stop" ? null : { scheduler: "schedule.service", horizon: "horizon.service" } },
+                intent: { window: { timezone: "Europe/Amsterdam", start: "03:00", end: "06:00", enforced: false }, drain_seconds: 20 },
+            }, [phase], { REBOOT_FIXTURE: folder, ANSIBLE_LIBRARY: `${folder}/library`,
+                PATH: `${folder}/bin:${Deno.env.get("PATH")}` });
+            assertNotEquals(result.code, 0, result.output);
+            const saved = JSON.parse(await Deno.readTextFile(record));
+            assertEquals(saved.outcome, "failed", result.output);
+            const calls: string[][] = (await Deno.readTextFile(`${folder}/calls.jsonl`).catch(() => "")).trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+            const starts = calls.filter((call) => call[0] === "systemd" && call[1] === "started" || call[0] === "incus" && call[1] === "start");
+            if (scenario === "Gateway partial stop" || scenario === "Gateway timeout") {
+                assertEquals(starts, [["systemd", "started", "schedule.service"], ["systemd", "started", "horizon.service"]]);
+                assertEquals(saved.gateway_stopped, ["schedule.service", "horizon.service"]);
+            } else if (scenario === "Gateway Horizon already stopped") {
+                assertEquals(starts, [["systemd", "started", "schedule.service"]]);
+                assertEquals(saved.gateway_stopped, ["schedule.service"]);
+            } else if (scenario === "CI partial stop") {
+                assertEquals(starts, [["incus", "start", "--project", "orbit-ci", "ci-a"]]);
+                assertEquals(saved.ci_stopped.map((runner: { name: string }) => runner.name), ["ci-a"]);
+            } else {
+                assertEquals(starts, []);
+            }
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    });
+}

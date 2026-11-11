@@ -3,7 +3,7 @@
 # on the Gateway, its scheduler and Horizon. A stopped task guest stays parked; the next task call wakes it.
 - name: Start the stopped runners again
   ansible.builtin.import_tasks: fleet-reboot-ci-start.yml
-  when: target.ci_project is not none and runners is defined and runners.stdout is defined
+  when: record.ci_stopped | default([]) | length > 0
 - name: Start the Gateway scheduler and Horizon again
   ansible.builtin.systemd_service: { name: "{{ item }}", state: started }
-  loop: "{{ [target.gateway.scheduler, target.gateway.horizon] | select | list if target.gateway is not none else [] }}"
+  loop: "{{ record.gateway_stopped | default([]) }}"
