@@ -244,7 +244,7 @@ def execute(steps, environment, strict, workers):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--base')
-    parser.add_argument('--only', choices=('shape', 'validate'))
+    parser.add_argument('--only', choices=('shape', 'control', 'validate'))
     parser.add_argument('--reports', type=Path, default=Path(tempfile.gettempdir()) / f'orbit-shape-gate-{os.getuid()}')
     parser.add_argument('--cache', type=Path, default=Path.home() / '.cache/orbit-shape-runtime')
     parser.add_argument('--tools', type=Path)
@@ -263,7 +263,8 @@ def main(argv=None):
     if args.only != 'validate':
         environment['PATH'] = f'{tool_path(args.tools)}{os.pathsep}{environment["PATH"]}'
     collections = collections_path(args.tools)
-    steps = [step for step in plan(base, args.reports, args.cache, collections) if args.only in (None, step.group)]
+    steps = [step for step in plan(base, args.reports, args.cache, collections)
+             if args.only in (None, step.group) or args.only == 'control' and step.group == 'shape' and not step.parallel and step.name != 'ansible collections']
     print('Swamp shape gate' + (f' against {base[:12]}' if base else '') + f'; reports in {args.reports}', flush=True)
     results = execute(steps, environment, args.strict, args.workers)
     print('\nSwamp shape gate summary', flush=True)

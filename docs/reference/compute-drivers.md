@@ -353,17 +353,17 @@ The check is the Ansible module `orbit_static_php`. The [runtime folder](/refere
 
 #### The static PHP workflow
 
-The `Static PHP build` workflow runs when the recipe, the build files or the workflow change. It requires every pin to name its definition, then builds only the versions whose release does not exist yet. The proof job keeps each archive it proved in the Actions cache under its build id, so a change to the proof alone does not build again.
+The `Static PHP build` workflow runs when the recipe, the build files or the workflow change. It requires every pin to name its definition. Compilation exceeds the [CI budget](/reference/implementation-loop#ci-budget), so a pull request only validates the pins. On main, a push or a manual run builds the versions whose release does not exist yet. The proof job keeps each archive it proved in the Actions cache under its build id, so a change to the proof alone does not build again.
 
 A proof job unpacks the archive, checks its SHA-256, refuses a binary that is not fully static, and runs the extension check. It then runs `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G`, installs the Gateway with Composer and its scripts, runs Artisan and Pest with `php -d memory_limit=1G vendor/bin/pest`, and serves the Gateway's `/up` with `frankenphp php-server`.
 
-On main, from a push or a manual run, the publish job creates the release with the archive and `SHA256SUMS`. It never replaces a release: a published SHA-256 may already be pinned. Pull requests build and prove, but never publish.
+On main, from a push or a manual run, the publish job creates the release with the archive and `SHA256SUMS`. It never replaces a release: a published SHA-256 may already be pinned. Pull requests never build, prove or publish.
 
 #### Change a static build
 
 1. Change the definition: the `instances.php` section, the PHP build's extensions, `tools/static-php/craft.yml` or `bin/static-php-build`.
 2. Run `bin/static-php-build definition`. Record each changed version's `build` and `url`, and set its `sha256` to `null`.
-3. The pull request's workflow builds and proves the new definition. After merge, main publishes it.
+3. The pull request's workflow validates the pins. After merge, main builds, proves and publishes the definition.
 4. A second pull request records the published SHA-256 from the release's `SHA256SUMS`. Only then can a Node install the build.
 
 ### Recipe identity

@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
@@ -22,9 +22,9 @@ def steps(only=None):
 
 class WorkflowCallsTheScriptTest(unittest.TestCase):
     def test_both_jobs_call_the_script_and_keep_no_inline_steps(self):
-        shape = WORKFLOW.split('  shape:', 1)[1].split('  validate:', 1)[0]
+        shape = WORKFLOW.split('  shape:', 1)[1].split('  fixtures:', 1)[0]
         validate = WORKFLOW.split('  validate:', 1)[1].split('  tests:', 1)[0]
-        self.assertIn('python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only shape --strict --base "$SHAPE_BASE" --reports "$RUNNER_TEMP"', shape)
+        self.assertIn('python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only control --strict --base "$SHAPE_BASE" --reports "$RUNNER_TEMP"', shape)
         self.assertIn('python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only validate --strict', validate)
         for inline in ('pip install', 'ansible-lint', 'check-swamp-shape.ts', 'check-swamp-base-policy.py', 'deno test',
                        'check-frozen-agent-commands', 'validate-swamp-workflows.py', 'check-grant-patterns.py'):
@@ -36,6 +36,15 @@ class WorkflowCallsTheScriptTest(unittest.TestCase):
         self.assertIn('${{ runner.temp }}/shape.json', WORKFLOW)
         for report in ('workflow-validation.json', 'grant-validation.json'):
             self.assertIn('${{ runner.temp }}/' + report, WORKFLOW)
+
+    def test_full_fixtures_are_only_manual_or_scheduled_and_do_not_use_beast(self):
+        fixtures = WORKFLOW.split('  fixtures:', 1)[1].split('  validate:', 1)[0]
+        self.assertIn("if: ${{ !inputs.changed-only && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}", fixtures)
+        self.assertIn('runs-on: ubuntu-26.04', fixtures)
+        self.assertIn('cancel-in-progress: true', fixtures)
+        self.assertIn("cron: '17 */3 * * *'", WORKFLOW)
+        required = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:', 1)[1]
+        self.assertNotIn('Full shape fixtures', required)
 
     def test_the_linter_pins_live_only_in_the_requirements_file(self):
         pins = (ROOT / 'swamp/ansible/shape-gate-requirements.txt').read_text()
@@ -57,6 +66,28 @@ class PlanTest(unittest.TestCase):
         for step in steps('shape')[-4:-1]:
             self.assertEqual(step.argv[step.argv.index('--base') + 1], BASE)
         self.assertIn('/reports/shape.json', steps('shape')[-4].argv)
+
+    def test_control_runs_all_four_static_rules_without_fixtures(self):
+        control = [step for step in steps('shape') if not step.parallel and step.name != 'ansible collections']
+        self.assertEqual([step.name for step in control],
+                         ['check-swamp-shape', 'check-swamp-base-policy', 'lint-behavior-names', 'frozen agent commands'])
+        code, calls, output = ExitCodeTest().run_gate(['--only', 'control', '--base', BASE], [])
+        self.assertEqual(code, 0, output)
+        self.assertEqual(len(calls), 4)
+        self.assertEqual([argv[0] for argv in calls], [step.argv[0] for step in control])
+        for failure in range(4):
+            code, calls, _ = ExitCodeTest().run_gate(['--only', 'control', '--base', BASE], [0] * failure + [1])
+            self.assertEqual(code, 1)
+            self.assertEqual(len(calls), 4)
+
+    def test_control_installs_the_pinned_tools_its_analyzers_call(self):
+        scope = gate['main'].__globals__
+        with tempfile.TemporaryDirectory() as scratch:
+            install = Mock(return_value=Path(scratch))
+            with patch.dict(scope, {'tool_path': install, 'execute': lambda *_args: []}), redirect_stdout(io.StringIO()):
+                code = gate['main'](['--only', 'control', '--base', BASE, '--reports', scratch])
+        self.assertEqual(code, 0)
+        install.assert_called_once()
 
     def test_the_validation_group_needs_credentials_where_ci_does(self):
         needs = {step.name: step.needs for step in steps('validate')}
