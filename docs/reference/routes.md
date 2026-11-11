@@ -128,6 +128,8 @@ When neither exists, creation stops before any source or runtime change. An `app
 | `default` | `<project>.test` |
 | Any other name | `<instance>.<project>.test` |
 
+The Conn [Project directory and name check](/reference/conn#threads-in-an-orbit-project) preview this same effective TLD without creating a Route.
+
 The source branch does not change the generated domain. `instance:create <project> <node> default --branch=release` still generates `<project>.test`.
 
 Cluster membership decides routing scope, independently of the domain. A Node in an active Cluster uses Cluster scope, also when the Cluster has no TLD and the domain uses the Node TLD. Every other Node uses Node scope. A Cluster that owns app Routes needs exactly one active Router. Public Process Routes select their edge independently, as [public Process hostnames](#public-process-hostnames) describes.

@@ -18,14 +18,15 @@ final readonly class RouteStateResolver
      * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
      * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
      */
-    public function forNode(Node $node, array $nodeOverrides = [], array $clusterOverrides = []): RoutePlacement
+    public function forNode(Node $node, array $nodeOverrides = [], array $clusterOverrides = [], ?Cluster $loadedCluster = null): RoutePlacement
     {
         $nodeOverride = $nodeOverrides[$node->id] ?? [];
         $nodeTld = array_key_exists('tld', $nodeOverride) ? $nodeOverride['tld'] : $node->tld;
         $clusterId = array_key_exists('cluster_id', $nodeOverride)
             ? $nodeOverride['cluster_id']
             : $node->cluster_id;
-        $cluster = $clusterId === null ? null : Cluster::query()->findOrFail($clusterId);
+        $cluster = $clusterId === null ? null : ($loadedCluster?->id === $clusterId
+            ? $loadedCluster : Cluster::query()->findOrFail($clusterId));
 
         if ($cluster instanceof Cluster) {
             $clusterOverride = $clusterOverrides[$cluster->id] ?? [];

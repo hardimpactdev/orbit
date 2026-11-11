@@ -5,7 +5,7 @@ description: "Create, register, reconcile a renamed branch or domain, set up, cl
 covers:
   - apps/cli/app/Commands/Instances/**
   - apps/gateway/app/Actions/Instances/{StartDevelopmentInstanceCreateAction,RenameInstanceAction}.php
-  - apps/gateway/app/Domain/Instances/InstanceName.php
+  - apps/gateway/app/Domain/Instances/{InstanceName,DevelopmentInstanceCreateAdmission}.php
   - apps/gateway/app/Data/Instances/{CreateInstanceData,RenameInstanceData}.php
   - apps/gateway/app/Http/Requests/Instances/{StoreInstanceRequest,RenameInstanceRequest}.php
   - packages/php-sdk/src/Requests/Instances/{Create,Register,Rename,Show,Update,Destroy,Clone,Transfer,Migrate}InstanceRequest.php
@@ -25,7 +25,7 @@ Instance JSON includes nullable `seed_path` and `seed_commit`. On `default`, the
 
 Every command accepts `--json`. Machine output never supplies consent. Human list commands use tables, with labeled records when the terminal is too narrow; detail commands show a tree and slow requests show progress.
 
-Placement commands create, adopt, inspect, and remove an Instance on one Node. Instance names use lowercase letters, digits and hyphens, contain 1–63 characters, and start and end with a letter or digit. Conn checks the same format with its [name check](/reference/conn#threads-in-an-orbit-project).
+Placement commands create, adopt, inspect, and remove an Instance on one Node. Instance names use lowercase letters, digits and hyphens, contain 1–63 characters, and start and end with a letter or digit. Conn checks the same format with its [name check](/reference/conn#threads-in-an-orbit-project). Its Project directory reports the shared read-only clone admission result before a name is chosen.
 
 `instance:create`, `instance:clone`, `instance:transfer`, `instance:migrate`, and `instance:destroy` return an Operation. `instance:rename` records the branch at once from the Node agent's report and returns the Instance. `instance:register` returns the Instance at once when the checkout's `.env` is absent or private, and otherwise an Operation for the run that protects `.env`. The Gateway validates and records intent, then queues the native start. The API returns the Operation before that start runs. Swamp executes the work. The CLI follows the Operation and prints its final receipt in JSON mode. `--idempotency-key=KEY` retries the same admission without creating another Operation. Ctrl+C stops following; it leaves the Operation running. Use `operation:show` to read it again.
 

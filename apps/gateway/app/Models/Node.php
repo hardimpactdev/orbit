@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 /**
@@ -37,6 +38,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string|null $agent_secret_hash
  * @property int|null $ssh_jump_node_id
  * @property-read Collection<int, NodeRole> $roles
+ * @property-read TaskVm|null $liveTaskVm
  * @property-read Collection<int, TaskVm> $taskVms
  * @property-read Collection<int, ToolManagerRecord> $toolManagers
  * @property-read Collection<int, Tool> $tools
@@ -106,6 +108,12 @@ final class Node extends Model
     public function roles(): HasMany
     {
         return $this->hasMany(NodeRole::class);
+    }
+
+    /** @return HasOne<TaskVm, $this> */
+    public function liveTaskVm(): HasOne
+    {
+        return $this->hasOne(TaskVm::class)->live();
     }
 
     /** @return HasMany<TaskVm, $this> */

@@ -15,14 +15,13 @@ use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlan;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\Deployment\DevelopmentDeploySteps;
+use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\InstanceContainer;
-use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
 use App\Domain\Instances\OwnedDatabaseSlug;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
@@ -34,12 +33,8 @@ use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Routes\NativeRouteAdmission;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\SourceControl\GitBranchName;
-use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -60,6 +55,7 @@ final readonly class StartDevelopmentInstanceCreateAction
         private NodeSettingsNormalizer $nodeSettings,
         private ManagedCheckoutOverlap $overlap,
         private InstanceDatabaseClonePlanner $databases,
+        private DevelopmentInstanceCreateAdmission $admission,
     ) {}
 
     public function execute(CreateInstanceData $data, ?string $caller, ?string $requestId): Operation
@@ -76,15 +72,9 @@ final readonly class StartDevelopmentInstanceCreateAction
 
         return DB::transaction(function () use ($data, $caller, $requestId): Operation {
             $project = Project::query()->findOrFail($data->projectId);
-            if ($project->source_access === ProjectSourceAccess::GhCli) {
-                throw new ResourceOperationException('operation.kind_unavailable', 'Native creation requires anonymous or scoped GitHub App repository access.', 503);
-            }
+            $this->admission->assertSourceAccess($project);
             $node = Node::query()->findOrFail($data->nodeId);
-            $this->assertDefaults($project);
-            $this->assertPlacement($node);
-            if ($project->source_profile_error !== null) {
-                throw new ResourceOperationException($project->source_profile_error, 'The Project source metadata is invalid or unsupported for a development Instance.', 422);
-            }
+            $this->admission->assertProject($project, $node);
             $root = $data->root === null ? null : ProjectRoot::validate($data->root, $project->type);
             $name = DefaultInstanceName::resolve($project, $data->name);
             $instance = Instance::query()->where('project_id', $project->id)->where('name', $name)->lockForUpdate()->first();
@@ -297,12 +287,9 @@ final readonly class StartDevelopmentInstanceCreateAction
                 throw new ResourceOperationException('instance.default_missing',
                     "The Project's default Instance runs on Node [{$default->node_id}]. Create its other Instances there.", 409);
             }
-            if ($default->status !== InstanceState::Active || $default->runtime()->value('seed_commit') === null) {
-                throw new ResourceOperationException('instance.default_missing', 'The Project\'s default Instance has no seed snapshot yet: finish its create first.', 409);
-            }
+            $this->admission->readyDefault($project, $default);
             $this->assertContainerProject($project);
-            app(InstanceLifecycleContributions::class)->assertCreateAvailable();
-            $this->modelRoute();
+            $this->admission->assertRuntime();
 
             return [true, $default];
         }
@@ -324,18 +311,6 @@ final readonly class StartDevelopmentInstanceCreateAction
     private function assertContainerProject(Project $project): void
     {
         app(InstanceContainer::class)->assertPhp($project);
-    }
-
-    /** A clone's agents reach the models only through the Node's forwarder to the router guard, with its placeholder key. */
-    private function modelRoute(): TaskVmModelRoute
-    {
-        if (! app()->bound(TaskVmModelRoute::class)) {
-            $this->unavailable('A clone needs the model router.');
-        }
-        $route = app(TaskVmModelRoute::class);
-        $route->assertReady();
-
-        return $route;
     }
 
     /**
@@ -372,33 +347,6 @@ final readonly class StartDevelopmentInstanceCreateAction
         // The default stays on the Project's default branch, which its deployments follow; a clone takes its own branch.
         return [...$containers->intent($instance, $containers->reserve($instance, $node, $source), $database, $source instanceof Instance ? $branch : '',
             $domain === null ? null : 'https://'.$domain), 'steps' => $steps];
-    }
-
-    private function unavailable(string $message): never
-    {
-        throw new ResourceOperationException('operation.kind_unavailable', $message, 503);
-    }
-
-    private function assertDefaults(Project $project): void
-    {
-        if (! is_string($project->default_branch) || ! GitBranchName::isValid($project->default_branch)
-            || ! is_string($project->root) || ! ProjectRoot::isValid($project->root, $project->type)) {
-            throw new ResourceOperationException('project.source_defaults_incomplete', "App [{$project->slug}] does not have complete source defaults.");
-        }
-        GitRepositoryOrigin::validate($project->repository_url);
-    }
-
-    private function assertPlacement(Node $node): void
-    {
-        if ($node->roles()->where('role', RoleName::AppProd)->where('status', LifecycleStatus::Active)->exists()) {
-            throw new ResourceOperationException('instance.candidate_required', 'Production Instances require instance:clone.', 409);
-        }
-        if ($node->status !== LifecycleStatus::Active || $node->platform !== 'linux') {
-            throw new ResourceOperationException('instance.node_inactive', 'The selected app-dev Node is not active.');
-        }
-        if (! $node->roles()->where('role', RoleName::AppDev)->where('status', LifecycleStatus::Active)->exists()) {
-            throw new ResourceOperationException('instance.node_not_app_dev', 'The selected Node has no active app-dev role.');
-        }
     }
 
     private function assertRetry(Instance $instance, Node $node, ?string $root, ?string $branch): void

@@ -11,7 +11,6 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Operations\StartsOperation;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Http\JsonResponse;
@@ -29,8 +28,8 @@ final class ConnProjectsController extends Controller
     public function index(Request $request, ConnThreadProjects $projects): JsonResponse
     {
         return response()->json([
-            'data' => $projects->defaults($this->caller($request))
-                ->map(static fn (Instance $default): array => ConnProjectData::fromDefault($default)->toArray())
+            'data' => $projects->all($this->caller($request))
+                ->map(static fn (ConnProjectData $project): array => $project->toArray())
                 ->all(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
