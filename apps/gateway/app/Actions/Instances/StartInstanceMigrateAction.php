@@ -13,6 +13,7 @@ use App\Domain\InstanceMigration\InstanceMigrationRoute;
 use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationIdempotency;
@@ -23,8 +24,8 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\DatabaseConnection;
-use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
@@ -34,6 +35,7 @@ use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use LogicException;
 
 /**
  * Admits the move of one checkout Instance into a container on its Node (docs/cli/instance/migrate.mmd) and records its whole
@@ -91,6 +93,15 @@ final readonly class StartInstanceMigrateAction
             // The Node's mirror fetches the branch from the checkout itself: commits that were never pushed come along, and it needs no token.
             $container = [...$this->containers->intent($instance, $runtime, $databases['servers'][0] ?? null, $branch, $route === null ? null : 'https://'.$route->domain),
                 'repository' => $instance->checkout_path, 'protocols' => ['file'], 'steps' => []];
+            $endpoints = $container['bridge_endpoints'];
+            if (! is_array($endpoints)) {
+                throw new LogicException('The container access plan must expose its endpoints.');
+            }
+            $environmentTargets = array_map(static function (mixed $value): array {
+                $target = ValidatedData::object($value);
+
+                return ['host' => ValidatedData::string($target['host']), 'port' => ValidatedData::integer($target['port'])];
+            }, array_values($endpoints));
             $reach = array_map($this->endpoint(...), $databases['servers']);
             $publication = $route === null || $before === null ? null : $this->routes->capture($instance, $route, $runtime, $before);
 
@@ -104,6 +115,11 @@ final readonly class StartInstanceMigrateAction
                     'checkout' => $instance->checkout_path, 'branch' => $branch, 'default' => $default === null,
                     'application' => ApplicationDirectory::resolve($instance->checkout_path, $instance->root ?? $instance->project->root),
                     'awake' => ['directory' => RuntimeHibernation::MarkerDirectory, 'path' => RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id))],
+                    'environment' => [
+                        'targets' => $environmentTargets,
+                        'node_addresses' => array_values(array_filter([$node->wireguard_ip, $node->lan_ip, $node->public_ssh_host])),
+                        'proxy_policy' => ['private_v4' => InstanceEgress::PrivateV4, 'private_domains' => app(PeerDnsPolicy::class)->domains()],
+                    ],
                     'databases' => $reach, 'processes' => $sourceProcesses, 'firewall_prefix' => InstanceContainer::firewallPrefix($instance),
                     'retire' => $this->retire($instance, $default),
                 ],
@@ -195,7 +211,7 @@ final readonly class StartInstanceMigrateAction
     private function databases(Instance $instance): array
     {
         $servers = $sqlite = [];
-        $targets = DatabaseConnectionTarget::query()->with('databaseConnection.server')->where('instance_id', $instance->id)
+        $targets = $instance->databaseConnectionTargets()->with('databaseConnection.server')
             ->orderByRaw("prefix = 'DB' desc")->orderBy('id')->get();
         foreach ($targets as $target) {
             $connection = $target->databaseConnection;

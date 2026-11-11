@@ -16,6 +16,7 @@ additionalFiles:
   - proof/cli-release.json
   - ansible/library/orbit_artifact.py
   - ansible/library/orbit_static_php.py
+  - ansible/library/orbit_migrate_env.py
   - ansible/tasks/artifact-fetch.yml
   - ansible/transport-exit-codes.json
   - ansible/operation-node-role-add.yml
@@ -80,6 +81,7 @@ additionalFiles:
   - ansible/tasks/instance-migrate-discard.yml
   - ansible/tasks/instance-migrate-retire.yml
   - ansible/tasks/instance-migrate-retirement-check.yml
+  - ansible/tasks/instance-migrate-env-check.yml
   - ansible/ai-router-task-guard.yml
   - ansible/ai-router-model-forwarder.yml
   - ansible/tasks/address-node.yml

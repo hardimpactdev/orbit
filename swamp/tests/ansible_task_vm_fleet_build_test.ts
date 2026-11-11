@@ -9,6 +9,7 @@ import {
   cleanupStockRoles,
   existingGatewayDns,
   freshGatewayDnsCheck,
+  missingGatewayDnsTool,
   prepareStockRoles,
   productionGatewayDns,
   stockBaseTasks,
@@ -561,6 +562,21 @@ Deno.test({
     );
   },
 });
+
+for (const check of [false, true]) {
+  Deno.test({
+    name: `local Gateway DNS fails with a named error before activation when dig is missing${check ? " in check mode" : ""}`,
+    ignore: !hasAnsible,
+    async fn() {
+      const result = await missingGatewayDnsTool(check);
+      assertEquals(result.status, "failed", result.output);
+      assertStringIncludes(result.output, "gateway.private_dns_tool_missing");
+      assertStringIncludes(result.output, "dig is required");
+      assertEquals(result.units, []);
+      assertEquals(result.output.includes("FAILED - RETRYING"), false);
+    },
+  });
+}
 
 Deno.test({
   name:

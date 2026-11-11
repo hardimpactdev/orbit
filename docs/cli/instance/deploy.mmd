@@ -34,6 +34,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - your Node has an access grant to Node 12
   %%> - Instance 42 is an active Instance of Project 7 on an app-prod or app-dev Node
+  %%> - a pending default Route projection refuses `deployment.projection_pending`; successful container create or migration completes that projection with its seed
   %%> - no other operation holds Instance 42; else `operation.target_busy`
   %%> Freezes:
   %%> - the branch and commit, the deploy steps, the shared paths and the release name
