@@ -7,7 +7,10 @@ if (Deno.args[0] === "--daemon") {
   });
   await new Promise(() => {});
 }
-const file = `${folder}/state.json`;
+const settings = JSON.parse(Deno.readTextFileSync(`${folder}/state.json`));
+const configRemote = Deno.env.get("INCUS_REMOTE") ?? "";
+const remote = settings.default_remote && configRemote !== "local";
+const file = `${folder}/${remote ? "remote-state" : "state"}.json`;
 const state = JSON.parse(Deno.readTextFileSync(file));
 state.profiles ??= {};
 state.instances ??= [];
@@ -15,6 +18,9 @@ const args = [...Deno.args];
 Deno.writeTextFileSync(`${folder}/calls`, JSON.stringify(args) + "\n", {
   append: true,
 });
+Deno.writeTextFileSync(`${folder}/targets`, JSON.stringify({
+  args, remote: Boolean(remote), configRemote, socket: Deno.env.get("INCUS_SOCKET") ?? "",
+}) + "\n", { append: true });
 const projectIndex = args.indexOf("--project");
 const project = projectIndex >= 0 ? args[projectIndex + 1] : "default";
 if (projectIndex >= 0) args.splice(projectIndex, 2);
@@ -241,6 +247,7 @@ if (family === "query") {
   });
   if (!state.publish_missing_archive) Deno.writeTextFileSync(archive(fingerprint), "published archive");
   // Incus commits image creation before the separate alias request.
+  if (state.publish_builder_owner) instance(action).config["user.orbit.stock-build"] = state.publish_builder_owner;
   Deno.writeTextFileSync(file, JSON.stringify(state));
   if (state.publish_alias_failure) fail("Injected publication alias assignment failure");
   state.images.at(-1).aliases.push({name: alias});
@@ -287,7 +294,8 @@ if (family === "query") {
       fail("Missing upstream archive");
     }
   }
-  state.instances.push({ name: args[2], project, status: "Stopped", config: {"volatile.base_image": source?.fingerprint} });
+  const config = Object.fromEntries(args.flatMap((arg, index) => arg === "--config" ? [pair(args[index + 1])] : []));
+  state.instances.push({ name: args[2], project, status: "Stopped", config: {...config, "volatile.base_image": source?.fingerprint} });
 } else if (family === "copy") {
   if (!instance(action)) fail("Instance not found");
   state.instances.push({ name, project, status: "Stopped" });

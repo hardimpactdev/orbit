@@ -121,15 +121,11 @@
       {{ container_restrictions_unset | default([]) | select('in', (container_project_after.stdout | from_json).config) | list }}
   changed_when: true
 
-- name: Read the container images
-  ansible.builtin.command:
-    argv: [incus, --project, "{{ container_host.project }}", image, list, --format, json]
-  register: container_images
-  changed_when: false
-
 - name: Read the image daemon identity
   ansible.builtin.command:
     argv: [incus, query, /1.0]
+  environment:
+    INCUS_REMOTE: local
   register: container_image_daemon
   changed_when: false
 
@@ -182,6 +178,7 @@
     project: "{{ container_host.project }}"
     alias: "{{ container_host.alias }}"
     archive_directory: "{{ container_image_directory }}/images"
+    socket: "{{ container_image_socket }}"
     failure_code: "{{ container_host.fail }}"
 
 # The container bridge has its own catalog names: the withdrawal of a bridge's rules deletes them by comment.
