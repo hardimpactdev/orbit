@@ -25,6 +25,7 @@ function fixture() {
             gate: null as string | null,
             resumed_after: 0,
             history_version: "f".repeat(64) as string | null,
+            development_retries: {} as Record<string, unknown>,
         },
     };
     const listed: unknown[] = [instance];
@@ -81,6 +82,14 @@ function fixture() {
                 (body as { route_operation_id?: number }).route_operation_id ===
                     200
             ) instance.development_projection_route_id = null;
+            const ledger =
+                (body as { development_retries?: Record<string, unknown> })
+                    .development_retries;
+            if (ledger) {
+                instance.auto_deploy.development_retries = structuredClone(
+                    ledger,
+                );
+            }
             data = {};
         } else throw new Error("Unexpected HTTP request");
         return Promise.resolve({
@@ -2100,3 +2109,236 @@ for (const intent of matrixIntents) {
         }
     });
 }
+
+Deno.test("durable retry limit survives fifty later automatic deployments", async () => {
+    const f = fixture();
+    f.history.push(failed(1), failed(2), failed(3));
+    await f.run("2026-11-01T05:00:00.000Z");
+    assertEquals(f.memory.get("development-7")?.result, "commit_failed");
+    assertEquals(f.starts, []);
+    // The real recorder retains only 50 rows. Fifty other automatic heads
+    // finish, so the three B failures disappear without any manual deploy.
+    f.history.splice(
+        0,
+        f.history.length,
+        ...Array.from({ length: 50 }, (_, i) => ({
+            ...failed(i + 4),
+            commit: (i + 4).toString(16).padStart(40, "0"),
+        })),
+    );
+    // The branch moves back to the same previously exhausted SHA B.
+    await f.run("2026-11-02T05:00:00.000Z");
+    assertEquals(f.starts, []);
+    assertEquals(f.memory.get("development-7")?.result, "commit_failed");
+});
+
+for (const reset of [false, true]) {
+    Deno.test(`matrix pruned-return-after-weeks / manual-reset-${reset}`, async () => {
+        const f = fixture();
+        f.history.push(failed(1), failed(2), failed(3));
+        await f.run();
+        const stopped = structuredClone(
+            f.instance.auto_deploy.development_retries,
+        );
+        // Other green heads remain deployable despite B's stop.
+        const C = "c".repeat(40);
+        f.source.head = C;
+        await f.run("2026-11-01T05:00:00.000Z");
+        assertEquals(f.starts.length, 1);
+        f.operation.status = "succeeded";
+        f.instance.seed_commit = C;
+        await f.run("2026-11-01T05:01:00.000Z");
+        f.history.splice(
+            0,
+            f.history.length,
+            ...Array.from({ length: 50 }, (_, i) => ({
+                ...failed(i + 4),
+                status: "succeeded",
+                commit: (i + 4).toString(16).padStart(40, "0"),
+            })),
+        );
+        f.source.head = B;
+        await f.run("2026-12-20T05:00:00.000Z");
+        assertEquals(f.starts.length, 1);
+        assertEquals(f.memory.get("development-7")?.result, "commit_failed");
+        assertEquals(
+            (f.instance.auto_deploy.development_retries.commits as {
+                commit: string;
+                attempts: number;
+            }[])
+                .find((e) => e.commit === B)?.attempts,
+            3,
+        );
+        if (reset) {
+            f.history.push({
+                ...failed(54, true),
+                commit: C,
+                status: "succeeded",
+            });
+            await f.run("2026-12-20T05:01:00.000Z");
+            assertEquals(f.starts.length, 2);
+            // Even after the manual row is pruned, its durable boundary remains.
+            f.memory.delete("development-7");
+            f.history.splice(
+                0,
+                f.history.length,
+                ...Array.from({ length: 50 }, (_, i) => ({
+                    ...failed(i + 55),
+                    status: "succeeded",
+                    commit: C,
+                })),
+            );
+            await f.run("2027-01-20T05:00:00.000Z");
+            assertEquals(f.starts.length, 3);
+            assertEquals(
+                f.instance.auto_deploy.development_retries.manual_after,
+                54,
+            );
+        } else {
+            // Losing/replaying Swamp checkpoints cannot lose the authoritative total.
+            f.memory.clear();
+            await f.run("2027-01-20T05:00:00.000Z");
+            assertEquals(f.starts.length, 1);
+            assertEquals(
+                f.memory.get("development-7")?.result,
+                "commit_failed",
+            );
+            assertEquals(
+                f.instance.auto_deploy.development_retries.commits,
+                stopped.commits,
+            );
+        }
+    });
+}
+
+for (const intent of ["id", "key", "stale-id", "stale-key"]) {
+    Deno.test(`matrix durable-duplicate-evidence / ${intent}`, async () => {
+        const f = fixture();
+        const checkpoint = {
+            pending: {
+                commit: B,
+                key: "durable.duplicate",
+                operation_id: intent.endsWith("id") ? 100 : null,
+                manual_after: 0,
+            },
+        };
+        f.operation.status = "failed";
+        f.operation.result = { deployment_id: 1 };
+        f.history.push(failed(1));
+        if (intent.startsWith("stale")) {
+            f.source.head = "c".repeat(40);
+            f.operations.set(101, {
+                ...f.operation,
+                id: 101,
+                status: "running",
+            });
+            f.heldBy(101);
+        }
+        f.memory.set("development-7", structuredClone(checkpoint));
+        await f.run();
+        // Replay the pending checkpoint against both retained row and receipt.
+        f.memory.set("development-7", structuredClone(checkpoint));
+        await f.run("2026-10-31T05:09:59.000Z");
+        const entries = f.instance.auto_deploy.development_retries.commits as {
+            attempts: number;
+            last_failure_at: string;
+            stopped: boolean;
+        }[];
+        assertEquals(entries[0].attempts, 1);
+        assertEquals(entries[0].last_failure_at, now);
+        assertEquals(entries[0].stopped, false);
+        f.holder(false);
+        f.source.head = B;
+        await f.run("2026-10-31T05:10:00.000Z");
+        assertEquals(f.starts.length, 1);
+    });
+}
+
+Deno.test("matrix durable-late-reconciliation / unknown-history-id", async () => {
+    const f = fixture();
+    await f.run();
+    f.operation.status = "failed";
+    await f.run();
+    // A timeout initially had no row. Reconciliation later attaches one to its receipt.
+    f.operation.result = { deployment_id: 1 };
+    f.history.push(failed(1));
+    await f.run("2026-10-31T05:09:59.000Z");
+    const entries = f.instance.auto_deploy.development_retries.commits as {
+        attempts: number;
+    }[];
+    assertEquals(entries[0].attempts, 1);
+    assertEquals(f.starts.length, 1);
+    await f.run("2026-10-31T05:10:00.000Z");
+    assertEquals(f.starts.length, 2);
+});
+
+Deno.test("matrix durable-checkpoint-replay / failed-write", async () => {
+    const f = fixture();
+    await f.run();
+    f.operation.status = "failed";
+    const write = f.ctx.writeResource;
+    f.ctx.writeResource = () =>
+        Promise.reject(new Error("Checkpoint unavailable"));
+    await assertRejects(f.run);
+    const entries = f.instance.auto_deploy.development_retries.commits as {
+        attempts: number;
+    }[];
+    assertEquals(entries[0].attempts, 1);
+    // The old pending checkpoint replays after the Gateway has already committed the count.
+    f.ctx.writeResource = write;
+    await f.run("2026-10-31T05:01:00.000Z");
+    assertEquals(
+        (f.instance.auto_deploy.development_retries.commits as {
+            attempts: number;
+        }[])[0].attempts,
+        1,
+    );
+    await f.run("2026-10-31T05:09:59.000Z");
+    assertEquals(f.starts.length, 1);
+    await f.run("2026-10-31T05:10:00.000Z");
+    assertEquals(f.starts.length, 2);
+});
+
+Deno.test("matrix durable-success-reset / replay-old-no-row-failure", async () => {
+    const f = fixture();
+    const checkpoint = {
+        pending: {
+            commit: B,
+            key: "old.failed.no-row",
+            operation_id: 100,
+            manual_after: 0,
+        },
+    };
+    f.operation.status = "failed";
+    f.memory.set("development-7", checkpoint);
+    await f.run();
+    // Public ledger after a later, actually successful B deployment (Operation 101).
+    // Its history was pruned before this replay of the older failed receipt.
+    const entries = f.instance.auto_deploy.development_retries
+        .commits as Record<string, unknown>[];
+    Object.assign(entries[0], {
+        attempts: 0,
+        last_failure_at: null,
+        stopped: false,
+        evidence: [],
+        reset_operation_id: 101,
+        reset_after: 1,
+        reset_at: "2026-10-31T05:02:00.000Z",
+    });
+    f.memory.set("development-7", checkpoint);
+    await f.run("2026-10-31T05:20:00.000Z");
+    assertEquals(
+        (f.instance.auto_deploy.development_retries.commits as {
+            attempts: number;
+        }[])[0].attempts,
+        0,
+    );
+    await f.run("2026-10-31T05:21:00.000Z");
+    assertEquals(
+        (f.instance.auto_deploy.development_retries.commits as {
+            attempts: number;
+        }[])[0].attempts,
+        0,
+    );
+    assertEquals(f.starts.length, 1);
+});

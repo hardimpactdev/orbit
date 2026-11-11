@@ -8,6 +8,7 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\FailNativeOperationAction;
 use App\Domain\Instances\Deployment\AutomaticDeployAlerts;
+use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
@@ -392,7 +393,7 @@ it('settles a failed automatic observation only after a successful manual deploy
     if ($succeeded && $matching) {
         expect($instance->auto_deploy_state)->toMatchArray(['result' => 'up_to_date', 'head' => $commit, 'commit' => $commit, 'error_code' => null, 'message' => null]);
     } else {
-        expect($instance->auto_deploy_state)->toBe($failed);
+        expect(array_diff_key($instance->auto_deploy_state, ['development_retries' => true]))->toBe($failed);
     }
 })->with([
     'container matching head' => [true, true, true],
@@ -556,4 +557,78 @@ it('keeps the existing recovery advice when alerting an interrupted deployment',
     (new AutomaticDeployAlerts($notifier))->failed($instance, $deployment);
 
     expect($notifier->summary)->toContain('does not deploy automatically again');
+});
+
+it('keeps development retry totals through real history pruning and only resets after actual manual execution', function (): void {
+    Queue::fake();
+    deployVault();
+    $instance = deployDefault(container: true);
+    $instance->runtime()->update(['seed_commit' => str_repeat('a', 40)]);
+    $instance->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
+    $commit = str_repeat('b', 40);
+    $ledger = ['manual_after' => 0, 'observed_through' => 0, 'unsettled' => [], 'commits' => [[
+        'commit' => $commit, 'attempts' => 3, 'last_failure_at' => now()->toIso8601String(), 'stopped' => true,
+        'evidence' => [['key' => 'failure.1', 'deployment_id' => null], ['key' => 'failure.2', 'deployment_id' => null], ['key' => 'failure.3', 'deployment_id' => null]],
+        'reset_after' => 0, 'reset_at' => null,
+    ]]];
+    $history = new AutomaticDeployHistory($instance)->snapshot();
+    $path = '/api/v1/instances/'.$instance->id;
+    $this->putJson($path.'/auto-deploy/policy', [
+        'resumed_after' => 0, 'last_deployment_id' => $history->lastDeploymentId, 'history_version' => $history->version,
+        'result' => 'commit_failed', 'commit' => $commit, 'head' => $commit, 'since' => now()->toIso8601String(),
+        'error_code' => null, 'message' => null, 'pause' => null, 'development_retries' => $ledger,
+    ])->assertOk()->assertJsonPath('data.auto_deploy.development_retries', $ledger);
+    $recorder = app(InstanceDeploymentRecorder::class);
+    foreach (range(1, 53) as $index) {
+        $row = $recorder->start($instance, 'swamp:auto-deploy');
+        $recorder->recordNative($row, $index <= 3 ? 'failed' : 'succeeded', null, [
+            'release' => null, 'selected_release' => null, 'commit' => $index <= 3 ? $commit : str_pad(dechex($index), 40, '0', STR_PAD_LEFT), 'failed_step' => null,
+        ]);
+    }
+    expect($instance->deployments()->count())->toBe(50)
+        ->and($instance->deployments()->where('commit', $commit)->exists())->toBeFalse()
+        ->and($instance->fresh()->auto_deploy_state['development_retries'])->toBe($ledger);
+    $this->postJson($path.'/auto-deploy/disable')->assertOk()->assertJsonPath('data.auto_deploy.development_retries', $ledger);
+    $this->postJson($path.'/auto-deploy/enable')->assertOk()->assertJsonPath('data.auto_deploy.development_retries', $ledger);
+    // Admission alone, including cancellation, is not an actual manual deployment.
+    $operation = app(StartInstanceDeployAction::class)->execute($instance->fresh(), 'operator', null);
+    expect($instance->fresh()->auto_deploy_state['development_retries'])->toBe($ledger);
+    app(CancelOperationAction::class)->execute($operation);
+    expect($instance->fresh()->auto_deploy_state['development_retries'])->toBe($ledger);
+    $operation = app(StartInstanceDeployAction::class)->execute($instance->fresh(), 'operator', null);
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'manual-reset']]);
+    app(InstanceDeployProjectionRouter::class)->apply($operation, ['status' => 'failed', 'run_id' => 'manual-reset',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [
+            'steps' => [], 'summary' => ['failed_steps' => ['Check out in the container']]]]);
+    $reset = $instance->fresh()->auto_deploy_state['development_retries'];
+    expect($reset['commits'])->toBe([])->and($reset['manual_after'])->toBeGreaterThan(0);
+    foreach (range(1, 50) as $index) {
+        $row = $recorder->start($instance, 'swamp:auto-deploy');
+        $recorder->recordNative($row, 'succeeded', null, ['release' => null, 'selected_release' => null,
+            'commit' => str_repeat('c', 40), 'failed_step' => null]);
+    }
+    expect($instance->deployments()->where('id', $reset['manual_after'])->exists())->toBeFalse()
+        ->and($instance->fresh()->auto_deploy_state['development_retries'])->toBe($reset);
+});
+
+it('resets only the successfully deployed SHA in the durable development ledger', function (): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $commit = str_repeat('b', 40);
+    $other = str_repeat('c', 40);
+    $entry = ['attempts' => 2, 'last_failure_at' => now()->toIso8601String(), 'stopped' => false,
+        'evidence' => [['key' => 'failed', 'deployment_id' => 1]], 'reset_after' => 0, 'reset_at' => null];
+    $instance->update(['auto_deploy_state' => ['development_retries' => ['manual_after' => 0, 'observed_through' => 0,
+        'unsettled' => [], 'commits' => [['commit' => $commit, ...$entry], ['commit' => $other, ...$entry]]]]]);
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'swamp:auto-deploy', null, $commit, $instance->node_id);
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'success-reset']]);
+    $data = ['status' => 'succeeded', 'run_id' => 'success-reset', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['steps' => [ContainerDeployOutcome::ResultStep => ['stdout' => json_encode(['commit' => $commit], JSON_THROW_ON_ERROR)]], 'summary' => ['failed_steps' => []]]];
+    app(InstanceDeployProjectionRouter::class)->apply($operation, $data);
+    $entries = $instance->fresh()->auto_deploy_state['development_retries']['commits'];
+    expect($entries[0]['attempts'])->toBe(0)->and($entries[0]['evidence'])->toBe([])->and($entries[0]['reset_after'])->toBeGreaterThan(0)->and($entries[0]['reset_operation_id'])->toBe($operation->id)
+        ->and($entries[1])->toBe(['commit' => $other, ...$entry]);
+    app(InstanceDeployProjectionRouter::class)->apply($operation->fresh(), $data);
+    expect($instance->fresh()->auto_deploy_state['development_retries']['commits'])->toBe($entries);
 });

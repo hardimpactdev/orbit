@@ -43,6 +43,9 @@ final readonly class PublishAutomaticDeployPolicyAction
                     throw new ResourceOperationException('instance.projection_unproven', 'The authoritative Route has no matching completed publication.', 409);
                 }
             }
+            if ($data->developmentRetries !== null && ! $instance->placedOnAppDev()) {
+                throw new ResourceOperationException('instance.auto_deploy_development_required', 'Development retries require development placement.', 409);
+            }
             $instance->auto_deploy_state = [...($instance->auto_deploy_state ?? []), ...$data->projection()];
             $instance->save();
 

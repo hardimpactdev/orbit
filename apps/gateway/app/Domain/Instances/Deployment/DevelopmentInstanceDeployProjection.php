@@ -52,7 +52,7 @@ final readonly class DevelopmentInstanceDeployProjection implements DirectOperat
     {
         return DB::transaction(function () use ($operation, $data): Operation {
             $locked = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-            $instance = Instance::query()->with(['node', 'project'])->findOrFail($locked->target_id);
+            $instance = Instance::query()->with(['node', 'project'])->lockForUpdate()->findOrFail($locked->target_id);
             $terminal = $locked->status->terminal();
             $status = ValidatedData::string($data['status']);
             $payload = ValidatedData::object($data['result'] ?? []);
@@ -65,6 +65,14 @@ final readonly class DevelopmentInstanceDeployProjection implements DirectOperat
                 $row = $this->history->start($instance, $locked->triggered_by ?? 'operation', callerNodeId: $locked->callerNodeId());
                 $historyId = $row->id;
                 $locked->update(['state' => [...($locked->state ?? []), 'deployment_id' => $historyId]]);
+                if (! in_array($locked->triggered_by, AutomaticDeployHistory::Triggers, true)) {
+                    $ledger = ValidatedData::object($instance->auto_deploy_state['development_retries'] ?? []);
+                    $instance->auto_deploy_state = [...($instance->auto_deploy_state ?? []), 'development_retries' => [
+                        ...$ledger, 'manual_after' => $historyId, 'observed_through' => $ledger['observed_through'] ?? 0,
+                        'unsettled' => [], 'commits' => [],
+                    ]];
+                    $instance->save();
+                }
             }
             $text = static fn (mixed $value, int $limit): ?string => $value === null ? null : mb_strcut(ValidatedData::string($value), 0, $limit, 'UTF-8');
             $facts = ['deployment_id' => $historyId, 'release' => null, 'selected_release' => null,
@@ -99,6 +107,18 @@ final readonly class DevelopmentInstanceDeployProjection implements DirectOperat
             }
             $row = InstanceDeployment::query()->where('instance_id', $instance->id)->findOrFail($historyId);
             $this->history->recordNative($row, $status, ValidatedData::nullableString($data['error_code'] ?? null), $facts);
+            if ($status === 'succeeded' && is_array($instance->auto_deploy_state['development_retries'] ?? null)) {
+                $state = $instance->auto_deploy_state;
+                $ledger = ValidatedData::object($state['development_retries']);
+                foreach ($ledger['commits'] ?? [] as $index => $entry) {
+                    if ($entry['commit'] === $facts['commit']) {
+                        $ledger['commits'][$index] = [...$entry, 'attempts' => 0, 'last_failure_at' => null, 'stopped' => false,
+                            'evidence' => [], 'reset_operation_id' => $locked->id, 'reset_after' => $historyId, 'reset_at' => now()->toIso8601String()];
+                    }
+                }
+                $instance->auto_deploy_state = [...$state, 'development_retries' => $ledger];
+                $instance->save();
+            }
 
             return $projected;
         });

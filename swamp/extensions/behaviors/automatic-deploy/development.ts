@@ -15,6 +15,12 @@ import {
     terminalOperation,
 } from "./development-policy.ts";
 
+import {
+    DevelopmentRetries,
+    observeRetryHistory,
+    recordRetryFailure,
+} from "./development-retries.ts";
+
 export const DevelopmentState = z.object({
     sequence: z.number().int().nonnegative().default(0),
     pending: z.object({
@@ -28,7 +34,7 @@ export const DevelopmentState = z.object({
         key: z.string(),
         operation_id: z.number().int().positive().nullable(),
     }).nullable().default(null),
-    // Evidence absent from deployment history, not a separate retry counter.
+    // Receipt evidence awaiting history linkage; totals live only in the Gateway ledger.
     unrecorded_failures: z.array(z.object({
         key: z.string(),
         commit: sha,
@@ -72,6 +78,7 @@ const Instance = z.object({
         gate: z.string().nullable(),
         resumed_after: z.number().int(),
         history_version: z.string(),
+        development_retries: DevelopmentRetries,
     }),
 });
 
@@ -159,8 +166,13 @@ export async function tickDevelopment(
                 current.auto_deploy.policy_owner !== "swamp"
             ) continue;
             const instance = Instance.parse(record);
+            const retries = instance.auto_deploy.development_retries;
+            let savedRetries = JSON.stringify(retries);
+            let saveRetries: (() => Promise<void>) | undefined;
             let saved = JSON.stringify(state);
             const save = async () => {
+                // Persist retry evidence before dropping or advancing its checkpoint intent.
+                await saveRetries?.();
                 if (JSON.stringify(state) === saved) return;
                 handles.set(
                     name,
@@ -177,27 +189,16 @@ export async function tickDevelopment(
                     `/api/v1/instances/${id}/deployment-source/head`,
                 ),
             ).head;
-            const publish = async (
+            const project = async (
                 result: string,
-                operationId: number | null = null,
                 routeOperationId: number | null = null,
                 commit = head,
             ) => {
-                const changed = state.result !== result ||
-                    state.commit !== commit;
-                if (changed) state.since = now;
-                const activity = changed &&
-                    !["up_to_date", "deploying", "gate_pending"].includes(
-                        result,
-                    );
-                if (activity) state.sequence++;
-                state.result = result;
-                state.commit = commit;
-                await save();
-                await request(
+                return await request(
                     "PUT",
                     `/api/v1/instances/${id}/auto-deploy/policy`,
                     {
+                        development_retries: retries,
                         resumed_after: instance.auto_deploy.resumed_after,
                         last_deployment_id: Math.max(
                             0,
@@ -218,6 +219,35 @@ export async function tickDevelopment(
                             : { route_operation_id: routeOperationId }),
                     },
                 );
+            };
+            saveRetries = async () => {
+                if (JSON.stringify(retries) === savedRetries) return;
+                await project(
+                    state.result ?? "busy",
+                    null,
+                    state.commit ?? head,
+                );
+                savedRetries = JSON.stringify(retries);
+            };
+            const publish = async (
+                result: string,
+                operationId: number | null = null,
+                routeOperationId: number | null = null,
+                commit = head,
+            ) => {
+                const changed = state.result !== result ||
+                    state.commit !== commit;
+                if (changed) state.since = now;
+                const activity = changed &&
+                    !["up_to_date", "deploying", "gate_pending"].includes(
+                        result,
+                    );
+                if (activity) state.sequence++;
+                state.result = result;
+                state.commit = commit;
+                await project(result, routeOperationId, commit);
+                savedRetries = JSON.stringify(retries);
+                await save();
                 if (activity) {
                     emit(id, `dev.policy.${id}.${state.sequence}`, {
                         event: "activity",
@@ -234,12 +264,30 @@ export async function tickDevelopment(
             };
             // The enable watermark resumes production pause policy; it is not
             // evidence of a manual deployment and must never erase attempts.
-            const manual = Math.max(
-                0,
-                ...history.filter((r) =>
-                    r.kind === "deploy" && !isAutomaticDeployment(r)
-                ).map((r) => r.id),
-            );
+            // A receipt initially without history can acquire a row during reconciliation.
+            // Link it before importing that row, so it never becomes a second attempt.
+            for (const entry of retries.commits) {
+                for (const evidence of entry.evidence) {
+                    if (
+                        evidence.key === null ||
+                        evidence.deployment_id !== null ||
+                        !history.some((r) =>
+                            r.commit === entry.commit && eligibleFailure(r) &&
+                            (r.id > retries.observed_through ||
+                                retries.unsettled.includes(r.id))
+                        )
+                    ) continue;
+                    const operation = await admissions.receipt(
+                        id,
+                        entry.commit,
+                        evidence.key,
+                    );
+                    evidence.deployment_id = operation?.result?.deployment_id ??
+                        null;
+                }
+            }
+            observeRetryHistory(retries, history);
+            const manual = retries.manual_after;
             // Only history carrying the admission SHA replaces retained failure evidence.
             // A terminal row with a null SHA cannot account for that commit.
             state.unrecorded_failures = state.unrecorded_failures.filter((f) =>
@@ -249,10 +297,30 @@ export async function tickDevelopment(
                     r.commit === f.commit && isAutomaticDeployment(r)
                 )
             );
+            for (const failure of state.unrecorded_failures) {
+                recordRetryFailure(
+                    retries,
+                    failure.commit,
+                    failure.key,
+                    failure.deployment_id,
+                    failure.finished_at,
+                );
+            }
             const recordFailure = (
                 intent: NonNullable<typeof state.pending>,
                 deploymentId: number | null,
+                operationId: number,
             ) => {
+                if (
+                    !recordRetryFailure(
+                        retries,
+                        intent.commit,
+                        intent.key,
+                        deploymentId,
+                        now,
+                        operationId,
+                    )
+                ) return;
                 if (
                     !state.unrecorded_failures.some((f) => f.key === intent.key)
                 ) {
@@ -286,10 +354,27 @@ export async function tickDevelopment(
                     recordFailure(
                         intent,
                         operation.result?.deployment_id ?? null,
+                        operation.id,
+                    );
+                }
+                if (
+                    historyEvidence && failureStatus(operation.status) &&
+                    operation.error_code !== "deployment.paused" &&
+                    intent.manual_after >= manual && history.some((r) =>
+                        r.id === operation.result?.deployment_id &&
+                        eligibleFailure(r)
+                    )
+                ) {
+                    recordRetryFailure(
+                        retries,
+                        intent.commit,
+                        intent.key,
+                        operation.result!.deployment_id!,
+                        now,
+                        operation.id,
                     );
                 }
                 state.pending = null;
-                await save();
                 // A later manual deployment supersedes this automatic attempt.
                 // Its boundary already discarded retry evidence; evaluate the live seed/head.
                 if (intent.manual_after >= manual) {
@@ -304,7 +389,9 @@ export async function tickDevelopment(
                         if (
                             intent.commit === head &&
                             operation.error_code !== "deployment.paused"
-                        ) continue;
+                        ) {
+                            continue;
+                        }
                     } else if (instance.seed_commit === intent.commit) {
                         await publish(
                             "up_to_date",
@@ -312,7 +399,9 @@ export async function tickDevelopment(
                             null,
                             intent.commit,
                         );
-                        if (intent.commit === head) continue;
+                        if (intent.commit === head) {
+                            continue;
+                        }
                     }
                 }
                 // A stale success cannot prove the current container's seed; observe normally.
@@ -409,17 +498,11 @@ export async function tickDevelopment(
                     continue;
                 }
             }
-            const failures = [
-                ...history.filter((r) =>
-                    r.id > manual && eligibleFailure(r) && r.commit === head
-                ).map((r) => ({ finished_at: r.finished_at ?? r.started_at })),
-                ...state.unrecorded_failures.filter((f) => f.commit === head),
-            ];
-            const last = failures.sort((a, b) =>
-                Date.parse(b.finished_at) - Date.parse(a.finished_at)
-            )[0];
-            const retry = last &&
-                automaticRetry(failures.length, last.finished_at, now);
+            const entry = retries.commits.find((e) => e.commit === head);
+            const retry = entry?.stopped
+                ? "commit_failed"
+                : entry?.last_failure_at &&
+                    automaticRetry(entry.attempts, entry.last_failure_at, now);
             if (retry) {
                 await publish(retry);
                 continue;

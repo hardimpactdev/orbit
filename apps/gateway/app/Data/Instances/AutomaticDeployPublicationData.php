@@ -23,11 +23,18 @@ final class AutomaticDeployPublicationData extends Data
         public ?string $message,
         public ?InstanceAutoDeployPauseData $pause,
         public ?int $routeOperationId = null,
+        /** @var array<string, mixed>|null */
+        public ?array $developmentRetries = null,
     ) {}
 
     /** @return array<string, mixed> */
     public function projection(): array
     {
-        return array_diff_key($this->toArray(), array_flip(['resumed_after', 'last_deployment_id', 'history_version', 'route_operation_id']));
+        $projection = array_diff_key($this->toArray(), array_flip(['resumed_after', 'last_deployment_id', 'history_version', 'route_operation_id']));
+        if ($this->developmentRetries === null) {
+            unset($projection['development_retries']);
+        }
+
+        return $projection;
     }
 }

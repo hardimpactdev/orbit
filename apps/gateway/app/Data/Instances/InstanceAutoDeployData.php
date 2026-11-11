@@ -39,6 +39,8 @@ final class InstanceAutoDeployData extends Data
         public ?string $historyVersion,
         public bool $eligible,
         public bool|Optional $developmentEligible,
+        /** @var array<string, mixed>|Optional */
+        public array|Optional $developmentRetries,
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -57,6 +59,7 @@ final class InstanceAutoDeployData extends Data
         return new self(
             eligible: $eligible,
             developmentEligible: $placement === 'production' ? new Optional : $developmentDefault,
+            developmentRetries: $placement === 'production' ? new Optional : ($state['development_retries'] ?? ['manual_after' => 0, 'observed_through' => 0, 'unsettled' => [], 'commits' => []]),
             resumedAfter: $instance->auto_deploy_resumed_after,
             blocked: $history === null ? [] : array_values(array_unique([...$automatic->blocked(), ...$history->rolledAway])),
             historyVersion: $history?->version,

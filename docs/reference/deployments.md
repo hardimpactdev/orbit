@@ -331,7 +331,7 @@ Development tests only the current head, not older green ancestors. Each later t
 
 The `auto_deploy` flag has the same meaning for development and production: on permits automatic deployment; off excludes selection and admission. A new container default starts with it on when creation succeeds and records its first seed. An expand-only data migration enables existing ready container defaults; it changes neither checkout Instances nor production settings.
 
-Turn automatic deployment off for one ready container default with `orbit instance:auto-deploy:disable <instance>`. Turn it back on with `orbit instance:auto-deploy:enable <instance>`. Disabling does not cancel a deployment already running, but queued automatic work rechecks the flag before execution. Turning the flag off and on preserves the per-commit retry clock and attempt count, including pending and retained failures. Only an actual manual deployment history row resets that accounting. Manual deployment remains available. Both commands refuse a checkout Instance with `instance.auto_deploy_container_default_required`: a user's working tree is never an automatic deployment target.
+Turn automatic deployment off for one ready container default with `orbit instance:auto-deploy:disable <instance>`. Turn it back on with `orbit instance:auto-deploy:enable <instance>`. Disabling does not cancel a deployment already running, but queued automatic work rechecks the flag before execution. Turning the flag off and on preserves the per-commit retry clock and attempt count, including pending and retained failures. Only an actual manual deployment resets all SHA accounting; successful deployment clears its own SHA. Manual deployment remains available. Both commands refuse a checkout Instance with `instance.auto_deploy_container_default_required`: a user's working tree is never an automatic deployment target.
 
 Before rolling code back past the ready-container eligibility fix:
 
@@ -378,6 +378,20 @@ Gateway target exclusion still applies: a timed-out run holds its target until n
 Development policy owns its decoder, outcome classification and receipt handling in a separate module. Production policy retains its original decoder and decisions. The Gateway selects the production or development projector at one router; development terminal rules never run through the production projector. Production guard fixtures compare the production receipts, history and retry decisions against the same harness on `orbit-main`.
 
 Policy tests are named `matrix <stem> / <intent>` in `development_test.ts`, with intents `none`, `id`, `key`, `stale-id`, and `stale-key`. The two stale forms are separate tests of the same old-commit rule. Tests check the same head and a newer green head where eligible. Cells without a pending intent reuse history or retained evidence from settlement; without either, there is no known attempt to count. The timeout and start-refusal tests cover both row shapes; the interruption test covers old null and new pinned SHAs.
+
+The durable retry cells in `development_test.ts` cover persistence across observations separately from the five-intent matrix:
+
+| Test | Evidence and result |
+| --- | --- |
+| `durable retry limit survives fifty later automatic deployments` | After three failures of B and fifty later automatic deployments that prune B's rows, returning to B stays `commit_failed`. This test fails on `4ced2d2`. |
+| `matrix pruned-return-after-weeks / manual-reset-false` | A newer green head deploys; B returns seven weeks later and stays stopped, including with a fresh Swamp checkpoint. |
+| `matrix pruned-return-after-weeks / manual-reset-true` | An actual manual deployment resets pruned B. The reset still holds after the manual row is pruned. |
+| `matrix durable-duplicate-evidence / <intent>` | ID, key and both stale intent forms replay one receipt and its history row. The failure counts once and the original ten-minute clock holds. |
+| `matrix durable-checkpoint-replay / failed-write` | The Gateway commits a failure before the Swamp checkpoint write fails; replay counts it once. |
+| `matrix durable-success-reset / replay-old-no-row-failure` | A success reset fences an older failed receipt even after its history is pruned. |
+| `matrix durable-late-reconciliation / unknown-history-id` | A failure initially has no row ID; later receipt reconciliation links its row without a second failure. |
+
+`ContainerDefaultDeployTest.php` publishes the ledger through the real policy API, prunes history through the real 50-row recorder, proves off/on and unexecuted manual cancellation preserve the ledger, and records an actual manual reset before pruning its row too. A successful deployment resets only its SHA and preserves the reset on projection replay.
 
 Replay uses the underlying terminal outcome, so it never adds a second failure. The table names the real client proof in `development_test.ts` for absent admission and the Gateway admission proof in `ContainerDefaultDeployTest.php` for replay. Pre-admission refusal and absent admission share the same fence once a key was saved.
 
@@ -470,7 +484,11 @@ A rollback or manual deployment can also end between the tick's read of the hist
 
 The Gateway exposes policy evidence to Swamp. Swamp never reads GitHub, the database, or a notifier directly. These contracts require Gateway Node access. Policy starts stay on API/MCP; receipt resolution also has an operator CLI command.
 
-Development retries count ended failed Operations even without a deployment history row, together with recorded deployment failures: ten minutes after the first failure, twenty after the second, then no further attempt on that commit after the third. An ended failed Operation never permits an immediate retry of the same head. A newer green head can deploy. A succeeded retained Operation reports `up_to_date` only if the current runtime seed matches its commit; otherwise policy settles it and checks the moved head normally.
+Development retries keep their authoritative per-SHA ledger in the Gateway development policy projection, `instances.auto_deploy_state.development_retries`. Deployment history and terminal receipts supply evidence, never the retry total. Each failed attempt counts once across its receipt, history row, replay and reconciliation: ten minutes after the first failure, twenty after the second, then no further attempt on that commit after the third. An ended failed Operation never permits an immediate retry of the same head. A newer green head can deploy. A succeeded retained Operation reports `up_to_date` only if the current runtime seed matches its commit; otherwise policy settles it and checks the moved head normally.
+
+The development ledger retains at most three failure identities per SHA, its last failure time and its stopped flag. It has no age horizon and no fixed limit on the number of SHAs: a branch can return to a stopped SHA weeks or years later. Evicting that entry could grant a fourth attempt; blocking all new SHAs when a cache fills could prevent a newer green head from deploying. The Gateway JSON column avoids that cache tradeoff.
+
+The development deployment projector records manual and successful resets when actual deployment history is created, independently of policy ticks. Only an actual manual deployment clears all SHA entries; a successful deployment clears its own SHA. Durable deployment and Operation boundaries prevent old evidence from being imported again after either reset. The history cursor keeps at most fifty unsettled row IDs. Toggles preserve the ledger. History pruning never touches it.
 
 A lost admission response can leave a retained intent without an Operation ID. On the next tick, development receipt lookup recovers the Operation by its exact key, or resolution fences a missing admission before policy abandons the intent and applies the same retry rules. If the key belongs to the generic automatic command, policy reconciles it through that command's receipt and resolution routes, with the same caller, Instance and SHA checks. Every new admission uses the development command. Receipt reconciliation precedes fresh Instance and history reads because it can itself record a terminal result.
 
@@ -482,7 +500,7 @@ Development policy checks `auto_deploy.development_eligible` in both list and fr
 | `GET /api/v1/instances/{instance}/deployment-source/commits?base=<sha>` | The current GitHub branch `head` and up to 20 first-parent `commits`, newest first, before `base`. Each has `sha`, `parents`, and `descends_from_deployed`. |
 | `GET /api/v1/instances/{instance}/deployment-source/checks?commit=<sha>` | The Project's configured `gate` and exact latest check `runs`, with name, head SHA, App slug, status, and conclusion. Empty runs never prove success. |
 | `GET /api/v1/instances/{instance}/deploy/automatic/receipt?request_key=<key>&commit=<sha>` | Exact keyed admission lookup, bound to caller, automatic command, Instance, and commit. Returns `request_key`, `found`, `operation`, and retained `deployment`, when available. Conflicting input returns `operation.idempotency_conflict`. |
-| `PUT /api/v1/instances/{instance}/auto-deploy/policy` | Publish the public policy projection with the observed `resumed_after`, `last_deployment_id`, and `history_version`. A changed cursor or history returns `instance.auto_deploy_observation_changed`. |
+| `PUT /api/v1/instances/{instance}/auto-deploy/policy` | Publish the public policy projection with the observed `resumed_after`, `last_deployment_id`, and `history_version`. Development also checkpoints `development_retries` under this observation guard. A changed cursor or history returns `instance.auto_deploy_observation_changed`. |
 
 The policy never posts its events. Each fire of `automatic-production-deploy` or the on-demand `automatic-development-deploy` prints the events it raised in its terminal `result` step: the notable Activity entries and the alerts for a failed deploy, a pause and a stalled commit. The Gateway reads that result from the run and records each event once, as an Activity entry or a release alert. A fire whose Instance tick failed still prints its result, with the failure's error code: a policy refusal keeps its own code, and any other error is `automatic.tick_failed`. Its `failures` assert then ends the run failed.
 
@@ -523,7 +541,9 @@ An inactive or absent `app-prod` role refuses admission with `instance.auto_depl
 
  There is no environment flag or runtime switch.
 
-The cutover release removes the PHP production policy loop. The development cutover removes the PHP retry loop; a Gateway scheduler now filters changed defaults before entering Swamp policy. The Gateway selects only active container defaults with a seed snapshot on app-dev Nodes from its records, requiring the same `auto_deploy` flag as production. Deploy Swamp first: it stays idle until the Gateway reports Swamp ownership. Finish or cancel in-flight PHP work through its current owner before activating the Gateway release; existing `operation.target_busy` holds serialize admissions. Swamp reconstructs policy and retries from the public projection and Gateway history.
+The cutover release removes the PHP production policy loop. The development cutover removes the PHP retry loop; a Gateway scheduler now filters changed defaults before entering Swamp policy. The Gateway selects only active container defaults with a seed snapshot on app-dev Nodes from its records, requiring the same `auto_deploy` flag as production. Deploy Swamp first: it stays idle until the Gateway reports Swamp ownership. Finish or cancel in-flight PHP work through its current owner before activating the Gateway release; existing `operation.target_busy` holds serialize admissions.
+
+Swamp reconstructs policy from the public projection and Gateway history; development retry totals survive in their durable Gateway ledger.
 
  Alert deduplication starts in Swamp: the owner accepts one possible repeat alert at cutover. Orbit exposes no stored alert-key contract.
 
@@ -712,7 +732,7 @@ When a development deploy runs, it leaves Process definitions, Route publication
 
 A development start explicitly refused by Swamp or unavailable before sending does not create deployment history. This includes a failed execution-copy vault synchronization with zero attempts and no result, which happens before workflow submission. The next scheduled policy observation releases that failed pending admission and may admit a fresh automatic deployment on a later tick. An uncertain start retains its pending intent until its outcome is known.
 
-Policy checkpoints stay durable before and after keyed admission. A retained pending intent with an Operation ID reads that Operation from the Gateway. A succeeded or failed Operation settles for the intent's commit, not the current head. A newer green head can then deploy, including after a checkout Instance moves into a container. Old `failed` or `commit_failed` results do not block a different commit; deployment retry counts come from that commit's history.
+Policy checkpoints stay durable before and after keyed admission. A retained pending intent with an Operation ID reads that Operation from the Gateway. A succeeded or failed Operation settles for the intent's commit, not the current head. A newer green head can then deploy, including after a checkout Instance moves into a container. Old `failed` or `commit_failed` results do not block a different commit; retry counts come from the durable development ledger for that SHA.
 
 When one tick writes a state resource several times, its native output contains only the last handle for that resource name. Earlier checkpoint handles are not duplicate method outputs.
 
