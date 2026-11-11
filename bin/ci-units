@@ -36,7 +36,8 @@ def module(name, path):
 
 
 gate = module('fixture_gate', ROOT / 'bin/swamp-shape-gate')
-selection_regex = module('fixture_selection', ROOT / 'bin/ci-build-plan').selection_regex
+selection = module('fixture_selection', ROOT / 'bin/ci-build-plan')
+selection_regex = selection.selection_regex
 supervisor = module('fixture_supervisor', ROOT / 'swamp/tests/_support/fixture_supervisor.py')
 
 
@@ -505,8 +506,7 @@ def main():
         signal.signal(signal.SIGTERM, lambda *_: CANCELLED.set())
         signal.signal(signal.SIGINT, lambda *_: CANCELLED.set())
         return run(units, budget, fixtures, args.times)
-    base = gate.resolve_base(args.base)
-    paths = subprocess.check_output(['git', '-C', str(ROOT), 'diff', '--name-only', '-z', base, args.head], text=True).strip('\0').split('\0')
+    base, paths = selection.changed_inputs(gate.resolve_base(args.base), args.head)
     result = plan([p for p in paths if p], budget, fixtures, defaults)
     if args.plan_json:
         costs = {name: cost for f in fixtures.values() for name, cost in units_for(f, budget)}

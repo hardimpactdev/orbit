@@ -198,6 +198,14 @@ def swamp_comparison_base(base, head):
     return source
 
 
+def changed_inputs(base, head):
+    """Select head's changes; the checkout must contain both refs and their common ancestry."""
+    ancestor = subprocess.check_output(['git', 'merge-base', base, head], text=True, timeout=60).strip()
+    paths = subprocess.check_output(['git', 'diff', '--name-only', '--no-renames', '-z', ancestor, head],
+                                    text=True, timeout=60).rstrip('\0').split('\0')
+    return ancestor, [path for path in paths if path]
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--base', required=True)
@@ -208,7 +216,7 @@ def main():
     p.add_argument('--proof-selection-output', type=Path)
     p.add_argument('--swamp-base', action='store_true', help='Resolve the retained source for the first history import')
     a = p.parse_args()
-    paths = subprocess.check_output(['git', 'diff', '--name-only', '--no-renames', '-z', a.base, a.head], timeout=60).decode().rstrip('\0').split('\0')
+    base, paths = changed_inputs(a.base, a.head)
     result = select(paths, a.main)
     _, unclaimed = selected_checks([path for path in paths if path])
     if unclaimed:
@@ -219,10 +227,8 @@ def main():
         if os.environ.get('GITHUB_STEP_SUMMARY'):
             with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as summary:
                 summary.write('### Unclaimed CI inputs\n\n' + '\n'.join(f'- {line}' for line in lines) + '\n')
-    # Build jobs may use a shallow checkout. Only the full-history changes job needs the case plan.
+    # The full-history plan job supplies one comparison for builds, fixtures and proof.
     if a.proof_cases:
-        base = subprocess.check_output(['timeout', '60', 'git', 'merge-base', a.base, a.head], text=True).strip()
-        paths = subprocess.check_output(['timeout', '60', 'git', 'diff', '--name-only', '--no-renames', '-z', base, a.head], text=True).rstrip('\0').split('\0')
         def read(ref, path):
             process = subprocess.run(['timeout', '60', 'git', 'show', f'{base if ref == "base" else a.head}:{path}'], capture_output=True, text=True)
             if process.returncode:
@@ -239,7 +245,7 @@ def main():
             head = subprocess.check_output(['timeout', '60', 'git', 'rev-parse', a.head], text=True).strip()
             a.proof_selection_output.write_text(json.dumps({'version': 1, 'base': base, 'head': head, 'files': result['proof_cases']}))
     if a.swamp_base and result['jobs']['swamp']:
-        result['swamp_base_ref'] = swamp_comparison_base(a.base, a.head)
+        result['swamp_base_ref'] = swamp_comparison_base(base, a.head)
     print(json.dumps(result))
     if a.github_output:
         with a.github_output.open('a') as output:
