@@ -3,31 +3,37 @@
     "host": "Beast",
     "date": "2026-11-11",
     "source_head": "f9d8da433c14d04a329684b8c61cff2ee99620c0",
-    "main": "2a2ca39f8bf668aea5a62323ffeace8843e2b526",
+    "main": "01c79b47de105c1f63183aaa833c8515307051ce",
     "gate_workers": 3,
     "maximum_total_workers": 4,
     "pause_above_load": 12,
-    "ci_slowdown": 2.1
+    "ci_slowdown": 2.1,
+    "hosted_run": "https://github.com/hardimpactdev/orbit/actions/runs/42980036090"
   },
-  "note": "Round 2 calibration with main\u2019s 240-second playbook guard and 720-second command deadline. Three gate workers and at most one supplemental command; pause new commands above load 12. CI forecasts equal Beast seconds times 2.1. Unmeasured new files still run with a one-second scheduling weight.",
+  "note": "Round 2 calibration with main\u2019s 240-second playbook guard and 720-second command deadline. Three gate workers and at most one supplemental command; pause new commands above load 12. CI forecasts equal Beast seconds times 2.1. Unmeasured new files still run with a one-second scheduling weight. Scheduling also uses completed hosted observations (ci), or completed case sums from the old fleet group (ci_case_sum); these are not new-group CI measurements. Local forecasts stay Beast seconds times 2.1.",
   "units": {
     "ansible-lint": {
-      "beast": 25.6
+      "beast": 25.6,
+      "ci": 135.885
     },
     "bin/check-swamp-base-policy_test.ts": {
-      "beast": 10.6
+      "beast": 10.6,
+      "ci": 36.09
     },
     "bin/check-swamp-shape_test.ts": {
-      "beast": 9.2
+      "beast": 9.2,
+      "ci": 18.739
     },
     "bin/lint-behavior-names_test.ts": {
       "beast": 0.1
     },
     "bin/source_test.ts": {
-      "beast": 0.2
+      "beast": 0.2,
+      "ci": 0.621
     },
     "bin/swamp-liveness_test.ts": {
-      "beast": 1.2
+      "beast": 1.2,
+      "ci": 2.345
     },
     "bin/swamp-shape-python_test.ts": {
       "beast": 2.4
@@ -36,43 +42,54 @@
       "beast": 0.1
     },
     "extensions/behaviors/automatic-deploy/development_test.ts": {
-      "beast": 0.2
+      "beast": 0.2,
+      "ci": 0.517
     },
     "extensions/behaviors/automatic-deploy/gateway_test.ts": {
-      "beast": 0.3
+      "beast": 0.3,
+      "ci": 3.094
     },
     "extensions/behaviors/automatic-deploy/mod_test.ts": {
-      "beast": 0.2
+      "beast": 0.2,
+      "ci": 0.376
     },
     "extensions/behaviors/composer-maintenance/mod_test.ts": {
-      "beast": 1.4
+      "beast": 1.4,
+      "ci": 4.511
     },
     "extensions/behaviors/js-maintenance/mod_test.ts": {
-      "beast": 2.2
+      "beast": 2.2,
+      "ci": 4.755
     },
     "extensions/behaviors/projects/horizon-new-dawn/gateway_test.ts": {
       "beast": 0.3
     },
     "extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
-      "beast": 0.4
+      "beast": 0.4,
+      "ci": 0.534
     },
     "extensions/behaviors/projects/horizon-new-dawn/queue_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.266
     },
     "ruff": {
-      "beast": 0.0
+      "beast": 0.0,
+      "ci": 0.12
     },
     "tests/ansible_artifact_test.py": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.224
     },
     "tests/ansible_command_output_test.py": {
       "beast": 1.1
     },
     "tests/ansible_container_host_system_test.py": {
-      "beast": 2.9
+      "beast": 2.9,
+      "ci": 6.168
     },
     "tests/ansible_firewall_test.py": {
-      "beast": 1.9
+      "beast": 1.9,
+      "ci": 5.5
     },
     "tests/ansible_gateway_retired_settings_test.ts": {
       "beast": 0.9
@@ -84,130 +101,171 @@
       "beast": 4.7
     },
     "tests/ansible_hub_prune_test.py": {
-      "beast": 1.8
+      "beast": 1.8,
+      "ci": 5.707
     },
     "tests/ansible_inputs_test.py": {
-      "beast": 10.1
+      "beast": 10.1,
+      "ci": 19.237
     },
     "tests/ansible_instance_bridge_test.py": {
       "beast": 0.1
     },
     "tests/ansible_instance_container_agent_test.ts": {
-      "beast": 57.4
+      "beast": 57.4,
+      "ci": 292.559
     },
     "tests/ansible_instance_container_build_test.ts": {
-      "beast": 38.8
+      "beast": 38.8,
+      "ci": 128.811
     },
     "tests/ansible_instance_container_clone_refusal_test.ts": {
-      "beast": 29.0
+      "beast": 29.0,
+      "ci": 96.339
     },
     "tests/ansible_instance_container_clone_test.ts": {
-      "beast": 56.7
+      "beast": 56.7,
+      "ci": 185.939
     },
     "tests/ansible_instance_container_deploy_test.ts": {
-      "beast": 49.6
+      "beast": 49.6,
+      "ci": 157.034
     },
     "tests/ansible_instance_container_destroy_test.ts": {
-      "beast": 5.0
+      "beast": 5.0,
+      "ci": 13.29
     },
     "tests/ansible_instance_container_network_test.ts": {
-      "beast": 64.8
+      "beast": 65.606,
+      "ci": 300.993
     },
     "tests/ansible_instance_container_php_test.ts": {
-      "beast": 27.3
+      "beast": 27.3,
+      "ci": 47.915
     },
     "tests/ansible_instance_container_process_build_test.ts": {
-      "beast": 60.5
+      "beast": 60.5,
+      "ci": 109.511
     },
     "tests/ansible_instance_container_process_control_test.ts": {
-      "beast": 111.0
+      "beast": 111.0,
+      "ci": 367.505
     },
     "tests/ansible_instance_container_workspace_test.ts": {
-      "beast": 21.8
+      "beast": 21.8,
+      "ci": 41.374
     },
     "tests/ansible_instance_egress_test.py": {
-      "beast": 8.0
+      "beast": 8.0,
+      "ci": 11.987
     },
     "tests/ansible_instance_host_acl_test.ts": {
-      "beast": 151.9
+      "beast": 151.9,
+      "ci": 461.69
     },
     "tests/ansible_instance_host_create_test.ts": {
-      "beast": 71.9
+      "beast": 71.9,
+      "ci": 330.694
     },
     "tests/ansible_instance_host_deadline_test.ts": {
-      "beast": 15.0
+      "beast": 15.0,
+      "ci": 17.905
+    },
+    "tests/ansible_instance_host_image_network_test.ts": {
+      "beast": 39.57
     },
     "tests/ansible_instance_host_image_pool_test.ts": {
-      "beast": 28.5
+      "beast": 28.5,
+      "ci": 48.468
     },
     "tests/ansible_instance_host_image_refuse_sudo_test.ts": {
-      "beast": 28.4
+      "beast": 28.4,
+      "ci": 93.752
     },
     "tests/ansible_instance_host_image_replace_test.ts": {
-      "beast": 52.6
+      "beast": 52.6,
+      "ci": 98.261
     },
     "tests/ansible_instance_host_resources_test.ts": {
-      "beast": 30.1
+      "beast": 30.1,
+      "ci": 96.481
     },
     "tests/ansible_instance_host_runtime_deno_test.ts": {
-      "beast": 29.9
+      "beast": 29.9,
+      "ci": 103.42
     },
     "tests/ansible_instance_host_runtime_php_test.ts": {
-      "beast": 38.7
+      "beast": 38.7,
+      "ci": 137.838
     },
     "tests/ansible_instance_host_runtime_vite_home_test.ts": {
-      "beast": 110.5
+      "beast": 110.5,
+      "ci": 321.456
     },
     "tests/ansible_instance_host_updates_mapped_runtime_test.ts": {
-      "beast": 71.0
+      "beast": 71.0,
+      "ci": 149.353
     },
     "tests/ansible_instance_host_updates_project_paths_test.ts": {
-      "beast": 68.5
+      "beast": 68.5,
+      "ci": 221.618
     },
     "tests/ansible_instance_host_updates_runtime_test.ts": {
-      "beast": 52.5
+      "beast": 52.5,
+      "ci": 210.204
     },
     "tests/ansible_instance_host_updates_squid_test.ts": {
-      "beast": 45.2
+      "beast": 45.2,
+      "ci": 146.127
     },
     "tests/ansible_instance_migrate_branch_test.ts": {
       "beast": 3.7
     },
     "tests/ansible_instance_migrate_bridge_dnat_test.ts": {
-      "beast": 9.3
+      "beast": 9.3,
+      "ci": 29.623
     },
     "tests/ansible_instance_migrate_bridge_retry_test.ts": {
-      "beast": 40.8
+      "beast": 40.8,
+      "ci": 61.858
     },
     "tests/ansible_instance_migrate_database_probe_test.ts": {
-      "beast": 23.1
+      "beast": 23.1,
+      "ci": 69.963
     },
     "tests/ansible_instance_migrate_database_refusal_test.ts": {
-      "beast": 13.5
+      "beast": 13.5,
+      "ci": 37.994
     },
     "tests/ansible_instance_migrate_expired_stash_test.ts": {
-      "beast": 3.4
+      "beast": 3.4,
+      "ci": 6.88
     },
     "tests/ansible_instance_migrate_git_edges_test.ts": {
-      "beast": 1.3
+      "beast": 1.3,
+      "ci": 3.192
     },
     "tests/ansible_instance_migrate_linked_retirement_test.ts": {
       "beast": 2.7
     },
     "tests/ansible_instance_migrate_links_archive_test.ts": {
-      "beast": 83.8
+      "beast": 83.8,
+      "ci": 282.749
     },
     "tests/ansible_instance_migrate_links_copy_test.ts": {
       "beast": 20.3
     },
     "tests/ansible_instance_migrate_links_late_test.ts": {
-      "beast": 13.5
+      "beast": 13.5,
+      "ci": 22.281
     },
     "tests/ansible_instance_migrate_links_refusal_test.ts": {
-      "beast": 5.1
+      "beast": 5.1,
+      "ci": 8.837
     },
     "tests/ansible_instance_migrate_links_suffix_test.ts": {
-      "beast": 24.4
+      "beast": 24.4,
+      "ci": 44.691
     },
     "tests/ansible_instance_migrate_links_test.py": {
       "beast": 0.6
@@ -216,82 +274,104 @@
       "beast": 9.2
     },
     "tests/ansible_instance_migrate_processes_test.ts": {
-      "beast": 139.8
+      "beast": 139.8,
+      "ci": 326.039
     },
     "tests/ansible_instance_migrate_receipt_test.ts": {
-      "beast": 35.6
+      "beast": 35.6,
+      "ci": 62.181
     },
     "tests/ansible_instance_migrate_retained_default_test.ts": {
-      "beast": 23.8
+      "beast": 23.8,
+      "ci": 67.304
     },
     "tests/ansible_instance_migrate_retention_test.ts": {
-      "beast": 33.3
+      "beast": 33.3,
+      "ci": 59.114
     },
     "tests/ansible_instance_migrate_retirement_errors_test.ts": {
-      "beast": 2.7
+      "beast": 2.7,
+      "ci": 5.413
     },
     "tests/ansible_instance_migrate_retirement_recheck_test.ts": {
-      "beast": 106.5
+      "beast": 106.5,
+      "ci": 238.284
     },
     "tests/ansible_instance_migrate_retry_test.ts": {
-      "beast": 39.5
+      "beast": 39.5,
+      "ci": 67.907
     },
     "tests/ansible_instance_migrate_rollback_test.ts": {
-      "beast": 53.0
+      "beast": 53.0,
+      "ci": 262.816
     },
     "tests/ansible_instance_migrate_standalone_test.ts": {
-      "beast": 33.6
+      "beast": 33.6,
+      "ci": 110.671
     },
     "tests/ansible_instance_migrate_stashes_test.ts": {
       "beast": 9.9
     },
     "tests/ansible_instance_migrate_unpushed_branches_test.ts": {
-      "beast": 4.2
+      "beast": 4.2,
+      "ci": 10.842
     },
     "tests/ansible_instance_migrate_unpushed_detached_test.ts": {
-      "beast": 5.7
+      "beast": 5.7,
+      "ci": 14.917
     },
     "tests/ansible_instance_migrate_worktree_preflight_test.ts": {
-      "beast": 56.5
+      "beast": 56.5,
+      "ci": 189.631
     },
     "tests/ansible_instance_migrate_worktree_race_test.ts": {
-      "beast": 29.0
+      "beast": 29.0,
+      "ci": 156.928
     },
     "tests/ansible_instance_module_args_test.py": {
-      "beast": 0.8
+      "beast": 0.8,
+      "ci": 1.946
     },
     "tests/ansible_model_forwarder_test.py": {
-      "beast": 4.3
+      "beast": 4.3,
+      "ci": 9.157
     },
     "tests/ansible_node_add_test.py": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.42
     },
     "tests/ansible_shape_gate_tools_test.py": {
       "beast": 1.8
     },
     "tests/ansible_static_php_test.py": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.216
     },
     "tests/ansible_swamp_start_cache_test.ts": {
       "beast": 0.1
     },
     "tests/ansible_task_container_host_prepare_arc_test.ts": {
-      "beast": 62.3
+      "beast": 62.3,
+      "ci": 120.778
     },
     "tests/ansible_task_container_host_prepare_packages_test.ts": {
-      "beast": 36.6
+      "beast": 36.6,
+      "ci": 121.49
     },
     "tests/ansible_task_container_host_prepare_refusals_test.ts": {
-      "beast": 51.0
+      "beast": 51.0,
+      "ci": 90.204
     },
     "tests/ansible_task_container_host_prepare_setup_test.ts": {
-      "beast": 61.7
+      "beast": 61.7,
+      "ci": 207.565
     },
     "tests/ansible_task_host_firewall_remove_test.ts": {
       "beast": 3.9
     },
     "tests/ansible_task_vm_apt_cache_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.272
     },
     "tests/ansible_task_vm_base_creation_test.ts": {
       "beast": 5.7
@@ -300,22 +380,46 @@
       "beast": 1.9
     },
     "tests/ansible_task_vm_docker_boot_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.168
     },
-    "tests/ansible_task_vm_fleet_build_test.ts": {
-      "beast": 183.0
+    "tests/ansible_task_vm_fleet_build_core_test.ts": {
+      "beast": 47.741,
+      "ci_case_sum": 150
+    },
+    "tests/ansible_task_vm_fleet_build_dns_check_test.ts": {
+      "beast": 31.664,
+      "ci_case_sum": 153
+    },
+    "tests/ansible_task_vm_fleet_build_dns_recovery_test.ts": {
+      "beast": 20.848
+    },
+    "tests/ansible_task_vm_fleet_build_dns_reuse_test.ts": {
+      "beast": 26.603,
+      "ci_case_sum": 122
+    },
+    "tests/ansible_task_vm_fleet_build_dns_withdraw_test.ts": {
+      "beast": 31.81,
+      "ci_case_sum": 153
+    },
+    "tests/ansible_task_vm_fleet_build_stock_test.ts": {
+      "beast": 29.506,
+      "ci_case_sum": 93
     },
     "tests/ansible_task_vm_fleet_wait_test.py": {
       "beast": 20.8
     },
     "tests/ansible_task_vm_host_clean_test.ts": {
-      "beast": 37.5
+      "beast": 37.5,
+      "ci": 65.439
     },
     "tests/ansible_task_vm_host_egress_test.py": {
-      "beast": 74.8
+      "beast": 74.8,
+      "ci": 170.243
     },
     "tests/ansible_task_vm_host_prepare_test.ts": {
-      "beast": 37.5
+      "beast": 37.5,
+      "ci": 123.869
     },
     "tests/ansible_task_vm_identity_boot_test.ts": {
       "beast": 0.1
@@ -324,92 +428,117 @@
       "beast": 6.3
     },
     "tests/ansible_task_vm_incus_test.py": {
-      "beast": 7.4
+      "beast": 7.4,
+      "ci": 15.06
     },
     "tests/ansible_task_vm_nested_firewall_test.py": {
-      "beast": 2.9
+      "beast": 2.9,
+      "ci": 7.663
     },
     "tests/ansible_task_vm_role_test.py": {
       "beast": 0.2
     },
     "tests/ansible_task_vm_uplink_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.266
     },
     "tests/ansible_wireguard_hub_lan_test.py": {
-      "beast": 130.9
+      "beast": 130.9,
+      "ci": 221.461
     },
     "tests/apt_proxy_test.ts": {
-      "beast": 1.9
+      "beast": 1.9,
+      "ci": 4.58
     },
     "tests/automatic_deploy_test.ts": {
-      "beast": 0.2
+      "beast": 0.2,
+      "ci": 0.618
     },
     "tests/batch_maintenance_test.ts": {
-      "beast": 4.1
+      "beast": 4.1,
+      "ci": 5.068
     },
     "tests/database_placement_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.169
     },
     "tests/dependency_inventory_test.ts": {
-      "beast": 0.2
+      "beast": 0.2,
+      "ci": 0.318
     },
     "tests/dependency_observations_test.ts": {
       "beast": 0.1
     },
     "tests/dependency_projects_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.266
     },
     "tests/dependency_results_fixtures_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.217
     },
     "tests/dependency_results_test.ts": {
       "beast": 0.1
     },
     "tests/dependency_retention_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.52
     },
     "tests/fleet_reboot_test.ts": {
-      "beast": 46.3
+      "beast": 46.3,
+      "ci": 193.717
+    },
+    "tests/fleet_reboot_unreachable_test.ts": {
+      "beast": 94.746
     },
     "tests/frankenphp_proxy_test.ts": {
       "beast": 0.2
     },
     "tests/gateway_release_order_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.217
     },
     "tests/gateway_swamp_load_test.ts": {
-      "beast": 0.5
+      "beast": 0.5,
+      "ci": 0.316
     },
     "tests/github_mint_test.ts": {
       "beast": 0.4
     },
     "tests/guard_syntax_test.ts": {
-      "beast": 0.2
+      "beast": 0.2,
+      "ci": 0.474
     },
     "tests/instance_clone_guest_test.py": {
       "beast": 0.1
     },
     "tests/instance_clone_test.py": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.269
     },
     "tests/maintenance_inspect_test.ts": {
-      "beast": 0.2
+      "beast": 0.2,
+      "ci": 0.267
     },
     "tests/maintenance_resources_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.215
     },
     "tests/native_host_method_test.ts": {
       "beast": 0.2,
       "source_blob": "e70ce19ae7a5d11c1791c157a7fb0de1c859b42f"
     },
     "tests/node_converge_ansible_test.ts": {
-      "beast": 35.5
+      "beast": 35.5,
+      "ci": 107.325
     },
     "tests/node_converge_cli_test.ts": {
-      "beast": 3.8
+      "beast": 3.8,
+      "ci": 10.523
     },
     "tests/node_converge_lock_test.ts": {
-      "beast": 18.7
+      "beast": 18.7,
+      "ci": 31.035
     },
     "tests/node_converge_test.ts": {
       "beast": 0.2
@@ -418,73 +547,91 @@
       "beast": 0.1
     },
     "tests/node_worker_systemd_cleanup_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.267
     },
     "tests/operation_schedules_test.ts": {
-      "beast": 0.2
+      "beast": 0.2,
+      "ci": 0.52
     },
     "tests/project_batches_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.224
     },
     "tests/project_deliverables_test.ts": {
-      "beast": 0.2
+      "beast": 0.2,
+      "ci": 0.218
     },
     "tests/project_extensions_test.ts": {
       "beast": 0.1
     },
     "tests/project_fleet_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.265
     },
     "tests/project_inputs_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.326
     },
     "tests/proof_keep_failed_test.ts": {
       "beast": 0.1
     },
     "tests/proof_observers_test.ts": {
-      "beast": 26.5
+      "beast": 26.5,
+      "ci": 142.266
     },
     "tests/proof_workspace_commit_test.ts": {
       "beast": 0.2
     },
     "tests/revoke_report_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.271
     },
     "tests/route_hold_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.166
     },
     "tests/schedule_placement_test.ts": {
       "beast": 0.1
     },
     "tests/service_detection_test.ts": {
-      "beast": 0.2
+      "beast": 0.2,
+      "ci": 0.37
     },
     "tests/swamp_role_worker_credentials_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.269
     },
     "tests/swamp_worker_renewal_enrollment_test.ts": {
-      "beast": 111.1
+      "beast": 111.1,
+      "ci": 195.067
     },
     "tests/swamp_worker_renewal_peers_test.ts": {
-      "beast": 82.9
+      "beast": 82.9,
+      "ci": 171.904
     },
     "tests/swamp_worker_renewal_rotation_test.ts": {
-      "beast": 71.6
+      "beast": 71.6,
+      "ci": 251.234
     },
     "tests/task_review_check_outputs_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.219
     },
     "tests/worker_query_test.ts": {
       "beast": 0.1
     },
     "tests/workflow_absent_secrets_test.ts": {
-      "beast": 0.2
+      "beast": 0.2,
+      "ci": 0.469
     },
     "tests/workflow_placement_test.ts": {
-      "beast": 0.1
+      "beast": 0.1,
+      "ci": 0.216
     },
     "tests/writes_declared_test.ts": {
-      "beast": 0.4
+      "beast": 0.4,
+      "ci": 1.233
     }
   }
 }

@@ -47,7 +47,7 @@ async function phase(path: string, failures: number, held = false, name = "drain
     const step = steps.find((step) => step.name === name);
     const env = Object.fromEntries(Object.entries(step.task.inputs.env).filter(([, value]) => typeof value === "string" && !value.includes("${{"))) as Record<string, string>;
     const result = await new Deno.Command("sh", {
-        args: ["-c", step.task.inputs.run.replace('"$ORBIT_ANSIBLE/operation-fleet-reboot.yml"', '"$ORBIT_RUN/play.json"')],
+        args: ["-c", step.task.inputs.run.replace("/opt/orbit/ansible/venv/bin/ansible-playbook", "ansible-playbook").replace('"$ORBIT_ANSIBLE/operation-fleet-reboot.yml"', '"$ORBIT_RUN/play.json"')],
         stdout: "piped", stderr: "piped",
         env: { ...env, ANSIBLE_CONFIG: `${ansible}ansible.cfg`, ANSIBLE_FORKS: "2", ORBIT_RUN: path, ORBIT_NODE_ID: "9", ORBIT_POSITION: "0",
             REBOOT_SSH_FIXTURE: path, ANSIBLE_COLLECTIONS_PATH: Deno.env.get("ANSIBLE_COLLECTIONS_PATH") ?? "/opt/orbit/ansible/collections",
@@ -133,7 +133,7 @@ Deno.test("collection can report a retained attempted-Node record when finalizat
     try {
         const run = await phase(path, 100, false, "drain", "1");
         assertEquals(run.code, 4, run.output);
-        const report = await new Deno.Command("/opt/orbit/ansible/venv/bin/ansible-playbook", {
+        const report = await new Deno.Command("ansible-playbook", {
             args: ["-i", "localhost,", "--tags", "report", `${ansible}operation-fleet-reboot.yml`], stdout: "piped", stderr: "piped",
             env: { ORBIT_RUN: path, ANSIBLE_STDOUT_CALLBACK: "default", ANSIBLE_CONFIG: `${ansible}ansible.cfg`, ANSIBLE_FORKS: "2" },
         }).output();
@@ -192,7 +192,7 @@ for (const name of ["drain", "reboot"]) {
             const step = steps.find((step) => step.name === name);
             const env = Object.fromEntries(Object.entries(step.task.inputs.env).filter(([, value]) => typeof value === "string" && !value.includes("${{"))) as Record<string, string>;
             const result = await new Deno.Command("sh", {
-                args: ["-c", step.task.inputs.run.replace('"$ORBIT_ANSIBLE/operation-fleet-reboot.yml"', '"$ORBIT_RUN/play.json"')], stdout: "piped", stderr: "piped",
+                args: ["-c", step.task.inputs.run.replace("/opt/orbit/ansible/venv/bin/ansible-playbook", "ansible-playbook").replace('"$ORBIT_ANSIBLE/operation-fleet-reboot.yml"', '"$ORBIT_RUN/play.json"')], stdout: "piped", stderr: "piped",
                 env: { ...env, ANSIBLE_CONFIG: `${ansible}ansible.cfg`, ANSIBLE_FORKS: "2", ORBIT_RUN: path, ORBIT_NODE_ID: "9", REBOOT_SSH_FIXTURE: path,
                     ANSIBLE_COLLECTIONS_PATH: Deno.env.get("ANSIBLE_COLLECTIONS_PATH") ?? "/opt/orbit/ansible/collections" },
             }).output();

@@ -154,7 +154,8 @@ def weights():
 
 def weight(step):
     # Integer tenths avoid floating point accumulation changing tie breaks.
-    return round(weights().get(step.unit, {'beast': 1})['beast'] * 10)
+    sample = weights().get(step.unit, {'beast': 1})
+    return round(max(sample['beast'], max(sample.get('ci', 0), sample.get('ci_case_sum', 0)) / 2.1) * 10)
 
 
 def ordered(steps):

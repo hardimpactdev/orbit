@@ -251,7 +251,7 @@ class ShardPartitionTest(unittest.TestCase):
                 for file in ('tests/new/nested_test.ts', 'tests/nested/new_test.py', 'bin/new_test.ts'):
                     self.assertEqual(planned[file], 1)
                 self.assertEqual({s.unit for s in units if s.argv[0] not in ('deno', 'python3')}, {'ruff', 'ansible-lint'})
-                self.assertEqual(len([s for s in tests if 'ansible_instance_host_' in s.unit]), 14)
+                self.assertEqual(len([s for s in tests if 'ansible_instance_host_' in s.unit]), 15)
                 self.assertTrue(all(len([arg for arg in s.argv if arg in discovered]) == 1 for s in tests))
                 control = gate['select_steps'](full, control_only=True)
                 self.assertEqual([s.name for s in control if s.name != 'ansible collections'],
@@ -268,6 +268,14 @@ class ShardPartitionTest(unittest.TestCase):
                     for i in range(1, 4):
                         self.assertEqual([self.signature(s) for s in gate['shard_units'](full, i)],
                                          [self.signature(s) for s in gate['shard_units'](shuffled_plan, i)])
+
+    def test_hosted_observations_keep_a_slow_ci_unit_out_of_an_already_heavy_shard(self):
+        commands = [gate['Step']('shape', name, ['tool'], parallel=True) for name in ('a-ci', 'b-local', 'c-local', 'd-local')]
+        for observation in ('ci', 'ci_case_sum'):
+            samples = {'a-ci': {'beast': 1, observation: 630}, 'b-local': {'beast': 100},
+                       'c-local': {'beast': 100}, 'd-local': {'beast': 90}}
+            with self.subTest(observation=observation), patch.dict(gate['weight'].__globals__, {'weights': lambda: samples}):
+                self.assertEqual([s.unit for s in gate['shard_units'](commands, 1)], ['a-ci'])
 
     def test_invalid_shards_refuse_before_launching_any_child(self):
         for arguments in (['--shard', '0/3'], ['--shard', '4/3'], ['--shard', '1/2'],
