@@ -893,8 +893,18 @@
     ]
   },
   "swamp/tests/ansible_task_vm_host_clean_test.ts": {
-    "source_sha256": "646f36506c29e160ce0e638698048743a11519f3fb4d191f7f4b5b07515c4a38",
+    "source_sha256": "4e07c9f1a22195040881f4bd1502fe1fd07fff0028671c7120b823d8304ce5f7",
     "cases": [
+      "base-start refuses absent authorization after cloud-init 0",
+      "base-start refuses empty authorization after cloud-init 0",
+      "base-start refuses wrong authorization after cloud-init 0",
+      "base-start refuses malformed authorization after cloud-init 0",
+      "base-start accepts the admitted fingerprint after cloud-init 0",
+      "base-start refuses absent authorization after cloud-init 2",
+      "base-start refuses empty authorization after cloud-init 2",
+      "base-start refuses wrong authorization after cloud-init 2",
+      "base-start refuses malformed authorization after cloud-init 2",
+      "base-start accepts the admitted fingerprint after cloud-init 2",
       "host-clean removes only old images, retired prefixes, the retired projects whole and the images of the image projects",
       "a project that cannot be emptied fails the phase after the other projects had their turn",
       "host-clean refuses a task VM project that shares images or volumes with default",
