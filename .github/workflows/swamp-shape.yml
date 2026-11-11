@@ -30,6 +30,7 @@ jobs:
     name: Swamp shape gate
     # Static controls stay on; slow fixtures have a separate manual/scheduled job.
     runs-on: ubuntu-26.04
+    timeout-minutes: 5
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || 'swamp' }}
@@ -67,7 +68,8 @@ jobs:
 
   fixtures:
     name: Full shape fixtures (report only)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Only this workflow's own schedule or manual run: a CI run that calls it (changed-only) never starts the fixtures.
+    if: ${{ !inputs.changed-only && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-26.04
     timeout-minutes: 180
     concurrency:
@@ -112,7 +114,7 @@ jobs:
         with:
           persist-credentials: false
       # Runs only when the change selects Swamp, so a pull request without Swamp inputs needs no Swamp credential;
-      # Dependabot pull requests get no Actions secrets. The nightly run validates everything.
+      # Dependabot pull requests get no Actions secrets. The scheduled run validates everything.
       - uses: ./.github/actions/ci-scope
         id: scope
         with:

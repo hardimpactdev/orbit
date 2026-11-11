@@ -39,7 +39,7 @@ class WorkflowCallsTheScriptTest(unittest.TestCase):
 
     def test_full_fixtures_are_only_manual_or_scheduled_and_do_not_use_beast(self):
         fixtures = WORKFLOW.split('  fixtures:', 1)[1].split('  validate:', 1)[0]
-        self.assertIn("if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'", fixtures)
+        self.assertIn("if: ${{ !inputs.changed-only && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}", fixtures)
         self.assertIn('runs-on: ubuntu-26.04', fixtures)
         self.assertIn('cancel-in-progress: true', fixtures)
         self.assertIn("cron: '17 */3 * * *'", WORKFLOW)

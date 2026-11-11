@@ -45,7 +45,7 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 Orbit CI runs builds, static checks and the full Gateway and CLI Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same fast checks.
 
-Pull requests and main pushes run the fast Swamp control checks. Full shape fixtures run only by manual dispatch or every three hours, outside the merge and deploy path. Static PHP compilation also runs only by manual dispatch; automatic runs retain its pin validation.
+Pull requests and main pushes run the fast Swamp control checks. Full shape fixtures run only by manual dispatch or every three hours, outside the merge and deploy path. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
 
 | Check | Work |
 | --- | --- |
@@ -59,7 +59,7 @@ Pull requests and main pushes run the fast Swamp control checks. Full shape fixt
 | Generated contracts | Check Operation kinds, their charts and workflow intent; generate OpenAPI, MCP tools and the web schema; check the recorded fixtures |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
-| Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and every night, run the Operation Deno tests, enforce static Swamp-shape controls and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
+| Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and on the three-hour schedule, run the Operation Deno tests, enforce static Swamp-shape controls and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Only for changes under `swamp/proof/` or shared CI inputs: run the case runner unit tests and lint the proof programs with `ruff` |
 | CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. The blocking switches decide whether it gates Required checks; see [the proof run job](#the-proof-run-job) |
 | Required checks | Require selected builds, static checks and Pest suites. Shape contains static controls; proof follows the blocking switches. Only explicitly untouched jobs may skip |
@@ -169,7 +169,7 @@ Inside the scheduled or manual full-fixture job, pinned tool and collection setu
 
 Unit tests run in one hosted job with four Deno workers.
 
-Workflow validation runs only when the change selects its workflow, grant, extension or runtime inputs, and validates every workflow on the nightly schedule. It needs the Swamp account secrets. GitHub gives Dependabot pull requests no Actions secrets, so a dependency update outside `swamp/` does not wait on them.
+Workflow validation runs only when the change selects its workflow, grant, extension or runtime inputs, and validates every workflow on the three-hour schedule. It needs the Swamp account secrets. GitHub gives Dependabot pull requests no Actions secrets, so a dependency update outside `swamp/` does not wait on them.
 
 The [CI budget](#ci-budget) applies before any fixture returns to pull requests. Project checks are removed from CI for now. Their local commands remain available. Orbit keeps fast TypeScript unit tests and no native workflow suite or custom runtime harness. Workflow validation and pinned `serve check-config` remain required. Full shape fixtures run every three hours and by manual dispatch.
 
@@ -355,7 +355,7 @@ A task VM holds the same environment in `/opt/orbit-shape-gate`. The task VM rol
 
 Workflow validation needs a Swamp account and reads only `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`. Without them, the script skips the workflow validation, the Node enrollment trust test (it imports the extensions that validation pulls) and the grant pattern check (it also needs PHP). It names each skipped step and still exits 0. `--only validate` exits 78 then, which the candidate gate reads as skipped. CI passes `--strict`: a skipped step is a failure there.
 
-CI gives the credentials to this one step on pull requests, on main pushes, on the nightly schedule and on the push of a `task-*-handoff` branch by the Orbit App (`orbit-nckrtl[bot]`), so a task handoff that changes `swamp/` can pass hosted CI. It never gives them on `pull_request_target` or to a fork. Decided by the orchestrator, for Nick's review: the push of a handoff branch by the App.
+CI gives the credentials to this one step on pull requests, on main pushes, on the three-hour schedule and on the push of a `task-*-handoff` branch by the Orbit App (`orbit-nckrtl[bot]`), so a task handoff that changes `swamp/` can pass hosted CI. It never gives them on `pull_request_target` or to a fork. Decided by the orchestrator, for Nick's review: the push of a handoff branch by the App.
 
 For each Composer project, the gate runs `composer check`. CI runs `composer validate --strict`. Its `composer check` runs Rector and Pint in fix mode, as [Formatters run in fix mode](#formatters-run-in-fix-mode) describes.
 
