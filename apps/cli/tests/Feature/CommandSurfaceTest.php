@@ -132,6 +132,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:migrate',
         'instance:node-service:attach',
         'instance:node-service:detach',
+        'instance:node-service:list',
         'instance:register',
         'instance:release:list',
         'instance:rename',
@@ -756,6 +757,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:migrate' => [['instance'], ['force' => false, 'idempotency-key' => null, 'json' => false]],
         'instance:node-service:attach' => [['instance'], ['process' => null, 'protocol' => 'tcp', 'port' => null, 'host-env-key' => null, 'port-env-key' => null, 'json' => false]],
         'instance:node-service:detach' => [['instance', 'target'], ['yes' => false, 'json' => false]],
+        'instance:node-service:list' => [['instance'], ['json' => false]],
         'instance:register' => [
             [],
             [
@@ -1072,7 +1074,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'node:wireguard-key' => ['node', 'public-key'],
             'node:update', 'node:converge', 'node:metrics', 'node:show', 'node:role:list' => ['node'],
             'node:role:add' => ['node', 'role'],
-            'instance:node-service:attach' => ['instance'],
+            'instance:node-service:attach', 'instance:node-service:list' => ['instance'],
             'instance:node-service:detach' => ['instance', 'target'],
             'firewall:allow' => ['port'],
             'proof' => ['orbit-command'],
@@ -1295,6 +1297,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:migrate' => [['instance' => '1', '--force' => true], ...$profileMissing],
         'instance:node-service:attach' => [['instance' => '1', '--process' => '1', '--port' => '1025', '--host-env-key' => 'MAIL_HOST', '--port-env-key' => 'MAIL_PORT'], ...$profileMissing],
         'instance:node-service:detach' => [['instance' => '1', 'target' => '1', '--yes' => true], ...$profileMissing],
+        'instance:node-service:list' => [['instance' => '1'], ...$profileMissing],
         'instance:register' => [
             ['--project' => '1', '--no-interaction' => true, '--path' => '/tmp/orbit-command-surface-not-git'],
             'code' => 'instance.source_invalid',

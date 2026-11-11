@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\Instances\AttachInstanceNodeServiceTargetAction;
 use App\Actions\Instances\DetachInstanceNodeServiceTargetAction;
+use App\Data\Instances\InstanceNodeServiceTargetRecordData;
 use App\Data\Operations\OperationData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -22,6 +23,13 @@ use Illuminate\Http\Request;
 #[RequiresNodeAccess(ServingNode::EnvironmentInstanceOwning)]
 final class InstanceNodeServiceTargetsController extends Controller
 {
+    public function index(Request $request, Instance $instance): JsonResponse
+    {
+        return response()->json(['data' => $instance->nodeServiceTargets()->orderBy('id')->get()
+            ->map(InstanceNodeServiceTargetRecordData::fromModel(...))->all(),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
+    }
+
     public function store(AttachInstanceNodeServiceTargetRequest $request, Instance $instance, AttachInstanceNodeServiceTargetAction $action): JsonResponse
     {
         $data = $request->validated();

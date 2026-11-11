@@ -62,6 +62,67 @@ beforeEach(function (): void {
 });
 
 describe('Node service attachment records', function (): void {
+    it('lists only the selected Instances ordered attachment identities without credentials or mutation', function (): void {
+        [$instance, $node, $input] = nodeServiceAttachmentFixture();
+        $first = $instance->nodeServiceTargets()->create(['node_id' => $node->id, ...$input]);
+        $other = Instance::query()->create(['project_id' => $instance->project_id, 'node_id' => $node->id, 'name' => 'other',
+            'checkout_path' => '/home/orbit/apps/app/other', 'status' => InstanceState::Active]);
+        $other->nodeServiceTargets()->create(['node_id' => $node->id, ...$input]);
+        $second = $instance->nodeServiceTargets()->create(['node_id' => $node->id, ...$input,
+            'host_env_key' => 'OTHER_HOST', 'port_env_key' => 'OTHER_PORT']);
+        $process = OrbitProcess::query()->findOrFail($input['process_id']);
+        $process->update(['runtime_config' => [...$process->runtime_config, 'environment' => ['SERVICE_PASSWORD' => 'list-secret-sentinel']]]);
+        $before = $process->getRawOriginal();
+        $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+
+        $response = $this->getJson("/api/v1/instances/{$instance->id}/node-service-targets")->assertOk();
+        expect($response->json('data'))->toBe([
+            ['id' => $first->id, 'instance_id' => $instance->id, 'node_id' => $node->id, ...$input],
+            ['id' => $second->id, 'instance_id' => $instance->id, 'node_id' => $node->id, ...$input,
+                'host_env_key' => 'OTHER_HOST', 'port_env_key' => 'OTHER_PORT'],
+        ])->and($response->json('meta.request_id'))->toBe($response->headers->get('X-Orbit-Request-Id'))
+            ->and($response->getContent())->not->toContain('list-secret-sentinel', 'environment', 'runtime_config')
+            ->and($process->refresh()->getRawOriginal())->toBe($before);
+        $this->assertDatabaseCount('instance_node_service_targets', 3);
+        $this->assertDatabaseCount('operations', 0);
+        $this->assertDatabaseCount('instance_environment_values', 0);
+        Http::assertNothingSent();
+        Process::assertNothingRan();
+        Queue::assertNothingPushed();
+    });
+
+    it('returns an empty attachment list without recording work', function (): void {
+        [$instance, $node] = nodeServiceAttachmentFixture();
+        $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+
+        $this->getJson("/api/v1/instances/{$instance->id}/node-service-targets")->assertOk()->assertJsonPath('data', []);
+        $this->getJson('/api/v1/instances/999999/node-service-targets')->assertNotFound();
+        $this->getJson('/api/v1/instances/app.example.test/node-service-targets')->assertNotFound();
+        $this->assertDatabaseCount('operations', 0);
+        Http::assertNothingSent();
+        Process::assertNothingRan();
+        Queue::assertNothingPushed();
+    });
+
+    it('requires an active peer and the selected Instances owning Node authority for reads', function (): void {
+        [$instance, $node, $input] = nodeServiceAttachmentFixture();
+        $target = $instance->nodeServiceTargets()->create(['node_id' => $node->id, ...$input]);
+        $uri = "/api/v1/instances/{$instance->id}/node-service-targets";
+        $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.1'])->getJson($uri)
+            ->assertForbidden()->assertJsonPath('error.code', 'peer.identity_unknown')->assertJsonMissingPath('data');
+        $caller = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'reader', 'status' => 'active',
+            'platform' => 'linux', 'wireguard_ip' => '10.44.0.11', 'public_ssh_host' => '10.44.0.11', 'user' => 'orbit']));
+        $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->getJson($uri)
+            ->assertForbidden()->assertJsonPath('error.code', 'node_access.required')->assertJsonMissingPath('data');
+        $caller->accessibleNodes()->attach($node);
+        $this->getJson($uri)->assertOk()->assertJsonPath('data.0.id', $target->id);
+        $this->assertDatabaseCount('operations', 0);
+        $this->assertModelExists($target);
+        Http::assertNothingSent();
+        Process::assertNothingRan();
+        Queue::assertNothingPushed();
+    });
+
     it('attaches idempotently and detaches without executing or writing environment values', function (): void {
         [$instance, $node, $input] = nodeServiceAttachmentFixture();
         $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
@@ -210,6 +271,11 @@ describe('Node service attachment records', function (): void {
 
         expect($data)->toMatchArray(['instance_id' => $instance->id, ...$input, 'changed' => true]);
         $this->assertDatabaseHas('instance_node_service_targets', ['instance_id' => $instance->id, 'node_id' => $node->id, ...$input]);
+        $list = collect(ToolManifest::default()->definitions())->firstWhere('name', 'instance-node-service-list');
+        expect($list->inputSchema['properties']['instance'])->toMatchArray(['type' => 'integer', 'minimum' => 1]);
+        $listed = (new ApiOperationTool($list, app(ApiDispatcher::class)))->handle(new McpRequest(['instance' => $instance->id]), $caller);
+        $records = json_decode((string) $listed->content(), true, flags: JSON_THROW_ON_ERROR)['data'];
+        expect($records)->toBe([['id' => $data['id'], 'instance_id' => $instance->id, 'node_id' => $node->id, ...$input]]);
         $detach = collect(ToolManifest::default()->definitions())->firstWhere('name', 'instance-node-service-detach');
         expect($detach->inputSchema['properties']['target'])->toMatchArray(['type' => 'integer', 'minimum' => 1]);
         $removed = (new ApiOperationTool($detach, app(ApiDispatcher::class)))
@@ -227,6 +293,8 @@ describe('Node service attachment records', function (): void {
         expect($spec['paths']['/api/v1/instances/{instance}/node-service-targets/{target}']['delete']['responses']['202']['content']['application/json']['schema']['properties']['data'])
             ->toBe(['$ref' => '#/components/schemas/Operation']);
         expect($spec['components']['schemas']['InstanceNodeServiceTarget']['properties']['process_id'])->toBe(['type' => 'integer']);
+        expect($spec['paths']['/api/v1/instances/{instance}/node-service-targets']['get']['responses']['200']['content']['application/json']['schema']['properties']['data'])
+            ->toBe(['type' => 'array', 'items' => ['$ref' => '#/components/schemas/InstanceNodeServiceTargetRecord']]);
 
     });
 

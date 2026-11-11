@@ -144,6 +144,8 @@ Route::middleware([
         'deployments/{deployment}',
         [InstanceDeploymentsController::class, 'show'],
     )->name('instance:deployment:show');
+    Route::get('instances/{instance}/node-service-targets', [InstanceNodeServiceTargetsController::class, 'index'])
+        ->whereNumber('instance')->name('instance:node-service:list');
     Route::post('instances/{instance}/node-service-targets', [InstanceNodeServiceTargetsController::class, 'store'])
         ->whereNumber('instance')->name('instance:node-service:attach');
     Route::delete('instances/{instance}/node-service-targets/{target}', [InstanceNodeServiceTargetsController::class, 'destroy'])
