@@ -16,6 +16,8 @@ use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\Deployment\DevelopmentDeploySteps;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
+use App\Domain\Instances\Environment\DevelopmentMailEnvironment;
+use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceSourceLayout;
@@ -195,6 +197,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 $database = $copy['intent'] ?? null;
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
                 $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? $server['connection'] ?? null, $source);
+                $input['mail_keys_taken_over'] = array_keys(app(DevelopmentMailEnvironment::class)->forInstance($instance, app(InstanceEnvironmentStore::class)->values($instance)));
                 // A rerun after a failed create checks the Processes its first run already started.
                 $input['members'] = $container ? [] : app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions', includeActive: true)['members'];
             }

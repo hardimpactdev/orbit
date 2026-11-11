@@ -2560,3 +2560,21 @@ default = ["swamp-shape"]
 [roots."."]
 inputs = [".editorconfig", ".gitattributes", ".gitignore", ".node-version", "composer.json", "composer.lock", "vet.json", "LICENSE", "*.md", "*.mdx", "*.mmd"]
 default = []
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_mail_test.py"
+php = true
+cost = 23
+inputs = [
+  "apps/gateway/app/Domain/Instances/Environment/DevelopmentMailEnvironment.php",
+  "swamp/ansible/instance-mail.yml",
+  "swamp/ansible/tasks/instance-mail.yml",
+  "swamp/ansible/instance_mail.php",
+  "swamp/ansible/instance_bridge.py",
+]
+[fixture.case_costs]
+  "test_only_mail_value_spans_change_and_nonmail_bytes_survive" = 2
+  "test_append_block_keeps_every_original_byte_and_one_backup" = 2
+  "test_own_choices_are_byte_identical_and_make_no_backup" = 2
+  "test_multiline_nonmail_and_failed_render_preserve_prior_content" = 2
+  "test_reusable_phase_changes_only_its_running_units_and_repeat_restarts_nothing" = 15

@@ -976,3 +976,7 @@ Proof preparation installs the tested checkout's frozen observer pin on every ne
 The `ai-router-model-forwarder.yml` playbook, including its numeric packet-counter checks, is documented in [AI router](/reference/ai-router#container-model-forwarder).
 
 The container playbook preserves agent settings outside Orbit's managed JSON keys and Git workspace trust, and applies the [per-Instance limits](/reference/development-containers#inside-a-container). It writes the shared [container PHP settings](/reference/php-runtime#container-php): the memory limit and PHP Data Bridge.
+
+## Updating container mail
+
+[`instance:mail:update`](/cli/instance/mail-update) reaches only the named running container. Its reusable phase preserves non-mail environment bytes, keeps one backup outside the workspace, clears Laravel config and restarts only its running PHP and worker Processes after a changed file. It does not start a stopped container or run a Node role converge.

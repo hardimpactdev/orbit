@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Commands\GatewayCommand;
 use App\Commands\Schedules\ListSchedulesCommand;
 use App\Commands\Schedules\RunScheduleCommand;
+use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\Extensions\GatewayExtensionState;
 use App\Support\CommandVocabulary;
@@ -13,7 +14,11 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Instances\UpdateInstanceMailRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\StringInput;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -129,6 +134,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:destroy',
         'instance:list',
         'instance:logs',
+        'instance:mail:update',
         'instance:migrate',
         'instance:node-service:attach',
         'instance:node-service:detach',
@@ -754,6 +760,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:destroy' => [['instance'], ['yes' => false, 'force' => false, 'idempotency-key' => null, 'json' => false]],
         'instance:list' => [[], ['json' => false]],
         'instance:logs' => [['instance'], ['lines' => '100', 'follow' => false, 'json' => false]],
+        'instance:mail:update' => [['instance'], ['json' => false]],
         'instance:migrate' => [['instance'], ['force' => false, 'idempotency-key' => null, 'json' => false]],
         'instance:node-service:attach' => [['instance'], ['process' => null, 'protocol' => 'tcp', 'port' => null, 'host-env-key' => null, 'port-env-key' => null, 'json' => false]],
         'instance:node-service:detach' => [['instance', 'target'], ['yes' => false, 'json' => false]],
@@ -1294,6 +1301,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:destroy' => [['instance' => '1'], ...$profileMissing],
         'instance:list' => [[], ...$profileMissing],
         'instance:logs' => [['instance' => '1'], ...$profileMissing],
+        'instance:mail:update' => [['instance' => '1'], ...$profileMissing],
         'instance:migrate' => [['instance' => '1', '--force' => true], ...$profileMissing],
         'instance:node-service:attach' => [['instance' => '1', '--process' => '1', '--port' => '1025', '--host-env-key' => 'MAIL_HOST', '--port-env-key' => 'MAIL_PORT'], ...$profileMissing],
         'instance:node-service:detach' => [['instance' => '1', 'target' => '1', '--yes' => true], ...$profileMissing],
@@ -1598,3 +1606,27 @@ it('registers only the new automatic release family', function (): void {
             ->not->toHaveKey('gateway:release:auto:'.$action);
     }
 });
+
+it('applies mail without confirmation in JSON and noninteractive human mode', function (bool $json): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile('test', 'https://10.44.0.1', '/unused-ca'));
+    $result = ['mail_keys_taken_over' => [], 'changed_key_count' => 0, 'changed' => false, 'reason' => 'own_mail_settings_kept'];
+    $final = ['id' => 901, 'kind' => 'instance.mail_update', 'target_type' => 'instance', 'target_id' => 501,
+        'status' => 'succeeded', 'sequence' => 2, 'poll_after_seconds' => null, 'result' => $result];
+    $mock = MockClient::global([
+        UpdateInstanceMailRequest::class => MockResponse::make(['data' => $final], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final]),
+    ]);
+    $exit = Artisan::call('instance:mail:update', ['instance' => 501, '--json' => $json, '--no-interaction' => true]);
+    $output = trim(Artisan::output());
+    expect($exit)->toBe(0)->and($output)->not->toContain('MAIL_PASSWORD=', 'Confirm');
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
+    } else {
+        expect($output)->toContain('Own mail settings kept.');
+    }
+    $mock->assertSent(fn ($request): bool => $request instanceof UpdateInstanceMailRequest
+        && $request->resolveEndpoint() === '/api/v1/instances/501/mail' && $request->body()->all() === []
+        && is_string($request->headers()->get('Idempotency-Key')));
+    MockClient::destroyGlobal();
+})->with([true, false]);

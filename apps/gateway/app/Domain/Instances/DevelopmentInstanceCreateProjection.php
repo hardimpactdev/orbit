@@ -37,7 +37,7 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
         return DB::transaction(function () use ($operation, $data, $container, $server): Operation {
             $operation->refresh();
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
-            $result = ValidatedData::object($data['result'] ?? []);
+            $result = [...ValidatedData::object($data['result'] ?? []), 'mail_keys_taken_over' => $operation->input['mail_keys_taken_over'] ?? []];
             $instance = app(InstanceLifecycleState::class)->instance($operation);
             if ((ValidatedData::object($operation->input['direct_provisioning'] ?? [])['already_active'] ?? false) === true) {
                 return $this->direct->project($operation, $data, $result);

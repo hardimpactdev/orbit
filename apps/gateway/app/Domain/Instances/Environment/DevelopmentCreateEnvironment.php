@@ -54,7 +54,7 @@ final readonly class DevelopmentCreateEnvironment
             $values['APP_KEY'] = LaravelApplicationKey::generate();
         }
         $this->store->seedForCreate($instance, $values);
-        $keys = array_keys($values);
+        $keys = array_keys([...$values, ...app(DevelopmentMailEnvironment::class)->forInstance($instance, $values)]);
         sort($keys, SORT_STRING);
 
         return $keys;
@@ -65,7 +65,10 @@ final readonly class DevelopmentCreateEnvironment
     {
         $instance->loadMissing(['node', 'project']);
 
-        return $this->renderer->render($this->context($instance), $this->store->values($instance), $this->capturedReferences($instance));
+        $values = $this->store->values($instance);
+        $mail = app(DevelopmentMailEnvironment::class)->forInstance($instance, $values);
+
+        return $this->renderer->render($this->context($instance), [...$values, ...$mail], array_diff_key($this->capturedReferences($instance), $mail));
     }
 
     /** @return array<string, string> Provenance is used only while creating the initial development files. */

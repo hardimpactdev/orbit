@@ -290,3 +290,22 @@ Production deploy commands receive the rendered environment through private SSH 
 An operator may set `APP_ENV` to `local` or `staging` on a production Instance. If `APP_ENV` decided the layout or the Unix user, that edit would turn off release layout or user isolation. So the Node role decides them, and `APP_ENV` stays an application setting.
 
 The Instance environment comes from its Node role.
+
+## Development mail
+
+Contributors configure nothing for the default mail service. On the Node that runs the main Mailpit, new development container Instances and development clones use SMTP at the Node's Instance bridge gateway, port `1025`. The fleet-owned `instances.mailpit` configuration names the Docker Node Process (`mailpit`) and its published SMTP port. The Process must be active and desired-running on that Node. A Node without that Process gets neither an allowance nor mail defaults. Production and checkout Instances are excluded.
+
+A non-empty `MAIL_URL`, a `MAIL_HOST` containing a `${...}` reference, a non-stock host, or a transport other than absent, `smtp` or `log` is a Project choice. Orbit leaves every mail key untouched. This choice takes precedence over a template `MAIL_MAILER=log`.
+
+| Input | Stock values |
+| --- | --- |
+| Keys absent | Stock. |
+| `MAIL_HOST` and `MAIL_PORT` | `127.0.0.1` or `localhost` with port absent, `1025` or `2525`, including template `MAIL_MAILER=smtp`. |
+| `MAIL_HOST` | Old host `10.6.0.7`, with a stock transport. |
+| `MAIL_MAILER` | `log`, with an absent or stock host. |
+
+For stock mail, Orbit owns `MAIL_MAILER`, `MAIL_HOST` and `MAIL_PORT` and clears `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_ENCRYPTION` and `MAIL_SCHEME` to empty strings. It changes only the Instance file. Project templates and stored Project values stay intact, and references elsewhere remain as written. Stock lines require no confirmation or override flag.
+
+For an existing container, [`instance:mail:update`](/cli/instance/mail-update) reads its current `.env` and changes only those seven mail keys. Hand edits to every other line stay byte for byte. It keeps one recoverable prior file outside the workspace, clears Laravel's config cache and restarts only that Instance's running PHP and worker Processes after a changed write. An unchanged repeat writes nothing and restarts nothing. Own settings succeed with `changed_key_count: 0` and reason `own_mail_settings_kept`. Results contain only taken-over key names and a changed-key count.
+
+Mail values and their network path must ship together. The initial rollout is Gateway release → mail update of a fixture container → one tagged fixture mail, read back through Mailpit's API → mail update of existing containers. No Node role converge is part of that sequence. During this cut, migrate and development deploy do not apply mail automatically: a freshly migrated Instance needs one mail update. Their automatic integration is a separate follow-up using the same reusable step. The explicit command remains a repair tool.

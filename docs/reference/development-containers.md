@@ -1087,3 +1087,7 @@ Two spikes on Beast on 2026-11-09 ran the user and agent layout in one container
 | `orbit` user | Could not run `t3`, `claude` or `codex`, read `/home/agent`, reach the model route or T3's port, or see agent processes |
 | Shared workspace | Each user edited the other's files; Git was clean for both |
 | Egress | Only DNS and the guard; no turn failed |
+
+## Default development mail
+
+New development containers and clones receive the [owned mail defaults](/reference/environment-variables#development-mail) in their rendered `.env` when the Node has its main Mailpit endpoint. Existing containers use [`instance:mail:update`](/cli/instance/mail-update), which preserves all non-mail bytes and keeps its backup outside the workspace. Until migrate and development deploy adopt the same step, apply mail once after migration. Network-path delivery is a separate change and must ship in the same release.

@@ -172,6 +172,7 @@ A kind needs this guard when its execution input is built or its execution code 
 | `instance.create` | Builds container, environment and Process input at submission; this includes container clones. |
 | `instance.deploy*` | Builds deploy steps, environment and runtime input after admission; the prefix covers all deploy variants. |
 | `instance.migrate` | Rebuilds container Process input against admitted units; a changed renderer can refuse those units. |
+| `instance.mail_update` | Uses the serving release's mail resolver while editing and refreshing a running Instance. |
 | `instance.clone` | Builds the clone's environment, Process and Schedule input at submission. |
 | `instance.destroy` | Reads teardown programs and builds removal input after admission. |
 | `conn.*` | Preserves the existing guard for checkout and session setup across a switch. |

@@ -7,6 +7,9 @@ description: Private intent files and shipped playbooks for Ansible phases.
 behaviors:
   - operations/ansible-input/write.ts
 additionalFiles:
+  - ansible/instance-mail.yml
+  - ansible/tasks/instance-mail.yml
+  - ansible/instance_mail.php
   - scripts/instance_clone.py
   - scripts/instance_clone_guest.py
   - ansible/proof-gateway.yml

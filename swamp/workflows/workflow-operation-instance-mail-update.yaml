@@ -1,0 +1,70 @@
+id: fdd25bfe-62c9-47b6-b401-ea3900ac8a69
+name: operation-instance-mail-update
+description: Apply only development mail keys in one current container environment file.
+vaults: [orbit-control-inputs]
+queueTimeout: 10
+labels: {role: swamp}
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: instance.mail_update}
+    intent: {type: object}
+    execution_secrets: {type: object}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+  - name: mail
+    steps:
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ansible-input
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      - name: Apply owned mail keys
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "instance-mail-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, "$ORBIT_ANSIBLE/instance-mail.yml"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+              ORBIT_MAIL_RESOLVER: '${{ vault.get(inputs.execution_secrets.resolver.vault, inputs.execution_secrets.resolver.key) }}'
+      - name: result
+        labels: {role: swamp}
+        dependsOn: [{step: Apply owned mail keys, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: instance-mail-result
+          methodName: execute
+          inputs:
+            run: timeout 5 cat "$ORBIT_RUN/result.json"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+      - name: cleanup
+        labels: {role: swamp}
+        dependsOn: [{step: result, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: instance-mail-cleanup
+          methodName: execute
+          inputs:
+            run: timeout 5 rm -rf -- "$ORBIT_RUN"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'

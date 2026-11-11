@@ -1850,5 +1850,15 @@
       "destroy resets only the admitted unit and rereads after the reset settles",
       "Docker removal keeps its native absence check and never resets systemd"
     ]
+  },
+  "swamp/tests/ansible_instance_mail_test.py": {
+    "source_sha256": "2c0a03dafbe414d06c603d964f3bb9dd59efcf302f0cf6f3641f521ea2d85707",
+    "cases": [
+      "test_only_mail_value_spans_change_and_nonmail_bytes_survive",
+      "test_append_block_keeps_every_original_byte_and_one_backup",
+      "test_own_choices_are_byte_identical_and_make_no_backup",
+      "test_multiline_nonmail_and_failed_render_preserve_prior_content",
+      "test_reusable_phase_changes_only_its_running_units_and_repeat_restarts_nothing"
+    ]
   }
 }

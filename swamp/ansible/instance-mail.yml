@@ -1,0 +1,55 @@
+---
+- name: Address the Instance Node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh_execution.target }}"
+    address_identity: "{{ intent.ssh_execution.identity_file }}"
+    address_group: mail_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Apply mail to the named Instance
+  hosts: mail_node
+  become: true
+  gather_facts: false
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    mail: "{{ intent.mail }}"
+  tasks:
+    - name: Apply and check mail
+      block:
+        - name: Apply owned mail keys
+          ansible.builtin.import_tasks: tasks/instance-mail.yml
+        - name: Write the public result
+          ansible.builtin.copy:
+            content: "{{ mail_result | to_json }}"
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            mode: '0600'
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: &local
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      rescue:
+        - name: Write the failure result
+          ansible.builtin.copy:
+            content: >-
+              {{ {'error_code': ansible_failed_result.msg
+                  if ansible_failed_result.msg is match('^[a-z]+[.][a-z_]+$')
+                  else 'env.runtime_refresh_failed'} | to_json }}
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            mode: '0600'
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: *local
+        - name: Fail the mail phase
+          ansible.builtin.fail:
+            msg: env.runtime_refresh_failed

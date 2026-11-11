@@ -677,3 +677,7 @@ Both paths require the recorded native run ID, an unfinished direct Operation, a
 A declared `OperationArtifactSource` may return a bounded existing-file reference: a relative private-read path, SHA-256, byte count and the shared 256 MiB maximum. `GET` on the same private-material path with `artifact=FIELD` serves only that declared artifact field, with the same Node, run and unfinished-Operation checks. It accepts no file path or source from the caller. The Gateway rejects symlinks, oversized files and digest mismatches. The worker bounds the download and verifies the admitted digest before use. No binary is embedded in JSON and no public artifact URL is added.
 
 `DirectOperationResultProjection` supplies the common atomic status/result transaction for extension families. Their fixed `result_hook` validates safe input and domain metadata; the result hook invokes its existing domain completion. Conn’s issue observations update its existing pairing metadata before the registered credential store accepts the output. No family transport or result controller is added.
+
+### Development mail update
+
+`instance.mail_update` has a 90-second run budget, including its bounded mail phase, result and cleanup. It holds the selected Instance lock. A successful repeat changes nothing and restarts nothing; own mail is also a successful no-op. The [mail command](/cli/instance/mail-update) defines its current-file preservation and value-free result.
