@@ -23,6 +23,11 @@ class StaticPhpBuildTest(unittest.TestCase):
         change(recipe)
         return build.definitions(recipe)['8.5']
 
+    def test_slow_compilation_is_manual_but_pin_validation_stays_automatic(self):
+        definition, compilation = WORKFLOW.split('  build:', 1)
+        self.assertIn('run: python3 bin/static-php-build verify-pins', definition)
+        self.assertIn("if: github.event_name == 'workflow_dispatch' && needs.definition.outputs.missing != '[]'", compilation)
+
     def test_the_shipped_pin_names_its_definition(self):
         item = build.definitions(RECIPE)['8.5']
         self.assertEqual(item['recorded'], {'build': item['build'], 'url': item['url']})

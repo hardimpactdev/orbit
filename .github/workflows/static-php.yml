@@ -1,7 +1,7 @@
 name: Static PHP build
 
 # Builds the static PHP CLI and FrankenPHP of the Instance runtime folder from the recipe's instances.php section, proves both
-# with the Gateway as a Laravel fixture, and on main, from a push or a manual run, publishes a build that has no release yet.
+# with the Gateway as a Laravel fixture, and on main, from a manual run, publishes a build that has no release yet.
 # A recipe pin records the published SHA-256 in a later reviewed commit. See docs/reference/compute-drivers.md#static-php-build.
 on:
   pull_request:
@@ -69,7 +69,8 @@ jobs:
   build:
     name: Build PHP ${{ matrix.build.php_version }}
     needs: definition
-    if: needs.definition.outputs.missing != '[]'
+    # Compilation exceeds the PR budget. Keep pin validation automatic.
+    if: github.event_name == 'workflow_dispatch' && needs.definition.outputs.missing != '[]'
     runs-on: ubuntu-26.04
     timeout-minutes: 240
     strategy:
