@@ -53,8 +53,14 @@ sequenceDiagram
     SW->>N: Stop the unit<br/>ssh exec · stop
     SW->>N: Remove the unit<br/>cfgmgmt/file absent
     SW->>N: Reload systemd<br/>ssh exec · daemon-reload
-    SW->>N: Check the unit<br/>cfgmgmt/systemd.check
     SW->>N: Check unit removal<br/>cfgmgmt/file.check
+    SW->>N: Check boot removal<br/>cfgmgmt/file.check
+    SW->>N: Read removed unit state<br/>ssh exec · systemctl show
+    SW->>N: Clear failed unit cache<br/>ssh exec · reset-failed
+    %%> Only the admitted unit is reset, after its file and boot link are absent, LoadState is not-found, and no PID, cgroup or pending job remains.
+    %%> A failed state alone never permits cleanup. Other remaining runtime or boot state fails the end check.
+    SW->>N: Check the unit<br/>ssh exec · systemctl show
+    %%> Reads the state again after cache cleanup; a running or loaded unit, boot policy, PID, cgroup or pending job refuses completion.
   else Docker
     SW->>N: Remove the container<br/>cfgmgmt/docker_container
     SW->>N: Check container removal<br/>cfgmgmt/docker_container
@@ -64,7 +70,7 @@ sequenceDiagram
     SW->>N: Remove the dev environment<br/>cfgmgmt/file absent
   end
   SW->>N: Verify it is gone<br/>native assert
-  %%> Asserts absent unit/container and stopped service; data volumes remain.
+  %%> Asserts absent unit/container and runtime and boot state; data volumes and the source environment file remain.
   alt all removed
     N-->>SW: unit gone
     %%> Returns:
