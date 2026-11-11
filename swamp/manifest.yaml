@@ -19,6 +19,8 @@ additionalFiles:
   - ansible/tasks/artifact-fetch.yml
   - ansible/transport-exit-codes.json
   - ansible/operation-node-role-add.yml
+  - ansible/operation-node-role-add-local-dns.yml
+  - ansible/operation-node-converge-local-dns.yml
   - ansible/operation-node-converge.yml
   - ansible/tasks/node-role-runtime.yml
   - ansible/tasks/node-converge-cli-absent.yml
@@ -105,6 +107,8 @@ additionalFiles:
   - ansible/tasks/check-files.yml
   - ansible/tasks/check-runtime.yml
   - ansible/tasks/gateway-dns.yml
+  - ansible/tasks/private-dns-listener.yml
+  - ansible/tasks/private-dns-withdraw.yml
   - ansible/tasks/gateway-runtime.yml
   - ansible/tasks/gateway-retire.yml
   - ansible/tasks/firewall-port.yml

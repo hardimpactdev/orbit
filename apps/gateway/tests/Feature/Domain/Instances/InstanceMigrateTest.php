@@ -1035,6 +1035,8 @@ describe('Processes moving into the container', function (): void {
             ->not->toContain('/etc/orbit/vite/', '/home/orbit/.vite-plus/', '--host=127.0.0.1');
         expect($unit['content'])->toContain('Environment=ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite',
             'Environment=ORBIT_DEV_SERVER_HOST=default.tool.test', 'Environment=ORBIT_DEV_SERVER_PATH=/__orbit/vite', 'Environment=ORBIT_DEV_SERVER_PORT=5195');
+        expect($run['intent']['container']['web_config']['content'])->toContain('env HTTPS on', 'env REQUEST_SCHEME https',
+            "remote_ip 10.253.0.1/32\n        header X-Forwarded-Proto https");
         expect($run['intent']['migrate']['processes'][0])->toMatchArray(['name' => $unit['name'], 'desired' => $desired]);
         expect(json_encode($run['intent']))->not->toContain('migration-process-secret');
         expect(collect($vault->puts)->firstWhere('key', 'instance-migrate-processes-'.$operation->id)['value'])

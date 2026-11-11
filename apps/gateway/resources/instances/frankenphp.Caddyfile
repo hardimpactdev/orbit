@@ -1,0 +1,29 @@
+# Managed by Orbit.
+{
+    admin off
+    auto_https off
+    frankenphp
+    servers {
+        trusted_proxies static __ORBIT_PROXY__/32
+    }
+}
+
+:__ORBIT_PORT__ {
+    root * "__ORBIT_ROOT__"
+    encode zstd br gzip
+    @node_https {
+        remote_ip __ORBIT_PROXY__/32
+        header X-Forwarded-Proto https
+    }
+    handle @node_https {
+        php_server {
+            env HTTPS on
+            env REQUEST_SCHEME https
+            env SERVER_PORT 443
+            env REMOTE_ADDR {client_ip}
+        }
+    }
+    handle {
+        php_server
+    }
+}

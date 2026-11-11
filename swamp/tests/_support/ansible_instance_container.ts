@@ -110,6 +110,7 @@ export function fixture() {
     workspace: "/srv/workspace",
     environment_file: "/srv/workspace/.env",
     units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=orbit\n" }],
+    web_config: { path: "/etc/orbit/frankenphp.Caddyfile", content: ":8080 {\n    php_server\n}\n" },
     php: "/opt/orbit-runtime/current/php/8.5/bin/php" as string | null,
     processes: [] as { id: number; name: string; content: string; environment: string | null; desired: string }[],
   };

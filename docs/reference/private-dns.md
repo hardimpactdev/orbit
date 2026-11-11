@@ -12,7 +12,7 @@ covers:
 
 # Private DNS
 
-Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, and forwards every other query to ordinary resolvers. It runs on the Node with the `vpn` role. Managed Linux Nodes route only Orbit names to it by default. This page explains resolver selection, the Gateway machine's resolver, the listener, Cluster Router addresses, and how to inspect or repair one peer. The active WireGuard manager projects VPN DNS behavior without creating local dnsmasq snippet files.
+Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, and forwards every other query to ordinary resolvers. The `vpn` Node serves the fleet. When no separate VPN Node serves the Gateway, the Gateway machine runs the shared listener itself. One listener owns each machine. Managed Linux Nodes route only Orbit names to it by default. This page explains resolver selection, the Gateway machine's resolver, the listener, Cluster Router addresses, and how to inspect or repair one peer. The active WireGuard manager projects VPN DNS behavior without creating local dnsmasq snippet files.
 
 [ADR 0248](/decisions/0248-render-private-dns-as-desired-state) replaces the plan of [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router), which proposed moving the Router LAN answers to a Cluster DNS on each Cluster Router and replaces the listener with plain dnsmasq. The proposal preserves the Cluster TLD and exact Cluster Route domains outside it, and forwards remaining names to VPN DNS. The approved behavior returns members automatically to healthy LAN DNS after VPN fallback. The recovery mechanism and member acceptance checks remain implementation gates. Until the DNS service and member steps are built, this page describes the listener.
 
@@ -79,11 +79,31 @@ The `PostUp` hook restores the selection whenever the `orbit` interface starts. 
 
 ## The Gateway machine
 
-The Gateway machine is not a managed peer. When it also holds `vpn`, its tunnel is the hub. When `gateway` moved to another machine, that machine keeps the tunnel it joined with. So the Gateway sets its own resolver in a separate step.
+The Gateway machine can be a hub or a managed peer. When it also holds `vpn`, its tunnel is the hub. When `gateway` moved to another machine, that machine keeps the tunnel it joined with. So the Gateway sets its own resolver in a separate step.
 
-Gateway bootstrap and every `gateway` role convergence send queries for the private VPN domain to Orbit VPN DNS over the `orbit` link. The address is the configured VPN DNS server, or the WireGuard address of the `vpn` Node. Every other query, including names under Node and Cluster TLDs, stays on the uplink resolvers when the Gateway machine is outside the managed peer policy. So the Gateway still resolves package mirrors, GitHub, and ACME endpoints while Orbit VPN DNS is down. The Orbit CLI on the Gateway machine resolves `reverb.orbit` and stays live.
+The Gateway uses the fleet VPN resolver when any separate Node holds a `vpn` role assignment, including a failed or removing Node or assignment. Its runtime, recipe and Ansible inputs stay unchanged: it installs no local listener or catalog and uses the existing resolver selection for that fleet state. A working production Gateway must not change because a stock fleet needs DNS bootstrap.
 
-The drop-in `/etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf` applies the route whenever the tunnel starts. It sets the routing domain and turns off the link's default DNS route before it sets the server, so the link never routes every name. A failure there never fails the tunnel. When `/etc/wireguard/orbit.dns-link` exists, the machine is a managed peer, and the step leaves the peer's policy in place.
+Local DNS becomes eligible only after the last separate `vpn` assignment row is gone. Failed and removing rows still suppress it. The current APIs forbid removing the VPN role or its Node, so production has no supported path into local DNS.
+
+With no separate VPN assignment, the Gateway role installs the shared private-DNS listener and a catalog rendered from the Gateway database before routing the private VPN domain to its own WireGuard address. The Gateway decides this from desired fleet state and passes the listener into the converge input; host probes do not select the policy. It proves that `gateway.orbit` answers and the listener loaded the catalog before applying resolver routing.
+
+Only a local DNS installation or withdrawal selects an additional wrapper playbook. Every existing Ansible file used by a Gateway with a separate VPN resolver stays unchanged. Shipping the additional files in the manifest has no host effect.
+
+Admission records local listener ownership before dispatch, in the same transaction as the operation. This conservative claim means the listener is owned or may be owned: a crash before installation, during installation or after a later machine task fails cannot hide cleanup duties. Withdrawal tolerates absent or partially installed resources.
+
+When a separate VPN resolver joins later, an owned Gateway switches resolver routing first, then disables and removes its local listener units, release and catalog. The ownership record is cleared only after withdrawal succeeds. A failed withdrawal keeps the record for retry. A Gateway with no local ownership claim receives no withdrawal input. Role removal also uses this record, including when a VPN joined before the next converge; a colocated VPN keeps the shared listener.
+
+Two races can leave an untracked listener. First, a VPN role is added to a fleet without a separate VPN while a Gateway role converge is queued. Second, the Gateway role is removed while a Node converge that carries the listener is still queued: removal takes no operation lock and clears ownership, and the later install does not claim it again.
+
+Both races are out of scope. No current automated fleet flow does either. `node:add` can enrol the first VPN Node, but no flow does that while a Gateway converge waits. Local DNS exists only in fleets without a separate VPN assignment, such as the nested CI fleet. The worst case is an untracked listener on a disposable task-VM Gateway.
+
+Closing these races needs one exclusion across role add, role converge, Node converge, role removal and rekey, which would change production locking. Revisit them for the first real fleet without a VPN Node.
+
+Check mode skips listener activation and live readiness probes. It does not prove an unapplied listener or a loaded catalog.
+
+A Gateway that also holds `vpn` uses the same footprint, `orbit-private-dns.socket` and `orbit-private-dns.service` as VPN publication. Convergence never adds a second listener. Every other query stays on the uplink resolvers when the Gateway is outside the managed peer policy, so package mirrors, GitHub and ACME remain reachable while private DNS is down.
+
+The unit `orbit-gateway-dns.service` applies the route whenever the tunnel starts. It sets the routing domain and turns off the link's default DNS route before it sets the server, so the link never routes every name. A failure there never fails the tunnel. When `/etc/wireguard/orbit.dns-link` exists, the machine is a managed peer, and the step leaves the peer's policy in place.
 
 If Orbit VPN DNS is unreachable, a private-name lookup on the Gateway machine takes about 40 seconds to fail, because systemd-resolved has no per-link timeout. Ordinary names still resolve at once.
 
@@ -95,15 +115,19 @@ If Orbit VPN DNS is unreachable, a private-name lookup on the Gateway machine ta
 | `getent hosts reverb.orbit` | The address of the Node that holds `websocket` |
 | `getent ahostsv4 example.com` | An ordinary name resolves through the uplink resolvers. |
 
-A failure of this step does not fail bootstrap or the role. The role stays `active`, and the response's `follow_up` names the failed route and the command that retries it. The CLI prints it as a warning. The Gateway logs the underlying code, `vpn.dns_resolver_failed` when the command fails on the machine. `orbit doctor --family=role` reports `role.private_dns_route_mismatch` until the route matches. Run `orbit node:role:add <gateway-node> gateway --converge` to retry.
+A listener or resolver-policy failure fails the Gateway role phase. Resolver routing starts only after the local listener answers `gateway.orbit` and confirms its catalog. `orbit doctor --family=role` reports `role.private_dns_route_mismatch` until the route matches. Run `orbit node:role:add <gateway-node> gateway --converge` to retry.
 
-Removing the `gateway` role removes the drop-in and reverts the `orbit` link. When that step fails, the role stays `failed` with `failed_step=remove:gateway-private-dns-resolver`, and running the removal again finishes it. `--offline` removal changes nothing on the machine and lists the drop-in under `retained_on_node`. [Relocating the gateway role](/solutions/relocate-gateway-role) adds the route on the target and removes it from the source.
+Removing the `gateway` role removes its resolver unit and reverts the `orbit` link. When local ownership is recorded, it also disables and removes the local listener units, catalog, catalog confirmation file and releases unless a colocated `vpn` role still needs them. When that step fails, the role stays `failed` with `failed_step=remove:gateway-private-dns-resolver`, and running the removal again finishes it. `--offline` removal changes nothing on the machine and lists the drop-in under `retained_on_node`. [Relocating the gateway role](/solutions/relocate-gateway-role) adds the route on the target and removes it from the source.
 
 ## The listener
 
-The listener and the published catalog live on the Node that holds `vpn`. The listener answers private names from the catalog on the VPN WireGuard DNS address. It forwards every other query to a dnsmasq backend on `127.0.0.55`. The Gateway sends the publication to the `vpn` Node over pinned SSH, including when both roles share one Node. This uses the managed account and host key established during bootstrap. Local `sudo` would retain the HTTP worker’s read-only filesystem namespace and could not publish DNS configuration. The worker’s filesystem protection stays enabled.
+The fleet listener and published catalog live on the Node that holds `vpn`. If the Gateway has no separate VPN resolver, its own runtime installs that same listener on its WireGuard address, with its baseline catalog. It forwards uncatalogued queries to the bootstrap dnsmasq backend on `127.0.0.55`.
 
-Gateway bootstrap starts `orbit-private-dns.service` after the dnsmasq backend is bound, so the first managed peer can resolve ordinary names during its role setup.
+A Gateway with a separate VPN resolver receives no listener or catalog. A managed peer Gateway keeps its existing DNS server and routing domains. This preserves the working fleet while repairing stock bootstrap.
+
+The Gateway sends the publication to the `vpn` Node over pinned SSH, including when both roles share one Node. This uses the managed account and host key established during bootstrap. Local `sudo` would retain the HTTP worker’s read-only filesystem namespace and could not publish DNS configuration. The worker’s filesystem protection stays enabled.
+
+Gateway role convergence starts `orbit-private-dns.service` after the bootstrap dnsmasq backend is bound, so the first managed peer can resolve ordinary names during its role setup.
 
 ### Upstream resolvers
 

@@ -88,6 +88,9 @@ final readonly class NodeRoleRemovalProjection implements DirectOperationProject
                 ->where('owner_id', $nodeId)->where('name', PlausibleProcess::NAME)->first();
             $process?->delete();
         }
+        if ($role === RoleName::Gateway) {
+            app(GatewayPrivateDnsState::class)->forget($nodeId);
+        }
         if ($role === RoleName::WebSocket) {
             app(WebSocketRegistry::class)->write(fn (): int => WebSocketRuntime::query()->where('node_id', $nodeId)->where('slot', 'default')->update(['required' => false]));
         }

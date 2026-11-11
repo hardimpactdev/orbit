@@ -49,6 +49,11 @@ final readonly class NativeNodeRoleRuntimeInput
             $domain = ValidatedData::string($dns['domain']);
             $address = ValidatedData::string($dns['address']);
             $runtime['gateway_dns'] = ['unit' => "# Managed by Orbit.\n[Unit]\nDescription=Orbit Gateway DNS routing\nAfter=wg-quick@orbit.service\nConditionPathExists=/sys/class/net/orbit\nConditionPathExists=!/etc/wireguard/orbit.dns-link\n\n[Service]\nType=oneshot\nExecStart=/usr/bin/resolvectl domain orbit ~{$domain}\nExecStart=/usr/bin/resolvectl default-route orbit false\nExecStart=/usr/bin/resolvectl dns orbit {$address}\n\n[Install]\nWantedBy=wg-quick@orbit.service\n"];
+            foreach (['listener', 'withdraw'] as $action) {
+                if (isset($dns[$action])) {
+                    $runtime['gateway_dns'][$action] = ValidatedData::object($dns[$action]);
+                }
+            }
             $runtime['files'][] = ['path' => '/etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf',
                 'ensure' => 'absent', 'content' => '', 'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
         }

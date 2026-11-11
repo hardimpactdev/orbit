@@ -321,6 +321,7 @@ class CloneGuestTest(unittest.TestCase):
                 "php": "/opt/orbit-runtime/current/php/8.5/bin/php",
                 "environment_file": "/srv/workspace/.env",
                 "units": [unit],
+                "web_config": {"path": "/etc/orbit/frankenphp.Caddyfile", "content": ":8080 {\n    php_server\n}\n"},
                 "processes": [],
             }
             commands = []
@@ -360,6 +361,13 @@ class CloneGuestTest(unittest.TestCase):
 
             restart = ["systemctl", "restart", unit["name"]]
             self.assertIn(restart, workspace())
+            self.assertNotIn(restart, workspace())
+            web_config = base / "etc/orbit/frankenphp.Caddyfile"
+            self.assertEqual(web_config.read_text(), container["web_config"]["content"])
+            # A stale Caddyfile must repair and restart even with an unchanged unit and PHP settings.
+            web_config.write_text("stale\n")
+            self.assertIn(restart, workspace())
+            self.assertEqual(web_config.read_text(), container["web_config"]["content"])
             self.assertNotIn(restart, workspace())
             written = settings.read_text()
             self.assertEqual(
