@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Solutions",
+      "order": 3,
+      "pages": [
+        "solutions/incus-shared-image-refresh"
+      ]
+    }
+  ]
+}
