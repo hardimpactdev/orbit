@@ -76,9 +76,9 @@ An Instance can explicitly attach a standalone Docker Node Process through `POST
 
 The record stores the Instance, Node, Process, TCP port and explicit environment key names. It grants no network access and changes no environment values. Repeating the same attachment returns the existing record; overlapping key names refuse with `instance.node_service_environment_conflict`. Attach is refused when the Instance already has a container runtime.
 
-`DELETE /api/v1/instances/{instance}/node-service-targets/{target}` takes the numeric attachment ID and returns a completed Operation after deleting the record. It refuses while any container runtime remains, including a retained failed-migration runtime; the record stays.
+`DELETE /api/v1/instances/{instance}/node-service-targets/{target}` takes the numeric attachment ID and returns a completed Operation after deleting the record. Record-only detach is available after a successful migration, including for a default Instance. It changes no network access, environment values or runtime. A running lifecycle operation or an unfinished failed migration with a retained runtime still refuses detach; the record stays.
 
-`process.required_by_instance_node_service` refuses Process removal before runtime changes and names the dependent Instances. `process.node_service_ownership_conflict` likewise refuses a role or service claiming that Process. Detach dependent records before destroying or assigning the Process.
+`process.required_by_instance_node_service` refuses Process removal before runtime changes and names the dependent Instances. `process.node_service_ownership_conflict` likewise refuses a role or service claiming that Process. Detach dependent records before destroying or assigning the Process. When a non-default Instance is destroyed successfully, its attachment records are removed. The shared Node Process and other Instances' attachments remain. Container defaults cannot currently be destroyed; use record-only detach to release their dependencies.
 
 ### Node account
 

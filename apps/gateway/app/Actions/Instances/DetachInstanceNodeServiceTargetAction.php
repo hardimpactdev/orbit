@@ -33,10 +33,6 @@ final readonly class DetachInstanceNodeServiceTargetAction
             }
             $result = [...AttachInstanceNodeServiceTargetAction::data($target, true)->toArray(), 'detached' => true];
             $input = ['instance_id' => $instance->id, 'target_id' => $target->id, 'attachment' => $result];
-            if ($instance->runtime()->exists()) {
-                throw new ResourceOperationException('instance.node_service_runtime_unsupported',
-                    'Container access must be withdrawn before removing this attachment; record-only detach cannot withdraw it.', 422);
-            }
             $operation = $this->operations->create('instance.node_service_detach', 'instance', $instance->id, $instance->node_id,
                 $input, $caller, $requestId, OperationStore::lockKey('instance', $instance->id));
             if ($operation->wasRecentlyCreated) {

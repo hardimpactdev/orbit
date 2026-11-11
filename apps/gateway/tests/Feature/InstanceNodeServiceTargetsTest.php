@@ -174,10 +174,30 @@ describe('Node service attachment records', function (): void {
         $uri = "/api/v1/instances/{$instance->id}/node-service-targets";
 
         $this->postJson($uri, $input)->assertUnprocessable()->assertJsonPath('error.code', 'instance.node_service_runtime_unsupported');
-        $this->deleteJson($uri.'/'.$target->id)->assertUnprocessable()->assertJsonPath('error.code', 'instance.node_service_runtime_unsupported');
+        $this->deleteJson($uri.'/'.$target->id)->assertAccepted()->assertJsonPath('data.status', 'succeeded');
+
+        $this->assertModelMissing($target);
+    });
+
+    it('retains the record when an unfinished failed migration still has a runtime', function (string $status): void {
+        [$instance, $node, $input] = nodeServiceAttachmentFixture();
+        $target = $instance->nodeServiceTargets()->create(['node_id' => $node->id, ...$input]);
+        $instance->runtime()->create(['node_id' => $node->id, 'incus_project' => 'orbit-instances',
+            'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2',
+            'runtime_version' => 'v1', 'agent_version' => 'v1', 'power_state' => 'stopped']);
+        Operation::query()->create(['kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => $instance->id,
+            'node_id' => $node->id, 'status' => $status, 'input' => [], 'result' => ['moved' => false, 'restored' => false]]);
+        $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+
+        $this->deleteJson("/api/v1/instances/{$instance->id}/node-service-targets/{$target->id}")->assertConflict()
+            ->assertJsonPath('error.code', 'instance.node_service_runtime_cleanup_required');
 
         $this->assertModelExists($target);
-    });
+        $this->assertDatabaseCount('operations', 1);
+        Http::assertNothingSent();
+        Process::assertNothingRan();
+        Queue::assertNothingPushed();
+    })->with(['failed', 'interrupted']);
 
     it('attaches then detaches through generated MCP tools with numeric target identity', function (): void {
         [$instance, $node, $input] = nodeServiceAttachmentFixture();
@@ -200,6 +220,8 @@ describe('Node service attachment records', function (): void {
         expect($removedData['result'])->toMatchArray(['id' => $data['id'], 'process_id' => $input['process_id'], 'changed' => true]);
         $this->assertDatabaseCount('instance_node_service_targets', 0);
         $spec = json_decode(file_get_contents(base_path('../../docs/openapi.json')), true, flags: JSON_THROW_ON_ERROR);
+        expect($spec['paths']['/api/v1/instances/{instance}/node-service-targets/{target}']['delete']['description'])
+            ->toContain('after a successful migration', 'no network, environment or runtime change');
         expect($spec['paths']['/api/v1/instances/{instance}/node-service-targets']['post']['responses']['200']['content']['application/json']['schema']['properties']['data'])
             ->toBe(['$ref' => '#/components/schemas/InstanceNodeServiceTarget']);
         expect($spec['paths']['/api/v1/instances/{instance}/node-service-targets/{target}']['delete']['responses']['202']['content']['application/json']['schema']['properties']['data'])
