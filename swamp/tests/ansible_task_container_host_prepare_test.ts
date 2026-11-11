@@ -1345,7 +1345,8 @@ Deno.test({
         const f = fixture({ stockOnly: true });
         const native = (...args: string[]) => {
             const result = new Deno.Command(`${f.folder}/bin/incus`, {
-                args: ["--project", stockProject, ...args],
+                // As a real operator must: Incus refuses --project on query.
+                args: args[0] === "query" ? args : ["--project", stockProject, ...args],
                 env: {
                     HOST_FIXTURE: f.folder,
                     INCUS_REMOTE: "local",

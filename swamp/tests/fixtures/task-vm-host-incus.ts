@@ -14,6 +14,11 @@ const projectIndex = args.indexOf("--project");
 const project = projectIndex >= 0 ? args[projectIndex + 1]
   : (args[0] === "query" ? new URLSearchParams(args.at(-1)?.split("?")[1]).get("project") : null) ?? "default";
 if (projectIndex >= 0) args.splice(projectIndex, 2);
+// Incus 7.0.2 refuses the global project flag on its raw API command; the path carries the project.
+if (projectIndex >= 0 && args[0] === "query") {
+  console.error("Error: --project cannot be used with the query command");
+  Deno.exit(1);
+}
 // Incus parses explicit image targets before applying the environment's default remote/socket.
 const targetIndex = args[0] === "image"
   ? (args[1] === "alias" ? 3

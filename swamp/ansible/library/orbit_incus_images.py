@@ -54,9 +54,9 @@ class Images:
         self.project = module.params['project']
         self.changed = False
 
-    def run(self, args, *, change=False):
+    def run(self, args, *, change=False, project_flag=True):
         code, out, err = self.module.run_command(
-            ['incus', '--project', self.project, *args],
+            ['incus', *(['--project', self.project] if project_flag else []), *args],
             environ_update={'INCUS_REMOTE': 'local', 'INCUS_SOCKET': self.module.params['socket']},
         )
         if code:
@@ -69,7 +69,8 @@ class Images:
         if body is not None:
             args += ['--data', json.dumps(body)]
         path += ('&' if '?' in path else '?') + 'project=' + quote(self.project, safe='')
-        out = self.run([*args, '--', path])
+        # Incus refuses --project on its raw API command; the path carries the project.
+        out = self.run([*args, '--', path], project_flag=False)
         return json.loads(out) if out.strip() else None
 
     def images(self):

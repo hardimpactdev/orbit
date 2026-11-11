@@ -67,10 +67,14 @@ env = {**os.environ, 'INCUS_REMOTE': 'local', 'INCUS_SOCKET': socket}
 def incus(*args):
     return subprocess.check_output(['incus', '--project', project, *args], env=env, text=True)
 
+def query(path):
+    # Incus refuses --project on its raw API command; the path carries the project.
+    return json.loads(subprocess.check_output(['incus', 'query', '--', path], env=env, text=True))
+
 def rows():
     return json.loads(incus('image', 'list', '--format', 'json'))
 
-server = json.loads(incus('query', '/1.0'))['environment']
+server = query('/1.0')['environment']
 require(server['server_name'] == node, f'Node {node}')
 pid = server['server_pid']
 daemon = dict(item.split(b'=', 1) for item in Path(f'/proc/{pid}/environ').read_bytes().split(b'\x00') if b'=' in item)
@@ -87,7 +91,7 @@ for image in images:
     for name in ['orbit-stock-candidate', 'orbit-stock-retiring', retention]:
         require(not any(a['name'] == name for a in image['aliases']), f'alias {name} / image {image["fingerprint"]}')
     require(image['aliases'] or image.get('properties', {}).get(key) != alias, f'interrupted image {image["fingerprint"]}')
-instances = json.loads(incus('query', '--', '/1.0/instances?recursion=1&project=' + quote(project, safe='')))
+instances = query('/1.0/instances?recursion=1&project=' + quote(project, safe=''))
 for instance in instances:
     require(instance['name'] not in ['orbit-stock-build', 'orbit-instance-build', 'orbit-clone-probe', 'orbit-clone-probe-copy'], f'instance {instance["name"]}')
 with open(snapshot, 'x', opener=lambda path, flags: os.open(path, flags, 0o600)) as saved:
