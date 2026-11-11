@@ -21,6 +21,9 @@ final readonly class ProofRunSettlement
     /** The code of a proof whose runs never started because the request that admitted them stopped. */
     public const string AdmissionInterrupted = 'proof.admission_interrupted';
 
+    /** The code of inconclusive native execution, when no completed failure takes precedence. */
+    public const string RunInterrupted = 'proof.run_interrupted';
+
     public function __construct(private OperationStore $store) {}
 
     /**
@@ -50,15 +53,22 @@ final readonly class ProofRunSettlement
             $cases = [];
             $ran = false;
             $passed = true;
-            $interrupted = false;
+            $admissionInterrupted = false;
+            $nativeInterrupted = false;
+            $failed = false;
             $kept = [];
             $workspace = [];
             foreach ($children as $child) {
                 $rows = self::cases($child);
-                $passed = $passed && $child->status === OperationStatus::Succeeded && ProofVerdicts::passed($rows);
+                $childPassed = $child->status === OperationStatus::Succeeded && ProofVerdicts::passed($rows);
+                $passed = $passed && $childPassed;
+                $nativeInterrupted = $nativeInterrupted || $child->status === OperationStatus::Interrupted;
+                // A completed failure wins over concurrent inconclusive coverage, including a failed case on an interrupted run.
+                $failed = $failed || array_any($rows, static fn (array $row): bool => ($row['verdict'] ?? null) === 'failed')
+                    || ($child->status !== OperationStatus::Interrupted && ! $childPassed);
                 $ran = $ran || array_any($rows, static fn (array $row): bool => ($row['verdict'] ?? 'unrun') !== 'unrun');
                 // A run that no Swamp run ever started, because the request that admitted it stopped, timed out unstarted.
-                $interrupted = $interrupted || $child->error_code === self::AdmissionInterrupted || ($child->error_code === 'operation.timed_out' && ! isset($child->state['swamp_run_id']));
+                $admissionInterrupted = $admissionInterrupted || $child->error_code === self::AdmissionInterrupted || ($child->error_code === 'operation.timed_out' && ! isset($child->state['swamp_run_id']));
                 $childInput = ValidatedData::object($child->input);
                 if (is_array($child->result['workspace'] ?? null)) {
                     $workspace[] = ['command' => $childInput['command'], ...array_intersect_key(ValidatedData::object($child->result['workspace']), ['expected' => 0, 'found' => 0])];
@@ -110,10 +120,14 @@ final readonly class ProofRunSettlement
             }
             unset($case);
 
+            $status = $passed ? OperationStatus::Succeeded : ($nativeInterrupted && ! $failed ? OperationStatus::Interrupted : OperationStatus::Failed);
+            $outcome = match ($status) {
+                OperationStatus::Succeeded => 'passed', OperationStatus::Interrupted => 'interrupted', default => 'failed'
+            };
             $this->store->change($proof, [
-                'status' => $passed ? OperationStatus::Succeeded : OperationStatus::Failed, 'finished_at' => now(), 'current_step' => null, 'failed_step' => null,
-                'error_code' => $passed ? null : ($ran ? 'proof.cases_failed' : ($workspace !== [] ? ProofCommandProjection::WorkspaceCommitMismatch : ($interrupted ? self::AdmissionInterrupted : 'proof.run_failed'))),
-                'result' => ['commit' => $input['commit'], 'outcome' => $passed ? 'passed' : 'failed', 'cases' => $cases, 'uncovered' => $input['uncovered'], 'receipt_url' => null, 'selected_commands' => $input['selected_commands'] ?? [],
+                'status' => $status, 'finished_at' => now(), 'current_step' => null, 'failed_step' => null,
+                'error_code' => $passed ? null : ($status === OperationStatus::Interrupted ? self::RunInterrupted : ($ran ? 'proof.cases_failed' : ($workspace !== [] ? ProofCommandProjection::WorkspaceCommitMismatch : ($admissionInterrupted ? self::AdmissionInterrupted : 'proof.run_failed')))),
+                'result' => ['commit' => $input['commit'], 'outcome' => $outcome, 'cases' => $cases, 'uncovered' => $input['uncovered'], 'receipt_url' => null, 'selected_commands' => $input['selected_commands'] ?? [],
                     ...($workspace === [] ? [] : ['workspace' => $workspace]), ...($kept === [] ? [] : ['kept' => $kept])],
             ]);
         });

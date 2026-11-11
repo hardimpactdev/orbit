@@ -83,15 +83,7 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
     public function timedOut(Operation $operation): void
     {
         $input = ValidatedData::object($operation->input);
-        $lines = [];
-        foreach (ValidatedData::object($operation->state[ProofBatchProjection::BatchReports] ?? []) as $key => $report) {
-            foreach (explode("\n", trim(ValidatedData::string($report))) as $line) {
-                if (trim($line) !== '') {
-                    $lines[] = $key."\t".trim($line);
-                }
-            }
-        }
-        $verdicts = ProofShardVerdicts::rows(ProofBatchPlan::stored($input['assignments'] ?? [['command' => $input['command'], 'file' => $input['file'], 'batch' => '']]), implode("\n", $lines));
+        $verdicts = ProofShardVerdicts::rows(ProofBatchPlan::stored($input['assignments'] ?? [['command' => $input['command'], 'file' => $input['file'], 'batch' => '']]), self::recordedReport($operation));
         app(OperationStore::class)->change($operation, ['result' => [...($operation->result ?? []), 'commit' => $input['commit'], 'command' => $input['command'],
             'file' => $input['file'], 'outcome' => 'failed', 'cases' => $verdicts['cases']]]);
         DB::afterCommit(static fn () => CancelProofGroup::dispatch($operation->id));
@@ -126,6 +118,9 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
                 $claimed ? null : 'tasks.provision_failed', static fn (): Operation => $operation, release: false);
 
             $report = is_string($native['report'] ?? null) ? $native['report'] : '';
+            if ($status === 'interrupted') {
+                $report = self::recordedReport($operation, $report);
+            }
             $verdicts = ProofShardVerdicts::rows(ProofBatchPlan::stored($input['assignments'] ?? [['command' => $input['command'], 'file' => $input['file'], 'batch' => '']]), $report);
             if (in_array($status, ['succeeded', 'failed'], true)) {
                 $passed = $status === 'succeeded' && ProofVerdicts::passed($verdicts['cases']);
@@ -150,13 +145,32 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
             }
 
             return app(DirectOperation::class)->project($operation, $data, ['commit' => $input['commit'], 'command' => $input['command'], 'file' => $input['file'],
-                'outcome' => ($data['status'] ?? null) === 'succeeded' ? 'passed' : 'failed', 'cases' => $verdicts['cases'], ...($workspace === null ? [] : ['workspace' => $workspace]),
+                'outcome' => match ($data['status'] ?? null) {
+                    'succeeded' => 'passed', 'interrupted' => 'interrupted', default => 'failed'
+                }, 'cases' => $verdicts['cases'], ...($workspace === null ? [] : ['workspace' => $workspace]),
                 ...($kept === null ? [] : ['kept' => $kept])]);
         });
         // After the commit, so that two runs which end together each see the other, and the last one closes the proof.
         DB::afterCommit(fn () => $this->settle($projected));
 
         return $projected;
+    }
+
+    /** Keep completed batch evidence when execution stops before the final report, without repeating lines it already contains. */
+    private static function recordedReport(Operation $operation, string $report = ''): string
+    {
+        $reported = explode("\n", trim($report));
+        $lines = $reported;
+        foreach (ValidatedData::object($operation->state[ProofBatchProjection::BatchReports] ?? []) as $key => $batchReport) {
+            foreach (explode("\n", trim(ValidatedData::string($batchReport))) as $line) {
+                $recorded = $key."\t".trim($line);
+                if (trim($line) !== '' && ! in_array($recorded, $reported, true)) {
+                    $lines[] = $recorded;
+                }
+            }
+        }
+
+        return implode("\n", $lines);
     }
 
     /**

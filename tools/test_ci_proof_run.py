@@ -61,7 +61,7 @@ class EvaluateTest(unittest.TestCase):
         self.assertFalse(proof.evaluate(0, json.dumps({'result': {'outcome': 'passed', 'cases': []}}))[0])
 
     def test_any_outcome_other_than_passed_or_nothing_to_prove_fails(self):
-        for outcome in ('failed', 'unrun', '', None):
+        for outcome in ('failed', 'interrupted', 'unrun', '', None):
             with self.subTest(outcome=outcome):
                 output = json.dumps({'result': {'outcome': outcome, 'cases': [{'command': 'firewall:allow', 'case': 'a', 'verdict': 'passed'}]}})
                 self.assertFalse(proof.evaluate(0, output)[0])
@@ -116,6 +116,36 @@ class CapacityReportTest(unittest.TestCase):
             self.assertEqual(['firewall:allow'], receipt['selected_commands'])
 
 
+class InterruptedReportTest(unittest.TestCase):
+    def test_interruption_stays_inconclusive_in_every_envelope_even_with_passed_rows(self):
+        for wrapper in (None, 'data', 'operation'):
+            for cases in ([], [{'command': 'firewall:allow', 'case': 'done', 'verdict': 'passed'},
+                               {'command': 'firewall:allow', 'case': 'later', 'verdict': 'unrun'}],
+                          [{'command': 'firewall:allow', 'case': 'done', 'verdict': 'passed'}],
+                          [{'command': 'firewall:allow', 'verdict': 'passed'}, None]):
+                for code in (0, 1, 3):
+                    with self.subTest(wrapper=wrapper, cases=cases, code=code):
+                        payload = {'id': 73, 'status': 'interrupted', 'error': {'code': 'proof.run_interrupted'},
+                                   'result': {'outcome': 'interrupted', 'cases': cases, 'selected_commands': ['firewall:allow']}}
+                        output = json.dumps({wrapper: payload} if wrapper else payload)
+                        outcome, lines, receipt = proof.report(code, output, SHA, 'ci-proof.7.2')
+                        self.assertFalse(proof.evaluate(code, output)[0])
+                        self.assertEqual('interrupted', outcome)
+                        self.assertEqual({'commit': SHA, 'idempotency_key': 'ci-proof.7.2', 'operation_id': 73,
+                                          'outcome': 'interrupted', 'selected_commands': ['firewall:allow'],
+                                          'error_code': 'proof.run_interrupted'}, receipt)
+
+    def test_a_completed_failure_stays_visible_alongside_interrupted_coverage(self):
+        output = json.dumps({'result': {'outcome': 'failed', 'selected_commands': ['firewall:allow', 'firewall:deny'],
+                                       'cases': [{'command': 'firewall:allow', 'case': 'done', 'verdict': 'failed'},
+                                                 {'command': 'firewall:deny', 'case': 'later', 'verdict': 'unrun'}]}})
+        outcome, lines, receipt = proof.report(1, output, SHA, 'ci-proof.7.2')
+        self.assertEqual('failed', outcome)
+        self.assertEqual('failed', receipt['outcome'])
+        self.assertIn('| firewall:allow | done |  | failed |', lines)
+        self.assertIn('| firewall:deny | later |  | unrun |', lines)
+
+
 
 class RunTest(unittest.TestCase):
     def run_script(self, orbit_body, env=None):
@@ -127,7 +157,7 @@ class RunTest(unittest.TestCase):
             environment = {'PATH': tmp + os.pathsep + '/usr/bin:/bin', 'PROOF_SHA': SHA, 'GITHUB_RUN_ID': '7',
                            'GITHUB_RUN_ATTEMPT': '2', 'GITHUB_STEP_SUMMARY': str(summary),
                            'GITHUB_OUTPUT': str(Path(tmp, 'outputs')), 'PROOF_RECEIPT': str(Path(tmp, 'receipt.json')), **(env or {})}
-            done = subprocess.run(['python3', '-I', str(SCRIPT)], env=environment, capture_output=True, text=True, timeout=60)
+            done = subprocess.run([str(SCRIPT)], env=environment, capture_output=True, text=True, timeout=60)
             self.outputs = Path(tmp, 'outputs').read_text() if Path(tmp, 'outputs').exists() else ''
             self.receipt = json.loads(Path(tmp, 'receipt.json').read_text()) if Path(tmp, 'receipt.json').exists() else None
             return done, summary.read_text() if summary.exists() else ''
@@ -168,6 +198,29 @@ class RunTest(unittest.TestCase):
     def test_no_selected_command_passes_without_cases(self):
         done, _ = self.run_script("echo '{\"result\":{\"outcome\":\"nothing_to_prove\",\"cases\":[],\"selected_commands\":[]}}'\n")
         self.assertEqual(0, done.returncode, done.stderr)
+
+    def test_interrupted_receipt_summary_and_output_never_pass_the_real_entrypoint(self):
+        for code in (0, 3):
+            with self.subTest(code=code):
+                payload = {'id': 73, 'status': 'interrupted', 'error': {'code': 'proof.run_interrupted'},
+                           'result': {'outcome': 'interrupted', 'selected_commands': ['firewall:allow'],
+                                      'cases': [{'command': 'firewall:allow', 'case': 'done', 'verdict': 'passed'}]}}
+                done, summary = self.run_script("cat <<'JSON'\n" + json.dumps(payload) + f"\nJSON\nexit {code}\n")
+                self.assertEqual(code or 1, done.returncode, done.stderr)
+                self.assertIn(f"## Proof run of `{SHA[:12]}`: interrupted", summary)
+                self.assertIn('| firewall:allow | done |  | passed |', summary)
+                self.assertEqual('outcome=interrupted\n', self.outputs)
+                self.assertEqual('interrupted', self.receipt['outcome'])
+
+    def test_nonzero_exit_and_malformed_coverage_never_write_a_passing_receipt(self):
+        for cases, code in (([{'command': 'firewall:allow', 'verdict': 'passed'}], 3),
+                            ([{'command': 'firewall:allow', 'verdict': 'passed'}, None], 0)):
+            with self.subTest(cases=cases, code=code):
+                payload = {'result': {'outcome': 'passed', 'selected_commands': ['firewall:allow'], 'cases': cases}}
+                done, _ = self.run_script("cat <<'JSON'\n" + json.dumps(payload) + f"\nJSON\nexit {code}\n")
+                self.assertEqual(code or 1, done.returncode, done.stderr)
+                self.assertEqual('outcome=failed\n', self.outputs)
+                self.assertEqual('failed', self.receipt['outcome'])
 
     def test_a_bad_sha_or_a_missing_cli_fails_before_running(self):
         self.assertNotEqual(0, self.run_script('exit 0\n', {'PROOF_SHA': 'main'})[0].returncode)

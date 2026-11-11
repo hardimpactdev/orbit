@@ -170,6 +170,134 @@ describe('the record of one run', function (): void {
     });
 });
 
+describe('native proof interruption', function (): void {
+    it('preserves interrupted status and every verdict while settling the proof without passing', function (string $report, array $verdicts, OperationStatus $aggregate): void {
+        Queue::fake();
+        [$proof, [[$run, $group, $vm]]] = proofRuns(['firewall:allow']);
+        $batch = ['command' => 'firewall:allow', 'file' => $run->input['file'], 'batch' => '', 'cases' => ['main', 'deny']];
+        $run->update(['input' => [...$run->input, 'assignments' => [$batch]]]);
+        $proof->update(['input' => [...$proof->input, 'selected_commands' => ['firewall:allow'], 'batches' => [$batch]]]);
+        $ended = proofKeptEnd($vm, $report, 'succeeded');
+        $ended['status'] = 'interrupted';
+        $ended['error_code'] = 'operation.native_failed';
+
+        $projected = app(ProofCommandProjection::class)->apply($run, $ended);
+
+        expect($projected->status)->toBe(OperationStatus::Interrupted)
+            ->and($projected->error_code)->toBe('operation.native_failed')
+            ->and($projected->result['outcome'])->toBe('interrupted')
+            ->and(array_column($projected->result['cases'], 'verdict'))->toBe($verdicts);
+        expect($proof->refresh()->status)->toBe($aggregate)
+            ->and($proof->result['outcome'])->toBe($aggregate === OperationStatus::Failed ? 'failed' : 'interrupted')
+            ->and($proof->error_code)->toBe($aggregate === OperationStatus::Failed ? 'proof.cases_failed' : 'proof.run_interrupted')
+            ->and($proof->result['cases'])->toBe($projected->result['cases']);
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
+        expect($vm->refresh()->state)->toBe(TaskVmState::Destroyed);
+        Queue::assertNotPushed(CancelProofGroup::class);
+        Queue::assertNotPushed(ReleaseTaskVmSlot::class);
+
+        $sequence = $projected->sequence;
+        $parentSequence = $proof->sequence;
+        // A terminal replay cannot replace the saved interruption with late success or lose its case evidence.
+        $ended['status'] = 'succeeded';
+        $ended['result']['report'] = '';
+        $again = app(ProofCommandProjection::class)->apply($run->refresh(), $ended);
+        app(ProofRunSettlement::class)->settle($proof->id);
+        expect($again->sequence)->toBe($sequence)->and($again->result)->toBe($projected->result);
+        expect($proof->refresh()->sequence)->toBe($parentSequence);
+    })->with([
+        'before cases' => ['', ['unrun', 'unrun'], OperationStatus::Interrupted],
+        'partial coverage' => [PROOF_PASSED, ['passed', 'unrun'], OperationStatus::Interrupted],
+        'all passed rows' => [PROOF_PASSED."\n".'{"id":"deny","verdict":"passed","secs":1}', ['passed', 'passed'], OperationStatus::Interrupted],
+        'completed failure' => [PROOF_PASSED."\n".PROOF_FAILED, ['passed', 'failed'], OperationStatus::Failed],
+        'malformed coverage' => [PROOF_PASSED."\n".'not a verdict', ['passed', 'unrun', 'unrun'], OperationStatus::Interrupted],
+    ]);
+
+    it('keeps recorded batch failures with absent, partial or complete interrupted reports', function (string $finalReport): void {
+        Queue::fake();
+        [$proof, [[$run]]] = proofRuns(['firewall:allow']);
+        $file = $run->input['file'];
+        $batches = [['command' => 'firewall:allow', 'file' => $file, 'batch' => 'one', 'cases' => ['deny']],
+            ['command' => 'firewall:allow', 'file' => $file, 'batch' => 'two', 'cases' => ['main']]];
+        $run->update(['input' => [...$run->input, 'assignments' => $batches]]);
+        $proof->update(['input' => [...$proof->input, 'batches' => $batches, 'selected_commands' => ['firewall:allow']]]);
+        app(ProofBatchProjection::class)->applyChild($run, ['intent' => $batches[0]], ['report' => PROOF_FAILED]);
+        $report = match ($finalReport) {
+            'complete' => "firewall:allow\t{$file}\tone\t".PROOF_FAILED."\nfirewall:allow\t{$file}\ttwo\t".PROOF_PASSED,
+            'partial' => "firewall:allow\t{$file}\ttwo\t".PROOF_PASSED,
+            default => '',
+        };
+        $history = ['id' => PROOF_RUN_ID, 'workflowName' => 'operation-proof-run', 'status' => 'interrupted',
+            'startedAt' => now()->subMinute()->toISOString(), 'completedAt' => now()->toISOString(),
+            'inputs' => ['operation_id' => $run->id, 'node_id' => $run->node_id, 'kind' => 'proof.command'],
+            'jobs' => $finalReport === 'absent' ? [] : [['name' => 'prove', 'steps' => [['name' => 'Report', 'status' => 'succeeded', 'outputs' => ['stdout' => $report]]]]]];
+
+        withProofSwamp(proofSwampSocket([], [PROOF_RUN_ID => $history]), function () use ($run): void {
+            app(SwampCommandStep::class)->projectTerminal($run, ['id' => PROOF_RUN_ID], app(DirectOperation::class)->definition('proof.command')['terminal_result']);
+        });
+
+        expect($run->refresh()->status)->toBe(OperationStatus::Interrupted)->and($run->result['outcome'])->toBe('interrupted')
+            ->and(array_column($run->result['cases'], 'verdict'))->toBe(['failed', $finalReport === 'absent' ? 'unrun' : 'passed'])
+            ->and($run->result['cases'][0])->toMatchArray(['case' => 'deny', 'cause' => 'assertion', 'failed' => ['ufw']]);
+        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->result['outcome'])->toBe('failed')
+            ->and($proof->error_code)->toBe('proof.cases_failed');
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
+    })->with(['absent', 'partial', 'complete']);
+
+    it('cancels an interrupted unclaimed group without retaining a VM even with keep_failed', function (): void {
+        Queue::fake();
+        [$proof, [[$run, $group, $vm]]] = proofRuns(['firewall:allow']);
+        $run->update(['input' => [...$run->input, 'keep_failed' => true]]);
+
+        $projected = app(ProofCommandProjection::class)->apply($run, proofEnded('interrupted', ['Release the place' => ['status' => 'skipped']]));
+
+        expect($projected->status)->toBe(OperationStatus::Interrupted)->and($projected->result['outcome'])->toBe('interrupted')
+            ->and($projected->result)->not->toHaveKey('kept')
+            ->and(array_column($projected->result['cases'], 'verdict'))->toBe(['unrun']);
+        expect($proof->refresh()->status)->toBe(OperationStatus::Interrupted);
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
+        expect($vm->refresh()->group_id)->toBe($group->id);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
+        Queue::assertNotPushed(ReleaseTaskVmSlot::class);
+    });
+
+    it('waits for live children and gives a completed non-interrupted failure precedence in either order', function (OperationStatus $other, string $verdict, OperationStatus $aggregate, bool $interruptFirst): void {
+        [$proof, [[$first], [$second]]] = proofRuns(['firewall:allow', 'firewall:deny']);
+        $interrupted = $interruptFirst ? $first : $second;
+        $finished = $interruptFirst ? $second : $first;
+        $interrupted->update(['status' => OperationStatus::Interrupted, 'result' => ['cases' => [['program' => 'p', 'command' => $interrupted->input['command'], 'verdict' => 'unrun', 'seconds' => 0]]]]);
+        app(ProofRunSettlement::class)->settle($proof->id);
+        expect($proof->refresh()->status)->toBe(OperationStatus::Running);
+
+        $finished->update(['status' => $other, 'result' => ['cases' => [['program' => 'p', 'command' => $finished->input['command'], 'verdict' => $verdict, 'seconds' => 1]]]]);
+        app(ProofRunSettlement::class)->settle($proof->id);
+
+        expect($proof->refresh()->status)->toBe($aggregate)
+            ->and($proof->result['outcome'])->toBe($aggregate === OperationStatus::Interrupted ? 'interrupted' : 'failed')
+            ->and(array_column($proof->result['cases'], 'verdict'))->toBe($interruptFirst ? ['unrun', $verdict] : [$verdict, 'unrun']);
+    })->with([
+        'passed sibling' => [OperationStatus::Succeeded, 'passed', OperationStatus::Interrupted],
+        'failed case' => [OperationStatus::Failed, 'failed', OperationStatus::Failed],
+        'failed setup' => [OperationStatus::Failed, 'unrun', OperationStatus::Failed],
+        'failed cleanup after passed cases' => [OperationStatus::Failed, 'passed', OperationStatus::Failed],
+        'cancelled sibling' => [OperationStatus::Cancelled, 'unrun', OperationStatus::Failed],
+        'invalid succeeded sibling' => [OperationStatus::Succeeded, 'unrun', OperationStatus::Failed],
+    ])->with([true, false]);
+
+    it('keeps missing admitted coverage unrun when the native run is interrupted', function (string $missing): void {
+        [$proof, [[$run]]] = proofRuns(['firewall:allow']);
+        $run->update(['status' => OperationStatus::Interrupted, 'result' => ['cases' => [['program' => $run->input['file'].'#main', 'command' => 'firewall:allow', 'case' => 'main', 'verdict' => 'passed', 'seconds' => 1]]]]);
+        $proof->update(['input' => [...$proof->input, 'selected_commands' => ['firewall:allow', 'firewall:deny'],
+            'batches' => [['command' => 'firewall:deny', 'file' => 'swamp/proof/firewall/deny.cases.yaml', 'batch' => '', 'cases' => ['missing']]],
+            'runs' => $missing === 'shard' ? [...$proof->input['runs'], ['operation_id' => $run->id + 100]] : $proof->input['runs']]]);
+
+        app(ProofRunSettlement::class)->settle($proof->id);
+
+        expect($proof->refresh()->status)->toBe(OperationStatus::Interrupted)->and($proof->result['outcome'])->toBe('interrupted')
+            ->and($proof->result['cases'][1])->toMatchArray(['command' => 'firewall:deny', 'case' => 'missing', 'verdict' => 'unrun']);
+    })->with(['case', 'shard']);
+});
+
 describe('the proof of the CLI', function (): void {
     it('stays running until the last run has ended', function (): void {
         Queue::fake();
