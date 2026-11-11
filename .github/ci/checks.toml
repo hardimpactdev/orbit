@@ -55,6 +55,7 @@ inputs = [
   "docs/site.json",
   "docs/navigation/**/*.json",
   "docs/cli/**/*.mmd",
+  ".github/workflows/static-php.yml",
   "bin/build-api",
   "bin/docs-openapi",
   "bin/mcp-tools",
@@ -105,8 +106,6 @@ inputs = [
   "bin/orbit-version",
   "bin/orbit-cli-release-version",
   "bin/orbit-cli-release-assets",
-  ".github/workflows/orbit-cli-binary.yml",
-  ".github/workflows/orbit-cli-release.yml",
 ]
 cost = 142
 ceiling = 240
@@ -197,7 +196,6 @@ inputs = [
   "bin/api-fixtures",
   "bin/check-operation-kinds",
   "apps/web/**",
-  ".github/workflows/docs-site.yml",
   "!apps/gateway/tests/**",
   "!apps/cli/tests/**",
   "!packages/php-sdk/tests/**",
