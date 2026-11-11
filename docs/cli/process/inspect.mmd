@@ -13,7 +13,8 @@ sequenceDiagram
   Note over GW: A list needs a state<br/>last inspection is over 30 s old
   %%> What it does:
   %%> - neither Prometheus nor the Node agent sees a container's units, so the list keeps the last completed inspection's state, observed_at and reason, and starts a read off the request; only a never-inspected Process has no observation
-  %%> - at most four reads start per list, and one read per Process at a time
+  %%> - at most four reads start per list, oldest observed_at first and never-inspected first; one read per Process at a time
+  %%> - each Process waits 30 s after its durable last outcome, including after cache eviction
   %%> - a running or unfinished Instance migration answers unknown with instance.lifecycle_busy and starts no read
   GW->>SW: Start run, full intent<br/>operation-process-container
   SW->>N: Read the unit<br/>Ansible · tags process

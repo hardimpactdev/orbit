@@ -114,7 +114,7 @@ final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRunti
     }
 
     /**
-     * Keep the last completed container inspection while a stale or absent refresh marker queues another read.
+     * Keep the last completed inspection while the oldest due Processes queue their next reads.
      *
      * @param  Collection<int, Process>  $processes
      * @return array<int, array{runtime_status: string, observed_at: ?string, runtime_error_code: ?string}>
@@ -141,14 +141,14 @@ final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRunti
         }
         $statuses = [];
         $reads = 0;
-        foreach ($containers as $process) {
+        foreach ($containers->sortBy(static fn (Process $process): string => $last[$process->id]['observed_at'] ?? '') as $process) {
             if (isset($blocked[$process->owner_id])) {
                 $statuses[$process->id] = ['runtime_status' => 'unknown', 'observed_at' => null, 'runtime_error_code' => $blocked[$process->owner_id]];
 
                 continue;
             }
             $statuses[$process->id] = $last[$process->id] ?? ['runtime_status' => 'unknown', 'observed_at' => null, 'runtime_error_code' => null];
-            if (! Cache::has(ContainerProcessObservation::key($process->id)) && $reads < 4 && RefreshContainerProcessStatus::enqueue($process->id)) {
+            if (ContainerProcessObservation::due($last[$process->id] ?? null) && $reads < 4 && RefreshContainerProcessStatus::enqueue($process->id)) {
                 $reads++;
             }
         }

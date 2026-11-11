@@ -37,6 +37,7 @@ use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Support\ValidatedData;
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -230,6 +231,67 @@ describe('the Process target of a container Instance', function (): void {
                 ->and($listed['observed_at'])->toBe('2026-11-11T16:00:00.000000Z')
                 ->and($listed['runtime_error_code'])->toBeNull();
         }
+        Queue::assertPushed(RefreshContainerProcessStatus::class, 1);
+    });
+
+    it('refreshes all forty Processes across multiple windows, oldest and never-inspected first', function (bool $neverInspectedTail): void {
+        $this->travelTo('2026-11-10 16:00:00 UTC');
+        $processes = collect([$this->process]);
+        for ($number = 1; $number < 40; $number++) {
+            $process = $this->process->replicate();
+            $process->source_definition_id = null;
+            $process->name = 'worker-'.str_pad((string) $number, 2, '0', STR_PAD_LEFT);
+            $process->save();
+            $processes->push($process);
+        }
+        foreach ($processes as $number => $process) {
+            if (! $neverInspectedTail || $number < 32) {
+                Operation::query()->create(['kind' => 'process.inspect', 'target_type' => 'process', 'target_id' => $process->id,
+                    'status' => 'succeeded', 'input' => [], 'result' => ['state' => 'active'], 'finished_at' => now()]);
+            }
+        }
+        $this->travelTo('2026-11-11 16:00:00 UTC');
+        $pending = [];
+        $completed = [];
+        for ($second = 0; $second <= 105; $second += 5) {
+            foreach ($pending as $id => [$due, $job, $operation]) {
+                if ($due <= $second) {
+                    app(ContainerProcessObservation::class)->apply($operation, ['status' => 'succeeded', 'run_id' => $operation->state['swamp_run_id'],
+                        'started_at' => $operation->created_at->toISOString(), 'finished_at' => now()->toISOString(), 'result' => ['state' => 'active']]);
+                    app(UniqueLock::class)->release($job);
+                    $completed[$id] = ($completed[$id] ?? 0) + 1;
+                    unset($pending[$id]);
+                }
+            }
+            Queue::fake();
+
+            app(ProcessRuntimeStatusIndex::class)->statuses($processes);
+
+            $jobs = Queue::pushed(RefreshContainerProcessStatus::class);
+            expect($jobs->count())->toBeLessThanOrEqual(4);
+            foreach ($jobs as $job) {
+                $operation = Operation::query()->create(['kind' => 'process.inspect', 'target_type' => 'process', 'target_id' => $job->processId,
+                    'status' => 'running', 'lock_key' => 'process-inspect:'.$job->processId, 'input' => [],
+                    'state' => ['swamp_run_id' => 'fairness-'.$second.'-'.$job->processId]]);
+                $pending[$job->processId] = [$second + 10, $job, $operation];
+            }
+            $this->travel(5)->seconds();
+        }
+        expect($completed)->toHaveCount(40)
+            ->and(min($completed))->toBeGreaterThanOrEqual(2);
+    })->with([false, true]);
+
+    it('keeps the per-Process floor after cache eviction', function (): void {
+        $this->travelTo('2026-11-11 16:00:00 UTC');
+        completedContainerStatusInspection($this->process, 'succeeded', 'active');
+        Cache::flush();
+        Queue::fake();
+
+        listedContainerStatus($this->instance);
+
+        Queue::assertNothingPushed();
+        $this->travel(30)->seconds();
+        listedContainerStatus($this->instance);
         Queue::assertPushed(RefreshContainerProcessStatus::class, 1);
     });
 

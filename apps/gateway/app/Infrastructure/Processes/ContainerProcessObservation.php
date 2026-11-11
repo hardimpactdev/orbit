@@ -15,13 +15,14 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Support\ValidatedData;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
  * The status of a container Process (docs/reference/development-containers.md#processes). Neither Prometheus nor the Node agent sees a
- * container's units, so lists retain the latest completed `process.inspect` result and its time. The short-lived cache only marks
+ * container's units, so lists retain the latest completed `process.inspect` result and its time. The durable completion time controls
  * when a replacement read is due; lists never wait for it.
  */
 final readonly class ContainerProcessObservation implements DirectOperationProjection
@@ -37,7 +38,7 @@ final readonly class ContainerProcessObservation implements DirectOperationProje
     }
 
     /**
-     * The latest completed inspection is durable; the cache only controls when another read is due.
+     * The latest completed inspection and its completion time survive cache eviction.
      *
      * @param  array<int, int>  $processIds
      * @return array<int, array{runtime_status: string, observed_at: ?string, runtime_error_code: ?string}>
@@ -60,6 +61,14 @@ final readonly class ContainerProcessObservation implements DirectOperationProje
         return $observations;
     }
 
+    /** @param array{runtime_status: string, observed_at: ?string, runtime_error_code: ?string}|null $observation */
+    public static function due(?array $observation): bool
+    {
+        $at = $observation['observed_at'] ?? null;
+
+        return $at === null || Carbon::parse($at)->addSeconds(PrometheusProcessRuntimeStatusIndex::ObservedSeconds)->lessThanOrEqualTo(now());
+    }
+
     public static function pending(int $processId): bool
     {
         return Operation::query()->where('lock_key', 'process-inspect:'.$processId)->exists();
@@ -71,7 +80,7 @@ final readonly class ContainerProcessObservation implements DirectOperationProje
         try {
             app(OperationIdempotency::class)->suspended(fn () => DB::transaction(function () use ($processId): void {
                 $process = Process::query()->find($processId);
-                if ($process === null || Cache::has(self::key($processId)) || self::pending($processId)) {
+                if ($process === null || ! self::due(self::latest([$processId])[$processId] ?? null) || self::pending($processId)) {
                     return;
                 }
                 $target = app(ProcessTargetResolver::class)->forInspection($process);
