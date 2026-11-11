@@ -8,7 +8,8 @@ covers:
   - apps/gateway/database/migrations/2027_02_04_000000_add_seed_commit_to_instance_runtimes.php
   - swamp/ansible/{instance-container.yml,tasks/instance-container-phase.yml}
   - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/notes/**}
-  - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check}.yml
+  - swamp/ansible/templates/instance-bridge-rules.j2
+  - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-device-check,instance-network-move,instance-network-move-nic,instance-bridge-rules}.yml
 ---
 
 # Instance containers
@@ -57,7 +58,7 @@ The converge sets up the network side next:
 
 - **Profile.** The default profile sets the [proxy settings](#egress-and-dns) as `environment.*` keys, so every `incus exec` that keeps its environment has them.
 - **Bridge.** `orbitinst0` has NAT and no IPv6. DHCP leaves the last address free for the image build.
-- **Egress ACL.** Each NIC rejects egress by default. Its common ACL admits the two proxies; its Instance ACL admits attached targets. The bridge passes egress to that [NIC policy](#network).
+- **Egress ACL.** Each NIC rejects egress by default. Its common ACL admits the two proxies; its Instance ACL admits attached targets. The bridge also rejects egress by default and admits the Node’s attached-target union. A packet must pass both [ACLs](#network).
 - **Input rules.** The Node admits DHCP from the bridge under `orbit:instances-dhcp`, and the egress proxy under `orbit:instances-egress`. It admits no DNS from the bridge.
 
 The converge then installs what the containers run:
@@ -66,9 +67,11 @@ The converge then installs what the containers run:
 - **Image.** The converge builds the [container image](#inside-a-container) once per definition and names it with the stable alias `orbit-instance`.
 - **Folders.** It installs both [shared folders](#shared-folders).
 
-The profile installs the common ACL and reject defaults before the bridge changes. A check refuses any unguarded NIC, including a stopped container. The role repeats that read-only check at the end.
+The bridge keeps default egress reject throughout convergence. Its `orbitinst0-egress` ACL admits the two proxies and one exact host/port per distinct attached target on the Node, with the bridge subnet as source. The profile and NICs use `orbitinst0-proxy`, which admits only the proxies and the existing ingress paths, plus each Instance's own target ACL. Convergence replaces an old common NIC reference in one device update, retaining its reject defaults. It audits every effective NIC on this bridge in every Incus project, including stopped containers. An unsafe NIC fails the role; the bridge stays rejecting.
 
-The converge creates no Instance. Each existing `app-dev` Node needs one converge of its Instance host role. Running containers keep working, with no restart: their existing NIC target rules become effective when the bridge stops rejecting them. The shared ACL has no runtime mutations.
+Create, clone and migrate add their endpoint rules before probing. These lifecycle steps only add rules. Destroy, restore and detach leave them in place, so a concurrent removal cannot revoke another Instance's path. The next host converge removes endpoint-shaped rules absent from its current Gateway intent. Until then, an unguarded NIC can reach an old database endpoint even when no Instance uses it; this bounded stale permission is accepted. Guarded NICs still require their own exact allow. ACL writes reread after an ETag conflict or a transient disappearing host-side veth, with at most five attempts and a one-second delay; exhaustion fails the phase.
+
+The converge creates no Instance. Each existing `app-dev` Node needs one converge of its Instance host role. It reconciles the attached-target union and moves existing NICs to the proxy ACL. Running containers keep working, with no restart.
 
 A task VM host on the build list, such as Beast, gets the container branch beside its task side. The two sides share nothing they change: the Instance side has its own project `orbit-instances`, bridge `orbitinst0`, pool `orbit-instances` and `orbit:instances-*` input rules, and touches no task VM, task container or CI place. The task side keeps the ZFS ARC: on a task VM host the Instance side writes no cap. Only a task VM's own Node gets no branch.
 
@@ -225,7 +228,7 @@ A container holds only a placeholder key, in `/home/agent/.config/orbit/model.en
 
 ## Network
 
-A container reaches only what this table lists. Everything else is dropped by its NIC ACL. The bridge passes egress to that policy; it keeps its ingress policy.
+A container reaches only what this table lists. Everything else is dropped by its NIC ACL. The bridge independently rejects everything except the proxies and the Node’s attached-target union. Its ingress policy stays unchanged.
 
 | Path | How |
 | --- | --- |
@@ -239,7 +242,7 @@ A container reaches only what this table lists. Everything else is dropped by it
 | DNS | None. The proxy resolves every name |
 | Everything else | Dropped, including the Gateway, WireGuard peers and other Nodes' private services |
 
-The NIC filters the published target address before Docker's DNAT. For a target on another Node, Orbit also adds the exact route allowance from the container's address through WireGuard; Incus masquerades the bridge source to the Node's address. A profile-only NIC can reach the two proxies, but no attached target. Starting a container whose NIC has no effective ACL or no egress reject default refuses with `instance.container_network_unsafe`.
+The NIC filters the published target address before Docker's DNAT. For a target on another Node, Orbit also adds the exact route allowance from the container's address through WireGuard; Incus masquerades the bridge source to the Node's address. A profile-only NIC can reach the two proxies, but no attached target. Before starting, Orbit checks every effective NIC on the Instance bridge. A missing ACL, a missing default egress reject, a reference to the bridge union ACL, or an unexpected extra NIC refuses with `instance.container_network_unsafe`.
 
 **F10, current ingress limit.** The bridge admits TCP 1024–65535 from its gateway address and TCP 3773 from any source. The NIC combines that common ACL with its own ACL as a union: a live scratch default admitted the Node on 8080, 3773 and 5173, although its own ACL named only 8080.
 

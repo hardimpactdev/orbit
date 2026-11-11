@@ -41,8 +41,8 @@ sequenceDiagram
   %%> - before any Node change, checks the recorded branch and every planned retirement; a refusal leaves prior resources untouched
   %%> - checks checkout symlinks and dependency package links before creating the container, skipping `.git` and installed package contents; broken links or targets outside the checkout refuse with `instance.migrate_symlink_unsupported`, naming every path and target
   %%> - retirement preflight refuses unpushed local branches or detached HEAD and stashes, with their existing named errors; it reads local refs only
-  %%> - deletes a container that an earlier failed move left, then creates and starts the new container through the shared container phase
-  %%> - each attached target has an exact TCP allow in the NIC ACL; the bridge passes egress to that default-reject NIC policy
+  %%> - deletes a container that an earlier failed move left, then creates and starts the new container through the shared container phase; discard leaves shared bridge endpoint rules for host reconciliation
+  %%> - each attached target gets an exact TCP allow in both the bridge and NIC ACLs; both keep default reject. Endpoint adds reread on ETag conflict, at most five attempts with a one-second delay
   %%> - probes every attached target from inside the container before downtime, else `instance.database_unreachable`
   %%> - fetches the branch from the checkout into the Node's mirror, including commits never pushed
   SW->>N: Check and stop<br/>Ansible · tags quiesce
