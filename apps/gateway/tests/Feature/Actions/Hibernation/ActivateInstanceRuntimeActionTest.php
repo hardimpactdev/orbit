@@ -12,6 +12,7 @@ use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
+use App\Domain\Processes\ProcessControlProjection;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\Routes\NativeCaddyPublicationProjection;
@@ -52,14 +53,14 @@ function hibernatedViteCheckout(bool $reassign = true): array
         'repository_url' => 'https://github.com/hardimpactdev/wake-fixture', 'default_branch' => 'main', 'root' => 'public', 'php_version' => '8.5']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default',
         'checkout_path' => '/home/orbit/apps/wake-fixture/default', 'branch' => 'main', 'root' => 'public', 'vite_port' => 5173,
-        'status' => 'active', 'provisioning_step' => 'active', 'first_setup_pending' => false]);
+        'status' => 'active', 'provisioning_step' => 'active', 'first_setup_pending' => false, 'development_projection_pending' => false]);
     Process::query()->create(['owner_type' => 'instance', 'owner_id' => $instance->id, 'name' => 'vite', 'runtime' => 'systemd',
         'runtime_config' => ['preset' => 'vp-dev', 'command' => VpDevPreset::command()], 'desired_state' => 'running', 'status' => 'active', 'keep_alive' => false]);
     $route = Route::query()->create(['kind' => 'app', 'project_id' => $project->id, 'node_id' => $node->id, 'provenance' => 'explicit',
         'publication' => 'private', 'domain' => 'wake-fixture.test', 'status' => 'pending']);
     $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => 'active', 'sites_published' => true]);
-    $state = (object) ['started' => false, 'awake' => false, 'events' => [], 'exception' => null, 'occupiedPort' => $reassign ? 5173 : null];
+    $state = (object) ['started' => false, 'awake' => false, 'events' => [], 'exception' => null, 'occupiedPort' => $reassign ? 5173 : null, 'prepareException' => null];
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldReceive('run')->andReturnUsing(function (Node $node, string $command, array $input = []) use ($state): array {
         // A removed command must fail here exactly as it does in the deployed runner.
@@ -73,6 +74,9 @@ function hibernatedViteCheckout(bool $reassign = true): array
             case 'vite.check-listener':
                 return ['owned' => $state->started, 'ready' => $state->started];
             case 'vite.set-traffic':
+                if ($input['operation'] === 'environment' && $state->prepareException !== null) {
+                    throw $state->prepareException;
+                }
                 $state->events[] = $input['operation'];
 
                 return [];
@@ -215,7 +219,66 @@ describe('host-checkout Vite wake', function (): void {
         finishWakePublication('succeeded');
         (new PromoteRouteWrites)->handle(app(RoutePublicationHolds::class));
         expect($change->refresh()->status)->toBe(OperationStatus::Queued);
+        expect($other->refresh()->development_projection_pending)->toBeTrue();
+        $runId = '6d30ed50-e474-4fef-9ff9-91de4cb3b2b9';
+        $change->update(['status' => 'running', 'state' => ['swamp_run_id' => $runId]]);
+        app(ProcessControlProjection::class)->apply($change, ['run_id' => $runId, 'status' => 'succeeded',
+            'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString()]);
+        expect($other->refresh()->development_projection_pending)->toBeFalse();
         Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+    });
+
+    it('keeps a saved port publication pending after preparation fails and publishes it on retry', function (): void {
+        [$instance, $state] = hibernatedViteCheckout();
+        $state->prepareException = new RuntimeException('Preparation refused after allocation.');
+        viteWakePoll($instance)->assertUnauthorized();
+        viteWakePoll($instance)->assertServiceUnavailable();
+
+        expect($instance->refresh()->vite_port)->toBe(5174)
+            ->and($instance->development_projection_pending)->toBeTrue()
+            ->and($state->awake)->toBeFalse();
+        test()->assertDatabaseCount('operations', 0);
+        $state->prepareException = null;
+
+        viteWakePoll($instance, '/?orbit-wake-retry=1')->assertUnauthorized();
+        viteWakePoll($instance)->assertUnauthorized();
+
+        expect($instance->refresh()->development_projection_pending)->toBeTrue()
+            ->and($state->started)->toBeFalse()->and($state->awake)->toBeFalse();
+        test()->assertDatabaseCount('operations', 1);
+        Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+        finishWakePublication('succeeded');
+        viteWakePoll($instance)->assertUnauthorized();
+
+        expect($instance->refresh()->development_projection_pending)->toBeFalse()
+            ->and($state->started)->toBeTrue()->and($state->awake)->toBeTrue();
+        Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+    });
+
+    it('reuses a successful publication if clearing its pending mark fails before Vite can start', function (): void {
+        [$instance, $state] = hibernatedViteCheckout();
+        viteWakePoll($instance)->assertUnauthorized();
+        finishWakePublication('succeeded');
+        $failClear = true;
+        DB::connection()->beforeExecuting(function (string $query, array $bindings) use (&$failClear): void {
+            if ($failClear && str_starts_with($query, 'update "instances"')
+                && str_contains($query, '"development_projection_pending" = ?') && ($bindings[0] ?? null) === false) {
+                throw new RuntimeException('The pending mark could not be cleared.');
+            }
+        });
+
+        viteWakePoll($instance)->assertUnauthorized();
+        viteWakePoll($instance)->assertServiceUnavailable();
+
+        expect($instance->refresh()->development_projection_pending)->toBeTrue()
+            ->and($state->started)->toBeFalse()->and($state->awake)->toBeFalse();
+        $failClear = false;
+        viteWakePoll($instance, '/?orbit-wake-retry=1')->assertUnauthorized();
+
+        expect($instance->refresh()->development_projection_pending)->toBeFalse()
+            ->and($state->started)->toBeTrue()->and($state->awake)->toBeTrue();
+        test()->assertDatabaseCount('operations', 1);
+        Queue::assertPushed(StartAdmittedSwampRun::class, 1);
     });
 
     it('starts Vite and writes the awake marker only after native publication succeeds', function (): void {

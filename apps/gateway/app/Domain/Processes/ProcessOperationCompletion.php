@@ -10,6 +10,7 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Support\ValidatedData;
@@ -71,6 +72,11 @@ final readonly class ProcessOperationCompletion
             $attributes['systemd_activation_pending'] = false;
         }
         $process->forceFill($attributes)->save();
+        if (isset($input['vite_plan'])) {
+            $listener = ValidatedData::object(ValidatedData::object($input['vite_plan'])['listener']);
+            Instance::query()->whereKey($process->owner_id)->where('vite_port', ValidatedData::integer($listener['port']))
+                ->update(['development_projection_pending' => false]);
+        }
         if ($operation !== null) {
             $this->installed($operation, $process, $outcome);
         }

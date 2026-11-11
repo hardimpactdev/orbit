@@ -84,7 +84,7 @@ Caddy on the Instance's Node checks for the awake marker on every request. When 
 
 The Gateway answers with a progress page, status 401, headers `X-Orbit-Runtime-Activation-State: pending` and `Retry-After: 1`, and then starts the wake. Caddy shows the page and does not pass the request on. The page polls the original path once a second and loads it when the state header is gone. That load is the first application request.
 
-Sleep leaves the Caddy handler and assigned Vite port in place. When startup keeps the same port, a wake publishes nothing. If preparation reassigns the port, the wake submits one [Caddy publication](/reference/caddy-configuration#native-publication). The page stays pending while that Operation waits for the Node hold and runs.
+Sleep leaves the Caddy handler and assigned Vite port in place. When startup keeps the same port and no Route publication is pending, a wake publishes nothing. If preparation reassigns the port, the wake submits one [Caddy publication](/reference/caddy-configuration#native-publication). The port transaction also sets the existing `development_projection_pending` mark. Preparation failures keep that obligation for the next retry. The page stays pending while the publication waits for the Node hold and runs. A successful publication clears the mark before Vite starts. If that clear fails, retry reuses the successful Operation.
 
 The wake runs in this order:
 

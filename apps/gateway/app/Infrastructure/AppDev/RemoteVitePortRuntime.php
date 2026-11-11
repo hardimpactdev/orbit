@@ -104,11 +104,11 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
         return RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id));
     }
 
-    public function project(Instance $instance, bool $portChanged): void
+    public function project(Instance $instance): void
     {
         $instance->loadMissing('routes');
         if ($instance->routes->isNotEmpty()) {
-            $this->caddy->publish($instance, $portChanged);
+            $this->caddy->publish($instance);
         }
     }
 }

@@ -17,10 +17,10 @@ final readonly class NativeViteCaddyPublication
 {
     public function __construct(private StartOperationAction $operations, private Repository $cache) {}
 
-    public function publish(Instance $instance, bool $portChanged): void
+    public function publish(Instance $instance): void
     {
         $id = $this->cache->get($this->key($instance));
-        if ($id === null && ! $portChanged) {
+        if ($id === null && ! $instance->development_projection_pending) {
             return;
         }
         if (! is_int($id)) {
@@ -33,6 +33,8 @@ final readonly class NativeViteCaddyPublication
 
         if ($operation->status === OperationStatus::Succeeded && ($operation->result['ready'] ?? false) === true
             && ($operation->input['wake_vite_port'] ?? null) === $instance->vite_port) {
+            $instance->update(['development_projection_pending' => false]);
+
             return;
         }
         $deadline = OperationRunBudgets::deadline($operation);
