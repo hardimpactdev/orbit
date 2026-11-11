@@ -12,6 +12,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Tasks\TaskVmAdmission;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Records Gateway budget expiry and a cancel request, and asks Swamp to stop the bound run; Swamp ends it. */
@@ -125,7 +126,7 @@ final readonly class ExpireOperationAction
             app(DirectOperation::class)->assertRun($current, $runId);
             $state = $current->state ?? [];
             $restore = is_array($state['native_timeout_restore'] ?? null) ? $state['native_timeout_restore'] : [];
-            $timeout = $state['native_timeout'] ?? [];
+            $timeout = ValidatedData::object($state['native_timeout'] ?? []);
             unset($state['native_timeout'], $state['native_timeout_restore']);
             if ($nativeStatus !== null) {
                 $state['native_timeout'] = [...$timeout, 'native_terminal_status' => $nativeStatus, 'native_terminal_observed_at' => now()->toISOString()];

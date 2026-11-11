@@ -943,7 +943,7 @@ Deno.test({
       assert(repaired.ok, repaired.output);
       assertEquals(setting("memory_limit"), "1G");
       assertEquals(setting("auto_prepend_file"), bridge);
-      assertEquals(tryRestarts().slice(before), ["try-restart orbit-*.service"]);
+      assertEquals(tryRestarts().slice(before), ["try-restart --no-block orbit-*.service"]);
       const again = f.run("start");
       assert(again.ok, again.output);
       assertEquals(again.changed, 0, again.output);
@@ -1072,10 +1072,51 @@ Deno.test({
       for (const call of calls.filter((call) => call[0] === "restart" || (call[0] === "enable" && call.includes("--now")))) {
         assert(call.includes("--no-block"), JSON.stringify(call));
       }
-      assertEquals(calls.filter((call) => call[0] === "is-active").map((call) => call.at(-1)), ["orbit-frankenphp.service", worker.name]);
+      assertEquals(calls.filter((call) => call[0] === "show").map((call) => call.at(-1)), ["orbit-frankenphp.service", worker.name]);
       const tasks = Deno.readTextFileSync(new URL("tasks/instance-container-phase.yml", root));
-      assert(tasks.includes("['timeout', '5', 'systemctl', 'is-active', '--', item]"));
-      assert(tasks.includes("retries: 10\n      delay: 1"));
+      assert(tasks.includes("['timeout', '5', 'systemctl', 'show', '--property=ActiveState', '--property=Job', '--', item]"));
+      assert(tasks.includes("retries: 10\n  delay: 1"));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.processes = [worker, paused];
+      f.write();
+      for (const phase of ["container", "workspace", "processes"]) {
+        const done = f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments });
+        assert(done.ok, done.output);
+      }
+      const settings = `${f.folder}/containers/instance-7/etc/orbit/php/conf.d/99-orbit-runtime.ini`;
+      Deno.writeTextFileSync(settings, "memory_limit = 128M\n");
+      const state = f.state();
+      state.systemctl = [];
+      // A unit remains active while its restart job is queued. Checking is-active alone would finish too soon.
+      state.queued = { [worker.name]: 2 };
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const start = f.run("start");
+      assert(start.ok, start.output);
+      const writes = start.output.indexOf("Write the changed container PHP settings");
+      const restart = start.output.indexOf("Restart the running Orbit units after changed PHP settings");
+      const ready = start.output.indexOf("Wait for each running unit");
+      assert(writes >= 0 && writes < restart && restart < ready, start.output);
+      assert(Deno.readTextFileSync(settings).includes("auto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php"));
+      assertEquals(f.state().queued[worker.name], 0);
+      assertEquals(f.state().systemctl.filter((call: string[]) => call[0] === "show" && call.at(-1) === worker.name).length, 3);
+      const processes = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: environments });
+      assert(processes.ok, processes.output);
+      const calls: string[][] = f.state().systemctl;
+      const tryRestart = calls.findIndex((call) => call[0] === "try-restart");
+      const enable = calls.findIndex((call) => call[0] === "enable" && call.includes("--now"));
+      assert(tryRestart >= 0 && tryRestart < enable, JSON.stringify(calls));
+      assert(calls[tryRestart].includes("--no-block"));
     } finally {
       f.cleanup();
     }

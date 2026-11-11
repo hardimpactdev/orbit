@@ -222,6 +222,17 @@ if (family === "list") {
       state.inactive = [...new Set([...state.inactive, ...units])];
     }
     save();
+    if (command[1] === "show") {
+      const unit = command.at(-1)!;
+      const queued = state.queued?.[unit] ?? 0;
+      if (queued > 0) {
+        state.queued[unit] = queued - 1;
+        save();
+      }
+      console.log(`ActiveState=${(state.inactive ?? []).includes(unit) ? "inactive" : "active"}`);
+      console.log(queued > 0 ? "Job=123" : "Job=");
+      Deno.exit(0);
+    }
     if (command[1] === "is-active") {
       const inactive = command.slice(3).filter((unit) => (state.inactive ?? []).includes(unit));
       for (const unit of command.slice(3)) console.log(inactive.includes(unit) ? "inactive" : "active");

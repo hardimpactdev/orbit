@@ -50,12 +50,18 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         $publication = ($input['route_publication'] ?? null) === null ? null : ValidatedData::object($input['route_publication']);
         $restoring = isset($input['restore_operation_id']);
         if ($restoring) {
+            $restoreOperationId = ValidatedData::integer($input['restore_operation_id']);
             return ['intent' => [
                 'instance_id' => $instance->id, 'instance_name' => $instance->name, 'ssh_execution' => $input['ssh_execution'],
                 'container' => $container, 'migrate' => $input['migrate'], 'restore_only' => true,
                 'restore_quiesced' => $input['restore_quiesced'],
                 'route_mutations' => $publication === null ? null : $publication['route_mutations'],
-            ], 'execution_secrets' => []];
+            ], 'execution_secrets' => [
+                ...($publication === null ? [] : ValidatedData::object($publication['execution_secrets'])),
+                // Swamp evaluates skipped-step inputs too. Reuse the interrupted run's existing execution copies, with no new put.
+                'process_environments' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-processes-'.$restoreOperationId],
+                'model_environment' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-model-'.$restoreOperationId],
+            ]];
         }
         // Swamp evaluates the agent step's inputs for a default too, so every run has the copy; only an Instance with T3 holds a key.
         $model = ($container['clone'] ?? null) === null ? "# The default Instance runs no agent.\n"
