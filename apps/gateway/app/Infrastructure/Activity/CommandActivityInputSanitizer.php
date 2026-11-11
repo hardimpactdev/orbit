@@ -10,7 +10,7 @@ use RuntimeException;
 
 final readonly class CommandActivityInputSanitizer
 {
-    private const string REDACTED = '[REDACTED]';
+    public const string REDACTED = '[REDACTED]';
 
     private const string REDACTION_FAILURE = 'Output withheld: redaction failed.';
 
