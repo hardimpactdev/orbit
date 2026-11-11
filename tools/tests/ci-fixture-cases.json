@@ -1,0 +1,1785 @@
+{
+  "swamp/tests/ansible_instance_migrate_test.ts": {
+    "source_sha256": "2ea2e73956abfe51b7f6cfece2adee83f5a788085f53e01bbad703db0a82c2bf",
+    "cases": [
+      "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
+      "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
+      "broken symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
+      "a link introduced after preparation refuses quiesce with zero downtime and removes only the prepared container",
+      "file targets with directory suffixes refuse before downtime and in the copied tree without repairing links",
+      "the exact archive tree handles absolute link changes after preflight and preserves rollback",
+      "the exact archive tree handles relative link changes after preflight and preserves rollback",
+      "the exact archive tree handles outside link changes after preflight and preserves rollback",
+      "the exact archive tree handles broken link changes after preflight and preserves rollback",
+      "a retained default copies its unpushed commit and changed, staged, untracked, deleted and ignored files",
+      "a linked checkout refuses retirement even when the default is in the same retirement batch",
+      "a clean standalone non-default checkout moves with T3 and leaves an unrelated default repository intact",
+      "a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was",
+      "a move starts with a new container: one that an earlier failed move left goes first",
+      "a checkout on another branch than the recorded one is refused before anything changes",
+      "a database server that the container cannot reach refuses the move, and the copy leaves nothing behind",
+      "a database server that listens is reached from the container",
+      "preflight names linked and detached worktrees and every tracked or untracked change before any Node change",
+      "retirement error lists stop at 20 entries with total counts",
+      "retirement rechecks changes created after preflight and leaves the container and source intact",
+      "retirement rechecks worktree created after preflight and leaves the container and source intact",
+      "retirement rechecks commits created after preflight and leaves the container and source intact",
+      "retirement rechecks stashes created after preflight and leaves the container and source intact",
+      "Schedule migration repoints a current timer with enabled intent only after successful cutover",
+      "Schedule migration repoints a agent timer with disabled intent only after successful cutover",
+      "Schedule migration repoints a direct timer with enabled intent only after successful cutover",
+      "Schedule rollback restores exact observed timer activation when its enabled intent differs",
+      "Schedule rollback restores exact observed timer activation when its disabled intent differs",
+      "Schedule cutover resumes the timer even when a late Git retirement check refuses",
+      "Schedule preflight refuses missing-service before stopping any timer or Process",
+      "Schedule preflight refuses missing-timer before stopping any timer or Process",
+      "Schedule preflight refuses foreign-service before stopping any timer or Process",
+      "Schedule preflight refuses changed-calendar before stopping any timer or Process",
+      "Schedule preflight refuses masked-timer before stopping any timer or Process",
+      "Schedule preflight refuses activating-service before stopping any timer or Process",
+      "Schedule preflight refuses service-dropin before stopping any timer or Process",
+      "Schedule preflight refuses timer-dropin before stopping any timer or Process",
+      "Schedule preflight refuses foreign-script before stopping any timer or Process",
+      "Schedule preflight refuses foreign-callback before stopping any timer or Process",
+      "Schedule preflight refuses legacy-script-drift before stopping any timer or Process",
+      "Schedule preflight refuses legacy-context-drift before stopping any timer or Process",
+      "Schedule preflight refuses legacy-missing-script before stopping any timer or Process",
+      "Schedule preflight refuses legacy-callback-drift before stopping any timer or Process",
+      "Schedule preflight checks every Schedule before stopping the first timer",
+      "Schedule preflight refuses a absolute-command-symlink that cannot move before downtime",
+      "Schedule preflight refuses a relative-command-symlink that cannot move before downtime",
+      "Schedule preflight refuses a directory-symlink that cannot move before downtime",
+      "Schedule preflight refuses a missing-directory that cannot move before downtime",
+      "Schedule preflight refuses a internal-command-symlink that cannot move before downtime",
+      "Schedule preflight refuses a internal-directory-symlink that cannot move before downtime",
+      "Schedule preflight refuses a extensionless-command-symlink that cannot move before downtime",
+      "Schedule rollback restores all timers after only some source timers stopped",
+      "Process migration carries a running vp-dev through the shared units and retires only moved host files",
+      "Process migration restores a running vp-dev only after removing its failed container",
+      "Process migration carries a stopped vp-dev through the shared units and retires only moved host files",
+      "Process migration restores a stopped vp-dev only after removing its failed container",
+      "preflight names every unpushed local branch with its count against all remote-tracking refs",
+      "preflight refuses and counts every commit when no remote-tracking refs exist",
+      "preflight refuses and counts an unpushed detached HEAD",
+      "preflight refuses stashes with the full count and preserves every entry and earlier move resource",
+      "a clean default with pushed commits and no stash retains all Git metadata and repeats without changes",
+      "a direct repository refuses a worktree created before its final preflight",
+      "a common_of repository refuses a worktree created before its final preflight",
+      "a worktree created after the final listing keeps all its Git data after retirement",
+      "a stash ref with an expired reflog still refuses before downtime",
+      "retention keeps real Git edge cases intact",
+      "a worker receipt failure leaves the source untouched and a retry reuses the prepared retention time",
+      "direct bridge endpoint add with transient missing-veth failure stays before the migration probe and downtime",
+      "direct bridge endpoint add with persistent missing-veth failure stays before the migration probe and downtime",
+      "Docker bridge endpoint add with transient missing-veth failure stays before the migration probe and downtime",
+      "Docker bridge endpoint add with persistent missing-veth failure stays before the migration probe and downtime",
+      "0 local Docker DNAT mappings refuse migration before a probe or downtime with the named error",
+      "2 local Docker DNAT mappings refuse migration before a probe or downtime with the named error",
+      "a forced quiesce failure after quiesce restores host ownership and removes every container reservation effect",
+      "a forced workspace failure after quiesce restores host ownership and removes every container reservation effect",
+      "a forced files failure after quiesce restores host ownership and removes every container reservation effect",
+      "a forced processes failure after quiesce restores host ownership and removes every container reservation effect",
+      "a forced seed failure after quiesce restores host ownership and removes every container reservation effect",
+      "migration refuses a moved Process with exit127 before cutover and restores its host ownership",
+      "migration refuses a moved Process with restart before cutover and restores its host ownership",
+      "migration refuses a moved Process with pid before cutover and restores its host ownership",
+      "migration refuses a moved Process with job before cutover and restores its host ownership",
+      "migration refuses a moved Process with inactive before cutover and restores its host ownership",
+      "migration refuses a moved Process with never-active before cutover and restores its host ownership",
+      "only migration settles desired-running Processes; a stable Process passes with its PID and restart count unchanged",
+      "an unavailable moved Process executable /opt/custom/tool refuses container preparation before stopping any host writer",
+      "an unavailable moved Process executable /opt/custom/vp refuses container preparation before stopping any host writer",
+      "an unavailable moved Process executable removed runtime refuses quiesce before stopping any host writer",
+      "the binary preflight names every unavailable Process and executable in one refusal",
+      "24 moved workers share one five-second settle window inside the 120-second process phase budget",
+      "the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step",
+      "an unsafe copied app service refuses before downtime and restore changes nothing",
+      "an unreadable copied environment refuses before downtime and restore preserves the source"
+    ]
+  },
+  "swamp/tests/ansible_instance_container_test.ts": {
+    "source_sha256": "aa748e232c488b04a5a8e4b9c69dccec234007a6b02f176d2dd909bd28b386a9",
+    "cases": [
+      "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
+      "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
+      "a start points php at the Project's PHP version, and removes the link of a Project without PHP",
+      "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
+      "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes",
+      "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer",
+      "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing",
+      "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file",
+      "a Process's start, stop and restart change its unit in the container; a read returns its state and journal",
+      "a clone runs its own Process units: the default's units and folders from the seed go, and its own start",
+      "a clone's first boot starts no unit of the default and the clone has its own machine-id",
+      "the workspace stays writable for its group before and after the deploy steps, whoever installed last",
+      "the agent phase trusts only its workspace and preserves other Git settings on reruns",
+      "the agent can commit with its default identity and keeps each configured identity value",
+      "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes",
+      "start refuses a NIC with missing ACL before starting the container",
+      "start refuses a NIC with permissive default before starting the container",
+      "start refuses a NIC with bridge union ACL before starting the container",
+      "start refuses an unguarded extra bridge NIC beside guarded eth0",
+      "first attach adds an exact bridge endpoint, retries ETag conflicts and repeats without changes",
+      "a copied seed with an unguarded extra local NIC refuses before the clone starts",
+      "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read",
+      "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish",
+      "a thirty-second Process stop succeeds and inspection keeps its existing unbounded state read"
+    ]
+  },
+  "swamp/tests/ansible_instance_host_test.ts": {
+    "source_sha256": "ec04a851012e7b43ccc3cb5028acb4eaf92ded941cf2960190ddebdca55c3046",
+    "cases": [
+      "a stuck Instance host playbook throws with its last task and kills a descendant holding stdout",
+      "a late playbook gets only the shared command budget left, then no new playbook starts",
+      "the shared command budget stays exhausted across Deno test file isolates",
+      "an ordinary playbook refusal preserves its exit status, including 124",
+      "deadline reaps a detached stdout holder forked before leader exit",
+      "deadline reaps a detached stdout holder forked during TERM",
+      "a real Ansible deadline kills a stalled command after its worker detaches",
+      "a build-list Node gets the Instance project, bridge, folders and image, then a rerun changes nothing",
+      "a task VM host keeps the ZFS ARC its task side sets: the Instance side writes no cap",
+      "an Instance bridge range that another interface of the Node holds refuses before any change"
+    ]
+  },
+  "swamp/tests/ansible_instance_host_image_test.ts": {
+    "source_sha256": "9e8a2307098f8d89826554b5a5cff35f8d87fb1afe23664dd84826ef4ee7a8d6",
+    "cases": [
+      "a new image definition is built, takes the stable alias and replaces the old image",
+      "a Node without its Instance pool is refused before anything changes",
+      "a directory pool skips the clone probe: a copy there is a full copy",
+      "an image that keeps a sudo path is never published",
+      "orbit-instance-build refuses an inherited unguarded profile NIC before starting",
+      "orbit-clone-probe-copy refuses an inherited unguarded profile NIC before starting"
+    ]
+  },
+  "swamp/tests/ansible_instance_host_runtime_test.ts": {
+    "source_sha256": "21ebb39ff6c2e7b17f9dc96e0a272198a2c163f6e5cdb979a1f4f7d5320b13a3",
+    "cases": [
+      "the runtime installs the recipe's Deno ZIP and exposes its executable through current/bin",
+      "a static PHP build is installed as php/<version> with no link in bin, and a build whose extensions differ is refused",
+      "the runtime folder builds its Vite+ home once, links vp and the home into each version, and drops a home no version links"
+    ]
+  },
+  "swamp/tests/ansible_instance_host_updates_test.ts": {
+    "source_sha256": "5a83070f1b45b764059c926c787770c74995ff51f0c11b530e647da9414b169b",
+    "cases": [
+      "a new runtime version installs beside the old one, flips current, restarts each running container's Processes and drops the old",
+      "a Squid configuration that does not parse never replaces the live one, and the run fails",
+      "a project that lists disk paths loses the list, so a container with the idmapped folders starts",
+      "an old folder version that a process still maps stays; a restart that failed runs again on the next converge"
+    ]
+  },
+  "swamp/tests/ansible_instance_host_acl_test.ts": {
+    "source_sha256": "0920e41e9d405ab744b7bfab08c5d59da5de40b31417f89c4a02975e31597d73",
+    "cases": [
+      "bridge remains reject after late unsafe attachments, and profile NICs use only the proxy ACL",
+      "host reconciles the endpoint union without wiping other rules and moves existing NICs without an open gate"
+    ]
+  },
+  "swamp/bin/check-swamp-base-policy_test.ts": {
+    "source_sha256": "bb97c5f5b46301e2747291bcfb737bf70ddb42ce65fd7c5d2024c0aab59ff129",
+    "cases": [
+      "real frozen policy owns limits and dependencies",
+      "stale baseline evidence can be repaired without growing immutable source debt"
+    ]
+  },
+  "swamp/bin/check-swamp-shape_test.ts": {
+    "source_sha256": "a1e0ce4f7e543de50d2cf1a9bcd04a1f7d13a0d094152cbd1b84a2cf5006c5ba",
+    "cases": [
+      "step inputs read one bounded data record, never a query or version history",
+      "official SSH proves the shipped Incus list poll under a literal argv timeout",
+      "Incus poll rejects retried mutation",
+      "Incus poll rejects extra mutation",
+      "Incus poll rejects shell command",
+      "Incus poll rejects unchecked command",
+      "Incus poll rejects suppressed read failure",
+      "Incus poll rejects computed interval",
+      "Incus argv rejects missing timeout",
+      "Incus argv rejects computed timeout",
+      "Incus argv rejects second unbounded invocation",
+      "Incus argv rejects unbounded conditional branch",
+      "a concatenated conditional branch cannot hide an unbounded body invocation",
+      "Incus poll rejects a shadowed isinstance guard",
+      "Incus poll rejects a shadowed len guard",
+      "body-key accounting rejects an additional bracket step use",
+      "body-key accounting rejects an additional history record use",
+      "body-key accounting rejects an additional dynamic producer output use",
+      "body-key accounting rejects an additional dynamic producer and field use",
+      "body-key accounting rejects an additional fully dynamic step selectors use",
+      "body-key accounting rejects an additional fully dynamic history selectors use",
+      "body-key accounting rejects an additional dynamic history field use",
+      "body-key accounting rejects an additional bracket SSH argv use",
+      "body-key accounting rejects an additional bracket output use",
+      "body-key accounting rejects an additional escaped bracket output use",
+      "body-key accounting rejects an additional joined bracket output use",
+      "body-key accounting rejects an additional concatenation use",
+      "Incus interval equal to or longer than the timeout is refused",
+      "an additional shell use of an SSH script body invalidates its bound",
+      "Incus reads are not admitted by a local shell timeout or another transport",
+      "phase script accepts a literal-bounded external-state poll and a shorter single wait",
+      "Python polls prove external origins and propagate HTTP errors before reading state",
+      "phase poll rejects httpx Gateway state",
+      "phase poll rejects requests unchecked HTTP error body",
+      "poll proofs follow only sibling shipped modules and reject tolerant helpers",
+      "an enclosing context manager cannot suppress a failed poll",
+      "provider wrappers are proved from source, never from their name",
+      "shell polls use the same parsed external origin and real errexit flags",
+      "phase script resolves the shipped metadata asset through the step environment",
+      "phase script accepts shell state polling and a Python one-shot wait under a step timeout",
+      "phase script does not allow action retries, swallowed request failures or a disconnected state selector",
+      "phase controls reject inline waits and files without a literal bound on every invocation",
+      "phase file bounds do not bless another script's unbounded call",
+      "phase budgets follow bounded script imports but not unused test harness imports",
+      "phase controls reject computed intervals and failed-command retries",
+      "Route private DNS grace allows only the approved file, step and literal command",
+      "a vault value may be the whole content of a 0600, or 0640 Instance .env, cfgmgmt file on a 209 worker, and nothing else",
+      "official SSH vault stdin and env require a 209 worker and closed execution descriptors",
+      "official SSH transport identity vault fields are native sensitive inputs",
+      "official SSH identity content requires one whole vault value, never raw or composite secrets",
+      "embedded threshold is per program, not sum of independent short programs",
+      "script metrics count source once across a tagged template, concatenation and subprocess sink",
+      "joins and aliases cannot hide an oversized operational string",
+      "systemd unit text is declarative and absent from script metrics",
+      "nested subprocess binaries are evidence for multi-action, not a claim of business action count",
+      "bounded polling, timer aliases and lock calls are not native controls",
+      "pure finite data iteration is not polling",
+      "private-material clients and Gateway HTTP step imports are grandfathered rules",
+      "agent aliases, wrappers, conditional commands and array invocations are classified",
+      "fixture rename or missing local dependency is unknown, never clean",
+      "vault values are permitted only as whole command environment values",
+      "secret workflow inputs are rejected; vault key names are public references",
+      "baseline cannot grow, add a rule, move a file or admit a different agent action",
+      "workflow coverage separates clean, unknown and accepted debt",
+      "aggregation preserves call sites separately from file-rule rows",
+      "Gateway failure reporters count as rule F even without private material",
+      "internal credential arguments are not secret-flow proof; env and private material are",
+      "native stdin and protected environment do not become argv findings",
+      "dynamic execution descriptor maps keep every value closed without a cardinality cap",
+      "closed execution_secrets containers carry only public vault-key references",
+      "agent array, bind and default-parameter wrappers cannot hide new actions",
+      "a new registered step cannot reuse an old Gateway HTTP helper without rule F",
+      "Gateway primitive exceptions require exact POST routes, never endpoint prefixes",
+      "Gateway primitive fetch aliases and options must prove their exact method and path",
+      "Gateway release-runner wait exception does not allow polling in Swamp steps",
+      "only concrete primitives are clean through shared local step dependencies",
+      "sign and mint names grant no Gateway exception",
+      "native shell Gateway requests use the same two exact POST routes",
+      "external HTTP calls are not Gateway primitives or callbacks",
+      "agent service and artifact operands are data, never agent action calls",
+      "real shell agent invocations remain forbidden through executable wrappers",
+      "closed empty execution secrets admits no private values",
+      "normalized repository identity is public while authentication identities remain private",
+      "official cfgmgmt identity file workflow input is a public string path",
+      "agent invocations inside shell substitutions and interpreter bodies are actions",
+      "static native child workflows are scanned through their local source graph",
+      "literal child choices scan both alternatives and reject unresolved targets",
+      "named native models resolve by name or id and retain their source findings",
+      "Python subprocess wrappers cannot hide sleep or workflow-lock commands",
+      "Python command bindings use execution order and immutable lexical captures",
+      "Python cross-scope and walrus writes invalidate captured command provenance",
+      "the exact approved HTTP extraction conserves one cap while the physical ledger only shrinks",
+      "HTTP source relocation rejects changed definitions, imports, retained debt and new callers",
+      "HTTP move proof follows the unchanged caller body and distinguishes local assertions from module loaders",
+      "forEach model identities use the item or index, with no grandfather growth",
+      "workflows declare vaults read directly or forwarded as bounded execution-copy descriptors",
+      "gate preserves ratchet and metrics when run from Swamp subtree",
+      "initial import uses preserved source history and matching repo identity",
+      "source move initial import uses older unprefixed source, not gate witness"
+    ]
+  },
+  "swamp/bin/lint-behavior-names_test.ts": {
+    "source_sha256": "42a1a10f052287390b5feaec50c439d40876e7b38152902a2dae6968801b1eec",
+    "cases": [
+      "a behavior named by run or Operation is reported",
+      "a behavior named by target or fixed is allowed",
+      "a per-run behavior the workflow deletes is allowed",
+      "a name Swamp would refuse at run time fails here",
+      "dotless, integer and passed-in names are valid",
+      "one behavior name used with two behavior types fails"
+    ]
+  },
+  "swamp/bin/source_test.ts": {
+    "source_sha256": "0879d78496c83f95a3f53e3d91a0721b5ea6b7d019289f7c98900d9ba677d2aa",
+    "cases": [
+      "model IDs are unique",
+      "workflow queue bounds have measured per-kind budgets",
+      "every Ansible file ships with the ansible-input extension",
+      "runtime credentials and generated records are ignored"
+    ]
+  },
+  "swamp/bin/swamp-liveness_test.ts": {
+    "source_sha256": "d5a01001f4cb56025f5633f11b6a72ae956a1309bf5ba48434b5b24d2cccbb21",
+    "cases": [
+      "malformed probe responses are refused",
+      "duplicate summary kinds are refused",
+      "partial or invalid state is preserved and rebaselines without restart",
+      "failed state publication keeps previous cooldown",
+      "old but draining backlog does not restart",
+      "three minutes without claim progress restarts",
+      "transient health failure is not a restart",
+      "inode exhaustion alerts and does not restart",
+      "inode warning is visible before exhaustion",
+      "unavailable Gateway does not prove a stall",
+      "startup and restart cooldown"
+    ]
+  },
+  "swamp/bin/swamp-shape-python_test.ts": {
+    "source_sha256": "2270f8f5ec52e8a009a953edb24c1336791571a5921f181ef4b5d3a4e7106441",
+    "cases": [
+      "python_secret_flow_is_from_environment_not_internal_argument_names",
+      "fixed_external_origin_with_dynamic_path_is_not_gateway_http",
+      "httpx_gateway_reads_share_the_external_origin_boundary",
+      "only_proven_named_host_tool_flocks_are_not_workflow_mutexes",
+      "late_outer_fd_rebinding_is_not_a_proven_tool_lock",
+      "outer_lock_and_origin_bindings_include_loop_and_destructuring_writes",
+      "agent_executable_context_in_python_subprocesses_and_remote_commands",
+      "validated_parameterized_host_tool_transaction",
+      "path_guard_custody_or_acquisition_changes_are_not_proven",
+      "mutated_or_untyped_callers_cannot_claim_constructor_provenance",
+      "native_certificate_signer_has_only_the_scoped_post_and_checked_numeric_operation"
+    ]
+  },
+  "swamp/bin/validate-swamp-workflows_test.ts": {
+    "source_sha256": "452425133aa49d63c3319ed9652914696c90c09c74ff931709d783acfe6f47ce",
+    "cases": [
+      "validation receives only its registry-read credentials",
+      "required validation only receives event-scoped credentials",
+      "serve grant validation and coverage regressions remain required",
+      "native environment is explicit and configuration is isolated"
+    ]
+  },
+  "swamp/extensions/behaviors/automatic-deploy/development_test.ts": {
+    "source_sha256": "966a5126d7f6d0f370047e2232dc817a5ad49365559489609e476df45366af36",
+    "cases": [
+      "development policy admits only after Gateway ownership switches",
+      "development policy returns only the final checkpoint handle",
+      "native development policy saves the exact pinned intent before admission",
+      "an existing target hold starts no competing deployment",
+      "target_busy at admission clears only the unadmitted intent",
+      "a lost admission response follows its receipt without a second start",
+      "terminal work without history cannot authorize a new effect",
+      "interrupted development deploys settle, back off and re-admit the head",
+      "interrupted development deploy without evidence backs off once then admits the current head",
+      "a definite start failure releases pending intent for the next scheduled admission",
+      "an uncertain or executed failure without history retains pending intent",
+      "development retries and backoff are owned by Swamp and reset after manual work",
+      "pending publication uses the normal Route root before dev deployment",
+      "only a proven zero-effect admission fence clears a pending development intent",
+      "unrelated production and non-default checkouts with null history cannot block dev discovery",
+      "a default with no authoritative Route deploys even when its display Route is unrelated",
+      "native-first deployment skips the old Gateway dev owner before reading new fields",
+      "canonical Gateway refusal skips ambiguous app-dev plus app-prod placement"
+    ]
+  },
+  "swamp/extensions/behaviors/automatic-deploy/gateway_test.ts": {
+    "source_sha256": "b4643019d66d98fb60268b5c6e58340215272bf3c9d63a66967bb74b04b73a07",
+    "cases": [
+      "native policy returns only the final production checkpoint handle",
+      "live default discovers production, guards ownership, saves intent, admits and publishes exact Gateway shapes",
+      "first live tick imports the public projection and preserves a stable since",
+      "history written after deploy admission rejects final PUT without failing the run or replaying admission",
+      "final publication conflict does not hide a failed policy decision",
+      "other final publication errors remain failed runs with the admission receipt kept",
+      "manual queued operation with input [] remains a readable busy holder",
+      "manual running operation with input [] remains a readable busy holder",
+      "a holder found in the list is read in full, because list rows carry no input",
+      "target_busy follows a manual operation with input []",
+      "non-empty operation input arrays remain unreadable",
+      "discovery covers all enabled app-prod Instances; a filter only narrows it",
+      "discovery uses the Gateway eligibility filter and skips excluded Instances",
+      "role refusal after the guard clears an unadmitted intent without a hold",
+      "PHP owner from Instance is a successful no-op without a write or state advance",
+      "PHP ownership also prevents automatic resolution of an expired missing request",
+      "pre-cutover publication owner refusal is a no-op before any POST or local state",
+      "Gateway deploy admission owner refusal cannot leave an unresolved intent",
+      "changed publication version and unreadable ownership probe stop before admission",
+      "fresh Instances with no public decision use a valid ownership probe",
+      "truncated walks fail closed even when the first candidate is green",
+      "moved head and nullable check evidence cannot admit a deploy",
+      "mixed history, resume and ownership observations fail closed",
+      "disabled and development targets do not read source or write",
+      "a failed Instance does not prevent the next discovered Instance from running",
+      "unreadable discovery fails closed instead of treating the fleet as empty",
+      "G06 validates keyed receipt caller and target; missing holds through manual deploy and resume",
+      "G06 queued receipt is followed before fresh history without replaying POST",
+      "missing receipt stays held until ten minutes, then resolve fences it without a deploy or effect hold",
+      "an operator-created fenced receipt from G06 clears intent without another resolve",
+      "resolve returning a real queued operation follows it without replacement",
+      "resolve returning a real terminal receipt uses history read after resolution",
+      "resolve terminal receipt without effect history retains the reviewed effect hold",
+      "lost or malformed resolve response preserves the original admission intent",
+      "a fence code without zero-attempt terminal proof cannot clear the effect hold",
+      "failure, pause and stall alerts reach the fire result once with exact payloads",
+      "before orbit#1561: admission and completed history stay automatic without a pause or effect hold",
+      "before orbit#1561: receipt lookup and resolution follow the automatic operation",
+      "before orbit#1561: own running deploy is deploying and a different commit is busy",
+      "before orbit#1561: automatic failures alert, back off and retain the retry ordinal",
+      "before orbit#1561: rollbacks and manual deploys still pause and alert",
+      "after orbit#1561: admission and completed history stay automatic without a pause or effect hold",
+      "after orbit#1561: receipt lookup and resolution follow the automatic operation",
+      "after orbit#1561: own running deploy is deploying and a different commit is busy",
+      "after orbit#1561: automatic failures alert, back off and retain the retry ordinal",
+      "after orbit#1561: rollbacks and manual deploys still pause and alert",
+      "structured caller with a changed display label: admission and completed history stay automatic without a pause or effect hold",
+      "structured caller with a changed display label: receipt lookup and resolution follow the automatic operation",
+      "structured caller with a changed display label: own running deploy is deploying and a different commit is busy",
+      "structured caller with a changed display label: automatic failures alert, back off and retain the retry ordinal",
+      "structured caller with a changed display label: rollbacks and manual deploys still pause and alert",
+      "native failure Operations with PHP empty-array results remain readable",
+      "nonempty array results cannot invent a deployment receipt"
+    ]
+  },
+  "swamp/extensions/behaviors/automatic-deploy/mod_test.ts": {
+    "source_sha256": "98ac09953d5f25c5c63511031ff848792b2028f02b6e42c21123af9f43c736be",
+    "cases": [
+      "automatic origin accepts Gateway callers and both stored labels while excluding rollbacks",
+      "E05 a restarted tick follows its recorded receipt without a new start",
+      "E10 lost admission response persists intent and holds the target",
+      "E10 terminal receipt without history cannot imply safe retry",
+      "E10 worker-loss receipt clears admission and holds until a later manual deploy",
+      "E12 admission refusal codes and advice survive",
+      "E14 automatic start sends only a pinned commit and required key",
+      "E16 keyed conflict holds intent and cannot create a fresh attempt",
+      "E17 branch head movement cannot change the selected pinned commit",
+      "intent is saved before POST and malformed success receipts stay unresolved",
+      "queued rollback winning admission is busy without a stall",
+      "terminal receipt is read before fresh live history",
+      "an unresolved historical worker loss holds newer commits too",
+      "malformed or mismatched admission receipts cannot establish success",
+      "queued cancellation clears its request but holds effects until manual deploy and resume",
+      "first-attempt commit_blocked without history holds effects and preserves the rolled-away block",
+      "worker loss without a row clears admission and holds only until manual deploy plus resume",
+      "first-attempt deployment.paused before deployment clears intent without an effect hold",
+      "resumed deployment.paused without effect evidence still holds",
+      "first-attempt instance.auto_deploy_role_inactive before deployment clears intent without an effect hold",
+      "resumed instance.auto_deploy_role_inactive without effect evidence still holds",
+      "first-attempt instance.auto_deploy_policy_owner before deployment clears intent without an effect hold",
+      "resumed instance.auto_deploy_policy_owner without effect evidence still holds",
+      "manual deploy and resume before observing worker loss still resolve that receipt",
+      "terminal no-row env.operation_busy clears its request and uses the manual resolution boundary",
+      "manual deploy and resume before observing terminal no-row env.operation_busy resolve it",
+      "terminal no-row Gateway exception clears its request and uses the manual resolution boundary",
+      "manual deploy and resume before observing terminal no-row Gateway exception resolve it",
+      "terminal no-row unexpected error code clears its request and uses the manual resolution boundary",
+      "manual deploy and resume before observing terminal no-row unexpected error code resolve it",
+      "terminal no-row cancel after start clears its request and uses the manual resolution boundary",
+      "manual deploy and resume before observing terminal no-row cancel after start resolve it",
+      "503 queue_unavailable is a refusal and the next tick can admit",
+      "503 dispatch_failed follows its operation then applies the terminal no-history rule",
+      "uncontracted server failures cannot be classified as a safe refusal"
+    ]
+  },
+  "swamp/extensions/behaviors/composer-maintenance/mod_test.ts": {
+    "source_sha256": "c28f1eddf3ec2decbc2222efef9173f47f09a51732e24032d2d7ad04459361f8",
+    "cases": [
+      "detect preflights every path before any command",
+      "detect has exact upstream Composer candidates without vendor",
+      "detect merges major and security reasons and carries nested path",
+      "detect fails closed on malformed",
+      "detect fails closed on code4",
+      "detect fails closed on error",
+      "detect fails closed on missing",
+      "detect fails closed on incomplete",
+      "audit keeps sparse numeric advisory objects",
+      "audit rejects unusable entries {}",
+      "audit rejects unusable entries {\"advisories\":null}",
+      "audit rejects unusable entries {\"advisories\":{\"a/a\":[{\"advisoryId\":\"\"}]}}",
+      "audit rejects unusable entries {\"advisories\":{\"a/a\":\"bad\"}}",
+      "detect reports a due exception and leaves policy untouched",
+      "detect omits an exception that is not due",
+      "detect omits an exception that is removed",
+      "detect rejects unusable exception records []",
+      "detect rejects unusable exception records {\"schema\":2,\"exceptions\":[]}",
+      "detect rejects unusable exception records {\"schema\":1,\"exceptions\":[{\"path\":\".\",\"manager\":\"composer\",\"package\":\"existing/pkg\",\"recorded_on\":\"bad\",\"days\":7}]}",
+      "paths reject escape or duplicate [\"/tmp\"]",
+      "paths reject escape or duplicate [\"../outside\"]",
+      "paths reject escape or duplicate [\"server/./web\"]",
+      "paths reject escape or duplicate [\".\",\".\"]",
+      "paths reject symlinks escaping the checkout",
+      "paths reject two entries resolving to the same directory",
+      "missing Composer binary fails with 127",
+      "input schemas reject unknown config and an empty path set",
+      "an aborted method runs no Composer command",
+      "Composer receives the shared clean environment without parent agent markers",
+      "missing cwd returns the maintainer path failure",
+      "missing configured path returns the maintainer path failure",
+      "JSON report stdout remains limited to 8 MiB in bytes",
+      "detect ignores repository exception files and never overwrites them",
+      "plan accepts an update failure with output over 8 MiB and reports its command"
+    ]
+  },
+  "swamp/extensions/behaviors/js-maintenance/mod_test.ts": {
+    "source_sha256": "1b656674369e281b1c98428aca628cfd9f0b93a743da5412a2d6d3cf196d74c8",
+    "cases": [
+      "fresh Vite+ npm detects from lockfiles without a bootstrap install",
+      "fresh Vite+ bun detects from lockfiles without a bootstrap install",
+      "manager lock mismatch npm@11.12.0 bun.lock",
+      "manager lock mismatch bun@1.3.14 package-lock.json",
+      "manager lock mismatch npm@11.12.0 ",
+      "manager lock mismatch bun@1.3.14 package-lock.json,bun.lock",
+      "invalid manager {}",
+      "invalid manager {\"packageManager\":\"pnpm@10\"}",
+      "invalid manager {\"packageManager\":\"npm@11\",\"devEngines\":{\"packageManager\":{\"name\":\"bun\"}}}",
+      "devEngines selects the declared manager",
+      "two inferred lockfiles disagree before any command",
+      "unsafe or missing paths ../outside",
+      "unsafe or missing paths /tmp",
+      "unsafe or missing paths mobile/../x",
+      "unsafe or missing paths .,.",
+      "unsafe or missing paths missing",
+      "unsafe or missing paths C:/repo",
+      "unsafe or missing paths mobile\\app",
+      "symlink leaving the checkout is rejected",
+      "two paths to the same real directory are rejected",
+      "missing cwd has the shared exit 70 failure",
+      "detect covers a subdirectory with no Composer package",
+      "real hauzer mobile outdated reads current from lock and folds Expo",
+      "real mealou mobile outdated reads current from lock and folds Expo",
+      "npm missing current uses locked version rather than wanted",
+      "missing current in report and lock fails",
+      "reported current takes precedence over lock",
+      "Bun JSON missing current uses bun.lock",
+      "Bun JSON missing current cannot use an aliased lock descriptor",
+      "real Bun table strips age markers, compares Current to Latest and skips non-direct alias target",
+      "Bun lock trailing-comma parser preserves commas inside strings",
+      "invalid npm detection output {\"raw\":\"broken\"}",
+      "invalid npm detection output {\"data\":{\"error\":\"failure\"}}",
+      "invalid npm detection output {\"data\":{\"react\":{\"latest\":2}}}",
+      "invalid npm detection output {\"code\":17,\"data\":{}}",
+      "invalid Bun table fails closed",
+      "npm via chains preserve real IDs, URLs, title, severity and affected range",
+      "one shared npm advisory remains on every controlling direct dependency",
+      "unresolvable npm via chain missing-package",
+      "unresolvable npm via chain @shadcn/registry",
+      "unresolvable npm via chain ",
+      "Bun walks dependencies and peers, stopping at another direct package",
+      "real Bun advisory fixture attaches through the original lock graph and keeps advisory order",
+      "unattachable Bun advisory fails closed",
+      "stale Bun exceptions retain the maintainer date and manager contract",
+      "Expo SDK major is one candidate while coupled security remains separate",
+      "no Expo SDK candidate is invented for an isolated coupled bump",
+      "manager and git children never receive parent agent markers or npm overrides",
+      "JSON reports have an 8 MiB byte limit",
+      "detect ignores repository exception files and never overwrites them",
+      "plan accepts an install failure with output over 8 MiB and reports its command"
+    ]
+  },
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/gateway_test.ts": {
+    "source_sha256": "2c14c1e48e268153f8a24b3a7836ba5cb09876601d75cd46da58c061d2660918",
+    "cases": [
+      "worker admission checks the current enrollment, package repo and merge policy without changing either",
+      "configuration and missing-ledger baseline writes conform to declared resource schemas",
+      "detection refreshes origin/main and rejects a stale checkout or failed fetch before writing a plan",
+      "Gateway HTML and empty bodies produce clear status-bearing errors",
+      "Horizon task admission defaults to package Project 57 and rejects the website Project"
+    ]
+  },
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
+    "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
+    "cases": [
+      "exact script output: v5.11.0 \u2192 v5.12.0",
+      "exact script output: v5.42.0 \u2192 v5.43.0",
+      "exact script output: v5.49.0 \u2192 v5.50.0",
+      "exact script output: v5.50.0 \u2192 v5.50.1",
+      "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
+      "missing, invalid and unknown baselines fail before diffing",
+      "upstream failures never become a clean empty detection",
+      "route and action text changes retain the script boundaries",
+      "nested config changes collapse only parent changes, including add and delete",
+      "baseline plan is one task and an up-to-date ledger produces none",
+      "non-object ledgers report an invalid synced_tag without reading upstream"
+    ]
+  },
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/queue_test.ts": {
+    "source_sha256": "ee80c3c86b5e69e7bb950230993133d008bce504d49c9d3110dc6e91558c2143",
+    "cases": [
+      "one candidate becomes one ordered backlog task through the Gateway, never a live start",
+      "baseline is one task and repeated scans create no second baseline",
+      "lost create reply is adopted by exact brief and never posted twice",
+      "uncertain absent creates stop for reconciliation; duplicates also stop",
+      "website Project and automatic merge settings cannot receive parity tasks",
+      "current upstream creates no group and does not call the Gateway"
+    ]
+  },
+  "swamp/tests/ansible_artifact_test.py": {
+    "source_sha256": "3a9f7cd695d5bfe91773efe3c3c2e6a037a251651a7572e50ca72616b35359d7",
+    "cases": [
+      "test_mirror_success_does_not_fetch_upstream",
+      "test_missing_mirror_dns_and_timeout_fall_back",
+      "test_write_limit_and_unknown_errors_stop",
+      "test_corrupt_mirror_never_fetches_upstream_or_publishes",
+      "test_integrity_failure_preserves_existing_destination",
+      "test_tool_manager_sha512_fetches_keep_transport_only_fallback_and_integrity",
+      "test_local_publication_failure_stops_and_cleans_staging",
+      "test_matching_cache_makes_no_download_or_change"
+    ]
+  },
+  "swamp/tests/ansible_command_output_test.py": {
+    "source_sha256": "68821d06d0c31cf0c43faf93a99ff3b9878db0751290703c3a3313994f2e8217",
+    "cases": [
+      "test_every_regex_is_exercised_or_classified_without_command_output",
+      "test_unclassified_native_regex_tests_fail_coverage",
+      "test_recorded_output_through_production_expressions",
+      "test_dpkg_installed_held_removed_and_absent"
+    ]
+  },
+  "swamp/tests/ansible_container_host_system_test.py": {
+    "source_sha256": "575b1cca09eb332a888efbe7f7bcbdd10a9ca5f707ed17dfa2ebbdb97e688104",
+    "cases": [
+      "test_held_and_unheld_installed_packages_are_not_reinstalled",
+      "test_config_files_left_after_removal_do_not_count_as_installed",
+      "test_an_absent_package_is_installed"
+    ]
+  },
+  "swamp/tests/ansible_firewall_test.py": {
+    "source_sha256": "d73b9f1a8a83947270fd9c8dd99221a9dd9decdfc810dcc08b302fff26e09df6",
+    "cases": [
+      "test_changed_shapes_and_order_select_only_owned_indices",
+      "test_node_allows_move_with_their_pair_and_strays_go",
+      "test_removed_pair_takes_every_node_allow"
+    ]
+  },
+  "swamp/tests/ansible_gateway_retired_settings_test.ts": {
+    "source_sha256": "c042f58888302e6c89c74aede983b58df9a1c8bd673d4cc0eb408b2f2b99f2f4",
+    "cases": [
+      "retired settings leave the Gateway environment; the other lines stay as they were"
+    ]
+  },
+  "swamp/tests/ansible_gateway_swamp_grants_test.py": {
+    "source_sha256": "86401f91d724e0bff859f07369bf835dff78c850e0485f6ee2bfc53b8538e5e3",
+    "cases": [
+      "test_proof_release_setup_repairs_a_restored_gateway_and_is_idempotent",
+      "test_restored_grants_are_replaced_from_the_candidate_and_a_failed_reload_is_retried",
+      "test_the_grants_tag_uses_the_candidate_renderer_not_the_saved_plan_grants"
+    ]
+  },
+  "swamp/tests/ansible_hub_converge_peers_test.py": {
+    "source_sha256": "2aaabed7f28d5b315531b0bb183de89113dd43c305e612e703b6cd3fdfd55fc5",
+    "cases": [
+      "test_offline_recorded_peers_do_not_fail_the_hub_converge",
+      "test_a_peer_that_was_live_before_the_change_must_handshake_again",
+      "test_a_recorded_peer_missing_from_the_hub_fails",
+      "test_the_live_peers_are_those_with_a_handshake_in_the_last_120_seconds",
+      "test_a_hub_without_its_interface_has_no_live_peer",
+      "test_the_network_phase_reads_the_live_peers_before_it_changes_the_hub_and_waits_only_for_them",
+      "test_the_check_phase_requires_the_recorded_peers_without_waiting_for_a_handshake"
+    ]
+  },
+  "swamp/tests/ansible_hub_prune_test.py": {
+    "source_sha256": "5e615ffaeba1613d641be4bb4e6a6ada5de870c85e4c5bd276143e88a0cf5844",
+    "cases": [
+      "test_a_node_created_after_the_intent_keeps_its_peer_file",
+      "test_the_hub_converge_runs_this_prune",
+      "test_node_add_loads_the_peer_files_the_hub_has_when_it_applies"
+    ]
+  },
+  "swamp/tests/ansible_inputs_test.py": {
+    "source_sha256": "a2fb8eddf67ab13e654a59a497e751ca589f7954f0caaf5baadf3ffeb62c7ac3",
+    "cases": [
+      "test_admitted_identity_and_secret_file_custody",
+      "test_metrics_container_plan_preserves_the_admitted_state",
+      "test_required_machine_phases_use_the_existing_ansible_entry_point",
+      "test_observations_precede_pure_composition_and_machine_application",
+      "test_chart_exposes_each_observe_compose_variables_and_apply_step",
+      "test_removal_waits_for_every_job_including_failed_and_skipped_container_cleanup",
+      "test_composed_observations_keep_literal_jinja_and_private_modes",
+      "test_tool_manager_keeps_mirrors_and_both_admitted_checksum_algorithms",
+      "test_analytics_and_swamp_resources_keep_the_admitted_pins_and_order",
+      "test_commands_and_runtime_copies_run_only_for_a_changed_pin_or_lock_and_retry_failure"
+    ]
+  },
+  "swamp/tests/ansible_instance_bridge_test.py": {
+    "source_sha256": "21b390491370bd9026acb0cdfbc0352a8f41d8e006cf0f5c3ec268d759e22573",
+    "cases": [
+      "test_stale_capture_keeps_later_admission_then_current_capture_prunes_it",
+      "test_same_tuple_readmission_during_stale_prune_bumps_etag_and_survives_retry",
+      "test_readmission_after_acl_write_survives_old_record_compaction",
+      "test_reconcile_compacts_old_records_deduplicates_and_never_deletes_newer_records",
+      "test_rechecks_newer_rule_without_a_record_before_removing_and_preserves_unknown_descriptions",
+      "test_only_one_exact_published_mapping_is_accepted",
+      "test_address_change_adds_new_tuple_until_host_reconcile_removes_the_old",
+      "test_reconcile_preserves_proxy_ingress_and_rules_outside_its_endpoint_shape"
+    ]
+  },
+  "swamp/tests/ansible_instance_container_destroy_test.ts": {
+    "source_sha256": "7da6c81025d6a5728b0b1a86472f7bb85184f728d074f7355b7d887210ce045f",
+    "cases": [
+      "migrated container cleanup keeps retained Git while removing its container, volume, ACL, rules and mirror; a retry changes nothing"
+    ]
+  },
+  "swamp/tests/ansible_instance_egress_test.py": {
+    "source_sha256": "b5a5d0c46a3ec4e6d1784424ffcaefc69d2567a41bf7ce65f0cc7af2fcf9d9ca",
+    "cases": [
+      "test_readiness_observes_the_listener_without_a_connection",
+      "test_readiness_refuses_a_listener_on_another_address",
+      "test_readiness_refuses_a_bound_port_that_is_not_listening",
+      "test_readiness_waits_for_the_service_to_listen",
+      "test_wait_is_bounded_after_start_and_before_the_image_uses_the_proxy"
+    ]
+  },
+  "swamp/tests/ansible_instance_migrate_links_test.py": {
+    "source_sha256": "2c06767fd3066491dd28df9a3a2904ce904b64349e5657d4eec42e8d8dc7ee89",
+    "cases": [
+      "test_rewrites_absolute_storage_and_local_package_links_without_changing_source",
+      "test_keeps_relative_targets_exactly",
+      "test_refuses_every_external_path_and_target_including_relative_and_prefix_siblings",
+      "test_refuses_broken_links_and_cycles_including_missing_external_targets",
+      "test_checks_resolved_destination_and_does_not_follow_directory_links",
+      "test_refuses_file_targets_with_directory_suffixes_at_every_hop_in_source_and_copy",
+      "test_allows_directory_targets_with_directory_suffixes",
+      "test_does_not_inspect_installed_package_or_git_contents",
+      "test_checks_composer_and_npm_package_boundary_links_but_not_named_ordinary_directories",
+      "test_uses_the_copied_tree_without_reading_the_old_checkout_and_is_idempotent",
+      "test_refuses_missing_copied_data_even_if_the_source_target_still_exists_without_partial_rewrites",
+      "test_preserves_non_utf8_bytes_in_link_names_and_targets",
+      "test_reports_non_utf8_refusals_as_byte_escapes_without_json_surrogates",
+      "test_resolves_parent_components_after_following_directory_links"
+    ]
+  },
+  "swamp/tests/ansible_instance_module_args_test.py": {
+    "source_sha256": "167748d56e02ff960ec4f0ed0f931b9d712f51da47907c517ed901fff6240bae",
+    "cases": [
+      "test_every_module_call_passes_the_real_argument_spec",
+      "test_the_check_refuses_what_the_real_module_refuses"
+    ]
+  },
+  "swamp/tests/ansible_model_forwarder_test.py": {
+    "source_sha256": "8c361cb5bc9c1646c24ce74cf7e9245d3efa30926a969fee085f2a82eada4b0f",
+    "cases": [
+      "test_table_unit_loads_after_nftables_and_reloads_in_place",
+      "test_forwarder_runs_only_with_its_table",
+      "test_table_comes_before_the_forwarder",
+      "test_readiness_observes_the_listener_without_a_connection",
+      "test_readiness_refuses_a_listener_on_another_address",
+      "test_readiness_refuses_a_bound_port_that_is_not_listening",
+      "test_counter_checks_accept_the_live_nft_increment",
+      "test_counter_checks_compare_multiple_digits_as_numbers",
+      "test_counter_checks_refuse_unchanged_or_falling_counters",
+      "test_checks_cover_every_path",
+      "test_temporary_probe_setup_and_cleanup_report_no_configuration_change"
+    ]
+  },
+  "swamp/tests/ansible_node_add_test.py": {
+    "source_sha256": "662af869588dfb3d6c78efe1761a2eebe0b4ae53e263fb58eab63f885895b6de",
+    "cases": [
+      "test_every_host_is_pinned_and_the_private_files_have_their_custody",
+      "test_every_phase_is_one_tag_and_runs_on_the_hosts_it_needs",
+      "test_the_machine_phase_validates_the_sudo_rule_before_it_replaces_the_old_one",
+      "test_the_agent_starts_only_after_its_group_and_unit_exist",
+      "test_the_tunnel_key_is_checked_before_any_tunnel_change",
+      "test_a_hub_node_has_no_hub_peer",
+      "test_a_condition_is_a_string_and_host_keys_stay_checked"
+    ]
+  },
+  "swamp/tests/ansible_shape_gate_tools_test.py": {
+    "source_sha256": "a70cc7d76d9318e4f797dee9651bea556aeeb16ded6911944790cb64ee8f8a8b",
+    "cases": [
+      "test_uses_the_system_tools_only_when_built_for_these_pins",
+      "test_a_built_venv_needs_no_write_access_and_no_install",
+      "test_the_playbook_names_the_tools_as_the_gate_does",
+      "test_the_playbook_builds_the_tools_where_the_gate_looks",
+      "test_deno_ansible_fixtures_receive_the_installed_pinned_collections",
+      "test_every_deno_test_file_runs_once_with_three_early_instance_host_groups",
+      "test_each_instance_command_receives_one_deadline_at_launch",
+      "test_a_completed_command_is_reported_while_its_neighbor_is_still_running"
+    ]
+  },
+  "swamp/tests/ansible_static_php_test.py": {
+    "source_sha256": "0ceee7bc659a002a18635ec911a5bdb7e63d79525bb7927668271912ae3d65a9",
+    "cases": [
+      "test_matching_build_passes",
+      "test_a_missing_and_an_extra_extension_fail_for_their_binary",
+      "test_frankenphp_s_own_module_is_no_extension",
+      "test_another_php_version_fails",
+      "test_a_binary_that_fails_stops_the_check",
+      "test_the_folder_install_checks_each_static_php_part"
+    ]
+  },
+  "swamp/tests/ansible_swamp_start_cache_test.ts": {
+    "source_sha256": "839e40d277907338658e6031ddd1a282525e5515b1532747f67c73e8f0fc05dc",
+    "cases": [
+      "the node phase gives an existing start cache to the swamp account, and the check phase asserts it",
+      "no Ansible task runs the swamp binary without naming a user other than root"
+    ]
+  },
+  "swamp/tests/ansible_task_container_host_prepare_test.ts": {
+    "source_sha256": "65670993450959963a3cc9c027c65c76974b3ef7c9dbe66f87d1443e94ed0f53",
+    "cases": [
+      "a container host gets its kernel side, bridge, project and clone check beside the VM side, then changes nothing",
+      "the container bridge gets DHCP and DNS input rules under its own catalog names",
+      "a small host caps the ARC at 1 GiB",
+      "a host without Incus installs the recipe's pinned packages, fetched by digest",
+      "a container host is refused before its container side changes: another Incus line, SCTP, subordinate IDs, a taken bridge",
+      "a copy that Incus shifted fails the phase and leaves no probe",
+      "a clone probe that a failed run left is removed before the next probe",
+      "a container host on a native pool gets the ARC cap now and after reboot, and keeps it when containers go",
+      "the container rule never raises a cap the host already runs",
+      "an Incus package removed with its config files left counts as missing and is installed"
+    ]
+  },
+  "swamp/tests/ansible_task_host_firewall_remove_test.ts": {
+    "source_sha256": "9480bd8c0f057b39db3d658c77b9d8a5696e8774fc4f5d118974e9d1eba807a5",
+    "cases": [
+      "task host withdrawal removes every owned input row, preserves unrelated rules, and repeats unchanged"
+    ]
+  },
+  "swamp/tests/ansible_task_vm_apt_cache_test.ts": {
+    "source_sha256": "cace6f0927db4905dda287a805064a9b55cbb8d16fce24c2fb79918d15371d75",
+    "cases": [
+      "the software phase starts with the cache, before any read of the snapshot",
+      "the index read goes through the cache over plain http; the packages stay a direct download",
+      "the cache installs from the own sources of the VM and keeps indexes, not packages",
+      "the cache opens on the nested bridge and stays in the image",
+      "the end check reads the cache"
+    ]
+  },
+  "swamp/tests/ansible_task_vm_base_creation_test.ts": {
+    "source_sha256": "27fdfd6d1889c6f8f1286d15c14f5d3871a09d65a8f15c9b924a8e1877160c6c",
+    "cases": [
+      "an unpromoted failed base and seed are replaced from stock",
+      "a recorded base stays intact unless rebuilding from stock is explicit",
+      "a new host with no leftovers builds from stock despite not-found deletions"
+    ]
+  },
+  "swamp/tests/ansible_task_vm_checkout_test.py": {
+    "source_sha256": "20f95089ce5fd5431c4c0b7b50583bb6c621e51d5ffb40b20d63b910a1229885",
+    "cases": [
+      "test_a_fresh_clone_at_the_tip_of_main_has_the_files_of_the_commit"
+    ]
+  },
+  "swamp/tests/ansible_task_vm_docker_boot_test.ts": {
+    "source_sha256": "3fdabaf07d443822c8efc899501de55b58bf43f71980aa7ff844f1b005df9bb5",
+    "cases": [
+      "the boot enables containerd, Docker and its socket, and disables none of them"
+    ]
+  },
+  "swamp/tests/ansible_task_vm_fleet_build_test.ts": {
+    "source_sha256": "955a4f08f760e17b989b7b45bf3207cb4f37276397e195b9edb17fc0bf84812c",
+    "cases": [
+      "a blank seed gets the network, then the containers, the Gateway bootstrap and the nested Orbit steps in order, then the operator join",
+      "a half-made fleet starts from nothing: its containers go first",
+      "a fleet whose build stopped after its containers existed has no operator stamp: all three go and the build runs whole",
+      "a build removes the operator stamp first, so a build that stops leaves the fleet incomplete",
+      "a complete fleet creates nothing, restarts nothing and changes nothing",
+      "a from-stock refresh with no Gateway release metadata reaches all nested roles after private DNS lets the websocket dependency listen",
+      "local Gateway DNS fails with a named error before activation when dig is missing",
+      "local Gateway DNS fails with a named error before activation when dig is missing in check mode",
+      "an already-running local listener is reused with zero changes and peer-managed Gateway DNS is preserved",
+      "production Gateway vars from main create no listener or catalog and change no resolver",
+      "local Gateway DNS check mode skips activation and readiness without retries or mutation",
+      "a recorded local listener is disabled and its stale catalog removed after routing to a separate VPN",
+      "fresh local Gateway DNS check mode plans resources without requiring an installed release",
+      "withdrawal retains the listener when resolver policy still names its local address",
+      "conservative DNS ownership can withdraw after later-failure",
+      "conservative DNS ownership can withdraw after not-started"
+    ]
+  },
+  "swamp/tests/ansible_task_vm_fleet_wait_test.py": {
+    "source_sha256": "bc2440968188d700100df3afb055d2dfcd333914d6ed4282b29109b287d0aa21",
+    "cases": [
+      "test_the_waits_use_the_tools_own_retry_and_no_shell",
+      "test_the_readiness_intent_is_reached_with_its_pinned_host_key",
+      "test_the_reason_query_reads_the_failed_step_and_error_code_of_the_operation",
+      "test_an_operation_that_ends_succeeded_passes_after_its_checks",
+      "test_a_nested_vm_that_is_not_running_ends_the_wait_at_once_and_is_named",
+      "test_an_operation_that_ends_failed_fails_the_wait",
+      "test_an_operation_that_does_not_end_fails_when_the_checks_run_out",
+      "test_an_operation_that_is_cancelled_or_interrupted_ends_the_wait_and_fails_it",
+      "test_doctor_passes_when_it_turns_healthy",
+      "test_doctor_stops_at_once_when_the_nested_gateway_is_not_running",
+      "test_doctor_does_not_pass_while_a_nested_app_vm_is_not_running",
+      "test_doctor_does_not_pass_on_a_healthy_node_while_the_fleet_is_not"
+    ]
+  },
+  "swamp/tests/ansible_task_vm_host_clean_test.ts": {
+    "source_sha256": "646f36506c29e160ce0e638698048743a11519f3fb4d191f7f4b5b07515c4a38",
+    "cases": [
+      "host-clean removes only old images, retired prefixes, the retired projects whole and the images of the image projects",
+      "a project that cannot be emptied fails the phase after the other projects had their turn",
+      "host-clean refuses a task VM project that shares images or volumes with default",
+      "a profile that cannot be removed keeps its project and fails the phase after the other projects had their turn",
+      "a retired project that shares its profiles with default loses none of them",
+      "a rebuild deletes the base VM and its seed; a recorded-base refresh preserves them"
+    ]
+  },
+  "swamp/tests/ansible_task_vm_host_egress_test.py": {
+    "source_sha256": "d1cda9942a2e0299835a67733dd9c6b02af04c8a83a4c2c7e6645fe289b07d9b",
+    "cases": [
+      "test_the_part_is_one_tag_that_keeps_its_handlers_and_takes_the_bridge_only_from_the_intent",
+      "test_the_ranges_the_log_skips_are_the_ranges_the_bridge_acl_drops",
+      "test_it_changes_the_bridge_in_one_setting_and_nothing_else_of_incus",
+      "test_only_the_rules_fail_the_part_and_each_setup_item_is_a_block_of_its_own_that_warns",
+      "test_the_rsyslog_rule_is_checked_where_apparmor_lets_rsyslogd_read_it",
+      "test_the_rate_limit_is_per_source_and_the_log_comes_before_the_add",
+      "test_the_slow_tasks_have_a_timeout",
+      "test_the_files_render_for_the_bridge_of_the_intent_and_log_without_a_verdict",
+      "test_raw_dnsmasq_is_merged_never_overwritten_and_a_foreign_log_file_is_left_alone",
+      "test_the_checks_pass_on_the_expected_end_state_safety_damage_fails_and_the_rest_warns",
+      "test_a_failed_setup_action_is_recorded_and_the_part_goes_on",
+      "test_a_failed_bridge_setting_names_the_error_text_of_the_tool_in_its_warning",
+      "test_a_rsyslog_rule_that_fails_its_check_keeps_the_old_rule_and_skips_nothing_else",
+      "test_a_staged_file_that_a_crash_left_is_removed_even_when_the_rule_is_unchanged",
+      "test_a_second_run_of_the_file_tasks_changes_nothing_and_leaves_the_logs_world_readable",
+      "test_a_second_render_changes_nothing",
+      "test_the_rendered_rules_pass_nft_check_mode",
+      "test_the_playbook_passes_the_ansible_syntax_check_for_the_part",
+      "test_a_host_without_containers_renders_the_files_it_had_before",
+      "test_a_container_host_logs_both_bridges_with_one_table_and_one_rotation",
+      "test_the_bridge_tasks_loop_over_both_bridges",
+      "test_the_end_checks_cover_the_container_bridge",
+      "test_a_container_host_touches_a_world_readable_dns_log_per_bridge"
+    ]
+  },
+  "swamp/tests/ansible_task_vm_host_prepare_test.ts": {
+    "source_sha256": "d33ec9f38e034e6e362df54f24483f37523f17f8e926ba74387411f055804a36",
+    "cases": [
+      "a deny-input host admits bridge DHCP and DNS without exposing other host services",
+      "a new loop host gets a sized ZFS pool, ARC cap and isolated network, then changes nothing",
+      "native ZFS uses a new dataset and never changes ARC, including an existing pool without a dataset setting",
+      "host preparation refuses conflicting storage, project and bridge before resource changes"
+    ]
+  },
+  "swamp/tests/ansible_task_vm_identity_boot_test.ts": {
+    "source_sha256": "57ec14aee7ab2a4dc30f752e0f6b4395e5032e99df2e76eb4587127b3b72a760",
+    "cases": [
+      "a task VM mounts its identity share without waiting: the kernel found the tag before the unit runs",
+      "a base VM has no identity share and ends after 1 s",
+      "a parked task VM keeps its applied identity without waiting or mounting"
+    ]
+  },
+  "swamp/tests/ansible_task_vm_idle_save_test.py": {
+    "source_sha256": "2c532d8168059897d9aade6432b7d62558b98b0ab85ea9a4b8b13e6f6412ba5e",
+    "cases": [
+      "test_the_save_intent_is_reached_with_its_pinned_host_key",
+      "test_a_dirty_workspace_is_committed_and_its_head_bundled",
+      "test_a_clean_workspace_keeps_its_head_and_makes_no_commit",
+      "test_a_workspace_that_stays_dirty_after_the_commit_fails_the_save_and_fetches_nothing",
+      "test_a_workspace_that_cannot_be_read_fails_the_save_and_fetches_nothing"
+    ]
+  },
+  "swamp/tests/ansible_task_vm_role_test.py": {
+    "source_sha256": "660277578d9da80844e58536e256c311337418d4f7f1eb015ae134fee2e728d8",
+    "cases": [
+      "test_every_phase_is_one_tag_and_the_recipe_is_always_resolved",
+      "test_the_nested_gateway_restarts_and_redelivers_only_for_what_changed",
+      "test_a_task_start_converges_the_converge_part_of_its_whole_intent_and_keeps_the_host_pins",
+      "test_a_phase_that_is_not_due_is_one_skipped_task",
+      "test_the_files_name_no_version",
+      "test_a_task_vm_is_reached_directly",
+      "test_a_task_vm_with_its_identity_is_reached_over_wireguard_and_not_through_its_host",
+      "test_a_guest_is_reached_through_its_host_with_both_pinned_keys",
+      "test_a_guest_of_an_incus_host_takes_its_address_and_key_from_the_run",
+      "test_every_condition_of_the_role_is_a_string",
+      "test_every_package_download_retries_with_the_tool_and_no_shell",
+      "test_the_wait_for_a_new_server_is_for_an_image_only",
+      "test_every_new_vm_gets_the_full_ssh_readiness_budget"
+    ]
+  },
+  "swamp/tests/ansible_task_vm_uplink_test.ts": {
+    "source_sha256": "93b7a1fdd9a9709eb26af2077ed01fa2faed90fd8e925f3509ce26f1d693fdae",
+    "cases": [
+      "the uplink file matches any Ethernet link by name and asks DHCP for IPv4",
+      "boot waits online for IPv4 only",
+      "every copy asks DHCP for an address by its own MAC, through a drop-in of the uplink file"
+    ]
+  },
+  "swamp/tests/ansible_wireguard_hub_lan_test.py": {
+    "source_sha256": "e5ed77ddcc1ffce5c16121fb3dffc724e0d205925108169be6c2714200ae8ba0",
+    "cases": [
+      "test_the_hubs_host_key_at_a_directly_routed_lan_address_proves_the_lan",
+      "test_a_foreign_host_that_answers_at_the_hubs_lan_address_is_refused",
+      "test_a_routed_foreign_source_tunnel_or_silent_address_is_unreachable",
+      "test_a_hub_with_the_old_suppress_rule_gets_the_private_range_rules_from_its_unit",
+      "test_a_hub_whose_unit_already_applies_the_rules_changes_nothing",
+      "test_rules_that_drifted_under_an_unchanged_unit_restart_it",
+      "test_an_endpoint_address_the_hub_does_not_hold_fails_before_any_unit_change",
+      "test_a_peer_in_the_hubs_public_prefix_routed_through_the_gateway_restarts_the_unit",
+      "test_a_default_gateway_that_changed_since_the_unit_ran_restarts_it",
+      "test_a_lan_ssh_rule_of_an_earlier_hub_lan_address_is_removed_and_the_current_one_kept",
+      "test_a_hub_whose_endpoint_is_no_longer_an_ipv4_address_removes_the_earlier_unit_rules_and_table",
+      "test_a_new_hub_endpoint_in_the_files_is_a_switch",
+      "test_an_unchanged_endpoint_is_no_switch_even_as_a_hostname_or_after_the_peer_roamed",
+      "test_a_move_that_was_cut_off_is_decided_from_the_file_it_replaced",
+      "test_the_endpoint_is_read_on_the_node_so_no_key_in_the_file_leaves_it",
+      "test_a_move_with_a_fresh_handshake_keeps_the_new_files",
+      "test_a_new_handshake_through_the_old_public_address_is_no_proof_of_the_lan",
+      "test_a_move_without_a_handshake_after_it_restores_the_files_and_the_live_configuration",
+      "test_a_move_without_a_previous_peer_file_still_goes_back_to_the_live_configuration",
+      "test_a_rerun_after_a_cut_off_move_keeps_the_files_that_move_replaced",
+      "test_a_failed_move_after_a_cut_off_one_loads_the_previous_files_not_the_live_state",
+      "test_the_node_takes_wireguard_only_from_the_new_endpoint_while_it_moves",
+      "test_a_pin_that_a_killed_move_left_is_removed_first",
+      "test_a_move_that_cannot_pin_changes_nothing",
+      "test_a_hostname_endpoint_pins_nothing",
+      "test_the_new_peers_are_loaded_without_the_interface_section_node_add_wrote",
+      "test_a_move_loads_a_key_file_without_a_final_newline",
+      "test_a_move_whose_new_configuration_does_not_load_goes_back_at_once_with_its_own_outcome",
+      "test_every_load_composed_from_the_key_file_ends_the_key_line_once_with_or_without_a_final_newline",
+      "test_a_refused_load_does_not_print_the_value_wg_refused",
+      "test_the_peer_phase_decides_from_the_previous_file_stages_the_files_and_moves_in_one_job",
+      "test_the_peer_phase_drops_the_copies_of_a_cut_off_move_when_it_no_longer_moves",
+      "test_node_add_refuses_to_move_any_live_tunnel_to_another_hub_endpoint"
+    ]
+  },
+  "swamp/tests/apt_proxy_test.ts": {
+    "source_sha256": "904a87f65af12780fead9a23bdfcbe208f119164070d5a27357a118f8c6c42b4",
+    "cases": [
+      "the first apt call of a nested Gateway names the package cache of its intent, as the drop-in does",
+      "the plan of the nested Gateway carries the package cache of its intent",
+      "every apt run of a nested Node comes after the drop-in",
+      "a nested Node gets the drop-in",
+      "every other Node gets none and loses a stale one"
+    ]
+  },
+  "swamp/tests/automatic_deploy_test.ts": {
+    "source_sha256": "c24399b35cab05a74597b3ee6dd354d280dc02a4df05ebd03813cdb49ffb6537",
+    "cases": [
+      "P01 newest green is pinned, then quiet",
+      "P02 pending is rechecked on the next tick",
+      "P03 red is cached until head changes or expiry",
+      "P04 failed check is read after five minutes",
+      "P05 pending head is read once per walk per tick",
+      "P06 three transient attempts stop after 10 and 20 minute waits",
+      "P07 newest green behind red head",
+      "P08 no check run means pending",
+      "P09 ungated project deploys the head without checks",
+      "P10 lasting own-step failure blocks until manual reset or new commit",
+      "P11 new commit proceeds after failed one",
+      "P12 ungated failed head stays blocked",
+      "P13 first retry is at ten minutes",
+      "P14 rollback pauses, explicit resume keeps rolled-away block",
+      "P15 rolled-away head is never redeployed, next commit proceeds",
+      "P16 resume before a tick still blocks rolled-away head",
+      "P17 manual attempt after rollback does not erase block",
+      "P18 block survives history pruning",
+      "P19 running rollback pauses even without a commit",
+      "P20 Gateway pause after admission is observed without replay",
+      "P21 Gateway superseded receipt stays paused after rollback",
+      "P22 manual deployment pauses and resumes from its commit",
+      "P23 busy records one notable skip",
+      "P24 first deployment must be manual",
+      "P25 unreadable gate fails tick without a start",
+      "P26 unsupported source access fails without reading checks",
+      "P27 disabled Instances are untouched",
+      "P28 one failure alert intent per commit",
+      "P29 no alert for a failure before enablement",
+      "P30 one rollback pause alert intent",
+      "P31 green commit alerts once per stall episode",
+      "P32 pending head alerts once per stall episode",
+      "P33 one manual pause alert intent with resume advice",
+      "P34 queued rollback is busy with no stall",
+      "P35 deployed commit ends the stall",
+      "P36 no GitHub repository skips alert",
+      "P37 notifier payload is durable for Gateway policy-event delivery",
+      "P38 every manual status pauses",
+      "P39 durable Gateway block survives resume and pruning before any tick",
+      "P40 projection fields, stable since, and separate receipt and stall",
+      "P41 only green first-parent descendants with exact Actions runs qualify",
+      "P42 lasting codes block immediately and manual reset uses a fresh request key",
+      "P43 own operation is deploying, another is busy, unchanged writes no deploy"
+    ]
+  },
+  "swamp/tests/batch_maintenance_test.ts": {
+    "source_sha256": "c1dc27313289ae1e21a19cc246e19b10a15011d1a36d67a9dcf3d40b985005c4",
+    "cases": [
+      "planning copy preserves file and directory symlinks without copying untracked targets",
+      "planning copy relocates internal absolute symlinks and preserves dangling internal links",
+      "planning copy refuses relative symlink escapes",
+      "planning copy refuses absolute symlink escapes",
+      "planning copy refuses chain symlink escapes",
+      "planning copy refuses directory-parent symlink escapes",
+      "planning copy refuses missing-target symlink escapes",
+      "planning copy still refuses tracked directories and unresolved link cycles",
+      "planning copy refuses an untracked internal symlink replacing a tracked parent directory",
+      "planning copy refuses a link that becomes an escape when an untracked target link is omitted",
+      "composer: planning resolves two targets and leaves the checkout unchanged",
+      "js: planning resolves two targets and leaves the checkout unchanged",
+      "Expo planning admits the SDK and its age-eligible React alignment as one immutable batch",
+      "batch declarations retain range styles and security floors",
+      "composer: unsupported security ranges block in planning and leave other candidates eligible",
+      "js: unsupported security ranges block in planning and leave other candidates eligible",
+      "partial numeric pins must admit the exact target under each manager's semantics",
+      "major ranges retain admitting declarations and preserve operator precision",
+      "Expo alignment blocks only its SDK candidate",
+      "Expo alignment blocks only its SDK candidate; unrelated security stays eligible",
+      "composer: the solver only sees security versions with a writable floor",
+      "js: the solver only sees security versions with a writable floor",
+      "range validation runs once for each age-eligible major option, excluding minor-only releases",
+      "Expo pack infrastructure failure aborts planning without choosing an older SDK",
+      "Expo view infrastructure failure aborts planning without choosing an older SDK",
+      "Expo falls back after range, with one metadata read per path/package/SDK per plan",
+      "Expo falls back after no eligible alignment, with one metadata read per path/package/SDK per plan",
+      "writable selection propagates infrastructure, unknown errors and aborts without checking older versions",
+      "blocked writable selection retains distinct reasons from the newest options",
+      "legacy capitalized npm names stay eligible beside another package and preserve their spelling",
+      "invalid target data blocks only its candidate with the schema issue",
+      "npm registry miss E404 blocks only that package beside a healthy candidate",
+      "npm registry miss detail blocks only that package beside a healthy candidate",
+      "npm registry miss stderr blocks only that package beside a healthy candidate",
+      "npm E500 still aborts planning instead of blocking one candidate",
+      "npm E502 still aborts planning instead of blocking one candidate",
+      "npm ETIMEDOUT still aborts planning instead of blocking one candidate",
+      "npm ECONNRESET still aborts planning instead of blocking one candidate"
+    ]
+  },
+  "swamp/tests/database_placement_test.ts": {
+    "source_sha256": "47660b12ec2e8bd2b4b437cdbc0d3480085b4709e3bac32f4d7a92c688843761",
+    "cases": [
+      "Database workflows use exactly one Node 209 selector per job and step"
+    ]
+  },
+  "swamp/tests/dependency_inventory_test.ts": {
+    "source_sha256": "96bae22479d2fb4b6bdd80408b427a59731a2ea482f1100727a4580bb7195cd0",
+    "cases": [
+      "Composer inventory retains transitive and both-scope resolutions, path and git provenance",
+      "npm inventory preserves multiple resolutions, workspace links and shared scopes without installs",
+      "Bun inventory follows both scope graphs and retains nested versions and local packages",
+      "pnpm inventory uses exact snapshot versions; planning support is a separate contract",
+      "repository inventory refuses external source-file symlinks before reading them",
+      "pnpm v9 keeps distinct peer snapshots and resolves importer peer selectors",
+      "unsafe absolute locked versions fail instead of exposing local paths",
+      "npm workspace package without a version remains a path resolution",
+      "pnpm aliases and oversized YAML are refused before parsing",
+      "pnpm inventory accepts a realistic lockfile above the old 256 KiB cap"
+    ]
+  },
+  "swamp/tests/dependency_observations_test.ts": {
+    "source_sha256": "9730fa2ec68244d7c44b8e07750b1f603f2a0d72b09bae79e087358f30e1c891",
+    "cases": [
+      "native refresh uses supplied observations and refuses a superseded publication"
+    ]
+  },
+  "swamp/tests/dependency_projects_test.ts": {
+    "source_sha256": "2810ed5e3f118341259d1e7e160517cdc0a08e9b089b519a5a8baef5dd7d2650",
+    "cases": [
+      "dependency project config requires worker paths and rejects the retired script field",
+      "worker configuration refuses escaping, duplicate and unconfigured policy paths"
+    ]
+  },
+  "swamp/tests/dependency_results_fixtures_test.ts": {
+    "source_sha256": "92b414265891f35ab86ba9493abe6a40252749afceda9635c5bb16895f4819a9",
+    "cases": [
+      "canonical dependency fixture: success",
+      "canonical dependency fixture: running-partial",
+      "canonical dependency fixture: failed",
+      "canonical dependency fixture: blocked",
+      "canonical dependency fixture: pr-unknown",
+      "running and partial refresh preserve original good commit, observation and immutable coordinates",
+      "PR unknown keeps last success; lifecycle publication preserves inventory time and run",
+      "canonical fixture bytes match the frozen SHA256SUMS manifest"
+    ]
+  },
+  "swamp/tests/dependency_results_test.ts": {
+    "source_sha256": "2f3a93812167346c7f8d9a9232f63672afa4ca6c02af5ac24d1006244e7f1a2c",
+    "cases": [
+      "producer schemas accept frozen canonical fixture success",
+      "producer schemas accept frozen canonical fixture running-partial",
+      "producer schemas accept frozen canonical fixture failed",
+      "producer schemas accept frozen canonical fixture blocked",
+      "producer schemas accept frozen canonical fixture pr-unknown",
+      "PR lookup failure retains last success/value, missing group fields are unknown",
+      "PR observation verifies exact URL/head/native run, including a still-open PR on a failed group",
+      "cancelled PR observation starts no Gateway or GitHub lookup",
+      "PR refresh projects real immutable batch targets into its publication contract"
+    ]
+  },
+  "swamp/tests/dependency_retention_test.ts": {
+    "source_sha256": "83fbcb2821765b479b280e76c2d96149e78924b457d03ed685be8f58423377ef",
+    "cases": [
+      "retention keeps latest index and exact reports of all retained versions, removes seven-day orphans"
+    ]
+  },
+  "swamp/tests/fleet_reboot_test.ts": {
+    "source_sha256": "a22b1f774be98ccafc1fc1ab8b0c6c39ed4ee3e0f94e7d3f93cd001c4c3a72bb",
+    "cases": [
+      "the pass visits one Node at a time and the Gateway reads its report step",
+      "each Node runs drain, reboot and check in order, each phase bounded and the drain longer than its budget",
+      "a Node waits outside the window or when admission found its task work busy, and an operator's pass ignores the window",
+      "a Node after a failed one halts from the records in the run folder",
+      "a Node's play reads the clock and writes its record on the Swamp Node without SSH to localhost",
+      "the check waits for the boot to finish before it reads the failed units",
+      "the CI drain stops idle runners, keeps a busy one running and never leaves one frozen",
+      "a failed phase records the assert's error code or the phase's own code, keeps the earlier record, and fails",
+      "the report lists every Node record in pass order and reports a cut Node failed",
+      "only the swamp Node schedules its own reboot, behind a path unit that the pass's cleanup releases",
+      "a failed drain starts what it stopped, and each task guest is recorded as soon as it stops",
+      "the rerun picks only failed jobs still running on a stopped runner at its freeze, in runs still at that attempt",
+      "the rerun records each accepted call on its own and the refused ones apart",
+      "the waits and calls of the rerun never fail the phase, and the tokens are always revoked",
+      "a runner registers under its container name, which the rerun matches against job runner names",
+      "the rerun posts re-run-failed-jobs once per due run, records it, and never fails the Node",
+      "a held due Node is read but never drained or rebooted",
+      "a held not-due Node is read but never drained or rebooted",
+      "the drain rescue preserves main recovery after held observation fails",
+      "the drain rescue preserves main recovery after held record fails",
+      "the drain rescue preserves main recovery after marker record fails",
+      "the drain rescue preserves main recovery after Gateway partial stop fails",
+      "the drain rescue preserves main recovery after Gateway record after stop fails",
+      "the drain rescue preserves main recovery after CI partial stop fails",
+      "the drain rescue preserves main recovery after CI stop-list record fails",
+      "the drain rescue preserves main recovery after CI stop-list read fails",
+      "the drain rescue preserves main recovery after Gateway already stopped fails",
+      "the drain rescue preserves main recovery after Gateway Horizon already stopped fails",
+      "the drain rescue preserves main recovery after Gateway timeout fails"
+    ]
+  },
+  "swamp/tests/fleet_reboot_unreachable_test.ts": {
+    "source_sha256": "45082ab15a8f9f2fc6885348e702063987fbc64c083805a4cf1c1576759e4f22",
+    "cases": [
+      "fleet reboot retries a first unreachable attempt and succeeds on the second without a failure record",
+      "fleet reboot records a persistently unreachable ordinary Node and later Nodes skip halted without SSH",
+      "fleet reboot records a persistently unreachable held Node and later Nodes skip halted without SSH",
+      "fleet reboot records unreachable check work on the controller after earlier phases connected",
+      "fleet reboot records a started cut phase as failed instead of not reached",
+      "collection can report a retained attempted-Node record when finalization was cut",
+      "unreachable diagnostics are redacted and bounded before recording and output",
+      "the controller records phase failures after succeeded, failed and skipped phases",
+      "the drain phase never replays a command that executed before SSH disconnected",
+      "the reboot phase never replays a command that executed before SSH disconnected"
+    ]
+  },
+  "swamp/tests/frankenphp_proxy_test.ts": {
+    "source_sha256": "592ce7ae0e6606805f5abeeed8fca6f89d6cb675f304ae071c359ea8a099f088",
+    "cases": [
+      "FrankenPHP translates CGI only for the trusted Node peer with forwarded HTTPS"
+    ]
+  },
+  "swamp/tests/gateway_release_order_test.ts": {
+    "source_sha256": "4c1a7eb375b093c963ad7454471704e428132a1246d18471fe8b22eeb92c6fa4",
+    "cases": [
+      "refresh admission follows successful verify and the new Horizon start, tolerating admission failure only",
+      "Swamp load requires the bounded DB busy guard, including forced releases"
+    ]
+  },
+  "swamp/tests/gateway_swamp_load_test.ts": {
+    "source_sha256": "99a34bb8b8fc3748e2a11474460ec620cfe0953c4e4f1f2c64cf139f490bab86",
+    "cases": [
+      "the release load compares only the commit's workflows, never a Schedule's",
+      "the release load checks the Ansible collections without failing the release, and installs nothing",
+      "a pin equal to the release's requirements.yml passes",
+      "a pin from another requirements.yml fails the check with the converge that installs the collections",
+      "a forced rollback release moves the serve checkout back to an ancestor commit",
+      "an unforced load refuses an ancestor commit and leaves the checkout alone",
+      "an unforced load moves the serve checkout forward",
+      "the release passes its force flag to the load",
+      "the checkout reads the release commit and the force flag from the load intent"
+    ]
+  },
+  "swamp/tests/github_mint_test.ts": {
+    "source_sha256": "f8c86939edaab180e9d7fab380f66e8c342ce044f4c3dc2c51dba1be7b2523f2",
+    "cases": [
+      "only the mint workflow and the check push post to the Gateway mint",
+      "every mint step names a purpose the Gateway issues and the run it belongs to",
+      "a step reads a minted key only after the step that mints it",
+      "a workflow that writes the dependency auth removes it on every outcome, and installs only after the write"
+    ]
+  },
+  "swamp/tests/guard_syntax_test.ts": {
+    "source_sha256": "2241a85c57c98bfba586524801101fc5f10970168a12bb03653a7e04663f5005",
+    "cases": [
+      "every step guard is one ${{ }} expression"
+    ]
+  },
+  "swamp/tests/instance_clone_guest_test.py": {
+    "source_sha256": "5aecb8d8f4b0f05021ade52dc9c3f5157d5fc0a2af560a2829be74b56c7ecca3",
+    "cases": [
+      "test_sessions_check_only_loopback_t3_and_reject_http_and_scope_failures",
+      "test_workspace_forwards_one_json_vault_value_without_printing_secrets",
+      "test_non_php_sessions_keep_both_authenticated_sessions_without_php",
+      "test_non_php_check_has_no_php_probe",
+      "test_php_readiness_still_checks_the_project_runtime",
+      "test_command_failure_names_command_and_exit_code_without_private_output",
+      "test_broken_php_still_fails_readiness",
+      "test_non_php_workspace_does_not_write_php_configuration",
+      "test_php_workspace_writes_the_shared_php_settings_and_restarts_running_units",
+      "test_agent_preserves_unmanaged_json_and_identity_and_repairs_only_managed_keys"
+    ]
+  },
+  "swamp/tests/instance_clone_test.py": {
+    "source_sha256": "5cb5b29a109909bd1b488ece49777f737be3790729fe32e7b3b6393230bee92f",
+    "cases": [
+      "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
+      "test_clone_uses_the_admitted_common_acl_name",
+      "test_clone_refuses_unsafe_effective_nics_before_start",
+      "test_guest_and_node_command_names_stay_in_sync",
+      "test_preserves_only_the_guest_command_and_exit_code",
+      "test_rejects_private_or_mismatched_guest_diagnostics",
+      "test_node_command_failure_names_executable_and_exit_without_output"
+    ]
+  },
+  "swamp/tests/instance_migrate_native_faults_test.ts": {
+    "source_sha256": "a2cdc1b55e3e0d459742a1fc2f366781116d6febba24409d6fc8a8fc4f3c0400",
+    "cases": [
+      "pinned migrate failure: real native finish proves restoration, including the restore Route child after a lost root",
+      "pinned migrate timeout: real native finish proves restoration, including the restore Route child after a lost root",
+      "pinned migrate cancel: real native finish proves restoration, including the restore Route child after a lost root",
+      "pinned migrate deadline: real native finish proves restoration, including the restore Route child after a lost root",
+      "pinned migrate lost: real native finish proves restoration, including the restore Route child after a lost root"
+    ]
+  },
+  "swamp/tests/maintenance_inspect_test.ts": {
+    "source_sha256": "1e56811f602057834bac8bb56ea44421b71218dc9b43dae33efa9095e4c68717",
+    "cases": [
+      "manifests selects each source's manifest, lockfile and workspace manifests only",
+      "changed sources are those whose file set or blob SHAs differ",
+      "declared reads direct constraints and refuses a malformed section",
+      "updates proposes a major only past the declared range and the release age",
+      "updates fixes an advisory with the lowest eligible unaffected release, for transitive packages too",
+      "updates treats a 0.x minor as a major, as the version rules do",
+      "updates keeps the highest fix and every advisory for copies of one package",
+      "updates skips a package under a running exception",
+      "composer facts expand Packagist's minified releases and read advisories",
+      "npm facts refuse a foreign document and read bulk advisories"
+    ]
+  },
+  "swamp/tests/maintenance_resources_test.ts": {
+    "source_sha256": "b17bd154ef0e630fb3efc54944c3766275d86f6d4b6d886b5163822e33479e92",
+    "cases": [
+      "failure capture is opt-in and never swallows abort or infrastructure failure"
+    ]
+  },
+  "swamp/tests/node_converge_ansible_test.ts": {
+    "source_sha256": "0593e497c02bbd0639ee7910704f6eb18ac7173daa0d8b020dbe9fbee8db1cff",
+    "cases": [
+      "generated converge vars preserve shell arguments, scalar strings and literal Jinja through Ansible",
+      "peer DNS routing domains stay literal and a second application changes nothing",
+      "input accepts the matching base CLI without writes",
+      "input rejects the unavailable base CLI without writes",
+      "input rejects the plan error base CLI without writes",
+      "input rejects the invalid digest base CLI without writes",
+      "input needs no base CLI without writes",
+      "router does not select PHP or unrelated JavaScript runtimes",
+      "app-dev selects its two PHP versions and JavaScript pins",
+      "app-prod selects the recorded browser artifact",
+      "a roleless recorded Composer Tool selects its manager and Git",
+      "the Swamp Node selects the pinned Deno of the Tool helper and unzip for its archive",
+      "a roleless recorded VP Tool selects the locked JavaScript manager",
+      "the final software check accepts a matching installed package without writes",
+      "the final software check rejects a drifted installed package without writes",
+      "repository trust requires exactly one primary fingerprint, not a matching subkey or one of several keys",
+      "role phases accept generated extra vars without shadowing each role's intent",
+      "JavaScript repair replaces stale extracted runtimes and then skips matching state",
+      "node.add and node.converge apply the same kernel policy from the intent",
+      "the kernel policy keeps a matching module file, such as one written by hand, and repairs a drifted one once",
+      "the Gateway role and bootstrap create /run/orbit from the tmpfiles rule before the scheduler starts",
+      "node.add and node.converge apply the same update policy from the intent",
+      "the update policy creates the missing folders and writes each file with its mode once, and sets the daily timers from the intent",
+      "the Tool helper runs with the pinned Deno of the Swamp Node, not with the binary that prepares the input",
+      "a Tool helper that cannot run with the compiled Swamp binary fails the tools phase and marks no Tool failed",
+      "a Tool helper that cannot run with a missing Deno launcher fails the tools phase and marks no Tool failed",
+      "with a working Tool helper, a refused Tool is marked failed alone and the tools phase succeeds"
+    ]
+  },
+  "swamp/tests/node_converge_cli_test.ts": {
+    "source_sha256": "61a662b10bd2bd2b289d29e0cec4e62e68ab5a6b12d154251e315ba80cb8daac",
+    "cases": [
+      "converge retires only managed CLI files, is idempotent and detects their return"
+    ]
+  },
+  "swamp/tests/node_converge_lock_test.ts": {
+    "source_sha256": "3ab5a94e6dc7db4c7370a3c0c38b5fd59015e1a6306995b07dfbafda55f82eba",
+    "cases": [
+      "agent replacement waits for the existing update lock, cleans failed staging and repeats without changes",
+      "CLI artifact replacement waits for the existing update lock, cleans failed staging and repeats without changes",
+      "CLI selection replacement waits for the existing update lock, cleans failed staging and repeats without changes",
+      "an agent replacement still restarts only for managed changes"
+    ]
+  },
+  "swamp/tests/node_converge_test.ts": {
+    "source_sha256": "0c16e114d8301ba02f505cf2e65faa105003d98506b2092d93fe8186d628b4fa",
+    "cases": [
+      "converge reports all phases, live no-op counts and measured elapsed time; hub changes are not target changes",
+      "converge stops reporting success at input and preserves the first failure",
+      "converge stops reporting success at agent and preserves the first failure",
+      "converge stops reporting success at software and preserves the first failure",
+      "converge stops reporting success at roles and preserves the first failure",
+      "converge stops reporting success at tools and preserves the first failure",
+      "converge stops reporting success at network and preserves the first failure",
+      "converge stops reporting success at check and preserves the first failure",
+      "malformed callbacks cannot claim a no-op ({)",
+      "malformed callbacks cannot claim a no-op ({\"stats\":{},\"plays\":[{}]})",
+      "malformed callbacks cannot claim a no-op ({\"stats\":{\"target\":{\"changed\":-1,\"failures\":0,\"unreachable\":0}},\"plays\":[{}]})",
+      "an isolated Tool failure retains both receipts without failing the phase or skipping network and check",
+      "a tools phase that stops before it judges a Tool fails the converge with no Tool receipt",
+      "private input is mode-protected, literal and limited to target plus recorded hub",
+      "terminal result removes private input after success without publishing callback content",
+      "terminal result removes private input after roles without publishing callback content",
+      "an invalid installed Tool version cannot become terminal success (null)",
+      "an invalid installed Tool version cannot become terminal success (\"\")",
+      "an invalid installed Tool version cannot become terminal success (\"2.3.4 private-text\")",
+      "an invalid installed Tool version cannot become terminal success (\"2.3.4\\nprivate-text\")",
+      "cleanup failure is explicit and preserves the completed check as the first failure",
+      "cleanup failure is explicit and preserves roles",
+      "failure before input preparation still publishes a failed terminal and accepts an absent private folder",
+      "matching Tool inventory is a read-only no-op",
+      "an out-of-constraint candidate is rejected before returning write argv",
+      "a protected package cannot produce a machine plan",
+      "a failed Tool postcondition is not installed",
+      "the workflow has ordered phase invocations and an always-dependent private cleanup"
+    ]
+  },
+  "swamp/tests/node_network_hub_prune_test.ts": {
+    "source_sha256": "8e5e861695a1705935c833e80a639fc8490402318b9f51f519daed6d3da2e908",
+    "cases": [
+      "the prune of the hub does not wait for the peer files, which a removal leaves without a step"
+    ]
+  },
+  "swamp/tests/node_worker_systemd_cleanup_test.ts": {
+    "source_sha256": "105c1ca46dc06861adbc2bccd26442708437fa91b68a7e4073ac8d70f4f3ace1",
+    "cases": [
+      "worker drain retains final child cleanup after its main process exits",
+      "systemd restarts the rendered worker policy despite a lingering connection child"
+    ]
+  },
+  "swamp/tests/operation_schedules_test.ts": {
+    "source_sha256": "cb1b4e38e516000985ad98d6501fa7ce6d7d7d3f3eb14a230d31a66fac7ae466",
+    "cases": [
+      "operation workflows never schedule Gateway claims",
+      "Gateway discovery and slot models cannot claim work",
+      "native retention keeps history and current data"
+    ]
+  },
+  "swamp/tests/project_batches_test.ts": {
+    "source_sha256": "1b128456ada74d77a1939fb6959a230cfa752733acce97afce26f7a13148041b",
+    "cases": [
+      "a project plan includes every compatible major and security target once, at exact versions",
+      "too-young, prerelease, missing-date and unsolved targets stay recorded; security cannot bypass policy",
+      "older eligible targets are tried when a latest stable target conflicts",
+      "joint solver can choose an older A for B and retain a coupled pair beside an unsatisfiable finding"
+    ]
+  },
+  "swamp/tests/project_deliverables_test.ts": {
+    "source_sha256": "107878a15bac0755ddbc8c66fb004d215d0e35541c117a7ade287cf770d88325",
+    "cases": [
+      "nckrtl-com: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "launch-starter-kit: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "launch: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "treadmill-website: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "orbit-website: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "recall: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "ai-cli-proxy: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "laravel-toolbar-site: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "operator-website: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "operator: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "fitta: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "house-italy: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "lindaretel: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "srpm: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "tankwerk: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "ditis-hr: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "platform11: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "hauzer: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "mealou: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+      "the contract fixture rejects malformed typed deliverables at creation"
+    ]
+  },
+  "swamp/tests/project_extensions_test.ts": {
+    "source_sha256": "a6f9a470a47b496b07736aca46d4218d49fb18cc76d4e45baf25cba6b6f609ca",
+    "cases": [
+      "the data file holds the recorded Project 20 configuration",
+      "weekly slots cross year boundaries and hourly inspection stays separate",
+      "project findings retain reports and blocked reasons and create one deterministic whole batch receipt",
+      "cancelled schedule cleanup requires ended children, no assistance and a removed or absent VM"
+    ]
+  },
+  "swamp/tests/project_fleet_test.ts": {
+    "source_sha256": "cc9545e17c6263c54c3da8e5487882a3a97693d2d8b2edc4a31e741fac27146c",
+    "cases": [
+      "launch-starter-kit preserves its current Project settings, configured paths and age policy",
+      "launch preserves its current Project settings, configured paths and age policy",
+      "treadmill-website preserves its current Project settings, configured paths and age policy",
+      "orbit-website preserves its current Project settings, configured paths and age policy",
+      "recall preserves its current Project settings, configured paths and age policy",
+      "ai-cli-proxy preserves its current Project settings, configured paths and age policy",
+      "laravel-toolbar-site preserves its current Project settings, configured paths and age policy",
+      "operator-website preserves its current Project settings, configured paths and age policy",
+      "operator preserves its current Project settings, configured paths and age policy",
+      "fitta preserves its current Project settings, configured paths and age policy",
+      "house-italy preserves its current Project settings, configured paths and age policy",
+      "lindaretel preserves its current Project settings, configured paths and age policy",
+      "srpm preserves its current Project settings, configured paths and age policy",
+      "tankwerk preserves its current Project settings, configured paths and age policy",
+      "ditis-hr preserves its current Project settings, configured paths and age policy",
+      "platform11 preserves its current Project settings, configured paths and age policy",
+      "hauzer preserves its current Project settings, configured paths and age policy",
+      "mealou preserves its current Project settings, configured paths and age policy",
+      "the fleet retains private project configuration in one data file without per-project workflows",
+      "private project config preserves every exception ledger found in the 20-repository inventory",
+      "the Project routine entrypoint accepts full Gateway inputs and runs on 209"
+    ]
+  },
+  "swamp/tests/project_inputs_test.ts": {
+    "source_sha256": "09c6ed95558d521b264b078b304d9b064c48e4dda94b28aa770ca9170b9559b4",
+    "cases": [
+      "Project routine selects this week's request from the captured intent alone",
+      "Project routine leaves unfinished captured Project work blocked",
+      "Project routine asks again for its own group, which the Gateway reuses by brief",
+      "native PR reads reject a different repository before exposing the vault credential",
+      "native schedule tick takes the Project policy from the data file and reads no model data and makes no Gateway call",
+      "the maintenance workflow keeps its id, which is the key of its pause on serve, and puts no pause or input in its file"
+    ]
+  },
+  "swamp/tests/proof_keep_failed_test.ts": {
+    "source_sha256": "069ad5b7c3b521e18e5e49c69a758293dd21b4448c85e549232a941b37cd285d",
+    "cases": [
+      "anchor: a guard that is true skips the step, as a guard of the repository already relies on",
+      "the proof run takes keep_failed as an optional boolean",
+      "without keep_failed the release runs, whatever the cases did",
+      "with keep_failed a run whose cases did not all pass skips the release, so its slot stays",
+      "with keep_failed a run that printed no verdict, or whose verify step failed, skips the release",
+      "with keep_failed a run that failed in its claim, before any case ran, skips the release too (M5 try 11)",
+      "with keep_failed a run that succeeded in every part, with every verdict passed, still releases the slot",
+      "with keep_failed a run that failed the check of the workspace commit, so that its proof step was skipped, skips the release"
+    ]
+  },
+  "swamp/tests/proof_observers_test.ts": {
+    "source_sha256": "715243eb5cbcf0e4b36e8a6539623019f84d917428b30751c3b34fbd9c5996e6",
+    "cases": [
+      "proof preparation installs the candidate artifact on every seed observer and repeats safely",
+      "proof preparation follows a changed candidate manifest without refreshing the seed",
+      "a bad candidate checksum preserves every old observer and refuses preparation",
+      "a download error preserves every old observer and refuses preparation",
+      "installed digests cannot pass preparation when no new report arrives"
+    ]
+  },
+  "swamp/tests/proof_restore_order_test.ts": {
+    "source_sha256": "07714a7ec175405fdcdb25aa996402ae107e6d51819472df363446346a9b0599",
+    "cases": [
+      "restored fleets require checkout migration before every nested Gateway API check",
+      "renewed base snapshots check readiness only after the apply that migrates",
+      "the first fleet build and image snapshots follow migration",
+      "initial restore calls the shared proof-fleet-restore workflow",
+      "batch restore calls the shared proof-fleet-restore workflow",
+      "replay restore calls the shared proof-fleet-restore workflow",
+      "final restore calls the shared proof-fleet-restore workflow",
+      "systemd boot and every required state mount gate apply",
+      "late gateway state mounts pass after the boot wait and fail without it",
+      "late app-dev state mounts pass after the boot wait and fail without it",
+      "boot wait refuses an unsettled boot, a timeout and an inactive required mount"
+    ]
+  },
+  "swamp/tests/proof_workspace_commit_test.ts": {
+    "source_sha256": "2e24b36ce1ff19a07789017d5c9e2a6ae7f3671e7aa24c312ad42d062b55779e",
+    "cases": [
+      "the check is an assert that holds for the commit under proof, with or without the newline that git prints",
+      "the check fails for a clone of main, for an unreadable workspace and for a partial commit",
+      "the read lets an unreadable workspace reach the assert, and it reads the HEAD of the checkout of the pinned intent",
+      "no case runs before the check: the proof of the command depends on it succeeding, and the check on the read",
+      "assigned batches use the old runner plan interface and filter its whole batch lines",
+      "merge-base replay fails a flagged case that passes on base and rejects missing or infrastructure verdicts",
+      "replay selection stays within the admitted batch and skips switching with no eligible cases",
+      "an old-runner head skips replay selection and base checkouts without calling its unsupported command"
+    ]
+  },
+  "swamp/tests/revoke_report_test.ts": {
+    "source_sha256": "fbbd774d444d1a0c95d87767cd043e4f71ac285778272d632d13da0f83ba75a3",
+    "cases": [
+      "the package result captures the token outcome from a step that runs the remove child"
+    ]
+  },
+  "swamp/tests/route_hold_test.ts": {
+    "source_sha256": "17ced613131dfaf21831053721df1b06fe2734edc95c344bb3a24f9d71e6909c",
+    "cases": [
+      "every Route-publish step is wrapped in the same hold and release calls, and runs only after its hold succeeded",
+      "the hold command asks again while the Gateway answers busy, and sends only the run",
+      "a busy retire hold or a failed release does not revert a Router that was switched, and the retire hold follows the first release"
+    ]
+  },
+  "swamp/tests/schedule_placement_test.ts": {
+    "source_sha256": "2f2ebb5618aaaebfd5497f9e97a500d127bfaba80055d048ca9bc18700800389",
+    "cases": [
+      "Schedule create has exactly one 209 selector on every job and step",
+      "Schedule control has exactly one 209 selector on every job and step",
+      "Schedule destroy has exactly one 209 selector on every job and step"
+    ]
+  },
+  "swamp/tests/service_detection_test.ts": {
+    "source_sha256": "a91e1fa6087cc9dae10e36afb642c64e126e12e1122a7f1ea7735f686f083cf4",
+    "cases": [
+      "unavailable native PR observations retain the last good publication",
+      "cancellation kills a tool's descendants and closes inherited output pipes",
+      "captured maintenance publishes exact PR and target links without retired factory records"
+    ]
+  },
+  "swamp/tests/swamp_role_worker_credentials_test.ts": {
+    "source_sha256": "911dde821872b5e251eccdcc2a3703affb93924ef07a0928e0b26e026173442d",
+    "cases": [
+      "the Swamp Ansible phase opens worker credentials before writing or starting units",
+      "the credentials end as folders 0750 and token files 0640",
+      "role convergence leaves live serve and workers to the guarded three-worker renewal path"
+    ]
+  },
+  "swamp/tests/swamp_worker_renewal_test.ts": {
+    "source_sha256": "65bd44f85554d816b713604d53a71a0e1b0b6e51246b5a4757f0c71e962a7460",
+    "cases": [
+      "worker renewal: two permanent peers accept before a drains and c stays running",
+      "worker renewal: b renews next while fresh a and permanent c stay connected",
+      "worker renewal: c renews as an equal permanent worker when it is oldest",
+      "worker renewal: three due workers finish sequential 75 minute drains before their session caps",
+      "worker renewal: two 4h45 bases renew beside fresh c without a second retirement drain",
+      "worker renewal: full b keeps eight accepting slots with c during a long drain and queued work succeeds",
+      "worker renewal: both full survivors defer without draining anyone",
+      "worker renewal: disconnected peer blocks all maintenance",
+      "worker renewal: draining peer blocks all maintenance",
+      "worker renewal: peer probe empty prevents any drain",
+      "worker renewal: peer probe at capacity prevents any drain",
+      "worker renewal: peer probe data plane failed prevents any drain",
+      "worker renewal: peer fill during probe cannot reduce the accepting pool",
+      "worker renewal: peer drain during probe cannot reduce the accepting pool",
+      "worker renewal: peer shrink during probe cannot reduce the accepting pool",
+      "worker renewal: failed re-enrollment leaves both survivors running and blocks the next round",
+      "worker renewal: failed peer during blocking drain logs detection after restart and stops",
+      "worker renewal: bootstrap quoted names resolve for all three units",
+      "worker renewal: remint ANSI names resolve for all three units",
+      "worker renewal: missing c receipt logs stopped renewal without drain",
+      "worker renewal: unreadable c receipt logs stopped renewal without drain",
+      "worker renewal: fresh workers stay persistent and no credential API exists at renewal time",
+      "worker renewal: old stop allowance prevents any drain",
+      "worker renewal: peer approaching eight-hour cap during probe blocks drain",
+      "worker renewal: same-process reconnect clears old enrolledAt lockout and renews on connection age",
+      "worker renewal: proof remint with missing c directory fails before any service stops",
+      "worker renewal: proof remint with missing c enrollment fails before any service stops",
+      "worker renewal: proof remint with missing c server fails before any service stops",
+      "worker renewal: proof remint with missing c empty server fails before any service stops",
+      "worker renewal: proof remint preflight accepts c without exposing tokens",
+      "worker renewal: proof remint preflight accepts c-1794127800 without exposing tokens",
+      "worker renewal: recovers a failed unit past its restart limit before voluntary renewal",
+      "worker renewal: recovers a inactive unit past its restart limit before voluntary renewal",
+      "worker renewal: does not recover a down unit without two serving peers",
+      "worker renewal: proof remint rejects c bare enrollment before any service stops",
+      "worker renewal: proof remint rejects c wrong enrollment name before any service stops",
+      "worker renewal: proof remint rejects c bare server before any service stops",
+      "worker renewal: proof remint rejects c wrong server name before any service stops",
+      "worker renewal: proof remint rejects c empty secret before any service stops"
+    ]
+  },
+  "swamp/tests/task_review_check_outputs_test.ts": {
+    "source_sha256": "f4a498f1e249bca5d012977685fde1813bd378df59b496726b6b9d4c2c7c9a3a",
+    "cases": [
+      "review fixes consume a direct check receipt and retain failed evidence",
+      "reviewer receives the passed handoff and hosted Required-check conclusions",
+      "reviewer rejects evidence with another head",
+      "reviewer rejects evidence with another handoff head",
+      "reviewer rejects evidence with another hosted head",
+      "reviewer rejects evidence with another tree",
+      "reviewer rejects evidence with another handoff tree",
+      "reviewer rejects raw fields and failed check evidence",
+      "turns without review evidence retain their original prompt"
+    ]
+  },
+  "swamp/tests/worker_query_test.ts": {
+    "source_sha256": "4b9dfb055f1b756e22b2216061ff32c586f10cdbdf4c3f52057243375956ea59",
+    "cases": [
+      "worker projection uses only permitted query records and no select",
+      "worker capability refusal propagates without local data fallback"
+    ]
+  },
+  "swamp/tests/workflow_absent_secrets_test.ts": {
+    "source_sha256": "c5c81d7c2822e09d1bae4ce9c32bc037f7c9d5ee13e80018c6d19fc4d8c13352",
+    "cases": [
+      "a checkout create reads no key that only a container create has",
+      "a container default's create and a clone's create read their own keys",
+      "a production and a checkout deployment read no key that only a container deployment has",
+      "a container process:start, stop and restart read no `read` section, which only a status or log read has",
+      "create finalization evaluates checkout, default and clone receipts with Swamp's CEL types",
+      "deploy VP workspace reads retain step names for the capture schema",
+      "guarded withdrawal resolves the same child when cleanup is needed and stays deferred during parent preflight"
+    ]
+  },
+  "swamp/tests/workflow_placement_test.ts": {
+    "source_sha256": "2c9bae7667abc1f1291bd9604d0514b53d19819428dbd979c46fa8db74467dad",
+    "cases": [
+      "placement lint rejects an unplaced effect",
+      "native workflow and job placement inherit to steps",
+      "empty step labels erase inherited labels but keep an inherited target",
+      "intrinsic steps also declare placement; malformed labels do not place work",
+      "only the Gateway bootstrap runs without a worker placement"
+    ]
+  },
+  "swamp/tests/writes_declared_test.ts": {
+    "source_sha256": "9b4d11a8e2b7028920832ffcb90ecc2afaee4db5304775648770044ad7036480",
+    "cases": [
+      "every step with an external effect declares writes: true or is reviewed",
+      "a step that cannot run twice declares writes, and is not listed as reviewed",
+      "the reviewed list holds no stale entry and its unreviewed count is pinned",
+      "the pattern finds the commands that cannot run twice",
+      "unknown behavior and model methods are audited by default",
+      "a custom file writer cannot lose its writes declaration",
+      "every native-data exception has an exact method pair and a review reason"
+    ]
+  },
+  "swamp/tests/instance_migrate_env_test.py": {
+    "source_sha256": "acb358406096a7d792cbc5234680e23c9ccece08ee516fc7978fae857b388cd4",
+    "cases": [
+      "test_servauto_mysql_requires_exact_attached_endpoint",
+      "test_mailpit_and_old_fleet_mail_are_refused",
+      "test_unused_mail_and_sqlite_hosts_are_skipped",
+      "test_prefixed_keys_driver_and_default_port",
+      "test_arbitrary_attached_prefix_uses_its_connection_driver",
+      "test_memcached_and_prefixed_mail_conventions",
+      "test_ipv6_loopback_canonical_target_and_ipv4_mapped_loopback",
+      "test_quotes_spaces_export_comments_and_crlf",
+      "test_every_copied_nested_env_is_checked_including_ignored_and_symlinked_apps",
+      "test_node_addresses_and_unspecified_hosts_are_refused_even_inside_allowed_ranges",
+      "test_direct_services_require_exact_admission_even_for_fleet_and_wireguard_addresses",
+      "test_nonredis_defaults_cannot_establish_that_redis_is_unused",
+      "test_conflicting_cache_aliases_do_not_skip_redis",
+      "test_mapped_node_addresses_are_normalized_for_local_detection",
+      "test_unknown_driver_missing_port_and_generic_host_port_pairs",
+      "test_secrets_and_substitutions_are_never_returned",
+      "test_malformed_private_quoting_cannot_hide_service_keys",
+      "test_broadcast_and_other_redis_consumers_keep_the_host_check",
+      "test_sqlite_does_not_hide_other_selected_database_connections",
+      "test_public_http_publishers_use_the_supplied_proxy_policy",
+      "test_known_listeners_and_browser_settings_are_not_outbound_services",
+      "test_active_mail_requires_explicit_port_instead_of_guessing_the_app_default",
+      "test_quoted_keys_and_escape_parity_reach_the_endpoint_check",
+      "test_unreadable_syntax_reports_only_the_file_and_line",
+      "test_projected_target_address_does_not_cover_a_different_recorded_endpoint",
+      "test_mixed_network_selections_cannot_use_only_the_default_drivers_port",
+      "test_explicit_connection_evidence_overrides_listener_exemptions",
+      "test_traversal_stat_and_read_errors_return_safe_preflight_refusals",
+      "test_multiline_private_values_do_not_forge_service_keys"
+    ]
+  },
+  "swamp/tests/instance_migrate_dotenv_test.py": {
+    "source_sha256": "66ba17ee487ffc2931268a7853d19310401c3db23e64a30ad96b8dae2194ab24",
+    "cases": [
+      "test_even_backslashes_before_a_closing_quote_do_not_swallow_the_next_host",
+      "test_odd_backslash_parity_preserves_an_escaped_double_quote",
+      "test_single_and_double_quoted_names_are_service_keys",
+      "test_double_quoted_escapes_match_phpdotenv_without_variable_expansion",
+      "test_backslashes_in_single_quotes_and_unquoted_values_are_literal",
+      "test_hash_starts_unquoted_comments_with_or_without_whitespace",
+      "test_trimmed_assignment_spacing_keeps_quoted_value_spacing",
+      "test_multiline_private_values_do_not_create_service_assignments",
+      "test_phpdotenv_literal_name_and_value_forms_are_retained",
+      "test_malformed_or_unsupported_syntax_raises_only_a_safe_line_number"
+    ]
+  },
+  "swamp/tests/ansible_task_vm_incus_test.py": {
+    "source_sha256": "b02d6482cecb5185102f721cc92c34c4494bb914e9334c9778949d6df09d689b",
+    "cases": [
+      "test_the_ssh_users_client_config_is_prepared_before_the_fleet",
+      "test_the_role_includes_it_in_the_tools_phase",
+      "test_a_fresh_task_vm_gets_the_pool_the_root_disk_and_the_nested_network",
+      "test_an_initialised_task_vm_is_left_alone",
+      "test_a_missing_network_is_added_to_an_initialised_incus",
+      "test_a_blank_seed_disk_gets_the_seed_pool",
+      "test_a_seed_disk_with_a_file_system_the_vm_does_not_know_is_refused_and_not_imported",
+      "test_a_seed_disk_of_a_known_pool_is_left_alone",
+      "test_an_image_gets_a_pool_and_no_network"
+    ]
+  },
+  "swamp/tests/ansible_schedule_logs_test.ts": {
+    "source_sha256": "f38567c977c0d0bd2efa8e46ad78b49077868d7f881000d4001138f0135e113d",
+    "cases": [
+      "migrated Schedule logs combine unit and command entries privately, in time order, with whole multiline messages",
+      "Schedule journal byte cap retains complete multibyte entries and excludes the first entry that cannot fit",
+      "Schedule journal keeps a complete entry at the exact UTF-8 byte bound",
+      "Schedule journal stops reading an oversized frame on the Node before transfer",
+      "Schedule journal reads long fields with --all and handles null and non-UTF-8 byte-array messages",
+      "Schedule journal bounds double JSON encoding and crosses the Gateway's real framed client"
+    ]
+  }
+}

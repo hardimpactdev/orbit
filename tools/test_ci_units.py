@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = SourceFileLoader('ci_units', str(ROOT / 'bin/ci-units'))
 units = module_from_spec(spec_from_loader(loader.name, loader))
 loader.exec_module(units)
-BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, pr_shards=6, default_cost=30)
+BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=5, pr_shards=6, default_cost=30)
 
 
 def fixture(file, cost=30, inputs=(), **options):
@@ -54,13 +54,13 @@ class PlanningTest(unittest.TestCase):
 
     def test_deno_slices_use_ceil_cost_and_python_stays_whole(self):
         self.assertEqual(units.units_for(fixture('swamp/a.ts', 121), BUDGET),
-                         [('swamp/a.ts#0/3', 121 / 3), ('swamp/a.ts#1/3', 121 / 3), ('swamp/a.ts#2/3', 121 / 3)])
+                         [('swamp/a.ts#0/3', 121 / 3 + 5), ('swamp/a.ts#1/3', 121 / 3 + 5), ('swamp/a.ts#2/3', 121 / 3 + 5)])
         self.assertEqual(units.units_for(fixture('swamp/a.py', 99), BUDGET), [('swamp/a.py', 99)])
         self.assertEqual(units.units_for(fixture('swamp/a.ts', 99, slices=False), BUDGET), [('swamp/a.ts', 99)])
-        self.assertEqual(units.units_for(fixture('swamp/a.ts', 60), BUDGET), [('swamp/a.ts', 60)])
+        self.assertEqual(units.units_for(fixture('swamp/a.ts', 60), BUDGET), [('swamp/a.ts', 65)])
         explicit = units.units_for(fixture('swamp/a.ts', 121, slices=5), BUDGET)
         self.assertEqual([u for u, _ in explicit], [f'swamp/a.ts#{k}/5' for k in range(5)])
-        self.assertTrue(all(cost == 121 / 5 for _, cost in explicit))
+        self.assertTrue(all(cost == 121 / 5 + 5 for _, cost in explicit))
 
     def test_limit_defers_names_and_keeps_direct_matches_over_shared_globs(self):
         fixtures = [fixture('swamp/direct.py', 100, ['swamp/tasks/input.yml']),
@@ -99,7 +99,9 @@ class PlanningTest(unittest.TestCase):
             self.assertEqual(names(planned([path], fixtures)), ['swamp/tests/a.ts'])
         self.assertEqual(names(planned(['swamp/ansible/tasks/a-sub/file.yml'], fixtures)), [])
         for path in ('.github/ci/checks.toml', 'bin/ci-units', units.PRELOAD):
-            self.assertEqual(set(names(planned([path], fixtures))), {'swamp/tests/a.ts', 'swamp/tests/b.py'})
+            result = planned([path], fixtures)
+            self.assertEqual(set(names(result)), {'swamp/tests/a.ts', 'swamp/tests/b.py'})
+            self.assertEqual(result['deferred'], ['swamp/tests/c.ts'])
         self.assertIsNotNone(units.selection_regex('swamp/**/a?.ts').fullmatch('swamp/deep/path/ab.ts'))
         self.assertIsNotNone(units.selection_regex('swamp/**/a?.ts').fullmatch('swamp/ab.ts'))
 
@@ -135,7 +137,7 @@ class TableTest(unittest.TestCase):
             path = Path(scratch) / 'checks.toml'
             source = (ROOT / '.github/ci/checks.toml').read_text()
             path.write_text(source)
-            new_file = 'swamp/tests/_support/slice.ts'
+            new_file = 'swamp/tests/_support/fixture_supervisor.py'
             with patch.object(units, 'fixture_steps', return_value={**units.fixture_steps(), new_file: object()}):
                 self.assertEqual(units.configuration(path)[1][new_file]['cost'], BUDGET['default_cost'])
             steps = {**units.fixture_steps(), 'swamp/tests/new_fixture.ts': object()}
@@ -153,7 +155,7 @@ class TableTest(unittest.TestCase):
             source = (ROOT / '.github/ci/checks.toml').read_text()
             source = source.replace('a build-list Node gets the Instance project, bridge, folders and image, then a rerun changes nothing', 'renamed case no longer in source')
             path.write_text(source)
-            with self.assertRaisesRegex(ValueError, 'every after_merge_cases name must occur'):
+            with self.assertRaisesRegex(ValueError, 'every after_merge_cases name must be registered'):
                 units.configuration(path)
 
     def test_container_dependency_closure_selects_the_affected_files(self):
@@ -249,8 +251,7 @@ class ExecutionTest(unittest.TestCase):
                      for name, code in [('swamp/fail.py', 1), ('swamp/pass.py', 0)]}
             fixtures = {name: fixture(name) for name in steps}
             setup = units.gate.Step('shape', 'setup', [sys.executable, '-c', ''])
-            with patch.object(units.gate, 'tool_path', return_value=Path(sys.executable).parent), \
-                    patch.object(units.gate, 'plan', return_value=[setup]), \
+            with patch.object(units, 'prepare', return_value=(os.environ.copy(), Path('/collections'))), \
                     patch.object(units, 'fixture_steps', return_value=steps), \
                     patch.dict(os.environ, {'GITHUB_STEP_SUMMARY': str(summary)}), \
                     contextlib.redirect_stdout(io.StringIO()):
@@ -266,8 +267,7 @@ class ExecutionTest(unittest.TestCase):
             fixtures = {name: fixture(name) for name in steps}
             setup = units.gate.Step('shape', 'setup', [sys.executable, '-c', ''])
             budget = {**BUDGET, 'shard_workers': 1, 'shard_deadline_seconds': .5}
-            with patch.object(units.gate, 'tool_path', return_value=Path(sys.executable).parent), \
-                    patch.object(units.gate, 'plan', return_value=[setup]), \
+            with patch.object(units, 'prepare', return_value=(os.environ.copy(), Path('/collections'))), \
                     patch.object(units, 'fixture_steps', return_value=steps), \
                     contextlib.redirect_stdout(io.StringIO()) as output:
                 self.assertEqual(units.run(list(steps), budget, fixtures, folder / 'times.json'), 1)
@@ -286,8 +286,7 @@ class ExecutionTest(unittest.TestCase):
             steps = {f'swamp/{i}.py': units.gate.Step('shape', str(i), [sys.executable, '-c', code]) for i in range(4)}
             fixtures = {name: fixture(name) for name in steps}
             setup = units.gate.Step('shape', 'setup', [sys.executable, '-c', ''])
-            with patch.object(units.gate, 'tool_path', return_value=Path(sys.executable).parent), \
-                    patch.object(units.gate, 'plan', return_value=[setup]), \
+            with patch.object(units, 'prepare', return_value=(os.environ.copy(), Path('/collections'))), \
                     patch.object(units, 'fixture_steps', return_value=steps), \
                     contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(units.run(list(steps), BUDGET, fixtures, folder / 'times.json'), 0)
@@ -327,6 +326,106 @@ class ExecutionTest(unittest.TestCase):
             self.assertIn('only', result.stdout + result.stderr)
 
 
+class PopulationTest(unittest.TestCase):
+    def preload(self, source, **env):
+        with tempfile.TemporaryDirectory() as scratch:
+            file = Path(scratch) / 'population_test.ts'
+            marker = Path(scratch) / 'body'
+            timing = Path(scratch) / 'cases.json'
+            source = source.replace('BODY', 'Deno.writeTextFileSync(' + json.dumps(str(marker)) + ', "ran")')
+            file.write_text(source)
+            result = subprocess.run(['deno', 'test', '--no-check', '-A', '--preload', str(ROOT / units.PRELOAD), str(file)],
+                                    env={**os.environ, 'NO_COLOR': '1', 'ORBIT_TEST_TIMING_FILE': str(timing),
+                                         'ORBIT_TEST_STARTED_AT_MS': str(time.time_ns() // 1_000_000), **env},
+                                    text=True, capture_output=True, timeout=10)
+            return result, marker.exists(), json.loads(timing.read_text()) if timing.exists() else None
+
+    @unittest.skipUnless(shutil.which('deno'), 'needs Deno')
+    def test_appended_and_loop_generated_cases_fail_before_any_body(self):
+        for extra in ['Deno.test("appended", () => { BODY; });',
+                      'for (let i = 0; i < 3; i++) Deno.test(`generated-${i}`, () => { BODY; });']:
+            result, ran, receipt = self.preload('Deno.test("original", () => { BODY; });' + extra,
+                                                ORBIT_TEST_CASES='["original"]')
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('Stale fixture case population', result.stdout + result.stderr)
+            self.assertFalse(ran)
+            self.assertGreater(len(receipt['registered']), 1)
+
+    @unittest.skipUnless(shutil.which('deno'), 'needs Deno')
+    def test_zero_registrations_empty_slice_and_commented_exclusion_cannot_pass(self):
+        for source, env, message in [
+            ('', {}, 'registered zero tests'),
+            ('Deno.test("one", () => { BODY; });', {'ORBIT_TEST_SLICE': '1/2'}, 'registered zero tests'),
+            ('// old-name\nDeno.test("new-name", () => { BODY; });', {'ORBIT_TEST_SKIP': '["old-name"]'}, 'Stale after_merge_cases'),
+            ('Deno.test("renamed", () => { BODY; });', {'ORBIT_TEST_CASES': '["original"]'}, 'Stale fixture case population'),
+        ]:
+            result, ran, _ = self.preload(source, **env)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn(message, result.stdout + result.stderr)
+            self.assertFalse(ran)
+
+    @unittest.skipUnless(shutil.which('deno'), 'needs Deno')
+    def test_case_receipt_has_exact_names_and_completed_times(self):
+        result, ran, receipt = self.preload('Deno.test("measured", () => { BODY; });', ORBIT_TEST_CASES='["measured"]')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(ran)
+        self.assertEqual(receipt['cases'][0]['name'], 'measured')
+        self.assertEqual(receipt['cases'][0]['status'], 'passed')
+        self.assertGreaterEqual(receipt['cases'][0]['seconds'], 0)
+        self.assertGreaterEqual(receipt['startup_seconds'], 0)
+
+    def test_source_change_invalidates_cost_before_a_fixture_can_be_deferred(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            inventory = json.loads(units.INVENTORY.read_text())
+            file = 'swamp/tests/ansible_instance_migrate_test.ts'
+            inventory[file]['source_sha256'] = 'stale'
+            path = Path(scratch) / 'inventory.json'
+            path.write_text(json.dumps(inventory))
+            with patch.object(units, 'INVENTORY', path):
+                with self.assertRaisesRegex(ValueError, file + ': stale fixture case inventory/cost'):
+                    units.configuration()
+
+    def test_named_case_costs_and_startup_replace_the_equal_share_estimate(self):
+        f = fixture('swamp/cases.ts', 140, cases=['large', 'small'], slices=2,
+                    case_costs={'large': 130, 'small': 10})
+        self.assertEqual(units.units_for(f, BUDGET), [('swamp/cases.ts#0/2', 135), ('swamp/cases.ts#1/2', 15)])
+        f['slices'] = 100
+        self.assertEqual(len(units.units_for(f, BUDGET)), 2, 'no empty slices')
+        result = planned(['swamp/cases.ts'], [fixture('swamp/cases.ts', 2500, cases=[f'case-{i}' for i in range(25)], slices=25)])
+        self.assertEqual(result['shards'], [])
+        self.assertEqual(len(result['deferred']), 25)
+        self.assertEqual(result['capacity'], [{'file': 'swamp/cases.ts', 'seconds': 2625, 'shards': 7, 'workers': 28}])
+
+    def test_tool_setup_is_inside_the_shard_deadline_and_empty_runs_fail(self):
+        step = units.gate.Step('shape', 'setup stand-in', [sys.executable, '-c', 'import signal; signal.pause()'])
+        with patch.object(units.gate, 'Step', return_value=step), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, 'OVER BUDGET'):
+                units.prepare(time.monotonic() + .3)
+        with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(units.run([], BUDGET, {}, Path(scratch) / 'times.json'), 1)
+
+    def test_cancelled_supervisor_reaps_detached_descendants_and_returns_a_receipt(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            pid = Path(scratch) / 'pid'
+            receipt = Path(scratch) / 'receipt'
+            child = f'import os,signal; os.setsid(); open({str(pid)!r}, "w").write(str(os.getpid())); signal.pause()'
+            leader = f'import subprocess,sys,signal; subprocess.Popen([sys.executable,"-c",{child!r}]); signal.pause()'
+            process = subprocess.Popen([sys.executable, str(ROOT / 'bin/ci-units'), '--supervise', '180', str(receipt), 'none', sys.executable, '-c', leader])
+            try:
+                deadline = time.monotonic() + 4
+                while not pid.exists() and time.monotonic() < deadline:
+                    time.sleep(.01)
+                self.assertTrue(pid.exists(), 'child never acknowledged readiness')
+                process.terminate()
+                self.assertEqual(process.wait(timeout=4), 0)
+                self.assertEqual(json.loads(receipt.read_text())['status'], 'CANCELLED')
+                self.assertFalse(Path(f'/proc/{pid.read_text()}').exists())
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+
+
 class WorkflowTest(unittest.TestCase):
     def test_hosted_matrix_budget_tools_artifacts_and_output(self):
         source = (ROOT / '.github/workflows/ci.yml').read_text()
@@ -340,6 +439,15 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn('fixture_shards: ${{ steps.units.outputs.fixture_shards }}', source)
         self.assertIn('bin/ci-units plan --base "$BASE" --head "$HEAD" --github-output "$GITHUB_OUTPUT"', source)
 
+    def test_required_stays_red_when_whole_file_capacity_is_exceeded(self):
+        source = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:\n', 1)[1]
+        code = textwrap.dedent(source.split("          python3 - <<'PYTHON'\n", 1)[1].split('          selected =', 1)[0])
+        needs = {'changes': {'result': 'success', 'outputs': {'fixture_capacity': '[{"file":"migration","shards":11}]',
+                                                           'fixture_shards': '[]'}}, 'fixtures': {'result': 'success'}}
+        with patch.dict(os.environ, {'NEEDS': json.dumps(needs)}):
+            with self.assertRaisesRegex(SystemExit, 'Required fixture capacity exceeded.*migration'):
+                exec(code, {})
+
     def test_required_accepts_skipped_only_with_empty_shards_and_preserves_job_selection_rules(self):
         # Exercise Required's actual inline rule before its unchanged build-selection checks.
         source = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:\n', 1)[1]
@@ -347,7 +455,7 @@ class WorkflowTest(unittest.TestCase):
         code = textwrap.dedent(source.split("          python3 - <<'PYTHON'\n", 1)[1].split('          selected =', 1)[0])
         for shards in ([], [{'name': '01', 'units': ['a']} ]):
             for result in ('success', 'skipped', 'failure', 'cancelled'):
-                needs = {'changes': {'result': 'success', 'outputs': {'fixture_shards': json.dumps(shards)}}, 'fixtures': {'result': result}}
+                needs = {'changes': {'result': 'success', 'outputs': {'fixture_shards': json.dumps(shards), 'fixture_capacity': '[]'}}, 'fixtures': {'result': result}}
                 with patch.dict(os.environ, {'NEEDS': json.dumps(needs)}):
                     if result == 'success' or (result == 'skipped' and not shards):
                         scope = {}

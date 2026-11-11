@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Select and run bounded Swamp fixture units. Costs and input rules live in checks.toml."""
 import argparse
+import ast
 import ctypes
+import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
@@ -20,8 +22,10 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 TABLE = ROOT / '.github/ci/checks.toml'
+INVENTORY = ROOT / 'tools/tests/ci-fixture-cases.json'
 PRELOAD = 'swamp/tests/_support/slice.ts'
 OUTPUT_LOCK = threading.Lock()
+CANCELLED = threading.Event()
 
 
 def module(name, path):
@@ -62,13 +66,14 @@ def configuration(path=TABLE):
         config = tomllib.load(source)
     budget = config['budget']
     if any(type(budget[key]) is not int or budget[key] <= 0 for key in
-           ('shard_seconds', 'shard_workers', 'shard_deadline_seconds', 'shard_ceiling_seconds', 'unit_ceiling_seconds', 'slice_seconds', 'pr_shards', 'default_cost')):
+           ('shard_seconds', 'shard_workers', 'shard_deadline_seconds', 'shard_ceiling_seconds', 'unit_ceiling_seconds', 'slice_seconds', 'slice_startup_seconds', 'pr_shards', 'default_cost')):
         raise ValueError('Fixture budgets must be positive integers')
     if budget['shard_deadline_seconds'] >= budget['shard_ceiling_seconds']:
         raise ValueError('shard_deadline_seconds must be below shard_ceiling_seconds')
     if budget['slice_seconds'] > budget['shard_seconds']:
         raise ValueError('slice_seconds exceeds shard_seconds')
     fixtures = {}
+    inventory = json.loads(INVENTORY.read_text())
     for fixture in config.get('fixture', []):
         file = fixture['file']
         if file in fixtures:
@@ -80,11 +85,20 @@ def configuration(path=TABLE):
         file, cost = fixture['file'], fixture['cost']
         if not (ROOT / file).is_file() or type(cost) is not int or cost <= 0:
             raise ValueError(f'Invalid fixture file or cost: {file}')
+        if file in inventory:
+            fixture.update(inventory[file])
+            if fixture['source_sha256'] != hashlib.sha256((ROOT / file).read_bytes()).hexdigest():
+                raise ValueError(f'{file}: stale fixture case inventory/cost; collect registrations and review its cost before execution')
+        elif sliceable(fixture):
+            raise ValueError(f'{file}: missing fixture case inventory/cost; collect registrations before execution')
         excluded = fixture.get('after_merge_cases', [])
-        if not isinstance(excluded, list) or any(not isinstance(name, str) or name not in (ROOT / file).read_text() for name in excluded):
-            raise ValueError(f'{file}: every after_merge_cases name must occur in its source')
+        if not isinstance(excluded, list) or any(not isinstance(name, str) or name not in fixture.get('cases', []) for name in excluded):
+            raise ValueError(f'{file}: every after_merge_cases name must be registered')
         if excluded and not sliceable(fixture):
             raise ValueError(f'{file}: after_merge_cases needs a Deno fixture')
+        weights = fixture.get('case_costs', {})
+        if any(name not in fixture.get('cases', []) or type(seconds) is not int or seconds <= 0 for name, seconds in weights.items()):
+            raise ValueError(f'{file}: invalid case_costs')
         slices = fixture.get('slices', True)
         if type(slices) not in (int, bool) or type(slices) is int and slices < 1:
             raise ValueError(f'{file}: slices must be a positive count or a boolean')
@@ -106,7 +120,19 @@ def units_for(fixture, budget):
     count = math.ceil(fixture['cost'] / budget['slice_seconds']) if sliceable(fixture) else 1
     if type(fixture.get('slices')) is int:
         count = max(count, fixture['slices'])
-    return [(fixture['file'] + (f'#{k}/{count}' if count > 1 else ''), fixture['cost'] / count)
+    if 'cases' in fixture and sliceable(fixture):
+        count = min(count, len([name for name in fixture['cases'] if name not in fixture.get('after_merge_cases', [])]))
+        if count == 0:
+            raise ValueError(f"{fixture['file']}: zero retained fixture cases")
+    startup = budget.get('slice_startup_seconds', 0) if sliceable(fixture) else 0
+    names = [name for name in fixture.get('cases', []) if name not in fixture.get('after_merge_cases', [])]
+    weights = fixture.get('case_costs', {})
+    if weights and set(weights) != set(names):
+        raise ValueError(f"{fixture['file']}: case_costs must name every retained case")
+    if weights and sum(weights.values()) != fixture['cost']:
+        raise ValueError(f"{fixture['file']}: cost must equal the retained case_costs total")
+    return [(fixture['file'] + (f'#{k}/{count}' if count > 1 else ''),
+             (sum(weights[name] for name in names[k::count]) if weights else fixture['cost'] / count) + startup)
             for k in range(count)]
 
 
@@ -117,7 +143,7 @@ def specificity(pattern):
 
 def plan(paths, budget, fixtures, defaults):
     selected, unmapped = {}, []
-    all_fixtures = any(path in ('.github/ci/checks.toml', 'bin/ci-units', PRELOAD) for path in paths)
+    all_fixtures = any(path in ('.github/ci/checks.toml', 'tools/tests/ci-fixture-cases.json', 'bin/ci-units', PRELOAD) for path in paths)
     for path in paths:
         matched = False
         for file, fixture in fixtures.items():
@@ -133,20 +159,30 @@ def plan(paths, budget, fixtures, defaults):
                 selected.setdefault(file, (-1, 0, 0))
     if all_fixtures:
         for file, fixture in fixtures.items():
-            if not fixture.get('after_merge'):
-                selected.setdefault(file, (-1, 0, 0))
-    admitted, deferred = [], []
+            selected.setdefault(file, (-1, 0, 0))
+    admitted, deferred, capacity = [], [], []
     order = {file: index for index, file in enumerate(fixtures)}
     # Admission is by directness, then table order. Size only decides packing.
     for file in sorted(selected, key=lambda file: (tuple(-p for p in selected[file]), order[file])):
         fixture = fixtures[file]
         candidates = [(name, cost, selected[file]) for name, cost in units_for(fixture, budget)]
+        if not fixture.get('after_merge'):
+            required = len(pack(candidates, {**budget, 'pr_shards': len(candidates)}))
+            if required > budget['pr_shards']:
+                capacity.append({'file': file, 'seconds': round(sum(c[1] for c in candidates), 3),
+                                 'shards': required, 'workers': required * budget['shard_workers']})
         if fixture.get('after_merge') or pack([*admitted, *candidates], budget) is None:
             deferred.extend(name for name, _, _ in candidates)
         else:
             admitted.extend(candidates)
     shards = pack(admitted, budget) or []
-    return {'shards': shards, 'deferred': sorted(deferred), 'unmapped': sorted(set(unmapped))}
+    result = {'shards': shards, 'deferred': sorted(deferred), 'unmapped': sorted(set(unmapped))}
+    if capacity:
+        result['capacity'] = capacity
+    excluded = [{'file': file, 'case': name} for file in selected for name in fixtures[file].get('after_merge_cases', [])]
+    if excluded:
+        result['excluded'] = excluded
+    return result
 
 
 def pack(units, budget):
@@ -181,8 +217,21 @@ def plan_summary(result, fixtures):
     for name in result['deferred']:
         reason = fixtures[name.split('#')[0]].get('reason', 'pull request shard limit')
         lines.append(f'- Deferred `{name}`: {reason}')
+        lines += [f'  - {case}' for case in case_names(name, fixtures)]
+    for row in result.get('capacity', []):
+        lines.append(f"- CAPACITY: `{row['file']}` needs {row['seconds']} declared seconds, {row['shards']} shards / {row['workers']} workers; limit is six shards. Required checks will fail.")
+    lines += [f"- After merge only: `{row['file']}` — {row['case']}" for row in result.get('excluded', [])]
     lines += [f'- Unmapped `{path}`: selected default fixtures' for path in result['unmapped']]
     return '\n'.join(lines)
+
+
+def case_names(unit, fixtures):
+    file, separator, part = unit.partition('#')
+    names = [name for name in fixtures[file].get('cases', []) if name not in fixtures[file].get('after_merge_cases', [])]
+    if separator:
+        k, n = map(int, part.split('/'))
+        names = names[k::n]
+    return names
 
 
 def unit_step(unit, fixtures, steps, collections):
@@ -201,9 +250,10 @@ def unit_step(unit, fixtures, steps, collections):
         if not match or not sliceable(fixtures[file]) or not 0 <= int(match[1]) < int(match[2]):
             raise ValueError(f'Invalid slice: {unit}')
         step.env['ORBIT_TEST_SLICE'] = part
-    if separator or fixtures[file].get('after_merge_cases'):
+    if step.argv[0] == 'deno':
         step.argv[2:2] = ['--preload', str(ROOT / PRELOAD)]
         step.env['ORBIT_TEST_SKIP'] = json.dumps(fixtures[file].get('after_merge_cases', []))
+        step.env['ORBIT_TEST_CASES'] = json.dumps(fixtures[file].get('cases'))
     if any(file.removeprefix('swamp/') in group for group in gate.INSTANCE_HOST_TEST_GROUPS):
         step.env['ORBIT_INSTANCE_HOST_DEADLINE_MS'] = str(int(time.time() * 1000) + 720_000)
     return step
@@ -215,6 +265,15 @@ def supervise(ceiling, receipt, command, shard_deadline=None):
     if libc.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
         raise OSError(ctypes.get_errno(), 'PR_SET_CHILD_SUBREAPER')
     started = time.monotonic()
+    cancelled = False
+    def cancel(_signum, _frame):
+        nonlocal cancelled
+        cancelled = True
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        raise InterruptedError('fixture run cancelled')
+    signal.signal(signal.SIGTERM, cancel)
+    signal.signal(signal.SIGINT, cancel)
     timeout = min(ceiling, shard_deadline - started) if shard_deadline is not None else ceiling
     if timeout <= 0:
         receipt.write_text(json.dumps({'status': 'NOT RUN', 'seconds': 0}))
@@ -224,13 +283,15 @@ def supervise(ceiling, receipt, command, shard_deadline=None):
         try:
             code = process.wait(timeout=timeout)
             outcome = 'passed' if code == 0 else 'FAILED'
-        except subprocess.TimeoutExpired:
+        except (subprocess.TimeoutExpired, InterruptedError):
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
             process.wait()
-            outcome = 'OVER BUDGET'
+            outcome = 'CANCELLED' if cancelled else 'OVER BUDGET'
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
         # Reap before removing temporary files: Ansible children can detach.
         cleanup_deadline = time.monotonic() + 2
         while supervisor.children():
@@ -253,7 +314,7 @@ def supervise(ceiling, receipt, command, shard_deadline=None):
 
 def run_unit(step, environment, ceiling, shard_deadline=None):
     started = time.monotonic()
-    if shard_deadline is not None and started >= shard_deadline:
+    if CANCELLED.is_set() or shard_deadline is not None and started >= shard_deadline:
         with OUTPUT_LOCK:
             print(f'==> {step.name}: NOT RUN (shard deadline reached)', flush=True)
         return {'unit': step.name, 'status': 'NOT RUN', 'seconds': 0}
@@ -263,8 +324,17 @@ def run_unit(step, environment, ceiling, shard_deadline=None):
                'ORBIT_TEST_STARTED_AT_MS': str(time.time_ns() // 1_000_000),
                'ORBIT_TEST_TIMING_FILE': str(Path(scratch) / 'startup.json')}
         receipt = Path(scratch) / 'unit-receipt.json'
-        code = subprocess.run([sys.executable, str(ROOT / 'bin/ci-units'), '--supervise', str(ceiling), str(receipt), str(shard_deadline) if shard_deadline is not None else 'none', *step.argv],
-                              cwd=gate.SWAMP, env=env, stdout=output, stderr=subprocess.STDOUT).returncode
+        process = subprocess.Popen([sys.executable, str(ROOT / 'bin/ci-units'), '--supervise', str(ceiling), str(receipt), str(shard_deadline) if shard_deadline is not None else 'none', *step.argv],
+                                   cwd=gate.SWAMP, env=env, stdout=output, stderr=subprocess.STDOUT)
+        sent_cancel = False
+        while True:
+            try:
+                code = process.wait(timeout=.1)
+                break
+            except subprocess.TimeoutExpired:
+                if CANCELLED.is_set() and not sent_cancel:
+                    process.terminate()
+                    sent_cancel = True
         result = json.loads(receipt.read_text()) if code == 0 and receipt.exists() else {
             'status': 'FAILED', 'seconds': round(time.monotonic() - started, 3)}
         startup = Path(scratch) / 'startup.json'
@@ -272,6 +342,9 @@ def run_unit(step, environment, ceiling, shard_deadline=None):
             result.update(json.loads(startup.read_text()))
         output.seek(0)
         captured = output.read()
+        if re.search(r'Ran 0 tests\b', captured):
+            result['status'] = 'FAILED'
+            captured += '\nFixture registered zero tests\n'
     outcome, seconds = result['status'], result['seconds']
     message = f'==> {step.name}: {outcome} ({seconds:.1f}s)'
     if outcome == 'OVER BUDGET' and shard_deadline is not None and time.monotonic() >= shard_deadline:
@@ -288,20 +361,36 @@ def run_unit(step, environment, ceiling, shard_deadline=None):
 def run(units, budget, fixtures, times):
     os.umask(0o022)
     shard_deadline = time.monotonic() + budget['shard_deadline_seconds']
-    results = []
-    times.write_text('[]\n')
+    results = [{'unit': unit, 'status': 'NOT RUN', 'seconds': 0,
+                'revision': os.environ.get('GITHUB_SHA'), 'run_id': os.environ.get('GITHUB_RUN_ID'),
+                'declared_seconds': dict(units_for(fixtures[unit.split('#')[0]], budget)).get(unit),
+                'source_sha256': hashlib.sha256((ROOT / unit.split('#')[0]).read_bytes()).hexdigest() if (ROOT / unit.split('#')[0]).is_file() else None,
+                'cases': [{'name': name, 'status': 'NOT RUN', 'seconds': 0} for name in case_names(unit, fixtures)]}
+               for unit in units]
+    times.write_text(json.dumps(results, indent=2) + '\n')
     if units:
-        tools = gate.default_tools()
-        environment = {**os.environ, 'PATH': f'{gate.tool_path(tools)}{os.pathsep}{os.environ["PATH"]}'}
-        collections = gate.collections_path(tools)
-        setup = gate.plan('', ROOT, ROOT, collections)[0]
-        subprocess.run(setup.argv, cwd=gate.SWAMP, env={**environment, **setup.env}, check=True)
+        try:
+            environment, collections = prepare(shard_deadline)
+        except RuntimeError as error:
+            print(str(error), flush=True)
+            summary(str(error))
+            return 1
         steps = fixture_steps()
         with ThreadPoolExecutor(max_workers=budget['shard_workers']) as pool:
             futures = {pool.submit(run_unit, unit_step(unit, fixtures, steps, collections), environment,
                                    budget['unit_ceiling_seconds'], shard_deadline): unit for unit in units}
             for future in as_completed(futures):
-                results.append(future.result())
+                result = future.result()
+                index = units.index(result['unit'])
+                # Keep the planned names even when the process never reached registration.
+                if not result.get('cases') and result['status'] == 'passed' and result['unit'].endswith('.py'):
+                    result['cases'] = [{'name': row['name'], 'status': 'passed', 'seconds': None} for row in results[index]['cases']]
+                result['cases'] = result.get('cases') or results[index]['cases']
+                for row in result['cases']:
+                    if row['status'] == 'running':
+                        row['status'] = 'CENSORED'
+                        row['seconds'] = round((time.time_ns() // 1_000_000 - row['started_at_ms']) / 1000, 3)
+                results[index].update(result)
                 times.write_text(json.dumps(results, indent=2) + '\n')
         results.sort(key=lambda result: units.index(result['unit']))
     times.write_text(json.dumps(results, indent=2) + '\n')
@@ -309,39 +398,98 @@ def run(units, budget, fixtures, times):
         f"| `{r['unit']}` | {r['status']} | {r['seconds']:.1f} | {r.get('startup_seconds', '—')} |" for r in results)
     print(table)
     summary(table)
-    return int(any(r['status'] != 'passed' for r in results))
+    return int(not units or CANCELLED.is_set() or any(r['status'] != 'passed' for r in results))
+
+
+def prepare(shard_deadline):
+    # The same ownership and deadline cover cold pip/collection setup too.
+    with tempfile.TemporaryDirectory() as scratch:
+        receipt = Path(scratch) / 'tools.json'
+        step = gate.Step('shape', 'fixture tool setup', [sys.executable, str(ROOT / 'bin/ci-units'), '--prepare', str(receipt)])
+        result = run_unit(step, os.environ.copy(), max(.001, shard_deadline - time.monotonic()), shard_deadline)
+        if result['status'] != 'passed':
+            raise RuntimeError(f"Fixture tool setup {result['status']}; every selected case is NOT RUN (named in the artifact)")
+        tools = json.loads(receipt.read_text())
+        return {**os.environ, 'PATH': tools['path']}, Path(tools['collections'])
+
+
+def prepare_tools(receipt):
+    tools = gate.default_tools()
+    environment = {**os.environ, 'PATH': f'{gate.tool_path(tools)}{os.pathsep}{os.environ["PATH"]}'}
+    collections = gate.collections_path(tools)
+    setup = gate.plan('', ROOT, ROOT, collections)[0]
+    subprocess.run(setup.argv, cwd=gate.SWAMP, env={**environment, **setup.env}, check=True)
+    receipt.write_text(json.dumps({'path': environment['PATH'], 'collections': str(collections)}))
+
+
+def collect(file):
+    """Read registrations without invoking test bodies; costs still need a human review."""
+    path = ROOT / file
+    if file.endswith('.py'):
+        tree = ast.parse(path.read_text())
+        cases = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name.startswith('test_')]
+    else:
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch) / 'cases.json'
+            subprocess.run(['deno', 'test', '--no-check', '-A', '--preload', str(ROOT / PRELOAD), str(path)],
+                           cwd=gate.SWAMP, env={**os.environ, 'ORBIT_TEST_COLLECT': str(output)},
+                           check=True, stdout=subprocess.DEVNULL, timeout=15)
+            cases = json.loads(output.read_text())
+        if not cases:
+            raise ValueError(f'{file}: fixture registered zero tests')
+    return {'source_sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'cases': cases}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
+    collector = commands.add_parser('collect')
+    collector.add_argument('--file', required=True)
     planner = commands.add_parser('plan')
     planner.add_argument('--base', required=True)
     planner.add_argument('--head', required=True)
     planner.add_argument('--github-output', type=Path)
+    planner.add_argument('--plan-json', type=Path)
     runner = commands.add_parser('run')
     runner.add_argument('--units', required=True, help='JSON array of unit names')
     runner.add_argument('--times', type=Path, default=Path('ci-unit-times.json'))
     args = parser.parse_args()
+    if args.command == 'collect':
+        print(json.dumps(collect(args.file), indent=2))
+        return 0
     budget, fixtures, defaults = configuration()
     if args.command == 'run':
         units = json.loads(args.units)
         if not isinstance(units, list) or any(not isinstance(unit, str) for unit in units):
             parser.error('--units must be a JSON array of strings')
+        signal.signal(signal.SIGTERM, lambda *_: CANCELLED.set())
+        signal.signal(signal.SIGINT, lambda *_: CANCELLED.set())
         return run(units, budget, fixtures, args.times)
     base = gate.resolve_base(args.base)
     paths = subprocess.check_output(['git', '-C', str(ROOT), 'diff', '--name-only', '-z', base, args.head], text=True).strip('\0').split('\0')
     result = plan([p for p in paths if p], budget, fixtures, defaults)
+    if args.plan_json:
+        costs = {name: cost for f in fixtures.values() for name, cost in units_for(f, budget)}
+        selected = [unit for shard in result['shards'] for unit in shard['units']]
+        args.plan_json.write_text(json.dumps({**result, 'budget': budget, 'revision': os.environ.get('GITHUB_SHA', args.head),
+                                             'table_sha256': hashlib.sha256(TABLE.read_bytes()).hexdigest(),
+                                             'selected_seconds': sum(costs[u] for u in selected),
+                                             'deferred_seconds': sum(costs[u] for u in result['deferred']),
+                                             'units': {u: {'declared_seconds': costs[u], 'cases': case_names(u, fixtures)}
+                                                       for u in [*selected, *result['deferred']]}}, indent=2) + '\n')
     print(json.dumps(result))
     summary(plan_summary(result, fixtures))
     if args.github_output:
         with args.github_output.open('a') as output:
             output.write('fixture_shards=' + json.dumps(result['shards'], separators=(',', ':')) + '\n')
+            output.write('fixture_capacity=' + json.dumps(result.get('capacity', []), separators=(',', ':')) + '\n')
     return 0
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == '--supervise':
+    if len(sys.argv) > 1 and sys.argv[1] == '--prepare':
+        prepare_tools(Path(sys.argv[2]))
+    elif len(sys.argv) > 1 and sys.argv[1] == '--supervise':
         supervise(float(sys.argv[2]), Path(sys.argv[3]), sys.argv[5:],
                   None if sys.argv[4] == 'none' else float(sys.argv[4]))
     else:
