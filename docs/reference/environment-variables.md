@@ -95,6 +95,8 @@ The foreign-key check refuses a file with keys that neither stored configuration
 
 Create seeds encrypted values from its bounded source template before the native environment step. For a Laravel Instance with a Route, create stores `APP_URL` as `https://{{instance.domain}}`, so `.env` names the Instance's own domain, not the template's URL. When create owns a database (a copy of the default one, or one on `--database-server`), its `DB_*` keys replace the template's database keys in that seed. An owned SQL test database also gets `.env.testing`, rendered as `env:sync` renders it.
 
+At development create, Orbit resolves only a whole-value `${APP_URL}` or `${APP_NAME}` captured as a live unquoted or double-quoted reference, using the Instance's own value and the existing writer. Everything else stays with the application's dotenv, including values the writer cannot represent identically in phpdotenv, Vite and systemd, so references to secrets do not copy their values into the browser. Existing Project templates need one source refresh through `project:update PROJECT --source-access=github_app` or a container default deployment; this records provenance for future Instances without changing existing Instances.
+
 The Gateway validates the exact create root, preparation ID, Project, Node and checkout. Clone reads its stored candidate snapshot. These steps run within their parent roots and admit no child Operation. Public synchronization still requires an active Instance.
 
 ## Where the file lives

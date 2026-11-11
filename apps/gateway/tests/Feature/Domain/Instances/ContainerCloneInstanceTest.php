@@ -2,16 +2,21 @@
 
 declare(strict_types=1);
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
+use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
+use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Processes\VpDevPreset;
+use App\Domain\Projects\ProjectEnvironmentTemplateRefresh;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
@@ -491,3 +496,216 @@ it('captures every attached server target once, including remote Redis, in the c
         ->and($intent['firewall'][1])->toMatchArray(['route' => 'yes', 'interface_in' => 'orbitinst0', 'interface_out' => 'orbit',
             'from_ip' => '10.253.0.2', 'to_ip' => '10.44.0.3', 'to_port' => '6379', 'proto' => 'tcp']);
 });
+
+it('resolves stock Laravel template references to the clone values in its file and dev Process environment', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    $project = $default->project;
+    $project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5', 'is_laravel' => true]);
+    $node->update(['tld' => 'beast.test']);
+    Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+    $example = file_get_contents(dirname(__DIR__, 6).'/swamp/tests/fixtures/laravel-stock.env.example');
+    $example .= <<<'ENV'
+
+VITE_APP_URL="${APP_URL}"
+UNQUOTED_URL=${APP_URL}
+VITE_LATER=${Z_LATER}
+Z_LATER="${VITE_APP_URL}/nested"
+PASSWORD=pa$$word
+HASH=$2y$10$abcdef
+PRICE=price$5
+ESCAPED="\${APP_NAME}"
+SINGLE='${APP_NAME}'
+ENV;
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($project, str_repeat('d', 40), 'fixture', $example);
+    app(InstanceEnvironmentStore::class)->seedForCreate($default, ['APP_NAME' => 'Default only']);
+    ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'dev', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'preset' => 'vp-dev', 'command' => VpDevPreset::definitionCommand()]]);
+
+    $operation = containerCreate($project, $node, 'references');
+    $clone = Instance::query()->findOrFail($operation->target_id);
+    $vault = vaultReadingSocket([]);
+    $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+    $workspace = json_decode(collect($vault->puts)->firstWhere('key', 'instance-create-processes-'.$operation->id)['value'], true, 512, JSON_THROW_ON_ERROR);
+    $file = $workspace['environment'];
+    $values = Dotenv::parse($file);
+    $domain = $clone->routes()->whereNull('web_root')->sole()->domain;
+
+    expect($values)->toMatchArray([
+        'APP_NAME' => 'Laravel', 'VITE_APP_NAME' => 'Laravel', 'MAIL_FROM_NAME' => 'Laravel',
+        'APP_URL' => 'https://'.$domain, 'VITE_APP_URL' => 'https://'.$domain, 'UNQUOTED_URL' => 'https://'.$domain,
+        'VITE_LATER' => '${Z_LATER}', 'Z_LATER' => '${VITE_APP_URL}/nested',
+        'PASSWORD' => 'pa$$word', 'HASH' => '$2y$10$abcdef', 'PRICE' => 'price$5',
+        'ESCAPED' => '${APP_NAME}', 'SINGLE' => '${APP_NAME}',
+    ]);
+    expect($run['intent']['container']['processes'][0]['content'])
+        ->toContain('EnvironmentFile=-/srv/workspace/.env');
+    expect($file)->toBe(collect($vault->puts)->firstWhere('key', 'instance-create-environment-input-'.$operation->id)['value']);
+});
+
+it('keeps an undefined template reference literal in the file inherited by Processes', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('e', 40), 'fixture', 'VITE_UNDEFINED="${NOT_DEFINED}"');
+
+    $operation = containerCreate($default->project, $node, 'undefined');
+    $contents = app(DevelopmentCreateEnvironment::class)->content(Instance::query()->findOrFail($operation->target_id));
+
+    expect(Dotenv::parse($contents)['VITE_UNDEFINED'])->toBe('${NOT_DEFINED}');
+});
+
+it('leaves circular references outside the allow-list unchanged', function (): void {
+    $template = ['FIRST' => '${SECOND}', 'SECOND' => '${FIRST}'];
+
+    expect(app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($template, $template))->toBe($template);
+});
+
+it('keeps old persisted secret references literal without refreshing their source metadata', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    $head = str_repeat('a', 40);
+    $default->project->environmentTemplate()->create(['source_path' => '.env.example', 'source_commit' => $head,
+        'source_blob' => 'same-blob', 'checked_head' => $head, 'entries' => [
+            ['key' => 'DB_PASSWORD', 'value' => 'synthetic-password', 'example' => 'synthetic-password', 'removed' => false],
+            ['key' => 'VITE_LITERAL', 'value' => '${DB_PASSWORD}', 'example' => '${DB_PASSWORD}', 'removed' => false],
+        ]]);
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, $head, 'same-blob', <<<'ENV'
+DB_PASSWORD=synthetic-password
+VITE_LITERAL='${DB_PASSWORD}'
+ENV);
+
+    $operation = containerCreate($default->project, $node, 'old-template');
+    $contents = app(DevelopmentCreateEnvironment::class)->content(Instance::query()->findOrFail($operation->target_id));
+
+    expect(Dotenv::parse($contents)['VITE_LITERAL'])->toBe('${DB_PASSWORD}');
+});
+
+it('leaves Process port and origin references outside the allow-list exactly as before', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('b', 40), 'fixture', <<<'ENV'
+ORBIT_DEV_SERVER_PORT=9999
+ORBIT_DEV_SERVER_ORIGIN=https://default.test
+PORT_COPY=${ORBIT_DEV_SERVER_PORT}
+ORIGIN_COPY=${ORBIT_DEV_SERVER_ORIGIN}
+ENV);
+    ProcessDefinition::query()->create(['project_id' => $default->project_id, 'name' => 'dev', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'preset' => 'vp-dev', 'command' => VpDevPreset::definitionCommand()]]);
+
+    $operation = containerCreate($default->project, $node, 'runtime-refs');
+    $clone = Instance::query()->findOrFail($operation->target_id);
+    $contents = app(DevelopmentCreateEnvironment::class)->content($clone);
+
+    expect($clone->vite_port)->toBe(5173);
+    expect(Dotenv::parse($contents))->toMatchArray([
+        'ORBIT_DEV_SERVER_PORT' => '9999', 'ORBIT_DEV_SERVER_ORIGIN' => 'https://default.test',
+        'PORT_COPY' => '${ORBIT_DEV_SERVER_PORT}', 'ORIGIN_COPY' => '${ORBIT_DEV_SERVER_ORIGIN}',
+    ]);
+});
+
+it('matches main rendering byte for byte for awkward values and non-listed references', function (): void {
+    // Expected bytes were captured from the renderer at main 1720d2e6fe4f76cb5b87edb6ea12ef30fd7ea271.
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('f', 40), 'fixture',
+        file_get_contents(__DIR__.'/../../../Fixtures/instance-environment-awkward.env.example'));
+    $instance = Instance::query()->create(['project_id' => $default->project_id, 'node_id' => $node->id, 'name' => 'awkward',
+        'checkout_path' => '/workspace/awkward', 'root' => '.', 'status' => 'reserved']);
+
+    app(DevelopmentCreateEnvironment::class)->admit($instance, $default->project);
+    $contents = app(DevelopmentCreateEnvironment::class)->content($instance);
+
+    expect($contents)->toBe(file_get_contents(__DIR__.'/../../../Fixtures/instance-environment-awkward.rendered'));
+});
+
+it('keeps existing rendering when an allowed replacement needs incompatible escaping', function (string $name): void {
+    $values = ['APP_NAME' => $name, 'VITE_APP_NAME' => '${APP_NAME}'];
+
+    expect(app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($values, ['VITE_APP_NAME' => '${APP_NAME}'], ['VITE_APP_NAME' => 'APP_NAME']))
+        ->toBe($values);
+})->with(["first\nsecond", "first\rsecond", 'C:\\Shop', 'Acme $ale "Shop"', 'price$5', '${DB_PASSWORD}']);
+
+it('keeps an undefined allow-listed reference literal', function (): void {
+    $values = ['VITE_APP_URL' => '${APP_URL}'];
+
+    expect(app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($values, $values, ['VITE_APP_URL' => 'APP_URL']))->toBe($values);
+});
+
+it('records provenance only for captured live whole-value allowed references', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    $instanceBefore = $default->fresh()->getAttributes();
+    $environmentBefore = app(InstanceEnvironmentStore::class)->values($default);
+
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('9', 40), 'fixture', <<<'ENV'
+APP_NAME=Laravel
+VITE_APP_NAME="${APP_NAME}"
+VITE_LITERAL="\${APP_NAME}"
+SECRET_LITERAL='${DB_PASSWORD}'
+ENV);
+
+    expect($default->project->environmentTemplate()->sole()->entries)->toBe([
+        ['key' => 'APP_NAME', 'value' => 'Laravel', 'example' => 'Laravel', 'removed' => false],
+        ['key' => 'VITE_APP_NAME', 'value' => '${APP_NAME}', 'example' => '${APP_NAME}', 'removed' => false, 'reference' => 'APP_NAME'],
+        ['key' => 'VITE_LITERAL', 'value' => '${APP_NAME}', 'example' => '${APP_NAME}', 'removed' => false],
+        ['key' => 'SECRET_LITERAL', 'value' => '${DB_PASSWORD}', 'example' => '${DB_PASSWORD}', 'removed' => false],
+    ]);
+    expect($default->fresh()->getAttributes())->toBe($instanceBefore);
+    expect(app(InstanceEnvironmentStore::class)->values($default))->toBe($environmentBefore);
+});
+
+it('leaves every old entry unchanged until source capture records live reference provenance', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    $head = str_repeat('8', 40);
+    $entries = [];
+    foreach (['APP_NAME' => 'Laravel', 'VITE_APP_NAME' => '${APP_NAME}', 'SINGLE' => '${APP_NAME}', 'ESCAPED' => '${APP_NAME}'] as $key => $value) {
+        $entries[] = ['key' => $key, 'value' => $value, 'example' => $value, 'removed' => false];
+    }
+    $default->project->environmentTemplate()->create(['source_path' => '.env.example', 'source_commit' => $head,
+        'source_blob' => 'same-blob', 'checked_head' => $head, 'entries' => $entries]);
+    $defaultBefore = $default->fresh()->getAttributes();
+    $environmentBefore = app(InstanceEnvironmentStore::class)->values($default);
+    $fileBefore = app(DevelopmentCreateEnvironment::class)->content($default);
+    $old = containerCreate($default->project, $node, 'old');
+    $oldInstance = Instance::query()->findOrFail($old->target_id);
+    $oldFile = app(DevelopmentCreateEnvironment::class)->content($oldInstance);
+    $expected = ['APP_DEBUG' => 'true', 'APP_ENV' => 'development', 'APP_KEY' => '', 'APP_NAME' => 'Laravel',
+        'ESCAPED' => '${APP_NAME}', 'SINGLE' => '${APP_NAME}', 'VITE_APP_NAME' => '${APP_NAME}'];
+    $mainBytes = '';
+    foreach ($expected as $key => $value) {
+        $mainBytes .= $key.'='.InstanceEnvironmentRenderer::quote($value)."\n";
+    }
+    expect($oldFile)->toBe($mainBytes);
+
+    // An existing source-capture event reads the same head/blob again, with source quoting available.
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, $head, 'same-blob', <<<'ENV'
+APP_NAME=Laravel
+VITE_APP_NAME="${APP_NAME}"
+SINGLE='${APP_NAME}'
+ESCAPED="\${APP_NAME}"
+ENV);
+    $fresh = containerCreate($default->project, $node, 'refreshed');
+    $contents = app(DevelopmentCreateEnvironment::class)->content(Instance::query()->findOrFail($fresh->target_id));
+
+    expect(Dotenv::parse($contents))->toMatchArray(['VITE_APP_NAME' => 'Laravel', 'SINGLE' => '${APP_NAME}', 'ESCAPED' => '${APP_NAME}']);
+    expect($default->fresh()->getAttributes())->toBe($defaultBefore);
+    expect(app(InstanceEnvironmentStore::class)->values($default))->toBe($environmentBefore);
+    expect(app(DevelopmentCreateEnvironment::class)->content($default))->toBe($fileBefore);
+    expect(app(DevelopmentCreateEnvironment::class)->content($oldInstance))->toBe($oldFile);
+});
+
+it('uses the source key writer for a captured whole-value name without rescanning data', function (string $name): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('7', 40), 'fixture',
+        'APP_NAME='.InstanceEnvironmentRenderer::quote($name)."\n".'VITE_APP_NAME="${APP_NAME}"');
+
+    $operation = containerCreate($default->project, $node, 'data-name');
+    $contents = app(DevelopmentCreateEnvironment::class)->content(Instance::query()->findOrFail($operation->target_id));
+
+    expect($contents)->toContain('APP_NAME='.InstanceEnvironmentRenderer::quote($name)."\n",
+        'VITE_APP_NAME='.InstanceEnvironmentRenderer::quote($name)."\n");
+    expect(Dotenv::parse($contents)['VITE_APP_NAME'])->toBe($name);
+})->with(['Acme Shop', 'Acme # Shop']);

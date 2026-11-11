@@ -27,13 +27,17 @@ final readonly class DevelopmentCreateEnvironment
      */
     public function admit(Instance $instance, Project $project, ?DatabaseConnection $database = null, ?Instance $source = null): array
     {
-        $template = [];
+        $template = $capturedReferences = [];
         foreach ($project->environmentTemplate()->first()->entries ?? [] as $entry) {
             if (! $entry['removed']) {
                 $template[$entry['key']] = $entry['value'];
+                if (isset($entry['reference'])) {
+                    $capturedReferences[$entry['key']] = $entry['reference'];
+                }
             }
         }
-        $values = [...$template, ...$this->store->values($instance)];
+        $stored = $this->store->values($instance);
+        $values = [...$template, ...$stored];
         if ($database !== null) {
             // The Instance's own database copy, attached under DB, replaces the template's database keys.
             $projected = app(DatabaseConnectionEnvProjection::class)->project($database, 'DB', 'wireguard', $instance->node);
@@ -52,6 +56,7 @@ final readonly class DevelopmentCreateEnvironment
         if ($project->is_laravel === true && ($values['APP_KEY'] ?? '') === '') {
             $values['APP_KEY'] = LaravelApplicationKey::generate();
         }
+        $values = $this->renderer->resolveTemplateReferences($values, array_intersect_assoc(array_diff_key($template, $stored), $values), $capturedReferences);
         $this->store->seedForCreate($instance, $values);
         $keys = array_keys($values);
         sort($keys, SORT_STRING);

@@ -8,6 +8,7 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Models\Project;
 use App\Models\ProjectEnvironmentTemplate;
@@ -87,13 +88,13 @@ final readonly class ProjectEnvironmentTemplateRefresh
         return $directory === '' ? '.env.example' : $directory.'/.env.example';
     }
 
-    /** @param array<string, string>|null $example null keeps the entries and records only the checked head */
+    /** @param array<string, array{value: string, reference: string|null}>|null $example null keeps the entries and records only the checked head */
     private function record(Project $project, string $head, string $path, ?string $blob, ?array $example): void
     {
         DB::transaction(function () use ($project, $head, $path, $blob, $example): void {
             Project::query()->lockForUpdate()->findOrFail($project->id);
             $current = ProjectEnvironmentTemplate::query()->where('project_id', $project->id)->first();
-            if ($current?->checked_head === $head && $current->source_path === $path) {
+            if ($example === null && $current?->checked_head === $head && $current->source_path === $path) {
                 return;
             }
             if ($example === null) {
@@ -112,18 +113,20 @@ final readonly class ProjectEnvironmentTemplateRefresh
      * New keys take their example value. A key whose value still equals its old example follows the
      * new example; an edited value stays. A key that `.env.example` dropped stays, marked removed.
      *
-     * @param  list<array{key: string, value: string, example: string|null, removed: bool}>  $entries
-     * @param  array<string, string>  $example
-     * @return list<array{key: string, value: string, example: string|null, removed: bool}>
+     * @param  list<array{key: string, value: string, example: string|null, removed: bool, reference?: string}>  $entries
+     * @param  array<string, array{value: string, reference: string|null}>  $example
+     * @return list<array{key: string, value: string, example: string|null, removed: bool, reference?: string}>
      */
     private static function merge(array $entries, array $example): array
     {
         $current = array_column($entries, null, 'key');
         $merged = [];
-        foreach ($example as $key => $value) {
+        foreach ($example as $key => $parsed) {
+            $value = $parsed['value'];
             $entry = $current[$key] ?? null;
             $edited = $entry !== null && $entry['value'] !== $entry['example'];
-            $merged[] = ['key' => $key, 'value' => $edited ? $entry['value'] : $value, 'example' => $value, 'removed' => false];
+            $merged[] = ['key' => $key, 'value' => $edited ? $entry['value'] : $value, 'example' => $value, 'removed' => false,
+                ...(! $edited && $parsed['reference'] !== null ? ['reference' => $parsed['reference']] : [])];
         }
         foreach ($entries as $entry) {
             if (! array_key_exists($entry['key'], $example)) {
@@ -134,13 +137,16 @@ final readonly class ProjectEnvironmentTemplateRefresh
         return $merged;
     }
 
-    /** @return array<string, string> unexpanded values in file order */
+    /** @return array<string, array{value: string, reference: string|null}> unexpanded values and live whole-value reference provenance */
     private static function parse(string $contents): array
     {
         $values = [];
         foreach (new Parser()->parse($contents) as $entry) {
             $value = $entry->getValue();
-            $values[$entry->getName()] = $value->isDefined() ? $value->get()->getChars() : '';
+            $chars = $value->isDefined() ? $value->get()->getChars() : '';
+            $references = $value->isDefined() ? $value->get()->getVars() : [];
+            $reference = in_array(0, $references, true) ? InstanceEnvironmentRenderer::templateReference($chars) : null;
+            $values[$entry->getName()] = ['value' => $chars, 'reference' => $reference];
         }
 
         return $values;

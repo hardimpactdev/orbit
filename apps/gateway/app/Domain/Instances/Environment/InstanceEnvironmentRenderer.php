@@ -12,6 +12,9 @@ final readonly class InstanceEnvironmentRenderer
 
     private const string EnvironmentPlaceholder = '{{instance.environment}}';
 
+    /** Only these non-secret Instance values may be copied into a browser-visible key. */
+    private const array TemplateReferences = ['APP_URL', 'APP_NAME'];
+
     /** @param array<string, string> $values */
     public function render(
         InstanceEnvironmentContext $context,
@@ -61,6 +64,45 @@ final readonly class InstanceEnvironmentRenderer
         }
 
         return $rendered;
+    }
+
+    /**
+     * Only captured live whole-value references may resolve. Replacements are data, never rescanned.
+     *
+     * @param  array<string, string>  $values
+     * @param  array<string, string>  $template
+     * @param  array<string, string>  $capturedReferences
+     * @return array<string, string>
+     */
+    public function resolveTemplateReferences(
+        #[\SensitiveParameter] array $values,
+        #[\SensitiveParameter] array $template,
+        array $capturedReferences = [],
+    ): array {
+        $resolved = $values;
+        foreach ($capturedReferences as $key => $reference) {
+            if (! isset($template[$key], $values[$reference]) || self::templateReference($template[$key]) !== $reference) {
+                continue;
+            }
+            $replacement = $values[$reference];
+            // Only commit values the unchanged writer represents literally in every consumer.
+            if (self::quote($replacement) === '"'.$replacement.'"') {
+                $resolved[$key] = $replacement;
+            }
+        }
+
+        return $resolved;
+    }
+
+    public static function templateReference(string $value): ?string
+    {
+        foreach (self::TemplateReferences as $name) {
+            if ($value === '${'.$name.'}') {
+                return $name;
+            }
+        }
+
+        return null;
     }
 
     /** Quote one value as a double-quoted dotenv value. */
