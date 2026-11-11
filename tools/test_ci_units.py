@@ -112,6 +112,80 @@ class PlanningTest(unittest.TestCase):
         self.assertIn('selected default', text)
 
 
+class InventorySelectionTest(unittest.TestCase):
+    def setUp(self):
+        self.scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(self.scratch.cleanup)
+        self.root = Path(self.scratch.name)
+        self.git('init', '-q')
+        self.git('config', 'user.name', 'CI test')
+        self.git('config', 'user.email', 'ci@example.test')
+        self.inventory = self.root / 'tools/tests/ci-fixture-cases.json'
+        self.inventory.parent.mkdir(parents=True)
+        self.a, self.b, self.c = ['swamp/tests/' + name + '.ts' for name in ('host_clean', 'systemd', 'new')]
+        self.initial = {self.a: {'cases': ['old']}, self.b: {'cases': ['drain', 'restart']}}
+        self.base = self.commit(self.initial)
+
+    def git(self, *args):
+        return subprocess.check_output(['git', *args], cwd=self.root, text=True, stderr=subprocess.PIPE).strip()
+
+    def commit(self, entries):
+        self.inventory.write_text(json.dumps(entries))
+        self.git('add', '.')
+        self.git('commit', '-qm', 'inventory')
+        return self.git('rev-parse', 'HEAD')
+
+    def changed(self, base, head):
+        with patch.object(units, 'ROOT', self.root):
+            return units.inventory_changes(base, head)
+
+    def test_population_edit_selects_only_its_fixture_through_cli(self):
+        head = self.commit({**self.initial, self.a: {'cases': ['old', 'new']}})
+        fixtures = {file: fixture(file) for file in (self.a, self.b)}
+        with patch.object(units, 'ROOT', self.root), \
+             patch.object(units, 'configuration', return_value=(BUDGET, fixtures, [])), \
+             patch.object(units.gate, 'resolve_base', return_value=self.base), \
+             patch.object(units.selection, 'changed_inputs', return_value=(self.base, [
+                 'tools/tests/ci-fixture-cases.json',
+                 'apps/gateway/tests/Unit/Domain/TaskVms/TaskVmRefreshGateTest.php'])), \
+             patch.object(sys, 'argv', ['ci-units', 'plan', '--base', self.base, '--head', head]), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(units.main(), 0)
+        self.assertEqual(names(json.loads(output.getvalue())), [self.a])
+
+    def test_added_removed_and_deleted_inventory_entries_select_existing_fixtures(self):
+        head = self.commit({self.b: self.initial[self.b], self.c: {'cases': ['new']}})
+        changed = self.changed(self.base, head)
+        self.assertEqual(changed, [self.a, self.c])
+        fixtures = {file: fixture(file) for file in (self.a, self.b, self.c)}
+        result = units.plan(['tools/tests/ci-fixture-cases.json'], BUDGET, fixtures, [], changed)
+        self.assertEqual(set(names(result)), {self.a, self.c})
+        self.inventory.unlink()
+        self.git('add', '-u')
+        self.git('commit', '-qm', 'remove inventory')
+        deleted = self.git('rev-parse', 'HEAD')
+        self.assertEqual(self.changed(head, deleted), sorted([self.b, self.c]))
+        self.assertEqual(self.changed(deleted, head), sorted([self.b, self.c]))
+
+    def test_formatting_only_inventory_change_selects_no_fixture_bodies(self):
+        self.inventory.write_text(json.dumps(self.initial, indent=2))
+        self.git('add', '.')
+        self.git('commit', '-qm', 'format inventory')
+        changed = self.changed(self.base, self.git('rev-parse', 'HEAD'))
+        self.assertEqual(changed, [])
+        self.assertEqual(names(units.plan(['tools/tests/ci-fixture-cases.json'], BUDGET,
+                                         {self.a: fixture(self.a)}, [], changed)), [])
+
+    def test_merge_base_excludes_main_only_inventory_edits(self):
+        self.git('checkout', '-qb', 'topic')
+        topic = self.commit({**self.initial, self.a: {'cases': ['old', 'new']}})
+        self.git('checkout', '-qb', 'base', self.base)
+        main = self.commit({**self.initial, self.b: {'cases': ['drain', 'restart', 'main-only']}})
+        ancestor = self.git('merge-base', main, topic)
+        self.assertEqual(ancestor, self.base)
+        self.assertEqual(self.changed(ancestor, topic), [self.a])
+
+
 class TableTest(unittest.TestCase):
     def test_table_files_costs_and_unsliceable_rules(self):
         budget, fixtures, defaults = units.configuration()
