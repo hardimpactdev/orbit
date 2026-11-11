@@ -363,7 +363,7 @@ final readonly class InstanceContainer
             'to_ip' => $host, 'to_port' => (string) $port, 'proto' => 'tcp', 'comment' => self::firewallPrefix($instance).$name,
             ...($local ? [] : ['route' => 'yes', 'interface_out' => self::WireGuardInterface])];
 
-        return ['host' => $host, 'port' => $port, 'docker' => $local && $database->server?->process?->runtime === ProcessRuntime::Docker, 'rule' => $rule];
+        return ['host' => $host, 'port' => $port, 'docker' => $local && $database->server->process?->runtime === ProcessRuntime::Docker, 'rule' => $rule];
     }
 
     /**
