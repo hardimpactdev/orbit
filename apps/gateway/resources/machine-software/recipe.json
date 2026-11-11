@@ -1133,6 +1133,7 @@
             "openssl"
         ],
         "gateway": [
+            "bind9-dnsutils",
             "caddy",
             "logrotate",
             "php:8.5"

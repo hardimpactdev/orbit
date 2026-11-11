@@ -105,6 +105,7 @@ additionalFiles:
   - ansible/tasks/check-files.yml
   - ansible/tasks/check-runtime.yml
   - ansible/tasks/gateway-dns.yml
+  - ansible/tasks/private-dns-listener.yml
   - ansible/tasks/gateway-runtime.yml
   - ansible/tasks/gateway-retire.yml
   - ansible/tasks/firewall-port.yml

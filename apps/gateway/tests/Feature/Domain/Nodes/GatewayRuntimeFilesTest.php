@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Nodes\GatewayRuntimeFiles;
+use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
+use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
@@ -77,4 +80,80 @@ it('runs the scheduler and, with a queue, Horizon as units unless the Node has t
     }
 
     expect($names())->toBe(['orbit-agent-view.service', 'orbit-runtime-hibernator.timer']);
+});
+
+it('captures the shared local DNS listener and Gateway catalog before resolver routing', function (string $address, string $upstream, ?LifecycleStatus $vpnStatus): void {
+    config(['orbit.gateway_checkout' => '/home/orbit/orbit/apps/gateway', 'orbit.home' => '/home/orbit/.orbit']);
+    $node = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => $address,
+        'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64']));
+    $role = $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    if ($vpnStatus !== null) {
+        $node->roles()->create(['role' => RoleName::Vpn, 'status' => $vpnStatus]);
+    }
+    $operation = Operation::query()->create(['kind' => 'node.role_converge', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
+        'status' => 'running', 'input' => [], 'triggered_by' => 'test']);
+
+    $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+
+    $dns = app(NativeNodeRoleRuntimeInput::class)->capture($node, $role, ['gateway_dns' => ['address' => $upstream, 'domain' => 'orbit'], 'runtime' => null], $operation)['intent']['gateway_dns'];
+    $listener = $dns['listener'];
+    $catalog = json_decode($listener['catalog'], true, flags: JSON_THROW_ON_ERROR);
+
+    expect($dns['unit'])->toContain("ExecStart=/usr/bin/resolvectl dns orbit {$address}\n", 'ConditionPathExists=!/etc/wireguard/orbit.dns-link');
+    expect($catalog['records']['gateway.orbit'])->toBe($address);
+    if ($vpnStatus === null) {
+        expect($catalog['records'])->toBe(['gateway.orbit' => $address])
+            ->and($catalog['suffixes'])->toBe([])
+            ->and($catalog['overrides'])->toBe([]);
+    } else {
+        expect($catalog['records']['reverb.orbit'])->toBe($address);
+    }
+    expect($listener['catalog_sha256'])->toBe(hash('sha256', $listener['catalog']))
+        ->and($listener['address'])->toBe($address)
+        ->and($listener['socket'])->toContain("ListenDatagram={$address}:53\n", "ListenStream={$address}:53\n")
+        ->and($listener['service'])->toContain('Sockets=orbit-private-dns.socket', '"--catalog=/var/lib/orbit/private-dns/catalog.json"',
+            '"--upstream='.($vpnStatus !== null || $address === $upstream ? '127.0.0.55' : $upstream).':53"')
+        ->and(array_column($listener['files'], 'path'))->toContain($listener['release'].'/serve.php');
+
+    if ($vpnStatus !== null) {
+        $footprint = app(NodePrivateDnsListenerFootprint::class)->input($node);
+        expect($listener['service'])->toBe($footprint['service'])
+            ->and($listener['socket'])->toBe($footprint['socket']);
+    }
+})->with([
+    'production Gateway peer forwards to the fleet DNS' => ['10.44.0.2', '10.44.0.1', null],
+    'stock Gateway before its first VPN publication' => ['10.45.0.1', '10.45.0.1', LifecycleStatus::Provisioning],
+    'active colocated VPN keeps the same listener owner' => ['10.45.0.1', '10.45.0.1', LifecycleStatus::Active],
+]);
+
+it('withdraws the Gateway listener only when no colocated VPN needs it', function (bool $vpn): void {
+    config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
+    $node = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture',
+        'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64']));
+    $role = $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Removing]);
+    $node->roles()->create(['role' => RoleName::Swamp, 'status' => LifecycleStatus::Active]);
+    if ($vpn) {
+        $node->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+    }
+    $capture = app(NativeNodeRoleRemovalInput::class);
+    $before = $capture->publications($node, RoleName::Gateway);
+    $plan = $capture->capture($node, $role, $before);
+
+    $units = array_column(array_column($plan['stop_units'], 'input'), 'unit');
+    expect($units)->toBe($vpn ? ['orbit-gateway-dns.service'] : ['orbit-gateway-dns.service', 'orbit-private-dns.socket', 'orbit-private-dns.service']);
+    expect(array_column(array_column($plan['remove_units'], 'input'), 'unit'))->toBe($units);
+})->with(['Gateway-only' => [false], 'Gateway and VPN' => [true]]);
+
+it('captures Gateway DNS without a configured DNS server or a separate VPN Node', function (): void {
+    config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
+    $node = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.45.0.1',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture',
+        'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64']));
+    $role = $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $node->roles()->create(['role' => RoleName::Swamp, 'status' => LifecycleStatus::Active]);
+
+    $snapshot = app(NodeRoleDirectInput::class)->capture($node, $role, false);
+
+    expect($snapshot['gateway_dns'])->toBe(['operation' => 'converge', 'address' => '10.45.0.1', 'domain' => 'orbit']);
 });

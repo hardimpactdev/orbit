@@ -26,7 +26,7 @@ final class NodeBootstrapPackageCatalog
     public function forRole(Node $node, RoleName $role): array
     {
         return match ($role) {
-            RoleName::Gateway => ['ca-certificates', 'caddy', 'logrotate'],
+            RoleName::Gateway => ['bind9-dnsutils', 'ca-certificates', 'caddy', 'logrotate'],
             // dig checks the listener after each publication of private DNS.
             RoleName::Vpn => ['bind9-dnsutils', 'dnsmasq', 'openssl'],
             RoleName::Router => ['caddy', 'openssl'],

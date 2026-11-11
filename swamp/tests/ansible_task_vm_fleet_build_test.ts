@@ -5,6 +5,12 @@
  * root and systemd: what the build does before it is the subject here.
  */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
+import {
+  cleanupStockRoles,
+  existingGatewayDns,
+  prepareStockRoles,
+  stockBaseTasks,
+} from "./_support/task_vm_stock_roles.ts";
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
@@ -98,7 +104,12 @@ const intent = {
  * Incus with its pools and network. `joined` records the operator stamp, which a complete fleet has. Returns the logged calls (incus,
  * swamp), the preseed, whether the operator stamp is still there, whether the play passed and its output.
  */
-function run(present: string[], initialised: boolean, joined = false) {
+function run(
+  present: string[],
+  initialised: boolean,
+  joined = false,
+  stockRoles = false,
+) {
   const folder = Deno.makeTempDirSync();
   const bin = `${folder}/bin`;
   Deno.mkdirSync(bin);
@@ -117,6 +128,11 @@ function run(present: string[], initialised: boolean, joined = false) {
     `${bin}/incus`,
     `#!/bin/sh
 printf 'incus %s\\n' "$*" | tr '\\n' ' ' >> "${folder}/log"; echo >> "${folder}/log"
+if [ -n "$STOCK_ROLES" ] && [ "$1" = --project ]; then
+  exec "${Deno.execPath()}" run -A "${
+      new URL("fixtures/task-vm-base-incus.ts", import.meta.url).pathname
+    }" "$@"
+fi
 case "$*" in
   "storage list --format csv") [ -n "$INITIALISED" ] && printf 'default,dir\\ntopology-seed,btrfs\\n' ;;
   "network list --format csv") [ -n "$INITIALISED" ] && printf 'oe-nested,bridge\\n' ;;
@@ -125,12 +141,18 @@ case "$*" in
       expanded_devices: {eth0: {"ipv4.address": $a[0][.]}}}]' < "${folder}/containers" ;;
   "list --format csv --columns ns") sed 's/$/,RUNNING/' "${folder}/containers" ;;
   "init "*) echo "$3" >> "${folder}/containers" ;;
+  *" -- systemctl restart wg-quick@orbit") if [ -n "$STOCK_ROLES" ]; then echo 'Fixture stops before real nested WireGuard/systemd activation' >&2; exit 42; fi ;;
+  *" -- grep -m1 ^DB_DATABASE="*) echo 'DB_DATABASE=/home/orbit/.orbit/gateway.sqlite' ;;
+  *"update nodes set wireguard_public_key ="*) echo '4' ;;
   *" -- cat /etc/ssh/ssh_host_ed25519_key.pub") echo "ssh-ed25519 AAAAgateway root@nested-gateway" ;;
   *" -- cat /home/orbit/.orbit/ssh/id_ed25519.pub") echo "ssh-ed25519 AAAAgatewaykey orbit@nested-gateway" ;;
   *" -- ssh-keygen -lf "*) echo "256 SHA256:fp-$2 root@$2 (ED25519)" ;;
   "file push "*) cat >> "${folder}/pushed-input" ;;
-  *" php artisan orbit:"*) n=$(($(cat "${folder}/operations" 2>/dev/null || echo 0) + 1)); echo "$n" > "${folder}/operations"; echo "Operation #$n queued." ;;
-  *" select status from operations "*) echo succeeded ;;
+  *" php artisan orbit:"*) n=$(($(cat "${folder}/operations" 2>/dev/null || echo 0) + 1)); echo "$n" > "${folder}/operations"; if [ -n "$STOCK_ROLES" ]; then "${Deno.execPath()}" run -A "${
+      new URL("_support/task_vm_stock_roles.ts", import.meta.url).pathname
+    }" "${folder}" "$n"; fi; echo "Operation #$n queued." ;;
+  *" select status from operations "*) if [ -n "$STOCK_ROLES" ]; then n=$(printf '%s' "$*" | sed 's/.*id = //'); cat "${folder}/role-$n.status"; else echo succeeded; fi ;;
+  *"select coalesce("*) echo "at Wait for Reverb code node_role.apply_failed" ;;
   *"/api/v1/doctor "*) echo '{"data":{"healthy":true}}' ;;
 esac
 exit 0
@@ -143,10 +165,14 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
 `,
   );
   Deno.writeTextFileSync(`${bin}/timeout`, `#!/bin/sh\nshift\nexec "$@"\n`);
-  Deno.writeTextFileSync(`${bin}/wg`, `#!/bin/sh\nexit 1\n`);
+  Deno.writeTextFileSync(
+    `${bin}/wg`,
+    stockRoles ? `#!/bin/sh\nexec /usr/bin/wg "$@"\n` : `#!/bin/sh\nexit 1\n`,
+  );
   for (const name of ["incus", "swamp", "timeout", "wg"]) {
     Deno.chmodSync(`${bin}/${name}`, 0o755);
   }
+  if (stockRoles) prepareStockRoles(folder);
   const play = [{
     hosts: "localhost",
     gather_facts: false,
@@ -171,10 +197,44 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
       checkout_current: ["code", "agent", "migrations"],
     },
     tasks: [
+      ...(stockRoles
+        ? [{
+          name: "Create the unpromoted task VM base from stock",
+          block: stockBaseTasks(),
+          vars: {
+            host: {
+              project: "orbit-tasks",
+              pool: "orbit-tasks",
+              image: "ubuntu-26.04-vm",
+              network: "orbittask0",
+              current: null,
+            },
+            base: {
+              vm: "host-base",
+              seed: "host-base-seed",
+              seed_size: "45GiB",
+              cpus: 6,
+              memory: "12GiB",
+              disk: "60GiB",
+              launch_config: "{}",
+            },
+            incus: ["incus", "--project", "orbit-tasks"],
+          },
+        }]
+        : []),
       { "ansible.builtin.import_tasks": `${tasks}task-vm-incus.yml` },
       { "ansible.builtin.import_tasks": `${tasks}task-vm-fleet.yml` },
     ],
   }];
+  if (stockRoles) {
+    // Run sandboxed copies only where the fixture needs local files; all other fleet tasks stay the production source.
+    for (const task of play[0].tasks) {
+      if (task["ansible.builtin.import_tasks"]?.endsWith("task-vm-fleet.yml")) {
+        task["ansible.builtin.import_tasks"] =
+          `${folder}/tasks/task-vm-fleet.yml`;
+      }
+    }
+  }
   Deno.writeTextFileSync(`${folder}/play.yml`, JSON.stringify(play));
   const done = new Deno.Command("ansible-playbook", {
     args: [
@@ -193,9 +253,13 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
     env: {
       PATH: `${bin}:${Deno.env.get("PATH")}`,
       INITIALISED: initialised ? "1" : "",
+      STOCK_ROLES: stockRoles ? "1" : "",
+      STOCK_FIXTURE: folder,
+      BASE_FIXTURE: `${folder}/base-state.json`,
       ANSIBLE_HOME: `${folder}/ansible`,
       ANSIBLE_LOCAL_TEMP: `${folder}/tmp`,
       ANSIBLE_NOCOLOR: "1",
+      ANSIBLE_FORKS: "4",
     },
   }).outputSync();
   const read = (name: string) => {
@@ -211,8 +275,19 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
   const preseed = read("preseed");
   const stamped = read("stamps/operator") !== "";
   const pushedInput = read("pushed-input");
+  const operatorKey = stockRoles ? read("wireguard/wg-nested.key") : "";
+  const baseState = stockRoles ? JSON.parse(read("base-state.json")) : null;
+  const roleOutputs = Object.fromEntries(
+    [1, 2, 3, 4, 5].map((id) => [id, read(`role-${id}.output`)]),
+  );
+  const roleStatuses = [1, 2, 3, 4, 5].map((id) => read(`role-${id}.status`));
+  if (stockRoles) cleanupStockRoles(folder);
   Deno.removeSync(folder, { recursive: true });
   return {
+    baseState,
+    operatorKey,
+    roleOutputs,
+    roleStatuses,
     log,
     preseed,
     stamped,
@@ -386,5 +461,96 @@ Deno.test({
       "incus list --format json",
     ]);
     assertStringIncludes(output, "changed=0");
+  },
+});
+
+/**
+ * The existing Incus fixture executes selected nested role contracts and generates real WireGuard keys in its own folder.
+ * It stops at "Restart the nested hub": applying wg-quick requires an actual nested container, systemd and the kernel. Snapshot,
+ * candidate task start and promotion remain unexecuted. app-dev/app-prod cover software selection, not their installed runtimes.
+ * The websocket health endpoint is a DNS dependency probe, not the external Reverb application.
+ */
+Deno.test({
+  name:
+    "a from-stock refresh with no Gateway release metadata reaches all nested roles after private DNS lets the websocket dependency listen",
+  ignore: !hasAnsible,
+  fn() {
+    const result = run([], false, false, true);
+    assertEquals(result.baseState.vm.generation, "stock");
+    assertEquals(result.baseState.seed, true);
+    assertEquals(result.baseState.calls[0], [
+      "--project",
+      "orbit-tasks",
+      "delete",
+      "--force",
+      "host-base",
+    ]);
+    assertStringIncludes(
+      JSON.stringify(intent.fleet.bootstrap),
+      '"wireguard_ip":"10.45.0.1"',
+    );
+    assertEquals("APP_VERSION" in intent.fleet.bootstrap, false);
+    assertEquals("REVISION" in intent.fleet.bootstrap, false);
+    assertEquals(
+      result.roleStatuses,
+      ["succeeded", "succeeded", "succeeded", "succeeded", "succeeded"],
+      Object.entries(result.roleOutputs).map(([id, output]) =>
+        `Nested Operation ${id}:\n${output}`
+      ).join("\n"),
+    );
+    assertStringIncludes(
+      result.roleOutputs[1],
+      "Require the recorded CLI pin only for a CLI caller",
+    );
+    assertStringIncludes(result.roleOutputs[3], "Wait for Reverb");
+    assertEquals(result.passed, false, result.output);
+    assertStringIncludes(result.output, "TASK [Restart the nested hub]");
+    assertStringIncludes(
+      result.output,
+      "Fixture stops before real nested WireGuard/systemd activation",
+    );
+    assertEquals(result.operatorKey.trim().length, 44);
+    assertStringIncludes(
+      result.log.join("\n"),
+      " -- systemctl restart wg-quick@orbit",
+    );
+    assertEquals(find(result.log, "snapshot create"), -1);
+    assertEquals(
+      find(result.log, "php artisan orbit:role-add gateway websocket") <
+        find(result.log, "php artisan orbit:node-add app-dev"),
+      true,
+    );
+    assertEquals(
+      find(result.log, "php artisan orbit:node-add app-dev") <
+        find(result.log, "php artisan orbit:node-add app-prod"),
+      true,
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "an already-running local listener is reused with zero changes and peer-managed Gateway DNS is preserved",
+  ignore: !hasAnsible,
+  async fn() {
+    const result = await existingGatewayDns();
+    assertEquals(result.firstStatus, "succeeded", result.first);
+    assertEquals(result.secondStatus, "succeeded", result.second);
+    assertStringIncludes(result.second, "changed=0");
+    assertEquals(result.samePid, true);
+    assertEquals(
+      result.calls.filter((call) =>
+        call.name === "orbit-private-dns.service" && call.state === "restarted"
+      ).length,
+      1,
+    );
+    assertEquals(
+      result.calls.some((call) =>
+        call.name === "orbit-gateway-dns.service" && call.state
+      ),
+      false,
+    );
+    assertStringIncludes(result.second, "TASK [Read Gateway resolver policy]");
+    assertStringIncludes(result.second, "skipping: [localhost]");
   },
 });
