@@ -17,6 +17,7 @@ use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
+use App\Models\InstanceNodeServiceTarget;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Project;
@@ -348,6 +349,33 @@ final readonly class InstanceContainer
         ksort($endpoints);
 
         return array_values($endpoints);
+    }
+
+    /**
+     * Subtractive intent only: no listener validation and no grant provisioning. Other attachments retain a shared tuple;
+     * the Node phase retains every other persisted bridge endpoint and the shared writer protects newer admissions.
+     *
+     * @return array<string, mixed>
+     */
+    public function nodeServiceWithdrawal(Instance $instance, InstanceRuntime $runtime, InstanceNodeServiceTarget $target): array
+    {
+        $host = Ipv4Subnet::from(ValidatedData::string($instance->node->instance_bridge))->usableRange()[0];
+        $matches = static fn (array $access): bool => $access['host'] === $host && $access['port'] === $target->port;
+        $services = InstanceNodeServiceTarget::query()->where('node_id', $runtime->node_id)->where('port', $target->port)
+            ->whereKeyNot($target->id)->whereHas('instance.runtime');
+        $instanceShared = (clone $services)->where('instance_id', $instance->id)->exists()
+            || array_any($this->databaseAccesses($instance, $runtime, null), $matches);
+        $nodeShared = $instanceShared || $services->exists() || array_any($this->nodeEndpoints($instance->node), $matches);
+
+        return ['instance_id' => $instance->id, 'name' => $runtime->container_name, 'project' => $runtime->incus_project,
+            'acl' => $runtime->container_name, 'network' => InstanceHostIntent::Network,
+            'bridge_cidr' => $instance->node->instance_bridge, 'bridge_admitted_at' => (int) now()->format('Uu'),
+            'withdrawal' => ['host' => $host, 'port' => $target->port, 'instance_shared' => $instanceShared, 'node_shared' => $nodeShared,
+                'nic_rule' => ['action' => 'allow', 'destination' => $host.'/32', 'protocol' => 'tcp',
+                    'destination_port' => (string) $target->port, 'state' => 'enabled'],
+                'firewall' => ['rule' => 'allow', 'interface_in' => InstanceHostIntent::Network,
+                    'from_ip' => $runtime->bridge_address, 'to_ip' => $host, 'to_port' => (string) $target->port,
+                    'proto' => 'tcp', 'comment' => self::firewallPrefix($instance).'node-service-'.$target->port]]];
     }
 
     /**
