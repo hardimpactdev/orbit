@@ -1,0 +1,43 @@
+---
+title: "instance:mail:update"
+description: "Apply the development Mailpit default to one container without changing its other environment lines."
+covers:
+  - apps/gateway/app/Domain/Instances/Environment/DevelopmentMailEnvironment.php
+  - apps/gateway/app/Domain/Instances/Environment/DevelopmentMailUpdate.php
+  - swamp/ansible/tasks/instance-mail.yml
+  - swamp/ansible/instance_mail.php
+---
+
+Apply Orbit's mail default to an existing development container Instance. Contributors configure nothing. New Instances and development clones receive it automatically. During the rollout, run this command once after migrating an existing Instance; migrate and development deploy do not yet apply mail automatically. This command remains the repair tool when those lifecycle paths apply the same step.
+
+## Usage
+
+```sh
+orbit instance:mail:update 42
+orbit instance:mail:update 42 --json
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `instance` | Numeric Instance ID. |
+| `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
+
+The current `.env` alone decides whether the mail settings are stock. [Development mail](/reference/environment-variables#development-mail) defines the rule. A Project's own mail succeeds unchanged with “own mail settings kept”. Stock mail needs no confirmation or override flag.
+
+Orbit replaces only values on the seven mail lines, at their existing positions, and appends missing keys. Every other byte stays unchanged, including comments, order, references, blank lines and line endings. The write replaces the file atomically and retains its owner and mode. Before a changed write, Orbit replaces `/var/lib/orbit/instance-mail/environment.backup` inside this container with the previous content, owned by the same user and mode `0600`. This one backup stays outside the workspace and cannot block a Git preflight.
+
+Only a changed file clears Laravel's config cache and restarts this Instance's running PHP and worker Processes. Orbit leaves stopped Processes stopped. An unchanged repeat writes nothing and restarts nothing. The result contains `mail_keys_taken_over` (names only), `changed_key_count`, and a skip reason for own settings or an already applied default. Values and file content never appear.
+
+## How it works
+
+<div className="flow-at" data-chart="instance/mail-update"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.container_required` | The Instance has no container runtime. |
+| `instance.host_unavailable` | Placement is not development or this Node has no main Mailpit endpoint. |
+| `operation.target_busy`, `instance.lifecycle_busy` | Lifecycle or Process work is unfinished. |
+| `instance.runtime_unavailable` | The container is stopped; Orbit does not start it. |
+| `env.configuration_invalid` | The current mail syntax cannot be read safely; the file stays intact. |

@@ -1,0 +1,23 @@
+command: instance:mail:update
+chart: instance/mail-update
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+uncovered:
+  main: "The proof fleet lacks Instance containers. Gateway and Ansible fixtures cover stock takeover, byte preservation, backup, changed-only restarts and completion. Owner live proof sends one tagged fixture mail and reads it back from Mailpit after release and converge."
+  own: "An own host, transport, host reference or nonempty MAIL_URL succeeds unchanged with own mail settings kept."
+  repeat: "An unchanged second run writes nothing and restarts nothing."
+  refusals: "Gateway fixtures cover checkout, production, no Mailpit and busy lifecycle work; Ansible fixtures cover a stopped container without starting it."
+  recovery: "A render failure preserves the current file; a changed write keeps one recoverable prior file outside the workspace."
+cases:
+  - id: invalid-id
+    batch: fresh-fleet
+    covers: []
+    summary: Reject a nonnumeric Instance locally.
+    act:
+      - cli:
+          run: [instance:mail:update, invalid]
+          forms: [json, human]
+          expect: {exit: 1, code: instance.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
