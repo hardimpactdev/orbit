@@ -204,7 +204,9 @@ describe('host-checkout Vite wake', function (): void {
 
         $page = viteWakePoll($instance, '/work?tab=one&orbit-wake-retry=1');
         $page->assertUnauthorized()->assertHeader('X-Orbit-Runtime-Activation-State', 'pending');
-        expect($page->getContent())->toContain('/work?tab=one')->not->toContain('/work?tab=one&orbit-wake-retry=1');
+        expect($page->getContent())->toContain('/work?tab=one');
+        preg_match('/const uri = (.+);/', $page->getContent(), $match);
+        expect(json_decode($match[1], true, flags: JSON_THROW_ON_ERROR))->toBe('/work?tab=one');
         viteWakePoll($instance, '/work?tab=one')->assertUnauthorized();
 
         expect($state->awake)->toBeFalse();
