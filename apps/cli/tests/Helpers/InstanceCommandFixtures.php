@@ -157,7 +157,7 @@ function instance_operation_json(string $kind, ?array $result = null, array $ove
     $payload = instance_operation_payload($kind, $result, $overrides);
     $payload['input'] = new stdClass;
 
-    return json_encode([...$payload, 'request_id' => $requestId ?? instance_request_id()], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+    return json_encode([...$payload, 'overdue_since' => null, 'request_id' => $requestId ?? instance_request_id()], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }
 
 /** @return array<string, mixed> */

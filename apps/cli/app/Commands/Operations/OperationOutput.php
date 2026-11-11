@@ -31,6 +31,7 @@ final class OperationOutput
             'Caller Node' => $operation->callerNodeName ?? ($operation->callerNodeId === null ? null : "Removed Node ($operation->callerNodeId)"),
             'Created' => $operation->createdAt,
             'Started' => $operation->startedAt,
+            ...($operation->overdueSince === null ? [] : ['Overdue since' => $operation->overdueSince]),
             'Finished' => $operation->finishedAt,
         ];
     }

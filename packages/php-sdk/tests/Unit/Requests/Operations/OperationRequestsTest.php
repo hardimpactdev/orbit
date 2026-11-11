@@ -245,3 +245,14 @@ it('preserves compact native step summaries in Operation JSON', function (): voi
     expect($operation->steps)->toBe($steps)->and($operation->toArray()['steps'])->toBe($steps);
     expect(OperationResponse::fromGatewayData(operation_payload(['steps' => []]), 'fixture-request')->toArray()['steps'])->toBe([]);
 });
+
+it('preserves the overdue audit alongside the existing timeout and cancel result', function (): void {
+    $response = OperationResponse::fromGatewayData(operation_payload(['status' => 'failed', 'error_code' => 'operation.timed_out',
+        'cancel_requested' => true, 'overdue_since' => '2026-11-11T10:15:00Z']), 'request');
+
+    expect($response->overdueSince)->toBe('2026-11-11T10:15:00Z')
+        ->and($response->toArray()['overdue_since'])->toBe('2026-11-11T10:15:00Z')
+        ->and($response->errorCode)->toBe('operation.timed_out')
+        ->and($response->cancelRequested)->toBeTrue()
+        ->and($response->terminal())->toBeTrue();
+});
