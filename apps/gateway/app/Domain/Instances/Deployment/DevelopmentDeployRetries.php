@@ -17,7 +17,10 @@ final readonly class DevelopmentDeployRetries
     public function read(Instance $instance, array $commits): array
     {
         $entries = DB::table('development_deploy_retries')->where('instance_id', $instance->id)
-            ->whereIn('commit', $commits)->orderBy('commit')->get()->map(static fn (object $row): array => ['commit' => $row->commit, ...json_decode($row->state, true, flags: JSON_THROW_ON_ERROR)])->all();
+            ->whereIn('commit', $commits)->orderBy('commit')->get()->map(static fn (object $row): array => [
+                'commit' => ValidatedData::string($row->commit),
+                ...ValidatedData::object(json_decode(ValidatedData::string($row->state), true, flags: JSON_THROW_ON_ERROR)),
+            ])->all();
 
         return [...$this->cursor($instance), 'commits' => $entries];
     }
@@ -25,7 +28,7 @@ final readonly class DevelopmentDeployRetries
     /** @return array<string, mixed> */
     public function cursor(Instance $instance): array
     {
-        return $instance->auto_deploy_state['development_retry_cursor'] ?? ['manual_after' => 0, 'observed_through' => 0, 'unsettled' => []];
+        return ValidatedData::object($instance->auto_deploy_state['development_retry_cursor'] ?? ['manual_after' => 0, 'observed_through' => 0, 'unsettled' => []]);
     }
 
     /** @param array<string, mixed> $ledger */
@@ -34,8 +37,10 @@ final readonly class DevelopmentDeployRetries
         if ($ledger['manual_after'] > $this->cursor($instance)['manual_after']) {
             DB::table('development_deploy_retries')->where('instance_id', $instance->id)->delete();
         }
-        foreach ($ledger['commits'] as $entry) {
-            $this->store($instance, $entry);
+        $commits = $ledger['commits'];
+        assert(is_array($commits));
+        foreach ($commits as $entry) {
+            $this->store($instance, ValidatedData::object($entry));
         }
         $instance->auto_deploy_state = [...($instance->auto_deploy_state ?? []),
             'development_retry_cursor' => array_diff_key($ledger, ['commits' => true])];

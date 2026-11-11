@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Instances;
 
+use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 
 final class ReadDevelopmentDeployRetriesRequest extends FormRequest
@@ -20,6 +21,9 @@ final class ReadDevelopmentDeployRetriesRequest extends FormRequest
     /** @return list<string> */
     public function commits(): array
     {
-        return $this->validated('commits');
+        $commits = $this->validated('commits');
+        assert(is_array($commits));
+
+        return ValidatedData::stringList(array_values($commits));
     }
 }
