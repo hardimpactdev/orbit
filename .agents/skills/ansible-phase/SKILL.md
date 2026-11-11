@@ -66,6 +66,7 @@ A decision that is more than a `when` becomes a Jinja template, read with `looku
 - Ansible treats a string with `{{` as a Jinja template, for example in Grafana dashboards. Tag such strings `!unsafe`, and only those: `!unsafe "on"` loads as `True`.
 - Round-trip generated vars through Ansible's loader. Tag only Jinja-bearing strings (`{{`, `{%`, `{#`): `!unsafe "!"` fails YAML construction, and ordinary scalar-looking strings need their quoted string types preserved.
 - With `-i localhost,`, localhost is an inventory host, not the implicit one. A task delegated to it from a Node's play inherits no `connection: local` and SSHes to the Swamp Node, which fails host key checking and ends the phase unreachable, past any `rescue`. Give each such task `vars: {ansible_connection: local, ansible_python_interpreter: "{{ ansible_playbook_python }}"}`, and test it from a play on another host.
+- A behavior runs inside the compiled Swamp binary, where `Deno.execPath()` names Swamp and runs no script; under `deno test` it names a real Deno, so a test hides the fault. A phase that runs a TypeScript helper on the Swamp Node names the pinned launcher, `/usr/local/bin/deno`, and proves the helper once, outside any `rescue`, before a task may read a helper failure as a result.
 - A `when` condition must be a real boolean. Write `x is not none`, not `x`.
 - `include_tasks` in a loop runs the hosts one at a time. To give each host its own item, set the item as a play variable and use `import_tasks`.
 - A `completed` dependency excludes a skipped job on the pinned runtime. Cleanup that waits for optional or downstream jobs uses `or: [completed, skipped]`, so an earlier failure cannot skip private-file removal.
@@ -74,6 +75,8 @@ A decision that is more than a `when` becomes a Jinja template, read with `looku
 - `regex_search` with a `'\1'` group argument fails. Use `regex_findall`.
 
 - A successful `Type=oneshot` service without `RemainAfterExit` is inactive. `state: started` reruns it every time. Compare the live state it owns and apply only on drift, keeping its unit conditions.
+
+- Give each phase fixture its own `ORBIT_RUN_ID`. Concurrent worktrees share the Node's `/tmp`, so a repeated fixture id can overwrite another run's bundles and credential files.
 - Open Docker-to-host Analytics storage ports before running `createdb` or migrations. Keep publication ports after readiness.
 - Keep the readiness wait after the step that starts a service. Analytics starts in a native child after the Node phase; a readiness phase after that child waits before publication.
 
@@ -86,6 +89,7 @@ A decision that is more than a `when` becomes a Jinja template, read with `looku
 - `community.general.ufw` runs `ufw status verbose`, a read of the user rules and `ufw --version` around every call, and detects `changed` from the rules, so an insert of an existing rule reports no change. `insert` takes the absolute row number of `ufw status numbered` (`insert_relative_to: zero`). A delete names the tuple and carries no comment.
 - The pinned `ansible-core` rejects a variable named `none`. Keep test fixtures in plain names.
 - Local Ansible fixtures use the built-in stdout callback and write registered results to temporary fixture files. Test core-only fixtures with an empty `ANSIBLE_COLLECTIONS_PATH`: a developer's installed callback must not hide a collection dependency from the gate.
+- Give each local fixture a unique `ORBIT_RUN_ID`, stable across its phases. Private run folders do not isolate Node-side `/tmp` filenames when several fixture Nodes run on localhost.
 - Name a host differently from every group. Ansible warns when both share a name (`node` as host and as group), and a play then reads ambiguous.
 - `wg syncconf` leaves a random `ListenPort` on a peer that sets none. To report a change only when the peers differ, hash `wg showconf` without its `ListenPort` line before and after.
 - The Gateway holds a placeholder for the host key of a Node it is enrolling. Pin the key the run observed for that Node, never the placeholder in the intent.
@@ -129,3 +133,15 @@ A restored proof Gateway keeps the base image's installed collections and genera
 `command` expands `~user` even with `argv`. Set `expand_argument_vars: false` for literal arguments such as DNS routing domain `~orbit`; otherwise it becomes the account's home path and drifts on every run. Test with a domain that names an existing account and read back the arguments before checking a zero-change repeat.
 
 A proof candidate must install its own frozen observer pin after every base restore. A copied delivery manifest does not update running binaries. The disposable proof VM is the trust boundary; candidate code, including its installer, runs inside it. Require preparation in every batch and direct case, even when an older workflow skips setup. Share the normal checksum-verified installer and require the expected agent version and a new stored host fact before cases. Give preparation a separate bounded budget from batch setup.
+
+`incus copy` applies device overrides to the snapshot's local devices. A profile-only root needs a complete disk definition: pass type, path, pool and size as separate `--device root,key=value` arguments. A comma after the value stays in that value.
+
+Instance container network ACLs live in Incus project `default`, even when the container lives in `orbit-instances`. Destroy removes the container first, then its ACL in the default project. Test both the project and a second removal with zero changes.
+
+A Process move disables the source units before copying. Render container units from a copy of their records and save the new paths only after cutover. A failed move removes the new container before restoring source units, so two runtimes never run the same writer.
+
+A retirement preflight is an early warning, not a deletion barrier. Retain the whole old checkout with a same-filesystem rename so tag-only commits, expired stash reflogs, nested repositories and worktrees added after the final listing keep their Git metadata. Never infer that recursive deletion is safe from a path match or a worktree listing.
+
+A migration overlay archive omits unchanged tracked symlinks: they arrive in the branch bundle. Use the checkout scan only for early refusal. Derive and apply rewrites inside the container from the exact copied tree after the bundle and overlay, mapping old-checkout targets without reading the host. This also keeps non-UTF-8 names out of Incus JSON arguments. Check dependency package links without entering installed package trees; never change source links.
+
+When resolving symlinks, retain directory requirements from raw targets ending in `/` or `/.` at every hop. Path normalization removes those suffixes and can turn an `ENOTDIR` target into a valid file link.

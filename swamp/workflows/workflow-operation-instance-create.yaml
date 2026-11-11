@@ -1,6 +1,6 @@
 id: c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a
 name: operation-instance-create
-description: Development Instance create from 209; the checkout with its .env and the Project setup steps are two Ansible phases, the database, Process and Route work are children. A container default runs its container, workspace, Process and seed phases instead; a clone of it its clone, workspace, agent, Process, T3 and registration phases.
+description: 'Development Instance create: checkout/default Ansible phases, or five direct clone phases in an isolated job. Route, certificate and DNS publish in a separate job; native progress records each phase.'
 vaults: [orbit-control-inputs]
 queueTimeout: 10
 labels: {role: swamp}
@@ -13,22 +13,23 @@ inputs:
     intent: {type: object}
     # Names only: git_credential and environment, member_<Process id> for each development Process environment,
     # server_database_create and server_database_check for an owned server database, step_<index> for each development
-    # deploy step of a container default, and model_environment for a clone's placeholder model key.
+    # deploy step of a container default, model_environment for a clone's placeholder model key, and process_environments for
+    # a default's Process environment files or a clone's private workspace JSON (environment and processes).
     execution_secrets:
       type: object
       additionalProperties:
         type: object
         properties:
           vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^(?:instance-(?:git-(?:operation|credential)-|create-environment-(?:input|testing)-|create-model-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*|database-create-(?:intent|owner)-[1-9][0-9]*|development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01]))$'}
+          key: {type: string, pattern: '^(?:instance-(?:git-(?:operation|credential)-|create-environment-(?:input|testing)-|create-model-|create-processes-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*|database-create-(?:intent|owner)-[1-9][0-9]*|development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01]))$'}
         required: [vault, key]
         additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-  - name: create
+  # One input predecessor; clone and publication have separate depth queues.
+  - name: input
     steps:
-      # Input: the admitted intent and the shipped playbooks, as the run folder that both Ansible phases read.
       - name: input
         labels: {role: swamp}
         writes: true
@@ -41,14 +42,14 @@ jobs:
           inputs:
             intent: '${{ inputs.intent }}'
             path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
-      # Checkout: refuse a branch another worktree holds, make the checkout (a seed worktree or a fresh repository), fetch with the
-      # read token as a 0600 file that is removed after the fetch, check out the admitted branch (or keep a retained one) and print
-      # its commit, then write .env (0640, group orbit-env) and, for an owned test database, .env.testing.
+  - name: legacy
+    dependsOn: [{job: input, condition: {type: succeeded}}]
+    steps:
       - name: checkout
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: input, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-        guard: '${{ inputs.intent.already_active || inputs.intent.container != null }}'
+        dependsOn: []
+        guard: '${{ (inputs.intent.already_active || inputs.intent.container != null) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
           behaviorType: command/shell
@@ -56,7 +57,7 @@ jobs:
           methodName: execute
           inputs:
             run: timeout 400 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags checkout "$ORBIT_ANSIBLE/operation-instance-create.yml"
-            env: &ansible
+            env:
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_RUN_ID: '${{ run.id }}'
               ORBIT_NODE_ID: '${{ string(inputs.node_id) }}'
@@ -68,16 +69,11 @@ jobs:
               ORBIT_GIT_CREDENTIAL: '${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.execution_secrets.git_credential.key) }}'
               ORBIT_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}'
               ORBIT_ENVIRONMENT_TESTING: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.environment_testing ? inputs.execution_secrets.environment_testing.key : inputs.execution_secrets.environment.key) }}'
-      # A Project's first default Instance on a Node of the build list is a container, not a checkout
-      # (docs/cli/instance/container/create-default.mmd). Container: create it from the image with its address and its ACL, start it, and
-      # fetch the default branch into the Node's mirror with the read token, which never enters the container. A clone of the default
-      # (docs/cli/instance/container/create.mmd) runs the `clone` tag instead: a copy of the default's seed snapshot with its own
-      # address, ACL, firewall rules and T3 proxy device, and its own branch in the mirror.
       - name: container
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: input, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-        guard: '${{ inputs.intent.already_active || inputs.intent.container == null }}'
+        dependsOn: []
+        guard: '${{ (inputs.intent.already_active || inputs.intent.container == null) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
           behaviorType: command/shell
@@ -86,7 +82,7 @@ jobs:
           inputs:
             run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASE" "$ORBIT_ANSIBLE/instance-container.yml"
             env:
-              ORBIT_PHASE: '${{ inputs.intent.container != null && inputs.intent.container.clone != null ? "clone" : "container" }}'
+              ORBIT_PHASE: 'container'
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_RUN_ID: '${{ run.id }}'
               ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
@@ -95,13 +91,11 @@ jobs:
               ANSIBLE_FORCE_COLOR: '0'
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ORBIT_GIT_CREDENTIAL: '${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.execution_secrets.git_credential.key) }}'
-      # Workspace: the branch in as a bundle, checked out in /srv/workspace as `orbit`, and .env for `orbit` with group `work`. No
-      # /etc/orbit/instance, so T3 never starts in the default Instance; a clone's agent step writes it.
       - name: workspace
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: container, condition: {type: succeeded}}]
-        guard: '${{ inputs.intent.already_active || inputs.intent.container == null }}'
+        guard: '${{ (inputs.intent.already_active || inputs.intent.container == null) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
           behaviorType: command/shell
@@ -118,36 +112,11 @@ jobs:
               ANSIBLE_FORCE_COLOR: '0'
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ORBIT_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}'
-      # Agent: a clone's placeholder model key, the agents' settings, the note links and /etc/orbit/instance, inside the container.
-      - name: agent
-        labels: {role: swamp}
-        writes: true
-        dependsOn: [{step: workspace, condition: {type: succeeded}}]
-        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone == null }}'
-        task:
-          type: behavior
-          behaviorType: command/shell
-          behaviorName: '${{ "ic-agent-" + string(inputs.node_id) }}'
-          methodName: execute
-          inputs:
-            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags agent "$ORBIT_ANSIBLE/instance-container.yml"
-            env:
-              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
-              ORBIT_RUN_ID: '${{ run.id }}'
-              ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
-              ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
-              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
-              ANSIBLE_FORCE_COLOR: '0'
-              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-              # Swamp evaluates a skipped step's inputs too, so the reference falls back to a key every run has.
-              ORBIT_MODEL_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.container != null && inputs.intent.container.clone != null ? inputs.execution_secrets.model_environment.key : inputs.execution_secrets.environment.key) }}'
-      # Deploy: each development deploy step in list order, as `orbit` in the workspace with the runtime folder's PATH, from its own
-      # vault copy on standard input. A best-effort step prints its exit status, so it never fails the run.
       - name: deploy
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: workspace, condition: {type: succeeded}}]
-        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || steps.exists(k, k.startsWith("deploy") && steps[k].status == "failed") }}'
+        guard: '${{ (inputs.intent.already_active || inputs.intent.container == null || steps.exists(k, k.startsWith("deploy") && steps[k].status == "failed")) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         forEach: {item: step, in: '${{ inputs.intent.container == null ? [] : inputs.intent.container.steps }}'}
         concurrency: 1
         task:
@@ -170,14 +139,13 @@ jobs:
             argv: '${{ ["incus", "exec", "--project", inputs.intent.container.project, "--cwd", inputs.intent.container.workspace, inputs.intent.container.name, "--", "runuser", "-u", "orbit", "--", "/usr/bin/env", "-i"] + inputs.intent.container.environment + ["/bin/sh", "-c", self.step.required ? "s=$(cat) && exec timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1" : "s=$(cat) || exit 1; timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1; echo \"$?\"", "sh", string(self.step.timeout_seconds)] }}'
             stdin: '${{ vault.get(inputs.execution_secrets["step_" + string(self._index)].vault, inputs.execution_secrets["step_" + string(self._index)].key) }}'
             timeoutSec: '${{ self.step.timeout_seconds + 10 }}'
-      # Processes: FrankenPHP as an `orbit-*` unit in the container, enabled and started.
       - name: container-processes
         labels: {role: swamp}
         writes: true
         dependsOn:
           - {step: workspace, condition: {type: succeeded}}
           - {step: deploy, condition: {type: always}}
-        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || steps.exists(k, steps[k].status == "failed") }}'
+        guard: '${{ (inputs.intent.already_active || inputs.intent.container == null || steps.exists(k, steps[k].status == "failed")) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
           behaviorType: command/shell
@@ -185,7 +153,7 @@ jobs:
           methodName: execute
           inputs:
             run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags processes "$ORBIT_ANSIBLE/instance-container.yml"
-            env: &container_phase
+            env:
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_RUN_ID: '${{ run.id }}'
               ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
@@ -193,11 +161,11 @@ jobs:
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
               ANSIBLE_FORCE_COLOR: '0'
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-      # Database: the default Instance's SQLite file, copied with the same children as instance:clone (ADR 0191).
+              ORBIT_PROCESS_ENVIRONMENTS: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.container != null ? inputs.execution_secrets.process_environments.key : inputs.execution_secrets.environment.key) }}'
       - name: database-snapshot
         labels: {role: swamp}
-        dependsOn: [{step: checkout, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-        guard: '${{ inputs.intent.already_active || inputs.intent.database == null || steps.exists(k, steps[k].status == "failed") }}'
+        dependsOn: [{step: checkout, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
+        guard: '${{ (inputs.intent.already_active || inputs.intent.database == null || steps.exists(k, steps[k].status == "failed")) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: workflow
           workflowIdOrName: instance-clone-database-snapshot
@@ -210,7 +178,7 @@ jobs:
       - name: database-install
         labels: {role: swamp}
         dependsOn: [{step: database-snapshot, condition: {type: succeeded}}]
-        guard: '${{ inputs.intent.already_active || inputs.intent.database == null }}'
+        guard: '${{ (inputs.intent.already_active || inputs.intent.database == null) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: workflow
           workflowIdOrName: instance-clone-database-install
@@ -226,7 +194,7 @@ jobs:
         dependsOn:
           - {step: database-snapshot, condition: {type: always}}
           - {step: database-install, condition: {type: always}}
-        guard: '${{ inputs.intent.already_active || inputs.intent.database == null }}'
+        guard: '${{ (inputs.intent.already_active || inputs.intent.database == null) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: workflow
           workflowIdOrName: instance-clone-database-cleanup
@@ -236,12 +204,10 @@ jobs:
             kind: '${{ inputs.kind }}'
             intent: '${{ inputs.intent.database }}'
             run_id: '${{ run.id }}'
-      # Server database: the Instance's own owner and databases on a Database server, with the child database:create runs.
-      # Swamp evaluates a skipped step's inputs too, so every reference to an absent section falls back to a present one.
       - name: server-database
         labels: {role: swamp}
-        dependsOn: [{step: checkout, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-        guard: '${{ inputs.intent.already_active || inputs.intent.server_database == null || steps.exists(k, steps[k].status == "failed") }}'
+        dependsOn: [{step: checkout, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
+        guard: '${{ (inputs.intent.already_active || inputs.intent.server_database == null || steps.exists(k, steps[k].status == "failed")) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: workflow
           workflowIdOrName: operation-database-create
@@ -251,11 +217,10 @@ jobs:
             kind: database.create
             intent: '${{ inputs.intent.server_database == null ? {} : inputs.intent.server_database.intent }}'
             execution_secrets: '${{ inputs.intent.server_database == null ? {} : {"create": inputs.execution_secrets.server_database_create, "check": inputs.execution_secrets.server_database_check} }}'
-      # The child keeps a refused batch as its own outcome, so the owner's login proves the database is usable.
       - name: server-database-check
         labels: {role: swamp}
         dependsOn: [{step: server-database, condition: {type: succeeded}}]
-        guard: '${{ inputs.intent.already_active || inputs.intent.server_database == null }}'
+        guard: '${{ (inputs.intent.already_active || inputs.intent.server_database == null) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -276,12 +241,11 @@ jobs:
             argv: '${{ ["timeout", "60"] + (inputs.intent.server_database == null ? [] : inputs.intent.server_database.intent.owner_client) }}'
             stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.server_database == null ? inputs.execution_secrets.environment.key : inputs.execution_secrets.server_database_check.key) }}'
             timeoutSec: 70
-      # A MySQL default database is copied into the new one before setup migrates it (ADR 0191).
       - name: server-database-fill
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: server-database-check, condition: {type: succeeded}}]
-        guard: '${{ inputs.intent.already_active || inputs.intent.server_database == null || inputs.intent.server_database.fill == null }}'
+        guard: '${{ (inputs.intent.already_active || inputs.intent.server_database == null || inputs.intent.server_database.fill == null) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -302,16 +266,15 @@ jobs:
             argv: '${{ ["timeout", "600"] + (inputs.intent.server_database == null || inputs.intent.server_database.fill == null ? [] : inputs.intent.server_database.fill) }}'
             stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.server_database == null ? inputs.execution_secrets.environment.key : inputs.execution_secrets.server_database_create.key) }}'
             timeoutSec: 610
-      # Setup: the Project setup list in order, one command per item as the account; the first failure stops it.
       - name: setup
         labels: {role: swamp}
         writes: true
         dependsOn:
-          - {step: checkout, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-          - {step: database-install, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-          - {step: server-database-check, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-          - {step: server-database-fill, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-        guard: '${{ inputs.intent.already_active || size(inputs.intent.setup_steps) == 0 || steps.exists(k, steps[k].status == "failed") }}'
+          - {step: checkout, condition: {type: or, conditions: [type: succeeded, type: skipped]}}
+          - {step: database-install, condition: {type: or, conditions: [type: succeeded, type: skipped]}}
+          - {step: server-database-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}
+          - {step: server-database-fill, condition: {type: or, conditions: [type: succeeded, type: skipped]}}
+        guard: '${{ (inputs.intent.already_active || size(inputs.intent.setup_steps) == 0 || steps.exists(k, steps[k].status == "failed")) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
           behaviorType: command/shell
@@ -326,18 +289,15 @@ jobs:
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
               ANSIBLE_FORCE_COLOR: '0'
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-      # Processes: create and start the development Processes through the shared Process create workflow.
       - name: processes
         labels: {role: swamp}
-        # A dependency on a forEach over an empty list resolves at once, so Processes also wait on the .env write.
         dependsOn:
           - {step: checkout, condition: {type: always}}
           - {step: setup, condition: {type: always}}
-        guard: '${{ inputs.intent.already_active || steps.exists(k, steps[k].status == "failed") }}'
+        guard: '${{ (inputs.intent.already_active || steps.exists(k, steps[k].status == "failed")) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         forEach: {item: member, in: '${{ inputs.intent.processes }}'}
         task:
           type: workflow
-          # A rerun starts an existing container instead of creating it again.
           workflowIdOrName: '${{ self.member.kind == "process.start" ? "operation-process-start" : "operation-process-create" }}'
           inputs:
             operation_id: '${{ inputs.operation_id }}'
@@ -345,14 +305,11 @@ jobs:
             kind: '${{ self.member.kind }}'
             intent: '${{ self.member.intent }}'
             execution_secrets: '${{ "member_" + string(self.member.id) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["member_" + string(self.member.id)]} : {} }}'
-      # Route certificates: the Node-local key and CSR, then the Gateway's signature of it, beside the checkout (same level as it). They
-      # touch only the certificate folder; the Route child below takes the signed certificates.
       - name: route-csr
         labels: {role: swamp}
         writes: true
-        dependsOn:
-          - {step: input, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-        guard: '${{ inputs.intent.already_active || inputs.intent.route == null }}'
+        dependsOn: []
+        guard: '${{ (inputs.intent.already_active || inputs.intent.route == null) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         forEach: {item: leaf, in: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes }}'}
         task:
           type: workflow
@@ -362,20 +319,17 @@ jobs:
             leaf: '${{ self.leaf }}'
             operation_id: '${{ inputs.operation_id }}'
             parent_run_id: '${{ run.id }}'
-      # Route: a web-serving Project's Route, through the same child that route:create runs, beside the setup (same depth as it). The
-      # checkout phase has granted Caddy its access and written the URL, so the child skips both on this Node.
-      # It waits for the same steps as the setup, so a Swamp job puts both at one depth and does not make one wait for the other.
       - name: route
         labels: {role: swamp}
         writes: true
         dependsOn:
           - {step: route-csr, condition: {type: always}}
-          - {step: checkout, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-          - {step: container-processes, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-          - {step: database-install, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-          - {step: server-database-check, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-          - {step: server-database-fill, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-        guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.exists(k, steps[k].status == "failed") }}'
+          - {step: checkout, condition: {type: or, conditions: [type: succeeded, type: skipped]}}
+          - {step: container-processes, condition: {type: or, conditions: [type: succeeded, type: skipped]}}
+          - {step: database-install, condition: {type: or, conditions: [type: succeeded, type: skipped]}}
+          - {step: server-database-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}
+          - {step: server-database-fill, condition: {type: or, conditions: [type: succeeded, type: skipped]}}
+        guard: '${{ (inputs.intent.already_active || inputs.intent.route == null || (inputs.intent.container != null && inputs.intent.container.clone != null) || steps.exists(k, steps[k].status == "failed")) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: workflow
           workflowIdOrName: operation-route-create
@@ -388,60 +342,13 @@ jobs:
             execution_secrets: '${{ inputs.intent.route_secrets }}'
             signed: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps && steps["route-csr-" + string(i)].status == "succeeded" ? steps["route-csr-" + string(i)].outputs.sign.stdout : "") }}'
             prepared: '${{ string(inputs.node_id) }}'
-      # T3: a clone's T3 starts for the first time, with its own identity, and the workspace becomes its project.
-      - name: t3
-        labels: {role: swamp}
-        writes: true
-        dependsOn:
-          - {step: agent, condition: {type: succeeded}}
-          - {step: container-processes, condition: {type: always}}
-        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone == null || steps.exists(k, steps[k].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: command/shell
-          behaviorName: '${{ "ic-t3-" + string(inputs.node_id) }}'
-          methodName: execute
-          inputs:
-            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags t3 "$ORBIT_ANSIBLE/instance-container.yml"
-            env: *container_phase
-      # Register (docs/cli/instance/container/t3-register.mmd): `agent` issues the Gateway's and Swamp's sessions and T3 answers about
-      # each; the reply waits in the run folder for the next step, which never lets a session into the run's outputs.
-      - name: t3-sessions
-        labels: {role: swamp}
-        writes: true
-        dependsOn:
-          - {step: t3, condition: {type: succeeded}}
-          - {step: route, condition: {type: always}}
-        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone == null || steps.exists(k, steps[k].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: command/shell
-          behaviorName: '${{ "ic-register-" + string(inputs.node_id) }}'
-          methodName: execute
-          inputs:
-            run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags register "$ORBIT_ANSIBLE/instance-container.yml"
-            env: *container_phase
-      # The checks of POST /conn/environments, then both sessions as native sensitive fields; the receipt names only their vault keys.
-      - name: t3-register
-        labels: {role: swamp}
-        dependsOn: [{step: t3-sessions, condition: {type: succeeded}}]
-        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone == null }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-t3'
-          behaviorName: '${{ "ic-t3-register" }}'
-          methodName: register
-          inputs:
-            instance_id: '${{ inputs.intent.instance_id }}'
-            folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
-      # Seed: the first `seed-<commit>` snapshot, taken with the Processes stopped for a moment; clones copy it.
       - name: seed
         labels: {role: swamp}
         writes: true
         dependsOn:
           - {step: container-processes, condition: {type: succeeded}}
           - {step: route, condition: {type: always}}
-        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone != null || steps.exists(k, steps[k].status == "failed") }}'
+        guard: '${{ (inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone != null || steps.exists(k, steps[k].status == "failed")) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
           behaviorType: command/shell
@@ -449,29 +356,337 @@ jobs:
           methodName: execute
           inputs:
             run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags seed "$ORBIT_ANSIBLE/instance-container.yml"
-            env: *container_phase
-      # Finish: map the first phase that did not finish to the public receipt. The cleanup of the run folder runs beside it.
+            env: &container_phase
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
+              ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+  # Four fixed SSH behavior slots bound inventory and separate concurrent creates.
+  - name: clone
+    dependsOn: [{job: input, condition: {type: succeeded}}]
+    steps:
+      - name: clone-container
+        labels: {role: swamp}
+        writes: true
+        dependsOn: []
+        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
+          methodName: exec
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ ["timeout", "300"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["container"] }}'
+            stdin: ${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.execution_secrets.git_credential.key) }}
+            timeoutSec: 310
+          globalArgs:
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.ssh_execution.target.user }}
+              port: ${{ inputs.intent.ssh_execution.target.port }}
+              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+              hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+            hosts:
+              - name: target
+                address: ${{ inputs.intent.ssh_execution.target.host }}
+      - name: clone-database-snapshot
+        labels: {role: swamp}
+        dependsOn: []
+        guard: '${{ (inputs.intent.already_active || inputs.intent.database == null || steps.exists(k, k.startsWith("clone-database") && steps[k].status == "failed")) || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: workflow
+          workflowIdOrName: instance-clone-database-snapshot
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent: '${{ inputs.intent.database }}'
+            run_id: '${{ run.id }}'
+      - name: clone-database-install
+        labels: {role: swamp}
+        dependsOn: [{step: clone-database-snapshot, condition: {type: succeeded}}, {step: clone-container, condition: {type: succeeded}}]
+        guard: '${{ (inputs.intent.already_active || inputs.intent.database == null) || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: workflow
+          workflowIdOrName: instance-clone-database-install
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent: '${{ inputs.intent.database }}'
+            run_id: '${{ run.id }}'
+            digest: '${{ steps["clone-database-snapshot"].outputs.digest.stdout.split(" ")[0] }}'
+      - name: clone-database-cleanup
+        labels: {role: swamp}
+        dependsOn: [{step: clone-database-snapshot, condition: {type: always}}, {step: clone-database-install, condition: {type: always}}]
+        guard: '${{ (inputs.intent.already_active || inputs.intent.database == null) || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: workflow
+          workflowIdOrName: instance-clone-database-cleanup
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent: '${{ inputs.intent.database }}'
+            run_id: '${{ run.id }}'
+      - name: clone-server-database
+        labels: {role: swamp}
+        dependsOn: []
+        guard: '${{ (inputs.intent.already_active || inputs.intent.server_database == null || steps.exists(k, k.startsWith("clone-database") && steps[k].status == "failed")) || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: workflow
+          workflowIdOrName: operation-database-create
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.intent.server_database == null ? inputs.node_id : inputs.intent.server_database.node_id }}'
+            kind: database.create
+            intent: '${{ inputs.intent.server_database == null ? {} : inputs.intent.server_database.intent }}'
+            execution_secrets: '${{ inputs.intent.server_database == null ? {} : {"create": inputs.execution_secrets.server_database_create, "check": inputs.execution_secrets.server_database_check} }}'
+      - name: clone-server-database-check
+        labels: {role: swamp}
+        dependsOn: [{step: clone-server-database, condition: {type: succeeded}}]
+        guard: '${{ (inputs.intent.already_active || inputs.intent.server_database == null) || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("ic-dbcheck-" + string(inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.host)).split(".").join("-") }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ ("ic-dbcheck-" + string(inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.host)).split(".").join("-") }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.server_database == null ? 22 : inputs.intent.server_database.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.identity_file }}'
+              hostKeys: '${{ inputs.intent.server_database == null ? [] : inputs.intent.server_database.intent.ssh_execution.target.host_keys }}'
+            hosts: [{name: target, address: '${{ inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.host }}'}]
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ ["timeout", "60"] + (inputs.intent.server_database == null ? [] : inputs.intent.server_database.intent.owner_client) }}'
+            stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.server_database == null ? inputs.execution_secrets.environment.key : inputs.execution_secrets.server_database_check.key) }}'
+            timeoutSec: 70
+      - name: clone-server-database-fill
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: clone-server-database-check, condition: {type: succeeded}}]
+        guard: '${{ (inputs.intent.already_active || inputs.intent.server_database == null || inputs.intent.server_database.fill == null) || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("ic-dbfill-" + string(inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.host)).split(".").join("-") }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ ("ic-dbfill-" + string(inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.host)).split(".").join("-") }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.server_database == null ? 22 : inputs.intent.server_database.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.identity_file }}'
+              hostKeys: '${{ inputs.intent.server_database == null ? [] : inputs.intent.server_database.intent.ssh_execution.target.host_keys }}'
+            hosts: [{name: target, address: '${{ inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.host }}'}]
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ ["timeout", "600"] + (inputs.intent.server_database == null || inputs.intent.server_database.fill == null ? [] : inputs.intent.server_database.fill) }}'
+            stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.server_database == null ? inputs.execution_secrets.environment.key : inputs.execution_secrets.server_database_create.key) }}'
+            timeoutSec: 610
+      - name: clone-workspace
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: clone-container, condition: {type: succeeded}}, {step: clone-database-install, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-fill, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
+        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
+          methodName: exec
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ ["timeout", "120"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["workspace"] }}'
+            stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, (inputs.intent.container == null ? inputs.execution_secrets.environment.key : inputs.execution_secrets.process_environments.key)) }}'
+            timeoutSec: 130
+          globalArgs:
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.ssh_execution.target.user }}
+              port: ${{ inputs.intent.ssh_execution.target.port }}
+              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+              hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+            hosts:
+              - name: target
+                address: ${{ inputs.intent.ssh_execution.target.host }}
+      - name: clone-agent
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: clone-workspace, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
+          methodName: exec
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ ["timeout", "120"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["agent"] }}'
+            stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, (inputs.intent.container != null && inputs.intent.container.clone != null ? inputs.execution_secrets.model_environment.key : inputs.execution_secrets.environment.key)) }}'
+            timeoutSec: 130
+          globalArgs:
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.ssh_execution.target.user }}
+              port: ${{ inputs.intent.ssh_execution.target.port }}
+              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+              hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+            hosts:
+              - name: target
+                address: ${{ inputs.intent.ssh_execution.target.host }}
+      - name: clone-t3
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: clone-agent, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
+          methodName: exec
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ ["timeout", "120"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["t3"] }}'
+            stdin: ''
+            timeoutSec: 130
+          globalArgs:
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.ssh_execution.target.user }}
+              port: ${{ inputs.intent.ssh_execution.target.port }}
+              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+              hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+            hosts:
+              - name: target
+                address: ${{ inputs.intent.ssh_execution.target.host }}
+      - name: clone-sessions
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: clone-t3, condition: {type: succeeded}}]
+        guard: ${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+          methodName: exec
+          globalArgs:
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.ssh_execution.target.user }}
+              port: ${{ inputs.intent.ssh_execution.target.port }}
+              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+              hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+            hosts:
+              - name: target
+                address: ${{ inputs.intent.ssh_execution.target.host }}
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ ["timeout", "60"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["sessions"] }}'
+            stdin: ''
+            timeoutSec: 70
+      - name: clone-session-copy
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: clone-sessions, condition: {type: succeeded}}]
+        guard: ${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+          methodName: copy
+          globalArgs:
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.ssh_execution.target.user }}
+              port: ${{ inputs.intent.ssh_execution.target.port }}
+              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+              hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+            hosts:
+              - name: target
+                address: ${{ inputs.intent.ssh_execution.target.host }}
+          inputs:
+            hosts: name:target
+            src: '${{ ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_private : "/tmp/orbit-clone-skipped") + "/t3.json" }}'
+            dst: ${{ "/tmp/orbit-ansible-" + run.id + "/t3.json" }}
+            direction: from
+            captureOutput: false
+            timeoutSec: 20
+      - name: clone-register
+        labels: {role: swamp}
+        dependsOn: [{step: clone-session-copy, condition: {type: succeeded}}]
+        guard: ${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone == null }}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-t3'
+          behaviorName: ${{ "ic-t3-register" }}
+          methodName: register
+          inputs:
+            instance_id: ${{ inputs.intent.instance_id }}
+            folder: ${{ "/tmp/orbit-ansible-" + run.id }}
+  # TLS publication never gates a phase in the container chain.
+  - name: publication
+    dependsOn: [{job: input, condition: {type: succeeded}}]
+    steps:
+      - name: clone-route-csr
+        labels: {role: swamp}
+        writes: true
+        dependsOn: []
+        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) || inputs.intent.route == null }}'
+        forEach: {item: leaf, in: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes }}'}
+        task:
+          type: workflow
+          workflowIdOrName: route-create-csr
+          inputs:
+            intent: '${{ inputs.intent.route }}'
+            leaf: '${{ self.leaf }}'
+            operation_id: '${{ inputs.operation_id }}'
+            parent_run_id: '${{ run.id }}'
+      - name: clone-route
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: clone-route-csr, condition: {type: always}}]
+        guard: '${{ inputs.intent.already_active || inputs.intent.route == null || inputs.intent.container == null || inputs.intent.container.clone == null || steps.exists(k, steps[k].status == "failed") }}'
+        task:
+          type: workflow
+          workflowIdOrName: operation-route-create
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            parent_run_id: '${{ run.id }}'
+            kind: route.create
+            intent: '${{ inputs.intent.route }}'
+            execution_secrets: '${{ inputs.intent.route_secrets }}'
+            signed: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("clone-route-csr-" + string(i)) in steps && steps["clone-route-csr-" + string(i)].status == "succeeded" ? steps["clone-route-csr-" + string(i)].outputs.sign.stdout : "") }}'
+            prepared: '${{ string(inputs.node_id) }}'
+  # Compensation waits for all writers, including the independent Route job.
+  - name: create
+    dependsOn: [{job: input, condition: {type: or, conditions: [type: completed, type: skipped]}}, {job: legacy, condition: {type: or, conditions: [type: completed, type: skipped]}}, {job: clone, condition: {type: or, conditions: [type: completed, type: skipped]}}, {job: publication, condition: {type: or, conditions: [type: completed, type: skipped]}}]
+    steps:
       - name: finish
         labels: {role: swamp}
-        dependsOn:
-          - {step: checkout, condition: {type: always}}
-          - {step: database-cleanup, condition: {type: always}}
-          - {step: server-database, condition: {type: always}}
-          - {step: server-database-check, condition: {type: always}}
-          - {step: server-database-fill, condition: {type: always}}
-          - {step: setup, condition: {type: always}}
-          - {step: processes, condition: {type: always}}
-          - {step: route, condition: {type: always}}
-          - {step: route-csr, condition: {type: always}}
-          - {step: container, condition: {type: always}}
-          - {step: workspace, condition: {type: always}}
-          - {step: deploy, condition: {type: always}}
-          - {step: container-processes, condition: {type: always}}
-          - {step: seed, condition: {type: always}}
-          - {step: agent, condition: {type: always}}
-          - {step: t3, condition: {type: always}}
-          - {step: t3-sessions, condition: {type: always}}
-          - {step: t3-register, condition: {type: always}}
+        dependsOn: []
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
@@ -480,23 +695,24 @@ jobs:
           inputs:
             intent: '${{ inputs.intent }}'
             checkout: '${{ "checkout" in steps ? steps.checkout : null }}'
-            database: '${{ inputs.intent.server_database == null ? ("database-install" in steps ? steps["database-install"].status : "skipped") : (inputs.intent.server_database.fill != null ? ("server-database-fill" in steps ? steps["server-database-fill"].status : "skipped") : ("server-database-check" in steps ? steps["server-database-check"].status : "skipped")) }}'
+            database: '${{ (inputs.intent.container != null && inputs.intent.container.clone != null ? ((inputs.intent.database == null || ("clone-database-install" in steps && steps["clone-database-install"].status == "succeeded")) && (inputs.intent.server_database == null || ("clone-server-database-check" in steps && steps["clone-server-database-check"].status == "succeeded" && (inputs.intent.server_database.fill == null || ("clone-server-database-fill" in steps && steps["clone-server-database-fill"].status == "succeeded")))) ? "succeeded" : "failed") : inputs.intent.server_database == null ? ("database-install" in steps ? steps["database-install"].status : "skipped") : (inputs.intent.server_database.fill != null ? ("server-database-fill" in steps ? steps["server-database-fill"].status : "skipped") : ("server-database-check" in steps ? steps["server-database-check"].status : "skipped"))) }}'
             setup: '${{ "setup" in steps ? steps.setup.status : "skipped" }}'
             processes: '${{ inputs.intent.processes.map(p, ("processes-" + string(p.index)) in steps ? steps["processes-" + string(p.index)].status : "skipped") }}'
-            route: '${{ "route" in steps ? steps.route.status : "skipped" }}'
-            certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps ? steps["route-csr-" + string(i)].status : "skipped") }}'
-            container: '${{ inputs.intent.container == null ? null : {"launch": "container" in steps ? steps.container.status : "skipped", "workspace": "workspace" in steps ? steps.workspace : null, "deploy": steps.filter(k, k.startsWith("deploy-")).map(k, steps[k].status), "processes": "container-processes" in steps ? steps["container-processes"].status : "skipped", "seed": "seed" in steps ? steps.seed.status : "skipped", "agent": "agent" in steps ? steps.agent.status : "skipped", "t3": "t3" in steps ? steps.t3.status : "skipped", "register": "t3-sessions" in steps && steps["t3-sessions"].status == "failed" ? "failed" : ("t3-register" in steps ? steps["t3-register"].status : "skipped"), "server": "t3-register" in steps && steps["t3-register"].status == "succeeded" ? steps["t3-register"].outputs.terminal.stdout : null} }}'
-      # Withdraw the Route: a create that failed after its key was made takes back what it published, the reverse of the publication that the
-      # Gateway captured at admission (the site, the pool, the DNS records, the certificate folders). The failure the run reports is the one
-      # that finish read; the Instance and its checkout stay, marked failed. It runs before accepted, so a failing accepted does not cut it short.
+            route: '${{ (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-route" in steps ? steps["clone-route"].status : "skipped") : ("route" in steps ? steps.route.status : "skipped")) }}'
+            certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ((inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route-csr-" : "route-csr-") + string(i)) in steps ? steps[(inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route-csr-" : "route-csr-") + string(i)].status : "skipped") }}'
+            container: '${{ inputs.intent.container == null ? dyn(null) : {"launch": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-container" in steps ? steps["clone-container"].status : "skipped") : ("container" in steps ? steps.container.status : "skipped")), "workspace": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-workspace" in steps ? steps["clone-workspace"] : null) : ("workspace" in steps ? steps.workspace : null)), "deploy": steps.filter(k, k.startsWith("deploy-")).map(k, steps[k].status), "processes": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-workspace" in steps ? steps["clone-workspace"].status : "skipped") : ("container-processes" in steps ? steps["container-processes"].status : "skipped")), "seed": "seed" in steps ? steps.seed.status : "skipped", "agent": "clone-agent" in steps ? steps["clone-agent"].status : "skipped", "t3": "clone-t3" in steps ? steps["clone-t3"].status
+              : "skipped", "register": "clone-sessions" in steps && steps["clone-sessions"].status == "failed" ? "failed" : ("clone-session-copy" in steps && steps["clone-session-copy"].status == "failed" ? "failed" : ("clone-register" in steps ? steps["clone-register"].status : "skipped")), "server": "clone-register" in steps && steps["clone-register"].status == "succeeded" ? steps["clone-register"].outputs.stdout : null} }}'
+            t3_observation: '${{ "clone-t3" in steps && steps["clone-t3"].status == "succeeded" ? steps["clone-t3"].outputs.stdout : "" }}'
+            sessions_observation: '${{ "clone-sessions" in steps && steps["clone-sessions"].status == "succeeded" ? steps["clone-sessions"].outputs.stdout : "" }}'
+            route_observation: '${{ "clone-route" in steps && steps["clone-route"].status == "succeeded" ? steps["clone-route"].outputs : {} }}'
       - name: withdraw-route
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: finish, condition: {type: succeeded}}]
-        guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.finish.outputs.ready == true || !(("route-csr-0" in steps && steps["route-csr-0"].status != "skipped") || ("route" in steps && steps.route.status != "skipped")) }}'
+        guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.finish.outputs.ready == true || !(("clone-route-csr-0" in steps && steps["clone-route-csr-0"].status != "skipped") || ("route-csr-0" in steps && steps["route-csr-0"].status != "skipped") || ("clone-route" in steps && steps["clone-route"].status != "skipped") || ("route" in steps && steps.route.status != "skipped")) }}'
         task:
           type: workflow
-          workflowIdOrName: route-withdraw
+          workflowIdOrName: '${{ "route-withdraw" }}'
           inputs:
             operation_id: '${{ inputs.operation_id }}'
             node_id: '${{ inputs.node_id }}'
@@ -504,13 +720,11 @@ jobs:
             side: restore
             intent: '${{ {"route_mutations": inputs.intent.route_mutations} }}'
             execution_secrets: {}
-      # Stop the container: a create that failed after it started leaves the container stopped, with its workspace; the same command
-      # resumes it, and instance:destroy removes it.
       - name: stop-container
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: finish, condition: {type: succeeded}}]
-        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || steps.finish.outputs.ready == true || !("container" in steps && steps.container.status != "skipped") }}'
+        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || steps.finish.outputs.ready == true || !(("clone-container" in steps && steps["clone-container"].status != "skipped") || ("container" in steps && steps.container.status != "skipped")) }}'
         task:
           type: behavior
           behaviorType: command/shell
@@ -519,32 +733,41 @@ jobs:
           inputs:
             run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags stop "$ORBIT_ANSIBLE/instance-container.yml"
             env: *container_phase
+      - name: clone-private-cleanup
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: stop-container, condition: {type: always}}]
+        guard: ${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+          methodName: exec
+          globalArgs:
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.ssh_execution.target.user }}
+              port: ${{ inputs.intent.ssh_execution.target.port }}
+              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+              hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+            hosts:
+              - name: target
+                address: ${{ inputs.intent.ssh_execution.target.host }}
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ ["timeout", "20"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["cleanup"] }}'
+            stdin: ''
+            timeoutSec: 30
       - name: accepted
         labels: {role: swamp}
-        dependsOn:
-          - {step: finish, condition: {type: succeeded}}
-          - {step: withdraw-route, condition: {type: always}}
-          - {step: stop-container, condition: {type: always}}
+        dependsOn: [{step: finish, condition: {type: succeeded}}, {step: withdraw-route, condition: {type: always}}, {step: stop-container, condition: {type: always}}, {step: clone-private-cleanup, condition: {type: always}}]
         task: {type: assert, expr: 'steps.finish.outputs.ready == true', severity: high, message: The development Instance create did not complete.}
-      # Cleanup: the run folder of the phases, also after a failure. It sits at the depth of finish, so the two run side by side.
       - name: cleanup
         labels: {role: swamp}
         writes: true
-        dependsOn:
-          - {step: input, condition: {type: always}}
-          - {step: checkout, condition: {type: always}}
-          - {step: container, condition: {type: always}}
-          - {step: workspace, condition: {type: always}}
-          - {step: container-processes, condition: {type: always}}
-          - {step: seed, condition: {type: always}}
-          - {step: agent, condition: {type: always}}
-          - {step: t3, condition: {type: always}}
-          - {step: t3-sessions, condition: {type: always}}
-          - {step: t3-register, condition: {type: always}}
-          - {step: stop-container, condition: {type: always}}
-          - {step: setup, condition: {type: always}}
-          - {step: processes, condition: {type: always}}
-          - {step: route, condition: {type: always}}
+        dependsOn: [{step: stop-container, condition: {type: always}}, {step: clone-private-cleanup, condition: {type: always}}]
         guard: '${{ inputs.intent.already_active }}'
         task:
           type: behavior

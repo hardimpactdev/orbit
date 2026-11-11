@@ -43,6 +43,10 @@ final readonly class ComposerSourceClassifier
             throw $this->invalid('app-dev.php_version_unsupported', $exception);
         }
 
+        if ($projectType === ProjectType::Monorepo) {
+            return new DevelopmentSourceProfile($version, false);
+        }
+
         if ($projectType === ProjectType::SymfonyApp) {
             $symfony = array_key_exists('symfony/framework-bundle', $require);
 

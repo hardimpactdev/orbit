@@ -38,6 +38,7 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 | Web server | FrankenPHP, in development now and in production once it has proved itself. PHP also works on the command line |
 | Nodes | No setting to opt in. Every `app-dev` and `app-prod` Node runs its Instances in containers, and the two roles change what they install |
 | Shared runtime | PHP, FrankenPHP, Composer, Node, Bun and the other runtime binaries live once per Node in a versioned read-only folder. Every container mounts it, as the agent folder |
+| Host disk paths | The Incus project `orbit-instances` has no `restricted.devices.disk.paths` limit beside its idmapped runtime and agent folders. This permits those mounts; the project does not restrict host disk source paths ([#3311](https://github.com/hardimpactdev/orbit/pull/3311)) |
 | Container contents | Containers install as little as possible |
 | Production | Production Instances move into containers too, after development containers work |
 | Sleep | A development container sleeps after one hour idle, never while a task runs in it. Development Instances have no Schedules. Production containers never sleep |
@@ -46,7 +47,7 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 | One default per Project | A Project has one `default` Instance in the whole fleet. The Node that holds it is where every clone of the Project is made |
 | Git | Orbit fetches and pushes from the Node |
 | History | T3 history is deleted with its Instance. Swamp records the transcript of each task turn, so task transcripts outlive a clone |
-| Migration | Existing checkout Instances move into containers with their code and database |
+| Migration | Existing checkout Instances move their code into containers; server databases stay in place with access for the container, and SQLite files move with the workspace |
 | Databases | The database family clones every database: a template copy on the same server, a dump and restore across Nodes. Remote database servers are allowed |
 | Pairing token | The pairing token that `t3 serve` prints to its journal is accepted |
 | Project files | MCP servers come from the project's own files. The agents use their own subagents only |
@@ -101,9 +102,9 @@ Beast and Shark take the dev path beside their task VMs. A task VM host on the b
 | 3 | Node preparation and the shared folders | Merged, [#3292](https://github.com/hardimpactdev/orbit/pull/3292) |
 | 3b | The static PHP build | Merged, [#3294](https://github.com/hardimpactdev/orbit/pull/3294) |
 | 4 | The first default Instance and its deployments | Merged, [#3299](https://github.com/hardimpactdev/orbit/pull/3299) |
-| 4b | The Project's development Processes in a container | |
+| 4b | The Project's development Processes in a container | Open, [#3309](https://github.com/hardimpactdev/orbit/pull/3309) |
 | 5 | Create an Instance as a clone, with T3 and its sessions | Open, [#3301](https://github.com/hardimpactdev/orbit/pull/3301) |
-| 6 | Destroy a container Instance | |
+| 6 | Destroy a container Instance | Clone cleanup first; defaults and guarded removal follow separately |
 | 7 | Run a task in a clone: start, check, publish, end | |
 | 8 | The `t3` task driver: Swamp drives T3 | |
 | 9 | Attach a task to an Instance | |
@@ -113,7 +114,7 @@ Beast and Shark take the dev path beside their task VMs. A task VM host on the b
 | 12 | Switch task work | |
 | 13 | Sleep and wake | |
 | 14 | Start a thread in an Orbit Project (Conn) | Open, [#3308](https://github.com/hardimpactdev/orbit/pull/3308) |
-| 15 | Migrate checkout Instances | |
+| 15 | Migrate checkout Instances | Open, [#3315](https://github.com/hardimpactdev/orbit/pull/3315): code and fixtures built; live check waits for the container host. Processes refuse until PR 4b is wired |
 | 16 | Switch every `app-dev` Node | |
 | 17 | Remove task VMs, the Pi server and the task container setting | |
 | 18–22 | [Production Instances](#production-instances) | |
@@ -266,8 +267,8 @@ The code changed these points of this plan:
 
 - **Database.** A container reaches no Database server until PR 5 adds its NIC rule and the Node's firewall rule. Until then a container default uses the database in its workspace, such as SQLite.
 - **`--database-server`** on a container default refuses with `operation.kind_unavailable` until PR 5.
-- **Processes.** A Project's development Process definitions carry environment values that must go through the vault. Their records and the `process:*` commands must reach the container. PR 4b builds that.
-- **Until PR 4b** a Project with development Process definitions refuses with `operation.kind_unavailable`, and FrankenPHP is the only unit.
+- **Processes.** A Project's development Process definitions carry values that must go through the vault. Their records and the `process:*` commands must reach the container. PR 4b builds that.
+- **Until PR 4b** a Project with development Process definitions refused with `operation.kind_unavailable`.
 - **PHP.** A PHP Project needs the static PHP build of its version in the runtime folder. Until PR 3b's pin records the build's SHA-256, a PHP Project refuses with `instance.host_unavailable`.
 - **Egress.** The deploy steps install dependencies through the [egress proxy](/reference/development-containers#egress-and-dns) of step 2c: their environment carries its proxy settings.
 - **Checkout commands.** Destroy, setup, `env:sync`, `env:import`, transfer, rename and clone refuse a container Instance until their own PRs give them a container path.
@@ -294,7 +295,36 @@ The Project's development Process definitions run as `orbit-*` units in the cont
 - The status observation reads the units in the container.
 - A deployment restarts the Processes whose code changed and installs a changed definition.
 
-It reuses the Process classes from `task-4193` that the reuse table names. Tests: Pest for the records and the target; Ansible fixture tests for the units. Live: a queue worker of the test Project runs in its default container, and `process:restart` restarts it.
+It reuses the Process classes from `task-4193` that the reuse table names. Tests: Pest for the records and the target; Ansible fixture tests for the units.
+
+The code changed these points of this plan:
+
+| Point | What the code does |
+| --- | --- |
+| No Ansible in the container | `task-4193` ran its shared systemd phase inside the container. Here the Node drives the container through `incus exec`, so the container installs no Ansible. |
+| Two tags | The `processes` tag of `instance-container.yml` installs the units. Its new `process` tag changes or reads one unit. |
+| One vault copy | The run's intent holds each unit and its environment file's path. The values go in one vault copy, from path to content. |
+| A changed record refuses | The run makes that copy only while the records still render the admitted units. |
+| `ContainerProcessDefinitions` is not needed | The create and deploy runs install the units, and the Process records complete with the run. |
+| `ContainerProcessTarget` is a branch | The Process target of a container Instance names `orbit` and the workspace's application directory. |
+| Commands that change a record | `process:create`, `process:update` and `process:destroy` refuse a container Instance's Process with `operation.kind_unavailable`. The Project's definitions and a deployment change it. |
+| Docker and presets | A Docker definition or a preset refuses with `process.target_unsupported`. |
+| `--follow` | `process:logs --follow` refuses a container Process with `process.target_unsupported`: the Node agent follows only its own Node's journals. The one-shot read works. |
+| Removed definitions | A later PR removes the record and unit of a definition the Project removes. Until then they stay. |
+| Clones | A clone of PR 5 records its own Processes from the definitions. Its `processes` phase removes the default's units and environment folders that came with the seed, then starts its own. |
+| Restart on deploy | Each deployment's new seed stops and starts every running unit, so every running Process restarts on the new commit. A container ignores the restart-on-deploy setting. |
+| Sleep and Doctor | The Node's idle hibernation and `orbit doctor` leave container Processes out: their units are not the Node's. PR 13 sleeps the whole container. |
+
+Live on Beast, with the test Laravel Project `P` (PHP 8.5) and its default Instance `I` in a container. The queue uses the workspace's SQLite database.
+
+1. Add the definition: `orbit process:create queue --project=P --for=development --command=/opt/orbit-runtime/current/php/8.5/bin/php --command=artisan --command=queue:work --command=--tries=1 --restart=always`.
+2. Deploy it: `orbit instance:deploy I` (or create the default with `orbit instance:create P beast default`). The deployment succeeds, and `orbit process:list --instance=I` lists `queue`, active within 30 seconds.
+3. On Beast: `incus exec --project orbit-instances instance-I -- systemctl show -p User,ActiveState orbit-process-<id>-queue.service` prints `User=orbit` and `ActiveState=active`.
+4. Set `QUEUE_NAME=high` in the definition's `spec.environment` with the MCP tool `project-process-definition-update`, and deploy again. `/etc/orbit/processes/<id>/` in the container holds its environment file, root only, mode 0600.
+5. `orbit process:restart <id>` succeeds, and the unit's `ExecMainStartTimestamp` changes. `orbit process:logs <id>` shows the worker's start lines.
+6. `orbit process:stop <id>`, then `orbit process:list --instance=I` shows it `inactive`; `orbit process:start <id>` brings it back.
+7. A merge to the default branch deploys, and the worker restarts on the new commit.
+8. The PR records the times of steps 2, 5 and 7.
 
 ### PR 5: create an Instance as a clone of the default
 
@@ -321,7 +351,7 @@ The code changed these points of this plan:
 - **Template copy.** The template copy on the default's server is built for PostgreSQL. MySQL keeps its dump on the same server.
 - **Renewal.** The daily renewal run moves to PR 13, with the wake that also renews. A session lasts 30 days.
 - **Vault copy.** The Gateway session's vault copy stays, as a pairing's credential does. Swamp has no delete for a sensitive field that a step wrote.
-- **Plug-in point.** `InstanceLifecycleContribution` has only the create part: `assertCreateAvailable()` and `projectCreate()`. PR 6 adds the destroy part.
+- **Plug-in point.** `InstanceLifecycleContribution` records creation and terminal destroy cleanup. Conn supplies it.
 - **Limits.** The copy sets no `limits.cpu` or `limits.memory`. No measured figure exists; the parity gate sets them.
 - **Egress and PHP.** The live checks wait on the container egress path of step 2c and on 3b's PHP pin, as PR 4's do.
 
@@ -355,9 +385,11 @@ The disk, agent and failure checks follow.
 
 ### PR 6: destroy a container Instance
 
+The first slice removes clones with `--force`, including their Route, Conn records, execution copies, container storage, ACL and T3 port. Guarded removal, default destruction and the refusal while clones exist follow separately. The first slice runs no Project teardown steps.
+
 The spec commit adds [container/destroy.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/destroy.mmd) to the destroy page and cases.
 
-Tests: Pest for the refusals, `instance.default_has_clones`, the record removal and the port release. Live on Beast:
+The follow-up adds Pest for guarded refusals and `instance.default_has_clones`. Its live proof on Beast:
 
 1. Destroy refuses during a running turn, and with `--force` removes the Instance.
 2. The paired Mac loses the server at once.
@@ -536,20 +568,36 @@ The code changed these points of this plan:
 
 ### PR 15: migrate checkout Instances
 
-The spec commit adds [container/migrate.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/migrate.mmd), the page of the temporary command `instance:migrate` and its cases. [Old paths](/reference/old-paths) lists the command until the last checkout Instance has moved.
+The spec commit adds [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd), the page of the temporary command [`instance:migrate`](/cli/instance/migrate) and its cases. [Old paths](/reference/old-paths) lists the command until the last checkout Instance has moved.
 
-- The command moves one checkout Instance into a container: the checkout as it is, its database cloned through the database family, its Route moved.
+- The command moves one checkout Instance into a container: its branch, its changed, untracked and ignored files, and its Route.
 - A default Instance moves before the other Instances of its Project, and keeps its checkout until its last worktree has moved.
-- A non-default checkout is a linked worktree, so the move builds a standalone repository from the Node and copies only the uncommitted and ignored files.
+- The container gets a standalone repository from the Node. The checkout's `.git` is never copied.
 - A non-default Instance before its default refuses with `instance.default_not_migrated`.
-- A failure leaves the checkout Instance running as before.
+- Every planned retirement refuses other registered worktrees, uncommitted changes, unpushed commits and stashes before downtime. Another path in the same batch still blocks.
+- Retirement repeats the preflight, then atomically retains the whole old checkout, including all Git metadata and work-tree files.
+- Retirement never recursively deletes or prunes Git data. `retained_git_path` and `retained_git_at` make it discoverable.
+- A failure before cutover leaves the checkout Instance running as before. A retirement failure keeps the container serving and the checkout intact.
 
-Tests: Pest for the admission, the default-first rule and the projection; Ansible `unit` cases; the cases. Live:
+[Migrate a checkout Instance](/reference/development-containers#migrate-a-checkout-instance) has what is built. The code changed these points of this plan:
 
-1. On Beast, a checkout default and one checkout feature with uncommitted files move.
-2. Both answer on their Routes, with the uncommitted files and matching data.
+- **Database.** The database is not cloned. It stays, and the container gets its way to each server the Instance uses.
+- **Why.** An Instance's database name and owner come from its Project and its name. A second database for the same Instance has no name to take.
+- **No drop.** A clone would end with a drop of the old database. Leaving it in place cannot lose data.
+- **Template copy.** A clone of a moved default still copies the default's database with the template copy of PR 5. The default's connection record does not change.
+- **Reuse.** The phases of `instance-container.yml` make the container, unchanged. The Node's mirror fetches the branch from the checkout itself, so the move needs no token.
+- **Chart.** The chart is `docs/cli/instance/migrate.mmd`, not under `container/`. The kind is new and has no checkout chart to wait for.
+- **PHP version.** A Project without a recorded PHP version refuses. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it.
+- **Processes.** The move uses the shared container Process phase and vault copy. It keeps Process ids and desired states. [Migration](/cli/instance/migrate) explains cleanup and recovery.
+
+An Instance with a Route beside its own refuses. The cases file holds the refusals that the proof fleet can run today; the cases that move an Instance wait for a proof Node with the Instance pool, as PR 4 says.
+
+Tests: Pest for the admission, the default-first rule, the PHP version, the databases, the Route publication and the projection. Deno for the receipt. Ansible fixtures cover clean standalone retirement, a retained default's local files, linked and detached worktree refusals, changed-file, unpushed-commit and stash refusals, bounded path errors, retained tag-only commits, expired stash reflogs, submodules and late worktrees and restoration. Live:
+
+1. On Beast, owned clean checkout fixtures move, default first, after their worktree links are resolved. Dirty and extra-worktree fixtures refuse and name the blockers.
+2. Both moved Instances answer on their Routes, with the same files and data.
 3. After the default has moved, a feature still on its checkout keeps working until its own move.
-4. A migration that fails at the database clone leaves the checkout Instance serving.
+4. A migration that fails at the check of the database server's port leaves the checkout Instance serving, with the access that the move added removed.
 5. On every `app-dev` Node, each checkout Instance moves, default first, in a window agreed with the people who use them.
 
 ### PR 16: switch every app-dev Node
@@ -722,7 +770,7 @@ Each PR moves its part into these pages. The specification stays on [Instance co
 | [Instance releases](/reference/deployments) | Development deployment in the default container; later production releases in containers | 4, 21 |
 | [`instance:create`](/cli/instance/create) | The clone path, the first default, the new errors | 4, 5 |
 | [Conn layer](/reference/conn) | Registration by the create flow's result, the Swamp session, the environment's Instance, the asleep state, `conn.environment_asleep` | 5, 13 |
-| [Processes and Schedules](/reference/processes-and-schedules) | Processes as `orbit` units in a container; production Schedules inside | 4, 20 |
+| [Processes and Schedules](/reference/processes-and-schedules) | Processes as `orbit` units in a container; production Schedules inside | 4b, 20 |
 | [PHP runtime](/reference/php-runtime) | FrankenPHP and the PHP CLI in containers | 4 |
 | [Routes](/reference/routes) | An upstream at a container's bridge address | 4 |
 | [Environment variables](/reference/environment-variables) | `.env` in a container, owned by `orbit` with group `work` | 4 |

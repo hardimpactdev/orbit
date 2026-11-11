@@ -129,6 +129,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:destroy',
         'instance:list',
         'instance:logs',
+        'instance:migrate',
         'instance:register',
         'instance:release:list',
         'instance:rename',
@@ -750,6 +751,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:destroy' => [['instance'], ['yes' => false, 'force' => false, 'idempotency-key' => null, 'json' => false]],
         'instance:list' => [[], ['json' => false]],
         'instance:logs' => [['instance'], ['lines' => '100', 'follow' => false, 'json' => false]],
+        'instance:migrate' => [['instance'], ['force' => false, 'idempotency-key' => null, 'json' => false]],
         'instance:register' => [
             [],
             [
@@ -1262,6 +1264,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:destroy' => [['instance' => '1'], ...$profileMissing],
         'instance:list' => [[], ...$profileMissing],
         'instance:logs' => [['instance' => '1'], ...$profileMissing],
+        'instance:migrate' => [['instance' => '1', '--force' => true], ...$profileMissing],
         'instance:register' => [
             ['--project' => '1', '--no-interaction' => true, '--path' => '/tmp/orbit-command-surface-not-git'],
             'code' => 'instance.source_invalid',

@@ -54,9 +54,9 @@ Deno.test("serve grant validation and coverage regressions remain required", asy
     const ci = await Deno.readTextFile(
         new URL("../../.github/workflows/ci.yml", import.meta.url),
     );
-    const needs = ci.split("  required:")[1].match(/needs: \[([^\]]+)\]/)?.[1]
-        .split(",").map((job) => job.trim());
-    assert(needs?.includes("swamp"));
+    // Required checks waits for the Swamp validation job through the Actions API, not `needs`.
+    const required = ci.split("  required:")[1];
+    assertStringIncludes(required, "'Swamp / Swamp workflow validate': 'swamp'");
 });
 Deno.test("native environment is explicit and configuration is isolated", async () => {
     const result = await run("python3", [

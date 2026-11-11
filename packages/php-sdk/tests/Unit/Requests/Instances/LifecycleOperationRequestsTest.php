@@ -7,6 +7,7 @@ use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Instances\CloneInstanceRequest;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
+use Orbit\Sdk\Requests\Instances\MigrateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Responses\Instances\InstanceRegistrationResult;
@@ -43,6 +44,8 @@ it('preserves lifecycle admission payloads, keys and typed Operation receipts', 
         'instance.register', '/api/v1/instances/register', ['source_path' => '/work/project', 'setup' => true]],
     'transfer' => [new TransferInstanceRequest(501, 10, name: 'proof', idempotencyKey: 'lifecycle-proof'),
         'instance.transfer', '/api/v1/instances/501/transfer', ['node_id' => 10, 'name' => 'proof']],
+    'migrate' => [new MigrateInstanceRequest(501, idempotencyKey: 'lifecycle-proof'),
+        'instance.migrate', '/api/v1/instances/501/migrate', []],
     'destroy' => [new DestroyInstanceRequest(501, force: true, idempotencyKey: 'lifecycle-proof'),
         'instance.destroy', '/api/v1/instances/501', ['force' => true]],
 ]);

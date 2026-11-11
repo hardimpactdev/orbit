@@ -26,9 +26,10 @@ LINE_LIMIT = 1000
 class Run:
     """The state of one case: bound names, the rules the case made, the baseline of `unchanged` and the evidence."""
 
-    def __init__(self, fleet, spec, evidence, target=None):
+    def __init__(self, fleet, spec, evidence, target=None, case=None):
         self.fleet, self.spec, self.evidence = fleet, spec, Path(evidence)
         self.target = target or spec.target   # the Node that plays the target of the file for this case
+        self.cli_steps = [step for step in spec_module.case_steps(case) if step.name == 'cli'] if case else []
         self.names, self.rules, self.baseline, self.sources = {}, {}, {}, {}
         self.log, self.calls, self.acted, self.timings = [], 0, time.time(), {}
         self.shimmed, self.background = set(), []
@@ -125,7 +126,7 @@ def execute(case, fleet, spec, evidence, negative=False):
     and is proven when each expectation named in `must_fail` fails."""
     started = time.time()
     deadline = started + case.timeout
-    run = Run(fleet, spec, evidence, case.node)
+    run = Run(fleet, spec, evidence, case.node, case)
     failures, verdict, cause = [], 'passed', None
     try:
         if negative and (not case.negative or len(case.stages) > 1):
@@ -195,7 +196,8 @@ def command_plan(args):
         print(f"batch {batch['batch']}: {batch['summary']}")
         for case_id in batch['cases']:
             case = spec.case(case_id)
-            print(f'  {case_id}  on {case.node}, {"alone" if case.lock == "all" else "alone on its Node"}  covers {case.covers}')
+            lock = {'all': 'alone', 'node': 'alone on its Node', 'read': 'reads its Node'}[case.lock]
+            print(f'  {case_id}  on {case.node}, {lock}  covers {case.covers}')
             if args.steps:
                 for step in case.setup + [item for stage in case.stages for item in stage.act + stage.expect]:
                     print(f'    {step.where.split(" ", 2)[-1]} {step.name} {json.dumps(step.args, sort_keys=True)}')
@@ -229,6 +231,7 @@ def command_case(args):
     discovered = time.time()
     try:
         fleet = fleet_module.from_environment()
+        fleet.prepare_cli_callers(spec_module.case_steps(case))
     except fleet_module.FleetError as error:
         result = {'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [str(error)]}
         print(verdict_line(result))
@@ -239,17 +242,17 @@ def command_case(args):
 
 
 def may_start(case, active):
-    """A case that runs alone waits for the others to end and holds the fleet; any other case needs a Node no running case works on."""
+    """Several readers may share a Node. A writer holds its Node, and a global case holds the fleet."""
     if any(other.lock == 'all' for other in active):
         return False
     if case.lock == 'all':
         return not active
-    return all(other.node != case.node for other in active)
+    return all(other.node != case.node or (other.lock == case.lock == 'read') for other in active)
 
 
 def schedule(cases, limit, work):
     """Run `work(case)` for the cases, at most `limit` at a time, and yield `(case, result)` as each ends. The cases that share the fleet
-    with others go first, in file order; the ones that run alone follow. A case waits for a free Node, and the next that can start goes on."""
+    with others go first, in file order; the ones that run alone follow. A case waits for its Node lock, and the next that can start goes on."""
     waiting = [case for case in cases if case.lock != 'all'] + [case for case in cases if case.lock == 'all']
     running = {}
     with concurrent.futures.ThreadPoolExecutor(limit) as pool:
@@ -286,6 +289,7 @@ def command_batch(args):
     discovered = time.time()
     try:
         fleet = fleet_module.from_environment()
+        fleet.prepare_cli_callers([step for case in cases for step in spec_module.case_steps(case)])
     except fleet_module.FleetError as error:
         print('\n'.join(verdict_lines([{'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [str(error)]} for case in cases])))
         return 1
@@ -313,7 +317,9 @@ def command_setup(args):
     root = Path(args.evidence or fleet_module.evidence_root())
     try:
         items = spec_module.expand_steps(spec.batches[args.batch].get('setup') or [], 'setup', f'batch {args.batch} setup', {}, {}, {})
-        run = Run(fleet_module.prepare(), spec, root / ('batch-' + args.batch))
+        fleet = fleet_module.prepare()
+        fleet.prepare_cli_callers(items)
+        run = Run(fleet, spec, root / ('batch-' + args.batch))
         run_steps(run, items, 'setup', failures, time.time() + 120)
     except steps.Unrun as error:
         failures.append(str(error))

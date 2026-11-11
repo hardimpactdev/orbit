@@ -83,9 +83,13 @@ The pin keeps that from happening. Until the hub hears from the new address, it 
 
 A hostname endpoint gets no pin. The pin is one `iptables` rule with the comment `orbit-hub-move`. The job removes it when it ends, removes a pin that an earlier, killed job left before it starts, and a reboot drops it. When the rule cannot be added, nothing changes and the phase fails with the assertion `node.hub_switch_unpinned`.
 
+When `wg` does not load the new files, no handshake can come: the job goes back at once, in the way described next, and the phase fails with the assertion `node.hub_switch_load_failed`.
+
 When no such handshake comes, the job puts the previous files back and sets the live configuration it saved before the move. The Node keeps the tunnel it had, also when a previous file was missing. After a cut-off move the job loads the previous files instead, because the live tunnel may already run the new ones. A new file without a previous copy is deleted, so the next converge reads no endpoint and moves again with the same rollback.
 
-A move that was cut off, for example by a reboot, leaves the files it replaced; the next converge decides the move from them and keeps them for its own rollback. The phase then fails with the assertion `node.hub_switch_no_handshake`. The job also records its outcome in `orbit.move-result` on the Node. A poll of the job that runs while the old tunnel is down can lose the SSH session; the converge then reaches the Node again through the tunnel the job left, reads the outcome, and reports `node.hub_switch_no_handshake` for a rollback. Only a Node that Swamp cannot reach within four minutes fails as unreachable.
+A move that was cut off, for example by a reboot, leaves the files it replaced; the next converge decides the move from them and keeps them for its own rollback. The phase then fails with the assertion `node.hub_switch_no_handshake`.
+
+The job also records its outcome in `orbit.move-result` on the Node. A poll of the job that runs while the old tunnel is down can lose the SSH session; the converge then reaches the Node again through the tunnel the job left, reads the outcome, and reports `node.hub_switch_no_handshake` or `node.hub_switch_load_failed` for a rollback. Only a Node that Swamp cannot reach within four minutes fails as unreachable.
 
 This is a rollback of the move, not a fallback: the Node stays on the endpoint it used before, and the converge reports the failure.
 
@@ -201,7 +205,7 @@ A gone Node whose id is above every remaining Node keeps its leftover file until
 
 Node removal runs one Swamp run on 209 that reaches the hub over SSH as root, with no script on the hub. `@swamp/cfgmgmt/exec` moves the running key into `/etc/wireguard/orbit.key` (0600) once, and skips this when the file exists. `@swamp/cfgmgmt/file` writes `orbit.conf`. One `rm -f` deletes the removed Node's file, and one `bash -c` command runs `wg syncconf` on the files that remain, composed on the Node as above.
 
-`wg syncconf` removes the interface key when its input has none, which the topology proof showed. Composing the key in on the Node keeps it out of the Gateway, the vault and the run history.
+`wg syncconf` removes the interface key when its input has none, which the topology proof showed. Composing the key in on the Node keeps it out of the Gateway, the vault and the run history. Every such input ends the key line with one newline, whether or not the key file ends with one. `wg` prints a value that it refuses; the load drops that value from its error output, so a refused key line does not reach the run history either.
 
 The run ends with the official `@swamp/cfgmgmt/systemd` check that `wg-quick@orbit` runs and is enabled, and a native assert that every admitted peer is live.
 

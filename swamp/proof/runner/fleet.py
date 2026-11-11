@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 # The prompt driver and the ufw shim loop by nature, so they live with the guest programs, outside the Swamp-shape
@@ -22,7 +23,7 @@ CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT
 NODE_HOME = '/home/orbit'
 NODE_USER = '1000'   # the managed user `orbit` of a Node
 # The tested checkout, where the nested Nodes see it (the fleet start mounts it on the Gateway and the app-dev Node; a case that runs the CLI
-# on another Node mounts it there). Nothing installs an `orbit` binary on a nested Node: the Gateway's CLI converge does that for the real fleet only.
+# on another Node needs the runner to mount it there before scheduling). Nothing installs an `orbit` binary on a nested Node: the Gateway's CLI converge does that for the real fleet only.
 CHECKOUT = Path(__file__).resolve().parents[3]
 NODE_CHECKOUT = NODE_HOME + '/orbit'
 NODE_ORBIT = ['php', NODE_CHECKOUT + '/apps/cli/orbit']
@@ -54,14 +55,13 @@ class Fleet:
             return subprocess.CompletedProcess(['incus', 'exec', node], 124, error.stdout or '', 'timeout')
 
     def cli(self, args, timeout=240, form='json', node=None):
-        """Run the CLI without a terminal. The human form leaves out `--json`. With `node` the call is the `orbit` installed on that
+        """Run the CLI without a terminal. The human form leaves out `--json`. With `node` the call uses the prepared checkout on that
         Node, run as its managed user: the Gateway sees that Node as the caller."""
         started = time.time()
         words = list(args)
         if form == 'json':
             words.insert(words.index('--') if '--' in words else len(words), '--json')
         if node:
-            self.prepare_node_cli(node)
             completed = self.incus_exec(node, [*NODE_ORBIT, *words], timeout)
         else:
             completed = subprocess.run([*ORBIT, *words], capture_output=True, text=True, timeout=timeout, env=CLI_ENV, cwd='/',
@@ -73,16 +73,40 @@ class Fleet:
         return {'rc': completed.returncode, 'json': parsed, 'stdout': completed.stdout, 'stderr': completed.stderr,
                 'secs': round(time.time() - started, 2), 'args': ['orbit', *words]}
 
+    def operations(self, kind=None, target_type=None, target_id=None):
+        """The operation:list API applies these filters before selecting the newest page. The CLI has no generic target filters."""
+        query = urlencode({key: value for key, value in {'kind': kind, 'target_type': target_type, 'target_id': target_id}.items() if value is not None})
+        done = subprocess.run(['curl', '--silent', '--show-error', '--fail-with-body', '--max-time', '60', '--cacert', OUTER_CA,
+                               f'https://{NESTED_GATEWAY}/api/v1/operations?{query}'],
+                              capture_output=True, text=True, timeout=65, stdin=subprocess.DEVNULL)
+        try:
+            parsed = json.loads(done.stdout)
+        except ValueError:
+            parsed = None
+        return {'rc': done.returncode, 'json': parsed, 'stdout': done.stdout, 'stderr': done.stderr}
+
     def incus_exec(self, node, argv, timeout=60):
         """A program on a Node as its managed user, with the home of that user."""
         return subprocess.run(['incus', 'exec', self.nodes[node]['instance'], '--user', NODE_USER, '--cwd', NODE_HOME, '--env', 'HOME=' + NODE_HOME, '--env', 'COLUMNS=' + COLUMNS, '--', *argv],
                               capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
 
+    def prepare_cli_callers(self, items):
+        """Prepare each required caller once, before any case can take a Node lock.
+        The outer VM supplies the default and gateway caller; only other Nodes need preparation."""
+        callers = {step.args.get('as') for step in items if step.name == 'cli'} - {None, 'gateway'}
+        for node in sorted(callers):
+            if node not in self.nodes:
+                raise FleetError(f'cli as {node}: not a Node of the fleet')
+            try:
+                self.prepare_node_cli(node)
+            except subprocess.TimeoutExpired as error:
+                raise FleetError(f'{node}: CLI caller preparation timed out after {error.timeout} seconds') from error
+
     def prepare_node_cli(self, node):
         """Make the tested CLI run on `node` as that Node: the checkout mounted, and a profile that names the nested Gateway.
 
-        A restore of `base` takes both back when the Node had neither at the time, so this runs before each call and leaves a Node that is
-        ready alone. A step that cannot be done is a `FleetError` that names it, and not the exit status 127 of a missing program.
+        A restore of `base` takes both back when the Node had neither at the time, so the runner prepares required callers
+        before scheduling cases. A step that cannot be done is a `FleetError` that names it, and not the exit status 127 of a missing program.
         """
         guest = self.nodes[node]['instance']
         mounted = subprocess.run(['incus', 'config', 'device', 'get', guest, 'checkout', 'source'], capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)

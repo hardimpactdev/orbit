@@ -7,6 +7,7 @@ use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
@@ -16,6 +17,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
@@ -23,7 +25,10 @@ use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
+use App\Models\ProcessDefinition;
+use App\Models\ProjectDevelopmentDeployStep;
 use App\Support\ValidatedData;
+use Dotenv\Dotenv;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -78,6 +83,37 @@ function seededDefault(Node $node, ?ProjectType $type = null): Instance
 }
 
 describe('a clone of the container default', function (): void {
+    it('limits every default and clone to the same CPU memory process and root disk budget', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $operation = containerCreate($default->project, $node, 'bounded');
+        $runtime = InstanceRuntime::query()->where('instance_id', $default->id)->sole();
+        $defaultIntent = app(InstanceContainer::class)->intent($default, $runtime);
+
+        foreach ([$defaultIntent, containerIntentOf($operation)] as $container) {
+            expect($container)->toMatchArray([
+                'project' => 'orbit-instances',
+                'config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096'],
+                'root_disk_pool' => 'orbit-instances', 'root_disk_size' => '40GiB',
+            ]);
+        }
+    });
+
+    it('keeps the Project display name on one safe metadata line and titles its T3 project', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $name = "Nick's \"App\" \$HOME\\next\nline";
+        $default->project->update(['name' => $name]);
+        $container = containerIntentOf(containerCreate($default->project->fresh(), $node, 'named'));
+        $metadata = $container['clone']['files'][0]['content'];
+        $values = Dotenv::parse($metadata);
+        expect($container['clone']['t3']['title'])->toBe($name)
+            ->and($values['ORBIT_PROJECT_ID'])->toBe((string) $default->project_id)
+            ->and($values['ORBIT_PROJECT_NAME'])->toBe(str_replace(["\r", "\n"], ' ', $name))
+            ->and($values['ORBIT_NODE'])->toBe($node->name)
+            ->and(substr_count($metadata, "\n"))->toBe(8);
+    });
+
     it('takes the next address, the lowest free T3 port and the default as its clone source', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
@@ -90,6 +126,33 @@ describe('a clone of the container default', function (): void {
             ['bridge_address' => '10.253.0.3', 't3_port' => 3800, 'clone_source_instance_id' => $default->id],
             ['bridge_address' => '10.253.0.4', 't3_port' => 3801, 'clone_source_instance_id' => $default->id],
         ]);
+    });
+
+    it('runs its own records of the Project\'s development Processes, not the default\'s units from the seed', function (): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'worker', 'environments' => ['development'],
+            'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'node', 'worker.js'], 'environment' => ['QUEUE' => 'high']]]);
+        $default = Instance::query()->findOrFail(containerCreate($project, $node)->target_id);
+        $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
+        InstanceRuntime::query()->where('instance_id', $default->id)->firstOrFail()
+            ->update(['seed_commit' => str_repeat('c', 40), 'power_state' => InstanceRuntimePowerState::Running]);
+
+        $operation = containerCreate($project, $node, 'feature');
+
+        $vault = vaultReadingSocket([]);
+        $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+        $workspace = json_decode(collect($vault->puts)->firstWhere('key', 'instance-create-processes-'.$operation->id)['value'], true, 512, JSON_THROW_ON_ERROR);
+        $environment = collect($vault->puts)->firstWhere('key', 'instance-create-environment-input-'.$operation->id)['value'];
+        $own = Process::query()->where('owner_id', $operation->target_id)->sole();
+        $units = $run['intent']['container']['processes'];
+        expect($workspace['environment'])->toBe($environment)
+            ->and(array_keys($workspace['processes']))->toBe([$units[0]['environment']])
+            ->and(Dotenv::parse($workspace['processes'][$units[0]['environment']])['QUEUE'])->toBe('high')
+            ->and(json_encode($run['intent']))->not->toContain('QUEUE=high');
+        expect($own->id)->not->toBe(Process::query()->where('owner_id', $default->id)->sole()->id)
+            ->and(array_column($units, 'name'))->toBe(["orbit-process-{$own->id}-worker.service"])
+            ->and($units[0]['environment'])->toStartWith("/etc/orbit/processes/{$own->id}/");
     });
 
     it('hands the run the seed snapshot, T3\'s port and files, its firewall rules and no deploy step', function (): void {
@@ -107,10 +170,12 @@ describe('a clone of the container default', function (): void {
             ->and($clone['snapshot'])->toBe('seed-'.str_repeat('c', 40))
             ->and($clone['source_mirror'])->toBe('/var/lib/orbit/instance-repositories/'.$default->id.'.git')
             ->and($clone['t3'])->toMatchArray(['port' => 3800, 'listen' => '10.44.0.7', 'device' => 't3', 'internal_port' => 3773,
-                'url' => 'http://10.44.0.7:3800', 'label' => 'tool / feature'])
-            ->and(collect($clone['files'])->pluck('path')->all())->toBe(['/etc/orbit/instance', '/home/agent/.codex/config.toml', '/home/agent/.claude.json'])
-            ->and($clone['files'][0]['content'])->toBe("# Managed by Orbit.\nORBIT_INSTANCE_ID={$id}\nORBIT_INSTANCE=feature\nORBIT_PROJECT=tool\nORBIT_URL=\n")
+                'url' => 'http://10.44.0.7:3800', 'label' => 'tool / feature', 'title' => 'tool'])
+            ->and(collect($clone['files'])->pluck('path')->all())->toBe(['/etc/orbit/instance', '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json'])
+            ->and($clone['files'][0]['content'])->toBe("# Managed by Orbit.\nORBIT_INSTANCE_ID={$id}\nORBIT_INSTANCE=feature\nORBIT_PROJECT=tool\nORBIT_PROJECT_ID={$default->project_id}\nORBIT_PROJECT_NAME=\"tool\"\nORBIT_NODE={$node->name}\nORBIT_URL=\n")
             ->and($clone['files'][1]['content'])->toContain('base_url = "http://10.253.0.1:8319/v1"')
+            ->and($clone['files'][2])->toBe(['path' => '/home/agent/.claude.json', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]])
+            ->and($clone['files'][3])->toBe(['path' => '/home/agent/.t3/userdata/settings.json', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true]])
             ->and($clone['model_environment'])->toBe(['path' => '/home/agent/.config/orbit/model.env', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600'])
             ->and($clone['links'][0])->toBe(['path' => '/home/agent/.claude/CLAUDE.md', 'target' => '/opt/orbit-agent/current/notes/package.md'])
             // WireGuard peers reach T3, the task VM range first refused.
@@ -177,6 +242,22 @@ describe('a clone of the container default', function (): void {
     });
 });
 
+it('starts a clone without copying the Project development deploy commands that its default already ran', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    ProjectDevelopmentDeployStep::query()->create(['project_id' => $default->project_id, 'name' => 'install', 'position' => 1,
+        'command' => 'bun install', 'required' => true, 'timeout_seconds' => 300]);
+    $operation = containerCreate($default->project, $node, 'feature');
+    $vault = vaultReadingSocket([]);
+
+    $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+
+    expect($run['intent']['container']['steps'])->toBe([])
+        ->and(array_keys($run['execution_secrets']))->not->toContain('step_0')
+        ->and(collect($vault->puts)->pluck('key')->all())->not->toContain('development-deploy-operation-'.$operation->id.'-step-0')
+        ->and($run['execution_secrets']['model_environment']['key'])->toBe('instance-create-model-'.$operation->id);
+});
+
 it('starts the run with the placeholder model key in the vault and the template copy of the default database', function (): void {
     $node = containerDefaultNode();
     databaseServerOn($node, 'pg', DatabaseDriver::Pgsql, 5432);
@@ -220,6 +301,32 @@ describe('the template copy of a clone\'s PostgreSQL database', function (): voi
 });
 
 describe('the clone\'s create result', function (): void {
+    it('shows the failed clone command in the Operation error and keeps its stable code', function (): void {
+        $node = containerDefaultNode();
+        $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
+        $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']])->save();
+        $caller = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'reader', 'status' => 'active',
+            'platform' => 'linux', 'wireguard_ip' => '10.44.0.2', 'public_ssh_host' => '10.44.0.2', 'user' => 'orbit']));
+        $caller->accessibleNodes()->attach($node->id);
+        $diagnostic = 'instance.container_sessions_failed: command php exited 1';
+        $failure = app(NativeStepFailure::class)->fromRun(['status' => 'failed', 'jobs' => [['steps' => [[
+            'name' => 'clone-sessions', 'status' => 'failed',
+            'error' => 'exec failed on 1/1 host(s): target (exit 1: '.$diagnostic.')',
+        ]]]]], $operation);
+
+        app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
+            'status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+            'error_code' => 'instance.create_register_failed', 'failure' => $failure,
+            'result' => ['instance_id' => $operation->target_id, 'ready' => false, 'failed_step' => 'register'],
+        ]);
+
+        $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->getJson('/api/v1/operations/'.$operation->id)
+            ->assertOk()->assertJsonPath('data.error_code', 'instance.create_register_failed')
+            ->assertJsonPath('data.error.code', 'instance.create_register_failed')
+            ->assertJsonPath('data.error.detail', 'exec failed on 1/1 host(s): target (exit 1: '.$diagnostic.')')
+            ->assertJsonPath('data.failed_step', 'clone-sessions');
+    });
+
     it('records the T3 server from the run\'s result: its Node, its Instance and the Gateway session from the vault', function (): void {
         $node = containerDefaultNode();
         $operation = containerCreate(seededDefault($node)->project, $node, 'feature');

@@ -7,7 +7,7 @@ namespace App\Domain\Instances;
 use App\Models\Instance;
 
 /**
- * An extension's part of a container Instance's create flow (docs/reference/development-containers.md#t3-registration-and-pairing).
+ * An extension's part of a container Instance's create and destroy flows (docs/reference/development-containers.md#t3-registration-and-pairing).
  * The admission of a clone asks each contribution first; the create's projection hands each one the run's result, in its own
  * transaction. A contribution changes only its own records: the machine work is the run's.
  */
@@ -23,4 +23,7 @@ interface InstanceLifecycleContribution
      * @param  array<string, mixed>  $server
      */
     public function projectCreate(Instance $instance, array $server): void;
+
+    /** Remove extension records after native destruction, inside the projection transaction. */
+    public function projectDestroy(Instance $instance): void;
 }

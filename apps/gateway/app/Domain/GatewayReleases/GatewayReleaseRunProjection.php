@@ -42,6 +42,7 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         'Snapshot the database' => ['snapshot', 'gateway.release_snapshot_failed', false],
         'Migrate' => ['migrate', 'gateway.release_migrate_failed', true],
         'Check the migration' => ['migrate', 'gateway.release_migrate_failed', true],
+        'Wait for active Operations' => ['idle', 'gateway.release_idle_check_failed', true],
         'Load Swamp on Node 209' => ['swamp', 'gateway.release_swamp_load_failed', true],
         'Hand over the release' => ['handoff', 'gateway.release_handoff_failed', true],
     ];
@@ -150,10 +151,10 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             durationMs: $record->created_at === null ? 0 : (int) $record->created_at->diffInMilliseconds(now()),
             phases: $phases,
             errorCode: $code,
-            message: $code === null ? null : "Swamp run for Operation {$operation->id} ended {$status}".($step === null ? '.' : " at {$step}.").self::migrateOutput($data, $phase),
+            message: $code === null ? null : "Swamp run for Operation {$operation->id} ended {$status}".($step === null ? '.' : " at {$step}.").self::failureOutput($data, $phase),
         ), $record);
         if ($code === null) {
-            // The task image refresh is not here: the run's own step admits it as soon as Swamp has loaded the commit.
+            // The activate child admits task image refreshes after verification and the new Horizon start.
             $id = GatewayReleaseCommit::id($sha);
             DB::afterCommit(static function () use ($id): void {
                 try {
@@ -172,14 +173,18 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
     }
 
     /**
-     * The end of the migration's own output for a failed migration: an exec that fails keeps none, so Migrate prints it with its exit code.
+     * The migration output or pre-load guard refusal, including its blocking Operation IDs, for the release record.
      *
      * @param  array<string,mixed>  $data
      */
-    private static function migrateOutput(array $data, string $phase): string
+    private static function failureOutput(array $data, string $phase): string
     {
-        $output = ValidatedData::object($data['result'] ?? [])['migrate'] ?? null;
-        if ($phase !== 'migrate' || ! is_string($output) || trim($output) === '') {
+        $output = match ($phase) {
+            'migrate' => ValidatedData::object($data['result'] ?? [])['migrate'] ?? null,
+            'idle' => ValidatedData::object($data['failure'] ?? [])['detail'] ?? null,
+            default => null,
+        };
+        if (! is_string($output) || trim($output) === '') {
             return '';
         }
         // The output can carry SQL with its values, and the message reaches the release alert: it is redacted like any native failure.

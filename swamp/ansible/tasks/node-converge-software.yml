@@ -13,6 +13,9 @@
 - name: Reconcile selected JavaScript pins
   when: "'vp' in tool_by_name"
   ansible.builtin.import_tasks: task-vm-javascript.yml
+- name: Reconcile the Tool helper's Deno pin
+  when: "'deno' in tool_by_name"
+  ansible.builtin.import_tasks: task-vm-deno.yml
 - name: Reconcile selected browser pin
   when: "'chrome-headless-shell' in tool_by_name"
   ansible.builtin.import_tasks: node-converge-browser.yml

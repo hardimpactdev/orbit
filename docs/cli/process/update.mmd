@@ -30,6 +30,7 @@ sequenceDiagram
   Note over GW: Validate, record the task<br/>keep old spec · #5130
   %%> Requirements:
   %%> - your Node has an access grant to the Process's Node
+  %%> - a Valkey Database server follows the [image-update rule and validation order](/reference/database-servers#update-a-valkey-servers-image)
   %%> - a Route that points to this Process keeps the same listener, else `process.route_upstream_changed`
   %%> Result:
   %%> - the new unit or container rendered; secret environment values pushed to the vault key `process-update-operation-5130`

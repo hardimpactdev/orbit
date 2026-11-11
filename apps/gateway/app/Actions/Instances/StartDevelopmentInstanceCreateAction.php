@@ -27,8 +27,8 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Processes\ProcessInstanceOperation;
-use App\Domain\ProjectDefinitions\DefinitionEnvironment;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\ProjectLifecycleStepStore;
@@ -46,7 +46,6 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -130,6 +129,10 @@ final readonly class StartDevelopmentInstanceCreateAction
                 // The checkout path names the workspace inside the container, which only the Instance's id names.
                 $instance->update(['checkout_path' => InstanceContainer::workspaceOnNode($instance)]);
             }
+            if ($container) {
+                // The runtime row first: it makes the Process records target the container.
+                app(InstanceContainer::class)->reserve($instance, $node, $source);
+            }
             if (! $instance instanceof Instance) {
                 $checkout = StoragePath::parse($sourceRoot)->append($project->slug, $name);
                 $this->overlap->assertAvailable($node->id, $checkout,
@@ -190,9 +193,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 $server = $serverSlug === null ? null : $this->serverDatabase($instance, $serverSlug, $clone);
                 $copy = $server === null && $clone !== null ? $this->sqliteCopy($instance, $node, $clone) : null;
                 $database = $copy['intent'] ?? null;
-                if (! $container) {
-                    app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
-                }
+                app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
                 $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? $server['connection'] ?? null, $source);
                 // A rerun after a failed create checks the Processes its first run already started.
                 $input['members'] = $container ? [] : app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions', includeActive: true)['members'];
@@ -215,7 +216,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 // no deploy step but adds its database copy and its T3 start.
                 $input['run_budget_seconds'] = 1800 + array_sum(array_column($steps, 'timeout_seconds')) + ($server === null ? 0 : 180);
 
-                return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId);
+                return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
             }
             // F8: 60 s for the create phases, the admitted setup timeouts (the setup phase runs within 540 s),
             // 30 s for the Process phase, 180 s for the Route child (CSR, signing, install, publication and its TLS probe; 117 s measured cold),
@@ -225,7 +226,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 static fn (LifecycleStep $step): int => $step->timeoutSeconds, app(ProjectLifecycleStepStore::class)->ordered($project, LifecyclePhase::Setup)))) + 30
                 + (isset($input['route_create']) ? 240 : 0) + ($database === null && $server === null ? 0 : 180);
 
-            return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId);
+            return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
         });
     }
 
@@ -278,8 +279,7 @@ final readonly class StartDevelopmentInstanceCreateAction
     /**
      * Whether this create makes a container Instance, and of which default (docs/reference/development-containers.md#lifecycle). The
      * Project's one `default` in the fleet is a container on a Node of the build list, and every other Instance of the Project is a
-     * clone of it on its Node. The Project's own development Processes come in a later part of the runtime, so a Project that has
-     * them is refused until then.
+     * clone of it on its Node.
      *
      * @return array{0: bool, 1: Instance|null} Whether it is a container, and the default it clones
      */
@@ -323,10 +323,6 @@ final readonly class StartDevelopmentInstanceCreateAction
 
     private function assertContainerProject(Project $project): void
     {
-        if (ProcessDefinition::query()->where('project_id', $project->id)->get()
-            ->contains(static fn (ProcessDefinition $definition): bool => in_array(DefinitionEnvironment::Development->value, $definition->environments, true))) {
-            $this->unavailable('The Project\'s development Processes cannot run in a container yet.');
-        }
         app(InstanceContainer::class)->assertPhp($project);
     }
 

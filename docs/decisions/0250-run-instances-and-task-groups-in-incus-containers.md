@@ -86,7 +86,7 @@ The default Instance holds the fleet's ready copies, with each nested container 
   - The app runs as `orbit`: FrankenPHP, queue workers, development servers and every Orbit Process.
   - T3, Claude Code and Codex run as `agent`, and so do their shell commands. There is no wrapper shell and no switch between the users.
   - `orbit` cannot run the agent binaries, read `/home/agent`, see agent processes or reach the model route. A firewall rule by uid inside the container enforces the last.
-  - Both users share the workspace through a group with default ACLs. Git's `safe.directory` names the workspace for `orbit` only, because `agent` owns the repository.
+  - Both users share the workspace through a group with default ACLs. Git's `safe.directory` names only `/srv/workspace` in each user's own Git config, because the workspace and `.git` can have different owners.
   - This is the boundary against an attacker who comes in through a preview URL.
   - Root work (packages, services, runtime setup) goes through Orbit from the host. A project's system packages come from its recipe, not from the agent.
   - Without a nested fleet, `user.max_user_namespaces=0` is set inside the container, and the container has no nesting.

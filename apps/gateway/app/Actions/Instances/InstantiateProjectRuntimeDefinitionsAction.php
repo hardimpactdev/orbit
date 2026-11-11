@@ -104,6 +104,34 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
         $instance->update(['runtime_definitions_captured_at' => now()]);
     }
 
+    /**
+     * Brings a container Instance's Processes up to the Project's development definitions before a deployment admits its units: a new
+     * definition becomes a new record, and a changed one changes its record. The deployment installs and starts both.
+     */
+    public function refreshForContainer(Instance $instance): void
+    {
+        $definitions = ProcessDefinition::query()->where('project_id', $instance->project_id)
+            ->orderBy('name')->orderBy('id')->lockForUpdate()->get()
+            ->filter(static fn (ProcessDefinition $definition): bool => in_array(DefinitionEnvironment::Development->value, $definition->environments, strict: true));
+        if ($definitions->isEmpty()) {
+            return;
+        }
+        $target = $this->processTargets->forPreparation($instance);
+        foreach ($definitions as $definition) {
+            $record = Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)
+                ->where('source_definition_id', $definition->id)->lockForUpdate()->first();
+            if ($record === null) {
+                $this->captureProcess($instance, $definition, $target, DesiredProcessState::Running);
+
+                continue;
+            }
+            $attributes = $this->processSpecifications->attributes($this->processData($instance, $definition), $target);
+            if (! $this->processSpecifications->matches($record, $attributes)) {
+                $record->forceFill([...$attributes, 'status' => LifecycleStatus::Provisioning])->save();
+            }
+        }
+    }
+
     private function assertProductionTarget(Instance $instance): void
     {
         if ($instance->placedOnAppProd()) {

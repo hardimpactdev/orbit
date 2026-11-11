@@ -9,6 +9,7 @@ use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Node;
@@ -28,6 +29,10 @@ final readonly class ProcessOperationAdmission
     {
         return DB::transaction(function () use ($process, $verb, $created, $preserveRecord, $caller, $requestId): Operation {
             $input = $this->inputFor($process, $verb, $created, $preserveRecord, $caller);
+            if (isset($input['container']) && in_array($verb, ['create', 'update', 'destroy'], true)) {
+                // A container Instance takes its Processes from the Project's development definitions, which a deployment installs.
+                throw new ResourceOperationException('operation.kind_unavailable', 'Change the Processes of a container Instance through the Project\'s development definitions and a deployment.', 503);
+            }
             if (in_array($verb, ['create', 'update'], true) && $process->runtime === ProcessRuntime::Systemd) {
                 $input['activation_pending'] = $process->systemd_activation_pending || $process->systemd_activation_hash !== $input['content_hash'];
             }
@@ -48,7 +53,7 @@ final readonly class ProcessOperationAdmission
             'start', 'restart' => $this->targets->forStart($process),
             default => $this->targets->forInstallation($process),
         };
-        if ($process->isVpDev() && in_array($verb, ['create', 'update', 'start', 'restart'], true)) {
+        if ($target->container === null && $process->isVpDev() && in_array($verb, ['create', 'update', 'start', 'restart'], true)) {
             $instance = $target->instance;
             if ($instance !== null) {
                 app(VitePortAllocator::class)->assign($instance, recheck: true);
@@ -65,16 +70,21 @@ final readonly class ProcessOperationAdmission
     public function inputForTarget(Process $process, string $verb, ProcessTarget $target, ?ManagedUserAccount $account = null, bool $created = false, bool $preserveRecord = false, ?Node $caller = null): array
     {
         $systemd = $process->runtime === ProcessRuntime::Systemd;
+        $hostVite = $target->container === null && $process->isVpDev();
         $templateAccount = $account === null && $systemd && ! $process->isVpDev() && $target->certificateScope !== null;
         if ($templateAccount) {
             $account = new ManagedUserAccount($target->user, '__orbit_process_account_group__', self::AccountHomeToken);
         }
         $name = $systemd ? $this->systemd->unitName($process) : $this->docker->containerName($process);
         $input = ['process_id' => $process->id, 'node_id' => $target->node->id, 'name' => $name,
-            'runtime' => $process->runtime->value, 'variant' => $process->isVpDev() && in_array($verb, ['create', 'update', 'start', 'restart'], true) ? 'vite' : $process->runtime->value, 'desired' => $process->desired_state->value,
+            'runtime' => $process->runtime->value, 'variant' => $hostVite && in_array($verb, ['create', 'update', 'start', 'restart'], true) ? 'vite' : $process->runtime->value, 'desired' => $process->desired_state->value,
             'on_demand' => $target->onDemandHostStart, 'created' => $created, 'preserve_record' => $preserveRecord,
             'caller_node_id' => $caller?->id,
-            'vite' => $verb !== 'stop' && $systemd && $process->isVpDev() ? ['path' => SystemdProcessRenderer::viteEnvironmentPath($process->owner_id), 'instance_id' => $process->owner_id] : null];
+            'vite' => $verb !== 'stop' && $systemd && $hostVite ? ['path' => SystemdProcessRenderer::viteEnvironmentPath($process->owner_id), 'instance_id' => $process->owner_id] : null];
+        if ($target->container !== null) {
+            // The unit lives in the Instance container; Swamp acts on it through `incus exec` on the Node.
+            $input['container'] = $target->container;
+        }
         if (! $systemd && in_array($verb, ['start', 'stop', 'restart'], true)) {
             $input['image'] = $this->docker->containerInput($process, $target)['image'];
         }
@@ -102,7 +112,7 @@ final readonly class ProcessOperationAdmission
             }
         }
 
-        if ($process->isVpDev() && in_array($verb, ['create', 'update', 'start', 'restart'], true) && $target->instance !== null) {
+        if ($hostVite && in_array($verb, ['create', 'update', 'start', 'restart'], true) && $target->instance !== null) {
             $instance = $target->instance;
             $marker = RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id));
             $input['vite_plan'] = [

@@ -47,6 +47,12 @@
           - intent.agent.url is string
           - intent.agent.sha256 is match('^[0-9a-f]{64}$')
           - secrets.agent_verifier is match('^[0-9a-f]{64}$')
+        quiet: true
+      tags: [input]
+    - name: Require the recorded CLI pin only for a CLI caller
+      when: intent.cli != None
+      ansible.builtin.assert:
+        that:
           - intent.cli.skip_reason == None
           - intent.cli.plan_error == None
           - intent.cli.release.url is string
@@ -71,6 +77,26 @@
       tags: [roles]
     - name: Start the independent Tool observations
       ansible.builtin.set_fact: { tool_results: [] }
+      tags: [tools]
+    # A helper that cannot run is no Tool failure. It fails the phase here, before the rescue of a Tool can record one.
+    - name: Run the Tool helper once before judging any Tool
+      when: intent.tools | length > 0
+      ansible.builtin.command:
+        argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", check]
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      failed_when: false
+      register: tool_helper
+      tags: [tools]
+    - name: Require a working Tool helper
+      when: intent.tools | length > 0
+      ansible.builtin.assert:
+        that: tool_helper.rc | default(1) == 0 and (tool_helper.stdout | default('') | trim) == '{"ready":true}'
+        fail_msg: >-
+          The Tool helper does not run with {{ converge_deno }} on the Swamp Node, so no Tool was judged.
+          Converge the Swamp Node: its software phase installs the pinned Deno.
+        quiet: true
       tags: [tools]
     - name: Reconcile each independent Tool
       ansible.builtin.include_tasks:
@@ -108,6 +134,7 @@
       changed_when: false
       tags: [check]
     - name: Check the recorded CLI artifact
+      when: intent.cli != None
       tags: [check]
       block:
         - name: Read the selected CLI checksum
@@ -117,6 +144,11 @@
           ansible.builtin.assert:
             that: cli_check.stat.checksum | default('') == intent.cli.release.sha256
             quiet: true
+    - name: Check the retired CLI files without changing the Node
+      when: intent.cli == None
+      ansible.builtin.import_tasks: tasks/node-converge-cli-absent.yml
+      vars: { cli_remove: false }
+      tags: [check]
     - name: Check the selected software without writes
       ansible.builtin.include_tasks:
         file: tasks/node-converge-software-check.yml

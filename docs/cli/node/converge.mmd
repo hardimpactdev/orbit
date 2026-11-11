@@ -66,6 +66,7 @@ sequenceDiagram
     GW->>SW: Start run, full intent<br/>operation-node-converge
     %%> Inputs:
     %%> - target, scope, recorded roles, Tools, network and vault key names; playbooks read release pins
+    %%> - the Gateway includes a CLI plan only for a Node with a recorded `ci-runner` assignment that is not being removed; scope flags do not change that decision
     %%> - reserve the Node and its recorded hub until the Operation settles
     GW-->>CLI: 202 Accepted<br/>Operation ID
     %%> Result:
@@ -75,7 +76,9 @@ sequenceDiagram
     %%> - writes private inventory, vars and known_hosts from schema-validated inputs
     SW->>N: Install Orbit's layer<br/>Ansible phase: agent
     %%> What it does:
-    %%> - applies the agent, CLI, Orbit-owned files and units, and the kernel policy (SCTP blocked, non-local bind); restarts only changed services
+    %%> - applies the agent, Orbit-owned files and units, and the kernel policy (SCTP blocked, non-local bind); restarts only changed services
+    %%> - with a CLI plan: requires and installs its pinned release and root profile
+    %%> - without a CLI plan: needs no CLI release or probe; removes the managed `/usr/local/bin/orbit` link, regular `orbit-0.N.0` binaries and root profile at `/root/.orbit/config.json` in this phase, under the Node update lock; preserves unrelated executables, backups and directories
     SW->>N: Install pinned software<br/>Ansible phase: software
     %%> What it does:
     %%> - reads recipe.json and holds its selected packages at their pins
@@ -83,6 +86,10 @@ sequenceDiagram
     %%> What it does:
     %%> - repairs selected role configuration without changing an Instance or role assignment
     SW->>N: Apply recorded Tools<br/>Ansible phase: tools
+    %%> What it does:
+    %%> - runs the Tool helper once on the Swamp Node, before it judges a Tool
+    %%> On a helper that cannot run:
+    %%> - fail the phase and mark no Tool failed
     %%> On a Tool failure:
     %%> - continue with the other Tools and mark only that Tool failed
     alt recorded network in scope
@@ -95,7 +102,7 @@ sequenceDiagram
       SW->>N: Apply peer, wait<br/>Ansible phase: network
       %%> What it does:
       %%> - when the rendered hub endpoint is the hub's LAN address, first proves that the kernel routes it directly from the Node's `lan_ip` and that an SSH host key there has the hub's recorded fingerprint; a failed proof fails the phase before any WireGuard change, with the assertion `node.hub_lan_unreachable` or `node.hub_lan_identity_mismatch`, with no fallback to the public endpoint
-      %%> - a changed hub endpoint, read from the previous `orbit.peers`, moves in one detached job on the Node: it takes WireGuard packets only from the new endpoint's address while it runs (assertion `node.hub_switch_unpinned` when it cannot), installs the staged files, ends the old session and accepts only a handshake from after the move; without one, it puts the previous files back and loads them, and the phase fails with the assertion `node.hub_switch_no_handshake`
+      %%> - a changed hub endpoint, read from the previous `orbit.peers`, moves in one detached job on the Node: it takes WireGuard packets only from the new endpoint's address while it runs (assertion `node.hub_switch_unpinned` when it cannot), installs the staged files, ends the old session and accepts only a handshake from after the move; without one, it puts the previous files back and loads them, and the phase fails with the assertion `node.hub_switch_no_handshake`; when `wg` does not load the new files, it puts the previous ones back at once, and the assertion is `node.hub_switch_load_failed`
       %%> - applies the recorded Node side and waits for the tunnel handshake
       %%> - both arrows are one phase; the peer arrow is only for a peer target
       %%> - a target hub is applied once; it requires every recorded peer on its interface (assertion `vpn.hub_peer_missing`) and waits only for the peers that had a handshake in the 120 seconds before the change, each for a handshake in the last 180 seconds, so an offline peer does not fail it
@@ -108,6 +115,7 @@ sequenceDiagram
     SW->>N: Check the Node<br/>Ansible phase: check
     %%> What it does:
     %%> - checks the selected software, units and role configuration, plus the recorded tunnel; on a target hub, every recorded peer on its interface, with no handshake wait
+    %%> - checks the pinned CLI only when the Gateway supplied a CLI plan; otherwise checks that the managed CLI files are absent
     %%> - all seven phases run in order, idempotently; an empty scope item needs no mutation
     opt phases completed or failed
       %% path: cleanup

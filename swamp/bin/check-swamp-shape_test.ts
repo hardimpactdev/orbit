@@ -2404,7 +2404,7 @@ Deno.test("static native child workflows are scanned through their local source 
         `name: parent\njobs:\n- steps:\n  - task:\n      type: workflow\n      workflowIdOrName: ${
             JSON.stringify(reference)
         }\n`;
-    for (const reference of ["child", "11111111-1111-4111-8111-111111111111"]) {
+    for (const reference of ["child", "11111111-1111-4111-8111-111111111111", '${{ "child" }}', '${{ "11111111-1111-4111-8111-111111111111" }}']) {
         const sources = new Map([
             ["workflows/parent.yaml", parent(reference)],
             ["workflows/child.yaml", child()],
@@ -2428,7 +2428,7 @@ Deno.test("static native child workflows are scanned through their local source 
             baseline_accepted: 2,
         });
     }
-    for (const reference of ["missing", "${{ inputs.child }}"]) {
+    for (const reference of ["missing", '${{ "missing" }}', "${{ inputs.child }}", '${{ "child" + inputs.suffix }}']) {
         const analyses = analyze(
             new Map([["workflows/parent.yaml", parent(reference)], [
                 "workflows/child.yaml",

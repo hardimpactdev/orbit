@@ -10,6 +10,10 @@ export function unsafeYaml(value: unknown, depth = 0): string {
     return "\n" + entries.map(([key, item]) => `${pad}${key === null ? "-" : JSON.stringify(key) + ":"} ${unsafeYaml(item, depth + 1)}`).join("\n");
 }
 
+/** The launcher of the recipe's pinned Deno on the Swamp Node (ansible/tasks/task-vm-deno.yml). It runs the Tool helper: this code runs in the
+ * compiled Swamp binary, so `Deno.execPath()` names Swamp, which cannot run a script. */
+export const toolRuntime = "/usr/local/bin/deno";
+
 export async function convergeInput(folder: string, builder: string, toolHelper: string) {
     const intent = JSON.parse(await Deno.readTextFile(`${folder}/intent.json`));
     const hosts: Record<string, unknown> = {};
@@ -31,7 +35,7 @@ export async function convergeInput(folder: string, builder: string, toolHelper:
     const plans = JSON.parse(await Deno.readTextFile(`${folder}/plans.json`));
     await Deno.writeTextFile(`${folder}/inventory.json`, JSON.stringify({ all: { hosts } }), { mode: 0o600 });
     await Deno.writeTextFile(`${folder}/known_hosts`, [...known].sort().join("\n") + "\n", { mode: 0o600 });
-    await Deno.writeTextFile(`${folder}/vars.yml`, unsafeYaml({ converge_intent: intent, kind: 'node.converge', converge_tool_helper: toolHelper, converge_deno: Deno.execPath(), converge_secrets: secrets, converge_plans: plans }), { mode: 0o600 });
+    await Deno.writeTextFile(`${folder}/vars.yml`, unsafeYaml({ converge_intent: intent, kind: 'node.converge', converge_tool_helper: toolHelper, converge_deno: toolRuntime, converge_secrets: secrets, converge_plans: plans }), { mode: 0o600 });
     // Reuse the shipped role materializer. Only its literal variables are consumed: its cross-Node
     // inventory and publication plays are deliberately never used by a Node converge.
     for (const role of intent.roles) {

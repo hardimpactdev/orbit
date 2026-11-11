@@ -72,6 +72,9 @@ final readonly class ProcessLifecycleInput
         $processId = ValidatedData::integer($input['process_id']);
         $control = Arr::only($input, ['process_id', 'runtime', 'name', 'image', 'on_demand', 'directory', 'vite']);
         $intent = ['control' => $control, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($node)];
+        if (isset($input['container'])) {
+            $intent['container'] = $input['container'];
+        }
         $copies = [];
         if ($material !== null) {
             $installation = Arr::only($input, ['process_id', 'runtime', 'name', 'desired', 'on_demand', 'directory', 'content_hash', 'activation_pending', 'spec', 'account_user', 'required_mount_paths']);

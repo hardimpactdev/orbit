@@ -112,6 +112,7 @@ Deno.test("select maps malformed inventory to conn.revocation_failed without pub
                     intent: {
                         url: "https://t3.test",
                         labels: ["phone"],
+                        pairings: [],
                         links: ["owned-link"],
                     },
                     directory,
@@ -153,6 +154,7 @@ Deno.test("selection gives sessions and links ordered request slots without priv
             intent: {
                 url: "https://t3.test",
                 labels: ["phone"],
+                pairings: [],
                 links: ["first", "second", "third"],
             },
             directory,
@@ -162,6 +164,7 @@ Deno.test("selection gives sessions and links ordered request slots without priv
                 { index: 0, body: '{"sessionId":"owned"}' },
                 { index: 1, body: '{"sessionId":"owned-two"}' },
             ],
+            pairings: [],
             links: [
                 { index: 0, body: '{"id":"first"}' },
                 { index: 1, body: '{"id":"second"}' },
@@ -179,12 +182,19 @@ Deno.test("selection gives sessions and links ordered request slots without priv
             ],
         );
         await Deno.remove(`${directory}/inventory.json`);
-        assertEquals(
-            await behavior.methods.select.execute({
-                intent: { url: "https://t3.test", labels: [], links: [] },
-                directory,
-            }, context),
-            { sessions: [], links: [] },
+        await assertRejects(
+            () =>
+                behavior.methods.select.execute({
+                    intent: {
+                        url: "https://t3.test",
+                        labels: [],
+                        links: [],
+                        pairings: [],
+                    },
+                    directory,
+                }, context),
+            Error,
+            "conn.revocation_unmatched",
         );
     } finally {
         await Deno.remove(directory, { recursive: true });

@@ -95,6 +95,10 @@ sequenceDiagram
     SW->>N: Run dev deploy steps<br/>incus exec · vault copy
     %%> What it does:
     %%> - each Project command as `orbit` in the workspace, with the runtime folder's PATH
+    SW->>N: Install the Processes<br/>Ansible · tags processes
+    %%> What it does:
+    %%> - writes changed `orbit-*` units and new environment files from the vault, removes former ones, and restarts the changed units
+    %%> - the seed snapshot then restarts every running Process on the new commit
     SW->>N: Take the seed snapshot<br/>Ansible · tags seed
     %%> What it does:
     %%> - stops the units, snapshots `seed-<commit>`, starts them again and deletes older seeds

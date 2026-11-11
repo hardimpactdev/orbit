@@ -15,6 +15,8 @@ orbit task:cancel [task] [--yes] [--idempotency-key=KEY] [--json]
 
 In a terminal, the task list leaves out `settling`, `waiting_for_review`, and `completed` tasks. Before it asks, the CLI reads the task and names it and its Instance in the question. The question defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither changes the task. A `completed` task, or a `settling` task with a pull request, fails with `tasks.not_cancellable`; complete a settling task instead. Pass the task ID to cancel a `settling` task without a pull request. When the task holds a workspace or a task VM, origin's task branch must already reach its latest approved commit. Otherwise the call fails with `tasks.approved_work_unpublished`, names the commit, and changes nothing; run [`task:publish`](/cli/task/publish) first, which resumes a parked VM. A failed GitHub read fails the same way. The [tasks reference](/reference/tasks#cancel-a-stuck-task) describes the rule.
 
+When the task has a running Operation, such as its task start, the cancel asks it to stop and answers `operation.target_busy` with its id if it is still running. Run the cancel again once that Operation has ended.
+
 A child ID cancels only that child’s turn/check and keeps its parent workspace. The Gateway derives ownership from the selected row.
 
 ## How it works

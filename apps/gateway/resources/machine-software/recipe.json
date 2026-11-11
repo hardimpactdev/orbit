@@ -1302,6 +1302,12 @@
                     "bun": "bun-linux-x64/bun"
                 }
             },
+            "deno": {
+                "tool": "deno",
+                "bin": {
+                    "deno": "deno"
+                }
+            },
             "composer": {
                 "version": "2.9.5",
                 "artifacts": {
@@ -1324,6 +1330,15 @@
                 },
                 "bin": {
                     "rg": "ripgrep-15.2.0-x86_64-unknown-linux-musl/rg"
+                }
+            },
+            "php-data-bridge": {
+                "version": "0.3.1",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://github.com/nckrtl/php-data-bridge/releases/download/v0.3.1/php-data-bridge.tar.gz",
+                        "sha256": "f13fa9716a769e6098dc717613cc8c8a2d12187f7792c5d2b7d2afa084fa99c4"
+                    }
                 }
             },
             "vite-plus": {

@@ -1,0 +1,30 @@
+sequenceDiagram
+  %% Target design, container runtime (ADR 0250, docs/reference/development-containers.md#processes): the status of a Process in an Instance container. No command starts it; a Process list does.
+  %% status: draft
+  %% command: none · Process lists
+  %% kind: process.inspect
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve
+  participant N as app-dev Node<br/>reached over ssh
+  Note over GW: A list needs a state<br/>none observed in 30 s
+  %%> What it does:
+  %%> - neither Prometheus nor the Node agent sees a container's units, so the list answers `unknown` and starts a read off the request
+  %%> - at most four reads start per list, and one read per Process at a time
+  GW->>SW: Start run, full intent<br/>operation-process-container
+  SW->>N: Read the unit<br/>Ansible · tags process
+  %%> What it does:
+  %%> - `systemctl is-active` in the container through `incus exec`
+  SW->>SW: Keep the result<br/>process-command-assets
+  %%> What it does:
+  %%> - publishes the unit's state; journal lines of a log read go only to the vault
+  alt the read passes
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Keep the state 30 s<br/>lists show it
+  else the read fails
+    SW--xGW: Run failed<br/>failed step
+    Note over GW: Keep `unknown` 30 s<br/>the next list reads again
+  end

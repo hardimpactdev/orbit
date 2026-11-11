@@ -1,4 +1,12 @@
 """Pin what keeps the container model forwarder fail-closed: the playbook's units, its reload, its order, and its end checks."""
+import copy
+import os
+import select
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -44,12 +52,133 @@ class ModelForwarderPlaybookTest(unittest.TestCase):
         names = list(self.apply)
         self.assertLess(names.index('Load the table'), names.index('Run the forwarder'))
 
+    def readiness(self, address, port):
+        """Run the production readiness task against real sockets without changing the host."""
+        command = shutil.which('ansible-playbook') or str(Path(sys.executable).parent / 'ansible-playbook')
+        task = copy.deepcopy(self.apply['Wait for the forwarder'])
+        # Keep negative cases bounded, without waiting for a service to start.
+        if 'ansible.builtin.wait_for' in task:
+            task['ansible.builtin.wait_for']['timeout'] = 1
+        else:
+            task.update(retries=1, delay=0)
+        with tempfile.TemporaryDirectory(prefix='forwarder-readiness-') as folder:
+            playbook = Path(folder) / 'probe.yml'
+            playbook.write_text(yaml.safe_dump([{
+                'name': 'Observe the listener', 'hosts': 'localhost', 'gather_facts': False,
+                'vars': {'intent': {'address': address, 'origin': f'http://{address}:{port}'}}, 'tasks': [task],
+            }]))
+            return subprocess.run([command, '-i', 'localhost,', '-c', 'local', str(playbook)],
+                                  check=False, capture_output=True, text=True, timeout=30,
+                                  env={**os.environ, 'ANSIBLE_STDOUT_CALLBACK': 'default',
+                                       'ANSIBLE_CALLBACKS_ENABLED': 'default', 'ANSIBLE_COLLECTIONS_PATH': folder})
+
+    def test_readiness_observes_the_listener_without_a_connection(self):
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            result = self.readiness(*listener.getsockname())
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('changed=0', result.stdout)
+            self.assertFalse(select.select([listener], [], [], 0)[0],
+                             'Host TCP readiness enters over lo, which the forwarder table rejects')
+
+    def test_readiness_refuses_a_listener_on_another_address(self):
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            result = self.readiness('127.0.0.2', listener.getsockname()[1])
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_readiness_refuses_a_bound_port_that_is_not_listening(self):
+        with socket.socket() as bound, socket.socket() as other:
+            bound.bind(('127.0.0.1', 0))
+            other.bind(('127.0.0.1', 0))
+            other.listen()
+            result = self.readiness(*bound.getsockname())
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def counter_checks(self, before, after, increases):
+        """Evaluate the production regex vars and assertions through Ansible, without nft or host changes."""
+        command = shutil.which('ansible-playbook') or str(Path(sys.executable).parent / 'ansible-playbook')
+        cases = (
+            ('Check that the forwarder\'s table dropped it', 'before', 'after',
+             'ip daddr 10.44.0.3 tcp dport 8318 counter packets {packets} bytes 60 drop'),
+            ('Check that the output rule reset it', 'output_before', 'output_after',
+             'ip daddr 10.44.0.3 tcp dport 8318 meta skuid != 999 counter packets {packets} bytes 60 reject with tcp reset'),
+            ('Check that the input rule reset it', 'input_before', 'input_after',
+             'ip daddr 10.253.0.1 tcp dport 8319 iifname != "orbitinst0" counter packets {packets} bytes 60 reject with tcp reset'),
+        )
+        checks = []
+        for name, before_var, after_var, rule in cases:
+            checks.append({
+                'name': f'Exercise {name}',
+                'vars': {before_var: {'stdout': rule.format(packets=before)},
+                         after_var: {'stdout': rule.format(packets=after)}},
+                'block': [copy.deepcopy(self.check[name]), {
+                    'name': 'Require a rising counter',
+                    'ansible.builtin.assert': {'that': increases},
+                }],
+                'rescue': [{
+                    'name': 'Require a counter assertion failure',
+                    'ansible.builtin.assert': {'that': [not increases, f'ansible_failed_task.name == "{name}"']},
+                }],
+            })
+        variables = copy.deepcopy(self.check['Check the container path from the bridge']['vars'])
+        variables['intent'] = {'address': '10.253.0.1', 'origin': 'http://10.253.0.1:8319',
+                               'guard_origin': 'http://10.44.0.3:8318'}
+        with tempfile.TemporaryDirectory(prefix='forwarder-counters-') as folder:
+            playbook = Path(folder) / 'counters.yml'
+            playbook.write_text(yaml.safe_dump([{
+                'name': 'Check nft counters', 'hosts': 'localhost', 'gather_facts': False,
+                'vars': variables, 'tasks': checks,
+            }]))
+            result = subprocess.run([command, '-i', 'localhost,', '-c', 'local', str(playbook)],
+                                    check=False, capture_output=True, text=True, timeout=30,
+                                    env={**os.environ, 'ANSIBLE_STDOUT_CALLBACK': 'default',
+                                         'ANSIBLE_CALLBACKS_ENABLED': 'default', 'ANSIBLE_COLLECTIONS_PATH': folder})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('changed=0', result.stdout)
+
+    def test_counter_checks_accept_the_live_nft_increment(self):
+        # Operation 16184 recorded this input rule with packets 1, bytes 60.
+        self.counter_checks(0, 1, True)
+
+    def test_counter_checks_compare_multiple_digits_as_numbers(self):
+        self.counter_checks(9, 10, True)
+
+    def test_counter_checks_refuse_unchanged_or_falling_counters(self):
+        for before, after in ((42, 42), (42, 41)):
+            with self.subTest(before=before, after=after):
+                self.counter_checks(before, after, False)
+
     def test_checks_cover_every_path(self):
         for name in ('Check that the guard answers a container through the forwarder', 'Check that the forwarder\'s table dropped it',
                      'Check that the output rule reset it', 'Check that the input rule reset it'):
             self.assertIn(name, self.check)
         relayed = self.check['Check that the Node\'s own processes cannot use the forwarder']['ansible.builtin.command']['argv']
         self.assertEqual(relayed[-1], '{{ intent.origin }}/v1/responses')
+
+    def test_temporary_probe_setup_and_cleanup_report_no_configuration_change(self):
+        command = shutil.which('ansible-playbook') or str(Path(sys.executable).parent / 'ansible-playbook')
+        checks = []
+        for name in ('Make the namespace and its veth on the bridge',
+                     'Remove the namespace, its veth and the return route'):
+            task = copy.deepcopy(self.check[name])
+            # Exercise the production task's reporting without creating host network resources.
+            task['loop'] = [['/usr/bin/true']]
+            checks.append(task)
+        with tempfile.TemporaryDirectory(prefix='forwarder-probe-reporting-') as folder:
+            playbook = Path(folder) / 'probe.yml'
+            playbook.write_text(yaml.safe_dump([{
+                'name': 'Check temporary probe reporting', 'hosts': 'localhost', 'gather_facts': False,
+                'tasks': checks,
+            }]))
+            result = subprocess.run([command, '-i', 'localhost,', '-c', 'local', str(playbook)],
+                                    check=False, capture_output=True, text=True, timeout=30,
+                                    env={**os.environ, 'ANSIBLE_STDOUT_CALLBACK': 'default',
+                                         'ANSIBLE_CALLBACKS_ENABLED': 'default', 'ANSIBLE_COLLECTIONS_PATH': folder})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertRegex(result.stdout, r'ok=2\s+changed=0\s+unreachable=0\s+failed=0')
 
 
 if __name__ == '__main__':

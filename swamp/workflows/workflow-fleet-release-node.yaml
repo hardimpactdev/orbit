@@ -1,6 +1,6 @@
 id: 3125b46d-bd66-4e0a-96bf-e336d7f182fc
 name: fleet-release-node
-description: Gate one fleet Node on 209, publish its CLI through the native child, record the outcome, and for a rollout publish the pinned observer with official cfgmgmt, all from 209.
+description: Gate one fleet Node on 209, publish its CLI only when required, record the outcome, and for a rollout publish the pinned observer with official cfgmgmt, all from 209.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -97,7 +97,7 @@ jobs:
     - step: record
       condition:
         type: succeeded
-    guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || steps.record.outputs.step != "cli" }}
+    guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || !(steps.record.outputs.step in ["cli", "agent"]) }}
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/fetch'
@@ -124,7 +124,7 @@ jobs:
     - step: record
       condition:
         type: succeeded
-    guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || steps.record.outputs.step != "cli" }}
+    guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || !(steps.record.outputs.step in ["cli", "agent"]) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -158,7 +158,7 @@ jobs:
     - step: observer_read
       condition:
         type: always
-    guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || steps.record.outputs.step != "cli" || (size(data.latest("fleet-observer-fetch-" + string(inputs.target_node_id), steps.gate.outputs.ssh.target.host).attributes.changes) == 0 && "observer_read" in steps && steps.observer_read.status == "succeeded" && steps.observer_read.outputs.stdout.startsWith(steps.gate.outputs.agent.sha256)) }}
+    guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || !(steps.record.outputs.step in ["cli", "agent"]) || (size(data.latest("fleet-observer-fetch-" + string(inputs.target_node_id), steps.gate.outputs.ssh.target.host).attributes.changes) == 0 && "observer_read" in steps && steps.observer_read.status == "succeeded" && steps.observer_read.outputs.stdout.startsWith(steps.gate.outputs.agent.sha256)) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -178,7 +178,7 @@ jobs:
     - step: observer_restart
       condition:
         type: always
-    guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || steps.record.outputs.step != "cli" || !("observer_fetch" in steps) || steps.observer_fetch.status != "succeeded" }}
+    guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || !(steps.record.outputs.step in ["cli", "agent"]) || !("observer_fetch" in steps) || steps.observer_fetch.status != "succeeded" }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -201,7 +201,7 @@ jobs:
     - step: observer_check
       condition:
         type: always
-    guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || steps.record.outputs.step != "cli" }}
+    guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || !(steps.record.outputs.step in ["cli", "agent"]) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-release'

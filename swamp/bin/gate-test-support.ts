@@ -31,6 +31,10 @@ export type Flow = {
     }[];
 };
 export const ROOT = root.replace(/\/$/, "");
+/** Resolve the constant CEL workflow target recognized by check-swamp-shape. */
+export function resolveWorkflowTarget(target: string): string {
+    return /^\$\{\{\s*"([\w.-]+)"\s*\}\}$/.exec(target)?.[1] ?? target;
+}
 /** Inspect a tracked workflow without starting the Swamp runtime. */
 export function trackedStep(workflow: string, name: string) {
     const value = parse(

@@ -14,4 +14,5 @@ export const Container = z.object({
         }).strict(),
     ).max(4096),
     environment: z.record(z.string(), z.string()),
+    healthcheck_arguments: z.array(z.string()).max(10).optional(),
 }).strict();

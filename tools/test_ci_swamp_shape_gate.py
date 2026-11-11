@@ -51,9 +51,9 @@ class PlanTest(unittest.TestCase):
         names = [step.name for step in steps('shape')]
         self.assertEqual(names[:2], ['ansible collections', 'ansible-lint'])
         self.assertEqual(names[-4:], ['check-swamp-shape', 'check-swamp-base-policy', 'lint-behavior-names', 'frozen agent commands'])
-        # Eight named suites, then each file in swamp/tests as its own step.
+        # Eight named suites plus the file commands, with two balanced Instance-host groups.
         self.assertEqual(len([name for name in names if name.startswith('deno test')]), 8 + len(gate['deno_test_files']()))
-        self.assertIn('deno test tests/ansible_instance_host_test.ts', names)
+        self.assertTrue(any('tests/ansible_instance_host_test.ts' in name for name in names))
         for step in steps('shape')[-4:-1]:
             self.assertEqual(step.argv[step.argv.index('--base') + 1], BASE)
         self.assertIn('/reports/shape.json', steps('shape')[-4].argv)

@@ -79,6 +79,11 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 }
                 app(ProcessInstanceOperation::class)->completeMembers($operation, OperationStatus::from(ValidatedData::string($data['status'])),
                     ValidatedData::nullableString($data['error_code'] ?? null), $result);
+                $container = ValidatedData::object($input['direct_provisioning'])['container'] ?? null;
+                if (is_array($container) && in_array($data['status'], ['succeeded', 'failed', 'cancelled'], true)) {
+                    app(ContainerProcesses::class)->complete($instance, $container['processes'] ?? [], $data['status'] === 'succeeded',
+                        ValidatedData::nullableString($data['error_code'] ?? null));
+                }
             }
 
             return $this->direct->project($operation, $data, $result);
@@ -94,7 +99,7 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
      * @param  array<string, mixed>  $result
      * @return array<string, mixed>
      */
-    private function server(array $t3, array $result): array
+    public function server(array $t3, array $result): array
     {
         $server = $result['t3'] ?? null;
         $session = is_array($server) ? ($server['gateway_session'] ?? null) : null;

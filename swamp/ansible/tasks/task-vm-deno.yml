@@ -1,6 +1,7 @@
 ---
 # Deno at the pin of the recipe, the version the repository's CI sets up, for the Project check of a task VM (its Deno tests and
-# Swamp shape checks). One release folder per digest, behind a launcher in /usr/local/bin.
+# Swamp shape checks) and for the Tool helper of node.converge on the Swamp Node (node-converge-software.yml). One release folder per
+# digest, behind a launcher in /usr/local/bin.
 - name: Read the Deno version
   ansible.builtin.command: { argv: [/usr/local/bin/deno, --version] }
   register: deno_version

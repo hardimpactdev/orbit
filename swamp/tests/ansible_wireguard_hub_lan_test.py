@@ -84,8 +84,9 @@ def without_owner(node):
 
 @NEEDS_ANSIBLE
 class WireGuardHubLanTest(unittest.TestCase):
-    def run_tasks(self, task_file, variables, files, after=()):
-        """Run one task file on this machine; returns the exit code, the output and the logged calls."""
+    def run_tasks(self, task_file, variables, files, after=(), loaded=None):
+        """Run one task file, or the `loaded` tasks under its name, on this machine; returns the exit code, the output and the
+        logged calls."""
         with tempfile.TemporaryDirectory() as folder:
             folder = Path(folder)
             (folder / 'bin').mkdir()
@@ -101,7 +102,8 @@ class WireGuardHubLanTest(unittest.TestCase):
             if (folder / 'etc/hub-source').exists():
                 (folder / 'etc/hub-source').chmod(0o700)
             tasks = folder / task_file
-            tasks.write_text(yaml.safe_dump(without_owner(yaml.safe_load((ANSIBLE / 'tasks' / task_file).read_text()))))
+            loaded = yaml.safe_load((ANSIBLE / 'tasks' / task_file).read_text()) if loaded is None else loaded
+            tasks.write_text(yaml.safe_dump(without_owner(loaded)).replace('@DIR@', str(folder)))
             variables = json.loads(json.dumps(variables).replace('@DIR@', str(folder)))
             (folder / 'play.yml').write_text(json.dumps([{'hosts': 'node', 'gather_facts': False,
                                                           'tasks': [{'ansible.builtin.include_tasks': str(tasks)}, *after]}]))
@@ -368,6 +370,76 @@ class WireGuardHubLanTest(unittest.TestCase):
         code, output, _ = self.move(9_999_999_999, **{'wg/orbit.peers.next': '[Interface]\nPrivateKey = OLD\n' + self.PEERS.format(self.LAN)})
         self.assertEqual(code, 0, output)
         self.assertEqual(self.left['loaded.log'].count('[Interface]'), 1)
+
+    # 44 characters as `wg genkey` prints them; the key of no tunnel.
+    KEY = 'A' * 43 + '='
+    # Reads a configuration as `wg` does: a section line, or `Name = value` with a whole key as the value of PrivateKey. Like
+    # `wg`, it prints the value it rejects. The input may be a pipe, so it is read once.
+    STRICT_WG = WG.replace('cat "$3" >> "$STUB_DIR/loaded.log"; echo', r"""cat "$3" > "$STUB_DIR/input"; awk '
+      /^$/ || /^\[(Interface|Peer)\]$/ { next }
+      NF >= 3 && $2 == "=" && ($1 != "PrivateKey" || (NF == 3 && length($3) == 44 && $3 ~ /=$/)) { next }
+      { printf "Key is not the correct length or format: `%s\047\n", $3 > "/dev/stderr"; bad = 1 }
+      END { exit bad }' "$STUB_DIR/input" || { echo "Configuration parsing error" >&2; exit 1; }
+    cat "$STUB_DIR/input" >> "$STUB_DIR/loaded.log"; echo""")
+
+    def test_a_move_loads_a_key_file_without_a_final_newline(self):
+        # Node 209: the key ran into the next line (`PrivateKey = <key>[Peer]`), and `wg` refused the whole input.
+        code, output, _ = self.move(9_999_999_999, **{'bin/wg': self.STRICT_WG, 'wg/orbit.key': self.KEY})
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.left['loaded.log'], f'[Interface]\nPrivateKey = {self.KEY}\n{self.PEERS.format(self.LAN)}---\n')
+
+    def test_a_move_whose_new_configuration_does_not_load_goes_back_at_once_with_its_own_outcome(self):
+        code, output, calls = self.move(9_999_999_999, **{'bin/wg': self.STRICT_WG, 'wg/orbit.key': 'UNLOADABLE\n'})
+        self.assertNotEqual(code, 0)
+        self.assertIn('node.hub_switch_load_failed', output)
+        self.assertNotIn('node.hub_switch_no_handshake', output)
+        # No wait for a handshake that cannot come: the hub peer is gone and nothing was loaded.
+        self.assertNotIn('latest-handshakes', calls)
+        self.assertEqual((self.left['wg/orbit.conf'], self.left['wg/orbit.peers']), ('old conf\n', self.PEERS.format(self.PUBLIC)))
+        self.assertEqual(self.left['loaded.log'], 'setconf: LIVE CONFIG\n')
+        self.assertEqual([name for name in self.left if name.endswith(('.previous', '.next', 'move-result'))], [])
+        self.assertEqual(self.left['rules.txt'], '')
+        self.assertNotIn('UNLOADABLE', output)
+
+    INTERFACE = 'ListenPort = 51820\nFwMark = 51820\n'
+    HUB_PEER = '[Peer]\nPublicKey = NODEKEY\nAllowedIPs = 10.44.0.9/32\n'
+
+    def sync(self, key, **task):
+        """Run the four tasks outside the move that load a configuration composed from the key file, in the order of the
+        returned names, with the WireGuard folder in the test folder."""
+        converge = {found['name']: found for found in peer_block() + yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub.yml').read_text())}
+        add = next(play for play in yaml.safe_load((ANSIBLE / 'operation-node-add.yml').read_text()) if play['name'] == 'Set up the tunnel')
+        tasks = [converge['Reconcile live peer state without copying its private key'],
+                 converge['Reconcile live hub peers and port without copying its private key'],
+                 *yaml.safe_load((ANSIBLE / 'tasks/node-add-hub-peers.yml').read_text()),
+                 next(found for found in add['tasks'] if found['name'] == 'Apply the tunnel peers')]
+        tasks = [{**{name: value for name, value in found.items() if name != 'when'}, **task} for found in tasks]
+        tasks = json.loads(json.dumps(tasks).replace('/etc/wireguard', '@DIR@/wg'))
+        variables = {'hub_plan': {'interface': self.INTERFACE},
+                     'hub_sync': {'private_key_file': '@DIR@/wg/orbit.key', 'sync_path': '@DIR@/wg/hub.sync', 'interface': self.INTERFACE},
+                     'net': {'private_key_file': '@DIR@/wg/orbit.key', 'sync_path': '@DIR@/wg/add.peers', 'sync_body': self.PEERS.format(self.PUBLIC)}}
+        files = {'bin/wg': self.STRICT_WG, 'wg/orbit.key': key, 'wg/orbit.peers': self.PEERS.format(self.PUBLIC),
+                 'wg/orbit-peers.d/9.conf': self.HUB_PEER}
+        code, output, _ = self.run_tasks('sync.yml', variables, files, loaded=tasks)
+        return code, output, [found['name'] for found in tasks]
+
+    def test_every_load_composed_from_the_key_file_ends_the_key_line_once_with_or_without_a_final_newline(self):
+        head = f'[Interface]\nPrivateKey = {self.KEY}\n'
+        for key in (self.KEY, self.KEY + '\n'):
+            with self.subTest(key=key):
+                code, output, names = self.sync(key)
+                self.assertEqual(code, 0, output)
+                self.assertEqual(dict(zip(names, self.left['loaded.log'].split('---\n'), strict=False)), dict(zip(names, (
+                    head + self.PEERS.format(self.PUBLIC), head + self.INTERFACE + self.HUB_PEER,
+                    head + self.INTERFACE + '\n' + self.HUB_PEER, head + self.PEERS.format(self.PUBLIC)), strict=True)))
+
+    def test_a_refused_load_does_not_print_the_value_wg_refused(self):
+        # `wg` prints the value it rejects; in the key line that is what the key file holds.
+        code, output, names = self.sync('UNLOADABLE\n', ignore_errors=True)
+        self.assertEqual(code, 0, output)
+        self.assertEqual(output.count('...ignoring'), len(names), output)
+        self.assertIn('Key is not the correct length or format: ', output)
+        self.assertNotIn('UNLOADABLE', output)
 
 def peer_block():
     return next(task for task in yaml.safe_load((ANSIBLE / 'tasks/node-converge-network.yml').read_text())

@@ -13,6 +13,10 @@ covers:
 
 # Instance setup and teardown
 
+[Instance containers](/reference/development-containers#processes) use the Project's development deploy steps to build the default, then install its development Process definitions. A clone inherits that workspace and installs its own Process records. Its workspace phase reads `.env` and the Process environment files from one private vault copy.
+
+Orbit activates the clone after reading T3's registration receipt.
+
 A Project stores two ordered lists of named commands: setup steps and teardown steps. Orbit runs the setup list before it activates a new development Instance, and the teardown list before it removes an active development Instance. Setup does not require a Route: an unrouted monorepo `default` becomes `active` and runs the same list. Its setup commands can install dependencies in each subproject without application metadata inspection at the repository root.
 
 [Registration](/cli/instance/register) runs this list only with `--setup`, followed by its development Processes. It uses the same frozen list digest and command checks. Setup runs with a private umask, so a command that creates `.env` does not expose it to other accounts. On retry, setup checks and starts existing Project-defined Processes too; it retains their records. An empty list with no Processes or other Node work starts no run.
@@ -78,6 +82,8 @@ The first command adds a 180-second step and lowers `build-assets` by 180 second
 Authorized reads return the commands. [Activity](/cli/activity) records no input for the step commands and `instance:setup`, so it never holds command text or command output.
 
 A container Instance has no setup steps: the default's development deploy steps install and migrate, and a clone copies the result. `instance:setup` refuses a container Instance with `operation.kind_unavailable`. See [the default Instance](/reference/development-containers#the-default-instance).
+
+Container agents use `Orbit Agent <agent@orbit.local>` as their Git identity when the name or email is unset. Convergence preserves each configured identity value.
 
 ## Checkout access
 
@@ -156,7 +162,7 @@ Explicit `instance:setup` returns after admitting the Operation. Each command ru
 
 Native create and destroy return after admission. Each command uses its admitted timeout. The create run budget is 60 seconds, plus the admitted setup timeouts and 30 seconds for the Process step. A Route adds 180 seconds, and so does the Instance's own database (a copy, or one on a Database server); the setup phase stops at 540 seconds. The destroy run budget is 60 seconds, plus the teardown timeouts (at most 540 seconds), plus 180 seconds for each Route it withdraws and 180 seconds when it removes owned databases.
 
-A failed run has no automatic rollback or removal. Retained explicit setup keeps its existing list budget.
+A failed run has no automatic rollback or removal. Retained explicit setup keeps its existing list budget. Failed-create Route withdrawal uses the [deferred child](/reference/instance-removal) shared with removal.
 
 A step that runs past its timeout, is cut short by the list budget, or has no time left to start, ends the Operation with `command.deadline_exceeded`, `outcome: deadline`, and the step name. The Gateway validates this classification against the proven command or budget receipt. Lower the step timeouts until the list fits.
 

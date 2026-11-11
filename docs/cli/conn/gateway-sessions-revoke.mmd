@@ -44,8 +44,9 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the requester follows `GET /api/v1/conn/operations/5181`
-  SW->>T3: Revoke old sessions<br/>GET clients · POST …/revoke
+  SW->>T3: Revoke old sessions
   %%> How:
+  %%> - reads the sessions with subscribeAuthAccess, then POSTs …/revoke
   %%> - the typed Conn revocation child runs HTTPS from 209, with the admin session from `vault.get`
   %%> What it does:
   %%> - lists the client sessions on env-beast once, selects those labelled `Orbit Gateway` that are not the current session, and revokes each

@@ -3,12 +3,11 @@ title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for development source, how owned Processes and Schedules go with it, and how to retry an interrupted removal."
 covers:
   - apps/gateway/app/Actions/{Instances/{ProjectDirectInstanceDestroyAction,StartInstanceDestroyAction},DatabaseConnections/PrepareOwnedDatabaseDestructionAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,Removal/**}
-  - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
-  - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,ContainerInstanceDestroy.php,ContainerDestroyExecutionCopies.php,DirectInstanceDestroyIntent.php,Removal/**}
+  - apps/gateway/app/{Http/Requests/Instances/RemoveInstanceRequest,Models/InstanceRemoval,Models/InstanceRemovalMember}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
-  - swamp/workflows/workflow-operation-instance-destroy.yaml
+  - swamp/{workflows/workflow-operation-instance-destroy.yaml,ansible/instance-container-destroy.yml}
 ---
 
 # Instance removal
@@ -27,7 +26,7 @@ The run follows the [destroy flow](https://github.com/hardimpactdev/orbit/blob/m
 
 The run then withdraws the captured Route publications, so the site goes down first.
 
-The same `route-withdraw` workflow takes back the Route of a create that failed. Its `side` input is `forward` for a removal and `restore` for a failed create, which applies the captured publication in reverse.
+The same `route-withdraw` workflow takes back the Route of a create that failed. Its `side` input is `forward` for a removal and `restore` for a failed create, which applies the captured publication in reverse. Both parents resolve this child only when withdrawal runs, so a skipped withdrawal does not scan its behavior definitions during parent preflight.
 
 Each Node that serves the Route, answers its private DNS or holds a withdrawn certificate scope gets one Ansible read, one composition and one Ansible apply, and the Nodes run in parallel. A failure on one Node does not stop the others, so a rerun finishes what is left. Before it writes, the apply phase checks that each file still has the checksum the read found, and refuses otherwise.
 
@@ -45,7 +44,7 @@ The Route child allows its own steps to fail, so destroy reads its ready result.
 
 Publication captures include the full site catalogs so unrelated Routes, PHP pools and DNS records remain present. Each native action has its own run and iteration identity. The Gateway does not supply an execution lock or recapture publication intent during the run.
 
-`instance:destroy` refuses a container Instance with `operation.kind_unavailable` until the container destroy flow exists. See [the default Instance](/reference/development-containers#the-default-instance).
+A container Instance follows the [container destroy flow](/reference/development-containers#destroy). A non-default container Instance, cloned or migrated, requires `--force`, skips work checks and teardown, and deletes the container with its Processes and owned network state. The Instance named `default` stays unavailable. Conn removes its environment and pairing records after the T3 server is gone. Destroy also deletes migration execution copies and the owned database’s create copies, which hold its server and owner logins. The runtime row stays until success, so its address and port stay reserved during a failed removal.
 
 ## Retry and ownership
 

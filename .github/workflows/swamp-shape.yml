@@ -29,7 +29,7 @@ jobs:
     name: Swamp shape gate
     runs-on: [self-hosted, hardimpact]
     # The gate takes a few minutes; a hung step fails here instead of holding main for hours.
-    timeout-minutes: 20
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || 'swamp' }}

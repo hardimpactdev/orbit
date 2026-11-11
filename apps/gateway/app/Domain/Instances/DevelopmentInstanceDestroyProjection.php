@@ -43,7 +43,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
                 $detail['hibernation'][] = ['instance_id' => ValidatedData::integer($member['instance_id']), 'path' => $path];
             }
         }
-        $public = [...Arr::only($input, ['removal_id', 'node_id', 'instance_id', 'project_id', 'name', 'force', 'inventory_digest', 'repository', 'source_pending', 'protected_source_roots', 'members']), 'direct_destroy' => $detail];
+        $public = [...Arr::only($input, ['container_destroy', 'removal_id', 'node_id', 'instance_id', 'project_id', 'name', 'force', 'inventory_digest', 'repository', 'source_pending', 'protected_source_roots', 'members']), 'direct_destroy' => $detail];
         $programs = ValidatedData::object(app(InstanceDestroyTeardownSecret::class)->resolve($operation, $operation->target_id, '', 'teardown')->value);
         $teardown = [];
         foreach (InstanceLifecycleInput::members($programs) as $member) {
@@ -72,10 +72,18 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
 
     public function apply(Operation $operation, array $data): Operation
     {
+        $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
+        if (($operation->input['container_destroy'] ?? null) !== null && $data['status'] === 'succeeded' && ! $operation->status->terminal()) {
+            app(ContainerDestroyExecutionCopies::class)->remove($operation);
+        }
+
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation->refresh();
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
             [$code, $result] = $this->outcome($data);
+            if ($data['status'] === 'succeeded') {
+                $result = [...$result, ...Arr::only($operation->input, ['retained_git_path', 'retained_git_at'])];
+            }
             $data = [...$data, 'error_code' => $code];
             if (! $operation->status->terminal()) {
                 if ($data['status'] === 'succeeded') {

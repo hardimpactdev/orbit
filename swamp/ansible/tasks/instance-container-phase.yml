@@ -2,8 +2,13 @@
 # One phase of instance-container.yml, `phase`, on the Node. Containers live in `container.project`; `incus` gets no stray input.
 # Work in the container runs through `incus exec` from the Node: root for units and snapshots, `orbit` for the workspace.
 - name: Name the container commands
+  tags: [always]
   ansible.builtin.set_fact:
     incus_project: [incus, --project, "{{ container.project }}"]
+    resource_args: >-
+      {{ (['--config'] | product(container.config.items() | map('join', '=')) | list | flatten)
+         + ['--device', 'root,type=disk', '--device', 'root,path=/',
+            '--device', 'root,pool=' ~ container.root_disk_pool, '--device', 'root,size=' ~ container.root_disk_size] }}
     as_orbit: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/orbit', container.name,
           '--', 'runuser', '-u', 'orbit', '--'] }}
@@ -19,9 +24,14 @@
     node_bundle: "/tmp/orbit-instance-{{ container.instance_id }}-{{ run_id }}.bundle"
     # Run-scoped, so the run of another Operation never removes it; the fetch and checkout phases of one run share it.
     container_bundle: "/tmp/orbit-workspace-{{ run_id }}.bundle"
-    units: "{{ container.units | map(attribute='name') | list }}"
+    # FrankenPHP and the Project's development Processes; `units` are those that run, which seed and check stop, start and read.
+    unit_files: "{{ container.units + (container.processes | default([])) }}"
+    units: >-
+      {{ (container.units + (container.processes | default([]) | selectattr('desired', 'equalto', 'running') | list))
+         | map(attribute='name') | list }}
 
 - name: Read the container
+  tags: [container, clone, stop, start]
   ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
   register: container_read
   changed_when: false
@@ -31,6 +41,7 @@
 # The container's own ACL: the bridge's way to the model forwarder stays in the bridge ACL; this one lets the Node's Caddy reach
 # FrankenPHP, a clone's T3 clients reach T3, and the container reach its database server. Network ACLs live in the default project.
 - name: Converge the container's ACL
+  tags: [container, clone]
   when: phase in ['container', 'clone']
   block:
     - name: Read the network ACLs
@@ -57,13 +68,14 @@
               '--device', 'eth0,ipv4.address=' ~ container.address,
               '--device', 'eth0,security.acls=' ~ container.network ~ '-egress,' ~ container.acl,
               '--device', 'eth0,security.acls.default.egress.action=reject',
-              '--device', 'eth0,security.acls.default.ingress.action=reject'] }}
+              '--device', 'eth0,security.acls.default.ingress.action=reject'] + resource_args }}
       changed_when: true
 
 # A clone copies the default's seed snapshot, which the default took with its units stopped: a ZFS clone that needs no start of the
 # default. The copy takes its own address and ACL; T3 is published on the Node's WireGuard address in NAT mode, so T3 sees its
 # client's own address.
 - name: Copy the default's seed snapshot
+  tags: [clone]
   when: phase == 'clone'
   block:
     - name: Read the default's seed snapshots
@@ -85,7 +97,7 @@
         argv: >-
           {{ incus_project + ['copy', container.clone.source ~ '/' ~ container.clone.snapshot, container.name,
               '--device', 'eth0,ipv4.address=' ~ container.address,
-              '--device', 'eth0,security.acls=' ~ container.network ~ '-egress,' ~ container.acl] }}
+              '--device', 'eth0,security.acls=' ~ container.network ~ '-egress,' ~ container.acl] + resource_args }}
       changed_when: true
     - name: Read the copy's devices
       ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
@@ -100,9 +112,48 @@
               'connect=tcp:' ~ container.address ~ ':' ~ container.clone.t3.internal_port, 'nat=true'] }}
       changed_when: true
 
+# The copy is the default's machine until it is prepared, so it is prepared while it is stopped, before its first start: its own
+# machine-id, and no `orbit-*` unit that starts at boot. The seed keeps the default's units enabled, and at boot they would run with
+# the default's settings: FrankenPHP on the default's address, a queue worker on the default's database. Each later phase of the
+# clone enables the units it sets up. The default's Process units and environment folders go; the `processes` phase checks again.
+- name: Prepare the copy before its first start
+  tags: [clone]
+  when: phase == 'clone' and (container_read.rc != 0 or (container_read.stdout | from_json).status != 'Running')
+  vars:
+    files_route: "/1.0/instances/{{ container.name }}/files?project={{ container.project }}&path="
+  block:
+    - name: Read the units that start at boot, the Process units and the Process folders
+      ansible.builtin.command: { argv: [incus, query, "--", "{{ files_route }}{{ item }}"] }
+      loop: [/etc/systemd/system/multi-user.target.wants, /etc/systemd/system, /etc/orbit/processes]
+      register: copy_read
+      changed_when: false
+      failed_when: copy_read.rc != 0 and 'not found' not in (copy_read.stderr | lower)
+    - name: Name what the copy must not start or keep
+      ansible.builtin.set_fact:
+        copy_remove: >-
+          {{ ((copy_read.results[0].stdout | default('[]', true) | from_json) | select('match', '^orbit-.*[.]service$')
+               | map('regex_replace', '^', '/etc/systemd/system/multi-user.target.wants/') | list)
+             + ((copy_read.results[1].stdout | default('[]', true) | from_json) | select('match', '^orbit-process-[0-9]+-.*[.]service$')
+               | reject('in', container.processes | default([]) | map(attribute='name') | list)
+               | map('regex_replace', '^', '/etc/systemd/system/') | list)
+             + ((copy_read.results[2].stdout | default('[]', true) | from_json)
+               | reject('in', container.processes | default([]) | map(attribute='id') | map('string') | list)
+               | map('regex_replace', '^', '/etc/orbit/processes/') | list) }}
+    - name: Keep the default's units from starting in the copy
+      when: copy_remove | length > 0
+      ansible.builtin.command: { argv: "{{ incus_project + ['file', 'delete', '--force'] + (copy_remove | map('regex_replace', '^', container.name) | list) }}" }
+      changed_when: true
+    # Incus's own id of the copy, without dashes, the form systemd writes.
+    - name: Give the copy its own machine-id
+      ansible.builtin.command:
+        argv: "{{ incus_project + ['file', 'push', '--uid', '0', '--gid', '0', '--mode', '0444', '-', container.name ~ '/etc/machine-id'] }}"
+        stdin: "{{ (clone_read.stdout | from_json).config['volatile.uuid'] | replace('-', '') }}"
+      changed_when: true
+
 # UFW on the Node, each rule under the Instance's comment prefix: T3's route rules, the task VM range's deny first, and the way to
 # the database server.
 - name: Admit the container's own paths on the Node
+  tags: [container, clone]
   when: phase in ['container', 'clone'] and container.firewall | default([]) | length > 0
   community.general.ufw:
     rule: "{{ item.rule }}"
@@ -118,6 +169,7 @@
   loop_control: { label: "{{ item.comment }}" }
 
 - name: Start the container
+  tags: [container, clone, start]
   when: phase in ['container', 'clone', 'start'] and (container_read.rc != 0 or (container_read.stdout | from_json).status != 'Running')
   ansible.builtin.command: { argv: "{{ incus_project + ['start', container.name] }}" }
   changed_when: true
@@ -125,6 +177,7 @@
 # `php` on every PATH in the container is the Project's static build from the runtime folder: `/usr/local/bin` is on the PATH of
 # units, login shells and `incus exec` sessions, so `composer` runs for `agent` and `orbit` alike. A Project without one has none.
 - name: Link the Project's php
+  tags: [container, start]
   when: phase in ['container', 'start']
   vars:
     container_php: "{{ container.php | default(none) or '' }}"
@@ -152,13 +205,36 @@
       ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '/usr/local/bin/php'] }}" }
       changed_when: true
 
+# Both static PHP binaries read this compiled-in scan directory; the limit is shared by every container, not a Project setting.
+- name: Configure the container's PHP memory limit
+  tags: [container, clone, start]
+  when: phase in ['container', 'clone', 'start']
+  vars:
+    container_php_ini_path: /etc/orbit/php/conf.d/99-orbit-runtime.ini
+    container_php_ini_content: "memory_limit = 1G\n"
+  block:
+    - name: Read the container's PHP settings
+      ansible.builtin.command: { argv: "{{ as_root + ['cat', '--', container_php_ini_path] }}" }
+      register: container_php_ini_read
+      changed_when: false
+      failed_when: container_php_ini_read.rc != 0 and 'No such file or directory' not in container_php_ini_read.stderr
+    - name: Write the changed container PHP settings
+      when: container_php_ini_read.rc != 0 or container_php_ini_read.stdout ~ '\n' != container_php_ini_content
+      ansible.builtin.command:
+        argv: "{{ incus_project + ['file', 'push', '--create-dirs', '--uid', '0', '--gid', '0', '--mode', '0644', '-', container.name ~ container_php_ini_path] }}"
+        stdin: "{{ container_php_ini_content }}"
+        stdin_add_newline: false
+      changed_when: true
+
 - name: Stop the container
+  tags: [stop]
   when: phase == 'stop' and container_read.rc == 0 and (container_read.stdout | from_json).status == 'Running'
   ansible.builtin.command: { argv: "{{ incus_project + ['stop', '--timeout', '30', container.name] }}" }
   changed_when: true
 
 # The branch comes from a mirror on the Node: a container cannot reach GitHub, and the read token never enters it.
 - name: Fetch the branch on the Node
+  tags: [container, clone, fetch]
   when: phase in ['container', 'clone', 'fetch']
   vars:
     credential_path: "/tmp/orbit-git-credential-{{ run_id }}"
@@ -223,6 +299,7 @@
 
 # A pinned commit must be on the branch's first-parent chain; without one the branch's newest commit deploys.
 - name: Check the commit on the Node
+  tags: [fetch]
   when: phase == 'fetch'
   block:
     - name: Read the branch's first-parent chain
@@ -240,6 +317,7 @@
 
 # The first build brings the branch in only when the workspace is not at the mirror's commit yet, so a rerun changes nothing.
 - name: Read the workspace and the mirror
+  tags: [workspace]
   when: phase == 'workspace'
   block:
     - name: Read the workspace repository
@@ -271,6 +349,7 @@
              or workspace_before.results[1].stdout | trim != mirror_head.stdout | trim }}
 
 - name: Bring the branch into the container
+  tags: [fetch, workspace]
   when: phase == 'fetch' or (phase == 'workspace' and workspace_behind | bool)
   block:
     - name: Bundle the branch
@@ -286,6 +365,7 @@
 
 # The workspace is a repository shared by `orbit` and `agent` through the group `work`.
 - name: Check out the branch in the workspace
+  tags: [workspace]
   when: phase == 'workspace' and workspace_behind | bool
   block:
     - name: Fetch the bundle and check out the branch
@@ -300,6 +380,7 @@
       changed_when: false
 
 - name: Read the checked-out commit
+  tags: [workspace]
   when: phase == 'workspace'
   block:
     - name: Read the commit
@@ -313,6 +394,7 @@
 # The .env goes in as `orbit` with group `work`, 0640, through a 0600 file on the Node that is removed at once. It is compared by
 # digest first, so a rerun with the same .env changes nothing.
 - name: Read the digest of .env in the container
+  tags: [workspace]
   when: phase == 'workspace'
   ansible.builtin.command: { argv: "{{ as_root + ['sha256sum', '--', container.environment_file] }}" }
   register: environment_digest
@@ -320,6 +402,7 @@
   failed_when: false
 
 - name: Write .env in the container
+  tags: [workspace]
   when: >-
     phase == 'workspace'
     and (environment_digest.stdout | default('')).split(' ') | first != lookup('ansible.builtin.env', 'ORBIT_ENVIRONMENT') | hash('sha256')
@@ -342,6 +425,7 @@
 
 # A deployment checks out only a clean tree that the commit fast-forwards.
 - name: Check out the commit
+  tags: [checkout]
   when: phase == 'checkout'
   vars:
     target: "{{ container.commit if container.commit is not none else 'refs/remotes/origin/' ~ container.branch }}"
@@ -383,13 +467,105 @@
       ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_bundle] }}" }
       changed_when: false
 
-# FrankenPHP and the Project's other development Processes are `orbit-*` units, so a runtime folder update restarts them too.
+# `orbit` and `agent` share the workspace through the group `work`. A tool that asks for 0755 folders, such as Bun in `node_modules`,
+# caps their ACL mask, so the other user cannot write there. Before the deploy steps (`checkout`) and after them (`processes`) root
+# gives the group back what the owner has; only entries that lack it change.
+- name: Keep the workspace writable for its group
+  tags: [checkout, processes]
+  when: phase in ['checkout', 'processes']
+  ansible.builtin.command:
+    argv: >-
+      {{ as_root + ['find', container.workspace, '(', '(', '-type', 'd', '!', '-perm', '-g=rwx', ')', '-o',
+          '(', '-type', 'f', '!', '-perm', '-g=rw', ')', ')', '-print', '-exec', 'chmod', 'g+rwX', '{}', '+'] }}
+  register: workspace_modes
+  changed_when: workspace_modes.stdout != ''
+
+# A Process unit or folder that is not this Instance's goes: a clone starts with its default's units in the seed, and a definition the
+# Project removed leaves its unit behind.
+- name: Remove the Process units of other owners
+  tags: [processes]
+  when: phase == 'processes'
+  vars:
+    owned_units: "{{ container.processes | default([]) | map(attribute='name') | list }}"
+    owned_ids: "{{ container.processes | default([]) | map(attribute='id') | map('string') | list }}"
+  block:
+    - name: Read the Process units and folders
+      ansible.builtin.command:
+        argv: "{{ as_root + ['find', item, '-mindepth', '1', '-maxdepth', '1', '-name', 'orbit-process-*.service' if item == '/etc/systemd/system' else '[0-9]*'] }}"
+      loop: [/etc/systemd/system, /etc/orbit/processes]
+      register: foreign_read
+      changed_when: false
+      failed_when: foreign_read.rc != 0 and 'No such file' not in foreign_read.stderr
+    - name: Name the foreign units and folders
+      ansible.builtin.set_fact:
+        foreign_units: "{{ foreign_read.results[0].stdout_lines | map('basename') | reject('in', owned_units) | list }}"
+        foreign_folders: "{{ foreign_read.results[1].stdout_lines | map('basename') | reject('in', owned_ids) | list }}"
+    - name: Stop and disable the foreign units
+      when: foreign_units | length > 0
+      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'disable', '--now', '--'] + foreign_units }}" }
+      changed_when: true
+    - name: Remove the foreign units and folders
+      when: foreign_units | length > 0 or foreign_folders | length > 0
+      ansible.builtin.command:
+        argv: >-
+          {{ as_root + ['rm', '-rf', '--'] + (foreign_units | map('regex_replace', '^', '/etc/systemd/system/') | list)
+             + (foreign_folders | map('regex_replace', '^', '/etc/orbit/processes/') | list) }}
+      changed_when: true
+    - name: Reload systemd after the removal
+      when: foreign_units | length > 0
+      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'daemon-reload'] }}" }
+      changed_when: true
+
+# FrankenPHP and the Project's other development Processes are `orbit-*` units, so a runtime folder update restarts them too. A
+# Process's environment file is named by the digest of its content, so a changed value is a new file and a changed unit.
+- name: Write the Processes' environment files
+  tags: [processes]
+  when: phase == 'processes' and (container.processes | default([]) | selectattr('environment') | list | length > 0)
+  vars:
+    environments: "{{ lookup('ansible.builtin.env', 'ORBIT_PROCESS_ENVIRONMENTS') | from_json }}"
+  block:
+    - name: Read the environment files
+      ansible.builtin.command: { argv: "{{ as_root + ['test', '-f', item.environment] }}" }
+      loop: "{{ container.processes | selectattr('environment') | list }}"
+      loop_control: { label: "{{ item.name }}" }
+      register: environments_read
+      changed_when: false
+      failed_when: environments_read.rc not in [0, 1]
+    # Root reads it when systemd starts the unit; the values go in on standard input and never touch the Node's disk.
+    - name: Push the missing environment files
+      when: item.rc != 0
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['file', 'push', '--create-dirs', '--uid', '0', '--gid', '0', '--mode', '0600', '-',
+              container.name ~ item.item.environment] }}
+        stdin: "{{ environments[item.item.environment] }}"
+        stdin_add_newline: false
+      loop: "{{ environments_read.results }}"
+      loop_control: { label: "{{ item.item.name }}" }
+      no_log: true
+      changed_when: true
+
+# A changed value is a new file; the old one goes, so no former value stays in the container.
+- name: Remove the Processes' former environment files
+  tags: [processes]
+  when: phase == 'processes' and (container.processes | default([]) | length > 0)
+  ansible.builtin.command:
+    argv: >-
+      {{ as_root + ['find', '/etc/orbit/processes/' ~ item.id, '-maxdepth', '1', '-type', 'f', '-name', '*.env']
+         + (['!', '-path', item.environment] if item.environment else []) + ['-print', '-delete'] }}
+  loop: "{{ container.processes }}"
+  loop_control: { label: "{{ item.name }}" }
+  register: environments_removed
+  changed_when: environments_removed.stdout != ''
+  failed_when: environments_removed.rc != 0 and 'No such file' not in environments_removed.stderr
+
 - name: Install and start the Processes
-  when: phase == 'processes' and units | length > 0
+  tags: [processes]
+  when: phase == 'processes' and unit_files | length > 0
   block:
     - name: Read the units
       ansible.builtin.command: { argv: "{{ as_root + ['cat', '/etc/systemd/system/' ~ item.name] }}" }
-      loop: "{{ container.units }}"
+      loop: "{{ unit_files }}"
       loop_control: { label: "{{ item.name }}" }
       register: units_read
       changed_when: false
@@ -409,25 +585,55 @@
       ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'daemon-reload'] }}" }
       changed_when: true
     - name: Enable and start the units
+      when: units | length > 0
       ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'enable', '--now', '--'] + units }}" }
       changed_when: false
+    # A changed unit restarts. A deployment's new seed then stops and starts every running unit on the new commit.
     - name: Restart the changed units
-      when: units_written.results | selectattr('changed', 'defined') | selectattr('changed') | list | length > 0
+      when: (units_written.results | selectattr('changed', 'defined') | selectattr('changed') | map(attribute='item.item.name') | select('in', units) | list | length) > 0
       ansible.builtin.command:
-        argv: "{{ as_root + ['systemctl', 'restart', '--'] + (units_written.results | selectattr('changed', 'defined') | selectattr('changed') | map(attribute='item.item.name') | list) }}"
+        argv: >-
+          {{ as_root + ['systemctl', 'restart', '--']
+             + (units_written.results | selectattr('changed', 'defined') | selectattr('changed') | map(attribute='item.item.name') | select('in', units) | list) }}
       changed_when: true
 
 # The agent's side of a clone: the placeholder model key, the Claude Code and Codex settings, the note links, and the instance file,
-# whose presence starts T3. Each file is compared by digest, so a rerun changes nothing; the key comes through the vault.
+# whose presence starts T3. Whole files are compared by digest; JSON settings merge only Orbit's keys, preserving runtime state.
+# A rerun changes nothing; the key comes through the vault.
 - name: Prepare the agent
+  tags: [agent]
   when: phase == 'agent'
   vars:
     agent_files: >-
-      {{ container.clone.files + [container.clone.model_environment | combine({'content': lookup('ansible.builtin.env', 'ORBIT_MODEL_ENVIRONMENT')})] }}
+      {{ (container.clone.files | selectattr('content', 'defined') | list)
+         + [container.clone.model_environment | combine({'content': lookup('ansible.builtin.env', 'ORBIT_MODEL_ENVIRONMENT')})] }}
   block:
-    - name: Make the agent's Claude Code folder
-      ansible.builtin.command: { argv: "{{ as_agent + ['mkdir', '-p', '-m', '0700', '/home/agent/.claude'] }}" }
+    - name: Make the agent's configuration folders
+      ansible.builtin.command: { argv: "{{ as_agent + ['mkdir', '-p', '-m', '0700', '/home/agent/.claude', '/home/agent/.t3/userdata'] }}" }
       changed_when: false
+    # Git keeps the agent's own preferences; only its trust list is Orbit's. The workspace's .git belongs to orbit.
+    - name: Read the agent's trusted Git directories
+      ansible.builtin.command: { argv: "{{ as_agent + ['git', 'config', '--global', '--get-all', 'safe.directory'] }}" }
+      register: agent_git_safe
+      changed_when: false
+      failed_when: agent_git_safe.rc not in [0, 1]
+    - name: Trust only the workspace for the agent
+      when: agent_git_safe.stdout_lines != [container.workspace]
+      ansible.builtin.command:
+        argv: "{{ as_agent + ['git', 'config', '--global', '--replace-all', 'safe.directory', container.workspace] }}"
+      changed_when: true
+    - name: Read the agent's Git identity
+      ansible.builtin.command: { argv: "{{ as_agent + ['git', 'config', '--global', '--get', item.key] }}" }
+      loop: [{key: user.name, value: Orbit Agent}, {key: user.email, value: agent@orbit.local}]
+      register: agent_git_identity
+      changed_when: false
+      failed_when: agent_git_identity.rc not in [0, 1]
+    - name: Set only the agent's missing Git identity values
+      when: item.rc == 1
+      ansible.builtin.command: { argv: "{{ as_agent + ['git', 'config', '--global', item.item.key, item.item.value] }}" }
+      loop: "{{ agent_git_identity.results }}"
+      loop_control: { label: "{{ item.item.key }}" }
+      changed_when: true
     - name: Read the digests of the agent's files
       ansible.builtin.command: { argv: "{{ as_root + ['sha256sum', '--', item.path] }}" }
       loop: "{{ agent_files }}"
@@ -444,6 +650,28 @@
         stdin: "{{ item.item.content }}"
         stdin_add_newline: false
       loop: "{{ agent_digests.results }}"
+      loop_control: { label: "{{ item.item.path }}" }
+      no_log: true
+      changed_when: true
+    - name: Read the agent's JSON settings
+      ansible.builtin.command: { argv: "{{ as_root + ['cat', '--', item.path] }}" }
+      loop: "{{ container.clone.files | selectattr('json', 'defined') | list }}"
+      loop_control: { label: "{{ item.path }}" }
+      register: agent_settings
+      changed_when: false
+      failed_when: agent_settings.rc != 0 and 'No such file or directory' not in agent_settings.stderr
+      no_log: true
+    - name: Merge Orbit's changed JSON settings
+      vars:
+        settings: "{{ item.stdout | from_json if item.rc == 0 else {} }}"
+      when: item.rc != 0 or settings != (settings | combine(item.item.json))
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['file', 'push', '--uid', item.item.uid | string, '--gid', item.item.gid | string, '--mode', item.item.mode,
+              '-', container.name ~ item.item.path] }}
+        stdin: "{{ settings | combine(item.item.json) | to_json }}\n"
+        stdin_add_newline: false
+      loop: "{{ agent_settings.results }}"
       loop_control: { label: "{{ item.item.path }}" }
       no_log: true
       changed_when: true
@@ -464,6 +692,7 @@
 # T3 starts for the first time and makes its own identity: the default never ran it, so no clone shares one. The workspace becomes
 # its project once; the project's id stays in the agent's settings, so a rerun adds none.
 - name: Start T3
+  tags: [t3]
   when: phase == 't3'
   vars:
     t3_project_mark: "{{ container.clone.t3.project_mark }}"
@@ -494,7 +723,7 @@
       when: t3_project.rc != 0
       block:
         - name: Add the project
-          ansible.builtin.command: { argv: "{{ as_agent + [container.clone.t3.t3, 'project', 'add', container.workspace] }}" }
+          ansible.builtin.command: { argv: "{{ as_agent + [container.clone.t3.t3, 'project', 'add', container.workspace, '--title', container.clone.t3.title] }}" }
           register: t3_added
           changed_when: true
         - name: Keep the project's id
@@ -507,6 +736,7 @@
 # each, inside the container. The reply goes into the run folder on the worker, 0600; the next step checks it and stores the sessions
 # in the vault. No session enters a log, an argument or the run's outputs.
 - name: Register the T3 server
+  tags: [register]
   when: phase == 'register'
   vars:
     t3_url: "http://127.0.0.1:{{ container.clone.t3.internal_port }}"
@@ -553,6 +783,7 @@
 
 # A clone copies the seed snapshot, so it is taken with the Processes stopped: no file is half written in it.
 - name: Take the seed snapshot
+  tags: [seed]
   when: phase == 'seed'
   block:
     - name: Read the checked-out commit
@@ -592,6 +823,7 @@
       changed_when: true
 
 - name: Check the container
+  tags: [check]
   when: phase == 'check'
   block:
     - name: Read the branch and the commit
@@ -624,6 +856,7 @@
         container_commit: "{{ check_git.results[1].stdout | trim }}"
 
 - name: Report the commit
+  tags: [always]
   when: container_commit is defined
   ansible.builtin.debug:
     msg: "orbit-commit={{ container_commit }}"

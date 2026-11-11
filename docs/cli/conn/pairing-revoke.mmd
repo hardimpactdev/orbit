@@ -16,7 +16,7 @@ sequenceDiagram
   CLI->>GW: Revoke own pairings<br/>POST …/env-beast/pairings/revoke
   %%> Command:
   %%> - `POST /api/v1/conn/environments/env-beast/pairings/revoke`
-  %%> - syntax: the MCP tool `conn-pairing-revoke` with `environment` and an optional `node_id`
+  %%> - syntax: the MCP tool `conn-pairing-revoke` with `environment`, optional `node_id` and optional `pairing_id`
   %%> Input:
   %%> - the T3 server, and the Node whose pairings go; without `node_id` it is the caller
   %%> Not included:
@@ -27,6 +27,11 @@ sequenceDiagram
     %%> - `node_id` selects Node 4 instead of the caller
     %%> - the caller remains the owner of the revocation Operation
   end
+  opt pairing_id (API / MCP)
+    Note over GW: Target one pairing<br/>includes revoked
+    %%> Input:
+    %%> - pairing_id must belong to the selected Node and environment
+  end
   Note over GW: Select the pairings<br/>task #5171 · session to vault
   %%> Requirements:
   %%> - the `conn` extension is on; the caller is an active Node
@@ -34,7 +39,8 @@ sequenceDiagram
   %%> - env-beast is registered and the Gateway's admin session there has not expired
   %%> - no other revocation runs for env-beast; the Gateway holds one lock per server
   %%> What it does:
-  %%> - captures the subject Node's open pairings on env-beast: their client labels and link IDs; the subject defaults to the caller
+  %%> - captures the subject Node's open pairings on env-beast: their exact labels, issue windows, source IP and link IDs; the subject defaults to the caller
+  %%> - overlapping windows on that Node and environment refuse with conn.revocation_ambiguous before any T3 call
   %%> - pushes the admin session to the Swamp vault as `conn-session-5171` after commit (R3)
   %%> Why a run:
   %%> - calling T3's API is an effect; the Gateway's only execution primitives are mint and sign
@@ -42,7 +48,7 @@ sequenceDiagram
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209); no Node is a target
   %%> Inputs:
-  %%> - the T3 server URL, the captured labels and link IDs, and the vault key names; never the session
+  %%> - the T3 server URL, the captured labels, issue windows, source IP and link IDs, and the vault key names; never the session
   GW-->>CLI: 202 Accepted<br/>task #5171
   %%> What you get:
   %%> - the task number, at once
@@ -53,11 +59,12 @@ sequenceDiagram
   %%> - mktemp creates a private worker directory; no raw HTTP reply enters run history
   SW->>T3: Read session inventory
   %%> How:
-  %%> - one bounded curl request with the admin session from vault.get
-  %%> - no read is needed when no admitted label exists
+  %%> - one bounded subscribeAuthAccess WebSocket RPC with the admin bearer session from vault.get; its initial snapshot supplies payload.clientSessions
+  %%> - no read is needed when no admitted pairing or cleanup label exists
   Note over SW: Select the sessions
   %%> What it does:
-  %%> - typed data selects admitted labels and keeps the current admin and every other label
+  %%> - typed data matches Conn one-time-token sessions by exact label; mcp-client sessions by exact Node IP and issue window
+  %%> - the current admin is preserved; an empty selection or a delivered pairing with no matching session refuses with conn.revocation_unmatched
   %%> - an invalid or failed list refuses before any revoke
   SW->>T3: Revoke the sessions
   %%> How:
@@ -65,7 +72,8 @@ sequenceDiagram
   %%> - the reply stays in the private directory; no duplicate ownership read
   Note over SW: Read session revocations
   %%> What it does:
-  %%> - typed data reads the private replies and keeps valid completions and the revoked count
+  %%> - typed data reads private replies and keeps valid completions and the revoked count
+  %%> - zero actual session revocations fail with conn.revocation_unmatched and block link revocation
   SW->>T3: Revoke unused links
   %%> How:
   %%> - one bounded curl request per captured link; a failed session phase blocks these calls
@@ -90,18 +98,18 @@ sequenceDiagram
     %%> - the subject Node's pairings on env-beast get `revoked_at`, and their stored links are removed
     %%> - the device loses env-beast at once; its other servers and Orbit access stay
     %%> - task #5171 succeeds
-  else listing or a revoke fails
+  else listing, matching or a revoke fails
     T3--xSW: 401 or no answer
     %%> When:
     %%> - T3 refuses the admin session, cannot be reached, or answers with invalid data
-    SW--xGW: Run failed<br/>conn.revocation_failed
+    SW--xGW: Run failed<br/>conn.* error code
     %%> The Gateway reads:
     %%> - which step failed and its safe error code
     Note over GW: Mark revoked ones only<br/>task failed · rerun is safe
     %%> Result:
-    %%> - pairings whose sessions and links completed are marked revoked; the rest stay open; task #5171 fails
+    %%> - unmatched failures keep every pairing row unchanged; other failures mark only pairings whose sessions and links completed; task #5171 fails
     %%> Retry:
-    %%> - safe: run it again; it lists the sessions again and skips those already gone
+    %%> - use pairing_id to retry a revoked row whose session still lives; an empty retry fails with conn.revocation_unmatched
   end
   loop wait with progress until terminal
     CLI->>GW: Read Operation #5171<br/>GET conn/operations/5171

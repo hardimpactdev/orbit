@@ -9,9 +9,12 @@ use App\Actions\Instances\StartInstanceEnvironmentImportAction;
 use App\Actions\Instances\StartInstanceEnvironmentSyncAction;
 use App\Actions\Instances\StartInstanceStepListAction;
 use App\Actions\Instances\StartInstanceTransferAction;
+use App\Actions\Projects\CaptureProjectSourceFactsAction;
+use App\Actions\Projects\UpdateProjectAction;
 use App\Data\Instances\CloneInstanceData;
 use App\Data\Instances\RenameInstanceData;
 use App\Data\Instances\TransferInstanceData;
+use App\Data\Projects\UpdateProjectData;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceFolderPlan;
@@ -19,6 +22,8 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\LifecyclePhase;
+use App\Domain\Projects\ProjectSourceAccess;
+use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -26,7 +31,6 @@ use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
-use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\ProjectDevelopmentDeployStep;
 use App\Models\Route;
@@ -76,11 +80,13 @@ describe('the first default Instance of a Project on a build-list Node', functio
         $container = containerIntentOf($operation);
         expect($container)->toMatchArray([
             'project' => 'orbit-instances', 'name' => 'instance-'.$operation->target_id, 'image' => 'orbit-instance', 'address' => '10.253.0.2',
+            'root_disk_pool' => 'orbit-instances', 'root_disk_size' => '40GiB',
             'network' => 'orbitinst0', 'acl' => 'instance-'.$operation->target_id,
             'acl_rules' => ['description' => 'Orbit Instance '.$operation->target_id, 'egress' => [],
                 'ingress' => [['action' => 'allow', 'source' => '10.253.0.1/32', 'protocol' => 'tcp', 'destination_port' => '8080', 'state' => 'enabled']]],
             'mirror' => '/var/lib/orbit/instance-repositories/'.$operation->target_id.'.git', 'repository' => 'https://github.com/nckrtl/tool.git',
             'branch' => 'main', 'commit' => null, 'workspace' => '/srv/workspace', 'environment_file' => '/srv/workspace/.env', 'units' => [],
+            'processes' => [],
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin',
                 'VP_HOME=/var/lib/orbit/vite-plus-home', 'VP_NO_UPDATE_CHECK=1', 'HTTP_PROXY=http://10.253.0.1:3128',
                 'HTTPS_PROXY=http://10.253.0.1:3128', 'NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1', 'http_proxy=http://10.253.0.1:3128',
@@ -106,7 +112,7 @@ describe('the first default Instance of a Project on a build-list Node', functio
         $node = containerDefaultNode();
         $project = containerDefaultProject();
         $first = containerCreate($project, $node);
-        $first->forceFill(['status' => 'failed'])->save();
+        $first->forceFill(['status' => 'failed', 'lock_key' => null])->save();
 
         $repeat = containerCreate($project, $node);
 
@@ -123,18 +129,15 @@ describe('the first default Instance of a Project on a build-list Node', functio
 
     it('refuses a PHP Project until the runtime folder holds its static PHP build', function (): void {
         $node = containerDefaultNode();
+        $recipe = json_decode((string) file_get_contents(resource_path('machine-software/recipe.json')), false, flags: JSON_THROW_ON_ERROR);
+        $recipe->instances->php->versions->{'8.5'}->sha256 = null;
+        $home = sys_get_temp_dir().'/unpublished-php';
+        mkdir($home.'/release/apps/gateway/resources/machine-software', 0700, true);
+        symlink('release', $home.'/orbit');
+        file_put_contents($home.'/orbit/apps/gateway/resources/machine-software/recipe.json', json_encode($recipe, JSON_THROW_ON_ERROR));
+        config(['orbit.gateway_checkout' => $home.'/orbit/apps/gateway']);
 
         expect(containerRefusal(fn () => containerCreate(containerDefaultProject(ProjectType::LaravelApp, '8.5'), $node)))->toBe('instance.host_unavailable')
-            ->and(Instance::query()->count())->toBe(0);
-    });
-
-    it('refuses what a container cannot run yet: the Project\'s development Processes', function (): void {
-        $node = containerDefaultNode();
-        $project = containerDefaultProject();
-
-        ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'queue', 'environments' => ['development'],
-            'spec' => ['runtime' => 'systemd', 'command' => ['php', 'artisan', 'queue:work']]]);
-        expect(containerRefusal(fn () => containerCreate($project, $node)))->toBe('operation.kind_unavailable')
             ->and(Instance::query()->count())->toBe(0);
     });
 });
@@ -266,4 +269,50 @@ it('refuses every command that works on a checkout from the Node, for an Instanc
     'transfer' => [fn (Instance $instance) => app(StartInstanceTransferAction::class)->execute($instance, new TransferInstanceData(1, null, null))],
     'rename' => [fn (Instance $instance) => app(RenameInstanceAction::class)->execute($instance, new RenameInstanceData('feature'))],
     'clone' => [fn (Instance $instance) => app(StartInstanceCloneAction::class)->execute($instance, new CloneInstanceData(1, 'prod', 'prod', null, null))],
+]);
+
+describe('monorepo source facts', function (): void {
+    it('refreshes PHP from the root Composer requirement and hands the container its CLI link', function (): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject(ProjectType::Monorepo);
+        $project->update(['root' => 'public']);
+        $project->refresh();
+        $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()
+            ->with($project->repository_url, ProjectSourceAccess::GitHubApp, 'main', ['.env.example', 'composer.json', 'artisan'])
+            ->andReturn(['head' => str_repeat('a', 40), 'files' => [
+                '.env.example' => null, 'artisan' => null,
+                'composer.json' => ['mode' => '100644', 'object' => str_repeat('b', 40), 'content' => '{"require":{"php":"^8.5"}}'],
+            ]]);
+
+        app(UpdateProjectAction::class)->execute($project, new UpdateProjectData(
+            false, null, false, null, false, null, false, null, false, null,
+            sourceAccessProvided: true, sourceAccess: ProjectSourceAccess::GitHubApp,
+        ));
+
+        expect($project->refresh())->php_version->toBe('8.5')->is_laravel->toBeFalse()->source_profile_error->toBeNull();
+        expect(containerIntentOf(containerCreate($project, $node))['php'])->toBe('/opt/orbit-runtime/current/php/8.5/bin/php');
+    });
+});
+
+it('keeps the source type rules when selecting PHP from Composer', function (ProjectType $type, ?string $json, bool $entry, ?string $php, bool $laravel, ?string $error): void {
+    $entryPath = $type->frameworkEntryPoint();
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn([
+        'head' => str_repeat('a', 40), 'files' => [
+            '.env.example' => null,
+            'composer.json' => $json === null ? null : ['mode' => '100644', 'object' => str_repeat('b', 40), 'content' => $json],
+            $entryPath => $entry ? ['mode' => '100644', 'object' => str_repeat('c', 40), 'content' => 'entry'] : null,
+        ],
+    ]);
+
+    $read = app(CaptureProjectSourceFactsAction::class)->read('https://github.com/acme/source.git', ProjectSourceAccess::GitHubApp, 'main', '.', $type);
+
+    expect($read['facts'])->toMatchArray(['php_version' => $php, 'is_laravel' => $laravel, 'source_profile_error' => $error]);
+})->with([
+    'monorepo uses root constraint without Laravel classification' => [ProjectType::Monorepo, '{"require":{"php":"~8.4.0","laravel/framework":"^13.0"}}', false, '8.4', false, null],
+    'monorepo without Composer stays without PHP' => [ProjectType::Monorepo, null, false, null, false, null],
+    'unsupported monorepo PHP is recorded' => [ProjectType::Monorepo, '{"require":{"php":"^7.4"}}', false, null, false, 'app-dev.php_version_unsupported'],
+    'Laravel app' => [ProjectType::LaravelApp, '{"require":{"php":"^8.5","laravel/framework":"^13.0"}}', true, '8.5', true, null],
+    'Symfony app' => [ProjectType::SymfonyApp, '{"require":{"php":"~8.4.0","symfony/framework-bundle":"^8.0"}}', true, '8.4', false, null],
+    'Laravel package' => [ProjectType::LaravelPackage, '{"require":{"php":"^8.5","laravel/framework":"^13.0"}}', false, '8.5', false, null],
+    'Node package without Composer' => [ProjectType::NodePackage, null, false, null, false, null],
 ]);

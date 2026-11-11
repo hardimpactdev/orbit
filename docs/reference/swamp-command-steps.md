@@ -12,6 +12,8 @@ covers:
 
 Use `App\Infrastructure\Swamp\SwampCommandStep` for execution-copy references and terminal projection. Each family opts in with `workflow_inputs => true`; its projector returns the outer `{intent, execution_secrets}` envelope. The shared `DirectOperation::workflowInputs` builder validates names-only descriptors and writes authoritative Operation, kind and Node IDs last. An empty descriptor map serializes as an object. The separate `terminal_result` declaration fixes the result job and step; it does not opt into full inputs. Native `command/shell` owns execution and output capture. The Gateway records the result through the family's existing projector.
 
+A [container Process read](/reference/development-containers#processes) uses `processInspection` to read the fixed `Read Process result` capture from the completed run. The journal bytes stay in the execution vault; the Gateway checks the capture against the read's request id.
+
 Recorded reads such as [`node:metrics`](/cli/node/metrics) do not use command steps. The Gateway reads its saved observation and agent state without creating an Operation, starting a workflow, or asking Swamp to collect a fresh sample.
 
 ## Secret inputs
@@ -20,7 +22,7 @@ Call `executionCopy(string $vault, string $key, string $value): array{vault:stri
 
 Serve rate-limits requests and WebSocket handshakes per client and answers `429` with `Retry-After`. Its source admits at most 50 new WebSocket connections from one IP address in a fixed minute, for every token together, and names the rest of that minute as `Retry-After`; no serve setting changes it. Every Gateway process shares that budget.
 
-The Gateway opens one connection per admission instead of one per request: the copies and run starts that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. A request that fails on it closes that connection, and the next request opens a new one.
+The execution copies that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. After every copy is acknowledged, the Gateway queues the native starts on its existing `operations` queue and answers admission without waiting for them. Each start job opens its own connection. A request that fails closes its connection, and the next request opens a new one.
 
 Every Gateway WebSocket client also tries a refused `429` handshake again after the server's `Retry-After`, or after a doubling backoff from half a second when serve names none. It tries at most four times and only while the caller's connect timeout leaves room, so a copy or start waits up to 15 seconds instead of failing at once. A wait for the rest of serve's minute is longer, so the Gateway keeps its own connection rate low instead.
 
@@ -44,6 +46,8 @@ Official e459 accepts this server protocol even though its remote CLI refuses st
 Upstream fixes go through the orchestrator to Nick. Only official Swamp versions may be pinned or distributed. The GitHub App key and Orbit CA private key stay only in the Gateway.
 
 ## Terminal outputs
+
+Native behavior resources expose their attributes directly under `outputs`. The T3 registration resource named `terminal` therefore supplies `outputs.stdout`; its resource name adds no level.
 
 The action that produces public values prints one JSON object on stdout. Native `command/shell` stores it in `jobs[].steps[].outputs.stdout`, alongside `exitCode`, `executedAt`, `command`, `durationMs` and `stderr`. Keep secret values out of every output. On official e459 a step that exits nonzero keeps no outputs. A refusing action fails with its own exit code; the family projector maps the native failure to its public refusal. Native dependencies skip subsequent actions.
 

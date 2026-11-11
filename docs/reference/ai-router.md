@@ -3,6 +3,7 @@ title: "AI router"
 description: "The optional Orbit extension that collects CLIProxyAPI quota and its model list into shared Valkey, and publishes provider pools at collector.ai-router.orbit."
 covers:
   - apps/gateway/extensions/ai-router/**
+  - swamp/ansible/ai-router-model-forwarder.yml
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/web/src/extensions/ai-router/**
 ---
@@ -290,6 +291,8 @@ The command admits `ai_router.model_forwarder` on the Node. An applying run has 
 2. It applies the guard on the router's Node, with the Node's WireGuard address added to its sources. This phase is the guard phase of `ai-router:task-guard`.
 3. It runs the checks below.
 
+With the table loaded, readiness inspects the listening sockets for the bridge address and port 8319. A host TCP probe would enter over `lo` and be rejected.
+
 So a run that fails after phase 1 leaves no Node admitted without its table.
 
 A removing run applies the guard without the Node first, then takes the forwarder, its table, its units, its state and its user off the Node. A forwarder run never brings back a guard that `ai-router:task-guard --remove` took off: while the guard is off, an applying run is refused, and a removing run skips the guard phase and leaves the guard off.
@@ -303,6 +306,10 @@ Next, a request goes straight to the guard. It must fail, and the forward chain'
 Then root on the Node sends a request to the guard. It must fail, and the output chain's reset counter must rise. SSH to the router's Node must still answer.
 
 Last, root on the Node sends a request to the forwarder on the bridge address. It must fail, and the input chain's reset counter must rise.
+
+The three counter checks read decimal packet counts from nftables output and compare them as numbers. An unchanged or lower count fails the check.
+
+The check creates and removes a temporary namespace, veth and return route. These probe tasks report no configuration change, so a repeat run with no drift reports zero changes.
 
 A removing run ends by checking that the router's Node answers SSH from the Node while the guard port does not.
 

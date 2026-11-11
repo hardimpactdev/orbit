@@ -1,37 +1,68 @@
 id: 10c1e646-19cd-4527-8be5-01f524976346
 name: operation-instance-destroy
 description: Development Instance destroy from 209 in the chart's phases, one shipped script per Node phase through official SSH.
-vaults: [orbit-control-inputs]
+vaults:
+- orbit-control-inputs
 queueTimeout: 30
 inputs:
   type: object
   properties:
-    operation_id: {type: integer, minimum: 1}
-    node_id: {type: integer, minimum: 1}
-    kind: {type: string, const: instance.destroy}
-    intent: {type: object}
-    # Names only: git_credential, plus the Route material keys the Route withdrawal reads and the database server copies.
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      const: instance.destroy
+    intent:
+      type: object
     execution_secrets:
       type: object
       additionalProperties:
         type: object
         properties:
-          vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^[a-z][a-z0-9_.-]{0,254}$'}
-        required: [vault, key]
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^[a-z][a-z0-9_.-]{0,254}$
+        required:
+        - vault
+        - key
         additionalProperties: false
-  required: [operation_id, node_id, kind, intent, execution_secrets]
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
   additionalProperties: false
 jobs:
 - name: destroy
   labels:
     role: swamp
   steps:
+  - name: Prepare container removal
+    labels: &id004
+      role: swamp
+    guard: ${{ !("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ${{ "id-input-" + string(inputs.node_id) }}
+      methodName: write
+      inputs:
+        intent: ${{ inputs.intent }}
+        path: ${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}
   - name: Write the git credential
     labels:
       role: swamp
     writes: true
-    guard: ${{ size(inputs.intent.push_check_paths) == 0 }}
+    guard: ${{ ("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) || (size(inputs.intent.push_check_paths) == 0) }}
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
@@ -47,6 +78,10 @@ jobs:
         nodePort: ${{ inputs.intent.ssh_execution.target.port }}
         nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
       inputs: {}
+    dependsOn:
+    - step: Prepare container removal
+      condition:
+        type: always
   - name: Check work is pushed
     labels:
       role: swamp
@@ -57,7 +92,8 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
-    guard: ${{ size(inputs.intent.push_check_paths) == 0 || steps.exists(k, steps[k].status == "failed") }}
+    guard: ${{ ("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) || (size(inputs.intent.push_check_paths) == 0 || steps.exists(k, steps[k].status == "failed"))
+      }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -81,14 +117,14 @@ jobs:
         argv: '${{ ["/usr/bin/timeout", "150", "/bin/sh", "-c", "c=\"$1\"; shift; for p; do GIT_TERMINAL_PROMPT=0 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git -c core.hooksPath=/dev/null
           -c core.fsmonitor=false -c credential.helper= -c \"credential.helper=store --file=$c\" -c http.followRedirects=false -c url.https://github.com/.insteadOf=git@github.com: -c
           url.https://github.com/.insteadOf=ssh://git@github.com/ -C \"$p\" fetch --quiet --no-tags origin || { echo instance.remove_refused >&2; exit 3; }; [ -z \"$(/usr/bin/git -c
-          core.hooksPath=/dev/null -c core.fsmonitor=false -C \"$p\" status --porcelain -- . \":!.env\" \":!*/.env\" \":!.env.testing\" \":!*/.env.testing\")\" ] && [ -n \"$(/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C \"$p\" branch
-          -r --contains HEAD)\" ] || { echo \"instance.remove_refused: $p has work that is not pushed\" >&2; exit 3; }; done", "sh"] + ["/tmp/orbit-git-credential-" + run.id] + inputs.intent.push_check_paths
-          }}'
+          core.hooksPath=/dev/null -c core.fsmonitor=false -C \"$p\" status --porcelain -- . \":!.env\" \":!*/.env\" \":!.env.testing\" \":!*/.env.testing\")\" ] && [ -n \"$(/usr/bin/git
+          -c core.hooksPath=/dev/null -c core.fsmonitor=false -C \"$p\" branch -r --contains HEAD)\" ] || { echo \"instance.remove_refused: $p has work that is not pushed\" >&2; exit
+          3; }; done", "sh"] + ["/tmp/orbit-git-credential-" + run.id] + inputs.intent.push_check_paths }}'
   - name: Remove the git credential
     labels:
       role: swamp
     writes: true
-    guard: ${{ size(inputs.intent.push_check_paths) == 0 }}
+    guard: ${{ ("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) || (size(inputs.intent.push_check_paths) == 0) }}
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
@@ -119,10 +155,13 @@ jobs:
     - step: Remove the git credential
       condition:
         type: always
+    - step: Prepare container removal
+      condition:
+        type: always
     guard: ${{ steps.exists(k, steps[k].status == "failed") || (inputs.intent.members.all(m, m.route_id == null) && size(inputs.intent.route_mutations.restore.routes) == 0) }}
     task:
       type: workflow
-      workflowIdOrName: route-withdraw
+      workflowIdOrName: ${{ "route-withdraw" }}
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
@@ -146,7 +185,8 @@ jobs:
     - step: Withdraw the Route
       condition:
         type: always
-    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
+    guard: ${{ ("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) || (steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps &&
+      steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready)) }}
     forEach:
       item: process
       in: ${{ inputs.intent.native_runtime.processes }}
@@ -217,7 +257,8 @@ jobs:
     - step: Stop, remove Processes
       condition:
         type: always
-    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
+    guard: ${{ ("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) || (steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps &&
+      steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready)) }}
   - name: Remove SQLite files
     labels:
       role: swamp
@@ -240,7 +281,8 @@ jobs:
     - step: Run teardown steps
       condition:
         type: always
-    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
+    guard: ${{ ("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) || (steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps &&
+      steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready)) }}
     writes: true
     forEach:
       item: database
@@ -284,7 +326,8 @@ jobs:
     - step: Remove SQLite files
       condition:
         type: always
-    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
+    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready)
+      }}
     forEach:
       item: server
       in: ${{ inputs.intent.direct_destroy.database.servers }}
@@ -323,9 +366,9 @@ jobs:
     - step: Run teardown steps
       condition:
         type: always
-    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
+    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready)
+      }}
     writes: true
-    # Each member's awake and cold markers and Caddy access log; Caddy and the agent own them, so root removes them.
     forEach:
       item: file
       in: ${{ inputs.intent.direct_destroy.hibernation }}
@@ -375,7 +418,8 @@ jobs:
     - step: Remove hibernation files
       condition:
         type: always
-    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
+    guard: ${{ ("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) || (steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps &&
+      steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready)) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -390,7 +434,6 @@ jobs:
   - name: Check it is gone
     labels:
       role: swamp
-    # Always the end check: a source that stayed, for any reason, fails the run.
     dependsOn:
     - step: Remove the source
       condition:
@@ -405,3 +448,103 @@ jobs:
         hosts: name:target
         timeoutSec: 70
         argv: ${{ ["/usr/bin/timeout", "60", "/bin/sh", "-c", "for p; do [ ! -e \"$p\" ] || { echo \"$p still exists\" >&2; exit 1; }; done", "sh"] + inputs.intent.source_paths }}
+    guard: ${{ ("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) || (false) }}
+  - name: Delete the container
+    labels: *id004
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "id-delete-the-container-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags remove "$ORBIT_ANSIBLE/instance-container-destroy.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_RUN_ID: ${{ run.id }}
+          ORBIT_ANSIBLE: ${{ steps["Prepare container removal"].outputs.assets }}
+          ANSIBLE_SSH_ARGS: ${{ "-o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts -o StrictHostKeyChecking=yes" }}
+    guard: ${{ !("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) || steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps &&
+      steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
+    dependsOn:
+    - step: Drop owned databases
+      condition:
+        type: always
+    - step: Remove hibernation files
+      condition:
+        type: always
+    - step: Withdraw the Route
+      condition:
+        type: always
+    writes: true
+  - name: Read container removal
+    labels: *id004
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "id-read-container-removal-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 10 cat "$ORBIT_RUN/remove.json"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+    guard: ${{ !("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) }}
+    dependsOn:
+    - step: Delete the container
+      condition:
+        type: always
+  - name: Clean container files
+    labels: *id004
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "id-clean-container-removal-files-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 10 rm -rf -- "$ORBIT_RUN"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+    guard: ${{ !("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) }}
+    dependsOn:
+    - step: Prepare container removal
+      condition:
+        type: always
+    - step: Write the git credential
+      condition:
+        type: always
+    - step: Check work is pushed
+      condition:
+        type: always
+    - step: Remove the git credential
+      condition:
+        type: always
+    - step: Withdraw the Route
+      condition:
+        type: always
+    - step: Stop, remove Processes
+      condition:
+        type: always
+    - step: Run teardown steps
+      condition:
+        type: always
+    - step: Remove SQLite files
+      condition:
+        type: always
+    - step: Drop owned databases
+      condition:
+        type: always
+    - step: Remove hibernation files
+      condition:
+        type: always
+    - step: Remove the source
+      condition:
+        type: always
+    - step: Check it is gone
+      condition:
+        type: always
+    - step: Delete the container
+      condition:
+        type: always
+    - step: Read container removal
+      condition:
+        type: always
+    writes: true

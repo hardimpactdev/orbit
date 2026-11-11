@@ -14,7 +14,9 @@ covers:
 
 # Instance releases
 
-Development deployment uses one native Swamp root on 209 and official SSH to the app-dev Node. The Gateway captures public intent and names for private execution copies. Fetch, checkout checks, cleanup, checkout, Vite preparation, each Project command and final inspection are separate native steps. The shared terminal reader records the result and history; development steps do not read intent or report progress to the Gateway.
+An [Instance container's default deployment](/reference/development-containers#processes) runs its Project commands as `orbit`, repairs workspace group permissions before and after those commands, installs its development Processes and takes a new seed. The seed stops and starts every running unit, so each worker runs the new commit.
+
+Checkout development deployment uses one native Swamp root on 209 and official SSH to the app-dev Node. The Gateway captures public intent and names for private execution copies. Fetch, checkout checks, cleanup, checkout, Vite preparation, each Project command and final inspection are separate native steps. The shared terminal reader records the result and history; development steps do not read intent or report progress to the Gateway.
 
 Production deployment uses the same native root on 209 with a release layout and the admitted Project account ([chart](/cli/instance/deploy)). Every Node action is one official `@swamp/ssh` argv or an official `@swamp/cfgmgmt` behavior; no step calls the Gateway, and no polled executor remains. Rollback stays production-only, and development rollback refuses `deployment_config.unavailable` because checkouts have no retained releases.
 
@@ -604,6 +606,8 @@ The run has six parts:
 The Vite+ part runs only when a step needs Vite+. A failed required command skips the later ones. For a best-effort command, the step prints only the command's exit status, so a nonzero status does not fail the deployment.
 
 The shared terminal subscriber reads Swamp's native run data and records the deployment once. The first failed step names the error code, as [Development defaults](#development-defaults) lists. Only a verified native success advances the Instance seed. Development has no result callback, private-material read, token-mint request or Gateway command executor.
+
+A checkout Instance with an unfinished [`instance:migrate`](/cli/instance/migrate) refuses deployment with `instance.lifecycle_busy`. A reserved container row keeps the checkout runtime until the move completes.
 
 A `default` Instance in a container deploys with the variant `container` in the same workflow. Ansible phases start the container, fetch the commit into the Node's mirror and push it in, check it out under the same refusals, take the seed snapshot and check the result. Each Project command runs in the container as `orbit`, from its vault copy. [The default Instance](/reference/development-containers#the-default-instance) has the details.
 

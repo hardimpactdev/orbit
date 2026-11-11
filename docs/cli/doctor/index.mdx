@@ -11,7 +11,7 @@ covers:
   - packages/php-sdk/src/Responses/Doctor/**
 ---
 
-Doctor compares current Node and runtime facts with the Gateway's recorded intent. It reports differences and never repairs them. Native provisioning, deployment, Route, Tool, Schedule and database operations own their configuration checks. Doctor reuses the native firewall comparison for operator rules, matched by port, protocol and source.
+Doctor compares current Node and runtime facts with the Gateway's recorded intent. It leaves out [container Processes](/reference/development-containers#processes), whose units belong to the container rather than the Node. It reports differences and never repairs them. Native provisioning, deployment, Route, Tool, Schedule and database operations own their configuration checks. Doctor reuses the native firewall comparison for operator rules, matched by port, protocol and source.
 
 ## Commands
 

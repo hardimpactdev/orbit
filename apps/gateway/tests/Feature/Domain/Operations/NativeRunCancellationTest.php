@@ -375,3 +375,19 @@ it('does not record a confirmation for a request that was recorded again while S
 
     expect($operation->refresh()->state['native_cancel_confirmed_at'] ?? null)->toBeNull();
 });
+
+it('forwards a cancellation recorded before native start confirmation once the run binds', function (): void {
+    Queue::fake();
+    $operation = runningScript(run: null, minutes: 0);
+    $operation->update(['state' => ['swamp_start' => ['key' => 'operation:'.$operation->id, 'workflow' => 'operation-task-script']], 'attempts' => 0]);
+    app(CancelOperationAction::class)->execute($operation);
+    $operation->update(['state' => [...$operation->state, 'swamp_run_id' => RUN]]);
+    $socket = reconcileSocket($operation, 'running');
+
+    reconcile();
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($operation->state['native_cancel_requested_at'] ?? null)->not->toBeNull()
+        ->and($operation->state['native_cancel_confirmed_at'] ?? null)->not->toBeNull();
+    expect(array_column($socket->frames, 'type'))->toContain('workflow.cancel');
+});

@@ -4,7 +4,10 @@ import {
     assertThrows,
 } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { ROOT } from "../../../../../bin/gate-test-support.ts";
+import {
+    resolveWorkflowTarget,
+    ROOT,
+} from "../../../../../bin/gate-test-support.ts";
 import {
     behavior,
     composeCaddy,
@@ -444,7 +447,11 @@ Deno.test("the withdrawal workflows require every contribution, and destroy call
                 dependsOn?: { step: string }[];
                 task: {
                     methodName?: string;
-                    inputs?: { required?: Record<string, string> };
+                    workflowIdOrName?: string;
+                    inputs?: {
+                        required?: Record<string, string>;
+                        execution_secrets?: Record<string, unknown>;
+                    };
                 };
             }[];
         }[];
@@ -485,14 +492,15 @@ Deno.test("the withdrawal workflows require every contribution, and destroy call
         node.find((step) => step.name === "compose")!.task.methodName,
         "withdraw",
     );
-    const destroy = await Deno.readTextFile(
-        `${ROOT}/workflows/workflow-operation-instance-destroy.yaml`,
-    );
+    const destroy = await load("operation-instance-destroy");
+    const withdraw = destroy.jobs.flatMap((job) => job.steps).find((step) =>
+        step.name === "Withdraw the Route"
+    )!;
     assertEquals(
-        /workflowIdOrName: route-withdraw\n\s+inputs:[\s\S]*?execution_secrets: \{\}/
-            .test(destroy),
-        true,
+        resolveWorkflowTarget(withdraw.task.workflowIdOrName!),
+        "route-withdraw",
     );
+    assertEquals(withdraw.task.inputs?.execution_secrets, {});
 });
 
 Deno.test("a failed create takes back its publication: the reverse states remove the site, the pool and the DNS name, and keep what else is live", async () => {
@@ -583,7 +591,10 @@ Deno.test("the create workflow withdraws the Route of a failed create before it 
     const create = await load("operation-instance-create");
     const steps = create.jobs.flatMap((job) => job.steps);
     const withdraw = steps.find((step) => step.name === "withdraw-route")!;
-    assertEquals(withdraw.task.workflowIdOrName, "route-withdraw");
+    assertEquals(
+        resolveWorkflowTarget(withdraw.task.workflowIdOrName!),
+        "route-withdraw",
+    );
     assertEquals(withdraw.task.inputs?.side, "restore");
     // The create intent carries the captured reverse publication under route_mutations (NativeDevelopmentInstanceInput::routeWithdrawal).
     assertEquals(

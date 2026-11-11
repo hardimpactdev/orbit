@@ -24,6 +24,8 @@ Hibernation applies to a Process that meets every condition:
 | Desired state | `running`. Orbit leaves a stopped Process stopped. |
 | `keep_alive` | `false`. |
 
+Processes in [Instance containers](/reference/development-containers#processes) are excluded from this Node-level policy. Container sleep is a separate part of the container lifecycle.
+
 Restart policy does not matter. Hibernation never touches Node Processes, production Instances, Schedules, PHP-FPM services or pools, or Caddy socket paths.
 
 The Gateway's [Project Document cleanup gate](/reference/project-documents#local-state-and-startup-ordering) is separate from Instance hibernation. Its local runtime directory, `documents.cleanup_runtime`, changes no hibernation threshold or wake behavior. Restarting a Gateway consumer invalidates document-body cleanup authorization; waking an Instance does not grant it.
@@ -89,6 +91,8 @@ The wake runs in this order:
 Any other Process is ready when its runtime reports running.
 
 Orbit checks each Process every 0.5 seconds. A fresh Node agent view answers without SSH. Orbit confirms a `failed` answer, or a timeout, over SSH before the wake fails.
+
+An Instance that [moves into a container](/cli/instance/migrate) is the exception: the move removes its awake marker, and the Gateway starts no wake until the move has ended. Requests get the progress page meanwhile, and the move writes the awake marker itself.
 
 Every intercepted request starts a wake. A request during a running wake gets the same progress page. Its own wake attempt ends quietly when the running wake holds the Process lock. A failed wake keeps the cold marker and stores the error for up to 120 seconds. The next request gets a failure page, status 503, with state `failed`, the error, and a Try again link, and it also starts a new wake. The error shows once. Try again adds `orbit-wake-retry=1` to the path, and its request shows the progress page of the new wake.
 

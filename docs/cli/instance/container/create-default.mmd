@@ -26,8 +26,9 @@ sequenceDiagram
   %%> Result:
   %%> - the default Instance is reserved with its runtime record and Route; it gets no T3 port
   %%> - `.env` is rendered from the Project's env template; a repository read token goes to the vault
-  GW->>SW: Start run, full intent<br/>operation-instance-create
+  Note over GW: Commit, push copies<br/>queue start · answer 202
   GW-->>CLI: 202 Accepted<br/>task ID
+  GW->>SW: Start run from queue<br/>operation-instance-create
   SW->>N: Launch the container<br/>Ansible · tags container
   %%> What it does:
   %%> - `incus init` from the Node's image `orbit-instance` with the reserved bridge address, then `incus start`; the project's profile gives `security.port_isolation` and the idmapped, read-only shared folders
@@ -51,7 +52,8 @@ sequenceDiagram
   SW->>C: Start Processes<br/>Ansible · tags processes
   %%> What it does:
   %%> - FrankenPHP starts as the `orbit` unit `orbit-frankenphp.service` on port 8080 of the bridge address
-  %%> - the Project's development Process definitions need their own records and vault path; until then the admission refuses them with `operation.kind_unavailable`
+  %%> - the Project's development Processes start as `orbit-process-<id>-<name>.service` units, as `orbit`; each environment file comes from the vault, root only
+  %%> - a Process whose desired state is stopped is installed, not started
   opt web-serving Project
     SW->>N: Create the Route<br/>child operation-route-create
   end

@@ -7,6 +7,17 @@ SOURCE = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
 
 
 class RequiredGateTest(unittest.TestCase):
+    def test_main_push_dispatches_cli_release_after_required_checks_without_a_variable_gate(self):
+        caller = (ROOT / '.github/workflows/ci.yml').read_text()
+        block = caller.split('  cli-release:\n', 1)[1]
+        condition = next(line.strip() for line in block.splitlines() if line.startswith('    if:'))
+        self.assertEqual(condition, "if: github.event_name == 'push' && github.ref == 'refs/heads/main'")
+        self.assertIn('    needs: required\n', block)
+        # The implicit success() gate prevents dispatch after a failed or skipped Required checks job.
+        self.assertNotIn('always()', condition)
+        self.assertIn('      actions: write\n', block)
+        self.assertIn('gh workflow run orbit-cli-release.yml --repo "$GITHUB_REPOSITORY" --ref main -f commit="$GITHUB_SHA"', block)
+
     def test_agent_lock_changes_reuse_cache_only_with_the_same_toolchain_and_platform(self):
         import re
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
@@ -53,56 +64,8 @@ class RequiredGateTest(unittest.TestCase):
         self.assertNotIn('  native-plan:', SOURCE)
         self.assertNotIn('  native-tests:', SOURCE)
 
-    def test_selected_component_failure_or_skip_blocks_required_gate(self):
-        import json
-        import os
-        import subprocess
-        import textwrap
-        caller = (ROOT / '.github/workflows/ci.yml').read_text()
-        block = caller.split('  required:\n', 1)[1]
-        code = textwrap.dedent(block.split("          python3 - <<'PYTHON'\n", 1)[1].split('          PYTHON', 1)[0])
-        jobs = block.split('needs: [', 1)[1].split(']', 1)[0].split(', ')
-        for component in ('pi', 'agent', 'proof-run'):
-            self.assertIn(component, jobs)
-            for selected, result, success in ((True, 'success', True), (True, 'failure', False),
-                                              (True, 'skipped', False), (False, 'skipped', True)):
-                needs = {job: {'result': 'success'} for job in jobs}
-                selection = {job: False for job in jobs if job not in ('changes', 'gateway-release', 'proof-run')}
-                if component != 'proof-run':
-                    selection[component] = selected
-                needs[component]['result'] = result
-                needs['changes']['outputs'] = {'jobs': json.dumps(selection), 'gateway_release': 'false'}
-                env = {**os.environ, 'NEEDS': json.dumps(needs),
-                       'PROOF_REQUIRED': str(component == 'proof-run' and selected).lower(), 'FORK_PROOF': 'false',
-                       'PROOF_BLOCKING': 'true'}
-                done = subprocess.run(['python3', '-c', code], env=env,
-                                      capture_output=True, timeout=10)
-                self.assertEqual(done.returncode == 0, success, (component, selected, result, done.stderr))
-
-    def test_non_blocking_proof_leaves_the_required_gate_to_the_other_jobs(self):
-        import json
-        import os
-        import subprocess
-        import textwrap
-        caller = (ROOT / '.github/workflows/ci.yml').read_text()
-        block = caller.split('  required:\n', 1)[1]
-        self.assertIn("PROOF_BLOCKING: ${{ vars.ORBIT_PROOF_BLOCKING != 'false' }}", block)
-        code = textwrap.dedent(block.split("          python3 - <<'PYTHON'\n", 1)[1].split('          PYTHON', 1)[0])
-        jobs = block.split('needs: [', 1)[1].split(']', 1)[0].split(', ')
-        for blocking, proof, other, success in (('false', 'failure', 'success', True), ('true', 'failure', 'success', False),
-                                                ('false', 'failure', 'failure', False), ('false', 'success', 'success', True)):
-            needs = {job: {'result': 'success'} for job in jobs}
-            selection = {job: False for job in jobs if job not in ('changes', 'gateway-release', 'proof-run')}
-            selection['pi'] = True
-            needs['pi']['result'] = other
-            needs['proof-run']['result'] = proof
-            needs['changes']['outputs'] = {'jobs': json.dumps(selection), 'gateway_release': 'false'}
-            env = {**os.environ, 'NEEDS': json.dumps(needs), 'PROOF_REQUIRED': 'true', 'FORK_PROOF': 'false',
-                   'PROOF_BLOCKING': blocking}
-            done = subprocess.run(['python3', '-c', code], env=env, capture_output=True, timeout=10)
-            self.assertEqual(done.returncode == 0, success, (blocking, proof, other, done.stderr))
-
-    def test_fork_gate_requires_the_latest_trusted_outside_proof_on_the_exact_head(self):
+    def run_required(self, *, slow='true', proof_blocking='true', proof_required=False,
+                     fork=False, results=None, statuses=None, snapshots=None, selections=None):
         import json
         import os
         import subprocess
@@ -110,40 +73,138 @@ class RequiredGateTest(unittest.TestCase):
         from unittest.mock import patch
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
         block = caller.split('  required:\n', 1)[1]
-        self.assertIn("PROOF_REQUIRED: ${{ github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' }}", block)
-        self.assertIn('PROOF_SHA: ${{ github.event.pull_request.head.sha }}', block)
         code = textwrap.dedent(block.split("          python3 - <<'PYTHON'\n", 1)[1].split('          PYTHON', 1)[0])
         jobs = block.split('needs: [', 1)[1].split(']', 1)[0].split(', ')
-        prefix = 'https://github.com/hardimpactdev/orbit/actions/runs/'
+        needs = {job: {'result': 'success'} for job in jobs}
+        selection = {job: True for job in jobs if job not in ('changes', 'gateway-release')}
+        selection['swamp'] = True
+        for name, value in (selections or {}).items():
+            if value is None:
+                selection.pop(name, None)
+            else:
+                selection[name] = value
+        needs['changes']['outputs'] = {'jobs': json.dumps(selection), 'gateway_release': 'false'}
+        rows = {name: {'name': name, 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1} for name in (
+            'Swamp / Swamp shape gate', 'Swamp / Swamp workflow validate', 'Swamp / Swamp Deno tests', 'CI proof')}
+        for name, result in (results or {}).items():
+            if name in needs:
+                needs[name]['result'] = result
+            else:
+                rows[name].update(status='in_progress' if result == 'pending' else 'completed', conclusion=result)
+        env = {'NEEDS': json.dumps(needs), 'PROOF_REQUIRED': str(proof_required).lower(),
+               'FORK_PROOF': str(fork).lower(), 'PROOF_BLOCKING': proof_blocking,
+               'SLOW_CHECKS_BLOCKING': slow, 'CI_RUN_ID': '123',
+               'PROOF_SHA': 'a' * 40, 'GH_REPO': 'hardimpactdev/orbit',
+               'PROOF_RUN_URL_PREFIX': 'https://github.com/hardimpactdev/orbit/actions/runs/'}
+        snapshots = iter(snapshots or [list(rows.values())])
+        def api(argv, **options):
+            if '/statuses?' in argv[-1]:
+                return json.dumps([statuses or []]).encode()
+            self.assertEqual(argv[-1], 'repos/hardimpactdev/orbit/actions/runs/123/jobs?filter=all&per_page=100')
+            self.assertIn('--paginate', argv)
+            return json.dumps([{'jobs': next(snapshots)}]).encode()
+        result = None
+        with patch.dict(os.environ, env), patch.object(subprocess, 'check_output', side_effect=api) as github, \
+                patch('time.sleep') as sleep:
+            try:
+                exec(code, {})
+            except SystemExit as error:
+                result = error.code
+        return result, github, sleep
+
+    def test_one_always_reporting_gate_has_no_static_slow_dependencies(self):
+        caller = (ROOT / '.github/workflows/ci.yml').read_text()
+        self.assertEqual(caller.count('    name: Required checks\n'), 1)
+        block = caller.split('  required:\n', 1)[1]
+        self.assertIn('    if: always()', block)
+        jobs = block.split('needs: [', 1)[1].split(']', 1)[0].split(', ')
+        self.assertIn('gateway-tests', jobs)
+        self.assertNotIn('swamp', jobs)
+        self.assertNotIn('proof-run', jobs)
+        self.assertIn('      actions: read', block)
+        self.assertIn("SLOW_CHECKS_BLOCKING: ${{ vars.ORBIT_SLOW_CHECKS_BLOCKING != 'false' }}", block)
+        self.assertIn("PROOF_BLOCKING: ${{ vars.ORBIT_PROOF_BLOCKING != 'false' }}", block)
+
+    def test_every_other_selected_failure_or_skip_still_blocks(self):
+        for component in ('gateway-tests', 'pi', 'agent', 'php', 'Swamp / Swamp workflow validate', 'Swamp / Swamp Deno tests'):
+            for slow in ('true', 'false'):
+                for result in ('failure', 'cancelled', 'skipped'):
+                    with self.subTest(component=component, slow=slow, result=result):
+                        error, _, _ = self.run_required(slow=slow, results={component: result})
+                        self.assertIsNotNone(error)
+
+    def test_gateway_pest_skip_requires_explicit_false_and_complete_boolean_selection(self):
+        for slow in ('true', 'false'):
+            error, _, _ = self.run_required(slow=slow, results={'gateway-tests': 'skipped'},
+                                             selections={'gateway-tests': False})
+            self.assertIsNone(error)
+            for selections in ({'gateway-tests': None}, {'gateway-tests': 'false'},
+                               {'gateway-tests': 0}, {'unexpected-job': True}):
+                with self.subTest(slow=slow, selections=selections):
+                    error, _, _ = self.run_required(slow=slow, selections=selections)
+                    self.assertEqual(error, 'Incomplete build selections')
+        error, _, _ = self.run_required(results={'changes': 'failure'})
+        self.assertEqual(error, 'Build input selection failed')
+
+    def test_non_blocking_slow_jobs_need_not_complete_on_main_or_a_pr(self):
+        for proof_required in (False, True):
+            for result in ('pending', 'failure', 'cancelled'):
+                error, github, sleep = self.run_required(slow='false', proof_required=proof_required,
+                    results={'Swamp / Swamp shape gate': result, 'CI proof': result})
+                self.assertIsNone(error)
+                self.assertEqual(github.call_count, 1)
+                sleep.assert_not_called()
+
+    def test_default_requires_shape_and_selected_proof_success(self):
+        for component in ('Swamp / Swamp shape gate', 'CI proof'):
+            for result in ('success', 'failure', 'skipped', 'cancelled'):
+                error, _, _ = self.run_required(proof_required=True, results={component: result})
+                self.assertEqual(error is None, result == 'success', (component, result, error))
+
+    def test_existing_proof_switch_does_not_disable_shape(self):
+        error, _, sleep = self.run_required(proof_blocking='false', proof_required=True,
+                                            results={'CI proof': 'pending'})
+        self.assertIsNone(error)
+        sleep.assert_not_called()
+        error, _, _ = self.run_required(proof_blocking='false', results={'Swamp / Swamp shape gate': 'failure'})
+        self.assertIsNotNone(error)
+
+    def test_default_waits_for_jobs_missing_from_the_first_api_response(self):
+        rows = [{'name': name, 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1} for name in (
+            'Swamp / Swamp shape gate', 'Swamp / Swamp workflow validate', 'Swamp / Swamp Deno tests', 'CI proof')]
+        error, github, sleep = self.run_required(proof_required=True, snapshots=[rows[1:3], rows])
+        self.assertIsNone(error)
+        self.assertEqual(github.call_count, 2)
+        sleep.assert_called_once_with(15)
+
+    def test_rerun_retains_old_successes_but_waits_for_the_newest_shape_attempt(self):
+        fast = [{'name': name, 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1}
+                for name in ('Swamp / Swamp workflow validate', 'Swamp / Swamp Deno tests')]
+        old = {'name': 'Swamp / Swamp shape gate', 'status': 'completed', 'conclusion': 'failure',
+               'id': 2, 'run_attempt': 1}
+        new = {**old, 'status': 'in_progress', 'conclusion': None, 'id': 3, 'run_attempt': 2}
+        done = {**new, 'status': 'completed', 'conclusion': 'success'}
+        error, github, sleep = self.run_required(snapshots=[[*fast, new, old], [*fast, done, old]])
+        self.assertIsNone(error)
+        self.assertEqual(github.call_count, 2)
+        sleep.assert_called_once_with(15)
+        error, _, sleep = self.run_required(snapshots=[[*fast, done]])
+        self.assertIsNone(error)
+        sleep.assert_not_called()
+
+    def test_fork_gate_requires_trusted_status_only_while_proof_blocks(self):
         good = {'context': 'Orbit outside proof', 'state': 'success',
-                'creator': {'login': 'github-actions[bot]'}, 'target_url': prefix + '123'}
-        examples = [(True, [], False), (True, [good], True), (False, [], True),
-                    (True, [good, {**good, 'state': 'failure'}], True)]
-        examples += [(True, [{**good, 'state': state}, good], False) for state in ('pending', 'failure', 'error')]
-        examples += [(True, [{**good, 'creator': {'login': 'contributor'}}], False),
-                     (True, [{**good, 'target_url': 'https://github.com/fork/orbit/actions/runs/123'}], False)]
-        for selected, statuses, passed in examples:
-            with self.subTest(statuses=statuses):
-                needs = {job: {'result': 'success'} for job in jobs}
-                needs['proof-run']['result'] = 'skipped'
-                selection = {job: False for job in jobs if job not in ('changes', 'gateway-release', 'proof-run')}
-                needs['changes']['outputs'] = {'jobs': json.dumps(selection), 'gateway_release': 'false'}
-                env = {'NEEDS': json.dumps(needs), 'PROOF_REQUIRED': str(selected).lower(), 'FORK_PROOF': 'true', 'PROOF_BLOCKING': 'true',
-                       'PROOF_SHA': 'a' * 40, 'GH_REPO': 'hardimpactdev/orbit', 'PROOF_RUN_URL_PREFIX': prefix}
-                with patch.dict(os.environ, env), patch.object(subprocess, 'check_output', return_value=json.dumps([statuses]).encode()) as github:
-                    result = None
-                    try:
-                        exec(code, {})
-                    except SystemExit as error:
-                        result = error.code
-                    self.assertEqual(result is None, passed, result)
-                    if selected:
-                        github.assert_called_once_with([
-                            'timeout', '60', 'gh', 'api', '--paginate', '--slurp',
-                            'repos/hardimpactdev/orbit/commits/' + 'a' * 40 + '/statuses?per_page=100',
-                        ], timeout=65)
-                    else:
-                        github.assert_not_called()
+                'creator': {'login': 'github-actions[bot]'},
+                'target_url': 'https://github.com/hardimpactdev/orbit/actions/runs/123'}
+        for statuses, passed in (([], False), ([good], True),
+                                 ([{**good, 'state': 'pending'}, good], False),
+                                 ([{**good, 'creator': {'login': 'contributor'}}], False)):
+            error, _, _ = self.run_required(proof_required=True, fork=True, statuses=statuses)
+            self.assertEqual(error is None, passed, error)
+        for settings in ({'slow': 'false'}, {'proof_blocking': 'false'}):
+            error, github, _ = self.run_required(proof_required=True, fork=True, **settings)
+            self.assertIsNone(error)
+            self.assertFalse(any('/statuses?' in call.args[0][-1] for call in github.call_args_list))
 
     def test_units_use_one_pool_job_with_deno_parallelism(self):
         block = SOURCE.split('  tests:\n')[1]

@@ -43,6 +43,7 @@ class FakeFleet:
         self.deny_ignored = False       # True: every listener is open, so the test port is not blocked
         self.failing_cli = None         # a command name that raises
         self.next_id = 1
+        self.operation_rows, self.operation_queries = [], []
         self.list_nodes = None          # the Nodes of a `firewall:list` answer, when a test sets them
         self.callers, self.access_removed, self.down = [], [], set()   # the Node a CLI call ran as, `node:access:remove` calls, stopped Nodes
 
@@ -161,6 +162,9 @@ class FakeFleet:
         return 124
 
     # ---- CLI
+    def prepare_cli_callers(self, items):
+        pass   # No guest CLI files in the in-memory fleet.
+
     def cli(self, args, timeout=240, form='json', node=None):
         self.cli_calls.append(args)
         self.callers.append(node)
@@ -178,8 +182,6 @@ class FakeFleet:
                         [item for item in self.list_nodes if not any(arg.startswith('--node=') for arg in args) or f"--node={item['node_id']}" in args]}
         elif args[0] == 'node:access:remove':
             self.access_removed.append(args)
-        elif args[0] == 'operation:list':
-            document = {'operations': [{'id': number} for number in range(1, self.next_id)]}
         elif args[0] == 'operation:show':
             document = {'id': int(args[1]), 'status': self.human_status, 'steps': self.operation_steps}
         elif args[0] == 'firewall:allow':
@@ -194,6 +196,13 @@ class FakeFleet:
         if form == 'human':
             document, text = None, self.human(args, text)
         return {'rc': code, 'json': document, 'stdout': text, 'stderr': '', 'secs': 0.1, 'args': ['orbit', *args] + (['--json'] if form == 'json' else [])}
+
+    def operations(self, kind=None, target_type=None, target_id=None):
+        self.operation_queries.append((kind, target_type, target_id))
+        rows = [row for row in self.operation_rows if all(value is None or row[key] == value
+                for key, value in zip(('kind', 'target_type', 'target_id'), (kind, target_type, target_id)))]
+        document = {'data': sorted(rows, key=lambda row: row['id'], reverse=True)[:20]}
+        return {'rc': 0, 'json': document, 'stdout': json.dumps(document), 'stderr': ''}
 
     def human(self, args, text):
         document = json.loads(text)
@@ -218,9 +227,12 @@ class FakeFleet:
     def allow(self, args):
         if not any(item.startswith('--node=') for item in args):
             return {'error': {'code': 'firewall.node_id_invalid', 'message': 'Node ID must be a positive integer.', 'request_id': None}}, 1
+        if not any(item.startswith('--from=') for item in args):
+            return {'error': {'code': 'firewall.source_invalid', 'message': 'Source is required.', 'request_id': None}}, 1
         port, source = args[1], next(item[7:] for item in args if item.startswith('--from='))
         name = next((role for role, number in NODE_IDS.items() if f'--node={number}' in args), 'app-dev')
         operation = {'id': self.next_id, 'status': self.allow_status}
+        self.operation_rows.append({**operation, 'kind': 'firewall.allow', 'target_type': 'node_firewall', 'target_id': NODE_IDS[name]})
         self.next_id += 1
         if self.allow_status != 'succeeded':
             return operation, 1

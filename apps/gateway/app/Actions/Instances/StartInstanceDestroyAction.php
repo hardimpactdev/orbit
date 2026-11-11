@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
-use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Instances\InstanceLifecycleInput;
@@ -55,10 +55,11 @@ final readonly class StartInstanceDestroyAction
         if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
         }
-        InstanceContainer::assertCheckout($instance);
+
         if (! $force && $instance->project->source_access === ProjectSourceAccess::GhCli) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Native publication verification requires anonymous or scoped GitHub App repository access.', 503);
         }
+        app(ContainerInstanceDestroy::class)->assertAvailable($instance, $force);
         $snapshot = $this->snapshot($instance, $force);
         // A native Schedule fires from its own workflow on serve, not from the Node; it stops before the Instance goes.
         $members = array_column(is_array($snapshot['members'] ?? null) ? $snapshot['members'] : [], 'instance_id');
@@ -97,7 +98,9 @@ final readonly class StartInstanceDestroyAction
             $this->conflict($instance);
         }
         $this->assertSupported($instance);
-        $this->assertMemberPathAvailable($instance);
+        if (! $instance->runtime()->exists()) {
+            $this->assertMemberPathAvailable($instance);
+        }
         $members = collect([$instance]);
         $snapshots = [];
         $additional = [];
@@ -117,9 +120,9 @@ final readonly class StartInstanceDestroyAction
                 'common_repository_path' => dirname((string) $member->checkout_path), 'source_identity' => 'pending',
                 'linked_worktree_paths' => [], 'source_digest' => str_repeat('0', 64),
                 'runtime_published' => $member->status === InstanceState::Active,
-                'source_root' => $this->boundaries->instanceGroupingDirectory($member)->parent()?->value,
+                'source_root' => $member->runtime()->exists() ? null : $this->boundaries->instanceGroupingDirectory($member)->parent()?->value,
                 'user' => $member->node->user, 'group' => null,
-                'run_teardown' => ! $this->failedCreation($member),
+                'run_teardown' => ! $member->runtime()->exists() && ! $this->failedCreation($member),
                 'teardown_digest' => $this->teardownDigest($member->project),
                 'worktree_inventory' => null, 'origin' => null,
                 'source_prepare_id' => $member->source_prepare_id, 'registration_request_id' => $member->registration_request_id,
@@ -129,7 +132,13 @@ final readonly class StartInstanceDestroyAction
             ];
         }
 
-        return ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'project_id' => $instance->project_id,
+        $container = app(ContainerInstanceDestroy::class)->capture($instance);
+
+        return ['container_destroy' => $container,
+            ...($instance->retained_git_path === null ? [] : [
+                'retained_git_path' => $instance->retained_git_path, 'retained_git_at' => $instance->retained_git_at?->toIso8601String(),
+            ]),
+            'instance_id' => $instance->id, 'node_id' => $instance->node_id, 'project_id' => $instance->project_id,
             'name' => $instance->name, 'force' => $force, 'removal_id' => (string) Str::uuid(),
             'inventory_digest' => hash('sha256', json_encode($snapshots, JSON_THROW_ON_ERROR)),
             'source_pending' => true,
@@ -163,7 +172,7 @@ final readonly class StartInstanceDestroyAction
         $database = ValidatedData::object(ValidatedData::object($input['direct_destroy'] ?? [])['database'] ?? []);
         $databases = ($database['servers'] ?? []) !== [] || ($database['sqlite'] ?? []) !== [] || ($database['connection_ids'] ?? []) !== [];
 
-        return 60 + min(LifecycleStep::MaxTotalTimeoutSeconds, $teardown) + 180 * $routes + ($databases ? 180 : 0);
+        return (($input['container_destroy'] ?? null) === null ? 60 : 600) + min(LifecycleStep::MaxTotalTimeoutSeconds, $teardown) + 180 * $routes + ($databases ? 180 : 0);
     }
 
     private function teardownDigest(Project $project): string
@@ -178,6 +187,7 @@ final readonly class StartInstanceDestroyAction
 
     private function assertSupported(Instance $instance): void
     {
+
         if (InstanceTransfer::query()
             ->where('instance_id', $instance->id)
             ->open()

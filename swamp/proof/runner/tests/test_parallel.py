@@ -43,7 +43,7 @@ def observer(case_id, extra=''):
     covers: [main]
     summary: A case that compares the Node.
 {extra}    act:
-      - cli: {{run: [firewall:allow, "80"], expect: {{exit: 1}}}}
+      - cli: {{run: [firewall:allow, "80", "--node=${{app-dev.id}}"], expect: {{exit: 1}}}}
     expect:
       - unchanged: {{since: act}}
 '''
@@ -55,7 +55,7 @@ def refusal(case_id):
     covers: [main]
     summary: A case that expects no request.
     act:
-      - cli: {{run: [firewall:allow, "80"], expect: {{exit: 1, request: none}}}}
+      - cli: {{run: [firewall:allow, "80", "--node=${{app-dev.id}}"], expect: {{exit: 1, request: none}}}}
     expect: []
 '''
 
@@ -77,7 +77,7 @@ class PlacementTest(unittest.TestCase):
         self.assertEqual([case.node for case in loaded.cases], ['app-dev', 'app-prod', 'gateway', 'app-dev'])
 
     def test_a_case_that_runs_alone_keeps_the_target_and_takes_no_turn(self):
-        loaded = load_text(refusal('r') + writing('a') + writing('b'), HEADER + 'spread: [app-dev, app-prod]\n')
+        loaded = load_text(refusal('r').replace('    act:', '    exclusive: true\n    act:') + writing('a') + writing('b'), HEADER + 'spread: [app-dev, app-prod]\n')
         self.assertEqual([(case.id, case.node, case.lock) for case in loaded.cases], [('r', 'app-dev', 'all'), ('a', 'app-dev', 'node'), ('b', 'app-prod', 'node')])
 
     def test_a_case_names_its_own_node(self):
@@ -124,18 +124,74 @@ class PlacementTest(unittest.TestCase):
         text = writing('a').replace('    expect:\n', '    expect:\n      - ufw: {on: gateway, rows: []}\n')
         self.assertEqual(load_text(text).cases[0].lock, 'all')
 
+    def test_cli_cross_node_and_unresolved_targets_exclude_every_reader_and_writer(self):
+        for selector in (['--node=${app-prod.id}'], ['--node', '${app-prod.id}'], ['--node=${gateway.src}'], ['--node=unknown'], ['--node=app-dev'], ['--node', 'app-dev'], [],
+                         ['--node=${app-dev.id}', '--node=${app-prod.id}'], ['--', '--node=${app-dev.id}']):
+            for build in (writing, refusal):
+                text = build('cross').replace(', "--node=${app-dev.id}"', ''.join(', ' + json.dumps(word) for word in selector))
+                loaded = load_text(text + refusal('reader') + writing('writer'))
+                cross = loaded.case('cross')
+                self.assertEqual(cross.lock, 'all', (selector, build))
+                for other in loaded.cases[1:]:
+                    other.node = 'app-prod'
+                    self.assertFalse(runner.may_start(cross, [other]))
+                    self.assertFalse(runner.may_start(other, [cross]))
+
+    def test_a_read_command_without_an_operation_scope_runs_exclusively(self):
+        text = refusal('list').replace('firewall:allow, "80",', 'firewall:list,')
+        self.assertEqual(load_text(text).case('list').lock, 'all')
+
     def test_locks(self):
         loaded = load_text(writing('writes') + observer('observes') + refusal('no-request') + writing('asks', '    exclusive: true\n'))
-        self.assertEqual({case.id: case.lock for case in loaded.cases}, {'writes': 'node', 'observes': 'node', 'no-request': 'all', 'asks': 'all'})
+        self.assertEqual({case.id: case.lock for case in loaded.cases}, {'writes': 'node', 'observes': 'node', 'no-request': 'read', 'asks': 'all'})
 
     def test_steps_that_change_what_all_cases_share_run_alone(self):
-        for step in ('fault: {on: app-dev, command: ufw, fail_after: {match: insert, count: 1}}', 'busy_node: {on: app-dev}', 'agent_report: {node: app-dev}'):
+        for step in ('agent_report: {node: app-dev}', 'node_down: {node: app-dev}', 'node_access_remove: {consumer: app-prod, serving: app-dev}',
+                     'ipv6_addresses: {nodes: [app-dev]}', 'node_fixture: {kind: managed, as: managed}',
+                     'node_fixture: {kind: retained, as: retained, consumer: app-prod, serving: app-dev}'):
             loaded = load_text(writing('a').replace('    act:\n', f'    setup:\n      - {step}\n    act:\n'))
             self.assertEqual(loaded.cases[0].lock, 'all', step)
 
-    def test_a_comparison_of_the_operation_list_runs_alone(self):
-        loaded = load_text(observer('a').replace('{since: act}', '{since: act, what: [operations]}'))
-        self.assertEqual(loaded.cases[0].lock, 'all')
+    def test_a_recorded_request_runs_alone(self):
+        text = refusal('a').replace('    act:\n', '    act:\n      - recorded_request: {node: app-dev, caller: gateway, expect: []}\n')
+        self.assertEqual(load_text(text).case('a').lock, 'all')
+
+    def test_a_package_check_can_share_its_node_with_readers(self):
+        text = refusal('a').replace('    expect: []', '    expect:\n      - package: {on: app-dev, any: [nginx]}')
+        loaded = load_text(text + refusal('b'))
+        self.assertEqual(loaded.case('a').lock, 'read')
+        self.assertTrue(runner.may_start(loaded.case('a'), [loaded.case('b')]))
+        self.assertEqual(load_text(text.replace('on: app-dev', 'on: gateway')).case('a').lock, 'all')
+
+    def test_a_comparison_of_operations_does_not_hold_the_fleet(self):
+        loaded = load_text(refusal('a').replace('    expect: []', '    expect:\n      - unchanged: {since: act, what: [operations]}'))
+        self.assertEqual(loaded.cases[0].lock, 'read')
+
+    def test_a_refusal_with_mutating_setup_holds_its_node(self):
+        for step in ('fault: {on: app-dev, command: ufw, fail_after: {match: insert, count: 1}}', 'busy_node: {on: app-dev}',
+                     'listener: {on: app-dev, ports: [port]}', 'service: {on: app-dev, name: nginx, state: stop}', 'ufw_rule: {on: app-dev, action: deny, proto: tcp, port: "80"}',
+                     'cli: {run: [firewall:allow, "80", "--node=${app-dev.id}"], expect: {exit: 0}}'):
+            loaded = load_text(refusal('a').replace('    act:', f'    setup:\n      - {step}\n    act:'))
+            self.assertEqual(loaded.cases[0].lock, 'node', step)
+
+    def test_a_fault_or_busy_step_on_another_node_holds_the_fleet(self):
+        for step in ('fault: {on: gateway}', 'busy_node: {on: gateway}',
+                     'service: {on: gateway, name: nginx, state: stop}'):
+            loaded = load_text(refusal('a').replace('    act:', f'    setup:\n      - {step}\n    act:'))
+            self.assertEqual(loaded.cases[0].lock, 'all', step)
+
+    def test_a_negative_step_that_writes_keeps_the_node_exclusive(self):
+        loaded = load_text(refusal('a') + '''    negative:
+      after: act
+      do:
+        - ufw_delete: {on: app-dev, to: 80/tcp}
+      must_fail: [probe]
+''')
+        self.assertEqual(loaded.cases[0].lock, 'node')
+
+    def test_readers_take_their_turn_of_the_spread(self):
+        loaded = load_text(refusal('a') + refusal('b') + writing('c'), HEADER + 'spread: [app-dev, app-prod, gateway]\n')
+        self.assertEqual([(case.node, case.lock) for case in loaded.cases], [('app-dev', 'read'), ('app-prod', 'read'), ('gateway', 'node')])
 
     def test_the_cases_file_sets_the_default_number_at_a_time(self):
         self.assertEqual(load_text(writing('a')).parallel, 4)
@@ -152,7 +208,11 @@ class PlacementTest(unittest.TestCase):
         self.assertEqual(loaded.parallel, 4)
         spread = {case.node for case in loaded.cases if case.lock != 'all'}
         self.assertEqual(spread, {'app-dev', 'app-prod', 'gateway'})
-        self.assertEqual({case.node for case in loaded.cases if case.lock == 'all'}, {'app-dev'})
+        self.assertTrue(all(case.node == 'app-dev' for case in loaded.cases if case.lock == 'all'))
+        self.assertEqual(loaded.case('invalid-input[node-zero]').lock, 'all')
+        self.assertEqual(loaded.case('invalid-input[port-zero]').lock, 'read')
+        for case_id in ('conflict', 'busy-target', 'interrupted-reorder', 'failure-after-partial-change'):
+            self.assertEqual(loaded.case(case_id).lock, 'node', case_id)
 
 
 class RunOnAnotherNodeTest(unittest.TestCase):
@@ -263,6 +323,36 @@ class SchedulerTest(unittest.TestCase):
         _, together = self.watch([self.case('a', 'app-dev'), self.case('b', 'app-prod'), self.case('c', 'gateway')], 4)
         self.assertIn({'a', 'b', 'c'}, together)
 
+    def test_two_refusals_share_one_node_and_both_pass(self):
+        loaded = load_text(refusal('a') + refusal('b'))
+        fleet = FakeFleet()
+        cli = fleet.cli
+        barrier = threading.Barrier(2, timeout=1)
+
+        def together(args, *values, **kwargs):
+            if args[0] == 'firewall:allow':
+                barrier.wait()
+            return cli(args, *values, **kwargs)
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(fleet, 'cli', together):
+            def work(case):
+                return runner.execute(case, fleet, loaded, Path(directory) / case.id)[0]
+            results = [result for _, result in runner.schedule(loaded.cases, 4, work)]
+        self.assertEqual([result['verdict'] for result in results], ['passed', 'passed'], results)
+        self.assertEqual({case.node for case in loaded.cases}, {'app-dev'})
+
+    def test_a_reader_and_writer_never_share_their_node_in_either_order(self):
+        reader, writer = self.case('reader', 'app-dev', 'read'), self.case('writer', 'app-dev')
+        self.assertFalse(runner.may_start(reader, [writer]))
+        self.assertFalse(runner.may_start(writer, [reader]))
+        for cases in ([reader, writer], [writer, reader]):
+            _, together = self.watch(cases, 4)
+            self.assertNotIn({'reader', 'writer'}, together)
+
+    def test_a_reader_and_writer_on_other_nodes_run_together(self):
+        _, together = self.watch([self.case('reader', 'app-dev', 'read'), self.case('writer', 'app-prod')], 4)
+        self.assertIn({'reader', 'writer'}, together)
+
     def test_the_limit_caps_the_cases_at_a_time(self):
         _, together = self.watch([self.case('a', 'app-dev'), self.case('b', 'app-prod'), self.case('c', 'gateway')], 2)
         self.assertEqual(max(len(running) for running in together), 2)
@@ -349,5 +439,3 @@ class BatchTest(unittest.TestCase):
             code, lines, _ = self.call(['batch', 'dual-stack', '--file', str(CASES), '--evidence', tempfile.gettempdir()])
         self.assertEqual(code, 1)
         self.assertEqual({(line['verdict'], line['cause']) for line in lines}, {('failed', 'infrastructure')})
-
-

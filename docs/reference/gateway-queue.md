@@ -34,7 +34,7 @@ Laravel Horizon runs six queues on the connection with four supervisors. The `ta
 | `problems` | shares the 3 `tasks` workers | Observation context publication, the Swamp reader check, and batch metadata pruning, after waiting `tasks` jobs |
 | `task-vms` | 1 | Retained task VM lifecycle jobs and host sweep admission |
 | `builds` | 2 | Admission for [base snapshot refreshes](/reference/compute-drivers#refresh-the-base-snapshot) |
-| `operations` | 1 | Jobs that record a Swamp run in its [Operation](/reference/operations): the minute reconciler pass, schedule fires and WebSocket registry closes. One job at a time |
+| `operations` | 1 | Native run starts after admission, and jobs that record a Swamp run in its [Operation](/reference/operations): the minute reconciler pass, schedule fires and WebSocket registry closes. One job at a time |
 
 Image and host sweep jobs record Operations. Swamp executes their effects under the Operation target lock, fixed command contracts and keyed receipts. Task VM provisioning, enrollment, runtime preparation, resume and destruction keep their synchronous jobs until their owning Node and Process child composition is installed.
 
@@ -84,7 +84,7 @@ Doctor collects Activity and assistance signals from admitted redacted metadata,
 
 ### Without a queue
 
-While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks. `horizon:snapshot` does not run, and the Gateway creates no `horizon` Process. Task VMs need the queue. While task VMs are enabled, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
+While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks. `horizon:snapshot` does not run, and the Gateway creates no `horizon` Process. Native Operation starts and Task VMs need the queue. An Operation whose start cannot be queued fails with `swamp.start_enqueue_failed`. While task VMs are enabled, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
 
 Operations need the queue too: the minute `ReconcileSwampOperations` job, unique for 300 seconds, reads each open run's terminal result and records it on the `operations` queue ([Operations](/reference/operations#how-an-operation-runs)). It is the one scheduled job that works with Swamp runs.
 

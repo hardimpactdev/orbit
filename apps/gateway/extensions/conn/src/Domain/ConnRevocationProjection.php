@@ -33,17 +33,29 @@ final readonly class ConnRevocationProjection implements DirectOperationProjecti
             $sessions = $this->receipt($raw['session_receipt'] ?? null);
             $links = $this->receipt($raw['link_receipt'] ?? null);
             $status = OperationStatus::from(ValidatedData::string($data['status']));
+            $failure = ValidatedData::object($data['failure'] ?? []);
+            $unmatched = ($sessions['error_code'] ?? $failure['detail'] ?? null) === 'conn.revocation_unmatched';
+            $intent = ValidatedData::object($operation->input['intent']);
+            if (! is_array($intent['pairings'])) {
+                throw new LogicException('Conn revocation requires its admitted pairings.');
+            }
+            if ($status === OperationStatus::Succeeded && ($sessions['revoked'] ?? 0) === 0) {
+                $unmatched = true;
+            }
+            if ($unmatched) {
+                $status = OperationStatus::Failed;
+                $data['status'] = $status->value;
+            }
             if ($status === OperationStatus::Succeeded) {
                 $data['result'] = ['backend' => 'revoked', 'revoked_sessions' => $sessions['revoked'] ?? 0];
             } elseif (in_array($status, [OperationStatus::Failed, OperationStatus::Interrupted], true)) {
-                $data['error_code'] = 'conn.revocation_failed';
-                $data['result'] = ['error_code' => 'conn.revocation_failed'];
+                $data['error_code'] = $unmatched ? 'conn.revocation_unmatched' : 'conn.revocation_failed';
+                $data['result'] = ['error_code' => $data['error_code']];
             } else {
                 $data['result'] = [];
             }
             $projected = $this->projection->apply($operation, $data);
-            if (! $terminal && $status->terminal() && $status !== OperationStatus::Succeeded && ($sessions['valid'] ?? false) === true) {
-                $intent = ValidatedData::object($operation->input['intent']);
+            if (! $terminal && ! $unmatched && $status->terminal() && $status !== OperationStatus::Succeeded && ($sessions['valid'] ?? false) === true) {
                 $admittedLinks = ValidatedData::stringList($intent['links']);
                 $completed = ValidatedData::integerList($links['completed'] ?? []);
                 $ids = ValidatedData::integerList($operation->input['pairing_ids']);

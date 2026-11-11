@@ -14,6 +14,8 @@ covers:
 
 # Metrics role
 
+[Container Process status](/reference/development-containers#processes) comes from its units inside the container. The Node's Process metrics do not describe those units.
+
 The `metrics` role runs Prometheus and Grafana on one Node. It collects metrics from the selected managed Nodes. Exporters and Node-agent installation require managed Linux Nodes. SSH management on a macOS Node enables tools, not these Linux services. Open the dashboards at `https://metrics.orbit`. [`metrics`](/cli/metrics) lists the commands. [Service metrics](/reference/service-metrics) adds Caddy and PHP-FPM metrics to the same role.
 
 ## What runs where

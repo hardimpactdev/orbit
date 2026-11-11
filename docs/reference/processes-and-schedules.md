@@ -64,13 +64,15 @@ Run the sibling Deno unit tests for Orbit's Process and Schedule logic. Workflow
 
 An Instance Process serves one Instance. The Gateway derives its Node and systemd user and default working directory from the Instance. Docker keeps the image's working directory instead. [Instance removal](/reference/instance-removal) removes it.
 
+An Instance in a container runs its Processes as `orbit` units in the container. New Instances use the Project's development definitions; [migration](/cli/instance/migrate) moves an existing Instance's systemd Processes with their ids and desired states. Swamp reaches them through `incus exec` on the Node, never through the Node agent. [Instance containers](/reference/development-containers#processes) has the differences.
+
 A Node Process serves the Node itself, for example a shared Docker database. A systemd Process runs as the Node's managed user, with `/home/{managed user}` as its default working directory, unless `user` names another account. A Docker Process keeps the image's working directory unless an explicit directory is supplied. A Node Process reads no Instance environment file.
 
 ### Node account
 
 A Node systemd Process accepts `user`. The CLI flag is `--user`, and the API field is `user`. The name is one letter or underscore, then at most 31 letters, digits, underscores, or hyphens. The unit's `User=` is that name. When `user` is omitted, `User=` stays the derived account. `user` is part of the specification: a second create with the same name and a different account returns `process.name_taken`.
 
-The Gateway reads the named account through the agent's `account.lookup` and defaults the working directory to that account's home. An explicit working directory overrides this default. JSON includes `user`, and it is null when the Process uses the derived account. The Gateway does not create the account. It refuses `root` and accounts with UID zero. An absent account or an invalid account home fails create with `process.user_unavailable` (HTTP 422).
+On create and update, Orbit resolves the named account from the Node's stored [`accounts` fact](/reference/node-agent#facts) while the Node agent is online by agent liveness. It defaults the working directory to that account's home. An explicit working directory overrides this default. JSON includes `user`, and it is null when the Process uses the derived account. Orbit does not create the account. The API rejects invalid names and `root` with HTTP 422 `validation.failed` on `user`. An absent or non-current fact, an unlisted user, an invalid account home, or an account with UID zero returns `process.user_unavailable` (HTTP 422), without contacting the Node.
 
 Instance Processes, Docker Processes, presets, and Project definitions reject `user`. The API returns HTTP 422 and names the field `user`. [`process:create`](/cli/process/create) returns `process.option_invalid` for a rejected combination and `process.user_invalid` for a name that fails the pattern, and it sends no request. For example, `--user=deploy` runs the unit as the existing account `deploy`. The Node must be an active Linux Node with a WireGuard address. macOS returns `process.platform_unsupported` (HTTP 422) before SSH. A Node Process stays when an Instance is removed. The Gateway refuses to remove a Node that still owns a Process with `node.has_processes`. [Offline removal](/reference/node-provisioning#remove-a-node) of an unreachable Node deletes its Process records without remote cleanup.
 
@@ -157,6 +159,8 @@ A preset configures a development Instance Process. It sets the command, the run
 
 A preset needs a development Instance target. The Gateway refuses a Node target with `validation.failed` on `target_type`, and any other Instance with `process.preset_target_invalid`. An Instance has at most one Process of each preset. Another name for the same preset fails with `process.preset_exists`. The same request again returns the existing Process and keeps its desired state. A Process name alone never selects a preset.
 
+A supported `vp-dev` Process also moves during [Instance migration](/cli/instance/migrate). It keeps its preset identity, assigned port and desired state, uses the shared runtime in the container, and follows the ordinary container Process controls after cutover.
+
 ## Create a Process
 
 Create queues installation of the unit or container. With `start`, it also starts it. An identical create keeps the existing Process and its desired state and returns an Operation. A different specification with the same owner and name returns `process.name_taken` (409) and changes nothing. To change a Process, use [`process:update`](/cli/process/update), which keeps its ID and links. Back up container-layer data before an update that replaces a Docker container.
@@ -173,7 +177,7 @@ The Gateway exposes these Process endpoints.
 | --- | --- |
 | `GET /api/v1/processes` | The Processes with desired state, runtime status, `keep_alive`, `restart_on_deploy`, `cpu`, and `memory_bytes`. `target_type` and `target_id` limit the list to one owner. |
 | `POST /api/v1/processes` | Creates one Process. |
-| `PATCH /api/v1/processes/{process}` | Replaces the specification and reconverges the runtime of the same Process. The Process of a Valkey [Database server](/reference/database-servers#retry-and-response) is refused with `process.required_by_database_server` (409), so its command always keeps the server's ACL file. |
+| `PATCH /api/v1/processes/{process}` | Replaces the specification and reconverges the runtime of the same Process. A Valkey [Database server](/reference/database-servers#update-a-valkey-servers-image) follows its image-update rule and validation order, keeping its ACL command, mounts and health check. |
 | `POST /api/v1/processes/{process}/start`, `/stop`, `/restart` | Changes the runtime and stores the desired state: `running` after start and restart, `stopped` after stop. |
 | `GET /api/v1/processes/{process}/logs?lines=N` | A tail of 1 through 1,000 lines, answered from the Node agent's log stream. See [Live logs](/reference/live-logs) to follow new lines. |
 | `DELETE /api/v1/processes/{process}` | Stops the Process, removes its unit or container, and deletes the record. The Process of a [Database server](/reference/database-servers) is refused with `process.required_by_database_server` (409); remove the server instead. |
@@ -224,7 +228,7 @@ For example, `PATCH /api/v1/processes/41` can change only the published ports wi
 }
 ```
 
-This example updates an ordinary Process. Run a Valkey that clients log in to as a [Valkey Database server](/reference/database-servers#a-valkey-server) instead: it starts only with a password, and `process:update` refuses its Process.
+This example updates an ordinary Process. Run a Valkey that clients log in to as a [Valkey Database server](/reference/database-servers#a-valkey-server) instead: it starts only with a password, and its Process follows the [server image-update rule](/reference/database-servers#update-a-valkey-servers-image).
 
 The response keeps `id: 41`, returns `working_directory: null`, and exposes the environment only as `{"CACHE_LABEL":"[REDACTED]"}` under `runtime_config.environment`. Invalid fields return HTTP 422 before runtime mutation. An ownership conflict or competing operation returns the existing Process error code, not a successful replacement. A failed runtime operation uses the same failure contract as create, start, and restart.
 
@@ -343,7 +347,7 @@ The `vp-dev` preset applies only to development Instance Processes. Process defi
 
 ### A Node Process can name its account
 
-The systemd `User=` of a Node Process can be an account other than the managed user. Use it for a service that must not run as the managed user. The owner stays the Node. An Instance Process keeps the account derived from the Instance, because a chosen account would leave the production home and the development checkout. Docker rejects `user` because the image has its own user. The Gateway does not create the account. The Gateway checks the account with `getent passwd` over SSH before create and fails with `process.user_unavailable` when the account or its home is unavailable.
+The systemd `User=` of a Node Process can be an account other than the managed user. Use it for a service that must not run as the managed user. The owner stays the Node. An Instance Process keeps the account derived from the Instance, because a chosen account would leave the production home and the development checkout. Docker rejects `user` because the image has its own user. Account resolution follows [Node account](#node-account).
 
 `process.install_instance_definitions` captures owned definition copies and reuses the canonical private Process installer in the same root. Copies remain stopped. The Gateway capture action records definitions without converging a runtime.
 

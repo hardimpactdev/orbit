@@ -137,6 +137,10 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
 
     public function status(#[SensitiveParameter] Process $process): string
     {
+        $target = $this->targets->forInspection($process);
+        if ($target->container !== null) {
+            return app(ContainerProcessInspection::class)->read($process, $target, 'status', 1)['state'];
+        }
         $status = $this->call($process, 'process.status', $this->artifact($process), 'status', 'process.status_failed');
 
         return self::text($status, 'state');
@@ -144,6 +148,10 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
 
     public function logs(#[SensitiveParameter] Process $process, int $lines): string
     {
+        $target = $this->targets->forInspection($process);
+        if ($target->container !== null) {
+            return LogReadLimit::journalInTimeOrder(app(ContainerProcessInspection::class)->read($process, $target, 'logs', $lines)['output']);
+        }
         // Newest journal entry first, stopped after the byte limit, so the Node does bounded work; a container's
         // standard output and standard error in one stream, in the order it wrote them (ADR 0153).
         $logs = $this->call($process, 'process.logs', [
@@ -301,6 +309,10 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         ?string $change = null,
     ): array {
         $target ??= $this->targets->forInspection($process);
+        if ($target->container !== null) {
+            // The Node agent cannot reach a container's units: every change goes through a Process Operation.
+            throw new ResourceOperationException('process.target_unsupported', 'A Process in an Instance container changes only through its Operation.', 409);
+        }
 
         if (! is_string($target->node->wireguard_ip) || $target->node->wireguard_ip === '') {
             throw new ProcessOperationException(
