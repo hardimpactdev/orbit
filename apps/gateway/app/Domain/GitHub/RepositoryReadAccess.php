@@ -6,6 +6,7 @@ namespace App\Domain\GitHub;
 
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\ReadDeadline;
 use SensitiveParameter;
 use Throwable;
 
@@ -31,7 +32,7 @@ final readonly class RepositoryReadAccess
         private GitHubCliToken $cli,
     ) {}
 
-    public function for(#[SensitiveParameter] string $origin, ProjectSourceAccess $source): GitReadEnvironment
+    public function for(#[SensitiveParameter] string $origin, ProjectSourceAccess $source, ?ReadDeadline $deadline = null, ?RepositoryReadContext $context = null): GitReadEnvironment
     {
         $repository = GitHubRepository::fromOrigin($origin);
 
@@ -43,7 +44,7 @@ final readonly class RepositoryReadAccess
                 );
             }
 
-            return GitReadEnvironment::forGitHubToken($this->cli->token());
+            return GitReadEnvironment::forGitHubToken($deadline === null ? $this->cli->token() : $this->cli->token($deadline));
         }
 
         if (! $repository instanceof GitHubRepository) {
@@ -57,14 +58,22 @@ final readonly class RepositoryReadAccess
                 return GitReadEnvironment::none();
             }
 
-            $installation = $this->github->repositoryInstallation($credentials, $repository);
+            $deadline?->remaining();
+            $installation = $deadline === null ? $this->github->repositoryInstallation($credentials, $repository)
+                : $this->github->repositoryInstallation($credentials, $repository, $deadline);
 
+            $deadline?->remaining();
             if ($installation === null) {
                 return GitReadEnvironment::none();
             }
 
+            if ($context !== null) {
+                $context->installation = [$repository, $credentials, $installation];
+            }
+
             return GitReadEnvironment::forGitHubToken(
-                $this->github->repositoryReadToken($credentials, $installation, $repository),
+                $deadline === null ? $this->github->repositoryReadToken($credentials, $installation, $repository)
+                    : $this->github->repositoryReadToken($credentials, $installation, $repository, $deadline),
             );
         } catch (Throwable) {
             return GitReadEnvironment::none();

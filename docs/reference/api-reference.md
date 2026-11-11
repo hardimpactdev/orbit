@@ -35,6 +35,8 @@ bin/docs-openapi
 
 `composer docs-openapi` runs the same script. `docs/openapi.json` and `docs/docs.json` are ignored build outputs, so nothing compares them with a stored copy. The script fails when the sources disagree with the API contract. Continuous integration and the local candidate gate run it, then `bin/mcp-tools` and `bin/api-fixtures --check`.
 
+`GET /api/v1/conn/projects/{project}/branches` generates `conn-project-branches` with typed branch, pull request and Instance data, the optional `query`, and the `meta.pull_requests_unavailable` marker. [Conn branch choices](/reference/conn#threads-in-an-orbit-project) defines its bounds and partial-read behavior.
+
 `GET /api/v1/conn/environments` and `conn-environment-list` return the six flat Orbit fields described in [Instance servers](/reference/conn#instance-servers). Their nullable types come from `ConnEnvironmentData`; regenerate OpenAPI, the MCP manifest and web API types after changing this response.
 
 The generated `conn-pairing-revoke` tool includes optional `pairing_id`. Its description explains how to retry a revoked pairing whose session still lives. [Conn session cleanup](/reference/conn#session-cleanup) defines selection and failure behavior. Regenerate both OpenAPI and the MCP manifest when this request changes.

@@ -8,8 +8,10 @@ use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\GitHub\RepositoryReadContext;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
+use App\Domain\SourceControl\ReadDeadline;
 use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Infrastructure\GitHub\CachedGitHubApi;
 use App\Infrastructure\GitHub\GitHubTokenCache;
@@ -59,7 +61,45 @@ final readonly class GitRemoteBranchHeads implements RemoteBranchHeads
         return $matches[1];
     }
 
-    private function failure(Project $project, string $branch, ?Throwable $previous = null): ResourceOperationException
+    /** @return list<string> All remote heads, bounded by a ten-second read and 4 MiB of output. */
+    public function names(Project $project, ?RepositoryReadContext $context = null): array
+    {
+        $deadline = new ReadDeadline(10.0);
+        try {
+            $environment = $this->access->for($project->repository_url, $project->source_access, $deadline, $context);
+            if ($context !== null) {
+                $context->environment = $environment;
+            }
+            $result = $this->processes->run(new ProcessInvocation(
+                arguments: ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', '/', 'ls-remote', '--heads', '--', $project->repository_url],
+                timeout: $deadline->remaining(),
+                maxOutputBytes: 4_194_304,
+                environment: $environment->variables,
+            ));
+            $deadline->remaining();
+            if (! $result->succeeded() || $result->truncated) {
+                throw new \UnexpectedValueException;
+            }
+            $names = [];
+            foreach (explode("\n", rtrim($result->stdout, "\n")) as $line) {
+                if ($line === '' && $result->stdout === '') {
+                    continue;
+                }
+                if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\trefs\/heads\/(.+)\z/D', $line, $matches) !== 1 || ! GitBranchName::isValidSyntax($matches[1])) {
+                    throw new \UnexpectedValueException;
+                }
+                $names[] = $matches[1];
+            }
+
+            $deadline->remaining();
+
+            return array_values(array_unique($names));
+        } catch (Throwable $exception) {
+            throw $this->failure($project, null, $exception);
+        }
+    }
+
+    private function failure(Project $project, ?string $branch, ?Throwable $previous = null): ResourceOperationException
     {
         $repository = GitHubRepository::fromOrigin($project->repository_url);
 
@@ -69,7 +109,8 @@ final readonly class GitRemoteBranchHeads implements RemoteBranchHeads
 
         return new ResourceOperationException(
             'source.head_unavailable',
-            "The Gateway could not read the head of the branch [{$branch}] of Project [{$project->slug}].",
+            $branch === null ? "The Gateway could not read the remote branches of Project [{$project->slug}]."
+                : "The Gateway could not read the head of the branch [{$branch}] of Project [{$project->slug}].",
             502,
             $previous,
         );

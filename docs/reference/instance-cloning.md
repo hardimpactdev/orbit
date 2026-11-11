@@ -46,7 +46,7 @@ The Gateway refuses before it reserves anything:
 | `route.domain_conflict` | Another Route owns the preview domain. |
 | `operation.kind_unavailable` | A web Project's Node is in an active Cluster, the Node (or the candidate's Node) is a task VM, or the candidate has an attached Database connection. |
 
-Development [`instance:create`](/cli/instance/create) uses the same Route child, but answers a task VM Node with `instance.task_vm_node`.
+Development [`instance:create`](/cli/instance/create) uses the same Route child, but answers a task VM Node with `instance.task_vm_node`. Before its branch is recorded, [Conn branch choices](/reference/conn#threads-in-an-orbit-project) follow the branch selected for its create.
 
 One account and home serve one Project per Node. A candidate with an attached Database connection needs its own native composition. Seed SQLite with `sqlite_source_path` instead.
 

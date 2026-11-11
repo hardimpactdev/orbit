@@ -6,6 +6,7 @@ namespace App\Infrastructure\GitHub;
 
 use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\ReadDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -21,15 +22,16 @@ final readonly class ProcessGitHubCliToken implements GitHubCliToken
         private ProcessRunner $processes,
     ) {}
 
-    public function token(): string
+    public function token(?ReadDeadline $deadline = null): string
     {
         try {
             $result = $this->processes->run(new ProcessInvocation(
                 arguments: ['gh', 'auth', 'token', '--hostname', 'github.com'],
-                timeout: 30.0,
+                timeout: $deadline?->remaining() ?? 30.0,
                 maxOutputBytes: 4096,
                 environment: $this->environment(),
             ));
+            $deadline?->remaining();
         } catch (Throwable) {
             throw self::unauthenticated();
         }

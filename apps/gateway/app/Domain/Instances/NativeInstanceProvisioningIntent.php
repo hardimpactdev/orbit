@@ -59,7 +59,7 @@ final readonly class NativeInstanceProvisioningIntent
             'root' => $input['source_root'], 'user' => $input['user'],
             'prepare_id' => $input['prepare_id'], 'seed_repository' => $input['seed_repository'],
         ], 'resolve' => ['default_branch' => $input['default_branch'],
-            'branch' => $input['branch_override'] ?? ($instance->name === 'default' ? $input['default_branch'] : $instance->name),
+            'branch' => IntendedInstanceBranch::resolve($instance->name, ValidatedData::nullableString($input['branch_override'] ?? null), ValidatedData::nullableString($input['default_branch'])),
             'seed_commit' => $input['seed_commit'],
             'network' => true, 'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https']))],
             'setup' => ['instance_id' => $instance->id, 'list' => 'setup',
