@@ -115,7 +115,7 @@ sequenceDiagram
     %%> Retry:
     %%> - run the same command again; it starts with a new container
     %%> - a restore that failed keeps the reserved record and its address, and names the failed step
-    %%> - an interrupted root with no finish records moved/restored/ready as unknown and names `orbit instance:migrate INSTANCE --restore --force`; restore refuses after retirement began
+    %%> - an interrupted root with no finish records moved/restored as unknown and ready false, and names `orbit instance:migrate INSTANCE --restore --force`; restore refuses after retirement began
   end
   end
   loop every 2 s until terminal
