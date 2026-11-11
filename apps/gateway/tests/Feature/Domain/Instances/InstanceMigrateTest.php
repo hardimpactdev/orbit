@@ -657,6 +657,21 @@ describe('the databases of a move', function (): void {
 });
 
 describe('the end of a move', function (): void {
+    it('admits a routed migrated default deployment without a policy tick', function (): void {
+        $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+        $default = migrateCheckout(containerDefaultProject(ProjectType::LaravelApp, '8.5'), containerDefaultNode());
+        $route = migrateRoute($default);
+        migrateSource(['require' => ['php' => '^8.5', 'laravel/framework' => '^13.0']]);
+        $operation = migrateStart($default);
+
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $deploy = app(StartInstanceDeployAction::class)->execute($default->refresh(), 'manual', null);
+
+        expect($route->refresh()->status->value)->toBe('active');
+        expect($deploy->input['deployment'])->toMatchArray(['variant' => 'container', 'projection_route_id' => null]);
+        $this->assertDatabaseHas('instances', ['id' => $default->id, 'development_projection_pending' => false]);
+    });
+
     it('makes the container a default\'s runtime: the workspace is its checkout, it runs, and its seed commit is recorded', function (): void {
         $node = containerDefaultNode();
         $default = migrateCheckout(containerDefaultProject(), $node);
@@ -748,6 +763,7 @@ describe('the end of a move', function (): void {
         expect(InstanceRuntime::query()->where('instance_id', $default->id)->exists())->toBeFalse()
             ->and($default->refresh()->only(['checkout_path', 'status']))->toBe(['checkout_path' => '/home/orbit/apps/tool/default', 'status' => InstanceState::Active])
             ->and($operation->refresh()->error_code)->toBe('instance.database_unreachable');
+        $this->assertDatabaseHas('instances', ['id' => $default->id, 'development_projection_pending' => true]);
         // The same command moves it again, at the address that is free again.
         expect(migrateStart($default)->id)->not->toBe($operation->id)
             ->and(InstanceRuntime::query()->where('instance_id', $default->id)->value('bridge_address'))->toBe('10.253.0.2');
@@ -806,6 +822,7 @@ describe('the end of a move', function (): void {
             ->and($operation->refresh()->status->value)->toBe('failed')
             ->and($operation->error_code)->toBe($code)
             ->and($operation->result['error_message'])->toBe('Retirement refused without changing the source.');
+        $this->assertDatabaseHas('instances', ['id' => $default->id, 'development_projection_pending' => true]);
     })->with(['instance.migrate_retire_failed', 'instance.migrate_retirement_blocked', 'instance.migrate_unpushed_commits', 'instance.migrate_stashes_present']);
 
     it('records and exposes retained Git after retirement, including when a later retirement fails', function (bool $failed): void {
