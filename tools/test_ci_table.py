@@ -76,7 +76,7 @@ class CheckTableTest(unittest.TestCase):
             summary = Path(directory) / 'summary'
             stdout, stderr = io.StringIO(), io.StringIO()
             with patch('sys.argv', ['ci-build-plan', '--base', 'HEAD^']), \
-                    patch.object(plan.subprocess, 'check_output', return_value=b'tools/new.py\0'), \
+                    patch.object(plan, 'changed_inputs', return_value=('base', ['tools/new.py'])), \
                     patch.dict(os.environ, GITHUB_STEP_SUMMARY=str(summary)), \
                     contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 plan.main()

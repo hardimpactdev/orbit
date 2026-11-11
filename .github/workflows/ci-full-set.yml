@@ -31,7 +31,9 @@ jobs:
         with:
           python-version: '3.13'
       - name: Test receiver tooling without fixture bodies
-        run: python3 -m unittest discover -s tools -p 'test_ci_full_set.py'
+        run: |
+          python3 -m pip install --disable-pip-version-check 'PyYAML==6.0.3'
+          python3 -m unittest discover -s tools -p 'test_ci_full_set.py'
       - name: Collect every fixture and plan the covered range
         id: plan
         env:

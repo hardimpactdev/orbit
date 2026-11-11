@@ -12,6 +12,7 @@ use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\NodeNetworkReservation;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
@@ -37,7 +38,7 @@ final readonly class StartNodeConvergeAction
             $operation = $this->operations->execute('node.converge', 'node', $node->id, $node->id,
                 ['_converge' => ['network' => ['hub_id' => $hub?->id]],
                     'participant_node_ids' => array_values(array_unique([$node->id, $hub->id ?? $node->id]))],
-                'operator', $requestId, lockKey: 'node-converge:node:'.$node->id);
+                'operator', $requestId, lockKey: OperationStore::lockKey('node', $node->id));
             if ($operation->wasRecentlyCreated) {
                 // The one write before the capture: a build-list app-dev Node gets its Instance bridge here, never in the capture.
                 if (in_array(RoleName::AppDev->value, $selected, true)) {

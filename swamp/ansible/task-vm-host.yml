@@ -223,6 +223,42 @@
           register: base_cloud_init
           changed_when: false
           failed_when: base_cloud_init.rc not in [0, 2]
+        # Completion can follow an interrupted one-shot user setup. Prove authorization before the SSH converge.
+        - name: Read the base VM authorized keys
+          no_log: true
+          ansible.builtin.command:
+            argv: "{{ ['timeout', '30'] + incus + ['file', 'pull', base.vm ~ '/home/orbit/.ssh/authorized_keys', '-'] }}"
+          register: base_authorized_keys
+          changed_when: false
+          failed_when: false
+        - name: Require base VM authorized keys
+          ansible.builtin.assert:
+            that: base_authorized_keys.rc == 0 and base_authorized_keys.stdout | trim | length > 0
+            fail_msg: task_vm.bootstrap_key_missing
+            quiet: true
+        - name: Fingerprint the admitted bootstrap key
+          no_log: true
+          ansible.builtin.command:
+            argv: [timeout, "5", ssh-keygen, -l, -E, sha256, -f, "-"]
+            stdin: "{{ converge.boot.authorized_key }}"
+          register: base_expected_fingerprint
+          changed_when: false
+        - name: Fingerprint the base VM authorized keys
+          no_log: true
+          ansible.builtin.command:
+            argv: [timeout, "5", ssh-keygen, -l, -E, sha256, -f, "-"]
+            stdin: "{{ base_authorized_keys.stdout }}"
+          register: base_authorized_fingerprints
+          changed_when: false
+          failed_when: false
+        - name: Check the base VM bootstrap fingerprint
+          ansible.builtin.assert:
+            that: >-
+              base_authorized_fingerprints.rc == 0 and
+              base_expected_fingerprint.stdout.split()[1] in
+              (base_authorized_fingerprints.stdout_lines | map('split') | map(attribute=1) | list)
+            fail_msg: task_vm.bootstrap_key_mismatch
+            quiet: true
         # The nested Swamp runs with the proof Swamp Club key; every task VM copied from the base has it from its first boot.
         - name: Give the base VM the Club key
           no_log: true
