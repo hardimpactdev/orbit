@@ -43,7 +43,7 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 ## CI
 
-Orbit CI runs builds, static checks and the full default Gateway Pest suite when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same gate.
+Orbit CI runs builds, static checks and the full Gateway and CLI Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same gate.
 
 The Swamp shape job has a temporary 30-minute limit so its serial fixtures can finish on a loaded runner.
 
@@ -52,6 +52,7 @@ The Swamp shape job has a temporary 30-minute limit so its serial fixtures can f
 | PHP syntax and Composer | Check frozen agent command references, validate every tracked Composer manifest and run `php -l` on changed PHP files, with at most four workers |
 | Gateway static analysis | Run the complete Gateway PHPStan configuration and collect all Gateway tests whenever a PR changes any file under `apps/gateway/`, including tests |
 | Gateway Pest suite | Run the complete default Gateway suite on `ubuntu-26.04`: four workers, 1 GiB per PHP process and a five-second default per-test limit |
+| CLI Pest suite | Run the complete CLI suite on `ubuntu-26.04` in one process with 1 GiB of PHP memory |
 | CLI build | Build the existing Linux and macOS CLI binaries through the reusable Orbit CLI Binary workflow |
 | CLI static analysis, PHP SDK static analysis, E2E static analysis | Run PHPStan for `apps/cli`, `packages/php-sdk` or `apps/e2e` when a PR changes any file of that project, `composer.lock` included. The SDK also selects the CLI analysis |
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint; run `bin/check-flows` on the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) |
@@ -60,8 +61,8 @@ The Swamp shape job has a temporary 30-minute limit so its serial fixtures can f
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and every night, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Only for changes under `swamp/proof/` or shared CI inputs: run the case runner unit tests and lint the proof programs with `ruff` |
-| CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. Required checks requires its success, including the outside proof for a fork; see [the proof run job](#the-proof-run-job) |
-| Required checks | Require every selected build, static check, Gateway Pest suite and PR proof to succeed; only an explicitly untouched job may skip |
+| CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. The blocking switches decide whether it gates Required checks; see [the proof run job](#the-proof-run-job) |
+| Required checks | Require every selected build, static check and Pest suite to succeed. Shape and PR proof follow the blocking switches. Only an explicitly untouched required job may skip |
 
 The Gateway Pest job installs Gateway and CLI dev Composer dependencies and regenerates both autoloaders with `composer install --no-scripts`. It then runs `bin/build-api` so tests read the current OpenAPI and MCP contracts; these generated outputs are not cached. NodeMetrics runs the CLI's PHP consent fixture. Separate vendor caches use each project's manifest and lockfile, PHP 8.5, the runner OS and SDK Composer metadata; they never restore the runtime-only Gateway cache.
 
@@ -75,6 +76,10 @@ All Gateway paths select Pest, including tests, configuration and Composer input
 
 The job depends on input selection; only an explicit false selection skips it. Required checks has a static dependency on the job and validates the exact selection keys and boolean values before accepting the results. A selected failure, cancellation or unexpected skip fails the gate independently of `ORBIT_SLOW_CHECKS_BLOCKING`.
 
+The CLI Pest job installs `apps/cli` dev Composer dependencies with the shared PHP 8.5 action and coverage disabled. It runs the complete suite in one process with a 1 GiB memory limit and uploads JUnit results even after a failure. CLI and PHP SDK paths select it, including recorded response fixtures. The command pages under `docs/cli/` and the command vocabulary reference also select it, as do Gateway API route files, CLI release scripts and the agent source-commit script read by its tests.
+
+Shared CI inputs select it too. Unrelated documentation, Gateway implementation and Web changes leave CLI Pest unselected. Required checks requires the job whenever selected; only an explicit false selection permits a skip.
+
 The Swamp gate production-lints the observer preparation play. Its fixture tests install the candidate pin on all three nested Nodes and reject checksum and download failures. Gateway tests require new presence versions and host facts after a controlled restart. Runner tests require preparation before every batch and direct case, including old workflow calls without setup, and give preparation and batch setup separate bounded budgets.
 
 The gate also runs the real Ansible readiness tasks against sockets, checking that the Instance proxy and model forwarder observe their exact listeners without opening host TCP connections. Private dpkg databases prove that installed Incus packages stay untouched with or without a hold, while removed packages are installed.
@@ -85,9 +90,55 @@ The Swamp Deno test job uses `[self-hosted, orbit-shard]` when `ORBIT_SABRE_RUNN
 
 Runner containers are unprivileged. Install or repair their toolchain with `tools/ci-runners/setup.sh container NAME` while idle; jobs verify the managed PHP build and use fake privileged boundaries. Ordinary Deno tests need no sudo or Docker daemon; real Docker proofs run only on disposable proof VMs.
 
+### CI time budget
+
+Measure CI wall time from workflow creation to completion of `Required checks`. Include queueing, input selection and the final gate. Independent jobs overlap, so use the longest required path rather than adding every job's duration. The full workflow can continue after Required checks passes.
+
+The repository variables below show today's observed values. Their meaning and defaults are owned by [Capacity: ideal state](/reference/command-development-pipeline#capacity-ideal-state).
+
+| Switch or job | Observed today |
+| --- | --- |
+| `ORBIT_SLOW_CHECKS_BLOCKING` | `false` |
+| `ORBIT_PROOF_BLOCKING` | `false` |
+| `Start the CLI release` | Runs on main; [CLI binaries](/reference/cli-binaries) owns its condition |
+
+These job measurements are from the CI timing sample collected on 2026-11-10. They exclude queueing unless stated. A job with no selected work usually ends in about eight seconds. These are observed times, not time limits or guarantees.
+
+| Selected job | Observed time | Dependency before it starts |
+| --- | --- | --- |
+| Select build inputs | About 19 s | None |
+| PHP syntax and Composer | 21–35 s | None |
+| Gateway static analysis, collection and kernel cases | 41–60 s | None |
+| CLI build, Linux / macOS target | 44–59 s / 45–52 s | None; separate parallel jobs |
+| CLI / PHP SDK / E2E static analysis | 29–37 s / 25–31 s / 23–40 s | None |
+| Docs build / Generated contracts / Web build | 34–53 s / 27–54 s / 33–56 s | None |
+| Pi check, test and build | 35–43 s | None |
+| Rust agent check and test | 107–124 s | None |
+| Proof harness | 34–43 s | None |
+| Swamp workflow validate / Deno tests | 33–45 s / 22–53 s | None |
+| Gateway Pest suite | 47 s–1 min 13 s on 2026-11-10 pull requests | Select build inputs |
+| Swamp shape gate | About 17–20 min in the slow sample; recent completed jobs took 13:28 and 21:47 | None; the shared self-hosted pool |
+| CI proof, when selected | 3.6–49 min in the sample | Select build inputs, then proof capacity and execution |
+| Gateway release inputs | About 3 s | Select build inputs |
+| Required checks | About 3 s for aggregation, plus any API wait | Its required dependencies |
+
+The short jobs take about two minutes or less; the Rust sample reaches 2:04. Shape is the main obstacle to restoring full required coverage within about six minutes. Proof has a separate capacity and execution path.
+
+For source records, compare [CI run 42861369691](https://github.com/hardimpactdev/orbit/actions/runs/42861369691) and [CI run 42868182599](https://github.com/hardimpactdev/orbit/actions/runs/42868182599). Their shape jobs took 13:28 on Shark and 21:47 on Sabre. They used different revisions and loads. The second run failed Deno tests; a successful shape job does not establish a green Required result.
+
+The target is **about six minutes from push to green Required checks**, including required shape coverage and a green Gateway Pest suite. It is a planning budget, not delivered behavior. Today's report-only shape path is already shorter. The measured shape work supports an estimate near six minutes with three available Shark slots after fixture splitting. Loaded Sabre needs a budget near seven minutes. Hosted Pest setup and the new shape layout need measurements before either estimate becomes a claim.
+
+### Next measurements and changes
+
+The following work needs separate changes and measurements.
+
+- Split long shape fixture scenarios, preserve their assertions, then measure three shards before restoring shape blocking.
+- Decide separately whether proof should remain report-only. Keep the current proof switch until that decision.
+- Reuse trusted complete PR checks on main only for equal trees. Retain main artifacts and result records.
+
 ### The proof run job
 
-`proof-run` in `.github/workflows/ci.yml` is part of `Required checks` when a pull request's changed paths select commands. It passes only the full head SHA and an idempotency key to Orbit. A new push cancels the previous proof. A fork needs the trusted base-branch workflow, a maintainer's approval of the head and the `run-proofs` label; fork code never runs on the managed runner. That workflow publishes `Orbit outside proof` on the exact head. Required checks reads its latest trusted status and fails if it is missing, pending or failed. After the outside proof succeeds, rerun the failed Required job.
+`proof-run` in `.github/workflows/ci.yml` runs when a pull request's changed paths select commands. It gates `Required checks` only when both [blocking switches](#ci-time-budget) permit it. It passes only the full head SHA and an idempotency key to Orbit. A new push cancels the previous proof. A fork needs the trusted base-branch workflow, a maintainer's approval of the head and the `run-proofs` label; fork code never runs on the managed runner. That workflow publishes `Orbit outside proof` on the exact head. When proof is blocking, Required checks reads its latest trusted status and fails if it is missing, pending or failed. After the outside proof succeeds, rerun the failed Required job.
 
 CI proofs join one FIFO admission queue. Its front takes every free usable CI place up to its number of batches. Orbit balances whole batches by measured case time, runs them on fresh VMs, merges the verdicts and deletes the VMs. Capacity waits within a two-hour admission budget and then fails clearly. See [proof:run](/cli/proof/run).
 
@@ -124,11 +175,11 @@ Swamp check selection follows their inputs. Shape policy changes select the shap
 Inside the shape job, pinned tool and collection setup runs first. Independent Ansible lint, Python fixtures and Deno checker tests then share at most four command slots, with one Deno worker per command and separate temporary files. Ansible lint and the Deno fixtures receive the same pinned collection path, so a role include does not depend on collections installed in the worker's home. Baseline and ratchet checks stay serial, and every failure remains in the final result.
 
 
-Unit tests run in one job with four Deno workers. Keeping one job avoids five separate waits for the shared runner pool.
+Unit tests run in one hosted job with four Deno workers.
 
 Workflow validation runs only when the change selects its workflow, grant, extension or runtime inputs, and validates every workflow on the nightly schedule. It needs the Swamp account secrets. GitHub gives Dependabot pull requests no Actions secrets, so a dependency update outside `swamp/` does not wait on them.
 
-Required checks target five minutes. Project checks are removed from CI for now; Nick decides which checks return. Their local commands remain available. Orbit keeps fast TypeScript unit tests and no native workflow suite or custom runtime harness. Workflow validation and pinned `serve check-config` remain required. No nightly workflow replaces removed checks.
+The [CI time budget](#ci-time-budget) targets about six minutes with shape restored to the required path. Project checks are removed from CI for now. Their local commands remain available. Orbit keeps fast TypeScript unit tests and no native workflow suite or custom runtime harness. Workflow validation and pinned `serve check-config` remain required. No nightly workflow replaces removed checks.
 
 Tests of bin scripts live beside their script. The shape job names the liveness and Node 209 source suites explicitly. It also runs every unit test in `swamp/tests` and in the automatic-deploy, Composer and JS maintenance and Project extension folders. Each file in `swamp/tests` is its own step, so the workers share the slow Ansible files. Three files stay out: `node_add_bootstrap_test.ts` runs in the validation group, `metrics_exporter_firewall_test.ts` stays out until it passes, and `native_host_method_test.ts` needs systemd and passwordless sudo, so it runs on a host. Test fixtures serve unit tests; they do not start Swamp or pull extensions.
 
@@ -140,7 +191,7 @@ Two checks guard the flow charts. Generated contracts requires a chart or a `doc
 
 Swamp workflow validation uses the dedicated `orbit-monorepo-ci` collective token with only `extensions:read`. Validation keeps its read-only key and signed sign-in proof on pull requests and pushes to main. Shape and ordinary Operation test jobs receive no secret environment.
 
-CI uses `pull_request_target` only in the label workflow `proof-outside.yml`, which checks out one script from the base branch and passes only a commit SHA to Orbit ([the proof CI](/reference/feature-flow#the-proof-ci)). The runtime and local extension tree remain pinned; validation, shape, placement and Operation tests are required, including when authentication is absent or refused. No personal key or initial-import validation exception is used.
+CI uses `pull_request_target` only in the label workflow `proof-outside.yml`, which checks out one script from the base branch and passes only a commit SHA to Orbit ([the proof CI](/reference/feature-flow#the-proof-ci)). The runtime and local extension tree remain pinned. Validation, placement and Operation tests remain required, including when authentication is absent or refused. The blocking switches control whether shape gates Required checks. No personal key or initial-import validation exception is used.
 
 Build jobs, including Swamp validation, shape and unit tests, start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Each uses the same `bin/ci-build-plan` policy.
 
@@ -153,15 +204,13 @@ Known documentation, contract-generation and proof tools select only their consu
 On agent source, Cargo or test changes, CI runs `cargo check --locked --all-targets` and `scripts/check-crates test --locked`, including composed extension crates, within a 15-minute job budget. On Pi source changes, CI runs its check, tests and build within an eight-minute job budget. Shared CI changes select both jobs too. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
 
-CI wall time is measured from workflow creation to completion of `Required checks`, including queueing and the final gate.
-
 Installed Gateway runtime and CLI build dependencies use lock-based caches. Composer install and its current lifecycle scripts always rerun, including contract generation and autoload discovery. Download caches restore across lockfile changes. Source, generated contracts and release binaries are never restored as dependency caches.
 
 Rust CI caches the Cargo registry, Git dependencies and `apps/agent/target`. An exact manifest and lockfile key is preferred. After those inputs change, CI can restore the newest cache for the same operating system, architecture and Rust compiler; Cargo checks its fingerprints and rebuilds changed inputs. Locked checks and tests always run.
 
 Run `bin/check-operation-kinds` to repeat the registry check locally. It uses the real Gateway container, loads every family declaration and resolves its PHP executor or Swamp completion and execution handlers plus its named transports. Any loading or resolution failure exits nonzero. CI supplies a public fixture encryption key and requires no Gateway database. Constructor dependencies defer resource reads until their first use. The check runs no Operation, reads no resource records and contacts no Node. Families register a kind only after the Gateway enforces its required contracts.
 
-The proof CI is part of the one CI result; [the proof CI](/reference/feature-flow#the-proof-ci) describes it. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies include the selected Pi and Rust checks. The complete CI run must also finish successfully before the CLI release workflow publishes.
+The proof CI reports within the same CI run; [the proof CI](/reference/feature-flow#the-proof-ci) describes its execution. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies include the selected Pi and Rust checks.
 
 Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 
@@ -181,11 +230,11 @@ The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PH
 
 ### Gateway shards
 
-Gateway Pest runs in one hosted job with four workers and no shards. Gateway static analysis also runs the two privileged kernel cases. E2E, SDK, CLI, remote-program and web unit test jobs remain local checks; their test files and commands remain available.
+Gateway Pest runs in one hosted job with four workers and no shards. Gateway static analysis also runs the two privileged kernel cases. CLI Pest runs in a separate hosted job in one process. E2E, SDK, remote-program and web unit test jobs remain local checks; their test files and commands remain available.
 
 ### Runner policy during the Swamp migration
 
-During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway Pest, Pi and Rust tests. Web unit tests stay local. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
+During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway and CLI Pest, Pi and Rust tests. Web unit tests stay local. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
 
 Sabre and Shark run CI runners in unprivileged Incus containers. With Nick's approval, both hosts also run temporary Swamp migration workers. They may share capacity during the migration; restore their CI capacity when that work ends. Task VMs run only on Beast and Shark through Incus.
 
@@ -217,7 +266,7 @@ The Docs site workflow also follows each green main commit. It builds the docs a
 
 ### Gateway tests and privilege
 
-Ordinary local Gateway cases need no sudo. Privileged tests remain in their existing group for deliberate runs on a disposable host. CI runs neither group. Keep the existing no-sudo and temporary-directory boundaries when using these tests locally.
+Ordinary local Gateway cases need no sudo. Privileged tests remain in their existing group for deliberate runs on a disposable host. CI runs the two real-kernel cases in the hosted Gateway static analysis job and the default suite in the Gateway Pest job. Keep the existing no-sudo and temporary-directory boundaries when using these tests locally.
 
 In an Orbit task, run the tests that cover the change in each changed project directory, such as `apps/gateway` or `packages/php-sdk`. Use stock Pest with a test file path or `--filter`. Do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff, and CI runs builds and static checks on the handoff commit. Outside a task, run the full suite and the checks below. Each project keeps its own dependencies and test configuration.
 
@@ -270,7 +319,7 @@ The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it con
 
 Root `composer check` builds OpenAPI, navigation, flow data and the documentation context index, then runs `bin/review-check`, the candidate gate. This refreshes ignored outputs from the current checkout before the impact and freshness checks read them.
 
-The Orbit Project uses it as its task check, so it runs in the task VM at every subtask handoff. The gate runs only fast checks and no test suite. CI omits the Project check and runs the selected jobs in [CI](#ci), including Gateway Pest when its inputs change. Required checks must pass on the final head before merge.
+The Orbit Project uses it as its task check, so it runs in the task VM at every subtask handoff. The gate runs only fast checks and no test suite. CI omits the Project check and runs the selected jobs in [CI](#ci), including Gateway and CLI Pest when their inputs change. Required checks must pass on the final head before merge.
 
 The gate checks the working tree as it is, including uncommitted and untracked files. It runs these checks.
 
@@ -452,7 +501,7 @@ A failure on main is a `Required checks` check run on a `main` commit that did n
 
 ### CI runs the task gate
 
-The task gate and CI serve different scopes. The task gate runs `bin/review-check`; CI omits that Project check and runs the selected builds, static checks and Gateway Pest. A passing Required checks result therefore does not certify every local Project check.
+The task gate and CI serve different scopes. The task gate runs `bin/review-check`; CI omits that Project check and runs the selected builds, static checks and Gateway and CLI Pest. A passing Required checks result therefore does not certify every local Project check.
 
 ### Every project passes the gate at each handoff
 
@@ -490,11 +539,11 @@ Running the checks on a development machine to fill a cache is a rejected altern
 
 ### Gateway Pest gates selected changes
 
-The Gateway default suite runs in one hosted job. Four workers keep setup costs low; there are no shards or quarantined files. Other PHP suites remain local checks.
+The Gateway default suite runs in one hosted job. Four workers keep setup costs low; there are no shards or quarantined files. The CLI suite has its own hosted job. Other PHP suites remain local checks.
 
 ### Full suites gate merges
 
-The check name remains `Required checks` so branch protection, task handoff CI and Gateway auto-release continue to resolve it. The name represents the selected builds, static checks and Gateway Pest suite in [CI](#ci). A green result requires the selected Pest job to pass. No ruleset change is needed for Orbit.
+The check name remains `Required checks` so branch protection, task handoff CI and Gateway auto-release continue to resolve it. The name represents the selected builds, static checks and Gateway and CLI Pest suites in [CI](#ci). A green result requires every selected Pest job to pass. No ruleset change is needed for Orbit.
 
 ### Gateway test time limits
 

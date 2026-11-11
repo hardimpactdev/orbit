@@ -299,6 +299,83 @@ class CloneGuestTest(unittest.TestCase):
             self.assertEqual(json.loads(output.getvalue())["changes"], [])
             self.assertFalse((base / "etc/orbit/php").exists())
 
+    def test_php_workspace_writes_the_shared_php_settings_and_restarts_running_units(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            (base / "srv/workspace/.git").mkdir(parents=True)
+            (base / "srv/workspace/.env").write_text("PRIVATE-ENV")
+            unit = {"name": "orbit-frankenphp.service", "content": "[Service]\n"}
+            # The unit exists and runs with the settings of before the change.
+            (base / "etc/systemd/system").mkdir(parents=True)
+            (base / "etc/systemd/system" / unit["name"]).write_text(unit["content"])
+            settings = base / "etc/orbit/php/conf.d/99-orbit-runtime.ini"
+            settings.parent.mkdir(parents=True)
+            settings.write_text("memory_limit = 1G\n")
+            container = {
+                "workspace": "/srv/workspace",
+                "branch": "proof",
+                "expected_commit": "abc123",
+                "bundle": "/tmp/proof.bundle",
+                "php": "/opt/orbit-runtime/current/php/8.5/bin/php",
+                "environment_file": "/srv/workspace/.env",
+                "units": [unit],
+                "processes": [],
+            }
+            commands = []
+
+            def command(argv, **_kwargs):
+                commands.append(list(argv))
+                value = "proof\n" if "symbolic-ref" in argv else "abc123\n"
+                return subprocess.CompletedProcess(argv, 0, value, "")
+
+            class RootOwned(type(base)):
+                """A file of the test user reads as root's, as in the container."""
+
+                def stat(self, **kwargs):
+                    values = list(super().stat(**kwargs))
+                    values[4:6] = [0, 0]
+                    return os.stat_result(values)
+
+            def workspace():
+                commands.clear()
+                with (
+                    patch.object(
+                        GUEST.pathlib,
+                        "Path",
+                        lambda p: RootOwned(base / str(p).lstrip("/")),
+                    ),
+                    patch.object(GUEST.subprocess, "run", command),
+                    patch.object(GUEST.os, "walk", return_value=[]),
+                    patch.object(
+                        GUEST.sys,
+                        "stdin",
+                        io.StringIO(json.dumps({"environment": "PRIVATE-ENV"})),
+                    ),
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    GUEST.phase_main("workspace", json.dumps(container))
+                return list(commands)
+
+            restart = ["systemctl", "restart", unit["name"]]
+            self.assertIn(restart, workspace())
+            self.assertNotIn(restart, workspace())
+            written = settings.read_text()
+            self.assertEqual(
+                written,
+                "memory_limit = 1G\n"
+                "auto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php\n",
+            )
+            # The container phase writes the same file for a default and a deployment: both writers hold one content.
+            phase = (
+                Path(__file__).parents[1] / "ansible/tasks/instance-container-phase.yml"
+            ).read_text()
+            line = next(
+                x for x in phase.splitlines() if "container_php_ini_content:" in x
+            )
+            self.assertEqual(json.loads(line.split(":", 1)[1].strip()), written)
+
     def test_agent_preserves_unmanaged_json_and_identity_and_repairs_only_managed_keys(
         self,
     ):

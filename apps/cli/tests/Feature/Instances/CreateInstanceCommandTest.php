@@ -14,6 +14,7 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Saloon\Http\Request;
 use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {
@@ -108,9 +109,7 @@ describe('instance:create production refusal', function (): void {
 
 describe('instance:create database server', function (): void {
     it('sends --database-server as database_server', function (): void {
-        $mock = MockClient::global([
-            CreateInstanceRequest::class => instance_mock_response(201),
-        ]);
+        $mock = MockClient::global(instance_operation_responses(CreateInstanceRequest::class, 'instance.create'));
 
         $exitCode = Artisan::call('instance:create', [
             'project' => '3',
@@ -122,7 +121,7 @@ describe('instance:create database server', function (): void {
         ]);
 
         expect($exitCode)->toBe(0);
-        $mock->assertSent(static fn (CreateInstanceRequest $request): bool => $request->body()->all() === [
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateInstanceRequest && $request->body()->all() === [
             'project_id' => 3,
             'node_id' => 4,
             'name' => 'default',

@@ -61,7 +61,7 @@ final readonly class AdmitFleetRolloutAction
             if (! is_array($agent) || ! is_string($agent['url'] ?? null)) {
                 throw new ResourceOperationException('agent.release_unavailable', 'The pinned agent has no published delivery.', 409);
             }
-            $nodes[] = ['node_id' => $node->id, ...$this->cli->fleetInput($node),
+            $nodes[] = ['node_id' => $node->id, ...$this->cli->fleetInput($node, observer: true),
                 'agent' => ['url' => $agent['url'], 'sha256' => $agent['sha256'], 'version' => $this->delivery->reportedVersion($node)],
                 'daytime' => $node->roles->isNotEmpty() && $node->roles->every(static fn ($role): bool => $role->role === RoleName::AppDev)];
         }

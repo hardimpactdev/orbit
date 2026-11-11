@@ -5,10 +5,13 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -31,24 +34,36 @@ afterEach(function (): void {
 it('sends macOS enrollment fields and leaves policy to the gateway', function (array $options, array $body): void {
     $mockClient = MockClient::global([
         '*/api/v1/nodes' => MockResponse::make([
-            'data' => macos_enrolled_node(),
+            'data' => macos_enrollment_operation(),
             'meta' => ['request_id' => macos_request_id()],
-        ], 201),
+        ], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make([
+            'data' => macos_enrollment_operation(),
+            'meta' => ['request_id' => macos_request_id()],
+        ]),
     ]);
 
-    $this->artisan('node:add', [
+    $exit = Artisan::call('node:add', [
         'name' => 'mini',
         'host' => '192.0.2.40',
         '--platform' => 'macos',
         '--host-key-fingerprint' => macos_fingerprint(),
         ...$options,
         '--json' => true,
-    ])->assertExitCode(0);
+    ]);
 
-    expect($mockClient->getLastRequest())
+    expect($exit)->toBe(0)
+        ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['result'])
+        ->toBe(['id' => 2, 'enrolled' => true]);
+
+    $request = $mockClient->getRecordedResponses()[0]->getPendingRequest()->getRequest();
+
+    expect($request)
         ->toBeInstanceOf(AddNodeRequest::class)
-        ->and($mockClient->getLastRequest()?->body()->all())
-        ->toBe($body);
+        ->and($request->body()->all())
+        ->toBe($body)
+        ->and($mockClient->getRecordedResponses())->toHaveCount(3);
 })->with([
     'existing account and tunnel' => [
         [
@@ -212,4 +227,11 @@ function macos_fingerprint(): string
 function macos_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+}
+
+/** @return array<string, mixed> */
+function macos_enrollment_operation(): array
+{
+    return ['id' => 42, 'kind' => 'node.add', 'target_type' => 'node', 'target_id' => 2,
+        'status' => 'succeeded', 'sequence' => 3, 'input' => [], 'result' => ['id' => 2, 'enrolled' => true]];
 }

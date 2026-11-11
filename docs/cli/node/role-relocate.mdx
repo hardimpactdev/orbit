@@ -17,6 +17,7 @@ orbit node:role:relocate <node> <role> [--from=NODE] [--force] [--json]
 | --- | --- | --- |
 | `--from=NODE` | the current holder | Numeric ID of the source Node. After an earlier relocation of this role from that Node, the target already holds the role and `--from` names the Node whose leftovers to remove. |
 | `--force` | prompt | Confirm the move without prompting. Required without a terminal and with `--json`. |
+| `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the final Operation as JSON. |
 
 ```bash

@@ -21,6 +21,7 @@ orbit instance:register --project=ID [--path=PATH] [--name=NAME] [--root=PATH] [
 | `--setup` | off | Run the Project setup steps, then create and start its development Processes. |
 | `--yes` | prompt | Confirm the source ownership transfer without prompting. Required without a terminal and with `--json`. |
 | `--include-worktrees` | off | Reserved for adopting every worktree; unavailable. A single linked worktree needs no flag. |
+| `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the Instance, or the final task, as JSON. |
 
 ```bash

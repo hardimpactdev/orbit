@@ -23,7 +23,7 @@ class RunnerPolicyTest(unittest.TestCase):
                 self.assertNotIn('shivammathur/setup-php', block)
 
     def test_light_jobs_and_validation_stay_hosted(self):
-        for workflow, names in [('ci.yml', ['docs', 'web', 'api-reference', 'gateway-tests']),
+        for workflow, names in [('ci.yml', ['docs', 'web', 'api-reference', 'gateway-tests', 'cli-tests']),
                                 ('swamp-shape.yml', ['validate'])]:
             for name in names:
                 with self.subTest(job=name):

@@ -133,7 +133,7 @@ describe('instance:transfer request', function (): void {
 });
 
 describe('instance:transfer output', function (): void {
-    it('reports destination placement, domain, and completed cleanup', function (): void {
+    it('reports the completed transfer Operation for humans', function (): void {
         MockClient::global(transfer_cli_responses());
 
         expect(Artisan::call('instance:transfer', [
@@ -142,13 +142,7 @@ describe('instance:transfer output', function (): void {
             '--force' => true,
         ]))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'Instance: preview',
-            'ID 11',
-            'Destination Node 8',
-            'Destination path /srv/orbit/apps/shop/preview',
-            'Authoritative domain preview.shop.other.orbit',
-            'Cleanup completed',
-            'Request ID '.transfer_cli_request_id(),
+            'Instance transfer succeeded.', 'Operation: 901', 'Request ID: '.transfer_cli_request_id(),
         );
     });
 
@@ -166,15 +160,7 @@ describe('instance:transfer output', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and(trim(Artisan::output()))
-            ->toBe(json_encode([
-                'id' => 11,
-                'node_id' => 8,
-                'name' => 'preview',
-                'checkout_path' => '/srv/orbit/apps/shop/preview',
-                'domain' => 'preview.shop.other.orbit',
-                'transfer' => transfer_cli_progress(),
-                'request_id' => transfer_cli_request_id(),
-            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            ->toBe(instance_operation_json('instance.transfer', transfer_cli_result(), ['target_id' => 11], transfer_cli_request_id()));
     });
 });
 
@@ -206,12 +192,14 @@ describe('instance:transfer help and execution boundary', function (): void {
 /** @return array<class-string, MockResponse> */
 function transfer_cli_responses(): array
 {
-    return [
-        TransferInstanceRequest::class => MockResponse::make([
-            'data' => transfer_cli_payload(),
-            'meta' => ['request_id' => transfer_cli_request_id()],
-        ], 201),
-    ];
+    return instance_operation_responses(TransferInstanceRequest::class, 'instance.transfer', transfer_cli_result(),
+        ['target_id' => 11], transfer_cli_request_id());
+}
+
+/** @return array<string, mixed> */
+function transfer_cli_result(): array
+{
+    return ['instance_id' => 11, 'transfer_id' => '31', 'node_id' => 8, 'cutover' => true, 'restored' => false];
 }
 
 /** @return array<string, mixed> */

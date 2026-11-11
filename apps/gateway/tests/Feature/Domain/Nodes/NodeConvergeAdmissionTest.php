@@ -97,10 +97,34 @@ it('captures base from recorded state, redacts its verifier and dispatches copie
     Process::assertNothingRan();
 });
 
-it('captures the base CLI for an individually admitted Node outside the fleet rollout', function (bool $gateway): void {
-    if ($gateway) {
-        $this->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+it('captures no CLI plan or release dependency for a Node without a CI caller', function (?RoleName $role): void {
+    if ($role !== null) {
+        $this->node->roles()->create(['role' => $role, 'status' => 'active']);
     }
+    $this->mock(CliReleaseCatalog::class, fn ($mock) => $mock->shouldNotReceive('find'));
+    $this->mock(ReleaseHistory::class, fn ($mock) => $mock->shouldNotReceive('commit', 'count', 'ancestors', 'unchanged'));
+
+    $this->postJson($this->url, ['base' => true])->assertAccepted();
+
+    expect(Operation::query()->sole()->input['_converge']['intent']['cli'])->toBeNull();
+    $rollout = app(CliConvergePlan::class)->fleetInput($this->node, observer: true);
+    expect($rollout['release'])->toBeNull()->and($rollout['profile'])->toBe('')
+        ->and($rollout['ssh']['target']['host'])->toBe($this->node->wireguard_ip);
+    Http::assertNothingSent();
+    Process::assertNothingRan();
+})->with(['roleless' => [null], 'workload' => [RoleName::AppProd], 'services' => [RoleName::Database],
+    'app-dev without proof runner' => [RoleName::AppDev], 'Swamp' => [RoleName::Swamp], 'Gateway' => [RoleName::Gateway]]);
+
+it('retires CLI intent when the CI runner assignment is being removed', function (): void {
+    $this->node->roles()->create(['role' => RoleName::CiRunner, 'status' => 'removing']);
+
+    $this->postJson($this->url, ['base' => true])->assertAccepted();
+
+    expect(Operation::query()->sole()->input['_converge']['intent']['cli'])->toBeNull();
+});
+
+it('keeps the CI caller CLI plan even for base-only scope', function (): void {
+    $this->node->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
     $manifest = tmpfile();
     try {
         fwrite($manifest, json_encode(['number' => 9001, 'checksums_url' => 'https://example.test/SHA256SUMS',
@@ -109,7 +133,6 @@ it('captures the base CLI for an individually admitted Node outside the fleet ro
         app()->instance(ReleaseHistory::class, $release);
         app()->instance(CliReleaseCatalog::class, $release);
         config(['app.version' => str_repeat('c', 40)]);
-        expect(app(CliConvergePlan::class)->input($this->node)['skip_reason'])->toBe($gateway ? 'gateway' : 'roleless');
         $this->postJson($this->url, ['base' => true])->assertAccepted();
         $cli = Operation::query()->sole()->input['_converge']['intent']['cli'];
         expect($cli['skip_reason'])->toBeNull()->and($cli['plan_error'])->toBeNull()
@@ -120,7 +143,7 @@ it('captures the base CLI for an individually admitted Node outside the fleet ro
     } finally {
         fclose($manifest);
     }
-})->with(['roleless' => [false], 'Gateway' => [true]]);
+});
 
 it('replays an idempotent start without recapturing private input or dispatching again', function (): void {
     $first = $this->withHeader('Idempotency-Key', 'node-converge-replay')->postJson($this->url, ['base' => true])->assertAccepted();

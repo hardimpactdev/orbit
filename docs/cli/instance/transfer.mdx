@@ -18,6 +18,7 @@ orbit instance:transfer <instance> <node> [--name=NAME] [--sqlite-source-path=PA
 | `--name=NAME` | the current name | Destination Instance name: lowercase letters, digits and hyphens, at most 63 characters. Use it when the destination path or generated domain must change. |
 | `--sqlite-source-path=PATH` | none | Refused with `operation.kind_unavailable` before anything is reserved or moved: native transfer cannot copy SQLite yet. |
 | `--force` | prompt | Confirm the downtime and the deletion of the old placement. Required without a terminal and with `--json`. |
+| `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the final task as JSON, with every step, and nothing while it follows. |
 
 ```bash

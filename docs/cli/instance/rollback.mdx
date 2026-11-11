@@ -15,6 +15,7 @@ orbit instance:rollback <instance> --release=NAME [--json]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--release=NAME` | prompt | The retained release to select, from [`instance:release:list`](/cli/instance/release-list). The name is letters, digits, dots, hyphens and underscores, at most 128 characters, and starts with a letter or digit. |
+| `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the final task as JSON, with every step, and nothing while it follows. |
 
 ```bash

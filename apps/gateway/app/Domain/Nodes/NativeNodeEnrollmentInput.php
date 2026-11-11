@@ -130,8 +130,10 @@ final readonly class NativeNodeEnrollmentInput
                     ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication'])),
                     ...NodeRoleCertificateInput::participants(ValidatedData::object($snapshot['certificates']))];
             }
-            $intent['cli'] = ['ssh' => app(SwampSshExecutionInput::class)->forNode($node),
-                'cli' => app(CliConvergePlan::class)->input($node)];
+            $cli = app(CliConvergePlan::class)->nodeInput($node);
+            if ($cli !== null) {
+                $intent['cli'] = ['ssh' => app(SwampSshExecutionInput::class)->forNode($node), 'cli' => $cli];
+            }
             $intent['network'] = $this->network($node, $spec['roleless_operator'] === true);
             $publicPath = rtrim(Config::string('orbit.home'), '/').'/wireguard/public.key';
             $hubKey = is_file($publicPath) ? trim((string) file_get_contents($publicPath)) : '';
