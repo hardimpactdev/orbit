@@ -9,7 +9,6 @@ use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use JsonException;
-use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Orbit\Sdk\Requests\Processes\UpdateProcessRequest;
 use Orbit\Sdk\Requests\Projects\ListProcessDefinitionsRequest;
@@ -23,6 +22,18 @@ final class UpdateProcessCommand extends ProcessCommand
 {
     use RendersProjectRuntimeDefinitions;
     use SelectsProjectDefinitionTarget;
+
+    private const array DefinitionClears = [
+        'working-directory' => ['working_directory', 'working-directory', null],
+        'restart' => ['restart_policy', 'restart', null],
+        'keep-alive' => ['keep_alive', 'keep-alive', null],
+        'restart-on-deploy' => ['restart_on_deploy', 'no-restart-on-deploy', null],
+        'environment-file' => ['environment_file', null, null],
+        'environment' => ['environment', 'environment', []],
+        'ports' => ['ports', 'port', []],
+        'volumes' => ['volumes', 'volume', []],
+        'required-mount-paths' => ['required_mount_paths', null, []],
+    ];
 
     #[\Override]
     protected $signature = 'process:update
@@ -39,6 +50,15 @@ final class UpdateProcessCommand extends ProcessCommand
         {--restart= : never, on-failure, always, or unless-stopped}
         {--keep-alive : Keep running through app-dev idle hibernation}
         {--no-restart-on-deploy : Skip automatic restart after production activation}
+        {--clear-working-directory : Restore the definition default working directory}
+        {--clear-restart : Restore the definition default restart policy}
+        {--clear-keep-alive : Restore the definition default keep-alive setting}
+        {--clear-restart-on-deploy : Restore the definition default deploy restart setting}
+        {--clear-environment-file : Restore the definition default environment file}
+        {--clear-environment : Remove all definition environment values}
+        {--clear-ports : Remove all definition port bindings}
+        {--clear-volumes : Remove all definition volumes}
+        {--clear-required-mount-paths : Remove all definition required mount paths}
         {--user= : Existing non-root account for a Node systemd Process}
         {--idempotency-key= : Reuse a key to retry this Operation start}
         {--json : Return machine-readable JSON}';
@@ -54,6 +74,23 @@ final class UpdateProcessCommand extends ProcessCommand
         GatewayConnectorFactory $connectors,
     ): int {
         $installed = ! $this->providedProjectOption();
+        $clears = [];
+        foreach (self::DefinitionClears as $option => [$field, $setOption, $value]) {
+            if ($this->option('clear-'.$option) !== true) {
+                continue;
+            }
+            if ($installed) {
+                return $this->renderGatewayFailure('process.option_invalid', 'The --clear-'.$option.' option requires --project.');
+            }
+            if ($setOption !== null && $this->input->hasParameterOption('--'.$setOption)) {
+                return $this->renderGatewayFailure('process.option_invalid', 'Choose either --'.$setOption.' or --clear-'.$option.'.');
+            }
+            $clears[$field] = $value;
+        }
+        if ($this->hasRedactedValue($this->options())) {
+            return $this->renderGatewayFailure('process.redacted_value', 'Redacted values cannot be submitted. Supply only the values you want to change.');
+        }
+
         if (! $installed && $this->stringOption('user') !== null) {
             return $this->renderGatewayFailure('process.option_invalid', 'The --user option is only available for an installed Process.');
         }
@@ -100,7 +137,7 @@ final class UpdateProcessCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $runtime = $this->stringOption('runtime') ?? ($installed ? null : 'systemd');
+        $runtime = $this->stringOption('runtime');
 
         if ($runtime !== null && ! in_array($runtime, ['systemd', 'docker'], strict: true)) {
             return $this->renderGatewayFailure(
@@ -110,19 +147,6 @@ final class UpdateProcessCommand extends ProcessCommand
         }
 
         $command = $this->stringListOption('command');
-        if (! $installed && $command === [] && $this->consoleMode()->mayPrompt) {
-            do {
-                $argument = $this->commandPrompts()->run(fn () => new TextPrompt(
-                    label: 'Command argument', required: $command === [],
-                    validate: static fn (string $value): ?string => strlen($value) > 4096 || preg_match('/[\\x00\\r\\n]/', $value) === 1 ? 'Invalid command argument.' : null,
-                    hint: $command === [] ? 'One literal argv item; no shell evaluation.' : 'Leave empty to finish.',
-                ));
-                if (! is_string($argument) || $argument === '') {
-                    break;
-                }
-                $command[] = $argument;
-            } while (count($command) < 64);
-        }
 
         if (
             count($command) > 64
@@ -138,7 +162,7 @@ final class UpdateProcessCommand extends ProcessCommand
             );
         }
 
-        $restartPolicy = $this->stringOption('restart') ?? ($installed ? null : 'never');
+        $restartPolicy = $this->stringOption('restart');
 
         if (
             $restartPolicy !== null
@@ -151,13 +175,6 @@ final class UpdateProcessCommand extends ProcessCommand
         }
 
         $image = $this->stringOption('image');
-        if (! $installed && $runtime === 'docker' && $image === null && $this->consoleMode()->mayPrompt) {
-            $answer = $this->commandPrompts()->run(fn () => new TextPrompt(
-                label: 'Docker image', required: true,
-                validate: static fn (string $value): ?string => strlen($value) > 255 || preg_match('/\\A[A-Za-z0-9][A-Za-z0-9._\\/:@-]*\\z/D', $value) !== 1 ? 'Invalid Docker image.' : null,
-            ));
-            $image = is_string($answer) ? $answer : null;
-        }
         $workingDirectory = $this->stringOption('working-directory');
         $environmentWasProvided = $this->input->hasParameterOption('--environment');
         $environment = $this->environment();
@@ -241,12 +258,19 @@ final class UpdateProcessCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $spec = [
-            'runtime' => $runtime,
-            'command' => $command,
-            'restart_policy' => $restartPolicy,
-            'keep_alive' => $this->option('keep-alive') === true,
-        ];
+        $spec = $clears;
+        if ($runtime !== null) {
+            $spec['runtime'] = $runtime;
+        }
+        if ($this->input->hasParameterOption('--command')) {
+            $spec['command'] = $command;
+        }
+        if ($restartPolicy !== null) {
+            $spec['restart_policy'] = $restartPolicy;
+        }
+        if ($this->option('keep-alive') === true) {
+            $spec['keep_alive'] = true;
+        }
 
         if ($image !== null) {
             $spec['image'] = $image;
@@ -268,12 +292,16 @@ final class UpdateProcessCommand extends ProcessCommand
             $spec['volumes'] = $volumes;
         }
 
+        if (array_key_exists('environment', $spec)) {
+            $spec['environment'] = (object) $spec['environment'];
+        }
+
         try {
             $definition = json_encode(
                 [
                     'name' => $name,
                     'environments' => $environments,
-                    'spec' => $spec,
+                    'spec' => (object) $spec,
                 ],
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             );
@@ -300,5 +328,12 @@ final class UpdateProcessCommand extends ProcessCommand
         return $response instanceof ProjectRuntimeDefinitionResponse
             ? $this->renderDefinition($response, 'Process')
             : self::FAILURE;
+    }
+
+    private function hasRedactedValue(mixed $value): bool
+    {
+        return is_array($value)
+            ? array_any($value, $this->hasRedactedValue(...))
+            : is_string($value) && str_contains($value, '[REDACTED]');
     }
 }
