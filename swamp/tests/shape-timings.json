@@ -3,14 +3,14 @@
     "host": "Beast",
     "date": "2026-11-11",
     "source_head": "f9d8da433c14d04a329684b8c61cff2ee99620c0",
-    "main": "01c79b47de105c1f63183aaa833c8515307051ce",
+    "main": "8685ffb198941143777a12ba6795d753d859d1cc",
     "gate_workers": 3,
     "maximum_total_workers": 4,
     "pause_above_load": 12,
     "ci_slowdown": 2.1,
     "hosted_run": "https://github.com/hardimpactdev/orbit/actions/runs/42980036090"
   },
-  "note": "Round 2 calibration with main\u2019s 240-second playbook guard and 720-second command deadline. Three gate workers and at most one supplemental command; pause new commands above load 12. CI forecasts equal Beast seconds times 2.1. Unmeasured new files still run with a one-second scheduling weight. Scheduling also uses completed hosted observations (ci), or completed case sums from the old fleet group (ci_case_sum); these are not new-group CI measurements. Local forecasts stay Beast seconds times 2.1.",
+  "note": "Round 2 calibration with main\u2019s 240-second playbook guard and 720-second command deadline. Three gate workers and at most one supplemental command; pause new commands above load 12. CI forecasts equal Beast seconds times 2.1. Unmeasured new files still run with a one-second scheduling weight. Scheduling also uses completed hosted observations (ci), or completed case sums from the old fleet group (ci_case_sum); these are not new-group CI measurements. Local forecasts stay Beast seconds times 2.1. Fleet splits, mocked native-host boundaries and later main fixtures have supplemental measurements on Beast with the same worker and load limits.",
   "units": {
     "ansible-lint": {
       "beast": 25.6,
@@ -341,7 +341,7 @@
       "ci": 0.42
     },
     "tests/ansible_shape_gate_tools_test.py": {
-      "beast": 1.8
+      "beast": 1.717
     },
     "tests/ansible_static_php_test.py": {
       "beast": 0.1,
@@ -489,7 +489,7 @@
       "ci": 193.717
     },
     "tests/fleet_reboot_unreachable_test.ts": {
-      "beast": 94.746
+      "beast": 96.455
     },
     "tests/frankenphp_proxy_test.ts": {
       "beast": 0.2
@@ -579,6 +579,9 @@
     "tests/proof_observers_test.ts": {
       "beast": 26.5,
       "ci": 142.266
+    },
+    "tests/proof_restore_order_test.ts": {
+      "beast": 1.066
     },
     "tests/proof_workspace_commit_test.ts": {
       "beast": 0.2
