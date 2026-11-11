@@ -111,7 +111,11 @@ class ShapeGateToolsTest(unittest.TestCase):
     def test_each_instance_command_receives_one_deadline_at_launch(self):
         steps = self.gate.plan('HEAD', self.system, self.system, self.system / 'collections')
         commands = [step for step in steps if step.fixture_seconds is not None]
-        self.assertGreater(len(commands), 14)
+        fixture_files = {step.unit for step in steps if step.argv[:2] == ['deno', 'test']
+                         and step.unit.startswith(('tests/ansible_instance_host_', 'tests/ansible_instance_container_',
+                                                   'tests/ansible_instance_migrate_'))}
+        self.assertEqual({step.unit for step in commands}, fixture_files)
+        self.assertTrue(all(step.fixture_seconds == 720 for step in commands))
         for step in commands:
             with mock.patch.object(self.gate.time, 'time', return_value=1_000_000.125), \
                     mock.patch.object(self.gate.subprocess, 'run') as run:

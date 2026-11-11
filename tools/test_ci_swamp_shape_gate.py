@@ -34,6 +34,16 @@ class WorkflowCallsTheScriptTest(unittest.TestCase):
                        'check-frozen-agent-commands', 'validate-swamp-workflows.py', 'check-grant-patterns.py'):
             self.assertNotIn(inline, shape + validate)
 
+    def test_shard_clock_starts_before_setup_and_reserves_report_upload_time(self):
+        shape = WORKFLOW.split('  shape-shards:', 1)[1].split('  shape:', 1)[0]
+        self.assertLess(shape.index('Start the shard deadline'), shape.index('actions/checkout@'))
+        self.assertIn(f'+ {gate["SHARD_BUDGET_SECONDS"]} ))', shape)
+        job_minutes = int(re.search(r'timeout-minutes: (\d+)', shape)[1])
+        self.assertGreaterEqual(job_minutes * 60 - gate['SHARD_BUDGET_SECONDS'], 300)
+        upload = shape.split('actions/upload-artifact@', 1)[1]
+        self.assertIn('if: always()', upload)
+        self.assertIn('if-no-files-found: error', upload)
+
     def test_the_artifacts_and_the_credential_scope_stay(self):
         self.assertIn('name: Swamp shape gate', WORKFLOW)
         self.assertIn('name: Swamp workflow validate', WORKFLOW)
@@ -297,6 +307,8 @@ class OwnershipAndDeadlineTest(unittest.TestCase):
     def test_external_owners_must_exist_and_select_each_file(self):
         mutations = [
             WORKFLOW.replace('  tests:', '  removed:'),
+            WORKFLOW.replace('  validate:', '  removed:'),
+            WORKFLOW.replace('  tests:\n', '  tests:\n    if: false\n'),
             WORKFLOW.replace('deno test --parallel -A extensions/behaviors/operations',
                              'deno test --filter skipped -A extensions/behaviors/operations'),
             WORKFLOW.replace('      - name: Run Operations unit tests\n        if:',
@@ -321,6 +333,17 @@ class OwnershipAndDeadlineTest(unittest.TestCase):
         for name in ('node enrollment trust', 'exporter firewall'):
             with self.assertRaisesRegex(ValueError, 'test file without a shard owner:'):
                 gate['audit_ownership']([s for s in full if s.name != name])
+
+    def test_setup_deadline_failure_still_reports_every_selected_unit(self):
+        scope = gate['main'].__globals__
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(scope, {'tool_path': lambda *a: (_ for _ in ()).throw(TimeoutError('setup deadline'))}), redirect_stdout(io.StringIO()):
+                code = gate['main'](['--only', 'shape', '--base', BASE, '--shard', '2/3', '--reports', directory])
+            self.assertEqual(code, 1)
+            data = json.loads((Path(directory) / 'shard.json').read_text())
+            expected = gate['shard_units'](steps(), 2)
+            self.assertEqual([unit['unit'] for unit in data['units']], [s.unit for s in expected])
+            self.assertTrue(all(unit['outcome'] == 'FAILED' and 'setup deadline' in unit['detail'] for unit in data['units']))
 
     def test_hanging_unit_fails_by_name_and_writes_report_including_queued_work(self):
         import os
