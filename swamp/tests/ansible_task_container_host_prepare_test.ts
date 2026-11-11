@@ -187,7 +187,7 @@ function fixture(
     hosts: "localhost",
     become: false,
     tasks: stockOnly ? stockTasks.slice(stockTasks.findIndex((t) => t.name === "Read the image daemon identity"),
-      stockTasks.findIndex((t) => t.name === "Allow container DHCP requests to the host")).flatMap((task) => transform(task, folder)) : local("task-vm-host-prepare.yml", folder),
+      stockTasks.findIndex((t) => t.name === "Prove that a copy is a clone")).flatMap((task) => transform(task, folder)) : local("task-vm-host-prepare.yml", folder),
   }])
     .replaceAll("/etc/modprobe.d/orbit-task-vm-zfs.conf", `${folder}/arc.conf`)
     .replaceAll("/sys/module/zfs/parameters/zfs_arc_max", `${folder}/arc`)
@@ -431,8 +431,13 @@ Deno.test({
   fn() {
     const f = fixture();
     try {
+      const image = { ...stockRow(), properties: {} };
+      stockState(f, { images: [image] });
       const result = f.run();
-      assert(result.ok, result.output);
+      assert(!result.ok, result.output);
+      assertStringIncludes(result.output, recipePath + "#adopt-a-pinned-legacy-stock-image");
+      assertEquals(f.state().images.filter((row: { project: string }) => row.project === stockProject), [image]);
+      assert(!f.calls().some((c) => c.includes("orbit-clone-probe")));
       const rule = (comment: string) =>
         JSON.parse(f.read(`firewall-${comment.replace(/[^a-z-]/g, "_")}.json`));
       assertEquals(rule("orbit:task-containers-dhcp"), {

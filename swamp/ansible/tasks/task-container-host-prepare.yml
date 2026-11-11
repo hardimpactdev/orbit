@@ -121,6 +121,40 @@
       {{ container_restrictions_unset | default([]) | select('in', (container_project_after.stdout | from_json).config) | list }}
   changed_when: true
 
+# The container bridge has its own catalog names: the withdrawal of a bridge's rules deletes them by comment.
+- name: Allow container DHCP requests to the host
+  community.general.ufw:
+    rule: allow
+    interface_in: "{{ container_host.network }}"
+    proto: udp
+    from_port: '68'
+    to_port: '67'
+    comment: "orbit:{{ container_host.kind }}-dhcp"
+
+- name: Allow container DNS to the bridge address
+  when: container_dns | default(true)
+  community.general.ufw:
+    rule: allow
+    interface_in: "{{ container_host.network }}"
+    proto: "{{ item }}"
+    to_ip: "{{ container_host.address.split('/')[0] }}"
+    to_port: '53'
+    comment: "orbit:{{ container_host.kind }}-dns-{{ item }}"
+  loop: [udp, tcp]
+
+# An Instance host sets `container_dns` to false: its containers get no DNS, and the egress proxy resolves every name.
+- name: Remove container DNS to the bridge address
+  when: not (container_dns | default(true))
+  community.general.ufw:
+    rule: allow
+    interface_in: "{{ container_host.network }}"
+    proto: "{{ item }}"
+    to_ip: "{{ container_host.address.split('/')[0] }}"
+    to_port: '53'
+    comment: "orbit:{{ container_host.kind }}-dns-{{ item }}"
+    delete: true
+  loop: [udp, tcp]
+
 - name: Read the image daemon identity
   ansible.builtin.command:
     argv: [incus, query, /1.0]
@@ -180,40 +214,6 @@
     archive_directory: "{{ container_image_directory }}/images"
     socket: "{{ container_image_socket }}"
     failure_code: "{{ container_host.fail }}"
-
-# The container bridge has its own catalog names: the withdrawal of a bridge's rules deletes them by comment.
-- name: Allow container DHCP requests to the host
-  community.general.ufw:
-    rule: allow
-    interface_in: "{{ container_host.network }}"
-    proto: udp
-    from_port: '68'
-    to_port: '67'
-    comment: "orbit:{{ container_host.kind }}-dhcp"
-
-- name: Allow container DNS to the bridge address
-  when: container_dns | default(true)
-  community.general.ufw:
-    rule: allow
-    interface_in: "{{ container_host.network }}"
-    proto: "{{ item }}"
-    to_ip: "{{ container_host.address.split('/')[0] }}"
-    to_port: '53'
-    comment: "orbit:{{ container_host.kind }}-dns-{{ item }}"
-  loop: [udp, tcp]
-
-# An Instance host sets `container_dns` to false: its containers get no DNS, and the egress proxy resolves every name.
-- name: Remove container DNS to the bridge address
-  when: not (container_dns | default(true))
-  community.general.ufw:
-    rule: allow
-    interface_in: "{{ container_host.network }}"
-    proto: "{{ item }}"
-    to_ip: "{{ container_host.address.split('/')[0] }}"
-    to_port: '53'
-    comment: "orbit:{{ container_host.kind }}-dns-{{ item }}"
-    delete: true
-  loop: [udp, tcp]
 
 # On a ZFS pool, a copy must be a clone that Incus never shifts: without idmapped mounts it would rewrite every file of a copy at its
 # first start, with its own isolated ID range. Incus 7 reports empty `kernel_features`, so the phase measures it: a copy of a small
