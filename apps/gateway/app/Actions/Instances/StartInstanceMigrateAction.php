@@ -48,13 +48,36 @@ final readonly class StartInstanceMigrateAction
         private InstanceMigrationRoute $routes,
     ) {}
 
-    public function execute(Instance $instance, ?string $caller, ?string $requestId): Operation
+    public function execute(Instance $instance, ?string $caller, ?string $requestId, bool $restore = false): Operation
     {
         if (($replay = $this->idempotency->replay(InstanceMigration::Kind)) !== null) {
             return $replay;
         }
 
-        return $this->admit($instance, $caller, $requestId);
+        return $restore ? $this->restore($instance, $caller, $requestId) : $this->admit($instance, $caller, $requestId);
+    }
+
+    private function restore(Instance $instance, ?string $caller, ?string $requestId): Operation
+    {
+        return DB::transaction(function () use ($instance, $caller, $requestId): Operation {
+            $instance = Instance::query()->lockForUpdate()->findOrFail($instance->id);
+            $previous = Operation::query()->where('kind', InstanceMigration::Kind)->where('target_type', 'instance')
+                ->where('target_id', $instance->id)->latest('id')->lockForUpdate()->first();
+            if ($previous === null || $previous->status !== OperationStatus::Interrupted || ($previous->result['native_finish_missing'] ?? false) !== true) {
+                throw new ResourceOperationException('instance.migrate_restore_unavailable', 'The latest move is not interrupted without a native finish.', 409);
+            }
+            $input = $previous->input;
+            $migrate = ValidatedData::object($input['migrate']);
+            $runtime = $instance->runtime()->first();
+            if (($previous->result['retirement_started'] ?? true) === true || $instance->retained_git_path !== null
+                || $instance->checkout_path !== ($migrate['checkout'] ?? null) || $runtime === null || $runtime->seed_commit !== null) {
+                throw new ResourceOperationException('instance.migrate_restore_unsafe', 'Retirement began or the container owns this Instance.', 409);
+            }
+            $this->assertCheckout($instance, $instance->node);
+
+            return $this->operations->execute(InstanceMigration::Kind, 'instance', $instance->id, $previous->node_id,
+                [...$input, 'restore_operation_id' => $previous->id, 'restore_quiesced' => ($previous->result['quiesced'] ?? false) === true], $caller, $requestId);
+        });
     }
 
     private function admit(Instance $instance, ?string $caller, ?string $requestId): Operation

@@ -22,7 +22,14 @@ final class MigrateInstanceRequest extends GatewayRequest implements HasBody
     public function __construct(
         private readonly int $instanceId,
         private readonly ?string $idempotencyKey = null,
+        private readonly ?bool $restore = null,
     ) {}
+
+    /** @return array<string, bool> */
+    protected function defaultBody(): array
+    {
+        return $this->restore === null ? [] : ['restore' => $this->restore];
+    }
 
     /** @return array<string, string> */
     protected function defaultHeaders(): array

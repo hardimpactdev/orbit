@@ -656,7 +656,7 @@
       changed_when: true
     - name: Enable and start the units
       when: units | length > 0
-      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'enable', '--now', '--'] + units }}" }
+      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'enable', '--now', '--no-block', '--'] + units }}" }
       changed_when: false
     # A changed unit restarts. A deployment's new seed then stops and starts every running unit on the new commit.
     - name: Restart the changed units
@@ -667,8 +667,17 @@
              | map(attribute='item.item.name') | select('in', units) | list }}
         config_unit_names: "{{ ['orbit-frankenphp.service'] if web_config_written.changed | default(false) else [] }}"
       ansible.builtin.command:
-        argv: "{{ as_root + ['systemctl', 'restart', '--'] + ((changed_unit_names + config_unit_names) | unique | list) }}"
+        argv: "{{ as_root + ['systemctl', 'restart', '--no-block', '--'] + ((changed_unit_names + config_unit_names) | unique | list) }}"
       changed_when: true
+    # Each systemctl read is bounded too: a stuck unit start cannot consume the phase's entire timeout in one command.
+    - name: Wait for each running unit
+      ansible.builtin.command: { argv: "{{ as_root + ['timeout', '5', 'systemctl', 'is-active', '--', item] }}" }
+      loop: "{{ units }}"
+      register: unit_ready
+      changed_when: false
+      until: unit_ready.rc == 0 and unit_ready.stdout | trim == 'active'
+      retries: 10
+      delay: 1
 
 # The agent's side of a clone: the placeholder model key, the Claude Code and Codex settings, the note links, and the instance file,
 # whose presence starts T3. Whole files are compared by digest; JSON settings merge only Orbit's keys, preserving runtime state.

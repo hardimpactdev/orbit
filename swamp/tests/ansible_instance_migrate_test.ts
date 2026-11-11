@@ -197,7 +197,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     identity_file: "/dev/null",
     target: { host: "127.0.0.1", user: "orbit", port: 22, host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] },
   };
-  const write = () => Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({ ssh_execution, container, migrate }));
+  const write = (extra: Record<string, unknown> = {}) => Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({ ssh_execution, container, migrate, ...extra }));
   write();
   Deno.writeTextFileSync(migrate.awake.path, "");
   const rootfs = `${folder}/containers/instance-${id}`;
@@ -214,6 +214,12 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
       return `${root}/${[...Deno.readDirSync(root)].find((entry) => entry.isDirectory)!.name}`;
     },
     write,
+    fault(phase: string) {
+      const file = `${folder}/tasks/${["quiesce", "files"].includes(phase) ? "instance-migrate" : "instance-container"}-phase.yml`;
+      const tasks = parse(Deno.readTextFileSync(file)) as Task[];
+      tasks.push({ name: "Force a failure after the phase effects", tags: ["always"], when: `phase == '${phase}'`, "ansible.builtin.fail": { msg: "forced migration failure" } });
+      Deno.writeTextFileSync(file, stringify(tasks));
+    },
     run(phase: string, rawContainer = false) {
       const playbook = !rawContainer && ["container", "quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
       const done = new Deno.Command("ansible-playbook", {
@@ -1309,3 +1315,93 @@ for (const mappings of [0, 2]) {
     },
   });
 }
+
+// Run the real phase before forcing its exit. Restoration must unwind effects that already happened, not merely a no-op failure.
+for (const phase of ["quiesce", "workspace", "files", "processes", "seed"]) {
+  Deno.test({
+    name: `a forced ${phase} failure after quiesce restores host ownership and removes every container reservation effect`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        const host = migrationProcesses(f, "running");
+        const before = host();
+        const head = git(f.checkout, "rev-parse", "HEAD");
+        for (const prior of ["container", "quiesce", "workspace", "files", "processes"]) {
+          if (prior === phase) break;
+          const done = f.run(prior);
+          assert(done.ok, done.output);
+        }
+        f.fault(phase);
+        const failed = f.run(phase);
+        assert(!failed.ok, failed.output);
+        assert(failed.output.includes("forced migration failure"), failed.output);
+        const restored = f.run("restore");
+        assert(restored.ok, restored.output);
+        assertEquals(host(), before);
+        assertEquals(f.state().containers, {});
+        assertEquals(f.state()["network-acls"], []);
+        assertEquals(f.ufw(), []);
+        assert(!exists(f.container.mirror));
+        assert(exists(f.migrate.awake.path));
+        assertEquals(git(f.checkout, "rev-parse", "HEAD"), head);
+      } finally {
+        f.cleanup();
+      }
+    },
+  });
+}
+
+Deno.test({
+  name: "a new restore-only run after a lost worker uses the frozen quiesce checkpoint and restores host ownership",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const host = migrationProcesses(f, "running");
+      const before = host();
+      f.build();
+      const processes = f.run("processes");
+      assert(processes.ok, processes.output);
+      assert(!exists(f.migrate.awake.path));
+      // The worker and its run folder are gone. A new admission has only the frozen intent and native quiesce evidence.
+      Deno.removeSync(`${f.folder}/run/quiesced`);
+      f.write({ restore_only: true, restore_quiesced: true });
+      const restored = f.run("restore");
+      assert(restored.ok, restored.output);
+      assertEquals(host(), before);
+      assertEquals(f.state().containers, {});
+      assertEquals(f.state()["network-acls"], []);
+      assertEquals(f.ufw(), []);
+      assert(!exists(f.container.mirror));
+      assert(exists(f.migrate.awake.path));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "restore-only refuses a Node retirement checkpoint before deleting the serving container or touching host Processes",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const host = migrationProcesses(f, "running");
+      f.build();
+      Deno.writeTextFileSync(`${f.container.mirror}/orbit-migrate-retirement-started`, "true");
+      f.write({ restore_only: true, restore_quiesced: true });
+      const before = f.state();
+      const hostBefore = host();
+      const refused = f.run("restore");
+      assert(!refused.ok, refused.output);
+      assert(refused.output.includes("instance.migrate_restore_unsafe"), refused.output);
+      assertEquals(f.state(), before);
+      assertEquals(host(), hostBefore);
+      assert(exists(f.rootfs));
+      assert(!exists(f.migrate.awake.path));
+    } finally {
+      f.cleanup();
+    }
+  },
+});

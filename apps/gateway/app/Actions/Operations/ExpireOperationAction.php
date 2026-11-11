@@ -41,7 +41,7 @@ final readonly class ExpireOperationAction
                 : ($current->failed_step ?? $current->current_step);
             $seconds = OperationRunBudgets::seconds($current);
             $state['native_timeout'] = ['budget_seconds' => $seconds, 'deadline' => $deadline->toISOString()];
-            // What reopen() restores when the bound run turns out to have met its budget.
+            // What terminal reconciliation restores once the exact native result is available.
             $state['native_timeout_restore'] = ['cancel_requested' => $current->cancel_requested_at !== null,
                 'native_failure' => is_array($failure) && is_string($failure['detail'] ?? null)];
             if (! is_array($failure) || ! is_string($failure['detail'] ?? null)) {
@@ -103,7 +103,7 @@ final readonly class ExpireOperationAction
         $timeout = $operation->state['native_timeout'] ?? null;
 
         return $operation->status === OperationStatus::Failed && $operation->error_code === 'operation.timed_out'
-            && is_array($timeout) && ! isset($timeout['native_terminal_status']);
+            && is_array($timeout) && (! isset($timeout['native_terminal_status']) || $timeout['native_terminal_status'] === 'unproven');
     }
 
     public static function awaitsSettlement(Operation $operation): bool
@@ -112,13 +112,12 @@ final readonly class ExpireOperationAction
     }
 
     /**
-     * Undo an expiry whose root was not bound yet, once its exact native terminal met the bound kind's budget.
-     * The admission deadline (600 s) applies until the start reply binds the run; a slow reply must not turn a
-     * run that met its budget into a failure. The caller then projects the terminal as usual.
+     * Replace a provisional expiry once the exact native root has a terminal result.
+     * The caller projects that terminal through its normal family projection, including a restoration that ended after the deadline.
      */
-    public function reopen(Operation $operation, string $runId): Operation
+    public function reopen(Operation $operation, string $runId, ?string $nativeStatus = null): Operation
     {
-        return DB::transaction(function () use ($operation, $runId): Operation {
+        return DB::transaction(function () use ($operation, $runId, $nativeStatus): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if (! self::expiredUnsettled($current)) {
                 return $current;
@@ -126,7 +125,11 @@ final readonly class ExpireOperationAction
             app(DirectOperation::class)->assertRun($current, $runId);
             $state = $current->state ?? [];
             $restore = is_array($state['native_timeout_restore'] ?? null) ? $state['native_timeout_restore'] : [];
+            $timeout = $state['native_timeout'] ?? [];
             unset($state['native_timeout'], $state['native_timeout_restore']);
+            if ($nativeStatus !== null) {
+                $state['native_timeout'] = [...$timeout, 'native_terminal_status' => $nativeStatus, 'native_terminal_observed_at' => now()->toISOString()];
+            }
             if (($restore['native_failure'] ?? true) !== true) {
                 unset($state['native_failure']);
             }

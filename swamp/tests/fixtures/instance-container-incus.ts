@@ -198,6 +198,7 @@ if (family === "list") {
   let command = args.slice(args.indexOf("--") + 1);
   const user = command[0] === "runuser" ? command[command.indexOf("-u") + 1] : "root";
   if (command[0] === "runuser") command = command.slice(command.indexOf("--") + 1);
+  if (command[0] === "timeout") command = command.slice(2);
   if (command[0] === "systemctl") {
     state.systemctl ??= [];
     state.systemctl.push(command.slice(1));

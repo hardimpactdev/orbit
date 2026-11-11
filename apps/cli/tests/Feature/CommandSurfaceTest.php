@@ -751,7 +751,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:destroy' => [['instance'], ['yes' => false, 'force' => false, 'idempotency-key' => null, 'json' => false]],
         'instance:list' => [[], ['json' => false]],
         'instance:logs' => [['instance'], ['lines' => '100', 'follow' => false, 'json' => false]],
-        'instance:migrate' => [['instance'], ['force' => false, 'idempotency-key' => null, 'json' => false]],
+        'instance:migrate' => [['instance'], ['restore' => false, 'force' => false, 'idempotency-key' => null, 'json' => false]],
         'instance:register' => [
             [],
             [

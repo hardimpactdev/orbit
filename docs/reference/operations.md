@@ -133,6 +133,8 @@ The [reconciler](/reference/swamp-command-steps#reconciler) records an expired b
 
 `instance.migrate` derives its whole-run budget from the shipped workflow declarations, including restore and cleanup, with a fixed margin for admission and settlement. A declared timeout increase increases the budget. Other kinds retain their existing fixed, captured or learned budgets.
 
+The terminal step receipt comes from native history, including nested runs, even when no streamed progress events arrived. This also replaces provisional step states recorded at a deadline.
+
 The shared reader projects a native kind from its declared end-check step. A kind whose action runs as one of several guarded steps names the others as `alternatives`, and the step that ran is the end check; see [Swamp command steps](/reference/swamp-command-steps#read-swamps-run-data-instead-of-a-result-step).
 
 A projection that implements `DirectOperationTimeout` records its documented failure state in the expiry transaction, while the native result is still unknown. The normal terminal projection reconciles the final state when the run ends. Node removal, `tasks.cancel` and `tasks.maintenance_finish` use it to mark the departing Node `failed`; the native run may still finish, and a later admission recovers the records.

@@ -1,0 +1,33 @@
+{
+  "status": "interrupted",
+  "startedAt": "2026-11-11T00:41:32.401Z",
+  "completedAt": "2026-11-11T00:46:20.261Z",
+  "jobs": [
+    {
+      "name": "migrate",
+      "steps": [
+        {
+          "name": "quiesce",
+          "status": "succeeded",
+          "startedAt": "2026-11-11T00:41:32.416Z",
+          "completedAt": "2026-11-11T00:41:32.537Z"
+        },
+        {
+          "name": "processes",
+          "status": "unknown",
+          "startedAt": "2026-11-11T00:41:32.543Z",
+          "completedAt": "2026-11-11T00:46:20.261Z",
+          "error": "interrupted: owner_process_dead"
+        },
+        {
+          "name": "restore",
+          "status": "pending"
+        },
+        {
+          "name": "finish",
+          "status": "pending"
+        }
+      ]
+    }
+  ]
+}

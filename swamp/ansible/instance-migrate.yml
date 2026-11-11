@@ -39,7 +39,7 @@
     phase: "{{ ansible_run_tags | first }}"
     migrate_quiesced: >-
       {{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/quiesced', errors='ignore')
-         | default('', true) | trim == 'true' }}
+         | default('', true) | trim == 'true' or (intent.restore_quiesced | default(false) | bool) }}
   tasks:
     - name: Run the phase
       block:
@@ -65,7 +65,7 @@
         # The code of a refusal is the fail_msg of its assert; anything else is the phase's own failure. A failed restore keeps
         # the code of the phase that failed before it.
         - name: Write the failure
-          when: phase != 'restore'
+          when: phase != 'restore' or (intent.restore_only | default(false) | bool)
           ansible.builtin.copy:
             content: >-
               {{ ({'error_code': migrate_refusal_code, 'error_message': migrate_refusal_message,
