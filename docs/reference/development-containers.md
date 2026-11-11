@@ -5,6 +5,7 @@ covers:
   - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress}.php
   - apps/gateway/app/Domain/Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php
+  - apps/gateway/app/Domain/InstanceMigration/**
   - apps/gateway/database/migrations/2027_02_04_{000000_add_seed_commit_to_instance_runtimes,000002_add_operation_owner_to_instance_runtimes}.php
   - swamp/ansible/{instance-container.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network}.py}
@@ -542,7 +543,7 @@ The runtime reservation belongs to its admitting Operation. A late receipt canno
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
 | After a failed restore | The reservation and deployment hold remain. Inspect the site and failed recovery step; deployments refuse with `instance.lifecycle_busy` until the move has run again |
 
-The whole-run budget follows the declared phase timeouts, including restoration and cleanup. A deadline or confirmed cancel still projects the native end state. A lost worker with no final result reports an unknown state and the [restore-only command](/cli/instance/migrate#failure); restoration refuses once retirement began.
+The whole-run budget is 5,100 seconds. A lower-bound test checks it against the declared phase and child timeouts, including restoration and cleanup, with 600 seconds of margin. A deadline or confirmed cancel still projects the native end state. A lost worker with no final result reports an unknown state and the [restore-only command](/cli/instance/migrate#failure); restoration refuses once retirement began.
 
 Restore changes host Process states and the awake marker only when quiesce began. A target probe failure leaves both untouched.
 
