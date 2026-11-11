@@ -534,7 +534,7 @@ ENV;
     expect($values)->toMatchArray([
         'APP_NAME' => 'Laravel', 'VITE_APP_NAME' => 'Laravel', 'MAIL_FROM_NAME' => 'Laravel',
         'APP_URL' => 'https://'.$domain, 'VITE_APP_URL' => 'https://'.$domain,
-        'VITE_LATER' => 'https://'.$domain.'/nested',
+        'VITE_LATER' => '${Z_LATER}', 'Z_LATER' => '${VITE_APP_URL}/nested',
         'PASSWORD' => 'pa$$word', 'HASH' => '$2y$10$abcdef', 'PRICE' => 'price$5',
         'ESCAPED' => '${APP_NAME}', 'SINGLE' => '${APP_NAME}',
     ]);
@@ -554,9 +554,79 @@ it('keeps an undefined template reference literal in the file inherited by Proce
     expect(Dotenv::parse($contents)['VITE_UNDEFINED'])->toBe('${NOT_DEFINED}');
 });
 
-it('refuses circular template references before rendering either consumer environment', function (): void {
+it('leaves circular references outside the allow-list unchanged', function (): void {
     $template = ['FIRST' => '${SECOND}', 'SECOND' => '${FIRST}'];
 
-    expect(fn () => app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($template, $template))
-        ->toThrow(ResourceOperationException::class, 'unavailable reference');
+    expect(app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($template, $template))->toBe($template);
+});
+
+it('keeps old persisted secret references literal without refreshing their source metadata', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    $head = str_repeat('a', 40);
+    $default->project->environmentTemplate()->create(['source_path' => '.env.example', 'source_commit' => $head,
+        'source_blob' => 'same-blob', 'checked_head' => $head, 'entries' => [
+            ['key' => 'DB_PASSWORD', 'value' => 'synthetic-password', 'example' => 'synthetic-password', 'removed' => false],
+            ['key' => 'VITE_LITERAL', 'value' => '${DB_PASSWORD}', 'example' => '${DB_PASSWORD}', 'removed' => false],
+        ]]);
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, $head, 'same-blob', <<<'ENV'
+DB_PASSWORD=synthetic-password
+VITE_LITERAL='${DB_PASSWORD}'
+ENV);
+
+    $operation = containerCreate($default->project, $node, 'old-template');
+    $contents = app(DevelopmentCreateEnvironment::class)->content(Instance::query()->findOrFail($operation->target_id));
+
+    expect(Dotenv::parse($contents)['VITE_LITERAL'])->toBe('${DB_PASSWORD}');
+});
+
+it('leaves Process port and origin references outside the allow-list exactly as before', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('b', 40), 'fixture', <<<'ENV'
+ORBIT_DEV_SERVER_PORT=9999
+ORBIT_DEV_SERVER_ORIGIN=https://default.test
+PORT_COPY=${ORBIT_DEV_SERVER_PORT}
+ORIGIN_COPY=${ORBIT_DEV_SERVER_ORIGIN}
+ENV);
+    ProcessDefinition::query()->create(['project_id' => $default->project_id, 'name' => 'dev', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'preset' => 'vp-dev', 'command' => VpDevPreset::definitionCommand()]]);
+
+    $operation = containerCreate($default->project, $node, 'runtime-refs');
+    $clone = Instance::query()->findOrFail($operation->target_id);
+    $contents = app(DevelopmentCreateEnvironment::class)->content($clone);
+
+    expect($clone->vite_port)->toBe(5173);
+    expect(Dotenv::parse($contents))->toMatchArray([
+        'ORBIT_DEV_SERVER_PORT' => '9999', 'ORBIT_DEV_SERVER_ORIGIN' => 'https://default.test',
+        'PORT_COPY' => '${ORBIT_DEV_SERVER_PORT}', 'ORIGIN_COPY' => '${ORBIT_DEV_SERVER_ORIGIN}',
+    ]);
+});
+
+it('matches main rendering byte for byte for awkward values and non-listed references', function (): void {
+    // Expected bytes were captured from the renderer at main 1720d2e6fe4f76cb5b87edb6ea12ef30fd7ea271.
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('f', 40), 'fixture',
+        file_get_contents(__DIR__.'/../../../Fixtures/instance-environment-awkward.env.example'));
+    $instance = Instance::query()->create(['project_id' => $default->project_id, 'node_id' => $node->id, 'name' => 'awkward',
+        'checkout_path' => '/workspace/awkward', 'root' => '.', 'status' => 'reserved']);
+
+    app(DevelopmentCreateEnvironment::class)->admit($instance, $default->project);
+    $contents = app(DevelopmentCreateEnvironment::class)->content($instance);
+
+    expect($contents)->toBe(file_get_contents(__DIR__.'/../../../Fixtures/instance-environment-awkward.rendered'));
+});
+
+it('keeps existing rendering when an allowed replacement needs incompatible escaping', function (string $name): void {
+    $values = ['APP_NAME' => $name, 'VITE_APP_NAME' => '${APP_NAME}'];
+
+    expect(app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($values, ['VITE_APP_NAME' => '${APP_NAME}']))
+        ->toBe($values);
+})->with(["first\nsecond", "first\rsecond", 'C:\\name', 'a"b', 'price$5', '${DB_PASSWORD}']);
+
+it('keeps an undefined allow-listed reference literal', function (): void {
+    $values = ['VITE_APP_URL' => '${APP_URL}'];
+
+    expect(app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($values, $values))->toBe($values);
 });

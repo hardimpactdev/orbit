@@ -87,7 +87,7 @@ final readonly class ProjectEnvironmentTemplateRefresh
         return $directory === '' ? '.env.example' : $directory.'/.env.example';
     }
 
-    /** @param array<string, string>|null $example null keeps the entries and records only the checked head */
+    /** @param array<string, array{value: string, references: list<int>}>|null $example null keeps the entries and records only the checked head */
     private function record(Project $project, string $head, string $path, ?string $blob, ?array $example): void
     {
         DB::transaction(function () use ($project, $head, $path, $blob, $example): void {
@@ -112,18 +112,20 @@ final readonly class ProjectEnvironmentTemplateRefresh
      * New keys take their example value. A key whose value still equals its old example follows the
      * new example; an edited value stays. A key that `.env.example` dropped stays, marked removed.
      *
-     * @param  list<array{key: string, value: string, example: string|null, removed: bool}>  $entries
-     * @param  array<string, string>  $example
-     * @return list<array{key: string, value: string, example: string|null, removed: bool}>
+     * @param  list<array{key: string, value: string, example: string|null, removed: bool, references?: list<int>}>  $entries
+     * @param  array<string, array{value: string, references: list<int>}>  $example
+     * @return list<array{key: string, value: string, example: string|null, removed: bool, references?: list<int>}>
      */
     private static function merge(array $entries, array $example): array
     {
         $current = array_column($entries, null, 'key');
         $merged = [];
-        foreach ($example as $key => $value) {
+        foreach ($example as $key => $parsed) {
+            $value = $parsed['value'];
             $entry = $current[$key] ?? null;
             $edited = $entry !== null && $entry['value'] !== $entry['example'];
-            $merged[] = ['key' => $key, 'value' => $edited ? $entry['value'] : $value, 'example' => $value, 'removed' => false];
+            $merged[] = ['key' => $key, 'value' => $edited ? $entry['value'] : $value, 'example' => $value, 'removed' => false,
+                'references' => $edited ? [] : $parsed['references']];
         }
         foreach ($entries as $entry) {
             if (! array_key_exists($entry['key'], $example)) {
@@ -134,7 +136,7 @@ final readonly class ProjectEnvironmentTemplateRefresh
         return $merged;
     }
 
-    /** @return array<string, string> unexpanded values in file order */
+    /** @return array<string, array{value: string, references: list<int>}> unexpanded values and byte offsets in file order */
     private static function parse(string $contents): array
     {
         $values = [];
@@ -142,16 +144,9 @@ final readonly class ProjectEnvironmentTemplateRefresh
             $value = $entry->getValue();
             $chars = $value->isDefined() ? $value->get()->getChars() : '';
             $references = $value->isDefined() ? $value->get()->getVars() : [];
-            // Keep the parser's literal-reference distinction after removing the source quotes.
-            $preserved = '';
-            foreach (mb_str_split($chars) as $position => $char) {
-                if ($char === '$' && mb_substr($chars, $position + 1, 1) === '{'
-                    && ! in_array($position, $references, true)) {
-                    $preserved .= '\\';
-                }
-                $preserved .= $char;
-            }
-            $values[$entry->getName()] = $preserved;
+            $values[$entry->getName()] = ['value' => $chars, 'references' => array_map(
+                static fn (int $position): int => strlen(mb_substr($chars, 0, $position)), array_values($references),
+            )];
         }
 
         return $values;
