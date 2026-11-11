@@ -110,6 +110,7 @@ function fixture() {
     workspace: "/srv/workspace",
     environment_file: "/srv/workspace/.env",
     units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=orbit\n" }],
+    web_config: { path: "/etc/orbit/frankenphp.Caddyfile", content: ":8080 {\n    php_server\n}\n" },
     php: "/opt/orbit-runtime/current/php/8.5/bin/php" as string | null,
     processes: [] as { id: number; name: string; content: string; environment: string | null; desired: string }[],
   };
@@ -199,6 +200,7 @@ Deno.test({
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/.env`), "APP_KEY=base64:secret\n");
       assertEquals(state.containers["instance-7"].snapshots, [`seed-${head}`]);
       assert(state.systemctl.some((call: string[]) => call.join(" ") === "enable --now -- orbit-frankenphp.service"));
+      assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/orbit/frankenphp.Caddyfile`), f.container.web_config.content);
       // No bundle, credential or .env stays behind on the Node or in the container.
       assertEquals([...Deno.readDirSync(`${f.folder}/containers/instance-7/tmp`)], []);
 
@@ -207,6 +209,17 @@ Deno.test({
         assert(again.ok, again.output);
         assertEquals(again.changed, 0, `${phase}: ${again.output}`);
       }
+
+      // Configuration drift alone restarts PHP, even when its unit has not changed.
+      Deno.writeTextFileSync(`${f.folder}/containers/instance-7/etc/orbit/frankenphp.Caddyfile`, "stale\n");
+      const before = f.state().systemctl.length;
+      const repaired = f.run("processes");
+      assert(repaired.ok, repaired.output);
+      assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/orbit/frankenphp.Caddyfile`), f.container.web_config.content);
+      assert(f.state().systemctl.slice(before).some((call: string[]) => call.join(" ") === "restart -- orbit-frankenphp.service"));
+      const unchanged = f.run("processes");
+      assert(unchanged.ok, unchanged.output);
+      assertEquals(unchanged.changed, 0, unchanged.output);
     } finally {
       f.cleanup();
     }

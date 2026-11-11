@@ -185,8 +185,24 @@ it('renders FrankenPHP as an orbit unit on the bridge address, with the Project\
         ->and($units[0]['name'])->toBe('orbit-frankenphp.service')
         ->and($units[0]['content'])->toContain("User=orbit\nGroup=orbit\nUMask=0007\nWorkingDirectory=/srv/workspace\n")
         ->toContain('Environment=PATH=/opt/orbit-runtime/current/php/8.5/bin:/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin')
-        ->toContain('ExecStart=/opt/orbit-runtime/current/php/8.5/bin/frankenphp php-server --listen 10.253.0.2:8080 --root /srv/workspace/public')
+        ->toContain('ExecStart=/opt/orbit-runtime/current/php/8.5/bin/frankenphp run --config /etc/orbit/frankenphp.Caddyfile --adapter caddyfile')
         ->and(str_contains($units[0]['content'], '/etc/orbit/instance'))->toBeFalse();
+
+    $web = app(InstanceContainer::class)->intent($instance, $runtime)['web_config'];
+    expect($web['path'])->toBe('/etc/orbit/frankenphp.Caddyfile')
+        ->and($web['content'])->toContain(':8080 {', 'root * "/srv/workspace/public"', 'trusted_proxies static 10.253.0.1/32',
+            "remote_ip 10.253.0.1/32\n        header X-Forwarded-Proto https", 'env HTTPS on', 'env REQUEST_SCHEME https',
+            'env SERVER_PORT 443', 'env REMOTE_ADDR {client_ip}', "handle {\n        php_server\n    }")
+        ->not->toContain('__ORBIT_', 'private_ranges');
+
+    $otherNode = containerDefaultNode('shark', '10.44.0.8');
+    $runtime->node_id = $otherNode->id;
+    expect(app(InstanceContainer::class)->webConfig($instance, $runtime)['content'])
+        ->toContain('trusted_proxies static 10.253.1.1/32', 'remote_ip 10.253.1.1/32')
+        ->not->toContain('10.253.0.1');
+
+    $project->forceFill(['type' => ProjectType::NodePackage, 'php_version' => null])->save();
+    expect(app(InstanceContainer::class)->webConfig($instance->refresh(), $runtime))->toBeNull();
 });
 
 it('links the Project\'s php for every PATH in the container, and no version the runtime folder does not hold', function (): void {

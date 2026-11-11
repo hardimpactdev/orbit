@@ -153,6 +153,11 @@ def phase_main(phase, raw):
                     if str(old) != target:
                         old.unlink()
                         changes.append(str(old))
+        web_config = c.get("web_config")
+        before_web_config = len(changes)
+        if web_config is not None:
+            write(web_config["path"], web_config["content"])
+        web_config_changed = len(changes) > before_web_config
         desired = c["units"] + c["processes"]
         changed_units = []
         for unit in desired:
@@ -172,7 +177,12 @@ def phase_main(phase, raw):
             active = (
                 run(["systemctl", "is-active", "--quiet", name], False).returncode == 0
             )
-            if name in changed_units or php_settings_changed or not active:
+            if (
+                name in changed_units
+                or php_settings_changed
+                or (web_config_changed and name == "orbit-frankenphp.service")
+                or not active
+            ):
                 run(["systemctl", "restart" if active else "start", name])
                 changes.append("start:" + name)
     elif phase == "agent":

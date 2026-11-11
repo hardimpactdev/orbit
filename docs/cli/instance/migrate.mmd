@@ -63,6 +63,7 @@ sequenceDiagram
   SW->>C: Start the container<br/>Processes · T3 · seed
   %%> What it does:
   %%> - starts FrankenPHP and the Instance's existing Processes as `orbit`, with the same ids and desired states; their environment files come through the vault
+  %%> - writes the shared FrankenPHP Caddyfile and unit; only the Node's bridge peer with `X-Forwarded-Proto: https` sets PHP's HTTPS scheme, port and resolved client IP; other requests keep native values
   %%> - `vp-dev` uses the runtime folder’s `current/bin/vp`, workspace paths and its assigned port on `0.0.0.0`; only the Node can reach that port, and Caddy sends `/__orbit/vite` there
   %%> - a non-default Instance gets `/etc/orbit/instance`, the agent settings and its T3 server, registered as in create
   %%> - a default Instance gets its first `seed-<commit>` snapshot
