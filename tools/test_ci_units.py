@@ -1,0 +1,250 @@
+"""Fixture selection, bounded packing, process deadlines and the required matrix gate."""
+import contextlib
+import io
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import textwrap
+import time
+import tomllib
+import unittest
+from unittest.mock import patch
+from importlib.machinery import SourceFileLoader
+from importlib.util import module_from_spec, spec_from_loader
+
+ROOT = Path(__file__).resolve().parents[1]
+loader = SourceFileLoader('ci_units', str(ROOT / 'bin/ci-units'))
+units = module_from_spec(spec_from_loader(loader.name, loader))
+loader.exec_module(units)
+BUDGET = dict(shard_seconds=100, unit_ceiling_seconds=120, slice_seconds=60, pr_shards=2, default_cost=30)
+
+
+def fixture(file, cost=30, inputs=(), **options):
+    return dict(file=file, cost=cost, inputs=list(inputs), **options)
+
+
+def planned(paths, fixtures, defaults=(), budget=None):
+    return units.plan(paths, budget or BUDGET, {f['file']: f for f in fixtures}, defaults)
+
+
+def names(result):
+    return [name for shard in result['shards'] for name in shard['units']]
+
+
+class PlanningTest(unittest.TestCase):
+    def test_largest_first_packing_fills_holes_and_is_deterministic(self):
+        fixtures = [fixture(f'swamp/{name}.py', cost, ['swamp/input']) for name, cost in [('a', 40), ('b', 60), ('c', 50), ('d', 50)]]
+        result = planned(['swamp/input'], fixtures)
+        self.assertEqual(result['shards'], [{'name': '01', 'units': ['swamp/b.py', 'swamp/a.py']},
+                                             {'name': '02', 'units': ['swamp/c.py', 'swamp/d.py']}])
+        self.assertEqual(result, planned(['swamp/input'], list(reversed(fixtures))))
+
+    def test_deno_slices_use_ceil_cost_and_python_stays_whole(self):
+        self.assertEqual(units.units_for(fixture('swamp/a.ts', 121), BUDGET),
+                         [('swamp/a.ts#0/3', 121 / 3), ('swamp/a.ts#1/3', 121 / 3), ('swamp/a.ts#2/3', 121 / 3)])
+        self.assertEqual(units.units_for(fixture('swamp/a.py', 99), BUDGET), [('swamp/a.py', 99)])
+        self.assertEqual(units.units_for(fixture('swamp/a.ts', 99, slices=False), BUDGET), [('swamp/a.ts', 99)])
+        self.assertEqual(units.units_for(fixture('swamp/a.ts', 60), BUDGET), [('swamp/a.ts', 60)])
+
+    def test_limit_defers_names_and_keeps_direct_matches_over_shared_globs(self):
+        fixtures = [fixture('swamp/direct.py', 100, ['swamp/tasks/input.yml']),
+                    fixture('swamp/other.py', 100, ['swamp/**']),
+                    fixture('swamp/third.py', 100, ['swamp/**'])]
+        result = planned(['swamp/tasks/input.yml'], fixtures)
+        self.assertEqual(len(result['shards']), 2)
+        self.assertIn('swamp/direct.py', names(result))
+        self.assertEqual(result['deferred'], ['swamp/third.py'])
+
+    def test_after_merge_is_named_when_selected_and_never_runs_in_pr_shards(self):
+        result = planned(['swamp/slow.ts'], [fixture('swamp/slow.ts', 233, slices=False, after_merge=True, reason='one long case')])
+        self.assertEqual(result, dict(shards=[], deferred=['swamp/slow.ts'], unmapped=[]))
+
+    def test_unknown_swamp_path_selects_default_and_names_it(self):
+        fixtures = [fixture('swamp/default.py'), fixture('swamp/specific.py', inputs=['swamp/known/**'])]
+        result = planned(['swamp/new/file', 'docs/page.md'], fixtures, ['swamp/default.py'])
+        self.assertEqual(names(result), ['swamp/default.py'])
+        self.assertEqual(result['unmapped'], ['swamp/new/file'])
+        self.assertEqual(planned(['docs/page.md'], fixtures)['shards'], [])
+
+    def test_self_support_globs_and_control_files(self):
+        fixtures = [fixture('swamp/tests/a.ts', inputs=['swamp/tests/_support/helper.ts', 'swamp/ansible/tasks/a-*.yml']),
+                    fixture('swamp/tests/b.py'), fixture('swamp/tests/c.ts', after_merge=True, reason='pending mapping')]
+        for path in ('swamp/tests/a.ts', 'swamp/tests/_support/helper.ts', 'swamp/ansible/tasks/a-b.yml'):
+            self.assertEqual(names(planned([path], fixtures)), ['swamp/tests/a.ts'])
+        self.assertEqual(names(planned(['swamp/ansible/tasks/a-sub/file.yml'], fixtures)), [])
+        for path in ('.github/ci/checks.toml', 'bin/ci-units', units.PRELOAD):
+            self.assertEqual(set(names(planned([path], fixtures))), {'swamp/tests/a.ts', 'swamp/tests/b.py'})
+        self.assertIsNotNone(units.selection_regex('swamp/**/a?.ts').fullmatch('swamp/deep/path/ab.ts'))
+        self.assertIsNotNone(units.selection_regex('swamp/**/a?.ts').fullmatch('swamp/ab.ts'))
+
+    def test_plan_summary_explains_deferral_and_unmapped_paths(self):
+        text = units.plan_summary(dict(shards=[], deferred=['slow'], unmapped=['swamp/new']), {'slow': {'reason': 'one long case'}})
+        self.assertIn('one long case', text)
+        self.assertIn('swamp/new', text)
+        self.assertIn('selected default', text)
+
+
+class TableTest(unittest.TestCase):
+    def test_table_files_costs_and_unsliceable_rules(self):
+        budget, fixtures, defaults = units.configuration()
+        self.assertEqual(budget, {**BUDGET, 'pr_shards': 24})
+        self.assertTrue(defaults)
+        for f in fixtures.values():
+            self.assertTrue((ROOT / f['file']).is_file(), f['file'])
+            if f.get('after_merge'):
+                self.assertTrue(f.get('reason', '').strip(), f['file'])
+            elif not units.sliceable(f):
+                self.assertLessEqual(f['cost'], budget['shard_seconds'], f['file'])
+        self.assertLessEqual(set(units.fixture_steps()), set(fixtures))
+        must = {str(p.relative_to(ROOT)) for p in (ROOT / 'swamp/tests').glob('*instance*') if p.is_file()}
+        must.update('swamp/tests/' + name for name in ['ansible_task_container_host_prepare_test.ts',
+                    'ansible_container_host_system_test.py', 'ansible_command_output_test.py'])
+        self.assertLessEqual(must, set(fixtures))
+        for f in fixtures.values():
+            self.assertIn(f['file'], names(units.plan([f['file']], budget, fixtures, defaults)) +
+                          [u.split('#')[0] for u in units.plan([f['file']], budget, fixtures, defaults)['deferred']] +
+                          [u.split('#')[0] for u in names(units.plan([f['file']], budget, fixtures, defaults))])
+
+    def test_new_gate_files_get_default_cost_and_invalid_long_python_is_refused(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            path = Path(scratch) / 'checks.toml'
+            source = (ROOT / '.github/ci/checks.toml').read_text()
+            path.write_text(source)
+            new_file = 'swamp/tests/_support/slice.ts'
+            with patch.object(units, 'fixture_steps', return_value={**units.fixture_steps(), new_file: object()}):
+                self.assertEqual(units.configuration(path)[1][new_file]['cost'], BUDGET['default_cost'])
+            steps = {**units.fixture_steps(), 'swamp/tests/new_fixture.ts': object()}
+            # The fallback must work for real new fixture files, and refuse paths that do not exist.
+            with patch.object(units, 'fixture_steps', return_value=steps):
+                with self.assertRaisesRegex(ValueError, 'Invalid fixture file'):
+                    units.configuration(path)
+            path.write_text(source.replace('cost = 15', 'cost = 101', 1))
+            with self.assertRaisesRegex(ValueError, 'unsliceable cost exceeds'):
+                units.configuration(path)
+
+    def test_container_dependency_closure_selects_the_affected_files(self):
+        budget, fixtures, defaults = units.configuration()
+        for path, expected in [
+            ('swamp/ansible/tasks/instance-migrate-retire.yml', 'swamp/tests/ansible_instance_migrate_test.ts'),
+            ('swamp/ansible/instance_bridge.py', 'swamp/tests/ansible_instance_container_test.ts'),
+            ('swamp/tests/_support/instance_host.ts', 'swamp/tests/ansible_instance_host_image_test.ts'),
+            ('swamp/ansible/tasks/task-container-host-system.yml', 'swamp/tests/ansible_container_host_system_test.py'),
+        ]:
+            result = units.plan([path], budget, fixtures, defaults)
+            self.assertIn(expected, [u.split('#')[0] for u in names(result) + result['deferred']])
+
+
+class ExecutionTest(unittest.TestCase):
+    def test_gate_flags_environment_and_slice_preload_are_retained(self):
+        _, fixtures, _ = units.configuration()
+        steps = units.fixture_steps()
+        file = 'swamp/tests/ansible_instance_host_test.ts'
+        step = units.unit_step(file + '#1/3', fixtures, steps, Path('/collections'))
+        self.assertEqual(step.argv[:4], ['deno', 'test', '--preload', str(ROOT / units.PRELOAD)])
+        self.assertEqual(step.argv[-2:], ['-A', 'tests/ansible_instance_host_test.ts'])
+        self.assertEqual(step.env['ORBIT_TEST_SLICE'], '1/3')
+        self.assertEqual(step.env['ANSIBLE_COLLECTIONS_PATH'], '/collections')
+        self.assertIn('ORBIT_INSTANCE_HOST_DEADLINE_MS', step.env)
+        for invalid in ('#3/3', '#0/0', '#-1/3', '#x'):
+            with self.assertRaisesRegex(ValueError, 'Invalid slice'):
+                units.unit_step(file + invalid, fixtures, steps, Path('/collections'))
+
+    def test_deadline_kills_process_group_and_reports_recovery(self):
+        # Both leader and child block until killed. No fixture, Ansible or timing race.
+        with tempfile.TemporaryDirectory() as scratch:
+            pid = Path(scratch) / 'pid'
+            code = f'import subprocess,sys,signal; p=subprocess.Popen([sys.executable,"-c","import signal; signal.pause()"]); open({str(pid)!r},"w").write(str(p.pid)); signal.pause()'
+            step = units.gate.Step('shape', 'fake#0/2', [sys.executable, '-c', code])
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                result = units.run_unit(step, os.environ.copy(), 0.3)
+            self.assertEqual(result['status'], 'OVER BUDGET')
+            self.assertLess(result['seconds'], 3)
+            self.assertIn('==> fake#0/2: OVER BUDGET', output.getvalue())
+            self.assertIn('ceiling 0.3 s. Raise its cost in .github/ci/checks.toml (the plan adds a slice) or make it faster.', output.getvalue())
+            child = int(pid.read_text())
+            try:
+                deadline = time.monotonic() + 2
+                status = Path(f'/proc/{child}/stat').read_text().split()[2]
+                while status != 'Z' and time.monotonic() < deadline:
+                    time.sleep(0.001)
+                    status = Path(f'/proc/{child}/stat').read_text().split()[2]
+                self.assertEqual(status, 'Z', 'process-group child survived the ceiling')
+            except FileNotFoundError:
+                pass
+
+    def test_run_keeps_going_after_failures_and_publishes_times(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch) / 'times.json'
+            summary = Path(scratch) / 'summary.md'
+            steps = {name: units.gate.Step('shape', name, [sys.executable, '-c', f'raise SystemExit({code})'])
+                     for name, code in [('swamp/fail.py', 1), ('swamp/pass.py', 0)]}
+            fixtures = {name: fixture(name) for name in steps}
+            setup = units.gate.Step('shape', 'setup', [sys.executable, '-c', ''])
+            with patch.object(units.gate, 'tool_path', return_value=Path(sys.executable).parent), \
+                    patch.object(units.gate, 'plan', return_value=[setup]), \
+                    patch.object(units, 'fixture_steps', return_value=steps), \
+                    patch.dict(os.environ, {'GITHUB_STEP_SUMMARY': str(summary)}), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(units.run(list(steps), BUDGET, fixtures, output), 1)
+            results = json.loads(output.read_text())
+            self.assertEqual([r['status'] for r in results], ['FAILED', 'passed'])
+            self.assertIn('swamp/pass.py', summary.read_text())
+
+    @unittest.skipUnless(shutil.which('deno'), 'Deno preload is also exercised by the hosted fixture shards')
+    def test_preload_partitions_registration_and_retains_only_ignore(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            file = Path(scratch) / 'slice_test.ts'
+            file.write_text('Deno.test("zero", () => {}); Deno.test({name:"one", fn() {}}); Deno.test.ignore("two", () => {}); Deno.test("three", () => {});')
+            for k, expected in [(0, ('zero', 'two')), (1, ('one', 'three'))]:
+                result = subprocess.run(['deno', 'test', '-A', '--preload', str(ROOT / units.PRELOAD), str(file)],
+                                        env={**os.environ, 'ORBIT_TEST_SLICE': f'{k}/2', 'NO_COLOR': '1'}, capture_output=True, text=True, timeout=15)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                for name in expected:
+                    self.assertIn(name + ' ...', result.stdout)
+                for name in {'zero', 'one', 'two', 'three'} - set(expected):
+                    self.assertNotIn(name + ' ...', result.stdout)
+            file.write_text('Deno.test.only("only-case", () => {}); Deno.test("ordinary", () => {});')
+            result = subprocess.run(['deno', 'test', '-A', '--preload', str(ROOT / units.PRELOAD), str(file)],
+                                    env={**os.environ, 'ORBIT_TEST_SLICE': '0/2', 'NO_COLOR': '1'}, capture_output=True, text=True, timeout=15)
+            self.assertIn('only-case ... ok', result.stdout)
+            self.assertIn('only', result.stdout + result.stderr)
+
+
+class WorkflowTest(unittest.TestCase):
+    def test_hosted_matrix_budget_tools_artifacts_and_output(self):
+        source = (ROOT / '.github/workflows/ci.yml').read_text()
+        block = source.split('  fixtures:\n', 1)[1].split('\n  proof:\n', 1)[0]
+        for text in ['needs: changes', "needs.changes.outputs.fixture_shards != '[]'", 'runs-on: ubuntu-26.04',
+                     'timeout-minutes: 4', 'fail-fast: false', 'shard: ${{ fromJSON(needs.changes.outputs.fixture_shards) }}',
+                     'name: Fixtures (${{ matrix.shard.name }})', 'ci-unit-times-${{ matrix.shard.name }}',
+                     'bin/ci-units run', "if: steps.tools.outputs.php == 'true'", 'shape-gate-requirements.txt']:
+            self.assertIn(text, block)
+        self.assertNotIn('self-hosted', block)
+        self.assertIn('fixture_shards: ${{ steps.units.outputs.fixture_shards }}', source)
+        self.assertIn('bin/ci-units plan --base "$BASE" --head "$HEAD" --github-output "$GITHUB_OUTPUT"', source)
+
+    def test_required_accepts_skipped_only_with_empty_shards_and_preserves_job_selection_rules(self):
+        # Exercise Required's actual inline rule before its unchanged build-selection checks.
+        source = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:\n', 1)[1]
+        self.assertIn('changes, fixtures]', source)
+        code = textwrap.dedent(source.split("          python3 - <<'PYTHON'\n", 1)[1].split('          selected =', 1)[0])
+        for shards in ([], [{'name': '01', 'units': ['a']} ]):
+            for result in ('success', 'skipped', 'failure', 'cancelled'):
+                needs = {'changes': {'result': 'success', 'outputs': {'fixture_shards': json.dumps(shards)}}, 'fixtures': {'result': result}}
+                with patch.dict(os.environ, {'NEEDS': json.dumps(needs)}):
+                    if result == 'success' or (result == 'skipped' and not shards):
+                        scope = {}
+                        exec(code, scope)
+                        self.assertNotIn('fixtures', scope['needs'])
+                    else:
+                        with self.assertRaisesRegex(SystemExit, 'Required fixtures failed'):
+                            exec(code, {})
+        self.assertIn("expected = (set(needs) - {'changes'}) | {'swamp', 'proof-run'}", source)
+
+
+if __name__ == '__main__':
+    unittest.main()

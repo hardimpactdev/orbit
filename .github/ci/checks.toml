@@ -1,3 +1,1841 @@
+# Fixture input closure includes local imports, copied scripts and Ansible includes.
+# Costs start with shape-full.log; hosted ci-unit-times artifacts own later measurements.
+[budget]
+shard_seconds = 100
+unit_ceiling_seconds = 120
+slice_seconds = 60
+pr_shards = 24
+default_cost = 30
+
+[fixtures]
+default = ["swamp/tests/ansible_inputs_test.py"]
+
+[[fixture]]
+file = "swamp/bin/check-swamp-base-policy_test.ts"
+cost = 20
+after_merge = true
+reason = "Repository scanner fixtures create dynamic source inventories; their complete input closure needs a separate mapping."
+inputs = [
+  "swamp/bin/bounded-phase-scripts.ts",
+  "swamp/bin/check-swamp-base-policy.py",
+  "swamp/bin/check-swamp-shape.ts",
+  "swamp/bin/gate-test-support.ts",
+  "swamp/bin/native-host-start.py",
+  "swamp/bin/swamp-liveness.py",
+  "swamp/bin/swamp-shape-python.py",
+  "swamp/bin/swamp-shape-relocations.ts",
+  "swamp/bin/swamp_shape_host_tools.py",
+  "swamp/bin/swamp_shape_polling.py",
+  "swamp/bin/workflow-placement.ts",
+  "swamp/config/agent-command-kinds.json",
+  "swamp/config/swamp-shape-baseline.json",
+]
+
+[[fixture]]
+file = "swamp/bin/check-swamp-shape_test.ts"
+cost = 14
+after_merge = true
+reason = "Repository scanner fixtures create dynamic source inventories; their complete input closure needs a separate mapping."
+inputs = [
+  "swamp/bin/bounded-phase-scripts.ts",
+  "swamp/bin/check-swamp-shape.ts",
+  "swamp/bin/gate-test-support.ts",
+  "swamp/bin/native-host-start.py",
+  "swamp/bin/swamp-liveness.py",
+  "swamp/bin/swamp-shape-python.py",
+  "swamp/bin/swamp-shape-relocations.ts",
+  "swamp/bin/swamp_shape_host_tools.py",
+  "swamp/bin/swamp_shape_polling.py",
+  "swamp/bin/workflow-placement.ts",
+  "swamp/config/agent-command-kinds.json",
+  "swamp/config/swamp-shape-baseline.json",
+]
+
+[[fixture]]
+file = "swamp/bin/lint-behavior-names_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/bin/lint-behavior-names.ts",
+]
+
+[[fixture]]
+file = "swamp/bin/source_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/**",
+  "swamp/bin/gate-test-support.ts",
+  "swamp/bin/swamp-shape-python.py",
+  "swamp/bin/swamp_shape_host_tools.py",
+  "swamp/bin/swamp_shape_polling.py",
+  "swamp/manifest.yaml",
+  "swamp/models/**",
+  "swamp/workflows/**",
+]
+
+[[fixture]]
+file = "swamp/bin/swamp-liveness_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/bin/swamp-liveness.py",
+  "swamp/bin/swamp-liveness_fixture_test.ts",
+]
+
+[[fixture]]
+file = "swamp/bin/swamp-shape-python_test.ts"
+cost = 5
+after_merge = true
+reason = "Repository scanner fixtures create dynamic source inventories; their complete input closure needs a separate mapping."
+inputs = [
+  "swamp/bin/bounded-phase-scripts.ts",
+  "swamp/bin/check-swamp-shape.ts",
+  "swamp/bin/gate-test-support.ts",
+  "swamp/bin/native-host-start.py",
+  "swamp/bin/swamp-liveness.py",
+  "swamp/bin/swamp-shape-python.py",
+  "swamp/bin/swamp-shape-relocations.ts",
+  "swamp/bin/swamp_shape_host_tools.py",
+  "swamp/bin/swamp_shape_polling.py",
+  "swamp/bin/workflow-placement.ts",
+  "swamp/config/agent-command-kinds.json",
+  "swamp/config/swamp-shape-baseline.json",
+]
+
+[[fixture]]
+file = "swamp/bin/validate-swamp-workflows_test.ts"
+cost = 1
+inputs = [
+  ".github/ci/checks.toml",
+  ".github/workflows/ci.yml",
+  ".github/workflows/swamp-shape.yml",
+  "apps/agent/Cargo.lock",
+  "apps/agent/Cargo.toml",
+  "apps/cli/composer.json",
+  "apps/cli/composer.lock",
+  "apps/gateway/.env.example",
+  "apps/gateway/bin/render-swamp-grants",
+  "apps/gateway/composer.json",
+  "apps/gateway/composer.lock",
+  "apps/gateway/resources/agent/frozen-manifest.json",
+  "apps/gateway/resources/machine-software/recipe.json",
+  "bin/build-api",
+  "bin/gateway-app-key",
+  "bin/swamp-shape-gate",
+  "packages/php-sdk/composer.json",
+  "packages/php-sdk/composer.lock",
+  "packages/php-sdk/src/Requests/Logs/LogStreamTarget.php",
+  "packages/php-sdk/src/Requests/Logs/ScheduleLogStreamTarget.php",
+  "swamp/.swamp.yaml",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/bin/check-grant-patterns.py",
+  "swamp/bin/gate-test-support.ts",
+  "swamp/bin/swamp-shape-python.py",
+  "swamp/bin/swamp_shape_host_tools.py",
+  "swamp/bin/swamp_shape_polling.py",
+  "swamp/bin/validate-swamp-workflows.py",
+  "swamp/config/gateway-workflow-grants.json",
+  "swamp/config/serve-grants.json",
+  "swamp/extensions/behaviors/node-worker/config.ts",
+  "swamp/extensions/behaviors/operations/workflow_grant_patterns_test.ts",
+]
+
+[[fixture]]
+file = "swamp/extensions/behaviors/automatic-deploy/development_test.ts"
+cost = 5
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/automatic-deploy/development.ts",
+  "swamp/extensions/behaviors/automatic-deploy/gateway.ts",
+  "swamp/extensions/behaviors/automatic-deploy/policy.ts",
+]
+
+[[fixture]]
+file = "swamp/extensions/behaviors/automatic-deploy/gateway_test.ts"
+cost = 5
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/automatic-deploy/development.ts",
+  "swamp/extensions/behaviors/automatic-deploy/gateway.ts",
+  "swamp/extensions/behaviors/automatic-deploy/mod.ts",
+  "swamp/extensions/behaviors/automatic-deploy/policy.ts",
+  "swamp/tests/_support/automatic_deploy.ts",
+]
+
+[[fixture]]
+file = "swamp/extensions/behaviors/automatic-deploy/mod_test.ts"
+cost = 5
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/automatic-deploy/development.ts",
+  "swamp/extensions/behaviors/automatic-deploy/gateway.ts",
+  "swamp/extensions/behaviors/automatic-deploy/policy.ts",
+  "swamp/tests/_support/automatic_deploy.ts",
+]
+
+[[fixture]]
+file = "swamp/extensions/behaviors/composer-maintenance/mod_test.ts"
+cost = 5
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/composer.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/context.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/composer-maintenance/_lib/batch.ts",
+  "swamp/extensions/behaviors/composer-maintenance/_lib/io.ts",
+  "swamp/extensions/behaviors/composer-maintenance/_lib/policy.ts",
+  "swamp/extensions/behaviors/composer-maintenance/fixtures/livewire-audit.json",
+  "swamp/extensions/behaviors/composer-maintenance/fixtures/manager",
+  "swamp/extensions/behaviors/composer-maintenance/mod.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+]
+
+[[fixture]]
+file = "swamp/extensions/behaviors/js-maintenance/mod_test.ts"
+cost = 5
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/context.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/summary.ts",
+  "swamp/extensions/behaviors/js-maintenance/_lib/batch.ts",
+  "swamp/extensions/behaviors/js-maintenance/_lib/policy.ts",
+  "swamp/extensions/behaviors/js-maintenance/_lib/reports.ts",
+  "swamp/extensions/behaviors/js-maintenance/_lib/workspace.ts",
+  "swamp/extensions/behaviors/js-maintenance/fixtures/bun-outdated.txt",
+  "swamp/extensions/behaviors/js-maintenance/fixtures/manager",
+  "swamp/extensions/behaviors/js-maintenance/mod.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+]
+
+[[fixture]]
+file = "swamp/extensions/behaviors/projects/horizon-new-dawn/gateway_test.ts"
+cost = 5
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/detect.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/queue.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/surface.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/tasks.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/config.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/gateway.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/mod.ts",
+]
+
+[[fixture]]
+file = "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts"
+cost = 5
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/detect.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/surface.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/tasks.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/config.ts",
+]
+
+[[fixture]]
+file = "swamp/extensions/behaviors/projects/horizon-new-dawn/queue_test.ts"
+cost = 5
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/detect.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/queue.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/surface.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/tasks.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/config.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_artifact_test.py"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/library/orbit_artifact.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/transport-exit-codes.json",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_command_output_test.py"
+cost = 3
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/**/*.yaml",
+  "swamp/ansible/**/*.yml",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/tests/fixtures/command-output/**",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_container_host_system_test.py"
+cost = 6
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_firewall_test.py"
+cost = 4
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/firewall.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_gateway_retired_settings_test.ts"
+cost = 2
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/gateway-runtime.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_gateway_swamp_grants_test.py"
+cost = 18
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/gateway-bootstrap.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/gateway-ansible-collections.yml",
+  "swamp/ansible/tasks/gateway-swamp-grants.yml",
+  "swamp/ansible/tasks/proof-gateway-release.yml",
+  "swamp/proof/cli-release.json",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_hub_converge_peers_test.py"
+cost = 7
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/operation-node-converge.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/node-converge-handshake.yml",
+  "swamp/ansible/tasks/node-converge-hub-peers.yml",
+  "swamp/ansible/tasks/node-converge-network.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_hub_prune_test.py"
+cost = 3
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/operation-node-add.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/node-add-hub-peers.yml",
+  "swamp/ansible/tasks/node-converge-hub-prune.yml",
+  "swamp/ansible/tasks/node-converge-hub.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_inputs_test.py"
+cost = 15
+inputs = [
+  "bin/swamp-shape-gate",
+  "docs/cli/node/role-add.mmd",
+  "swamp/ansible/**",
+  "swamp/workflows/workflow-operation-node-role-add.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_bridge_test.py"
+cost = 30
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_container_destroy_test.ts"
+cost = 7
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance-container-destroy.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/address-node.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_container_test.ts"
+cost = 591
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance-container.yml",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/ansible/tasks/instance-bridge-rules.yml",
+  "swamp/ansible/tasks/instance-container-*.yml",
+  "swamp/ansible/tasks/instance-network-nic-check.yml",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/instance-container-incus.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_egress_test.py"
+cost = 9
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_host_acl_test.ts"
+cost = 30
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_host_image_test.ts"
+cost = 147
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_host_runtime_test.ts"
+cost = 247
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "apps/gateway/resources/machine-software/recipe.json",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_host_test.ts"
+cost = 145
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_host_updates_test.ts"
+cost = 315
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_migrate_links_test.py"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_migrate_links.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_migrate_test.ts"
+cost = 812
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance-container.yml",
+  "swamp/ansible/instance-migrate.yml",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_migrate_links.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/ansible/tasks/instance-bridge-rules.yml",
+  "swamp/ansible/tasks/instance-container-*.yml",
+  "swamp/ansible/tasks/instance-migrate-*.yml",
+  "swamp/ansible/tasks/instance-network-nic-check.yml",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/instance-migrate*",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_module_args_test.py"
+cost = 2
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/**",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_model_forwarder_test.py"
+cost = 7
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ai-router-model-forwarder.yml",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_node_add_test.py"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/build_vars.py",
+  "swamp/ansible/operation-node-add.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_shape_gate_tools_test.py"
+cost = 2
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "apps/gateway/resources/machine-software/recipe.json",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/library/orbit_artifact.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-role.yml",
+  "swamp/ansible/tasks/instance-bridge-refresh.yml",
+  "swamp/ansible/tasks/instance-bridge-rules.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-check.yml",
+  "swamp/ansible/tasks/instance-network-move-nic.yml",
+  "swamp/ansible/tasks/instance-network-move.yml",
+  "swamp/ansible/tasks/instance-network-nic-check.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/tasks/task-vm-recipe.yml",
+  "swamp/ansible/tasks/task-vm-shape-gate.yml",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/ansible_instance_host_acl_test.ts",
+  "swamp/tests/ansible_instance_host_image_test.ts",
+  "swamp/tests/ansible_instance_host_runtime_test.ts",
+  "swamp/tests/ansible_instance_host_test.ts",
+  "swamp/tests/ansible_instance_host_updates_test.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_static_php_test.py"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/library/orbit_static_php.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-folder.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_swamp_start_cache_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/operation-node-role-add.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/node-role-runtime.yml",
+  "swamp/ansible/tasks/swamp-start-cache.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_container_host_prepare_test.ts"
+cost = 320
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-host.yml",
+  "swamp/ansible/tasks/artifact-fetch.yml",
+  "swamp/ansible/tasks/task-container-*.yml",
+  "swamp/ansible/tasks/task-vm-host-prepare.yml",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_host_firewall_remove_test.ts"
+cost = 6
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/task-host-firewall-remove.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_vm_apt_cache_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/task-vm-apt-cache.yml",
+  "swamp/ansible/tasks/task-vm-apt-config.yml",
+  "swamp/ansible/tasks/task-vm-apt.yml",
+  "swamp/ansible/tasks/task-vm-check.yml",
+  "swamp/ansible/tasks/task-vm-image-cache.yml",
+  "swamp/ansible/tasks/task-vm-nested-firewall.yml",
+  "swamp/ansible/tasks/task-vm-software.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_vm_base_creation_test.ts"
+cost = 8
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-host.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_vm_checkout_test.py"
+cost = 3
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/task-vm-checkout.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_vm_docker_boot_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/task-vm-boot.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_vm_fleet_build_test.ts"
+cost = 70
+inputs = [
+  "apps/gateway/tests/Fixtures/production-gateway-converge-main.json",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/operation-node-converge.yml",
+  "swamp/ansible/operation-node-role-add-local-dns.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-host.yml",
+  "swamp/ansible/tasks/gateway-dns.yml",
+  "swamp/ansible/tasks/node-role-runtime.yml",
+  "swamp/ansible/tasks/private-dns-listener.yml",
+  "swamp/ansible/tasks/private-dns-withdraw.yml",
+  "swamp/ansible/tasks/task-vm-fleet-operator.yml",
+  "swamp/ansible/tasks/task-vm-fleet.yml",
+  "swamp/tests/_support/task_vm_stock_roles.ts",
+  "swamp/tests/_support/task_vm_stock_systemd.py",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_vm_fleet_wait_test.py"
+cost = 25
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/build_vars.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-fleet-wait.yml",
+  "swamp/ansible/tasks/task-vm-nested-wait.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_vm_host_clean_test.ts"
+cost = 52
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-host.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_vm_host_egress_test.py"
+cost = 117
+after_merge = true
+reason = "Python file costs 117 seconds and cannot be sliced."
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-host.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_vm_host_prepare_test.ts"
+cost = 57
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-host.yml",
+  "swamp/ansible/tasks/task-vm-host-prepare.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_vm_identity_boot_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/task-vm-boot.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_vm_idle_save_test.py"
+cost = 9
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/build_vars.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-idle-save.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_vm_role_test.py"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/build_vars.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-host.yml",
+  "swamp/ansible/task-vm-role.yml",
+  "swamp/ansible/tasks/task-vm-apt-config.yml",
+  "swamp/ansible/tasks/task-vm-apt.yml",
+  "swamp/ansible/tasks/task-vm-fleet.yml",
+  "swamp/ansible/tasks/task-vm-ready.yml",
+  "swamp/ansible/tasks/task-vm-tools.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_vm_uplink_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/task-vm-boot.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_wireguard_hub_lan_test.py"
+cost = 167
+after_merge = true
+reason = "Python file costs 167 seconds and cannot be sliced."
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/operation-node-add.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/node-add-hub-peers.yml",
+  "swamp/ansible/tasks/node-converge-hub-move.yml",
+  "swamp/ansible/tasks/node-converge-hub-switch.yml",
+  "swamp/ansible/tasks/node-converge-hub.yml",
+  "swamp/ansible/tasks/node-converge-network.yml",
+  "swamp/ansible/tasks/node-hub-lan-proof.yml",
+  "swamp/ansible/tasks/node-hub-source.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/apt_proxy_test.ts"
+cost = 3
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/operation-node-add.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/apt-proxy.yml",
+  "swamp/ansible/tasks/exporter.yml",
+  "swamp/ansible/tasks/role-prerequisites.yml",
+  "swamp/workflows/workflow-gateway-bootstrap.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/automatic_deploy_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/automatic-deploy/development.ts",
+  "swamp/extensions/behaviors/automatic-deploy/gateway.ts",
+  "swamp/extensions/behaviors/automatic-deploy/policy.ts",
+  "swamp/tests/_support/automatic_deploy.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/batch_maintenance_test.ts"
+cost = 5
+php = true
+inputs = [
+  "AGENTS.md",
+  "bin/swamp-shape-gate",
+  "swamp/AGENTS.md",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/composer.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/summary.ts",
+  "swamp/extensions/behaviors/composer-maintenance/_lib/batch.ts",
+  "swamp/extensions/behaviors/composer-maintenance/_lib/io.ts",
+  "swamp/extensions/behaviors/js-maintenance/_lib/batch.ts",
+  "swamp/extensions/behaviors/js-maintenance/_lib/reports.ts",
+  "swamp/extensions/behaviors/js-maintenance/_lib/workspace.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+  "swamp/tests/fixtures/batch/manager.php",
+]
+
+[[fixture]]
+file = "swamp/tests/database_placement_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/*.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/dependency_inventory_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_inventory.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/js-maintenance/_lib/workspace.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/dependency_observations_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results_schema.ts",
+  "swamp/extensions/behaviors/_lib/dependency_retention.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/_lib/project_schedule.ts",
+  "swamp/extensions/behaviors/_lib/service_detection.ts",
+  "swamp/extensions/behaviors/_lib/worker_query.ts",
+  "swamp/extensions/behaviors/dependency_scanner.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+  "swamp/extensions/behaviors/orbit_gateway.ts",
+  "swamp/tests/_support/project_scheduler.ts",
+  "swamp/tests/_support/task_contract.ts",
+  "swamp/tests/fixtures/dependency-read-token-v1/failed-scan-index.json",
+  "swamp/tests/fixtures/project-extensions/detection.json",
+  "swamp/tests/fixtures/project-extensions/nckrtl-com.json",
+]
+
+[[fixture]]
+file = "swamp/tests/dependency_projects_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/tests/_support/dependency_projects.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/dependency_results_fixtures_test.ts"
+cost = 1
+after_merge = true
+reason = "Production input closure is not yet settled; run in the full set after merge."
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]
+
+[[fixture]]
+file = "swamp/tests/dependency_results_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/_lib/project_schedule.ts",
+  "swamp/extensions/behaviors/_lib/service_detection.ts",
+  "swamp/extensions/behaviors/_lib/worker_query.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+  "swamp/tests/fixtures/worker_query.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/dependency_retention_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results_schema.ts",
+  "swamp/extensions/behaviors/_lib/dependency_retention.ts",
+  "swamp/tests/fixtures/dependency-results-v1/success.json",
+]
+
+[[fixture]]
+file = "swamp/tests/fleet_reboot_test.ts"
+cost = 21
+inputs = [
+  "apps/gateway/app/Domain/Fleet/direct-operations.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/fleet-reboot-drain-gateway.yml",
+  "swamp/ansible/tasks/fleet-reboot-drain-undo.yml",
+  "swamp/ansible/tasks/fleet-reboot-failed.yml",
+  "swamp/ansible/tasks/fleet-reboot-record.yml",
+  "tools/ci-runners/setup.sh",
+]
+
+[[fixture]]
+file = "swamp/tests/fleet_reboot_unreachable_test.ts"
+cost = 30
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/public_output.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/converge_result.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/fleet_reboot_result.ts",
+  "swamp/workflows/workflow-fleet-reboot-node.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/frankenphp_proxy_test.ts"
+cost = 1
+inputs = [
+  "apps/gateway/resources/instances/frankenphp.Caddyfile",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]
+
+[[fixture]]
+file = "swamp/tests/gateway_release_order_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/workflow-gateway-release-activate.yaml",
+  "swamp/workflows/workflow-operation-gateway-release.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/gateway_swamp_load_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/workflow-operation-gateway-release.yaml",
+  "swamp/workflows/workflow-operation-gateway-swamp-load.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/github_mint_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/workflow-task-check-push.yaml",
+  "swamp/workflows/workflow-task-github-mint.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/guard_syntax_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/*.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/instance_clone_guest_test.py"
+cost = 30
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-container-phase.yml",
+  "swamp/scripts/instance_clone.py",
+  "swamp/scripts/instance_clone_guest.py",
+]
+
+[[fixture]]
+file = "swamp/tests/instance_clone_test.py"
+cost = 30
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/scripts/instance_clone.py",
+  "swamp/scripts/instance_clone_guest.py",
+]
+
+[[fixture]]
+file = "swamp/tests/instance_migrate_native_faults_test.ts"
+cost = 30
+after_merge = true
+reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/node-worker/config.ts",
+  "swamp/workflows/workflow-operation-instance-migrate.yaml",
+  "swamp/extensions/behaviors/operations/instance-dev-command/assets.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/maintenance_inspect_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/inspect.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/_lib/project_schedule.ts",
+  "swamp/extensions/behaviors/_lib/versions.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/maintenance_resources_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/maintenance/context.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/node_converge_ansible_test.ts"
+cost = 43
+inputs = [
+  "apps/gateway/resources/machine-software/recipe.json",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/build_vars.py",
+  "swamp/ansible/operation-node-add.yml",
+  "swamp/ansible/operation-node-converge.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/swamp-worker-renewal.yml",
+  "swamp/ansible/tasks/node-kernel-policy.yml",
+  "swamp/ansible/tasks/node-update-policy.yml",
+  "swamp/extensions/behaviors/operations/ansible-input/converge_input.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/converge_tool.ts",
+  "swamp/extensions/behaviors/operations/tools/constraints.ts",
+  "swamp/extensions/behaviors/operations/tools/contract.ts",
+  "swamp/extensions/behaviors/operations/tools/native.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/node_converge_cli_test.ts"
+cost = 6
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/node-converge-cli-absent.yml",
+  "swamp/ansible/tasks/node-converge-replace.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/node_converge_lock_test.ts"
+cost = 27
+inputs = [
+  "apps/gateway/app/Infrastructure/Nodes/NodeAgentFootprint.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/node-converge-replace.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/node_converge_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/build_vars.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/public_output.ts",
+  "swamp/extensions/behaviors/operations/analytics/clickhouse_files.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/converge_input.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/converge_result.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/converge_tool.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/fleet_reboot_result.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/role_add_plans.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/write.ts",
+  "swamp/extensions/behaviors/operations/node-bootstrap/tool_setup_input.ts",
+  "swamp/extensions/behaviors/operations/node-bootstrap/tool_setup_plan.ts",
+  "swamp/extensions/behaviors/operations/node/ci_host_spec.ts",
+  "swamp/extensions/behaviors/operations/routes/caddy-input.ts",
+  "swamp/extensions/behaviors/operations/routes/mutation-command/dns.ts",
+  "swamp/extensions/behaviors/operations/routes/publication-command/assets.ts",
+  "swamp/extensions/behaviors/operations/routes/publication-command/sections.ts",
+  "swamp/extensions/behaviors/operations/tools/constraints.ts",
+  "swamp/extensions/behaviors/operations/tools/contract.ts",
+  "swamp/extensions/behaviors/operations/tools/native.ts",
+  "swamp/scripts/instance_clone.py",
+  "swamp/scripts/instance_clone_guest.py",
+  "swamp/workflows/workflow-operation-node-converge-direct.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/node_network_hub_prune_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/workflow-node-network-hub.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/node_worker_systemd_cleanup_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/node-worker/config.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/operation_schedules_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/bin/gate-test-support.ts",
+  "swamp/bin/swamp-shape-python.py",
+  "swamp/bin/swamp_shape_host_tools.py",
+  "swamp/bin/swamp_shape_polling.py",
+]
+
+[[fixture]]
+file = "swamp/tests/project_batches_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/project_deliverables_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/_lib/project_schedule.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+  "swamp/extensions/behaviors/operations/project-maintenance/projects.json",
+  "swamp/tests/_support/projects.ts",
+  "swamp/tests/_support/task_contract.ts",
+  "swamp/tests/fixtures/project-extensions/fleet.json",
+]
+
+[[fixture]]
+file = "swamp/tests/project_extensions_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/_lib/project_schedule.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+  "swamp/extensions/behaviors/operations/project-maintenance/projects.json",
+  "swamp/tests/_support/projects.ts",
+  "swamp/tests/fixtures/project-extensions/detection.json",
+  "swamp/tests/fixtures/project-extensions/nckrtl-com.json",
+]
+
+[[fixture]]
+file = "swamp/tests/project_fleet_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/operations/project-maintenance/projects.json",
+  "swamp/models/@nckrtl/orbit-gateway/orbit-gateway.yaml",
+  "swamp/tests/_support/projects.ts",
+  "swamp/tests/fixtures/project-extensions/exception-inventory.json",
+  "swamp/tests/fixtures/project-extensions/fleet.json",
+]
+
+[[fixture]]
+file = "swamp/tests/project_inputs_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results_schema.ts",
+  "swamp/extensions/behaviors/_lib/dependency_retention.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/_lib/project_schedule.ts",
+  "swamp/extensions/behaviors/_lib/service_detection.ts",
+  "swamp/extensions/behaviors/_lib/worker_query.ts",
+  "swamp/extensions/behaviors/dependency_scanner.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+  "swamp/extensions/behaviors/operations/project-maintenance/metadata.ts",
+  "swamp/extensions/behaviors/operations/project-maintenance/projects.json",
+  "swamp/extensions/behaviors/orbit_gateway.ts",
+  "swamp/tests/_support/project_scheduler.ts",
+  "swamp/tests/_support/task_contract.ts",
+  "swamp/tests/fixtures/project-extensions/detection.json",
+  "swamp/tests/fixtures/project-extensions/nckrtl-com.json",
+  "swamp/workflows/workflow-maintenance-projects.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/proof_keep_failed_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/proof/batches.yaml",
+  "swamp/proof/runner/spec.py",
+  "swamp/workflows/workflow-operation-proof-run.yaml",
+  "swamp/workflows/workflow-proof-fleet-verify.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/proof_observers_test.ts"
+cost = 43
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/proof-observers.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/node-converge-replace.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/proof_restore_order_test.ts"
+cost = 30
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-role.yml",
+  "swamp/ansible/tasks/task-vm-fleet-build.yml",
+  "swamp/ansible/tasks/task-vm-fleet.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/proof_workspace_commit_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/proof/batches.yaml",
+  "swamp/proof/runner/runner.py",
+  "swamp/proof/runner/spec.py",
+  "swamp/workflows/workflow-operation-proof-run.yaml",
+  "swamp/workflows/workflow-proof-fleet-verify.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/revoke_report_test.ts"
+cost = 1
+inputs = [
+  "apps/gateway/app/Domain/Tasks/direct-operations.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]
+
+[[fixture]]
+file = "swamp/tests/route_hold_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/workflow-operation-route-*.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/schedule_placement_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/workflow-operation-schedule-*.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/service_detection_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/_lib/project_schedule.ts",
+  "swamp/extensions/behaviors/_lib/service_detection.ts",
+  "swamp/extensions/behaviors/_lib/worker_query.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+  "swamp/tests/_support/dependency_projects.ts",
+  "swamp/tests/fixtures/worker_query.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/swamp_role_worker_credentials_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/swamp-worker-renewal.yml",
+  "swamp/ansible/tasks/role-swamp.yml",
+  "swamp/ansible/tasks/swamp-worker-renewal.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/swamp_worker_renewal_test.ts"
+cost = 233
+slices = false
+after_merge = true
+reason = "One renewal case costs 233 seconds and cannot be sliced."
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/swamp-worker-renewal.yml",
+  "swamp/ansible/tasks/gateway-swamp-remint.yml",
+  "swamp/ansible/tasks/gateway-swamp.yml",
+]
+
+[[fixture]]
+file = "swamp/tests/task_review_check_outputs_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/bin/gate-test-support.ts",
+  "swamp/bin/swamp-shape-python.py",
+  "swamp/bin/swamp_shape_host_tools.py",
+  "swamp/bin/swamp_shape_polling.py",
+  "swamp/extensions/behaviors/_lib/public_output.ts",
+  "swamp/extensions/behaviors/operations/tasks/transcript.ts",
+  "swamp/extensions/behaviors/operations/tasks/turn.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/worker_query_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/worker_query.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/workflow_absent_secrets_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/operations/_lib/behavior_name.ts",
+  "swamp/extensions/behaviors/operations/instance-deploy/vp_requirements.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/assets.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+  "swamp/extensions/behaviors/operations/instance-vp-command/native_steps.ts",
+  "swamp/extensions/behaviors/operations/instance-vp-command/requirements.ts",
+  "swamp/extensions/behaviors/operations/instance-vp-command/steps.ts",
+  "swamp/workflows/workflow-operation-instance-create.yaml",
+  "swamp/workflows/workflow-operation-instance-deploy-direct.yaml",
+  "swamp/workflows/workflow-operation-process-container.yaml",
+  "swamp/workflows/workflow-route-withdraw.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/workflow_placement_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/bin/lint-workflow-placement.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/writes_declared_test.ts"
+cost = 2
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/tests/writes-reviewed.json",
+]
+
 # CI check inputs. Includes are ORed; any !exclude wins, regardless of order.
 # ** crosses directories; * and ? stay within one name (selection_regex).
 # Costs are pull_request median wall seconds from ci-speed.md (2026-11-11).

@@ -45,7 +45,7 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 Orbit CI runs builds, static checks and the full Gateway and CLI Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same fast checks.
 
-Pull requests and main pushes run the fast Swamp control checks. Full shape fixtures run only by manual dispatch or every three hours, outside the merge and deploy path. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
+Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units in hosted shards. The full set also runs by manual dispatch or every three hours, outside the merge and deploy path. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
 
 | Check | Work |
 | --- | --- |
@@ -62,7 +62,7 @@ Pull requests and main pushes run the fast Swamp control checks. Full shape fixt
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and on the three-hour schedule, run the Operation Deno tests, enforce static Swamp-shape controls and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Run the case runner unit tests and lint the proof programs with `ruff` |
 | CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. The blocking switches decide whether it gates Required checks; see [the proof run job](#the-proof-run-job) |
-| Required checks | Require selected builds, static checks and Pest suites. Swamp contains static controls; proof follows the blocking switches. Only explicitly untouched jobs may skip |
+| Required checks | Require selected builds, static checks, Pest suites and fixture shards. Swamp contains static controls; proof follows the blocking switches. Only explicitly untouched jobs may skip |
 
 The Gateway Pest job installs Gateway and CLI dev Composer dependencies and regenerates both autoloaders with `composer install --no-scripts`. It then runs `bin/build-api` so tests read the current OpenAPI and MCP contracts; these generated outputs are not cached. NodeMetrics runs the CLI's PHP consent fixture. Separate vendor caches use each project's manifest and lockfile, PHP 8.5, the runner OS and SDK Composer metadata; they never restore the runtime-only Gateway cache.
 
@@ -112,7 +112,9 @@ Every executable check job has a `timeout-minutes` equal to its table `ceiling`,
 
 Required checks has static dependencies on the selected checks, including Swamp. It accepts success or an unselected skip and checks that the plan's boolean selection keys exactly match its dependencies. Its API wait covers only blocking proof. The two proof switches retain their meaning.
 
-Full shape fixtures are over budget and disabled on pull requests and main pushes. Their scheduled and manual runs report failures without blocking merge or deploy. The fast control job keeps the shape baseline, frozen-base policy, behavior names and frozen agent contract checks. Restore PR fixtures only as measured selections of touched cases within the five-minute budget.
+The fixture table in `.github/ci/checks.toml` maps changed inputs to files and declares their costs. `bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill shards of at most 100 declared seconds, with at most 24 shards per pull request. Direct input matches take priority when work exceeds that limit; the plan names deferred units and unmapped Swamp paths in its summary. Unmapped paths select the table’s default checks.
+
+Each fixture shard has a four-minute job limit. Each unit has a 120-second ceiling; a unit that exceeds it fails with its name, time and an instruction to raise its table cost for another slice or make it faster. Units that cannot be sliced and cost more than 100 seconds run after merge only, with a reason in the table. Shards publish measured unit times as summaries and artifacts. Scheduled and manual full runs still report failures outside the merge path. The fast control job keeps the shape baseline, frozen-base policy, behavior names and frozen agent contract checks.
 
 The CLI release starts after Required checks on main. Measure that chain separately through release publication, including dispatch queues. The Linux and macOS agent jobs use [release build caches](/reference/cli-binaries#agent-build-cache). Measure cold and warm agent deliveries separately; a cache does not by itself prove that publication fits five minutes.
 
