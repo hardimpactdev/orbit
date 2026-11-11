@@ -12,6 +12,7 @@ set -euo pipefail
 
 ruleset=$1 guard=$2 port=$3 user=$4 bridge=$5 address=$6 forwarder_port=$7
 table=$(sed -n 's/^table inet \([a-z_]*\) {$/\1/p' "$ruleset")
+socket_check="$(dirname "$0")/ai-router-forwarder-socket.py"
 made_user=0
 if nft list table inet "$table" >/dev/null 2>&1; then
     echo "The table $table exists on this host already; run the check elsewhere." >&2
@@ -26,6 +27,7 @@ cleanup() {
     set +e
     [[ -n "${guard_server:-}" ]] && kill "$guard_server" 2>/dev/null
     [[ -n "${forwarder_server:-}" ]] && kill "$forwarder_server" 2>/dev/null
+    [[ -n "${ready_directory:-}" ]] && rm -rf "$ready_directory"
     nft delete table inet "$table" 2>/dev/null
     iptables -D FORWARD -i "$bridge" -j ACCEPT -m comment --comment ofchk 2>/dev/null
     iptables -D FORWARD -o "$bridge" -j ACCEPT -m comment --comment ofchk 2>/dev/null
@@ -67,34 +69,57 @@ ip -n ofchkc route add default via "$address"
 sysctl -qw net.ipv4.ip_forward=1
 iptables -I FORWARD 1 -i "$bridge" -j ACCEPT -m comment --comment ofchk
 iptables -I FORWARD 1 -o "$bridge" -j ACCEPT -m comment --comment ofchk
-ip netns exec ofchkg python3 -m http.server "$port" --bind "$guard" >/dev/null 2>&1 &
+# Fix the fixture's neighbour mappings: a first-packet ARP exchange is not part of the nftables proof.
+ip link set ofchkg0 address 02:00:00:00:77:01
+ip -n ofchkg link set ofchkg1 address 02:00:00:00:77:02
+ip link set "$bridge" address 02:00:00:00:78:01
+ip -n ofchkc link set ofchkc1 address 02:00:00:00:78:02
+ip neigh replace "$guard" lladdr 02:00:00:00:77:02 nud permanent dev ofchkg0
+ip -n ofchkg neigh replace 169.254.77.1 lladdr 02:00:00:00:77:01 nud permanent dev ofchkg1
+ip neigh replace "${address%.*}.2" lladdr 02:00:00:00:78:02 nud permanent dev "$bridge"
+ip -n ofchkc neigh replace "$address" lladdr 02:00:00:00:78:01 nud permanent dev ofchkc1
+
+# Each listener acknowledges bind/listen through a pipe. No request or sleep stands in for readiness.
+ready_directory=$(mktemp -d -t ofchk-ready.XXXXXX)
+mkfifo "$ready_directory/guard" "$ready_directory/forwarder"
+exec {guard_ready}<>"$ready_directory/guard"
+exec {forwarder_ready}<>"$ready_directory/forwarder"
+ip netns exec ofchkg python3 "$socket_check" listen "$guard" "$port" >"$ready_directory/guard" &
 guard_server=$!
-python3 -m http.server "$forwarder_port" --bind "$address" >/dev/null 2>&1 &
+python3 "$socket_check" listen "$address" "$forwarder_port" >"$ready_directory/forwarder" &
 forwarder_server=$!
+for descriptor in "$guard_ready" "$forwarder_ready"; do
+    if ! read -r -t 2 -u "$descriptor" state || [[ $state != ready ]]; then
+        echo 'FAIL: listener did not acknowledge bind/listen' >&2
+        exit 1
+    fi
+done
+exec {guard_ready}>&-
+exec {forwarder_ready}>&-
 id -u "$user" >/dev/null 2>&1 || { useradd --system --no-create-home --shell /usr/sbin/nologin "$user"; made_user=1; }
 
-# The stand-ins answer within milliseconds, and a dropped packet would wait out the whole timeout, so it is short.
-get() { curl -s -o /dev/null --max-time 0.4 "$1"; }
-for _ in $(seq 50); do get "http://$guard:$port/" && get "http://$address:$forwarder_port/" && break; sleep 0.05; done
+# Only the TCP handshake is under test. HTTP response scheduling and filesystem access are unrelated to the table.
+get() { python3 "$socket_check" connect "$@"; }
+container() { ip netns exec ofchkc python3 "$socket_check" connect "$@"; }
 
 expect() {
-    local want=$1 what=$2
+    local want=$1 what=$2 code=0 got
     shift 2
-    if "$@"; then got=reached; else got=refused; fi
+    "$@" || code=$?
+    case $code in 0) got=reached ;; 7) got=refused ;; 28) got=dropped ;; *) got="failed with exit $code" ;; esac
     [[ $got == "$want" ]] || { echo "FAIL: $what: $got, expected $want" >&2; exit 1; }
     echo "ok: $what: $got"
 }
-container() { ip netns exec ofchkc curl -s -o /dev/null --max-time 0.4 "$1"; }
 
-expect reached 'container to the guard, without the table' container "http://$guard:$port/"
-expect reached 'root to the guard, without the table' get "http://$guard:$port/"
-expect reached 'root to the forwarder, without the table' get "http://$address:$forwarder_port/"
+expect reached 'container to the guard, without the table' container "$guard" "$port"
+expect reached 'root to the guard, without the table' get "$guard" "$port"
+expect reached 'root to the forwarder, without the table' get "$address" "$forwarder_port"
 nft --file "$ruleset"
-expect refused 'container to the guard, behind a FORWARD accept' container "http://$guard:$port/"
-expect reached 'container to the forwarder, on the bridge' container "http://$address:$forwarder_port/"
-expect refused 'root to the guard' get "http://$guard:$port/"
-expect refused 'root to the forwarder, over lo' get "http://$address:$forwarder_port/"
-expect reached 'the forwarder user to the guard' runuser -u "$user" -- curl -s -o /dev/null --max-time 0.4 "http://$guard:$port/"
+expect dropped 'container to the guard, behind a FORWARD accept' container "$guard" "$port"
+expect reached 'container to the forwarder, on the bridge' container "$address" "$forwarder_port"
+expect refused 'root to the guard' get "$guard" "$port"
+expect refused 'root to the forwarder, over lo' get "$address" "$forwarder_port"
+expect reached 'the forwarder user to the guard' runuser -u "$user" -- python3 "$socket_check" connect "$guard" "$port"
 nft --file "$ruleset"
-expect refused 'container to the guard, after loading the table again' container "http://$guard:$port/"
-expect refused 'root to the forwarder, after loading the table again' get "http://$address:$forwarder_port/"
+expect dropped 'container to the guard, after loading the table again' container "$guard" "$port"
+expect refused 'root to the forwarder, after loading the table again' get "$address" "$forwarder_port"

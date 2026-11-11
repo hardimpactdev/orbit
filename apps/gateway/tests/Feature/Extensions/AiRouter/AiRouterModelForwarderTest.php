@@ -384,7 +384,7 @@ it('confines the guard to containers on the bridge through the forwarder, on a r
     }
 
     expect($check->exitCode())->toBe(0, $check->output().$check->errorOutput())
-        ->and($check->output())->toContain('ok: container to the guard, behind a FORWARD accept: refused')
+        ->and($check->output())->toContain('ok: container to the guard, behind a FORWARD accept: dropped')
         ->toContain('ok: container to the forwarder, on the bridge: reached')
         ->toContain('ok: root to the forwarder, over lo: refused')
         ->toContain('ok: the forwarder user to the guard: reached');
