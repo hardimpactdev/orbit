@@ -10,7 +10,7 @@ const workflow = parse(
         ),
     ),
 ) as {
-    jobs: { steps: { name: string; task: { inputs: { argv: string } } }[] }[];
+    jobs: { steps: { name: string; task: { inputs: { argv: string; run?: string; env?: Record<string, string> } } }[] }[];
 };
 const argv =
     workflow.jobs.flatMap((job) => job.steps).find((step) =>
@@ -72,5 +72,15 @@ Deno.test("any other change is still work that is not pushed", async () => {
         const work = await checkout();
         await Deno.writeTextFile(`${work}/${file}`, "x\n");
         assertEquals(pushed(work), false, file);
+    }
+});
+
+Deno.test("every destroy Ansible step enables failed task stderr", () => {
+    const steps = workflow.jobs.flatMap((job) => job.steps).filter((step) =>
+        step.task.inputs.run?.includes("ansible-playbook")
+    );
+    assertEquals(steps.length, 1);
+    for (const step of steps) {
+        assertEquals(step.task.inputs.env?.ANSIBLE_DISPLAY_FAILED_STDERR, "1", step.name);
     }
 });
