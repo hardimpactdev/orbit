@@ -195,6 +195,10 @@ final readonly class RuntimeActivationPage
             return '/';
         }
 
+        $parts = explode('?', $uri, 2);
+        $query = array_filter(explode('&', $parts[1] ?? ''), static fn (string $part): bool => $part !== 'orbit-wake-retry=1');
+        $uri = $parts[0].(implode('&', $query) === '' ? '' : '?'.implode('&', $query));
+
         return str_replace(
             search: ["\r", "\n", '"', '<', '>'],
             replace: '',

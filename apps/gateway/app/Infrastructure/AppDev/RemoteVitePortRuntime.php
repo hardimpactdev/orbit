@@ -24,7 +24,7 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
 {
     public function __construct(
         private AgentCommandRunner $agents,
-        private RemoteAppDevCaddyManager $caddy,
+        private NativeViteCaddyPublication $caddy,
         private DevelopmentProjectionOperationLock $projection,
         private SystemdProcessRenderer $systemd,
     ) {}
@@ -111,7 +111,7 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
         $this->projection->run(function () use ($instance): void {
             $instance->loadMissing('routes');
             if ($instance->routes->isNotEmpty()) {
-                $this->caddy->build($instance->node);
+                $this->caddy->publish($instance);
             }
         });
     }

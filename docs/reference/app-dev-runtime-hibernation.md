@@ -4,6 +4,9 @@ description: "How Orbit stops the Processes of idle development Instances, prune
 covers:
   - apps/gateway/app/{Actions,Domain,Infrastructure}/Hibernation/**
   - apps/gateway/app/Http/Responses/RuntimeActivationPage.php
+  - apps/gateway/app/Http/Controllers/Api/RuntimeActivationsController.php
+  - apps/gateway/app/Infrastructure/AppDev/NativeViteCaddyPublication.php
+  - apps/gateway/app/Infrastructure/AppDev/RemoteVitePortRuntime.php
   - apps/gateway/config/orbit.php
 ---
 
@@ -84,9 +87,10 @@ The Gateway answers with a progress page, status 401, headers `X-Orbit-Runtime-A
 The wake runs in this order:
 
 1. When the cold marker exists, restore dependencies with `composer install --no-interaction --prefer-dist` and `vp install --frozen-lockfile`. This uses the cold wake timeout.
-2. Start every desired-running Process.
-3. Wait until each one runs. A `vp-dev` Process must answer on its [assigned Vite port](/reference/assigned-vite-ports).
-4. Clear the cold marker and write the awake marker.
+2. Submit one [Caddy publication](/reference/caddy-configuration#native-publication) for a `vp-dev` Process that needs preparation. Keep the page pending until that Operation succeeds.
+3. Start every desired-running Process.
+4. Wait until each one runs. A `vp-dev` Process must answer on its [assigned Vite port](/reference/assigned-vite-ports).
+5. Clear the cold marker and write the awake marker.
 
 Any other Process is ready when its runtime reports running.
 
@@ -94,7 +98,7 @@ Orbit checks each Process every 0.5 seconds. A fresh Node agent view answers wit
 
 An Instance that [moves into a container](/cli/instance/migrate) is the exception: the move removes its awake marker, and the Gateway starts no wake until the move has ended. Requests get the progress page meanwhile, and the move writes the awake marker itself.
 
-Every intercepted request starts a wake. A request during a running wake gets the same progress page. Its own wake attempt ends quietly when the running wake holds the Process lock. A failed wake keeps the cold marker and stores the error for up to 120 seconds. The next request gets a failure page, status 503, with state `failed`, the error, and a Try again link, and it also starts a new wake. The error shows once. Try again adds `orbit-wake-retry=1` to the path, and its request shows the progress page of the new wake.
+Every intercepted request starts a wake. A request during a running wake gets the same progress page. Its own wake attempt ends quietly when the running wake holds the Process lock. A failed wake keeps the cold marker and stores the failure until an explicit retry. This includes a failed, cancelled, interrupted or timed-out Caddy publication and any unexpected wake exception. Later requests get a failure page, status 503, with state `failed` and a Try again link. They start no new wake or publication. Try again adds `orbit-wake-retry=1` to the path and starts a new wake; subsequent page polls omit that flag.
 
 ### Probe requests
 

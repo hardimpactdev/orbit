@@ -8,5 +8,7 @@ interface HibernationWakeFailureStore
 {
     public function remember(int $instanceId, string $message): void;
 
-    public function pull(int $instanceId): ?string;
+    public function get(int $instanceId): ?string;
+
+    public function forget(int $instanceId): void;
 }
