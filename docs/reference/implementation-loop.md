@@ -60,7 +60,7 @@ The Swamp shape job has a temporary 30-minute limit so its serial fixtures can f
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and every night, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Only for changes under `swamp/proof/` or shared CI inputs: run the case runner unit tests and lint the proof programs with `ruff` |
-| CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. The blocking switches control whether its result gates Required checks, including the outside proof for a fork; see [CI time budget](#ci-time-budget) and [the proof run job](#the-proof-run-job) |
+| CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. The blocking switches decide whether it gates Required checks; see [the proof run job](#the-proof-run-job) |
 | Required checks | Require every selected build, static check and Gateway Pest suite to succeed. Require shape and PR proof according to the blocking switches. Only an explicitly untouched required job may skip |
 
 The Gateway Pest job installs Gateway and CLI dev Composer dependencies and regenerates both autoloaders with `composer install --no-scripts`. It then runs `bin/build-api` so tests read the current OpenAPI and MCP contracts; these generated outputs are not cached. NodeMetrics runs the CLI's PHP consent fixture. Separate vendor caches use each project's manifest and lockfile, PHP 8.5, the runner OS and SDK Composer metadata; they never restore the runtime-only Gateway cache.
@@ -170,7 +170,7 @@ Swamp check selection follows their inputs. Shape policy changes select the shap
 Inside the shape job, pinned tool and collection setup runs first. Independent Ansible lint, Python fixtures and Deno checker tests then share at most four command slots, with one Deno worker per command and separate temporary files. Ansible lint and the Deno fixtures receive the same pinned collection path, so a role include does not depend on collections installed in the worker's home. Baseline and ratchet checks stay serial, and every failure remains in the final result.
 
 
-Unit tests run in one job with four Deno workers. Keeping one job avoids five separate waits for the shared runner pool.
+Unit tests run in one hosted job with four Deno workers.
 
 Workflow validation runs only when the change selects its workflow, grant, extension or runtime inputs, and validates every workflow on the nightly schedule. It needs the Swamp account secrets. GitHub gives Dependabot pull requests no Actions secrets, so a dependency update outside `swamp/` does not wait on them.
 
@@ -261,7 +261,7 @@ The Docs site workflow also follows each green main commit. It builds the docs a
 
 ### Gateway tests and privilege
 
-Ordinary local Gateway cases need no sudo. Privileged tests remain in their existing group for deliberate runs on a disposable host. CI runs the two real-kernel cases in the hosted Gateway static analysis job; it does not run the default suite. Keep the existing no-sudo and temporary-directory boundaries when using these tests locally.
+Ordinary local Gateway cases need no sudo. Privileged tests remain in their existing group for deliberate runs on a disposable host. CI runs the two real-kernel cases in the hosted Gateway static analysis job and the default suite in the Gateway Pest job. Keep the existing no-sudo and temporary-directory boundaries when using these tests locally.
 
 In an Orbit task, run the tests that cover the change in each changed project directory, such as `apps/gateway` or `packages/php-sdk`. Use stock Pest with a test file path or `--filter`. Do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff, and CI runs builds and static checks on the handoff commit. Outside a task, run the full suite and the checks below. Each project keeps its own dependencies and test configuration.
 
