@@ -1058,10 +1058,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_fleet_build_test.ts"
-cost = 598
-slices = 15
-after_merge_cases = ["a from-stock refresh with no Gateway release metadata reaches all nested roles after private DNS lets the websocket dependency listen"]
-reason = "From-stock operator case failed at Make the operator key in run 43020616292. Its wrapper needs /usr/bin/wg, absent from the hosted image manifest; direct runner confirmation and a measured remedy are pending. Full-set receiver retains this case; no claim of passing coverage."
+cost = 677
+slices = 16
 inputs = [
   "apps/gateway/tests/Fixtures/production-gateway-converge-main.json",
   "bin/swamp-shape-gate",
@@ -1088,6 +1086,7 @@ inputs = [
   "a fleet whose build stopped after its containers existed has no operator stamp: all three go and the build runs whole" = 37 # completed body 36.842s, run 43010311414; larger completed history retained
   "a build removes the operator stamp first, so a build that stops leaves the fleet incomplete" = 36 # completed body 35.292s, run 43010311414; larger completed history retained
   "a complete fleet creates nothing, restarts nothing and changes nothing" = 8 # completed body 7.327s, run 43010311414; larger completed history retained
+  "a from-stock refresh with no Gateway release metadata reaches all nested roles after private DNS lets the websocket dependency listen" = 79 # UNMEASURED hosted estimate: existing file maximum; fixture-owned keys passed locally in 27.045s body / 27.127s wall; current-head hosted proof pending
   "local Gateway DNS fails with a named error before activation when dig is missing" = 2 # completed body 1.642s, run 43010311414; larger completed history retained
   "local Gateway DNS fails with a named error before activation when dig is missing in check mode" = 2 # completed body 1.890s, run 43010311414; larger completed history retained
   "an already-running local listener is reused with zero changes and peer-managed Gateway DNS is preserved" = 68 # completed body 67.121s, run 43010311414; larger completed history retained
