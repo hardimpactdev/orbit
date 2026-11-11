@@ -25,6 +25,8 @@ function collection_access_policies(): array
             'conn:operation:show' => ServingNode::Collection,
             // extensions/conn/src/Domain/ConnThreadProjects.php:32 filters ready defaults by accessibleNodeIds.
             'conn:project:list' => ServingNode::Collection,
+            // extensions/conn/src/Http/Requests/ListConnProjectBranchesRequest.php:20 requires access to the default Instance's Node; ConnProjectBranches.php:62 filters matched Instances by accessibleNodeIds.
+            'conn:project:branches' => ServingNode::Collection,
             // extensions/conn/src/Actions/CheckConnInstanceNameAction.php:21 uses the default authorized by ConnThreadProjects.php:45.
             'conn:instance:name:check' => ServingNode::Collection,
             // extensions/conn/src/Domain/ConnServerAccess.php:29 filters environment Nodes by accessibleNodeIds.
