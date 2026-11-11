@@ -1,0 +1,56 @@
+---
+title: "Node service target detach"
+sidebarTitle: "node-service:detach"
+description: "Delete an Instance's Node service attachment record through the API or MCP."
+covers:
+  - apps/gateway/app/Actions/Instances/DetachInstanceNodeServiceTargetAction.php
+  - apps/gateway/app/Actions/Instances/AttachInstanceNodeServiceTargetAction.php
+  - apps/gateway/app/Http/Controllers/Api/InstanceNodeServiceTargetsController.php
+  - apps/gateway/routes/api/instance.php
+---
+
+This action is available through the API and MCP. A CLI command is not available yet.
+
+```http
+DELETE /api/v1/instances/{instance}/node-service-targets/{target}
+```
+
+The MCP tool is `instance-node-service-detach`:
+
+```json
+{"instance": 12, "target": 4}
+```
+
+| Input | Meaning |
+| --- | --- |
+| `instance` | Positive Instance ID or exact Route domain. |
+| `target` | Positive numeric attachment ID returned by attach. It must belong to this Instance. |
+
+The caller must be an active WireGuard peer authorized for the Instance's Node. [Node access](/cli/node/access-add) defines that authority. The optional `Idempotency-Key` header follows the shared [Operation replay contract](/reference/operations#retry-a-start-with-a-key).
+
+Detach deletes only the selected attachment record and stores an immediately succeeded `instance.node_service_detach` Operation. HTTP 202 returns the Operation; its result includes the attachment identity and `detached: true`. No network rules, environment values, workload files or Process runtime change, and no reach probe runs. Other attachments and the Node Process remain.
+
+Detach works for a checkout Instance and after successful migration, including a default Instance. It releases that record's [Process dependency](/reference/processes-and-schedules#node-service-target-records). A missing target or another Instance's target returns 404 without a new receipt or deletion. A repeat without the original idempotency key therefore returns the same missing-target refusal; a matching keyed replay returns the original receipt.
+
+A running lifecycle operation refuses detach. If a failed migration retained its runtime, retry `orbit instance:migrate INSTANCE` to finish or restore the move before detaching. Both refusals keep the attachment and create no receipt.
+
+Receipt creation and attachment deletion commit in one transaction. If either write fails, both roll back: the attachment remains and no new receipt, including a failed one, is persisted.
+
+## How it works
+
+<div className="flow-at" data-chart="instance/node-service-detach"></div>
+
+## Errors
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `peer.identity_unknown` | 403 | The caller is not an active WireGuard peer. |
+| `node_access.required` | 403 | The caller lacks authority for the Instance's Node. |
+| `http.404` | 404 | The Instance or its Node does not exist. |
+| `env.target_ambiguous` | 409 | The Route domain matches multiple Instances; use the Instance ID. |
+| `validation.failed` | 422 | The optional request key is malformed. |
+| `operation.idempotency_conflict` | 409 | The key already belongs to another target or input. |
+| `instance.lifecycle_busy` | 409 | The Instance is not active, migration is running or a detach is already running. |
+| `instance.node_service_runtime_cleanup_required` | 409 | An unfinished move retained its runtime. Retry migration to finish or restore it first. |
+| `instance.node_service_target_missing` | 404 | The target is missing or belongs to another Instance. Nothing is deleted and no new receipt is created. |
+| `operation.target_busy` | 409 | Another Operation holds the Instance lock. Nothing is deleted and no new receipt is created. |
