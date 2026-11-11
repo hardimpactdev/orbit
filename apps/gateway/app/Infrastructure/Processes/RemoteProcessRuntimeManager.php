@@ -93,7 +93,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             $target = $this->targets->forStart($fresh);
             $this->assertReleaseAvailable($fresh, $target, 'start', 'process.start_failed');
             if ($fresh->isVpDev()) {
-                app(ViteProcessLifecycle::class)->run($fresh, fn () => $this->startUnlocked($fresh, $this->targets->forStart($fresh)), fn () => $this->stopUnlocked($fresh, $this->targets->forInspection($fresh)), true, explicitStart: $explicit);
+                app(ViteProcessLifecycle::class)->run($fresh, fn () => $this->startUnlocked($fresh, $this->targets->forStart($fresh)), fn () => $this->stopUnlocked($fresh, $this->targets->forInspection($fresh)), true, explicitStart: $explicit, recordedPortOnly: ! $explicit);
 
                 return;
             }

@@ -60,7 +60,7 @@ Only the Node can reach the assigned Vite port in the container. Caddy sends `/_
 
 ## Start, restart, and wake
 
-Every start of the preset on a checkout Instance runs one preparation step. These preparation, port reassignment and readiness rules apply to checkout Instances; migrated presets use container systemd controls:
+An explicit start or restart of the preset on a checkout Instance runs one preparation step. These preparation, port reassignment and readiness rules apply to checkout Instances; migrated presets use container systemd controls:
 
 1. If the preset's Vite already answers on the port, start returns without restarting it.
 2. This also applies to automatic starts during wake, transfer restore, and activation. Orbit does not suspend traffic or re-project Caddy for a healthy endpoint.
@@ -70,7 +70,9 @@ Every start of the preset on a checkout Instance runs one preparation step. Thes
 6. It writes the environment file and points the workload Caddy's `/__orbit/vite` path at the port.
 7. It starts Vite and waits until Vite answers the client request on that port.
 
-On a checkout Instance, when a port is taken between the check and the bind, Orbit retries with a new port. It makes at most three attempts within the deadline. Another startup error does not change the port. After `process:restart` of the preset, the next HTTP request goes through the wake page. An explicit `process:start` marks the site awake after readiness. An automatic start preserves the awake marker only when its owned endpoint is already ready; a start that must prepare Vite suspends traffic and may clear the marker. When Vite does not become ready, the start fails with `vite.not_ready`.
+A [wake](/reference/app-dev-runtime-hibernation#wake) uses only the recorded port and publishes nothing. If that port is unavailable, the wake and its retries fail without changing the assignment. Use [`process:start`](/cli/process/start) to recheck and publish the assignment.
+
+Explicit starts retry with a new port when another listener takes it between the check and bind. It makes at most three attempts within the deadline. Another startup error does not change the port. After `process:restart` of the preset, the next HTTP request goes through the wake page. An explicit `process:start` marks the site awake after readiness. An automatic start preserves the awake marker only when its owned endpoint is already ready; a start that must prepare Vite suspends traffic and may clear the marker. When Vite does not become ready, the start fails with `vite.not_ready`.
 
 ## Application setup
 

@@ -13,16 +13,20 @@ final readonly class CacheHibernationWakeFailureStore implements HibernationWake
 
     public function remember(int $instanceId, string $message): void
     {
-        $this->cache->put($this->key($instanceId), $message, 120);
+        $this->cache->forever($this->key($instanceId), $message);
     }
 
-    public function pull(int $instanceId): ?string
+    public function get(int $instanceId): ?string
     {
         $key = $this->key($instanceId);
         $message = $this->cache->get($key);
-        $this->cache->forget($key);
 
         return is_string($message) && $message !== '' ? $message : null;
+    }
+
+    public function forget(int $instanceId): void
+    {
+        $this->cache->forget($this->key($instanceId));
     }
 
     private function key(int $instanceId): string

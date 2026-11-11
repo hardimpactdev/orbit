@@ -8,6 +8,7 @@ use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Models\Instance;
 use SensitiveParameter;
+use Throwable;
 
 use function Illuminate\Support\defer;
 
@@ -25,12 +26,16 @@ final readonly class ScheduleInstanceRuntimeWakeAction
         defer(callback: function () use ($instance, $instanceId): void {
             try {
                 $this->activate->execute($instance);
-            } catch (HibernationException $exception) {
-                if (in_array($exception->errorCode, ['process.operation_busy', 'process.runtime_lock_failed'], true)) {
+            } catch (Throwable $exception) {
+                if ($exception instanceof HibernationException && in_array($exception->errorCode, ['process.operation_busy', 'process.runtime_lock_failed'], true)) {
                     return;
                 }
 
-                $this->failures->remember($instanceId, $exception->getMessage());
+                if (! $exception instanceof HibernationException) {
+                    report($exception);
+                }
+                $this->failures->remember($instanceId, $exception instanceof HibernationException
+                    ? $exception->getMessage() : 'The runtime wake failed. Check the Gateway log before retrying.');
             }
         }, always: true);
     }

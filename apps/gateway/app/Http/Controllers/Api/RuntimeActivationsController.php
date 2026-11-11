@@ -42,8 +42,14 @@ final class RuntimeActivationsController extends Controller
             return $pages->failed("Instance [{$instance->name}] is not an app-dev development target.", $instance, $uri);
         }
 
-        $failure = $failures->pull($instance->id);
-        $schedule->afterResponse($instance);
+        $retry = in_array('orbit-wake-retry=1', explode('&', (string) parse_url($uri, PHP_URL_QUERY)), true);
+        if ($retry) {
+            $failures->forget($instance->id);
+        }
+        $failure = $failures->get($instance->id);
+        if ($failure === null) {
+            $schedule->afterResponse($instance);
+        }
 
         return $failure === null
             ? $pages->progress($instance, $uri)
