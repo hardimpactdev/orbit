@@ -308,7 +308,7 @@ jobs:
         env: &id001 {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}', ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}', ANSIBLE_CONFIG: '${{
             steps["Write the intent"].outputs.assets + "/ansible.cfg" }}', ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s
             -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}',
-          ANSIBLE_FORCE_COLOR: '0'}
+          ANSIBLE_FORCE_COLOR: '0', ANSIBLE_DISPLAY_FAILED_STDERR: '1'}
   dependsOn:
   - job: ansible
     condition: {type: succeeded}
@@ -386,6 +386,7 @@ jobs:
           ANSIBLE_CONFIG: '${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}'
           ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
           ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
           ORBIT_PLAYBOOK: '${{ "playbook" in inputs.intent ? inputs.intent.playbook : "operation-node-role-add.yml" }}'
   dependsOn:
   - job: phase_13
