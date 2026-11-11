@@ -70,7 +70,7 @@ final readonly class AdmitNodeEnrollmentOperationAction
             $node->save();
         }
         $operation = $this->operations->execute('node.add', 'node', $node->id, $node->id,
-            ['name' => $node->name], 'operator', $requestId);
+            ['name' => $node->name], 'operator', $requestId, lockKey: OperationStore::lockKey('node', $node->id));
         if ($operation->wasRecentlyCreated) {
             $native = $this->native->capture($node, $operation, $spec, $data);
             $leaves = [];

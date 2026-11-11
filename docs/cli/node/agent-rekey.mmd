@@ -30,7 +30,7 @@ sequenceDiagram
   Note over GW: Validate, lock the Node<br/>task #5134 · Node 12
   %%> Requirements:
   %%> - Node 12 is an active, managed Linux Node with stored SSH host keys
-  %%> - Node convergence, role work, enrollment and agent rekey share one Node admission lock
+  %%> - Node convergence, role addition or convergence, enrollment and agent rekey share one Node admission lock
   %%> What it does:
   %%> - makes 32 random bytes as 64 hex characters, the new key
   %%> - writes the key to one vault copy, `node-agent-rekey-12-1`

@@ -22,7 +22,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - access follows the [shared Node authority rule](/cli/node) (`NodeAccessAuthorizer`)
   %%> - admission uses recorded Node, role, Tool and network state; no live preflight
-  %%> - Node convergence, role work, enrollment and agent rekey share one Node admission lock; enrollment's role work stays inside its parent run
+  %%> - Node convergence, role addition or convergence, enrollment and agent rekey share one Node admission lock; enrollment's role work stays inside its parent run
   alt unknown Node
     %% path: unknown-node
     GW--xCLI: Refused<br/>http.404
