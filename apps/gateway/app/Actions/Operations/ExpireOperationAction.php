@@ -116,9 +116,9 @@ final readonly class ExpireOperationAction
     public static function deadlineCancellation(Operation $operation): bool
     {
         $timeout = $operation->state['native_timeout'] ?? null;
+        $restore = ValidatedData::object($operation->state['native_timeout_restore'] ?? []);
 
-        return is_array($timeout) && ($timeout['cancel_requested_before_deadline']
-            ?? $operation->state['native_timeout_restore']['cancel_requested'] ?? false) !== true;
+        return is_array($timeout) && ($timeout['cancel_requested_before_deadline'] ?? $restore['cancel_requested'] ?? false) !== true;
     }
 
     /**
