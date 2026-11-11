@@ -42,6 +42,7 @@ ASSIGNMENT = re.compile(r'[A-Za-z0-9_.]+\Z')
 HOSTNAME = re.compile(r'(?=.{1,253}\Z)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\Z')
 DOTENV_TRIM = ' \n\r\t\0\v'
 DOTENV_SPACE = ' \n\r\t\v\f'
+DATABASE_PORTS = {'mysql': 3306, 'mariadb': 3306, 'pgsql': 5432, 'sqlsrv': 1433, 'redis': 6379}
 
 
 class DotenvSyntaxError(ValueError):
@@ -172,29 +173,20 @@ def port_number(value):
     return None
 
 
-def database_driver(values, stem):
-    """Infer a shared default port only when every selected database connection agrees."""
+def database_drivers(values, stem):
+    """Only env-selected network drivers contribute to the endpoint check."""
     driver = values.get(stem + '_CONNECTION')
-    selected = {driver} if driver != 'sqlite' else set()
-    independent = {'QUEUE_CONNECTION', 'BROADCAST_CONNECTION'}
-    non_database = {'sync', 'database', 'redis', 'sqs', 'beanstalkd', 'null', 'log', 'pusher',
-                    'ably', 'reverb', 'mercure', 'deferred', 'background'}
-    for name, value in values.items():
-        if name == stem + '_CONNECTION' or name.startswith('REDIS_'):
-            continue
-        if not name.endswith(('_CONNECTION', '_DATABASE')) or name == stem + '_DATABASE':
-            continue
-        if name.endswith('_DATABASE') and name[:-9] + '_CONNECTION' in values:
-            continue
-        if name in independent and value in non_database:
-            continue
-        if value not in ('sqlite', '', 'null', '(null)'):
-            selected.add(value)
-    if not selected:
-        return 'sqlite' if driver == 'sqlite' else None
-    if len(selected) == 1 and next(iter(selected)) in ('mysql', 'mariadb', 'pgsql', 'sqlsrv', 'redis'):
-        return next(iter(selected))
-    return None
+    selected = {driver} if driver in DATABASE_PORTS else set()
+    if stem == 'DB':
+        cache = values.get('CACHE_STORE', values.get('CACHE_DRIVER'))
+        consumers = ((values.get('SESSION_DRIVER'), ['SESSION_CONNECTION']),
+                     (values.get('QUEUE_CONNECTION'), ['DB_QUEUE_CONNECTION']),
+                     (cache, ['DB_CACHE_CONNECTION', 'DB_CACHE_LOCK_CONNECTION']))
+        for consumer, keys in consumers:
+            if consumer == 'database':
+                selected.update(connection for key in keys
+                                if (connection := values.get(key) or driver) in DATABASE_PORTS)
+    return selected
 
 
 def listener_or_browser_key(values, key):
@@ -226,37 +218,39 @@ def proxy_permits(host, policy):
 
 
 def connection(values, key):
-    """Whether the key is used, its port, and why uncertain driver use is checked conservatively."""
+    """Env selectors establish use; declarations and unknown app config do not."""
     stem = key[:-5]
-    driver_reason = ''
-    default = None
     standard = next((family for family in ('DB', 'MAIL', 'REDIS', 'MEMCACHED')
                      if stem == family or stem.endswith('_' + family)), None)
+    prefix = stem[:-len(standard)] if standard else ''
+    cache = values.get(prefix + 'CACHE_STORE', values.get(prefix + 'CACHE_DRIVER'))
+    broadcast = values.get(prefix + 'BROADCAST_CONNECTION', values.get(prefix + 'BROADCAST_DRIVER'))
+    selectors = (cache, values.get(prefix + 'SESSION_DRIVER'), values.get(prefix + 'QUEUE_CONNECTION'), broadcast,
+                 values.get(prefix + 'DB_CONNECTION'))
+    default, reason = None, ''
     if standard == 'DB' or (standard is None and stem + '_CONNECTION' in values):
-        driver = database_driver(values, stem)
-        if driver == 'sqlite':
+        drivers = database_drivers(values, stem)
+        if not drivers:
             return False, None, ''
-        ports = {'mysql': 3306, 'mariadb': 3306, 'pgsql': 5432, 'sqlsrv': 1433, 'redis': 6379}
-        default = ports.get(driver)
-        if driver not in ports:
-            driver_reason = 'driver use is unknown or selected connection ports are ambiguous, so an explicit port is required; '
+        default = DATABASE_PORTS[next(iter(drivers))] if len(drivers) == 1 else None
+        if default is None:
+            reason = 'selected connection ports are ambiguous, so an explicit port is required; '
     elif standard == 'MAIL':
-        driver = values.get(stem + '_MAILER')
-        if driver in ('log', 'array', 'sendmail'):
+        if values.get(stem + '_MAILER', values.get(stem + '_DRIVER')) != 'smtp':
             return False, None, ''
         if stem + '_PORT' not in values:
-            driver_reason = 'an explicit mail port is required because the app configuration may override its default; '
-        if driver != 'smtp':
-            driver_reason += 'mailer use is unknown, so it is checked conservatively; '
-    elif standard == 'REDIS':
-        default = 6379
-        driver_reason = 'the .env cannot prove Redis is unused by broadcasting, Horizon, scaling or other app consumers; '
-    elif standard == 'MEMCACHED':
-        default = 11211
-    elif stem not in ('PUSHER', 'REVERB') and stem + '_PORT' not in values:
+            reason = 'an explicit mail port is required because the app configuration may override its default; '
+    elif standard in ('REDIS', 'MEMCACHED'):
+        selected = standard.lower() in selectors
+        if standard == 'REDIS':
+            selected = selected or values.get(stem + '_CLIENT') in ('phpredis', 'predis')
+        if not selected:
+            return False, None, ''
+        default = 6379 if standard == 'REDIS' else 11211
+    elif stem not in ('PUSHER', 'REVERB') or broadcast != stem.lower():
         return False, None, ''
     port = port_number(values.get(stem + '_PORT', str(default) if default is not None else None))
-    return True, port, driver_reason
+    return True, port, reason
 
 
 def env_files(checkout):
