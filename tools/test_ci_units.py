@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = SourceFileLoader('ci_units', str(ROOT / 'bin/ci-units'))
 units = module_from_spec(spec_from_loader(loader.name, loader))
 loader.exec_module(units)
-BUDGET = dict(shard_seconds=100, unit_ceiling_seconds=120, slice_seconds=60, pr_shards=2, default_cost=30)
+BUDGET = dict(shard_seconds=100, shard_workers=4, unit_ceiling_seconds=180, slice_seconds=60, pr_shards=6, default_cost=30)
 
 
 def fixture(file, cost=30, inputs=(), **options):
@@ -39,9 +39,18 @@ class PlanningTest(unittest.TestCase):
     def test_largest_first_packing_fills_holes_and_is_deterministic(self):
         fixtures = [fixture(f'swamp/{name}.py', cost, ['swamp/input']) for name, cost in [('a', 40), ('b', 60), ('c', 50), ('d', 50)]]
         result = planned(['swamp/input'], fixtures)
-        self.assertEqual(result['shards'], [{'name': '01', 'units': ['swamp/b.py', 'swamp/a.py']},
-                                             {'name': '02', 'units': ['swamp/c.py', 'swamp/d.py']}])
+        self.assertEqual(result['shards'], [{'name': '01', 'units': ['swamp/b.py', 'swamp/c.py', 'swamp/d.py', 'swamp/a.py']}])
         self.assertEqual(result, planned(['swamp/input'], list(reversed(fixtures))))
+
+    def test_six_shards_have_four_bounded_lanes_and_defer_the_twenty_fifth_full_lane(self):
+        fixtures = [fixture(f'swamp/{i:02d}.py', 100, ['swamp/input']) for i in range(25)]
+        result = planned(['swamp/input'], fixtures)
+        self.assertEqual(len(result['shards']), 6)
+        self.assertTrue(all(len(shard['units']) == 4 for shard in result['shards']))
+        self.assertEqual(result['deferred'], ['swamp/24.py'])
+        # Mixed sizes require real lane packing, not just a 400-second total.
+        mixed = [fixture(f'swamp/{i}.py', 60, ['swamp/input']) for i in range(5)]
+        self.assertEqual(len(planned(['swamp/input'], mixed)['shards']), 2)
 
     def test_deno_slices_use_ceil_cost_and_python_stays_whole(self):
         self.assertEqual(units.units_for(fixture('swamp/a.ts', 121), BUDGET),
@@ -49,12 +58,15 @@ class PlanningTest(unittest.TestCase):
         self.assertEqual(units.units_for(fixture('swamp/a.py', 99), BUDGET), [('swamp/a.py', 99)])
         self.assertEqual(units.units_for(fixture('swamp/a.ts', 99, slices=False), BUDGET), [('swamp/a.ts', 99)])
         self.assertEqual(units.units_for(fixture('swamp/a.ts', 60), BUDGET), [('swamp/a.ts', 60)])
+        explicit = units.units_for(fixture('swamp/a.ts', 121, slices=5), BUDGET)
+        self.assertEqual([u for u, _ in explicit], [f'swamp/a.ts#{k}/5' for k in range(5)])
+        self.assertTrue(all(cost == 121 / 5 for _, cost in explicit))
 
     def test_limit_defers_names_and_keeps_direct_matches_over_shared_globs(self):
         fixtures = [fixture('swamp/direct.py', 100, ['swamp/tasks/input.yml']),
                     fixture('swamp/other.py', 100, ['swamp/**']),
                     fixture('swamp/third.py', 100, ['swamp/**'])]
-        result = planned(['swamp/tasks/input.yml'], fixtures)
+        result = planned(['swamp/tasks/input.yml'], fixtures, budget={**BUDGET, 'pr_shards': 2, 'shard_workers': 1})
         self.assertEqual(len(result['shards']), 2)
         self.assertIn('swamp/direct.py', names(result))
         self.assertEqual(result['deferred'], ['swamp/third.py'])
@@ -91,7 +103,7 @@ class PlanningTest(unittest.TestCase):
 class TableTest(unittest.TestCase):
     def test_table_files_costs_and_unsliceable_rules(self):
         budget, fixtures, defaults = units.configuration()
-        self.assertEqual(budget, {**BUDGET, 'pr_shards': 24})
+        self.assertEqual(budget, BUDGET)
         self.assertTrue(defaults)
         for f in fixtures.values():
             self.assertTrue((ROOT / f['file']).is_file(), f['file'])
@@ -105,9 +117,8 @@ class TableTest(unittest.TestCase):
                     'ansible_container_host_system_test.py', 'ansible_command_output_test.py'])
         self.assertLessEqual(must, set(fixtures))
         for f in fixtures.values():
-            self.assertIn(f['file'], names(units.plan([f['file']], budget, fixtures, defaults)) +
-                          [u.split('#')[0] for u in units.plan([f['file']], budget, fixtures, defaults)['deferred']] +
-                          [u.split('#')[0] for u in names(units.plan([f['file']], budget, fixtures, defaults))])
+            result = units.plan([f['file']], budget, fixtures, defaults)
+            self.assertIn(f['file'], {u.split('#')[0] for u in names(result) + result['deferred']})
 
     def test_new_gate_files_get_default_cost_and_invalid_long_python_is_refused(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -153,6 +164,23 @@ class ExecutionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Invalid slice'):
                 units.unit_step(file + invalid, fixtures, steps, Path('/collections'))
 
+    def test_each_step_has_its_own_temp_directory_and_gate_worker_environment(self):
+        code = 'import json,os; print(json.dumps({k:os.environ[k] for k in ["TMPDIR","TMP","TEMP","DENO_JOBS","ANSIBLE_FORKS","PYTHON_CPU_COUNT","RAYON_NUM_THREADS","ANSIBLE_COLLECTIONS_PATH"]}))'
+        step = units.gate.Step('shape', 'environment', [sys.executable, '-c', code], env={'ANSIBLE_COLLECTIONS_PATH': '/collections'})
+        directories = []
+        for _ in range(2):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(units.run_unit(step, os.environ.copy(), 5)['status'], 'passed')
+            env = json.loads(next(line for line in output.getvalue().splitlines() if line.startswith('{')))
+            self.assertEqual(env['TMPDIR'], env['TMP'])
+            self.assertEqual(env['TMPDIR'], env['TEMP'])
+            self.assertEqual(env['ANSIBLE_COLLECTIONS_PATH'], '/collections')
+            for key in ('DENO_JOBS', 'ANSIBLE_FORKS', 'PYTHON_CPU_COUNT', 'RAYON_NUM_THREADS'):
+                self.assertEqual(env[key], '1')
+            directories.append(env['TMPDIR'])
+            self.assertFalse(Path(env['TMPDIR']).exists())
+        self.assertNotEqual(*directories)
+
     def test_deadline_kills_process_group_and_reports_recovery(self):
         # Both leader and child block until killed. No fixture, Ansible or timing race.
         with tempfile.TemporaryDirectory() as scratch:
@@ -176,6 +204,16 @@ class ExecutionTest(unittest.TestCase):
             except FileNotFoundError:
                 pass
 
+    def test_deadline_reaps_a_child_that_detached_into_another_session(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            pid = Path(scratch) / 'pid'
+            child_code = f'import os,signal; os.setsid(); open({str(pid)!r},"w").write(str(os.getpid())); signal.pause()'
+            code = f'import subprocess,sys,signal; subprocess.Popen([sys.executable,"-c",{child_code!r}]); signal.pause()'
+            step = units.gate.Step('shape', 'detached', [sys.executable, '-c', code])
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(units.run_unit(step, os.environ.copy(), 0.3)['status'], 'OVER BUDGET')
+            self.assertFalse(Path(f'/proc/{pid.read_text()}').exists())
+
     def test_run_keeps_going_after_failures_and_publishes_times(self):
         with tempfile.TemporaryDirectory() as scratch:
             output = Path(scratch) / 'times.json'
@@ -193,6 +231,23 @@ class ExecutionTest(unittest.TestCase):
             results = json.loads(output.read_text())
             self.assertEqual([r['status'] for r in results], ['FAILED', 'passed'])
             self.assertIn('swamp/pass.py', summary.read_text())
+
+    def test_four_units_run_together_with_separate_supervisors(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            code = ('import pathlib,os,time; folder=pathlib.Path(' + repr(scratch) + '); '
+                    '(folder/("ready-"+str(os.getpid()))).write_text(""); deadline=time.monotonic()+4\n'
+                    'while len(list(folder.glob("ready-*"))) < 4 and time.monotonic() < deadline: time.sleep(.001)\n'
+                    'assert len(list(folder.glob("ready-*"))) == 4, "units ran serially"')
+            steps = {f'swamp/{i}.py': units.gate.Step('shape', str(i), [sys.executable, '-c', code]) for i in range(4)}
+            fixtures = {name: fixture(name) for name in steps}
+            setup = units.gate.Step('shape', 'setup', [sys.executable, '-c', ''])
+            with patch.object(units.gate, 'tool_path', return_value=Path(sys.executable).parent), \
+                    patch.object(units.gate, 'plan', return_value=[setup]), \
+                    patch.object(units, 'fixture_steps', return_value=steps), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(units.run(list(steps), BUDGET, fixtures, folder / 'times.json'), 0)
+            self.assertEqual(len(json.loads((folder / 'times.json').read_text())), 4)
 
     @unittest.skipUnless(shutil.which('deno'), 'Deno preload is also exercised by the hosted fixture shards')
     def test_preload_partitions_registration_and_retains_only_ignore(self):

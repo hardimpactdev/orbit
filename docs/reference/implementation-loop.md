@@ -3,9 +3,9 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,test,ci-build-plan,ci-cache-ref,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
+  - bin/{review-check,test,ci-build-plan,ci-units,ci-cache-ref,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy}.py,swamp/bin/check-swamp-shape.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
-  - tools/check_budget.py
+  - "{tools/check_budget.py,swamp/tests/_support/slice.ts}"
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py},agent_command.py}
   - .github/{ci/checks.toml,workflows/*.yml,actions/php/action.yml}
@@ -112,9 +112,11 @@ Every executable check job has a `timeout-minutes` equal to its table `ceiling`,
 
 Required checks has static dependencies on the selected checks, including Swamp. It accepts success or an unselected skip and checks that the plan's boolean selection keys exactly match its dependencies. Its API wait covers only blocking proof. The two proof switches retain their meaning.
 
-The fixture table in `.github/ci/checks.toml` maps changed inputs to files and declares their costs. `bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill shards of at most 100 declared seconds, with at most 24 shards per pull request. Direct input matches take priority when work exceeds that limit; the plan names deferred units and unmapped Swamp paths in its summary. Unmapped paths select the table’s default checks.
+The fixture table in `.github/ci/checks.toml` maps changed inputs to files and declares their costs. `bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 100 declared seconds, with at most six shards per pull request. Each shard runs up to four units at once. A file can declare a larger slice count when its cases need finer slices.
 
-Each fixture shard has a four-minute job limit. Each unit has a 120-second ceiling; a unit that exceeds it fails with its name, time and an instruction to raise its table cost for another slice or make it faster. Units that cannot be sliced and cost more than 100 seconds run after merge only, with a reason in the table. Shards publish measured unit times as summaries and artifacts. Scheduled and manual full runs still report failures outside the merge path. The fast control job keeps the shape baseline, frozen-base policy, behavior names and frozen agent contract checks.
+Direct input matches take priority when work exceeds that limit; the plan names deferred units and unmapped Swamp paths in its summary. Unmapped paths select the table’s default checks.
+
+Each fixture shard has a four-minute job limit. Each unit has a 180-second ceiling; a unit that exceeds it fails with its name, time and an instruction to raise its table cost for another slice or make it faster. Units that cannot be sliced and cost more than 100 seconds run after merge only, with a reason in the table. Shards publish measured unit times as summaries and artifacts. Scheduled and manual full runs still report failures outside the merge path. The fast control job keeps the shape baseline, frozen-base policy, behavior names and frozen agent contract checks.
 
 The CLI release starts after Required checks on main. Measure that chain separately through release publication, including dispatch queues. The Linux and macOS agent jobs use [release build caches](/reference/cli-binaries#agent-build-cache). Measure cold and warm agent deliveries separately; a cache does not by itself prove that publication fits five minutes.
 

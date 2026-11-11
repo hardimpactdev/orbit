@@ -1,10 +1,13 @@
 # Fixture input closure includes local imports, copied scripts and Ansible includes.
 # Costs start with shape-full.log; hosted ci-unit-times artifacts own later measurements.
+# The two primary fixture costs include censored lower bounds from the first hosted run.
+# Explicit slice counts are its registered case counts (52 migrate, 24 container).
 [budget]
 shard_seconds = 100
-unit_ceiling_seconds = 120
+shard_workers = 4
+unit_ceiling_seconds = 180
 slice_seconds = 60
-pr_shards = 24
+pr_shards = 6
 default_cost = 30
 
 [fixtures]
@@ -447,7 +450,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 591
+cost = 872
+slices = 24
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -638,7 +642,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_migrate_test.ts"
-cost = 812
+cost = 1373
+slices = 52
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1136,9 +1141,8 @@ inputs = [
 [[fixture]]
 file = "swamp/tests/dependency_results_fixtures_test.ts"
 cost = 1
-after_merge = true
-reason = "Production input closure is not yet settled; run in the full set after merge."
 inputs = [
+  "swamp/tests/fixtures/dependency-results-v1/**",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
@@ -1842,13 +1846,28 @@ inputs = [
 # swamp and swamp-shape use the current static control median, not retired fixtures.
 # Each executable check uses ceiling seconds rounded up to minutes as its job timeout.
 
+[[fixture]]
+file = "swamp/tests/instance_migrate_env_test.py"
+cost = 2
+inputs = ["swamp/ansible/library/orbit_migrate_env.py"]
+
+[[fixture]]
+file = "swamp/tests/instance_migrate_dotenv_test.py"
+cost = 1
+inputs = ["swamp/ansible/library/orbit_migrate_env.py"]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_vm_incus_test.py"
+cost = 30
+inputs = ["swamp/ansible/tasks/task-vm-incus.yml", "swamp/ansible/task-vm-role.yml", "swamp/ansible/tasks/task-vm-tools.yml"]
+
 [all-checks]
 # Changes to the check machinery run each check job once, without an agent delivery.
 inputs = [".github/workflows/ci.yml", ".github/actions/**", ".github/ci/checks.toml", "bin/ci-build-plan"]
 
 [ignored]
 # These paths have intentionally paused checks, prose skips, or always-run plan tests.
-inputs = ["tools/test_ci_*", "tools/test_swamp_import_base*", "tools/test_frozen_agent_commands*", "apps/desktop/**", "apps/agent/**/*.md", "apps/agent/**/*.mdx", "apps/pi-server/**/*.md", "apps/pi-server/**/*.mdx"]
+inputs = ["bin/ci-units", "tools/test_ci_*", "tools/test_swamp_import_base*", "tools/test_frozen_agent_commands*", "apps/desktop/**", "apps/agent/**/*.md", "apps/agent/**/*.mdx", "apps/pi-server/**/*.md", "apps/pi-server/**/*.mdx"]
 
 [check.php]
 inputs = [

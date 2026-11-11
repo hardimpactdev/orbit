@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Select and run bounded Swamp fixture units. Costs and input rules live in checks.toml."""
 import argparse
+import ctypes
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 import json
@@ -10,13 +12,16 @@ from pathlib import Path
 import re
 import signal
 import subprocess
+import sys
 import tempfile
+import threading
 import time
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 TABLE = ROOT / '.github/ci/checks.toml'
 PRELOAD = 'swamp/tests/_support/slice.ts'
+OUTPUT_LOCK = threading.Lock()
 
 
 def module(name, path):
@@ -28,6 +33,7 @@ def module(name, path):
 
 gate = module('fixture_gate', ROOT / 'bin/swamp-shape-gate')
 selection_regex = module('fixture_selection', ROOT / 'bin/ci-build-plan').selection_regex
+supervisor = module('fixture_supervisor', ROOT / 'swamp/tests/_support/fixture_supervisor.py')
 
 
 def fixture_steps():
@@ -56,7 +62,7 @@ def configuration(path=TABLE):
         config = tomllib.load(source)
     budget = config['budget']
     if any(type(budget[key]) is not int or budget[key] <= 0 for key in
-           ('shard_seconds', 'unit_ceiling_seconds', 'slice_seconds', 'pr_shards', 'default_cost')):
+           ('shard_seconds', 'shard_workers', 'unit_ceiling_seconds', 'slice_seconds', 'pr_shards', 'default_cost')):
         raise ValueError('Fixture budgets must be positive integers')
     if budget['slice_seconds'] > budget['shard_seconds']:
         raise ValueError('slice_seconds exceeds shard_seconds')
@@ -72,6 +78,9 @@ def configuration(path=TABLE):
         file, cost = fixture['file'], fixture['cost']
         if not (ROOT / file).is_file() or type(cost) is not int or cost <= 0:
             raise ValueError(f'Invalid fixture file or cost: {file}')
+        slices = fixture.get('slices', True)
+        if type(slices) not in (int, bool) or type(slices) is int and slices < 1:
+            raise ValueError(f'{file}: slices must be a positive count or a boolean')
         if fixture.get('after_merge') and not fixture.get('reason', '').strip():
             raise ValueError(f'{file}: after_merge needs a reason')
         if not sliceable(fixture) and cost > budget['shard_seconds'] and not fixture.get('after_merge'):
@@ -88,6 +97,8 @@ def sliceable(fixture):
 
 def units_for(fixture, budget):
     count = math.ceil(fixture['cost'] / budget['slice_seconds']) if sliceable(fixture) else 1
+    if type(fixture.get('slices')) is int:
+        count = max(count, fixture['slices'])
     return [(fixture['file'] + (f'#{k}/{count}' if count > 1 else ''), fixture['cost'] / count)
             for k in range(count)]
 
@@ -107,7 +118,8 @@ def plan(paths, budget, fixtures, defaults):
                        if selection_regex(pattern).fullmatch(path)]
             if matches:
                 matched = True
-                selected[file] = max(selected.get(file, (-1, 0, 0)), max(matches))
+                priority = (2, len(file), 0) if path == file else max(matches)
+                selected[file] = max(selected.get(file, (-1, 0, 0)), priority)
         if path.startswith('swamp/') and not matched and path != PRELOAD:
             unmapped.append(path)
             for file in defaults:
@@ -136,19 +148,22 @@ def plan(paths, budget, fixtures, defaults):
 
 
 def pack(units, budget):
-    shards, costs = [], []
+    shards, lanes = [], []
     for name, cost, _priority in sorted(units, key=lambda u: (-u[1], u[0])):
         if cost > budget['shard_seconds']:
             raise ValueError(f'{name}: unit cost exceeds shard_seconds')
-        index = next((i for i, total in enumerate(costs) if total + cost <= budget['shard_seconds'] + 1e-9), None)
-        if index is None:
+        candidates = [(total, shard, lane) for shard, loads in enumerate(lanes)
+                      for lane, total in enumerate(loads) if total + cost <= budget['shard_seconds'] + 1e-9]
+        if candidates:
+            _, index, lane = min(candidates)
+        else:
             if len(shards) == budget['pr_shards']:
                 return None
-            index = len(shards)
+            index, lane = len(shards), 0
             shards.append({'name': f'{index + 1:02d}', 'units': []})
-            costs.append(0)
+            lanes.append([0] * budget['shard_workers'])
         shards[index]['units'].append(name)
-        costs[index] += cost
+        lanes[index][lane] += cost
     return shards
 
 
@@ -190,36 +205,71 @@ def unit_step(unit, fixtures, steps, collections):
     return step
 
 
+def supervise(ceiling, receipt, command):
+    """One supervisor per unit: subreaper ownership never crosses parallel units."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
+        raise OSError(ctypes.get_errno(), 'PR_SET_CHILD_SUBREAPER')
+    started = time.monotonic()
+    try:
+        process = subprocess.Popen(command, start_new_session=True)
+        try:
+            code = process.wait(timeout=ceiling)
+            outcome = 'passed' if code == 0 else 'FAILED'
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+            outcome = 'OVER BUDGET'
+        # Reap before removing temporary files: Ansible children can detach.
+        cleanup_deadline = time.monotonic() + 2
+        while supervisor.children():
+            supervisor.signal_children(signal.SIGKILL)
+            while True:
+                try:
+                    pid, _ = os.waitpid(-1, os.WNOHANG)
+                except ChildProcessError:
+                    break
+                if pid == 0:
+                    break
+            if time.monotonic() >= cleanup_deadline:
+                raise RuntimeError('unit descendants did not exit after SIGKILL')
+            time.sleep(0.001)
+    except FileNotFoundError as error:
+        print(f'{error.filename}: required tool not found', flush=True)
+        outcome = 'FAILED'
+    receipt.write_text(json.dumps({'status': outcome, 'seconds': round(time.monotonic() - started, 3)}))
+
+
 def run_unit(step, environment, ceiling):
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix='orbit-shape-step-') as scratch, tempfile.TemporaryFile(mode='w+t') as output:
         env = {**environment, **step.env, 'TMPDIR': scratch, 'TMP': scratch, 'TEMP': scratch,
                'DENO_JOBS': '1', 'ANSIBLE_FORKS': '1', 'PYTHON_CPU_COUNT': '1', 'RAYON_NUM_THREADS': '1'}
-        try:
-            process = subprocess.Popen(step.argv, cwd=gate.SWAMP, env=env, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
-            try:
-                code = process.wait(timeout=ceiling)
-                outcome = 'passed' if code == 0 else 'FAILED'
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
-                outcome = 'OVER BUDGET'
-        except FileNotFoundError as error:
-            output.write(f'{error.filename}: required tool not found\n')
-            outcome = 'FAILED'
-        seconds = time.monotonic() - started
+        receipt = Path(scratch) / 'unit-receipt.json'
+        code = subprocess.run([sys.executable, str(ROOT / 'bin/ci-units'), '--supervise', str(ceiling), str(receipt), *step.argv],
+                              cwd=gate.SWAMP, env=env, stdout=output, stderr=subprocess.STDOUT).returncode
+        result = json.loads(receipt.read_text()) if code == 0 and receipt.exists() else {
+            'status': 'FAILED', 'seconds': round(time.monotonic() - started, 3)}
         output.seek(0)
-        print(output.read(), end='', flush=True)
-    print(f'==> {step.name}: {outcome} ({seconds:.1f}s)', flush=True)
+        captured = output.read()
+    outcome, seconds = result['status'], result['seconds']
+    message = f'==> {step.name}: {outcome} ({seconds:.1f}s)'
     if outcome == 'OVER BUDGET':
-        print(f'OVER BUDGET: {step.name} ran {seconds:.1f} s, ceiling {ceiling:g} s. '
-              'Raise its cost in .github/ci/checks.toml (the plan adds a slice) or make it faster.', flush=True)
-    return {'unit': step.name, 'seconds': round(seconds, 3), 'status': outcome}
+        message += (f'\nOVER BUDGET: {step.name} ran {seconds:.1f} s, ceiling {ceiling:g} s. '
+                    'Raise its cost in .github/ci/checks.toml (the plan adds a slice) or make it faster.')
+    # One write per completion keeps parallel unit output together.
+    with OUTPUT_LOCK:
+        print(captured + message, flush=True)
+    return {'unit': step.name, **result}
 
 
 def run(units, budget, fixtures, times):
     os.umask(0o022)
     results = []
+    times.write_text('[]\n')
     if units:
         tools = gate.default_tools()
         environment = {**os.environ, 'PATH': f'{gate.tool_path(tools)}{os.pathsep}{os.environ["PATH"]}'}
@@ -227,8 +277,13 @@ def run(units, budget, fixtures, times):
         setup = gate.plan('', ROOT, ROOT, collections)[0]
         subprocess.run(setup.argv, cwd=gate.SWAMP, env={**environment, **setup.env}, check=True)
         steps = fixture_steps()
-        for unit in units:
-            results.append(run_unit(unit_step(unit, fixtures, steps, collections), environment, budget['unit_ceiling_seconds']))
+        with ThreadPoolExecutor(max_workers=budget['shard_workers']) as pool:
+            futures = {pool.submit(run_unit, unit_step(unit, fixtures, steps, collections), environment,
+                                   budget['unit_ceiling_seconds']): unit for unit in units}
+            for future in as_completed(futures):
+                results.append(future.result())
+                times.write_text(json.dumps(results, indent=2) + '\n')
+        results.sort(key=lambda result: units.index(result['unit']))
     times.write_text(json.dumps(results, indent=2) + '\n')
     table = '| Unit | Result | Seconds |\n| --- | --- | ---: |\n' + '\n'.join(
         f"| `{r['unit']}` | {r['status']} | {r['seconds']:.1f} |" for r in results)
@@ -266,4 +321,7 @@ def main():
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    if len(sys.argv) > 1 and sys.argv[1] == '--supervise':
+        supervise(float(sys.argv[2]), Path(sys.argv[3]), sys.argv[4:])
+    else:
+        raise SystemExit(main())
