@@ -27,6 +27,8 @@ sequenceDiagram
   loop each Node, one at a time
     SW->>N: Drain the Node<br/>drain phase
     %%> Why:
+    %%> - SSH exit 255: eight attempts, 10 s each, with Ansible backoff (0, 1, 3, 7, 15, 30, 30 s); at most 166 s before overhead
+    %%> - a held Node that cannot be read fails and halts the pass, as any other Node does
     %%> - after a failed Node: `skipped`; outside the window: `deferred`; no `/var/run/reboot-required`: `not_due`
     %%> - a due held Node records boot ID, kernel and due time, then `deferred` (`operator_hold`); without a due reboot it stays `not_due`
     %%> - CI: stop each idle runner, frozen while read; a job still running after 15 min defers the Node
@@ -47,6 +49,11 @@ sequenceDiagram
       %%> - failed jobs a stopped runner was still running at its freeze; never a cancelled run
       %%> - `rerun-failed-jobs` once, only while the run is still at that attempt; the Node's result lists them
     end
+    SW->>SW: Record phase failures<br/>Record the Node
+    %%> Why:
+    %%> - always on the controller, including after UNREACHABLE bypasses Ansible rescue
+    %%> - private JSON callback reports supply `failed` / `fleet.node_unreachable` and bounded redacted SSH diagnostic text
+    %%> - a started phase without a terminal report or Node outcome is `failed` / `fleet.reboot_cut`; only unvisited Nodes use `not_reached`
   end
   alt every Node rebooted, scheduled, not due, deferred or skipped
     SW-->>GW: Run succeeded<br/>each Node's outcome
@@ -56,7 +63,7 @@ sequenceDiagram
   else a Node fails
     SW--xGW: Run failed<br/>NODE · error_code
     %%> Why stop:
-    %%> - the pass visits no Node after it; the next pass starts again there
+    %%> - later Nodes record `skipped` / `halted` without SSH; the next pass starts again there
     Note over GW: Alert once<br/>reboot_halted
   end
   Note over GW: Confirm 209 boot<br/>from its uptime

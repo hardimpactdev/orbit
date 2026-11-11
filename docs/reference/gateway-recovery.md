@@ -694,7 +694,9 @@ A task host with an open task Operation on one of its task VMs stays in the pass
 
 ### One Node of the pass
 
-The child `fleet-reboot-node` runs three Ansible phases of `swamp/ansible/operation-fleet-reboot.yml` from Node 209. Each phase reads and extends the Node's record in the pass's run folder. Once the record has an outcome, the later phases change nothing.
+The child `fleet-reboot-node` runs three Ansible phases of `swamp/ansible/operation-fleet-reboot.yml` from Node 209. Each phase reads and extends the Node's record in the pass's run folder. Once the record has an outcome, the later phases change nothing. Each phase keeps its Ansible JSON callback report private. Before the child ends, `Record the Node` reads those reports on the controller, including after an unreachable target bypasses Ansible rescue. It records a started phase without a terminal report or Node outcome as `failed` with `fleet.reboot_cut`; `not_reached` is only for Nodes never visited after a halt or a cut run.
+
+SSH connection failures (exit 255) get seven retries after the first attempt, with a 10-second connect timeout and one OpenSSH connection attempt per try. Ansible supplies the pauses: 0, 1, 3, 7, 15, 30 and 30 seconds. Eight timed-out attempts take at most 166 seconds before process overhead. This covers a two-minute uplink outage, stays within the existing 2,400-second drain phase and leaves room for the 900-second drain and six 75-second guest stops. The phase timeouts remain the hard bounds. The window check runs after the read, so connection retries cannot make a Node start draining after the window's cutoff. No failed machine action is retried by this policy.
 
 The `drain` phase decides first whether the Node goes on:
 
@@ -726,7 +728,7 @@ A reboot of the hub also starts `systemd-networkd` again, so the networkd drop-i
 
 Then the Node records `rebooted` with its new kernel.
 
-A phase that fails records `failed` with its step and error code: the assert's own code, such as `fleet.reboot_old_kernel`, `fleet.reboot_units_failed` or `fleet.reboot_still_due`, or `fleet.reboot_drain_failed`, `fleet.reboot_lost` (no SSH after the reboot) or `fleet.reboot_check_failed`. The pass visits no Node after it, and the Gateway raises [`reboot_halted`](#release-alerts). A Node that never answers SSH needs its provider console. The next pass starts again at that Node, as it is the first due Node.
+A phase that fails records `failed` with its step and error code: the assert's own code, such as `fleet.reboot_old_kernel`, `fleet.reboot_units_failed` or `fleet.reboot_still_due`, or `fleet.reboot_drain_failed`, `fleet.reboot_lost` (no SSH after the reboot) or `fleet.reboot_check_failed`. The pass visits no Node after it, and the Gateway raises [`reboot_halted`](#release-alerts). An unreachable Node records `failed` with `fleet.node_unreachable`, its phase and `error_detail`: the SSH diagnostic, redacted by the shared command-output filter and bounded to 4 KiB before recording or printing. This also applies to a held Node: the hold prevents draining and rebooting, but a failed read of its due state still halts the pass. Later Nodes record `skipped` with `halted` without SSH. A Node that never answers SSH needs its provider console. The next pass starts again at that Node, as it is the first due Node. This change adds no intent key: load the workflow and its result reader together, then activate the Gateway projection in the same release. Runs admitted by the preceding Gateway can use the new workflow.
 
 ### CI jobs lost at the freeze
 

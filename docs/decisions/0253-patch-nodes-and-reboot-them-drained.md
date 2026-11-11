@@ -57,6 +57,7 @@ Updates install on their own. Reboots run in one nightly Swamp pass that the Gat
 - **Nodes.** Every managed Linux Node except task VMs, one at a time, in the rollout's risk order, then the control path (the `vpn` hub, the Gateway, the Node that serves `swamp.orbit`), then Node 209.
 - **Due.** Swamp reads `/var/run/reboot-required` on each Node. A Node that is not due ends `not_due` at once. The agent is not changed.
 - **Phases.** Each Node runs `drain`, `reboot` and `check` as Ansible phases from Node 209. No step calls the Gateway.
+- **Connection.** SSH connection failures use Ansible's bounded retry settings; the [fleet reboot reference](/reference/gateway-recovery#one-node-of-the-pass) owns the bounds. The controller records an exhausted unreachable target as failed with a redacted SSH diagnostic, even when Ansible rescue cannot run. A reboot hold does not excuse a failed read.
 - **Failure.** A failed Node halts the pass and raises `reboot_halted`; the Nodes after it read that from the run folder. A failed drain first starts what it stopped. A deferred Node does not hold back the others.
 
 ### Drain
