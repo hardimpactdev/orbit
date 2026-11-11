@@ -191,6 +191,8 @@ An Instance on `app-prod` with no selected release accepts a stopped Process. A 
 
 The Gateway exposes these Process endpoints.
 
+Without a target, the list returns only Processes on Nodes the caller may reach, including their Instance-owned Processes. [Gateway authority](/cli/node#authority) permits the fleet-wide list.
+
 | Request | Result |
 | --- | --- |
 | `GET /api/v1/processes` | The Processes with desired state, runtime status, `keep_alive`, `restart_on_deploy`, `cpu`, and `memory_bytes`. `target_type` and `target_id` limit the list to one owner. |

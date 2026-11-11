@@ -46,6 +46,12 @@ final readonly class RequireNodeAccess
             return $this->scopeMissing();
         }
 
+        if ($scope === ServingNode::ProcessCollection) {
+            $scope = $request->input('target_type') === null && $request->input('target_id') === null
+                ? ServingNode::Collection
+                : ServingNode::ProcessOwning;
+        }
+
         if ($scope === ServingNode::Collection) {
             if ($this->authorizer->hasAnyAccess($consumer)) {
                 return $next($request);

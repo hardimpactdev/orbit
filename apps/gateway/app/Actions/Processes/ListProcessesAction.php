@@ -5,15 +5,19 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Data\Processes\ProcessData;
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Processes\ProcessTargetType;
 use App\Domain\Processes\ProcessUsageIndex;
+use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Collection;
 
 final readonly class ListProcessesAction
 {
     public function __construct(
+        private NodeAccessAuthorizer $access,
         private ProcessRuntimeStatusIndex $statuses,
         private ProcessUsageIndex $usage,
     ) {}
@@ -31,14 +35,24 @@ final readonly class ListProcessesAction
     }
 
     /**
-     * Every Process in the fleet, for a caller that draws all of them.
+     * Processes on Nodes the caller may reach.
      *
      * @return Collection<int, array<string, mixed>>
      */
-    public function executeAll(): Collection
+    public function executeAll(Node $consumer): Collection
     {
         return $this->withStatuses(
             Process::query()
+                ->when(! $this->access->hasGatewayAuthority($consumer), function ($query) use ($consumer): void {
+                    $nodeIds = $this->access->accessibleNodeIds($consumer);
+                    $query->where(fn ($owners) => $owners
+                        ->where(fn ($nodes) => $nodes
+                            ->whereIn('owner_type', ProcessTargetType::Node->storedTypes())
+                            ->whereIn('owner_id', $nodeIds))
+                        ->orWhere(fn ($instances) => $instances
+                            ->whereIn('owner_type', ProcessTargetType::Instance->storedTypes())
+                            ->whereIn('owner_id', Instance::query()->select('id')->whereIn('node_id', $nodeIds))));
+                })
                 ->orderBy('owner_type')
                 ->orderBy('owner_id')
                 ->orderBy('name')

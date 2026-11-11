@@ -40,7 +40,7 @@ final readonly class ServingNodeResolver
             ServingNode::CandidateClone => $this->candidateClone($request),
             ServingNode::InstanceTransfer => $this->instanceTransfer($request),
             ServingNode::EnvironmentInstanceOwning => $this->environmentInstanceOwning($request),
-            ServingNode::ProcessOwning => $this->processOwning($request),
+            ServingNode::ProcessOwning, ServingNode::ProcessCollection => $this->processOwning($request),
             ServingNode::ScheduleOwning => $this->scheduleOwning($request),
             ServingNode::ScheduleHost => $this->scheduleHost($request),
             ServingNode::InstanceHost => $this->instanceHost($request),
