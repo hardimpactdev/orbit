@@ -583,7 +583,9 @@
         - container.web_config | default(none) is not none
         - web_config_read.rc != 0 or web_config_read.stdout ~ '\n' != container.web_config.content
       ansible.builtin.command:
-        argv: "{{ incus_project + ['file', 'push', '--create-dirs', '--uid', '0', '--gid', '0', '--mode', '0644', '-', container.name ~ container.web_config.path] }}"
+        argv: >-
+          {{ incus_project + ['file', 'push', '--create-dirs', '--uid', '0', '--gid', '0', '--mode', '0644', '-',
+                              container.name ~ container.web_config.path] }}
         stdin: "{{ container.web_config.content }}"
         stdin_add_newline: false
       register: web_config_written
@@ -617,7 +619,9 @@
     - name: Restart the changed units
       when: changed_unit_names | length > 0 or web_config_written.changed | default(false)
       vars:
-        changed_unit_names: "{{ units_written.results | selectattr('changed', 'defined') | selectattr('changed') | map(attribute='item.item.name') | select('in', units) | list }}"
+        changed_unit_names: >-
+          {{ units_written.results | selectattr('changed', 'defined') | selectattr('changed')
+             | map(attribute='item.item.name') | select('in', units) | list }}
         config_unit_names: "{{ ['orbit-frankenphp.service'] if web_config_written.changed | default(false) else [] }}"
       ansible.builtin.command:
         argv: "{{ as_root + ['systemctl', 'restart', '--'] + ((changed_unit_names + config_unit_names) | unique | list) }}"
