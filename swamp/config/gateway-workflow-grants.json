@@ -50,7 +50,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^process-update-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
-    {"vault": "orbit-control-inputs", "key_pattern": "^nckrtl-process-command-assets-[a-f0-9-]{36}-inspection-inspection-[a-f0-9-]{36}-value$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^nckrtl-process-command-assets-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-inspection-inspection-inspection-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-value$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^schedule-run-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^schedule-command-[0-9a-f-]{36}$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^node-agent-rekey-[1-9][0-9]*-[1-9][0-9]*$", "actions": ["write", "read"]},

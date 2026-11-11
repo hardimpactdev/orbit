@@ -12,7 +12,7 @@ return [
     // The status read of a container Process: its unit's state, which lists show until the next read
     // (docs/reference/development-containers.md#processes). Its journal lines stay in the vault.
     'process.inspect' => ['workflow' => 'operation-process-container', 'workflow_inputs' => true,
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^nckrtl-process-command-assets-[a-f0-9-]{36}-inspection-inspection-[a-f0-9-]{36}-value$']],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^nckrtl-process-command-assets-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-inspection-inspection-inspection-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-value$']],
         'terminal_result' => ['job' => 'process', 'step' => 'Read Process result', 'native' => true,
             'captures' => ['state' => ['job' => 'process', 'step' => 'Read Process result', 'field' => 'state']]],
         'projection' => ContainerProcessObservation::class],

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -70,8 +71,9 @@ final readonly class ContainerProcessInspection
                     $this->socket->close();
                     $reference = ValidatedData::object(app(SwampCommandStep::class)->processInspection($run['id'], $request)['inspection']);
                     $key = ValidatedData::string($reference['key']);
+                    $pattern = ValidatedData::string(app(DirectOperation::class)->definition('process.inspect')['execution_copies'][0]['key_pattern'] ?? null);
                     if (($reference['vault'] ?? null) !== 'orbit-control-inputs'
-                        || preg_match('/\Anckrtl-process-command-assets-[a-f0-9-]{36}-inspection-inspection-'.preg_quote($request, '/').'-value\z/D', $key) !== 1) {
+                        || preg_match('~'.$pattern.'~D', $key) !== 1 || ! str_ends_with($key, '-'.$request.'-value')) {
                         $this->unavailable();
                     }
                     $value = ValidatedData::object(json_decode(app(SwampVaultExecutionCopy::class)->readSecret('orbit-control-inputs', $key), true, flags: JSON_THROW_ON_ERROR));

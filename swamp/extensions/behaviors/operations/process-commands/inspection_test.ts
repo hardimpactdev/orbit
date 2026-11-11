@@ -29,7 +29,7 @@ Deno.test("inspection publishes journal bytes only through native sensitive outp
             state: "active",
             inspection: {
                 vault: "orbit-control-inputs",
-                key: `nckrtl-process-command-assets-model-identity-inspection-inspection-${request}-value`,
+                key: `nckrtl-process-command-assets-model-identity-inspection-inspection-inspection-${request}-value`,
             },
         });
         assertEquals(
