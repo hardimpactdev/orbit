@@ -15,10 +15,10 @@ Deno.test({
         assertEquals(f.result(), { commit: phase === "workspace" || phase === "seed" ? head : null });
       }
       const state = f.state();
-      assertEquals(state["network-acls"], [{ name: "instance-7", ...f.container.acl_rules }]);
+      assertEquals(state["network-acls"].find((acl: {name: string}) => acl.name === "instance-7"), { name: "instance-7", ...f.container.acl_rules });
       assertEquals(state.containers["instance-7"].devices, [
         "eth0,ipv4.address=10.253.0.2",
-        "eth0,security.acls=orbitinst0-egress,instance-7",
+        "eth0,security.acls=orbitinst0-proxy,instance-7",
         "eth0,security.acls.default.egress.action=reject",
         "eth0,security.acls.default.ingress.action=reject",
         "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB",

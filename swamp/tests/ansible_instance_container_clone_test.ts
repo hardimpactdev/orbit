@@ -50,7 +50,7 @@ Deno.test({
       }
       const state = f.state();
       assertEquals(state.containers["instance-8"].source, `instance-7/seed-${seed}`);
-      assertEquals(state.containers["instance-8"].devices, ["eth0,ipv4.address=10.253.0.3", "eth0,security.acls=orbitinst0-egress,instance-8", "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB"]);
+      assertEquals(state.containers["instance-8"].devices, ["eth0,ipv4.address=10.253.0.3", "eth0,security.acls=orbitinst0-proxy,instance-8", "eth0,security.acls.default.egress.action=reject", "eth0,security.acls.default.ingress.action=reject", "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB"]);
       assertEquals(state.containers["instance-8"].added, {
         t3: { type: "proxy", settings: ["listen=tcp:10.44.0.7:3800", "connect=tcp:10.253.0.3:3773", "nat=true"] },
       });
