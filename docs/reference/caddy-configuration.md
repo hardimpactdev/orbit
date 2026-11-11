@@ -16,11 +16,7 @@ Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy.
 
 ## Native publication
 
-The manual `orbit:caddy-build` command submits `route.caddy_converge`. A [Vite wake in a host checkout](/reference/app-dev-runtime-hibernation#wake) uses the same publication only when startup reassigns its port. Sleep leaves the handler unchanged, so an ordinary wake publishes nothing.
-
-When its Node is free, a publication takes the [shared hold](/reference/routes#coordinate-publication) through completion. It renders current state when its queued start runs after acquiring the hold. A wake waits for a busy hold and the publication result through its existing page polls. Native publication has no unchanged-file shortcut: reading the disk file alone cannot prove that a previous reload succeeded.
-
-Gateway releases do not converge Caddy sites; [node converge](/cli/node/converge) publishes the Gateway Node's sites as for any Node. The workflow writes the rendered bytes directly to `/etc/caddy/Caddyfile` through official SSH with sudo. It then runs `caddy validate` as the `caddy` user and reloads Caddy only after validation succeeds.
+The manual `orbit:caddy-build` command submits `route.caddy_converge`. Gateway releases do not converge Caddy sites; [node converge](/cli/node/converge) publishes the Gateway Node's sites as for any Node. The workflow writes the rendered bytes directly to `/etc/caddy/Caddyfile` through official SSH with sudo. It then runs `caddy validate` as the `caddy` user and reloads Caddy only after validation succeeds.
 
 This workflow creates no version directory or backup and does not restore the previous file on failure. If validation or reload fails, the new bytes remain at `/etc/caddy/Caddyfile`; the Operation records the failure. Correct the owning stored intent and submit another publication. A successful command exit means the Operation was submitted, not that publication has completed.
 

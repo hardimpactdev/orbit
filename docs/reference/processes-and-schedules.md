@@ -161,7 +161,7 @@ A preset configures a development Instance Process. It sets the command, the run
 
 A preset needs a development Instance target. The Gateway refuses a Node target with `validation.failed` on `target_type`, and any other Instance with `process.preset_target_invalid`. An Instance has at most one Process of each preset. Another name for the same preset fails with `process.preset_exists`. The same request again returns the existing Process and keeps its desired state. A Process name alone never selects a preset.
 
-A Vite port reassignment sets the Instance's existing pending Route projection mark atomically with the new port. Successful native Vite publication clears it only when the assigned port still matches its captured plan. A failed preparation leaves the mark for [wake retry](/reference/app-dev-runtime-hibernation#wake).
+A [hibernation wake](/reference/app-dev-runtime-hibernation#wake) starts Vite on its recorded port without changing the assignment or publishing Caddy. A port conflict keeps the site asleep and shows a failure page. [`process:start`](/cli/process/start) remains the explicit operation that rechecks the port and publishes its handler.
 
 A supported `vp-dev` Process also moves during [Instance migration](/cli/instance/migrate). It keeps its preset identity, assigned port and desired state, uses the shared runtime in the container, and follows the ordinary container Process controls after cutover.
 

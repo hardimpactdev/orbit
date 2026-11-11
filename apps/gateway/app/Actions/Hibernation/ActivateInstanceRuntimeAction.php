@@ -16,7 +16,6 @@ use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\NativeViteCaddyPublication;
 use App\Models\Instance;
 use App\Models\Process;
 use SensitiveParameter;
@@ -30,10 +29,9 @@ final readonly class ActivateInstanceRuntimeAction
         private HibernationMarkerStore $markers,
         private InstanceRuntimeReadiness $readiness,
         private InstanceCheckoutInspector $checkouts,
-        private NativeViteCaddyPublication $publication,
     ) {}
 
-    public function execute(#[SensitiveParameter] Instance $instance, bool $retry = false): void
+    public function execute(#[SensitiveParameter] Instance $instance): void
     {
         $instance->loadMissing('node');
 
@@ -54,10 +52,7 @@ final readonly class ActivateInstanceRuntimeAction
         $instanceId = $instance->id;
 
         try {
-            $this->admissions->run([$instanceId], function () use ($instance, $instanceId, $retry): void {
-                if ($retry) {
-                    $this->publication->retry($instance);
-                }
+            $this->admissions->run([$instanceId], function () use ($instance, $instanceId): void {
                 $instance->load('processes');
                 $key = RuntimeHibernation::key($instanceId);
 
@@ -78,7 +73,6 @@ final readonly class ActivateInstanceRuntimeAction
                 }
 
                 $this->markers->markAwake($instance->node, $key);
-                $this->publication->forget($instance);
             });
         } catch (ProcessOperationException|ResourceOperationException $exception) {
             throw new HibernationException(

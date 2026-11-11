@@ -48,7 +48,7 @@ final class RuntimeActivationsController extends Controller
         }
         $failure = $failures->get($instance->id);
         if ($failure === null) {
-            $schedule->afterResponse($instance, $retry);
+            $schedule->afterResponse($instance);
         }
 
         return $failure === null

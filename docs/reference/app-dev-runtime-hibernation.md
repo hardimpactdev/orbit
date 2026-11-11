@@ -4,9 +4,6 @@ description: "How Orbit stops the Processes of idle development Instances, prune
 covers:
   - apps/gateway/app/{Actions,Domain,Infrastructure}/Hibernation/**
   - apps/gateway/app/Http/Responses/RuntimeActivationPage.php
-  - apps/gateway/app/Http/Controllers/Api/RuntimeActivationsController.php
-  - apps/gateway/app/Infrastructure/AppDev/NativeViteCaddyPublication.php
-  - apps/gateway/app/Infrastructure/AppDev/RemoteVitePortRuntime.php
   - apps/gateway/config/orbit.php
 ---
 
@@ -84,23 +81,26 @@ Caddy on the Instance's Node checks for the awake marker on every request. When 
 
 The Gateway answers with a progress page, status 401, headers `X-Orbit-Runtime-Activation-State: pending` and `Retry-After: 1`, and then starts the wake. Caddy shows the page and does not pass the request on. The page polls the original path once a second and loads it when the state header is gone. That load is the first application request.
 
-Sleep leaves the Caddy handler and assigned Vite port in place. When startup keeps the same port and no Route publication is pending, a wake publishes nothing. If preparation reassigns the port, the wake submits one [Caddy publication](/reference/caddy-configuration#native-publication). The port transaction also sets the existing `development_projection_pending` mark. Preparation failures keep that obligation for the next retry. The page stays pending while the publication waits for the Node hold and runs. A successful publication clears the mark before Vite starts. If that clear fails, retry reuses the successful Operation.
-
 The wake runs in this order:
 
 1. When the cold marker exists, restore dependencies with `composer install --no-interaction --prefer-dist` and `vp install --frozen-lockfile`. This uses the cold wake timeout.
-2. Prepare each `vp-dev` Process. Publish a reassigned port before starting it.
-3. Start every desired-running Process.
-4. Wait until each one runs. A `vp-dev` Process must answer on its [assigned Vite port](/reference/assigned-vite-ports).
-5. Clear the cold marker and write the awake marker.
+2. Start every desired-running Process. A `vp-dev` wake uses its recorded port and never assigns or publishes another port.
+3. Wait until each one runs. A `vp-dev` Process must answer on its [assigned Vite port](/reference/assigned-vite-ports).
+4. Clear the cold marker and write the awake marker.
 
-Any other Process is ready when its runtime reports running.
+Any other Process is ready when its runtime reports running. If the recorded Vite port is unavailable or Vite cannot start on it, the wake fails without changing the stored port or writing the awake marker. Retrying the wake keeps the same port. Use [`process:start`](/cli/process/start) to recheck the assignment and publish it through the normal Process operation.
 
 Orbit checks each Process every 0.5 seconds. A fresh Node agent view answers without SSH. Orbit confirms a `failed` answer, or a timeout, over SSH before the wake fails.
 
 An Instance that [moves into a container](/cli/instance/migrate) is the exception: the move removes its awake marker, and the Gateway starts no wake until the move has ended. Requests get the progress page meanwhile, and the move writes the awake marker itself.
 
-Every intercepted request starts a wake. A request during a running wake gets the same progress page. Its own wake attempt ends quietly when the running wake holds the Process lock. A failed wake keeps the cold marker and stores the failure until an explicit retry. This includes a failed, cancelled, interrupted or timed-out Caddy publication and any unexpected wake exception. Later requests get a failure page, status 503, with state `failed` and a Try again link. They start no new wake or publication. Try again adds `orbit-wake-retry=1` to the path and starts a new wake; subsequent page polls omit that flag.
+Every intercepted request starts a wake. A request during a running wake gets the same progress page. Its own wake attempt ends quietly when the running wake holds the Process lock. A failed wake keeps the cold marker and stores the failure until an explicit retry. Later requests get a failure page, status 503, with state `failed` and a Try again link. They start no new wake. Try again adds `orbit-wake-retry=1` to the path and starts a new wake; subsequent page polls omit that flag. Unexpected exceptions also produce this failure state without exposing their details.
+
+### Check a port saved by an earlier failed wake
+
+The former wake could save a new port before its Caddy publication failed. The Gateway has no authoritative record of the activated Vite port, so a wake cannot detect that earlier mismatch. Before waking a suspected Instance, compare `instance:show`'s `vite_port` with its upstream in the Node's loaded Caddy configuration through the local admin API. Reading the Caddyfile alone does not prove what is loaded.
+
+If the ports differ, run [`process:start`](/cli/process/start) for the Instance's Vite Process. Its native operation checks the assignment and publishes the handler before starting Vite. A successful operation restores the serving state; a wake retry alone cannot repair a stale handler.
 
 ### Probe requests
 

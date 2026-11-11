@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppDev;
 
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Processes\ProcessOperationException;
@@ -23,7 +24,8 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
 {
     public function __construct(
         private AgentCommandRunner $agents,
-        private NativeViteCaddyPublication $caddy,
+        private RemoteAppDevCaddyManager $caddy,
+        private DevelopmentProjectionOperationLock $projection,
         private SystemdProcessRenderer $systemd,
     ) {}
 
@@ -106,9 +108,11 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
 
     public function project(Instance $instance): void
     {
-        $instance->loadMissing('routes');
-        if ($instance->routes->isNotEmpty()) {
-            $this->caddy->publish($instance);
-        }
+        $this->projection->run(function () use ($instance): void {
+            $instance->loadMissing('routes');
+            if ($instance->routes->isNotEmpty()) {
+                $this->caddy->build($instance->node);
+            }
+        });
     }
 }

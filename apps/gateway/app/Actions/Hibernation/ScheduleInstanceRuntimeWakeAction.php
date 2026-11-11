@@ -19,15 +19,15 @@ final readonly class ScheduleInstanceRuntimeWakeAction
         private HibernationWakeFailureStore $failures,
     ) {}
 
-    public function afterResponse(#[SensitiveParameter] Instance $instance, bool $retry = false): void
+    public function afterResponse(#[SensitiveParameter] Instance $instance): void
     {
         $instanceId = $instance->id;
 
-        defer(callback: function () use ($instance, $instanceId, $retry): void {
+        defer(callback: function () use ($instance, $instanceId): void {
             try {
-                $this->activate->execute($instance, $retry);
+                $this->activate->execute($instance);
             } catch (Throwable $exception) {
-                if ($exception instanceof HibernationException && in_array($exception->errorCode, ['process.operation_busy', 'process.runtime_lock_failed', 'hibernation.publication_pending'], true)) {
+                if ($exception instanceof HibernationException && in_array($exception->errorCode, ['process.operation_busy', 'process.runtime_lock_failed'], true)) {
                     return;
                 }
 

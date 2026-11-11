@@ -23,6 +23,5 @@ interface VitePortRuntime
 
     public function prepare(Process $process, Instance $instance): void;
 
-    /** Discharge a pending Route publication before startup can finish. */
     public function project(Instance $instance): void;
 }

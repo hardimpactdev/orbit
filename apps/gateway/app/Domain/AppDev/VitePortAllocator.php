@@ -46,8 +46,7 @@ final readonly class VitePortAllocator
                     ['port' => $port],
                 );
                 if ($instance->node_id === $node->id) {
-                    $instance->update(['vite_port' => $port,
-                        ...($instance->vite_port === $port ? [] : ['development_projection_pending' => true])]);
+                    $instance->update(['vite_port' => $port]);
                 }
             });
 
