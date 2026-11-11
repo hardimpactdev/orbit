@@ -188,6 +188,7 @@ async function operation(
   id: number,
   check = false,
   failAfterDns = false,
+  toolPath?: string,
 ) {
   const recipe = JSON.parse(
     Deno.readTextFileSync(
@@ -332,6 +333,7 @@ async function operation(
       hosts: "localhost",
       connection: "local",
       gather_facts: false,
+      ...(toolPath ? { environment: { PATH: toolPath } } : {}),
       vars,
       tasks,
       handlers: [{
@@ -368,6 +370,30 @@ async function operation(
     );
   } finally {
     await server?.shutdown();
+  }
+}
+
+export async function missingGatewayDnsTool(check = false) {
+  const folder = Deno.makeTempDirSync();
+  try {
+    Deno.mkdirSync(`${folder}/bin`);
+    prepareStockRoles(folder);
+    // Give the whole play a real tool PATH without dig. No production task name or added guard is needed.
+    const toolPath = `${folder}/without-dig`;
+    Deno.mkdirSync(toolPath);
+    for (const name of ["timeout", "cat"]) {
+      Deno.symlinkSync(`/usr/bin/${name}`, `${toolPath}/${name}`);
+    }
+    Deno.symlinkSync(`${folder}/bin/resolvectl`, `${toolPath}/resolvectl`);
+    await operation(folder, 2, check, false, toolPath);
+    return {
+      status: Deno.readTextFileSync(`${folder}/role-2.status`),
+      output: Deno.readTextFileSync(`${folder}/role-2.output`),
+      units: [...Deno.readDirSync(`${folder}/units`)].map((entry) => entry.name),
+    };
+  } finally {
+    cleanupStockRoles(folder);
+    Deno.removeSync(folder, { recursive: true });
   }
 }
 

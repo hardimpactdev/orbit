@@ -6,7 +6,8 @@ covers:
   - apps/gateway/app/Domain/AppDev/{ClusterRouterDnsSelection*,Dns*,PrivateDns*}.php
   - apps/gateway/app/Infrastructure/WireGuard/{NativeWireGuardPeerConverger,NativeWireGuardPeerDnsRepairer,PeerDnsPolicy}.php
   - apps/gateway/app/Infrastructure/Gateway/GatewayPrivateDnsResolver.php
-  - apps/gateway/app/Domain/Nodes/GatewayPrivateDnsRoute.php
+  - apps/gateway/app/Domain/Nodes/{GatewayPrivateDnsRoute,NodeDesiredConvergeInput,NativeNodeRoleAddInput}.php
+  - swamp/ansible/tasks/private-dns-listener.yml
   - apps/gateway/app/{Actions/Fleet/AdmitPeerDnsAction,Console/Commands/ReconcilePeerDnsCommand}.php
 ---
 
@@ -85,7 +86,13 @@ The Gateway uses the fleet VPN resolver when any separate Node holds a `vpn` rol
 
 Local DNS becomes eligible only after the last separate `vpn` assignment row is gone. Failed and removing rows still suppress it. The current APIs forbid removing the VPN role or its Node, so production has no supported path into local DNS.
 
-With no separate VPN assignment, the Gateway role installs the shared private-DNS listener and a catalog rendered from the Gateway database before routing the private VPN domain to its own WireGuard address. The Gateway decides this from desired fleet state and passes the listener into the converge input; host probes do not select the policy. It proves that `gateway.orbit` answers and the listener loaded the catalog before applying resolver routing.
+With no separate VPN assignment, the Gateway role installs the shared private-DNS listener and a catalog rendered from the Gateway database before routing the private VPN domain to its own WireGuard address. The Gateway decides this from desired fleet state and passes the listener into the converge input; host probes do not select the policy.
+
+The proof uses `dig` to check the `gateway.orbit` answer, then checks that the listener loaded the catalog before applying resolver routing. Local DNS adds no package to the captured recipe or role package lists and changes no package pin. Current Incus Ubuntu 26.04 cloud VM and container images do not provide `dig`.
+
+The nested Gateway gets `dig` from its colocated `vpn` role’s existing, unversioned `bind9-dnsutils` prerequisite. Bootstrap installs that prerequisite in its machine phase before Node converge runs software and then roles, where the listener check runs. A nested refresh therefore has `dig` before the check.
+
+A Gateway without that prerequisite can lack `dig`; the phase then fails before installing the listener, including in check mode. Ansible reports `gateway.private_dns_tool_missing`. Node converge’s Operation result reports `operation.native_failed`; its result reader does not project named Ansible failures.
 
 Only a local DNS installation or withdrawal selects an additional wrapper playbook. Every existing Ansible file used by a Gateway with a separate VPN resolver stays unchanged. Shipping the additional files in the manifest has no host effect.
 
@@ -99,7 +106,7 @@ Both races are out of scope. No current automated fleet flow does either. `node:
 
 Closing these races needs one exclusion across role add, role converge, Node converge, role removal and rekey, which would change production locking. Revisit them for the first real fleet without a VPN Node.
 
-Check mode skips listener activation and live readiness probes. It does not prove an unapplied listener or a loaded catalog.
+Check mode verifies that `dig` exists, but skips listener activation and live readiness probes. It does not prove an unapplied listener or a loaded catalog.
 
 A Gateway that also holds `vpn` uses the same footprint, `orbit-private-dns.socket` and `orbit-private-dns.service` as VPN publication. Convergence never adds a second listener. Every other query stays on the uplink resolvers when the Gateway is outside the managed peer policy, so package mirrors, GitHub and ACME remain reachable while private DNS is down.
 

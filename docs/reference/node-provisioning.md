@@ -109,6 +109,8 @@ A [task VM copies its base snapshot](/reference/compute-drivers#claims-copy-the-
 
 The Gateway role requires `logrotate`, pinned in the recipe's `gateway` profile. The gateway role convergence installs the [host log-retention rules](/reference/gateway-recovery#disk-retention), the Gateway PHP-FPM pool and the agent-view and hibernator units, and retires the release unit's timer and the Documents PHP-FPM start hook. Releases leave them unchanged.
 
+The Gateway’s local listener uses the image prerequisites and readiness checks described in [Gateway private DNS](/reference/private-dns#the-gateway-machine).
+
 Existing operator masks remain in place. Convergence skips enabling `logrotate.timer` when `systemctl is-enabled` reports `masked` or `masked-runtime` for either `logrotate.service` or `logrotate.timer`, so an operator mask does not block releases. Otherwise it enables the configured timer afterward; it does not restart journald or force a rotation.
 
 Task checkout operations require systemd 250 or newer, cgroup v2, and the managed user's passwordless sudo. Missing or unreadable supervision refuses operations.
