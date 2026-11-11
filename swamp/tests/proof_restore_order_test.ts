@@ -337,6 +337,7 @@ Deno.test("boot wait refuses an unsettled boot, a timeout and an inactive requir
         await Deno.chmod(`${dir}/timeout`, 0o755);
         const expired = await check("running");
         assert(!expired.success);
+        assert(new TextDecoder().decode(expired.stderr).endsWith("\n"));
         assert(
             new TextDecoder().decode(expired.stderr).includes(
                 "systemd boot did not settle within 120s (state=, exit=124)",
