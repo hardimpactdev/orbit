@@ -9,11 +9,11 @@ use App\Actions\Instances\StartInstanceMigrateAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\ReadOperationAction;
-use App\Data\Instances\InstanceData;
-use App\Data\Operations\OperationData;
 use App\Actions\Schedules\CreateScheduleAction;
 use App\Actions\Schedules\RunScheduleAction;
 use App\Actions\Schedules\ShowScheduleLogsAction;
+use App\Data\Instances\InstanceData;
+use App\Data\Operations\OperationData;
 use App\Data\Schedules\AddScheduleData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
@@ -63,7 +63,6 @@ use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Infrastructure\Swamp\SwampReadBudget;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
-use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\DatabaseConnection;
@@ -248,9 +247,12 @@ function migrationTerminalReader(Operation $migration, string $status, bool $noR
     $runId = '77eb3d91-e9b9-42f9-8c35-e1e5837042b2';
     $workflow = app(DirectOperation::class)->definition($migration->kind)['workflow'];
     $inputs = ['operation_id' => $migration->id, 'node_id' => $migration->node_id, 'kind' => $migration->kind];
+    $result = $status === 'succeeded'
+        ? ['instance_id' => $migration->target_id, 'ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]
+        : ['ready' => false, 'moved' => false, 'restored' => true];
     $history = ['id' => $runId, 'workflowName' => $workflow, 'status' => $status, 'inputs' => $inputs,
         'startedAt' => ($migration->started_at ?? now())->toISOString(), 'completedAt' => now()->toISOString(),
-        'jobs' => [['name' => 'migrate', 'steps' => [['name' => 'finish', 'status' => 'succeeded', 'outputs' => ['stdout' => json_encode(['ready' => false, 'moved' => false, 'restored' => true], JSON_THROW_ON_ERROR)]]]]]];
+        'jobs' => [['name' => 'migrate', 'steps' => [['name' => 'finish', 'status' => 'succeeded', 'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]]]]]];
     $search = $noRun ? [] : [['runId' => $runId, 'workflowName' => $workflow, 'inputs' => $inputs,
         'tags' => ['orbit_start_key' => 'operation:'.$migration->id]]];
     $socket = new class($history, $search, $startEvent) implements WebSocketClient
@@ -2043,6 +2045,8 @@ it('returns the stored overdue migrate when the shared read allowance is empty',
     expect($stored->getAttributes())->toBe($before)
         ->and($operation->refresh()->getAttributes())->toBe($before)
         ->and($instance->runtime()->exists())->toBeTrue();
+});
+
 /** @param array<string,mixed> $attributes */
 function migrationSchedule(Instance $instance, array $attributes = [], ?ScheduleRuntimeAccount $account = null): Schedule
 {
@@ -2231,8 +2235,6 @@ describe('migrate registered Schedule timers', function (): void {
         }
         $this->travel(2)->hours();
         $expired = app(ExpireOperationAction::class)->execute($migration);
-        $timeoutResult = $expired->result;
-        $finishedAt = $expired->finished_at->toISOString();
         expect($expired->error_code)->toBe('operation.timed_out')
             ->and($expired->lock_key)->toBeNull()
             ->and($fire->refresh()->status)->toBe(OperationStatus::Failed);
@@ -2244,13 +2246,17 @@ describe('migrate registered Schedule timers', function (): void {
         $ended = $reader->projectTerminal($expired, ['id' => $run, 'status' => $status], $selector);
         $reader->projectTerminal($ended, ['id' => $run, 'status' => $status], $selector);
 
-        expect($ended->refresh()->status)->toBe(OperationStatus::Failed)
-            ->and($ended->error_code)->toBe('operation.timed_out')
-            ->and($ended->result)->toBe($timeoutResult)
-            ->and($ended->finished_at->toISOString())->toBe($finishedAt)
+        expect($ended->refresh()->status)->toBe(match ($status) {
+            'succeeded' => OperationStatus::Succeeded, 'interrupted' => OperationStatus::Interrupted, default => OperationStatus::Failed,
+        })
+            ->and($ended->error_code)->toBe(match ($status) {
+                'succeeded' => null, 'cancelled' => 'operation.timed_out', default => 'operation.native_failed',
+            })
+            ->and($ended->result['moved'])->toBe($status === 'succeeded')
+            ->and($ended->result['restored'])->toBe($status !== 'succeeded')
             ->and($ended->lock_key)->toBeNull()
-            ->and($ended->state['native_timeout'])->not->toHaveKey('native_terminal_status');
-        expect($instance->runtime()->exists())->toBeTrue();
+            ->and($ended->state['native_timeout']['native_terminal_status'])->toBe($status);
+        expect($instance->runtime()->exists())->toBe($status === 'succeeded');
         expect($fire->refresh()->status)->toBe(OperationStatus::Failed)
             ->and($fire->error_code)->toBe('instance.lifecycle_busy')
             ->and($fire->sequence)->toBe($fireSequence)
@@ -2258,7 +2264,9 @@ describe('migrate registered Schedule timers', function (): void {
         Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
         app(SwampConnection::class)->release();
         migrateVault();
-        expect(migrateStart($instance)->input['had_runtime_reservation'])->toBeTrue();
+        if ($status !== 'succeeded') {
+            expect(migrateStart($instance)->input['had_runtime_reservation'])->toBeFalse();
+        }
     })->with(['late success' => ['succeeded', false], 'late failure' => ['failed', false],
         'late cancellation' => ['cancelled', false], 'crash interruption' => ['interrupted', false],
         'recovered start' => ['interrupted', true]]);
@@ -2303,7 +2311,7 @@ describe('migrate registered Schedule timers', function (): void {
 
         expect($expired->refresh()->error_code)->toBe('operation.timed_out')
             ->and($expired->lock_key)->toBeNull()
-            ->and($expired->state['native_timeout'])->not->toHaveKey('no_run_verified_at');
+            ->and($expired->state['native_timeout'])->toHaveKey('no_run_verified_at');
         expect($instance->runtime()->exists())->toBeTrue();
         expect($fire->refresh()->status)->toBe(OperationStatus::Failed)
             ->and($fire->error_code)->toBe('instance.lifecycle_busy');

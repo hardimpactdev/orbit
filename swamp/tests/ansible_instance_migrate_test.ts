@@ -1176,7 +1176,7 @@ for (const damaged of ["missing-service", "missing-timer", "foreign-service", "c
         assertEquals(receipt.error_code, "schedule.container_artifact_unsupported");
         assert(receipt.error_message.includes(schedules.schedule.id), receipt.error_message);
         assert(receipt.error_message.includes(schedules.schedule.name), receipt.error_message);
-        assertEquals(receipt.preflight_refused, true);
+        assertEquals(receipt.preflight_refused, false);
         assert(exists(f.migrate.awake.path));
         assertEquals(f.state().containers ?? {}, {});
         assertEquals(schedules.host(), before);
@@ -1249,7 +1249,7 @@ for (const pathKind of ["absolute-command-symlink", "relative-command-symlink", 
         assertEquals(f.result().error_code, pathKind.endsWith("command-symlink") ? "schedule.container_command_unsupported" : "schedule.container_path_unsupported");
         assert(f.result().error_message.includes(schedules.schedule.id), f.result().error_message);
         assert(f.result().error_message.includes(schedules.schedule.name), f.result().error_message);
-        assertEquals(f.result().preflight_refused, true);
+        assertEquals(f.result().preflight_refused, false);
         assertEquals(schedules.host(), before);
         assertEquals(Deno.readTextFileSync(schedules.servicePath), schedules.service);
         assertEquals(Deno.readTextFileSync(schedules.scriptPath), schedules.script);

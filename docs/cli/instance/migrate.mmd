@@ -82,7 +82,7 @@ sequenceDiagram
     SW->>N: Remove the checkout<br/>Ansible · tags retire
     %%> What it does:
     %%> - a due timer fire waits as a recorded Schedule Operation until migration terminal projection reopens admission; its context is rebuilt for the final runtime, on success or rollback
-    %%> - every terminal transition settles deferred fires under the Instance lock; closed runtime admission explicitly fails them, including bound start failure and expiry; timeout results stay unchanged and later receipts cannot replay a fire
+    %%> - every terminal transition settles deferred fires under the Instance lock; closed runtime admission explicitly fails them, including bound start failure and expiry; Schedule settlement preserves the migration result and late native recovery cannot replay a settled fire
     %%> - replaces only the moved Schedules’ checkout-dependent services with host triggers for container execution, keeps their UUID timers and calendars, and resumes each recorded desired state
     %%> - removes the old host Process units and their environment folders
     %%> - repeats the same retirement preflight as an early warning; a new blocker leaves the container serving and the checkout intact

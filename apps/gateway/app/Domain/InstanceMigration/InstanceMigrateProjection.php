@@ -46,7 +46,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
             && ! ($before->status === OperationStatus::Running && isset($before->state['swamp_start']));
         $refused = ! isset($operation->state['swamp_run_id']) && ($operation->state['native_start_not_submitted'] ?? false) === true;
         if ($instance !== null && ($unstarted || $refused) && ($operation->input['had_runtime_reservation'] ?? false) !== true) {
-            $instance->runtime()->delete();
+            $instance->runtime()->where('operation_id', $operation->id)->delete();
         }
         app(DeferredMigrationScheduleRuns::class)->release($operation, targetAvailable: $instance !== null);
     }

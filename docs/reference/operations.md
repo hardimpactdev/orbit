@@ -135,7 +135,7 @@ Instance migration settles [deferred Schedule fires](/reference/schedules#checko
 
 The submission boundary records whether a native start was sent or explicitly refused; proven no-start outcomes, including failed execution-copy preparation, free a new runtime reservation.
 
-A deleted Instance never prevents the Operation from becoming terminal; its waiting Schedule fires fail with `schedule.target_unavailable`, even if their Schedule was also deleted. An unverified runtime keeps its reservation; a projected rollback removes it. Expiry settles fires immediately and preserves the migration’s timeout result. Later native receipts, stale hold release and recovery cannot replay a settled fire.
+A deleted Instance never prevents the Operation from becoming terminal; its waiting Schedule fires fail with `schedule.target_unavailable`, even if their Schedule was also deleted. An unverified runtime keeps its reservation; a projected rollback removes it. Expiry settles fires immediately without changing the migration’s timeout result. Migration-specific late-result recovery can update that result as described below; later receipts, stale hold release and recovery cannot replay a settled fire.
 
 A run can beat its expiry. For example, Swamp's start reply arrives after the 600-second admission budget, so the Operation expires unbound, and the run then ends within its kind's budget. When the exact native terminal finished before the bound deadline, the shared reader reopens the Operation and projects that terminal normally. The `timed_out` mark and its cancel request go, and the records reach their real end state. A terminal at or after the deadline keeps the timeout.
 
