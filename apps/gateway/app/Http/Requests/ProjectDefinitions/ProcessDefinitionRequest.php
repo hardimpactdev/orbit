@@ -10,6 +10,7 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\RequiredMountPaths;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\ProjectDefinitions\DefinitionEnvironment;
+use App\Domain\ProjectDefinitions\ProcessDefinitionSpecification;
 use App\Models\ProcessDefinition;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
@@ -97,7 +98,13 @@ final class ProcessDefinitionRequest extends FormRequest
         try {
             $this->inspectedData = app(ProjectDefinitionJsonInspector::class)->inspectProcess($this->getContent());
 
-            return $this->inspectedData;
+            $data = $this->inspectedData;
+            $definition = $this->route('processDefinition');
+            if ($definition instanceof ProcessDefinition && is_array($data['spec'] ?? null)) {
+                $data['spec'] = ProcessDefinitionSpecification::update($definition->spec, ValidatedData::object($data['spec']));
+            }
+
+            return $data;
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -107,10 +114,10 @@ final class ProcessDefinitionRequest extends FormRequest
     public function after(): array
     {
         return [function (Validator $validator): void {
-            $this->validateSystemdExecutable($validator, $this->inspectedData);
-            $this->validateEnvironmentNames($validator, $this->inspectedData);
-            $this->validatePorts($validator, $this->inspectedData);
-            $this->validateDevelopmentSpecification($validator, $this->inspectedData);
+            $this->validateSystemdExecutable($validator, $validator->getData());
+            $this->validateEnvironmentNames($validator, $validator->getData());
+            $this->validatePorts($validator, $validator->getData());
+            $this->validateDevelopmentSpecification($validator, $validator->getData());
         }];
     }
 
@@ -125,6 +132,10 @@ final class ProcessDefinitionRequest extends FormRequest
                 }
             }
             unset($volume);
+        }
+
+        if ($this->route('processDefinition') instanceof ProcessDefinition) {
+            $spec = array_intersect_key($spec, ValidatedData::object($this->inspectedData['spec'] ?? null));
         }
 
         return new ProjectDefinitionInputData(

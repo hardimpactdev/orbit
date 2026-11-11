@@ -80,7 +80,7 @@ it('deploys a keep-alive edit of a captured vp-dev definition to the default and
 
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])->putJson(
         "/api/v1/projects/{$project->id}/process-definitions/vp-dev",
-        ['name' => 'vp-dev', 'environments' => ['development'], 'spec' => [...$definition->spec, 'keep_alive' => true]],
+        ['name' => 'vp-dev', 'environments' => ['development'], 'spec' => ['keep_alive' => true]],
     )->assertOk()->assertJsonPath('data.spec.keep_alive', true);
 
     $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn([

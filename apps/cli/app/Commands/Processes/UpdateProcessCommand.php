@@ -12,7 +12,6 @@ use JsonException;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Orbit\Sdk\Requests\Processes\UpdateProcessRequest;
 use Orbit\Sdk\Requests\Projects\ListProcessDefinitionsRequest;
-use Orbit\Sdk\Requests\Projects\ShowProcessDefinitionRequest;
 use Orbit\Sdk\Requests\Projects\UpdateProcessDefinitionRequest;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
 use Orbit\Sdk\Responses\Processes\ProcessMutationResponse;
@@ -33,7 +32,7 @@ final class UpdateProcessCommand extends ProcessCommand
         {--command=* : One command argument; repeat for each argv item}
         {--image= : Docker image}
         {--working-directory= : Runtime working directory}
-        {--environment=* : Docker NAME=VALUE; repeat as needed}
+        {--environment=* : NAME=VALUE; repeat, or pass an empty value to clear}
         {--port=* : Docker HOST:CONTAINER[/tcp|udp]; repeat as needed}
         {--volume=* : Docker SOURCE:TARGET[:ro]; repeat as needed}
         {--restart= : never, on-failure, always, or unless-stopped}
@@ -140,7 +139,7 @@ final class UpdateProcessCommand extends ProcessCommand
         $image = $this->stringOption('image');
         $workingDirectory = $this->stringOption('working-directory');
         $environmentWasProvided = $this->input->hasParameterOption('--environment');
-        $environment = $this->environment();
+        $environment = $this->stringListOption('environment') === [''] ? [] : $this->environment();
 
         if ($environment === null) {
             return self::FAILURE;
@@ -221,20 +220,7 @@ final class UpdateProcessCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $connector = $this->gatewayConnector($repository, $connectors);
-        if ($connector === null) {
-            return self::FAILURE;
-        }
-        $current = $this->sendWithProgress(
-            $connector,
-            new ShowProcessDefinitionRequest($projectId, $name),
-            ProjectRuntimeDefinitionResponse::class,
-            ['Read Process definition', 'Reading Process definition', 'Read Process definition'],
-        );
-        if (! $current instanceof ProjectRuntimeDefinitionResponse) {
-            return self::FAILURE;
-        }
-        $spec = $current->spec;
+        $spec = [];
         if ($runtime !== null) {
             $spec['runtime'] = $runtime;
         }
@@ -257,7 +243,7 @@ final class UpdateProcessCommand extends ProcessCommand
         }
 
         if ($environmentWasProvided) {
-            $spec['environment'] = $environment;
+            $spec['environment'] = (object) $environment;
         }
 
         if ($portsWereProvided) {
@@ -273,7 +259,7 @@ final class UpdateProcessCommand extends ProcessCommand
                 [
                     'name' => $name,
                     'environments' => $environments,
-                    'spec' => $spec,
+                    'spec' => (object) $spec,
                 ],
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             );
@@ -282,6 +268,11 @@ final class UpdateProcessCommand extends ProcessCommand
                 'process.definition_invalid',
                 'Process definition could not be encoded.',
             );
+        }
+
+        $connector = $this->gatewayConnector($repository, $connectors);
+        if ($connector === null) {
+            return self::FAILURE;
         }
 
         $response = $this->sendWithProgress(

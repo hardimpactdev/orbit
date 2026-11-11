@@ -108,6 +108,8 @@ The agent routes `agent:watch` and `agent:facts` are internal: only `orbit-agent
 
 `instance:register` lists two success answers: 201 with the Instance when the Gateway registers at once, and 202 with the Operation of the run that protects `.env`. The [Node agent](/reference/node-agent#facts) page owns their meaning.
 
+Project Process definition updates use `PUT /api/v1/projects/{project}/process-definitions/{name}`. The body requires `name`, `environments` and a `spec` object; fields inside `spec` are optional. [Definition updates](/reference/processes-and-schedules#project-definitions) preserve omitted fields and define runtime replacement and collection clearing. The generator resolves class constants in `Rule::in` and preserves integer enum values. The captured preset schema accepts `preset: vp-dev` and integer `preset_version: 1`; it publishes no empty enum.
+
 A form-request rule `present` marks that property required, as `required` does.
 
 Requests that inspect raw JSON also declare their body fields in `rules()`. The generated bodies include the Instance branch and shared paths, deploy-step fields, database connection patches, and Node settings. A keyed array rule such as `array:path` publishes a closed JSON object, and nullable objects and members keep their null type. The generator resolves the shared database rules' regex constants and translates their whole-string anchors for JSON Schema, so invalid connection fields remain invalid in OpenAPI and MCP. The raw JSON checks still enforce object shape and the domain rules at runtime.

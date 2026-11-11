@@ -1716,7 +1716,7 @@ it('still follows HTTP 202 Process Operations on ordinary workload Nodes', funct
     'destroy' => ['process:destroy', ['process' => '12', '--yes' => true], DestroyProcessRequest::class],
 ]);
 
-it('edits keep-alive without dropping captured preset fields', function (bool $versioned): void {
+it('sends only keep-alive without reading captured preset fields', function (bool $versioned): void {
     $data = process_definition_cli_data();
     $data['environments'] = ['development'];
     $data['spec'] = [
@@ -1740,12 +1740,13 @@ it('edits keep-alive without dropping captured preset fields', function (bool $v
         ->assertExitCode(0);
 
     expect(json_decode((string) $mock->getLastPendingRequest()?->body(), true, flags: JSON_THROW_ON_ERROR))
-        ->toBe(['name' => 'queue', 'environments' => ['development'], 'spec' => [...$data['spec'], 'keep_alive' => true]]);
+        ->toBe(['name' => 'queue', 'environments' => ['development'], 'spec' => ['keep_alive' => true]]);
+    $mock->assertNotSent(ShowProcessDefinitionRequest::class);
 })->with(['unversioned historical capture' => false, 'versioned capture' => true]);
 
-it('does not update a definition when reading its current specification fails', function (): void {
+it('renders a partial definition update failure without reading its specification', function (): void {
     $mock = MockClient::global([
-        ShowProcessDefinitionRequest::class => MockResponse::make([
+        UpdateProcessDefinitionRequest::class => MockResponse::make([
             'error' => ['code' => 'process_definition.not_found', 'message' => 'Process definition not found.'],
         ], 404, ['X-Orbit-Request-Id' => process_cli_request_id()]),
     ]);
@@ -1756,10 +1757,10 @@ it('does not update a definition when reading its current specification fails', 
 
     expect($exit)->toBe(1);
     expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('process_definition.not_found');
-    $mock->assertNotSent(UpdateProcessDefinitionRequest::class);
+    $mock->assertNotSent(ShowProcessDefinitionRequest::class);
 });
 
-it('replaces supplied definition argv while preserving omitted runtime settings', function (): void {
+it('sends supplied definition argv without supplying omitted runtime settings', function (): void {
     $data = process_definition_cli_data();
     $data['spec']['keep_alive'] = true;
     $mock = MockClient::global([
@@ -1773,5 +1774,49 @@ it('replaces supplied definition argv while preserving omitted runtime settings'
     ])->assertExitCode(0);
 
     expect(json_decode((string) $mock->getLastPendingRequest()?->body(), true, flags: JSON_THROW_ON_ERROR)['spec'])
-        ->toBe([...$data['spec'], 'command' => ['/usr/bin/php', 'artisan', 'horizon'], 'restart_policy' => 'always']);
+        ->toBe(['command' => ['/usr/bin/php', 'artisan', 'horizon'], 'restart_policy' => 'always']);
+});
+
+it('sends an empty environment as an object to clear the definition environment', function (): void {
+    $mock = MockClient::global([UpdateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope())]);
+
+    $this->artisan('process:update', ['name' => 'queue', '--project' => '7', '--for' => 'development',
+        '--environment' => [''], '--json' => true])->assertExitCode(0);
+
+    expect((string) $mock->getLastPendingRequest()?->body())
+        ->toBe('{"name":"queue","environments":["development"],"spec":{"environment":{}}}');
+    $mock->assertNotSent(ShowProcessDefinitionRequest::class);
+});
+
+it('sends a runtime conversion without replaying Docker-specific fields', function (): void {
+    $data = process_definition_cli_data();
+    $data['spec'] = ['runtime' => 'docker', 'image' => 'worker:1', 'command' => ['worker'],
+        'ports' => ['8080:80'], 'volumes' => [], 'environment' => ['TOKEN' => '[REDACTED]']];
+    $mock = MockClient::global([
+        ShowProcessDefinitionRequest::class => MockResponse::make(['data' => $data, 'meta' => ['request_id' => process_cli_request_id()]]),
+        UpdateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope()),
+    ]);
+
+    $this->artisan('process:update', ['name' => 'queue', '--project' => '7', '--for' => 'production',
+        '--runtime' => 'systemd', '--command' => ['/usr/bin/worker'], '--json' => true])->assertExitCode(0);
+
+    expect(json_decode((string) $mock->getLastPendingRequest()?->body(), true, flags: JSON_THROW_ON_ERROR)['spec'])
+        ->toBe(['runtime' => 'systemd', 'command' => ['/usr/bin/worker']]);
+    $mock->assertNotSent(ShowProcessDefinitionRequest::class);
+});
+
+it('does not replay a redacted command during an unrelated definition edit', function (): void {
+    $data = process_definition_cli_data();
+    $data['spec']['command'] = ['/usr/bin/worker', '--api-token=[REDACTED]'];
+    $mock = MockClient::global([
+        ShowProcessDefinitionRequest::class => MockResponse::make(['data' => $data, 'meta' => ['request_id' => process_cli_request_id()]]),
+        UpdateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope()),
+    ]);
+
+    $this->artisan('process:update', ['name' => 'queue', '--project' => '7', '--for' => 'development',
+        '--keep-alive' => true, '--json' => true])->assertExitCode(0);
+
+    expect(json_decode((string) $mock->getLastPendingRequest()?->body(), true, flags: JSON_THROW_ON_ERROR)['spec'])
+        ->toBe(['keep_alive' => true]);
+    $mock->assertNotSent(ShowProcessDefinitionRequest::class);
 });
