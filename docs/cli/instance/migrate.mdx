@@ -134,6 +134,7 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 
 | Code | Meaning |
 | --- | --- |
+| `instance.migrate_restore_failed` | The restore-only task could not restore the Route or checkout. The reserved runtime stays for diagnosis. |
 | `instance.migrate_restore_unavailable` | The latest move is not interrupted without a final result. |
 | `instance.migrate_restore_unsafe` | Retirement began or the container owns the Instance. Restoration cannot discard it. |
 | `instance.id_invalid` | The Instance is missing in a call that cannot prompt, or is not a positive integer. |

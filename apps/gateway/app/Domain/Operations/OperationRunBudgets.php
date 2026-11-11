@@ -83,47 +83,50 @@ final class OperationRunBudgets
     }
 
     /**
-     * Sum the workflow's declared execution bounds, including both forward and restore children and cleanup. The extra 600 s
-     * covers admission, metadata steps and settlement. Reading the shipped declarations keeps their timeouts the only rule;
-     * no second table can silently fall behind a longer phase. Only migrate selects this rule until its other owners adopt it.
+     * Sum the workflow's declared execution bounds, including forward and restore children and cleanup. The fixed 600 s margin
+     * covers admission, metadata steps and settlement. The shipped declarations remain the only timeout source. Only migrate
+     * selects this rule until the other kind owners adopt it.
      *
-     * @param  ?string  $directory  A workflow fixture directory; production reads the release's shipped workflow definitions.
+     * @param  ?string  $directory  A workflow fixture directory; production reads the release's shipped definitions.
+     * @param  list<string>  $parents  Ancestors of a child workflow; rejects recursive declarations.
      */
-    public static function workflowSeconds(string $workflow, ?string $directory = null): int
+    public static function workflowSeconds(string $workflow, ?string $directory = null, array $parents = []): int
     {
         $directory ??= dirname(base_path(), 2).'/swamp/workflows';
-        /** @var Closure(string, list<string>): int $sum */
-        $sum = static function (string $name, array $parents = []) use ($directory, &$sum): int {
-            if (preg_match('/\A[a-z0-9-]+\z/D', $name) !== 1 || in_array($name, $parents, true)) {
-                throw new LogicException('A run budget requires an acyclic, literal workflow declaration.');
+        if (preg_match('/\A[a-z0-9-]+\z/D', $workflow) !== 1 || in_array($workflow, $parents, true)) {
+            throw new LogicException('A run budget requires an acyclic, literal workflow declaration.');
+        }
+        $definition = ValidatedData::object(Yaml::parseFile($directory.'/workflow-'.$workflow.'.yaml'));
+        $jobs = $definition['jobs'] ?? null;
+        if (! is_array($jobs)) {
+            throw new LogicException('A run budget requires declared workflow jobs.');
+        }
+        $seconds = $parents === [] ? 600 : 0;
+        foreach ($jobs as $rawJob) {
+            $job = ValidatedData::object($rawJob);
+            $steps = $job['steps'] ?? null;
+            if (! is_array($steps)) {
+                throw new LogicException('A run budget requires declared job steps.');
             }
-            /** @var array{jobs:list<array{steps:list<array{task:array{type:string,workflowIdOrName?:string,inputs?:array<string,mixed>}}}>}>} $definition */
-            $definition = Yaml::parseFile($directory.'/workflow-'.$name.'.yaml');
-            $seconds = 0;
-            foreach ($definition['jobs'] as $job) {
-                foreach ($job['steps'] as $step) {
-                    $task = $step['task'];
-                    if ($task['type'] === 'workflow') {
-                        $seconds += $sum(ValidatedData::string($task['workflowIdOrName'] ?? null), [...$parents, $name]);
-
-                        continue;
-                    }
-                    $inputs = $task['inputs'] ?? [];
-                    $bound = $inputs['timeoutSec'] ?? 0;
-                    if (! is_int($bound)) {
-                        throw new LogicException('A run budget requires a declared numeric step timeout.');
-                    }
-                    if (preg_match('/\Atimeout\s+([1-9][0-9]*)\s/', ValidatedData::string($inputs['run'] ?? ''), $match) === 1) {
-                        $bound = max($bound, (int) $match[1]);
-                    }
-                    $seconds += $bound;
+            foreach ($steps as $rawStep) {
+                $step = ValidatedData::object($rawStep);
+                $task = ValidatedData::object($step['task'] ?? null);
+                if (($task['type'] ?? null) === 'workflow') {
+                    $seconds += self::workflowSeconds(ValidatedData::string($task['workflowIdOrName'] ?? null), $directory, [...$parents, $workflow]);
+                    continue;
                 }
+                $inputs = ValidatedData::object($task['inputs'] ?? []);
+                $bound = $inputs['timeoutSec'] ?? 0;
+                if (! is_int($bound)) {
+                    throw new LogicException('A run budget requires a declared numeric step timeout.');
+                }
+                if (preg_match('/\Atimeout\s+([1-9][0-9]*)\s/', ValidatedData::string($inputs['run'] ?? ''), $match) === 1) {
+                    $bound = max($bound, (int) $match[1]);
+                }
+                $seconds += $bound;
             }
-
-            return $seconds;
-        };
-
-        return 600 + $sum($workflow);
+        }
+        return $seconds;
     }
 
     /** The longest successful run of the kind in the last 14 days x 1.5, rounded up to a minute, at least 15 minutes; 30 minutes without a success. */

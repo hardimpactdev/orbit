@@ -893,7 +893,7 @@ it('starts the run with the container, the checkout and the model key in the vau
     expect($run['execution_secrets'])->toBe(['process_environments' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-processes-'.$operation->id], 'model_environment' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-model-'.$operation->id]])
         ->and($put['value'])->toContain("ORBIT_MODEL_KEY=placeholder-model-key\n")
         ->and(json_encode($run['intent']))->not->toContain('placeholder-model-key')
-        ->and(array_keys($run['intent']))->toBe(['instance_id', 'instance_name', 'ssh_execution', 'container', 'migrate', 'route_mutations'])
+        ->and(array_keys($run['intent']))->toBe(['instance_id', 'instance_name', 'ssh_execution', 'restore_only', 'restore_quiesced', 'container', 'migrate', 'route_mutations'])
         ->and($run['intent']['route_mutations'])->toBeNull()
         ->and(app(DirectOperation::class)->definition('instance.migrate')['workflow'])->toBe('operation-instance-migrate');
 });
@@ -1451,7 +1451,10 @@ it('reports a lost worker half-state and admits one restore command from its fro
         ->and($restoring->input['migrate'])->toBe($interrupted->input['migrate'])
         ->and($restoring->input['container'])->toBe($interrupted->input['container'])
         ->and($intent['intent'])->toMatchArray(['restore_only' => true, 'restore_quiesced' => true])
-        ->and($intent['execution_secrets'])->toBe([]);
+        ->and($intent['execution_secrets'])->toMatchArray([
+            'process_environments' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-processes-'.$interrupted->id],
+            'model_environment' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-model-'.$interrupted->id],
+        ]);
 
     $restored = migrateEnd($restoring, 'succeeded', ['ready' => true, 'moved' => false, 'restored' => true]);
     expect($restored->status->value)->toBe('succeeded')
