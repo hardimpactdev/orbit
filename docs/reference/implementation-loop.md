@@ -114,7 +114,7 @@ Required checks has static dependencies on the selected checks, including Swamp.
 
 Full shape fixtures are over budget and disabled on pull requests and main pushes. Their scheduled and manual runs report failures without blocking merge or deploy. The fast control job keeps the shape baseline, frozen-base policy, behavior names and frozen agent contract checks. Restore PR fixtures only as measured selections of touched cases within the five-minute budget.
 
-The CLI release starts after Required checks on main. Measure that chain separately through release publication, including dispatch queues. Agent delivery builds can extend release publication beyond five minutes; they need separate optimization.
+The CLI release starts after Required checks on main. Measure that chain separately through release publication, including dispatch queues. The Linux and macOS agent jobs use [release build caches](/reference/cli-binaries#agent-build-cache). Measure cold and warm agent deliveries separately; a cache does not by itself prove that publication fits five minutes.
 
 ### The proof run job
 
