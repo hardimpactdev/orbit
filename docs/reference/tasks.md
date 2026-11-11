@@ -55,15 +55,15 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `position` | subtask | Order under the parent, gapless from 1 |
 | `deliverables` | subtask | The typed items the subtask must deliver |
 | `check` | subtask | The latest [task check](#project-check) run |
-| `fixup_problem` | subtask | The problem a [Gateway fixup](#fix-a-settling-pull-request) repairs. Null on every other subtask |
+| `fixup_problem` | subtask | The problem a [Gateway fixup](#settling) repairs. Null on every other subtask |
 | `implementer_agent_thread_id` | subtask | The subtask's implementer thread |
 | `reviewer_agent_thread_id` | task | The current reviewer thread. A shared reviewer thread is stored here, and [Review a subtask](#review-a-subtask) points it at the fresh reviewer |
 | `taskable_type`, `taskable_id` | task | The task workspace Instance. Null until a provision operation creates it |
 | `implementer_model`, `reviewer_model` | task | The models used for the task's threads |
-| `pr_url` | task | The reviewed pull request Orbit opened on the last subtask, or the [incoming pull request](#incoming-pull-requests) Orbit reviews |
+| `pr_url` | task | The reviewed pull request Orbit opened on the last subtask, or the [incoming pull request](#ready-and-merge-a-task-pull-request) Orbit reviews |
 | `pr_branch` | task | The incoming pull request's head branch, which Orbit fetches and pushes. Null for a task whose branch is `task-{id}` |
 | `merge_status`, `merge_reason`, `merged_sha` | task | The [merge step](#merge-step) result: `waiting`, `refused`, or `merged`, its reason, and the merge commit |
-| `type` | subtask | `implementation`, or `final_review` for a [final review](#final-review) |
+| `type` | subtask | `implementation`, or `final_review` for a [final review](#review-a-subtask) |
 | `watched_pr_url` | task | The pull request on `task-{id}` found by the [branch watch](#watch-the-branch-while-subtasks-are-open). Null until that list finds one. Not `pr_url` |
 | `watched_pr_number` | task | The watched pull request's number. Null until the branch watch finds one |
 | `watched_pr_state` | task | The last watched state: `open`, `merged`, or `closed`. Null until the branch watch finds one |
@@ -1273,7 +1273,7 @@ Durations and token counts are medians. Shares are between 0 and 1. A number is 
 | `merge_wait_ms` | `settled_at` to `merged_at`: review, fixups, and merge |
 | `excluded` | Merged tasks that lack a time that `lead_time_ms` needs |
 | `yield` | `merged` divided by `tasks` |
-| `pr_first_pass` | Merged tasks with no fixup subtask, from a [final review](#final-review) or from [settling](#fix-a-settling-pull-request), divided by `merged` |
+| `pr_first_pass` | Merged tasks with no fixup subtask, from a [final review](#review-a-subtask) or from [settling](#settling), divided by `merged` |
 | `wasted_share` | The tokens of tasks that did not merge, plus the tokens of replaced implementer threads, divided by `tokens` |
 | `subtask_first_pass` | Reviewed subtasks whose first verdict was `approved`, divided by reviewed subtasks |
 | `review_rounds` | The mean count of `approved` and `changes_requested` verdicts per reviewed subtask |
@@ -1465,7 +1465,7 @@ Shared prompts stay free of Project policy. They do not name a feature contract 
 
 ### Every task group runs on its own task VM
 
-Each task group gets its own [task VM](#task-vm-workspace). [One user](/reference/pi-server#one-user-for-every-task-agent) runs its agents and checks in the same environment. The [VM edge](/reference/compute-drivers#why-task-vms-work-this-way) is the boundary. A task waits for its VM; there is no shared-host fallback.
+Each task group gets its own [task VM](#task-workspace). [One user](/reference/pi-server#one-user-for-every-task-agent) runs its agents and checks in the same environment. The [VM edge](/reference/compute-drivers#why-task-vms-work-this-way) is the boundary. A task waits for its VM; there is no shared-host fallback.
 
 Operators can inspect the task Node's last reported resource use with [`node:metrics`](/cli/node/metrics). The read does not contact or wake the VM. An offline VM retains its last snapshot with the original observation time and a `possibly outdated` label; this is resource evidence, not proof that an agent turn is still running.
 

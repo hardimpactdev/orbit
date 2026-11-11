@@ -14,7 +14,7 @@ sequenceDiagram
   participant VM as Base VM<br/>shark-base
   Note over GW: Admit the refresh<br/>one run per host
   %%> Started by:
-  %%> - every Gateway release, from its step "Admit VM refreshes", as soon as Swamp has loaded the new commit and while the release goes on to switch: `task-vms:refresh-images --commit <sha>` runs from the new release, so the intent holds the new commit's recipe, pins and checkout, and the run uses the new commit's workflows and playbooks; a code-only release refreshes too
+  %%> - every verified Gateway release, from its step "Admit VM refreshes", after successful verification and successful or skipped Horizon start: `task-vms:refresh-images --commit <sha>` runs from the verified release; admission is best effort and does not wait for refresh completion. The intent holds the new commit's recipe, pins and checkout; the run uses the new commit's workflows and playbooks; a code-only release refreshes too
   %%> - the daily schedule at 03:20, and an operator
   %%> - a release asks a host again, up to 6 rounds 5 s apart, when Swamp could not take the run yet because it had just reloaded
   %%> Result:

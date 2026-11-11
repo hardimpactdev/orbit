@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 5 of the command development pipeline (feature-flow section 6, gateway-recovery "Automatic releases"). A merged green commit gets an automatic Swamp release run; a failed check switches back. The steps of the run itself are in the chart gateway:release:deploy. No fleet test follows a release.
+  %% Target design: stage 5 of the command development pipeline (feature-flow section 6, gateway-recovery "Automatic releases"). A merged green commit gets an automatic Swamp release run when automatic releases are enabled and unpaused; a failed check switches back. The steps of the run itself are in the chart gateway:release:deploy. No fleet test follows a release.
   %% status: draft
   %% command: development pipeline stage 5 · automatic Swamp release
   %% kind: pipeline.5-automatic-release
@@ -37,32 +37,44 @@ sequenceDiagram
   %%> What it does:
   %%> - writes a database snapshot, then migrates while the old release still serves
   %%> - old code must work with the new schema
+  SW->>GN: Wait for active Operations<br/>before Swamp load
+  %%> What it does:
+  %%> - checks release-blocking Operations while the old release and Horizon serve; force does not bypass it
+  %%> - a busy timeout refuses with `gateway.release_busy`; no Swamp load or activation follows
   SW->>GN: Load the new workflows<br/>Swamp reloads, no restart
   %%> Why:
   %%> - the switch then runs the new commit's own steps
+  SW->>GN: Drain Horizon<br/>loaded activation child
+  %%> On failure:
+  %%> - no switch follows a failed drain; Start Horizon still runs
   SW->>GN: Switch to the new release<br/>gateway-rollback script
   %%> What it does:
-  %%> - drains Horizon, switches the links, reloads PHP-FPM, restarts the running services
+  %%> - switches the links, reloads PHP-FPM, restarts the running services; a failed switch still reaches Start Horizon
   SW->>GN: Check the Gateway<br/>health · version
   %%> What it does:
   %%> - reads the health endpoint and the status version of the Gateway
-  alt the check passes
-    SW-->>GW: Run succeeded<br/>terminal result
-    %%> Result:
-    %%> - the run reports success once, as a terminal result
-    Note over GW: Record the release<br/>verified
-    %%> Result:
-    %%> - the release is recorded; the Gateway admits the footprint rollout of stage 8 (`fleet.rollout`), and a daily pass at 03:05 Amsterdam visits the Nodes it deferred
-    %%> - no fleet test follows a release
-    %%> Next:
-    %%> - each task VM host refreshes its image and seed (stage 6; built, 4 of 33 runs succeeded by 2026-11-06)
-  else the check fails
+  alt the check fails
     SW->>GN: Switch back<br/>gateway-rollback previous
     %%> What it does:
-    %%> - returns to the previous release without Swamp
-    SW--xGW: Run failed<br/>switched back · alert
+    %%> - returns to the previous release without Swamp; a failed switch-back reports its own error
+  end
+  SW->>GN: Start Horizon<br/>on the live release
+  %%> What it does:
+  %%> - always runs after activation paths, including failed drain, switch, verification or switch-back; skips only when no Horizon unit is configured
+  %%> - a failed start admits no refresh
+  alt verification and Horizon pass
+    SW->>GN: Admit VM refreshes<br/>verified release's artisan
+    %%> What it does:
+    %%> - also permits a skipped Horizon start; admission is best effort and never waits for refresh completion (stage 6)
+    SW-->>GW: Run succeeded<br/>terminal result
+    Note over GW: Record the release<br/>verified
     %%> Result:
-    %%> - the Gateway records that it switched back and raises an alert; the next green commit releases
+    %%> - the Gateway admits the [Fleet rollout](/reference/gateway-recovery#fleet-rollout), and a daily pass at 03:05 Amsterdam visits the Nodes it deferred
+    %%> - no fleet test follows a release; development defaults are not deployed by it
+  else verification failed
+    SW--xGW: Run failed<br/>switch-back result · alert
+    %%> Result:
+    %%> - the Gateway records the failed verification and switch-back outcome; no refresh is admitted
   else a step from migrate on fails
     SW--xGW: Run failed<br/>failed step
     %%> On failure:

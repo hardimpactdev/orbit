@@ -95,13 +95,14 @@ if (family === "query") {
         environment: { server_version: state.server_version ?? "7.0.1" },
       }),
     );
-  } else if (resource === "instances" && !item) {
-    console.log(JSON.stringify(state.instances.map((row: { project: string; devices?: Record<string, Record<string, string>> }) => {
+  } else if (resource === "instances") {
+    const expanded = state.instances.map((row: { project: string; devices?: Record<string, Record<string, string>> }) => {
       const devices = structuredClone(state.profiles[row.project]?.devices ?? {});
       // Incus replaces a whole device of the same name; it does not inherit missing local properties.
       for (const [name, device] of Object.entries(row.devices ?? {})) devices[name] = device;
       return { ...row, expanded_devices: devices };
-    })));
+    });
+    console.log(JSON.stringify(item ? expanded.find((row: {name: string}) => row.name === item) : expanded));
   } else if (resource === "profiles") {
     const owner = new URLSearchParams(query).get("project") ?? "default";
     console.log(JSON.stringify(state.profiles[owner]));

@@ -314,14 +314,14 @@ After that reload, a rollback reloads or restarts the same active, opted-in Inst
 
 ## Automatic deployments
 
-Swamp runs automatic-deploy policy every minute at second 30 (`30 * * * * *`). It discovers enabled, active production Instances on Nodes with an active `app-prod` role and active default development checkouts on `app-dev` Nodes. The Gateway retains admission, locks, authorization and history. The PHP automatic-deploy command, alias and schedule are removed. The native end assertion fails when the policy producer records a failure. The Gateway captures the full event receipt from that producer in its existing terminal history read, including events from a failed fire; no reporting step prints it.
+When the shared producer is enabled and unpaused, Swamp runs automatic-deploy policy every minute at second 30 (`30 * * * * *`). It discovers enabled, active production Instances on Nodes with an active `app-prod` role and active default development checkouts on `app-dev` Nodes. The Gateway retains admission, locks, authorization and history. The PHP automatic-deploy command, alias and schedule are removed. The native end assertion fails when the policy producer records a failure. The Gateway captures the full event receipt from that producer in its existing terminal history read, including events from a failed fire; no reporting step prints it.
 
-Each policy tick reads the branch head through the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). Both policies use the [Gateway source contracts](#swamp-policy-contracts). Development follows the Project default branch. It keeps the GitHub App installation that covers the repository for up to 60 minutes. It keeps the read tokens for up to 50 minutes, encrypted with the application key. Between token refreshes, each eligible Instance costs one `ls-remote` and no GitHub API call in a quiet minute. A failed read drops the cached installation and tokens.
+Each active policy tick reads the branch head through the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). Both policies use the [Gateway source contracts](#swamp-policy-contracts). Development follows the Project default branch. It keeps the GitHub App installation that covers the repository for up to 60 minutes. It keeps the read tokens for up to 50 minutes, encrypted with the application key. Between token refreshes, each eligible Instance costs one `ls-remote` and no GitHub API call in a quiet minute. A failed read drops the cached installation and tokens.
 
 - When the Instance already runs the commit the tick would deploy, the tick starts nothing and writes no history row.
 - Otherwise it starts an [`instance.deploy` operation](#the-deploy-operation) pinned to that commit. The [origin label](#history) identifies the policy that admitted it.
 - The deployment proves that the branch contains the commit and checks out exactly that commit. It fails with `deployment.commit_not_on_branch` otherwise.
-- Pushes that arrive meanwhile wait for the next tick. That tick reads the newest head, so intermediate commits coalesce.
+- Pushes that arrive meanwhile wait for the next active tick. That tick reads the newest head, so intermediate commits coalesce.
 - While another operation holds the Instance, the tick skips it and reports `busy`. Its own operation that has not ended yet is `deploying`.
 - The tick finds the holder with `operation:list`. List rows carry no input, so it reads the holder with `operation:show` to compare its commit.
 
@@ -329,7 +329,9 @@ A head the Gateway cannot read fails the tick for that Instance with `source.hea
 
 ### Automatic development defaults
 
-A default deploys its default branch's head. Its deployed commit is its `seed_commit`. A failed commit retries as the [failure rules](#failures-of-automatic-deployments) describe; for a default every failure is retryable. A new commit deploys at once.
+**Delivered state, 2026-11-11.** The independent development tick (#3331) was reverted. Development auto-deploy stays inside the shared `automatic-production-deploy` producer; whether it runs depends on the policy setting. It accepts checkout defaults and has no container-only gate. A Gateway release does not deploy development defaults. Use [`instance:deploy`](/cli/instance/deploy) on the container default to deploy explicitly and take a new seed after success. A clone starts from that default's last successfully deployed seed. An independent producer limited to container defaults remains planned.
+
+While the shared producer is active, a default deploys its default branch's head. Its deployed commit is its `seed_commit`. A failed commit retries as the [failure rules](#failures-of-automatic-deployments) describe; for a default every failure is retryable. A new commit is eligible on the next active policy tick.
 
 ### Production Instances
 
@@ -539,7 +541,7 @@ A manual deployment means "deploy what the branch holds now". So it takes no com
 
 ### Poll, do not wait for a webhook
 
-Automatic policy reads branch heads through the Gateway instead of receiving a GitHub push webhook. A webhook would need a public endpoint and a webhook secret on a Gateway that otherwise answers only WireGuard peers. Swamp uses the source-read contracts for production and default development Instances. Automatic Gateway releases retain their separate source reader. A quiet minute costs one `git ls-remote`, and a pending check costs a few GitHub API reads, well within the App's rate limit. The polling delay is up to one minute; failed-check caches, retry backoff, and the operation queue can add time.
+Automatic policy reads branch heads through the Gateway instead of receiving a GitHub push webhook. A webhook would need a public endpoint and a webhook secret on a Gateway that otherwise answers only WireGuard peers. Swamp uses the source-read contracts for production and default development Instances. Automatic Gateway releases retain their separate source reader. A quiet minute costs one `git ls-remote`, and a pending check costs a few GitHub API reads, well within the App's rate limit. While the shared producer is active, the polling delay is up to one minute; failed-check caches, retry backoff, and the operation queue can add time.
 
 Conditional requests with an ETag were rejected: a quiet minute already makes no GitHub API call, and the cache keeps token requests rare.
 

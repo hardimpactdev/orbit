@@ -12,6 +12,8 @@ Every Instance runs in an unprivileged Incus container directly on its Node. A d
 
 In progress.
 
+**Delivered state, 2026-11-11.** The independent development tick (#3331) was reverted. Development auto-deploy remains in the shared producer and depends on the policy setting. A Gateway release does not deploy development defaults. A clone starts from the container default's last successfully deployed seed; `instance:deploy` on that default is the explicit refresh path. The every-merge policy below remains the intended decision. See [Automatic development defaults](/reference/deployments#automatic-development-defaults).
+
 Nick decided the direction on 2026-11-09, after a spike on Beast proved nested Incus with Docker inside an unprivileged container. On the same day he decided that a T3 server is the agent engine in every agent container, and that a development container and a task container are one thing. The build follows [Build order](#build-order) under Decision.
 
 Principle: [Lean](/mission#principles) and [One way, one name](/mission#principles).

@@ -64,6 +64,6 @@ A task VM boots from a base image that the same Gateway code built. Its enrollme
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: none in progress. [The base VM and its snapshot](/reference/compute-drivers#the-base-vm-and-its-snapshot) and [Skip what the image holds](/reference/compute-drivers#skip-what-the-image-holds) document the build and enrollment.
+- ADRs: none in progress. [The base VM and its snapshot](/reference/compute-drivers#the-base-vm-and-its-snapshot) and [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) document the build and enrollment.
 - Detail: [Compute drivers: The base VM and its snapshot](/reference/compute-drivers#the-base-vm-and-its-snapshot), [Compute drivers: Jobs](/reference/compute-drivers#jobs), [Gateway queue](/reference/gateway-queue)
 - Verify: a step made to fail leaves the row `failed` with that step and keeps the current image, and `--resume` continues from it. A release during a build starts the new Horizon after the running step.

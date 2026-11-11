@@ -1,5 +1,6 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#the-default-instance): the automatic development deployment of docs/reference/deployments.md, in the default Instance's container. Swamp's policy finds the commit, as it does today; the Gateway admits the deployment and records its result. When the charts move into place, this becomes the development branch of the deploy chart.
+  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#the-default-instance): the automatic development deployment of docs/reference/deployments.md, in the default Instance's container. Swamp's policy finds the commit when its shared producer is active; the Gateway admits the deployment and records its result. When the charts move into place, this becomes the development branch of the deploy chart.
+  %% Delivered state, 2026-11-11: the independent development tick (#3331) was reverted. Development auto-deploy stays in the shared automatic-deploy producer and depends on its policy setting. A Gateway release does not deploy development defaults. A clone starts at the last successfully deployed seed; instance:deploy on the container default explicitly refreshes it. The independent container-default policy remains the target.
   %% status: draft
   %% command: none · automatic deployment policy
   %% kind: instance.deploy

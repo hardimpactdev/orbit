@@ -20,12 +20,24 @@
       register: image_leftover
       changed_when: false
       failed_when: image_leftover.rc != 0 and 'not found' not in image_leftover.stderr
-    - name: Create and start the build container
-      ansible.builtin.command: { argv: "{{ ['incus', '--project', instances.project] + item }}" }
-      loop:
-        # The project allows only isolated ID maps, and Incus refuses a container that does not set it.
-        - [init, "{{ instances.stock }}", "{{ build }}", --config, security.idmap.isolated=true, --device, "eth0,ipv4.address={{ instances.build_address }}"]
-        - [start, "{{ build }}"]
+    - name: Create the build container
+      ansible.builtin.command:
+        argv: [incus, --project, "{{ instances.project }}", init, "{{ instances.stock }}", "{{ build }}",
+               --config, security.idmap.isolated=true, --device, "eth0,ipv4.address={{ instances.build_address }}"]
+      changed_when: true
+    - name: Read the build container's effective devices
+      ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances/{{ build }}?project={{ instances.project }}"] }
+      register: image_nic_read
+      changed_when: false
+    - name: Check every effective build container NIC before starting
+      ansible.builtin.include_tasks: instance-network-nic-check.yml
+      vars:
+        network_container: "{{ image_nic_read.stdout | from_json }}"
+        network_name: "{{ instances.network }}"
+        network_failure: instance.container_network_unsafe
+        expected_network_device: eth0
+    - name: Start the build container
+      ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", start, "{{ build }}"] }
       changed_when: true
     # Cloud-init's first boot makes the stock `ubuntu` user and its sudo grant; the setup script removes them only after it.
     # A container has no guest agent, so `cloud-init status --wait` blocks from the first moment of the boot. It exits 2 when

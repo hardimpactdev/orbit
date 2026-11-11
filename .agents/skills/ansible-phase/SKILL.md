@@ -46,7 +46,7 @@ The `node.role_add` flow provides these shared parts:
 
 ## Decisions as templates
 
-A decision that is more than a `when` becomes a Jinja template, read with `lookup('ansible.builtin.template', 'name.j2')` and decoded with `from_json`. It reads vars, reads no state of its own and prints one JSON object. Examples: [`firewall-rule.j2`](../../../swamp/ansible/templates/firewall-rule.j2) (the `ufw` changes a rule needs, in order) and [`route-withdraw.j2`](../../../swamp/ansible/templates/route-withdraw.j2) (the files a Route withdrawal writes, from three-way merges of captured states).
+A Jinja decision template is read with `lookup('ansible.builtin.template', 'name.j2')` and decoded with `from_json`. It reads vars, reads no state of its own and prints one JSON object. For decisions expressed directly as tasks, see [`firewall.yml`](../../../swamp/ansible/tasks/firewall.yml) and [`route-withdraw.yml`](../../../swamp/ansible/route-withdraw.yml).
 
 - A macro returns text. Return JSON with `to_json` and decode it with `from_json`; compare `'true'` and `'false'`, not booleans.
 - Keep state in a `namespace`, and change it inside the loop (`{% set ns.x = ... %}`). A plain `{% set %}` inside a `for` does not leave the loop.
@@ -147,3 +147,5 @@ A migration overlay archive omits unchanged tracked symlinks: they arrive in the
 When resolving symlinks, retain directory requirements from raw targets ending in `/` or `/.` at every hop. Path normalization removes those suffixes and can turn an `ENOTDIR` target into a valid file link.
 
 FrankenPHP's `trusted_proxies` does not translate native PHP CGI variables. Match the real Node peer and forwarded HTTPS before setting scheme, port or client IP. Share one rendered Caddyfile between the Ansible Processes phase and the native clone guest, and test configuration drift without unit drift in both writers.
+
+Native speed paths must use the same effective-NIC start gate as the Ansible phase. Carry the common NIC ACL name in Gateway intent for every writer; a network union ACL must never be attached to a NIC.

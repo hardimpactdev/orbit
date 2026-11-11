@@ -32,7 +32,7 @@ sequenceDiagram
   SW->>N: Launch the container<br/>Ansible · tags container
   %%> What it does:
   %%> - `incus init` from the Node's image `orbit-instance` with the reserved bridge address, then `incus start`; the project's profile gives `security.port_isolation` and the idmapped, read-only shared folders
-  %%> - the NIC carries the bridge ACL and the container's own ACL, which lets only the Node's Caddy reach port 8080
+  %%> - the NIC carries `orbitinst0-proxy` and the container's own ACL, which lets only the Node's Caddy reach port 8080; `orbitinst0-egress` stays on the bridge only
   %%> - the agent folder is mounted too, so its clones have it; nothing in the default runs from it
   %%> - fetches the default branch into the Node's mirror with the read token; the token stays on the Node
   opt database on a Database server
