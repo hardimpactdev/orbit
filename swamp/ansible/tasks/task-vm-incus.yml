@@ -2,6 +2,15 @@
 # Incus on a task VM, initialised once: a directory storage pool, the default profile's root disk and, on a task VM, the nested
 # network. intent.nested names the nested subnet and the bridge; it is null on an image, which gets the pool and
 # the root disk only, because the subnet belongs to a task VM. The fleet phase builds the nested containers into this network.
+# Incus first creates/truncates config.yml, then writes it. Prepare the SSH user's own config serially during provisioning, before proof
+# restores or other parallel Incus calls. The root-owned config made by the rest of this phase does not protect that user.
+- name: Prepare the Incus client config
+  become: true
+  become_user: "{{ orbit_user }}"
+  ansible.builtin.command:
+    argv: [incus, list, --project, default, --format, csv]
+    creates: "{{ orbit_home }}/.config/incus/config.yml"
+  environment: { HOME: "{{ orbit_home }}" }
 - name: Read the Incus storage pools
   ansible.builtin.command: { argv: [incus, storage, list, --format, csv] }
   register: incus_pools

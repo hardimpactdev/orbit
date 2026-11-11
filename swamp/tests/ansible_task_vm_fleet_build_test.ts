@@ -124,6 +124,14 @@ function run(
   const bin = `${folder}/bin`;
   Deno.mkdirSync(bin);
   Deno.mkdirSync(`${folder}/home/.ssh`, { recursive: true });
+  // A warm VM already has its SSH user's client config from the tools phase.
+  if (initialised) {
+    Deno.mkdirSync(`${folder}/home/.config/incus`, { recursive: true });
+    Deno.writeTextFileSync(
+      `${folder}/home/.config/incus/config.yml`,
+      "default-remote: local\n",
+    );
+  }
   Deno.mkdirSync(`${folder}/stamps`);
   if (joined) Deno.writeTextFileSync(`${folder}/stamps/operator`, "d");
   Deno.writeTextFileSync(`${folder}/containers`, present.join("\n"));
@@ -147,6 +155,7 @@ if [ -n "$STOCK_ROLES" ] && [ "$1" = --project ]; then
     }" "$@"
 fi
 case "$*" in
+  "list --project default --format csv") mkdir -p "$HOME/.config/incus"; printf 'default-remote: local\\n' > "$HOME/.config/incus/config.yml" ;;
   "storage list --format csv") [ -n "$INITIALISED" ] && printf 'default,dir\\ntopology-seed,btrfs\\n' ;;
   "network list --format csv") [ -n "$INITIALISED" ] && printf 'oe-nested,bridge\\n' ;;
   "admin init --preseed") cat > "${folder}/preseed" ;;
