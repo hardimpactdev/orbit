@@ -268,6 +268,9 @@ class RequiredGateTest(unittest.TestCase):
                           "needs.changes.outputs.proof_run == 'true'"):
             self.assertIn(condition, preflight)
             self.assertIn(condition, proof)
+        for block in (preflight, proof):
+            self.assertIn('    permissions:\n      contents: read\n      pull-requests: read', block)
+            self.assertNotIn(': write', block)
         self.assertIn('runs-on: ubuntu-26.04', preflight)
         self.assertIn('timeout-minutes: 1', preflight)
         self.assertIn('    needs: changes', preflight)

@@ -657,6 +657,9 @@ jobs:
   # Metadata only, after selection and before any managed-runner or Gateway wait.
   proof-eligibility:
     name: CI proof eligibility
+    permissions:
+      contents: read
+      pull-requests: read
     needs: changes
     if: >-
       github.event_name == 'pull_request'
@@ -687,6 +690,9 @@ jobs:
   # A selected proof is part of the single Required checks result.
   proof-run:
     name: CI proof
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       outcome: ${{ steps.report.outputs.outcome }}
     needs: [changes, proof-eligibility]
