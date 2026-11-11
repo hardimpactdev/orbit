@@ -113,18 +113,23 @@ jobs:
             }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
               }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
       inputs: {hosts: [target], argv: [timeout, '20', systemctl, daemon-reload], sudo: true, timeoutSec: 25}
-  - name: Check the unit
+  - name: Read removed unit state
     labels: {role: swamp}
+    dependsOn: [{step: Reload systemd, condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.runtime != "systemd" }}
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/systemd'
-      behaviorName: ${{ "process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
-      methodName: check
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
-          }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, service: '${{ inputs.intent.control.name }}', enabled: false, ensure: stopped}
-      inputs: {}
-    dependsOn: [{step: Reload systemd, condition: {type: succeeded}}]
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-removed-unit-state-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
+      methodName: exec
+      globalArgs: {name: '${{ "process-removed-unit-state-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
+      inputs:
+        hosts: [target]
+        argv: [timeout, '20', systemctl, show, '${{ inputs.intent.control.name }}', '--property=LoadState,ActiveState,SubState,UnitFileState,MainPID,ControlPID,ControlGroup,Job']
+        sudo: true
+        timeoutSec: 25
   - name: Check unit removal
     labels: {role: swamp}
     dependsOn: [{step: Reload systemd, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Remove the environment, condition: {type: or, conditions: [{type: succeeded},
@@ -138,6 +143,55 @@ jobs:
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: '${{ "/etc/systemd/system/" + inputs.intent.control.name }}', ensure: absent}
       inputs: {}
+  - name: Check boot removal
+    labels: {role: swamp}
+    dependsOn: [{step: Reload systemd, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Remove the environment, condition: {type: or, conditions: [{type: succeeded},
+            {type: skipped}]}}, {step: Remove the dev environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ inputs.intent.control.runtime != "systemd" }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "process-boot-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
+      methodName: check
+      globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
+          }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: '${{ "/etc/systemd/system/multi-user.target.wants/" + inputs.intent.control.name }}', ensure: absent}
+      inputs: {}
+  - name: Clear failed unit cache
+    labels: {role: swamp}
+    dependsOn: [{step: Read removed unit state, condition: {type: succeeded}}, {step: Check unit removal, condition: {type: succeeded}}, {step: Check boot removal, condition: {type: succeeded}}]
+    guard: >-
+      ${{ inputs.intent.control.runtime != "systemd" || steps.exists(key, steps[key].status in ["failed", "cancelled"]) ||
+        !(data.latest("process-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status == "compliant" &&
+          data.latest("process-boot-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status == "compliant" &&
+          ["LoadState=not-found", "ActiveState=failed", "SubState=failed", "UnitFileState=", "MainPID=0", "ControlPID=0", "ControlGroup=", "Job="].all(property,
+            property in steps["Read removed unit state"].outputs.stdout.split("\n"))) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-clear-failed-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
+      methodName: exec
+      globalArgs: {name: '${{ "process-clear-failed-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: [target], argv: [timeout, '20', systemctl, reset-failed, '${{ inputs.intent.control.name }}'], sudo: true, timeoutSec: 25}
+  - name: Check the unit
+    labels: {role: swamp}
+    dependsOn: [{step: Clear failed unit cache, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ inputs.intent.control.runtime != "systemd" }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-check-removed-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
+      methodName: exec
+      globalArgs: {name: '${{ "process-check-removed-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
+      inputs:
+        hosts: [target]
+        argv: [timeout, '20', systemctl, show, '${{ inputs.intent.control.name }}', '--property=LoadState,ActiveState,SubState,UnitFileState,MainPID,ControlPID,ControlGroup,Job']
+        sudo: true
+        timeoutSec: 25
   - name: Remove the container
     labels: {role: swamp}
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "docker") }}
@@ -170,10 +224,15 @@ jobs:
             {type: succeeded}, {type: skipped}]}}, {step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: assert
-      expr: 'inputs.intent.control.runtime == "systemd" ? (data.latest("process-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status
-        == "compliant" && data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.current.active
-        in ["inactive", "unknown"]) : data.latest("process-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status
-        == "compliant"'
+      expr: >-
+        inputs.intent.control.runtime == "systemd" ?
+          (data.latest("process-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status == "compliant" &&
+           data.latest("process-boot-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status == "compliant" &&
+           ["LoadState=not-found", "UnitFileState=", "MainPID=0", "ControlPID=0", "ControlGroup=", "Job="].all(property,
+             property in steps["Check the unit"].outputs.stdout.split("\n")) &&
+           ["ActiveState=inactive", "ActiveState=unknown"].exists(property, property in steps["Check the unit"].outputs.stdout.split("\n")) &&
+           ["SubState=dead", "SubState=unknown"].exists(property, property in steps["Check the unit"].outputs.stdout.split("\n"))) :
+          data.latest("process-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status == "compliant"
       message: The Process must have its admitted runtime and boot state.
       severity: high
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}
