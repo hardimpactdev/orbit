@@ -14,7 +14,7 @@ covers:
 
 # Node provisioning
 
-An [Instance container](/reference/development-containers#processes) runs FrankenPHP and development workers as `orbit-*` units inside the container. Its web configuration follows the [container proxy trust rules](/reference/development-containers#php). Container units order after `network.target` and use nonblocking starts with bounded readiness checks. A shared runtime folder update restarts those units in each running container. The [clone copy](/reference/development-containers#lifecycle) supplies its complete root disk device, including when the seed inherited it from the Node's profile.
+An [Instance container](/reference/development-containers#processes) runs FrankenPHP and development workers as `orbit-*` units inside the container. Its web configuration follows the [container proxy trust rules](/reference/development-containers#php). Container units order after `network.target` and use nonblocking starts with bounded readiness checks. Migration adds a [Process stability check before cutover](/cli/instance/migrate); other lifecycle and direct Process operations keep their own readiness checks. A shared runtime folder update restarts those units in each running container. The [clone copy](/reference/development-containers#lifecycle) supplies its complete root disk device, including when the seed inherited it from the Node's profile.
 
 Preparing an `app-dev` Node for [Instance containers](/reference/development-containers#prepare-a-node) keeps its existing checkout Instances. Each checkout moves only through [`instance:migrate`](/cli/instance/migrate), after the container host is ready. The role installs the profile's default-reject NIC policy from the admitted common ACL name. Before starting an image builder or clone probe, it uses the same [effective-NIC gate](/reference/development-containers#network) as Instance starts. It also replaces old bridge union ACL references on existing NICs with the common NIC ACL, retaining their reject defaults. Its read-only end check repeats the audit, including stopped containers. One converge applies this to an existing host without restarting its containers.
 
@@ -105,7 +105,7 @@ The enrollment workflow records the verified bootstrap host key for the WireGuar
 
 `node.bootstrap` creates a missing managed account, adds its SSH key, and validates passwordless sudo before publishing the rule. It preserves existing home and directory modes and refuses linked access paths.
 
-A [task VM copies its base snapshot](/reference/compute-drivers#claims-copy-the-base-snapshot) for the `app-dev` software. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.
+A [task VM copies its base snapshot](/reference/compute-drivers#claims-copy-the-base-snapshot) for the `app-dev` software. Its [common converge](/reference/compute-drivers#converge-a-running-task-vm) prepares the SSH user's Incus client config before parallel fleet work. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.
 
 The Gateway role requires `logrotate`, pinned in the recipe's `gateway` profile. The gateway role convergence installs the [host log-retention rules](/reference/gateway-recovery#disk-retention), the Gateway PHP-FPM pool and the agent-view and hibernator units, and retires the release unit's timer and the Documents PHP-FPM start hook. Releases leave them unchanged.
 

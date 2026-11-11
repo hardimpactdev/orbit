@@ -47,6 +47,8 @@ export function migrateResult(
     written: WrittenFailure | null,
 ) {
     const clone = (intent.container as { clone?: unknown } | null)?.clone ?? null;
+    const processes = (intent.migrate as { processes?: { translations?: { process_id: number; process_name: string; from: string; to: string }[] }[] } | undefined)?.processes ?? [];
+    const translations = processes.flatMap((process) => process.translations ?? []);
     const routed = intent.route_mutations != null;
     const commit = workspace?.status === "succeeded" ? COMMIT.exec(String(workspace.outputs?.stdout ?? ""))?.[1] ?? null : null;
     const done = (name: keyof Phases): [string, boolean, boolean] => [name, phases[name] === "succeeded", ["failed", "cancelled", "interrupted", "unknown"].includes(phases[name])];
@@ -76,6 +78,7 @@ export function migrateResult(
         ready: failed === undefined,
         moved,
         restored: !moved && phases.restore === "succeeded" && ["succeeded", "skipped"].includes(phases.restore_route),
+        ...(translations.length ? { process_translations: translations } : {}),
         ...(failed?.[0] === "container" && refusal !== null && written?.preflight_refused === true ? { preflight_refused: true } : {}),
         ...(commit ? { commit } : {}),
         ...(moved && written?.retained_git_path && written?.retained_git_at ? { retained_git_path: written.retained_git_path, retained_git_at: written.retained_git_at } : {}),

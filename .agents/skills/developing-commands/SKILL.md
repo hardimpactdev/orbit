@@ -62,7 +62,7 @@ When updating CLI fixtures from resource replies to Operations, preserve product
 
 Run a combined Unit and Feature test collection when adding global test constants or helpers. Separate focused runs do not catch duplicate names across files.
 
-Before changing a CI cache, separate hits from misses in job logs. A Cargo lock change can restore dependencies built by the same compiler on the same OS and architecture; Cargo fingerprints still decide what must rebuild.
+Before changing a CI cache, separate hits from misses in job logs. A Cargo lock change can restore dependencies built by the same compiler on the same OS and architecture; Cargo fingerprints still decide what must rebuild. A manifest commit option can label output without selecting a checkout; trace the build command's actual working directory before choosing cache paths.
 
 Nested command proof must cross the same CLI, typed SDK and Gateway validation boundaries as ordinary commands. Reuse CI's cases-file lookup so `node:role:add` resolves to `node/role-add.cases.yaml`. Run the approved human-only refusal cases too: JSON coverage alone does not prove that operators can see the stable error code. Pass that code through the shared renderer's code argument, not through its bounded validation fields. Map the command's implementation in the shared proof selection list when its cases become runnable.
 
@@ -98,3 +98,11 @@ Gateway releases admit refresh jobs only after verification and the new Horizon 
 For an attachment read, reuse the operation's ordered inventory and eager-load its identity graph. Project public fields explicitly, and compare query counts with one attachment and several on distinct Nodes.
 
 A Node hold orders publication runs but cannot make an earlier whole-file capture current. Refresh a waiting create's publication after it gains the hold, before dispatch, and preserve its admitted resource and certificate identities. Commit accepted catalog state and release the hold in the same transaction. A writer whose hold starts after its run needs a separate design: promotion cannot change frozen run inputs.
+
+An inline Route publication must complete its Instance projection mark in the same terminal transaction as the seed. A later policy receipt cannot prove a create or migration that publishes no separate Route update.
+
+A family that defers work behind an Operation settles it atomically at the first terminal row transition, including a bound native start failure and expiry. Lock its target, queue against the recorded runtime or fail deferred work explicitly when admission stays closed, and keep its terminal result. Keep family settlement out of shared timeout and cancel selection rules. Enumerate the terminal paths and test another kind’s renewed cancel after a lockless timeout.
+
+Classify a no-start failure at the submission boundary, including execution-copy preparation, instead of enumerating error codes in a projection. Terminal settlement must fail any deferred work when its target was deleted, including when its resource record was also deleted; guard destructive admission with the existing lifecycle rule before side effects and under the target lock.
+
+Fixture calibration binds to source and registered case names, including loop-generated cases. Include startup in each slice cost, distinguish a completed case from a censored unit, and report whole-file capacity failures instead of packing new cases into old slices.

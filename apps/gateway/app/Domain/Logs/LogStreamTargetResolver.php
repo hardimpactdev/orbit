@@ -60,8 +60,13 @@ final readonly class LogStreamTargetResolver
             throw new ResourceOperationException('schedule.state_invalid', 'The Schedule logs are unavailable in its current state.', 409);
         }
 
+        $target = $this->schedules->placementOf($schedule);
+        if ($target->container !== null) {
+            throw new ResourceOperationException('schedule.target_unsupported', 'A migrated Schedule has no live log stream yet; read its logs without --follow.', 409);
+        }
+
         return new LogStreamTarget(LogStreamRecordType::Schedule, $schedule->id,
-            $this->schedules->placementOf($schedule)->node,
+            $target->node,
             LogStreamSource::journal($this->scheduleUnits->serviceName($schedule)));
     }
 

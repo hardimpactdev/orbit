@@ -22,6 +22,8 @@ sequenceDiagram
   %%> What it asks:
   %%> - the Instance goes down during the move, and its old checkout moves to retention after it; `--force` answers yes
   Note over GW: Validate, reserve runtime<br/>address · T3 port
+  %%> If it never starts:
+  %%> - cancellation or admission expiry frees the new reservation and releases deferred Schedule fires under the Instance lock; an uncertain start keeps its reservation
   %%> Requirements:
   %%> - the Instance is an active checkout Instance on an `app-dev` Node of the build list, else `instance.migrate_unsupported`
   %%> - a non-default Instance needs its Project's default Instance in a container first, else `instance.default_not_migrated`
@@ -32,6 +34,7 @@ sequenceDiagram
   %%> Result:
   %%> - the runtime reservation records its owning Operation; late receipts cannot change a newer owner
   %%> - the whole-run budget is 5,100 seconds; a lower-bound test includes declared child, restoration and cleanup timeouts
+  %%> - maps only known host command locations, preserving opaque env/shell strings, and records each Process/from/to translation in the terminal receipt
   %%> - the runtime record is reserved: the next bridge address and, for a non-default Instance, the lowest free T3 port
   %%> - the checkout stays the Instance's runtime until the Route has moved; the Route's Node is held for the run
   %%> - the Instance takes no deployment and no wake while the run lasts
@@ -47,11 +50,14 @@ sequenceDiagram
   %%> - deletes a container that an earlier failed move left, then creates and starts the new container through the shared container phase; discard leaves shared bridge endpoint rules for host reconciliation
   %%> - each attached target gets an exact TCP allow in both the bridge and NIC ACLs; both keep default reject. Endpoint adds reread on ETag conflict, at most five attempts with a one-second delay
   %%> - probes every attached target from inside the container before downtime, else `instance.database_unreachable`
+  %%> - checks mapped Process executables inside the container, then repeats before quiesce; unavailable paths report `instance.migrate_process_binary_unavailable` naming every Process and path, leaving the checkout serving
   %%> - fetches the branch from the checkout into the Node's mirror, including commits never pushed
   SW->>N: Check and stop<br/>Ansible · tags quiesce
   %%> What it does:
-  %%> - repeats the branch, retirement, source symlink and environment checks before stopping writers
-  %%> - stops and disables the host Process units, then removes the awake marker
+  %%> - repeats the branch and retirement checks
+  %%> - checks every registered Node-timer Schedule and captures timer activation before stopping any writer; unsupported Schedules refuse with their name and reason
+  %%> - repeats source symlink and environment checks before stopping any writer
+  %%> - stops and disables host Schedule timers and Process units, then removes the awake marker
   %%> - records that quiesce began, so a failure before it never restarts host units or rewrites the awake marker
   SW->>C: Build the workspace<br/>Ansible · tags workspace
   %%> What it does:
@@ -64,7 +70,7 @@ sequenceDiagram
   %%> - checks the exact copied tree inside the container, maps old-checkout targets into the workspace and rewrites absolute internal links there; broken or external links fail with the same code before any Process starts, relative links keep their targets, and source links never change
   %%> - a non-default Instance gets the proxy device that publishes its T3 port
   SW->>C: Start the container<br/>Processes · T3 · seed
-  %%> - container units use `network.target`, nonblocking starts and bounded readiness
+  %%> - container units use `network.target` and nonblocking starts; reads all moved desired-running Processes active with no pending job, waits 5 seconds once for the whole set, then requires each still active with the same positive MainPID and NRestarts; failure names the Process with `instance.migrate_processes_failed` and restores before cutover
   %%> What it does:
   %%> - starts FrankenPHP and the Instance's existing Processes as `orbit`, with the same ids and desired states; their environment files come through the vault
   %%> - writes the shared FrankenPHP Caddyfile and unit; only the Node's bridge peer with `X-Forwarded-Proto: https` sets PHP's HTTPS scheme, port and resolved client IP; other requests keep native values
@@ -77,6 +83,9 @@ sequenceDiagram
   alt all steps pass
     SW->>N: Remove the checkout<br/>Ansible · tags retire
     %%> What it does:
+    %%> - a due timer fire waits as a recorded Schedule Operation until migration terminal projection reopens admission; its context is rebuilt for the final runtime, on success or rollback
+    %%> - every terminal transition settles deferred fires under the Instance lock; closed runtime admission explicitly fails them, including bound start failure and expiry; Schedule settlement preserves the migration result and late native recovery cannot replay a settled fire
+    %%> - replaces only the moved Schedules’ checkout-dependent services with host triggers for container execution, keeps their UUID timers and calendars, and resumes each recorded desired state
     %%> - removes the old host Process units and their environment folders
     %%> - repeats the same retirement preflight as an early warning; a new blocker leaves the container serving and the checkout intact
     %%> - atomically moves each old checkout under `<checkout>.orbit-retired-git/<sha256 of original path>`; the retained root is beside the migrating Instance's checkout
@@ -97,6 +106,7 @@ sequenceDiagram
     %%> - puts the Route back on the checkout when the run had moved it
     %%> - deletes the new container, its ACL, its firewall rules and its mirror
     %%> - restores host Process units and the awake marker only when quiesce began; an unreachable target causes zero downtime
+    %%> - restores host Schedule timers to their captured activation states; their unit files stay unchanged before cutover
     %%> - the checkout and database remain in place
     SW--xGW: Run failed<br/>failed step, error_code
     Note over GW: Project native end state

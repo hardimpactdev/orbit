@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Schedules;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\InstanceMigration\DeferredMigrationScheduleRuns;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Instance;
 use App\Models\Node;
@@ -20,6 +21,12 @@ final readonly class ScheduleOperationAdmission
     public function execute(Schedule $schedule, string $verb, bool $cascade = false, ?Node $caller = null, ?string $requestId = null, bool $created = false): Operation
     {
         return DB::transaction(function () use ($schedule, $verb, $cascade, $caller, $requestId, $created): Operation {
+            if (Instance::isMorphType($schedule->target_type)) {
+                Instance::query()->whereKey($schedule->target_id)->lockForUpdate()->firstOrFail();
+                if ($verb === 'run' && ($deferred = app(DeferredMigrationScheduleRuns::class)->admit($schedule, $caller, $requestId)) !== null) {
+                    return $deferred;
+                }
+            }
             $input = $this->inputFor($schedule, $verb, $cascade, $caller, $created);
             // UUID Schedules share their owner's target lock; Operation target IDs are integers.
             $owner = Instance::isMorphType($schedule->target_type) ? 'instance_schedules' : 'node_schedules';
@@ -45,7 +52,14 @@ final readonly class ScheduleOperationAdmission
         };
         $input = ['id' => $schedule->id, 'node_id' => $target->node->id, 'caller_node_id' => $caller?->id, 'created' => $created];
         $input += $this->specification->input($schedule, $target);
+        if ($target->container !== null && in_array($verb, ['create', 'destroy'], true)) {
+            // The Node timer only requests a run; its cwd must exist on the Node rather than inside the container.
+            $input['working_directory'] = '/';
+        }
         $input['command_hash'] = hash('sha256', $schedule->command);
+        if ($target->container !== null) {
+            $input['container'] = $target->container;
+        }
         $input['command'] = ['$secret' => 'schedule.command', 'id' => $schedule->target_id];
         if ($verb === 'run') {
             $input['run_budget_seconds'] = $schedule->timeout_seconds + ScheduleFires::MarginSeconds;

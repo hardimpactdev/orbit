@@ -7,6 +7,7 @@ namespace App\Actions\Operations;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\NativeRunCancellation;
+use App\Domain\Operations\OperationOverdueAlerts;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -36,6 +37,11 @@ final readonly class ExpireOperationAction
                 return $current;
             }
             $state = $current->state ?? [];
+            $overdue = isset($state['swamp_run_id']) && ! isset($state['overdue_since']);
+            $overdueSince = $deadline->toIso8601ZuluString('microsecond');
+            if ($overdue) {
+                $state['overdue_since'] = $overdueSince;
+            }
             $failure = $state['native_failure'] ?? null;
             $step = is_array($failure) && is_string($failure['failed_step'] ?? null) ? $failure['failed_step']
                 : ($current->failed_step ?? $current->current_step);
@@ -60,6 +66,9 @@ final readonly class ExpireOperationAction
             }
             // A run that outlives its Operation holds its behavior locks and its SSH session; a dead VM would hold them forever.
             app(NativeRunCancellation::class)->request($current);
+            if ($overdue) {
+                app(OperationOverdueAlerts::class)->raise($current, $seconds, $overdueSince);
+            }
 
             return $current;
         });

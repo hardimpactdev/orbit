@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Swamp;
 
+use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationStartRefusal;
@@ -39,6 +40,7 @@ final readonly class StartSwampRun
         $started = microtime(true);
         $outcome = 'unavailable';
         $accepted = false;
+        $submitted = false;
         try {
             if (! $this->begin($operation)) {
                 return;
@@ -52,7 +54,7 @@ final readonly class StartSwampRun
                 'workflowIdOrName' => $declaration['workflow'],
                 'inputs' => app(DirectOperation::class)->workflowInputs($operation),
                 'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
-            ]);
+            ], $submitted);
             $accepted = true;
             $this->bind($operation, $response['run_id']);
             if ($response['failed']) {
@@ -67,7 +69,7 @@ final readonly class StartSwampRun
                 ? $exception : ($accepted ? $this->uncertain()
                     : new ResourceOperationException('swamp.start_unavailable', 'The native workflow start is unavailable.', 503));
             $outcome = $safe->errorCode;
-            $this->fail($operation, $safe);
+            $this->fail($operation, $safe, notSubmitted: ! $submitted);
             throw new ResourceOperationException($safe->errorCode, $safe->getMessage(), $safe->status, details: ['operation_id' => $operation->id]);
         } finally {
             Log::info('Swamp direct start', ['operation_id' => $operation->id,
@@ -126,13 +128,13 @@ final readonly class StartSwampRun
     public function refuse(Operation $operation, ResourceOperationException $error): void
     {
         Log::info('Swamp direct start', ['operation_id' => $operation->id, 'outcome' => $error->errorCode, 'duration_ms' => 0]);
-        $this->fail($operation, $error);
+        $this->fail($operation, $error, notSubmitted: true);
     }
 
-    private function fail(Operation $operation, ResourceOperationException $error): void
+    private function fail(Operation $operation, ResourceOperationException $error, bool $notSubmitted): void
     {
         $code = $error->errorCode;
-        $uncertain = DB::transaction(function () use ($operation, $code, $error): bool {
+        $uncertain = DB::transaction(function () use ($operation, $code, $error, $notSubmitted): bool {
             $this->lock($operation);
             if ($operation->status->terminal()) {
                 return false;
@@ -146,7 +148,10 @@ final readonly class StartSwampRun
             // every Operation read shows as its error.
             app(OperationStore::class)->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(),
                 'error_code' => $code, 'current_step' => null, 'failed_step' => null, 'lock_key' => null,
-                'state' => [...($operation->state ?? []), 'native_failure' => ['failed_step' => null, 'detail' => $error->getMessage(), 'stderr_recorded' => false]],
+                'state' => [...($operation->state ?? []),
+                    ...($operation->kind === InstanceMigration::Kind && $notSubmitted && ! isset($operation->state['swamp_run_id'])
+                        ? ['native_start_not_submitted' => true] : []),
+                    'native_failure' => ['failed_step' => null, 'detail' => $error->getMessage(), 'stderr_recorded' => false]],
                 'result' => ['error' => ['code' => $code, 'message' => $error->getMessage(), 'details' => $error->details]]]);
             if (! isset($operation->state['swamp_run_id']) && DirectOperation::owns($operation)) {
                 $projection = app(DirectOperation::class)->projection($operation);
@@ -170,7 +175,7 @@ final readonly class StartSwampRun
     /** @param array<string,mixed> $payload
      * @return array{run_id:string,failed:bool}
      */
-    private function request(WebSocketEndpoint $endpoint, array $payload): array
+    private function request(WebSocketEndpoint $endpoint, array $payload, bool &$submitted): array
     {
         $id = bin2hex(random_bytes(16));
         $stage = 'connect';
@@ -181,6 +186,8 @@ final readonly class StartSwampRun
         try {
             [$socket, $shared] = $dispatch->socket($endpoint, 15, $this->socket);
             $stage = 'send';
+            // Once sending begins, failure can no longer disprove submission.
+            $submitted = true;
             $socket->send(['type' => 'workflow.run', 'id' => $id, 'payload' => $payload]);
             $stage = 'receive';
             // Observed pre-dispatch setup took 32.7s and 55.3s; worker dispatch follows started.
@@ -214,6 +221,8 @@ final readonly class StartSwampRun
                             'remote_code' => $redact($error['code'] ?? null, 100),
                             'remote_message' => $redact($error['message'] ?? null, 2000),
                         ]);
+                        // An explicit refusal before any root event proves that no run was accepted.
+                        $submitted = false;
                         throw new ResourceOperationException('swamp.start_refused', 'Swamp refused the workflow start. Inspect Swamp before another admission.', 503);
                     }
                 }

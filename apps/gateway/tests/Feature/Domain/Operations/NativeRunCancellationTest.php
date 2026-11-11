@@ -391,3 +391,29 @@ it('forwards a cancellation recorded before native start confirmation once the r
         ->and($operation->state['native_cancel_confirmed_at'] ?? null)->not->toBeNull();
     expect(array_column($socket->frames, 'type'))->toContain('workflow.cancel');
 });
+
+it('keeps a lockless script timeout unchanged and forwards an explicit renewed cancel after an hour', function (): void {
+    Queue::fake();
+    $operation = runningScript();
+    $expired = app(ExpireOperationAction::class)->execute($operation);
+    expect($expired->lock_key)->toBeNull();
+    $before = $expired->getAttributes();
+    $this->travel(61)->minutes();
+
+    expect(app(ExpireOperationAction::class)->releaseStaleHolds())->toBe(0)
+        ->and($expired->refresh()->getAttributes())->toBe($before);
+    $socket = reconcileSocket($expired, 'running');
+    reconcile();
+    expect($socket->frames)->toBe([]);
+
+    app(CancelOperationAction::class)->execute($expired);
+    $renewed = $expired->refresh()->state['native_cancel_requested_at'];
+    reconcile();
+
+    expect(array_column($socket->frames, 'type'))->toBe(['workflow.history.get', 'workflow.cancel'])
+        ->and($expired->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($expired->error_code)->toBe('operation.timed_out')
+        ->and($expired->state['native_cancel_requested_at'])->toBe($renewed)
+        ->and($expired->state)->toHaveKey('native_cancel_confirmed_at')
+        ->and($expired->state['native_timeout'])->not->toHaveKey('native_terminal_status');
+});

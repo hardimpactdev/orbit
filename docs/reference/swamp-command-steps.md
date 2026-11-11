@@ -14,6 +14,8 @@ Use `App\Infrastructure\Swamp\SwampCommandStep` for execution-copy references an
 
 A [container Process read](/reference/development-containers#processes) uses `processInspection` to read the fixed `Read Process result` capture from the completed run. The journal bytes stay in the execution vault; the Gateway checks the capture against the read's request id.
 
+Container status and log reads use the same native vault key: `nckrtl-process-command-assets-<model UUID>-inspection-inspection-inspection-<request UUID>-value`. The three `inspection` segments name the method, the resource spec and the resource instance prefix. The Gateway's grant in `swamp/config/gateway-workflow-grants.json` allows `write` and `read` on this family in `orbit-control-inputs`; both UUIDs have five hexadecimal groups of lengths 8, 4, 4, 4 and 12. The reader accepts only a key for its own request. A normal release renders and reloads the grant through its Swamp-load child; no manual serve restart is needed.
+
 Recorded reads such as [`node:metrics`](/cli/node/metrics) do not use command steps. The Gateway reads its saved observation and agent state without creating an Operation, starting a workflow, or asking Swamp to collect a fresh sample.
 
 ## Secret inputs

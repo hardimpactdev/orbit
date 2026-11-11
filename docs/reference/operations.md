@@ -127,9 +127,21 @@ Otherwise, the Gateway uses the longest successful run of that kind completed in
 
 The 15-minute floor is a stop-gap. A quick first success otherwise sets a budget that cancels a later, larger run, as it did for `instance.migrate` at 120 seconds. A hang of such a kind holds one Swamp dispatch slot and its target lock for up to 15 minutes; the Swamp Node has 12 slots: three workers with one slot per CPU, on 4 CPUs. The floor goes when each kind's budget comes from its workflow's declared step timeouts. The reconciler caches each kind’s history budget for one pass.
 
+Overdue reporting records Gateway expiry only; it does not ship the final soft/hard-limit design. A bound Operation that reaches its existing run-budget timeout records `overdue_since` and queues an alert after commit. The timestamp is the existing deadline, not the time the Gateway noticed it. The existing cancellation and `operation.timed_out` result still happen at that same deadline. This is a timeout audit, not an earlier warning while work continues.
+
+Alert delivery uses the [Gateway queue](/reference/gateway-queue)'s `tasks` workers, separate from the cancellation reconciler's `operations` worker. The job creates an `operation.overdue` Activity entry (`operation:overdue-alert`) and attempts the [signed release webhook](/reference/gateway-recovery#webhook). It has one attempt; webhook failure is recorded as `operation.alert_webhook_failed` and is not retried. The expiry marker prevents repeated reads or reconciliation from scheduling another job. Queue failure or worker loss can prevent delivery; this is not an exactly-once delivery guarantee.
+
+Admission and capacity waits do not raise this execution alert. Native history known before Gateway expiry can settle success without an overdue alert. If history is unavailable at expiry, existing recovery can later restore success while retaining `overdue_since` as the Gateway-expiry audit. Native SSH timeouts and the learned 900-second floor are unchanged.
+
 An unbound admission with attempts `0` has a separate 600-second budget, matching Swamp’s default `queueTimeout`, regardless of its kind’s execution budget. It runs from `started_at`, or `created_at` when no start was recorded. The reconciler includes these rows, even when cancellation was already requested.
 
 The [reconciler](/reference/swamp-command-steps#reconciler) projects an expired budget as `failed` with `error_code: operation.timed_out` and records `cancel_requested`. Operation reads apply the same deadline between passes. Expiration keeps the native binding, any captured F1 error detail, the failed or active step, and existing result evidence. An Operation admitted with a generic target hold keeps it until the shared reader verifies the exact bound native root is terminal. That receipt releases the hold and records the native status without reopening the timed-out Operation.
+
+Instance migration settles [deferred Schedule fires](/reference/schedules#checkout-migration) in the transaction that first marks its Operation terminal. It locks the Instance, then queues each fire against the recorded runtime or explicitly fails it if admission remains closed.
+
+The submission boundary records whether a native start was sent or explicitly refused; proven no-start outcomes, including failed execution-copy preparation, free a new runtime reservation.
+
+A deleted Instance never prevents the Operation from becoming terminal; its waiting Schedule fires fail with `schedule.target_unavailable`, even if their Schedule was also deleted. An unverified runtime keeps its reservation; a projected rollback removes it. Expiry settles fires immediately without changing the migration’s timeout result. Migration-specific late-result recovery can update that result as described below; later receipts, stale hold release and recovery cannot replay a settled fire.
 
 A run can beat its expiry. For example, Swamp's start reply arrives after the 600-second admission budget, so the Operation expires unbound, and the run then ends within its kind's budget. When the exact native terminal finished before the bound deadline, the shared reader reopens the Operation and projects that terminal normally. The `timed_out` mark and its cancel request go, and the records reach their real end state. A terminal at or after the deadline keeps the timeout.
 

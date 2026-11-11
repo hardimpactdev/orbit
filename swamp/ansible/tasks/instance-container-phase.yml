@@ -673,12 +673,22 @@
   when: phase in ['processes', 'start']
   ansible.builtin.command:
     argv: "{{ as_root + ['timeout', '5', 'systemctl', 'show', '--property=ActiveState', '--property=Job', '--', item] }}"
-  loop: "{{ units }}"
+  loop: >-
+    {{ units | difference(container.processes | default([]) | map(attribute='name') | list)
+       if phase == 'processes' and intent.migrate is defined else units }}
   register: unit_ready
   changed_when: false
   until: unit_ready.rc == 0 and 'ActiveState=active' in unit_ready.stdout_lines and 'Job=' in unit_ready.stdout_lines
   retries: 10
   delay: 1
+
+# Only migration holds cutover for a stable Process. Create, deploy, start and direct process.* keep their own checks.
+- name: Check each moved running Process before cutover
+  tags: [processes]
+  when: phase == 'processes' and intent.migrate is defined
+  ansible.builtin.include_tasks:
+    file: instance-migrate-process-ready.yml
+    apply: { tags: [processes] }
 
 # The agent's side of a clone: the placeholder model key, the Claude Code and Codex settings, the note links, and the instance file,
 # whose presence starts T3. Whole files are compared by digest; JSON settings merge only Orbit's keys, preserving runtime state.

@@ -60,6 +60,19 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 
 The command line runs a static PHP CLI from the same static build as FrankenPHP, in the runtime folder. A `php` shim around `frankenphp php-cli` does not fit yet: FrankenPHP refuses the `-d` options that Composer and test runners pass. Before PHP 8.6 it also cannot run `php -i` or PHP without a script, and Orbit runs PHP 8.5. One static build gives both binaries the same version and extensions, so web requests and commands behave the same. The shim can replace the CLI once FrankenPHP accepts `-d` and Orbit runs PHP 8.6.
 
+## Workspace volumes: proposed follow-up
+
+**Draft only; no implementation or ownership proof has run.** [Workspace volumes](/reference/development-containers#workspace-volumes-draft) owns the accepted bidirectional-write, clone-link and linked-lifecycle policies, remaining recommendations and required proof. This follow-up does not delay current container releases or migration-safety proofs. It proposes no path rename and changes no delivered-state claim below.
+
+The smallest sequence is:
+
+1. Separately authorize the disposable proof in the reference. Record exact Incus, kernel and storage versions. Stop on any failure of ownership or isolation.
+2. Review remaining recommendations and prepare the owned spec commit. Update affected charts, command pages and proof cases before changing a command's flow.
+3. Build owned volumes first. Prove consistent seeds, explicit copying and rebinding, conversion, removal, independent clones and recovery from a failed copy.
+4. Add explicit package links on the same Node. Prove lifecycle refusals, offline backup and restore, and recovery before enabling links for real Projects.
+
+Each implementation slice carries its Gateway and Swamp changes, behavior tests and documentation through normal owned PR work. Existing Instance, task VM and checkout migration behavior remains the baseline until a reviewed implementation replaces it.
+
 ## Rules for every PR
 
 Every build PR keeps these rules, so the work in progress never breaks what runs today. Another thread proves commands on the task VM proof fleet at the same time, so a regression on a task VM host stops its work.

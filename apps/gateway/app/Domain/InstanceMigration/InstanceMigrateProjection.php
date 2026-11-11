@@ -15,7 +15,6 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -35,16 +34,21 @@ use Illuminate\Support\Facades\DB;
  * the Instance's runtime: its checkout path becomes the workspace, the runtime runs, and a non-default Instance's T3 server is
  * recorded. A move that failed and restored drops the reserved runtime row, so the Instance is the checkout Instance it was.
  */
-final readonly class InstanceMigrateProjection implements DirectOperationProjection, DirectOperationStartRefusal
+final readonly class InstanceMigrateProjection implements DirectOperationProjection
 {
     public function __construct(private DirectOperation $direct) {}
 
-    public function refused(Operation $operation): void
+    /** The one settlement rule, called by OperationStore in the first terminal transition's transaction. */
+    public function terminal(Operation $operation, Operation $before): void
     {
-        // A queued start that never reached Swamp owns no Node effects. A retry keeps an earlier failed restore's reservation.
-        if (($operation->input['had_runtime_reservation'] ?? false) !== true) {
-            Instance::query()->findOrFail($operation->target_id)->runtime()->where('operation_id', $operation->id)->delete();
+        $instance = Instance::query()->lockForUpdate()->find($operation->target_id);
+        $unstarted = ! isset($before->state['swamp_run_id']) && $before->attempts === 0
+            && ! ($before->status === OperationStatus::Running && isset($before->state['swamp_start']));
+        $refused = ! isset($operation->state['swamp_run_id']) && ($operation->state['native_start_not_submitted'] ?? false) === true;
+        if ($instance !== null && ($unstarted || $refused) && ($operation->input['had_runtime_reservation'] ?? false) !== true) {
+            $instance->runtime()->where('operation_id', $operation->id)->delete();
         }
+        app(DeferredMigrationScheduleRuns::class)->release($operation, targetAvailable: $instance !== null);
     }
 
     public function input(Operation $operation): array
@@ -64,7 +68,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         ], 'execution_secrets' => [
             ...($publication === null ? [] : ValidatedData::object($publication['execution_secrets'])),
             'process_environments' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-migrate-processes-'.$operation->id,
-                app(ContainerProcesses::class)->environments($instance, $container['processes'] ?? [])),
+                app(ContainerProcesses::class)->environments($instance, $container['processes'] ?? [], migrate: true)),
             'model_environment' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-migrate-model-'.$operation->id, $model),
         ]];
     }
@@ -181,11 +185,20 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                     $instance->update(['retained_git_path' => $result['retained_git_path'], 'retained_git_at' => $result['retained_git_at']]);
                 }
                 if ($moved) {
-                    app(ContainerProcesses::class)->complete($instance, ValidatedData::object($operation->input['container'])['processes'] ?? [], true, null);
+                    app(ContainerProcesses::class)->complete($instance, ValidatedData::object($operation->input['container'])['processes'] ?? [], true, null, migrate: true);
+                    $schedules = ValidatedData::object($operation->input['migrate'])['schedules'] ?? [];
+                    if (! is_array($schedules) || ! array_is_list($schedules)) {
+                        throw new \InvalidArgumentException('The admitted Schedules must be a list.');
+                    }
+                    app(MigrateSchedules::class)->complete($instance, array_map(ValidatedData::object(...), $schedules));
                     $this->moved($instance, ValidatedData::object($operation->input['migrate']), ValidatedData::integerList($operation->input['sqlite_connection_ids'] ?? []));
                     // A default's clones start at the seed snapshot the run took of its commit.
                     $runtime->update(['power_state' => InstanceRuntimePowerState::Running,
                         ...($server === null ? ['seed_commit' => ValidatedData::string($result['commit'])] : [])]);
+                    if ($data['status'] === 'succeeded') {
+                        // This run published the container's Route inline; no later route.update receipt is needed.
+                        $instance->update(['development_projection_pending' => false]);
+                    }
                     if ($server !== null) {
                         app(InstanceLifecycleContributions::class)->projectCreate($instance, $server);
                     }

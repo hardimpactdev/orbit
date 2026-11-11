@@ -63,6 +63,7 @@ sequenceDiagram
   SW->>NT: Restore the base snapshot<br/>a reboot · 5–16 s
   %%> What it does:
   %%> - restores the task's Incus snapshot `base` (stage 2) of the three containers in parallel; every restore has a 45 s limit
+  %%> - the outer VM's tools phase prepares the Incus client config for the SSH user `orbit` before any parallel call; Incus first-use writes are not atomic
   %%> - a failed restore stops the run before any case
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
   %%> - a container snapshot holds no memory, so the restore is a reboot: no guest clock to set, no NFS server to restart, no stale TCP state; the operator peer comes back from the hub's peer file (stage 2)

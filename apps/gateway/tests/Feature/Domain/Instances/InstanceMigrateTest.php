@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 use App\Actions\Hibernation\ActivateInstanceRuntimeAction;
 use App\Actions\Instances\StartInstanceDeployAction;
+use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceMigrateAction;
+use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\ReadOperationAction;
+use App\Actions\Schedules\CreateScheduleAction;
+use App\Actions\Schedules\RunScheduleAction;
+use App\Actions\Schedules\ShowScheduleLogsAction;
 use App\Data\Instances\InstanceData;
 use App\Data\Operations\OperationData;
+use App\Data\Schedules\AddScheduleData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
@@ -20,6 +26,7 @@ use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
+use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceAttachedTargets;
 use App\Domain\Instances\InstanceContainer;
@@ -27,8 +34,12 @@ use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Logs\LogStreamTargetResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -36,6 +47,11 @@ use App\Domain\Processes\VpDevPreset;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Schedules\ScheduleControlProjection;
+use App\Domain\Schedules\ScheduleOperationAdmission;
+use App\Domain\Schedules\ScheduleRuntimeAccount;
+use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
+use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
@@ -59,6 +75,7 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\Schedule;
 use App\Support\ValidatedData;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -69,6 +86,8 @@ use Illuminate\Support\Facades\Schema;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 uses(LazilyRefreshDatabase::class);
+
+afterEach(fn () => app(SwampConnection::class)->release());
 
 require_once __DIR__.'/ContainerInstanceHelpers.php';
 
@@ -169,9 +188,9 @@ function migrateServerDatabase(Instance $instance, DatabaseServer $server, strin
  *
  * @param  array<string, string>  $secrets
  */
-function migrateVault(array $secrets = []): object
+function migrateVault(array $secrets = [], ?string $failKey = null): object
 {
-    $socket = new class($secrets) implements WebSocketClient
+    $socket = new class($secrets, $failKey) implements WebSocketClient
     {
         /** @var list<array{key: string, value: string}> */
         public array $puts = [];
@@ -179,14 +198,17 @@ function migrateVault(array $secrets = []): object
         /** @var list<array<string, mixed>> */
         private array $frames = [];
 
+        public array $sentTypes = [];
+
         /** @param array<string, string> $secrets */
-        public function __construct(private array $secrets) {}
+        public function __construct(private array $secrets, private readonly ?string $failKey) {}
 
         public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
 
         public function send(array $message): void
         {
             $this->frames[] = $message;
+            $this->sentTypes[] = $message['type'];
         }
 
         public function receive(float $timeoutSeconds): array
@@ -197,6 +219,9 @@ function migrateVault(array $secrets = []): object
                     'secretKey' => $frame['payload']['secretKey'], 'vaultType' => 'local_encryption', 'value' => $this->secrets[$frame['payload']['secretKey']] ?? '']]]];
             }
             $this->puts[] = ['key' => $frame['payload']['key'], 'value' => (string) ($frame['payload']['value'] ?? '')];
+            if ($frame['payload']['key'] === $this->failKey) {
+                return [['id' => $frame['id'], 'type' => 'error', 'error' => ['code' => 'vault_put_failed']]];
+            }
 
             return [['id' => $frame['id'], 'type' => 'vault.put', 'payload' => ['data' => [
                 'vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
@@ -211,6 +236,81 @@ function migrateVault(array $secrets = []): object
     };
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token']);
+
+    return $socket;
+}
+
+/** The shared reader's native history, recovery search and cancellation boundary. */
+function migrationTerminalReader(Operation $migration, string $status, bool $noRun = false, ?string $startEvent = null): WebSocketClient
+{
+    app(SwampConnection::class)->release();
+    $runId = '77eb3d91-e9b9-42f9-8c35-e1e5837042b2';
+    $workflow = app(DirectOperation::class)->definition($migration->kind)['workflow'];
+    $inputs = ['operation_id' => $migration->id, 'node_id' => $migration->node_id, 'kind' => $migration->kind];
+    $result = $status === 'succeeded'
+        ? ['instance_id' => $migration->target_id, 'ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]
+        : ['ready' => false, 'moved' => false, 'restored' => true];
+    $history = ['id' => $runId, 'workflowName' => $workflow, 'status' => $status, 'inputs' => $inputs,
+        'startedAt' => ($migration->started_at ?? now())->toISOString(), 'completedAt' => now()->toISOString(),
+        'jobs' => [['name' => 'migrate', 'steps' => [['name' => 'finish', 'status' => 'succeeded', 'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]]]]]];
+    $search = $noRun ? [] : [['runId' => $runId, 'workflowName' => $workflow, 'inputs' => $inputs,
+        'tags' => ['orbit_start_key' => 'operation:'.$migration->id]]];
+    $socket = new class($history, $search, $startEvent) implements WebSocketClient
+    {
+        public array $frames = [];
+
+        private ?array $frame = null;
+
+        private bool $open = false;
+
+        public function __construct(private readonly array $history, private readonly array $search, private readonly ?string $startEvent) {}
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+        {
+            $this->open = true;
+        }
+
+        public function send(array $message): void
+        {
+            $this->frames[] = $message;
+            $this->frame = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $frame = $this->frame;
+            $this->frame = null;
+            if ($frame === null) {
+                return [];
+            }
+            if ($frame['type'] === 'workflow.run') {
+                return [['id' => $frame['id'], 'type' => 'event', 'event' => ['workflowName' => $this->history['workflowName'],
+                    'runId' => $this->history['id'], 'kind' => $this->startEvent]]];
+            }
+            $payload = match ($frame['type']) {
+                'vault.put' => ['data' => ['vaultName' => $frame['payload']['vaultName'],
+                    'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']],
+                'workflow.history.get' => ['data' => $this->history],
+                'workflow.run.search' => ['data' => ['results' => $this->search], 'total' => count($this->search)],
+                'run.attach' => ['runId' => $this->history['id'], 'kind' => 'workflow-run'],
+                'workflow.cancel' => ['data' => ['runId' => $this->history['id'], 'status' => 'cancellation_requested']],
+            };
+
+            return [['id' => $frame['id'], 'type' => $frame['type'] === 'run.attach' ? 'run.attached' : $frame['type'], 'payload' => $payload]];
+        }
+
+        public function close(): void
+        {
+            $this->open = false;
+        }
+
+        public function isConnected(): bool
+        {
+            return $this->open;
+        }
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.read_token' => 'read-token']);
 
     return $socket;
 }
@@ -236,7 +336,7 @@ describe('the admission of a move', function (): void {
                 'awake' => ['directory' => '/dev/shm/orbit/hibernation', 'path' => '/dev/shm/orbit/hibernation/app-instance-'.$default->id.'.awake'],
                 'environment' => ['targets' => [], 'node_addresses' => ['10.44.0.7', '10.44.0.7'],
                     'proxy_policy' => ['private_v4' => InstanceEgress::PrivateV4, 'private_domains' => ['orbit']]],
-                'databases' => [], 'processes' => [], 'firewall_prefix' => 'orbit:instance-'.$default->id.'-',
+                'databases' => [], 'processes' => [], 'schedules' => [], 'firewall_prefix' => 'orbit:instance-'.$default->id.'-',
                 'retire' => [['path' => '/home/orbit/apps/tool/default', 'mirror' => '/var/lib/orbit/instance-repositories/'.$default->id.'.git']]])
             ->and($operation->node_id)->toBe($node->id);
     });
@@ -301,6 +401,108 @@ describe('the admission of a move', function (): void {
         expect(containerRefusal(fn () => migrateStart($default)))->toBe('instance.lifecycle_busy')
             ->and(InstanceMigration::running($default))->toBeTrue();
     });
+});
+
+describe('migration target ownership', function (): void {
+    it('settles a queued migration and its fires when its non-default Instance was already removed', function (string $terminal, string $fireState): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        migrateMovedDefault($project, $node);
+        $instance = migrateCheckout($project, $node, 'removed');
+        $schedule = $fireState === 'none' ? null : migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = $schedule === null ? null : app(RunScheduleAction::class)->admit($schedule, $node);
+        expect($migration->status)->toBe(OperationStatus::Queued);
+        if ($fire !== null) {
+            expect($fire->status)->toBe(OperationStatus::Waiting);
+        }
+        // Reproduce an already deleted target from before the destroy admission guard.
+        $instance->runtime()->delete();
+        DB::table('instances')->where('id', $instance->id)->delete();
+        if ($fireState === 'deleted') {
+            $schedule->delete();
+        }
+        $this->travel(11)->minutes();
+
+        $ended = $terminal === 'cancelled' ? app(CancelOperationAction::class)->execute($migration)
+            : app(ExpireOperationAction::class)->execute($migration);
+
+        expect($ended->refresh()->status)->toBe($terminal === 'cancelled' ? OperationStatus::Cancelled : OperationStatus::Failed)
+            ->and($ended->finished_at)->not->toBeNull()
+            ->and(Instance::query()->whereKey($instance->id)->exists())->toBeFalse();
+        if ($terminal === 'expired') {
+            expect($ended->error_code)->toBe('operation.timed_out');
+        }
+        if ($fire !== null) {
+            expect($fire->refresh()->status)->toBe(OperationStatus::Failed)
+                ->and($fire->finished_at)->not->toBeNull()
+                ->and($fire->error_code)->toBe('schedule.target_unavailable')
+                ->and($fire->result['error']['code'])->toBe('schedule.target_unavailable');
+            Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+            if ($fireState === 'retained') {
+                expect($schedule->refresh()->last_run_status->value)->toBe('error')
+                    ->and($schedule->error_code)->toBe('schedule.target_unavailable');
+            } else {
+                expect(Schedule::query()->whereKey($schedule->id)->exists())->toBeFalse();
+            }
+            $settled = $fire->getAttributes();
+            $result = $ended->result;
+            app(OperationStore::class)->change($ended, ['status' => $ended->status]);
+            app(CancelOperationAction::class)->execute($ended);
+            app(ExpireOperationAction::class)->execute($ended->refresh());
+            expect($fire->refresh()->getAttributes())->toBe($settled)
+                ->and($ended->refresh()->result)->toBe($result);
+        }
+        expect(Operation::query()->where('kind', 'schedule.run')->where('status', OperationStatus::Waiting)->exists())->toBeFalse();
+    })->with([
+        'cancel without fires' => ['cancelled', 'none'], 'expire without fires' => ['expired', 'none'],
+        'cancel with retained Schedule' => ['cancelled', 'retained'], 'expire with retained Schedule' => ['expired', 'retained'],
+        'cancel with deleted Schedule' => ['cancelled', 'deleted'], 'expire with deleted Schedule' => ['expired', 'deleted'],
+    ]);
+
+    it('blocks forced destroy after migration expiry but admits migration recovery with its reservation', function (): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        migrateMovedDefault($project, $node);
+        $instance = migrateCheckout($project, $node, 'retry');
+        $migration = migrateStart($instance);
+        $migration->update(['status' => OperationStatus::Running, 'attempts' => 1, 'started_at' => now(),
+            'state' => [...$migration->state, 'swamp_run_id' => '77eb3d91-e9b9-42f9-8c35-e1e5837042b2']]);
+        $reservation = $instance->runtime()->firstOrFail()->id;
+        expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($instance, true)))->toBe('instance.lifecycle_busy');
+        $this->travel(2)->hours();
+
+        $expired = app(ExpireOperationAction::class)->execute($migration);
+
+        expect($expired->error_code)->toBe('operation.timed_out')
+            ->and($instance->runtime()->firstOrFail()->id)->toBe($reservation);
+        expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($instance, true)))->toBe('instance.lifecycle_busy');
+        $retry = migrateStart($instance);
+        expect($retry->status)->toBe(OperationStatus::Queued)
+            ->and($retry->input['had_runtime_reservation'])->toBeTrue()
+            ->and($instance->runtime()->firstOrFail()->id)->toBe($reservation);
+    });
+
+    it('refuses forced destruction before cleanup and rechecks migration ownership at admission', function (bool $captured): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        migrateMovedDefault($project, $node);
+        $instance = migrateCheckout($project, $node, 'moving');
+        $destroy = app(StartInstanceDestroyAction::class);
+        $snapshot = $captured ? $destroy->snapshot($instance, true) : null;
+        $migration = migrateStart($instance);
+        $before = $instance->refresh()->getAttributes();
+        expect(Schedule::query()->exists())->toBeFalse();
+
+        $action = $captured ? fn () => app(DirectInstanceDestroyIntent::class)->record($snapshot)
+            : fn () => $destroy->execute($instance, true);
+        expect(containerRefusal($action))->toBe('instance.lifecycle_busy');
+
+        expect($instance->refresh()->getAttributes())->toBe($before)
+            ->and($migration->refresh()->status)->toBe(OperationStatus::Queued)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+        expect($instance->removalMember()->exists())->toBeFalse();
+    })->with(['initial guard' => false, 'snapshot predates migration' => true]);
 });
 
 describe('the PHP version of a web-serving Project', function (): void {
@@ -657,6 +859,21 @@ describe('the databases of a move', function (): void {
 });
 
 describe('the end of a move', function (): void {
+    it('admits a routed migrated default deployment without a policy tick', function (): void {
+        $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+        $default = migrateCheckout(containerDefaultProject(ProjectType::LaravelApp, '8.5'), containerDefaultNode());
+        $route = migrateRoute($default);
+        migrateSource(['require' => ['php' => '^8.5', 'laravel/framework' => '^13.0']]);
+        $operation = migrateStart($default);
+
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $deploy = app(StartInstanceDeployAction::class)->execute($default->refresh(), 'manual', null);
+
+        expect($route->refresh()->status->value)->toBe('active');
+        expect($deploy->input['deployment'])->toMatchArray(['variant' => 'container', 'projection_route_id' => null]);
+        $this->assertDatabaseHas('instances', ['id' => $default->id, 'development_projection_pending' => false]);
+    });
+
     it('makes the container a default\'s runtime: the workspace is its checkout, it runs, and its seed commit is recorded', function (): void {
         $node = containerDefaultNode();
         $default = migrateCheckout(containerDefaultProject(), $node);
@@ -748,6 +965,7 @@ describe('the end of a move', function (): void {
         expect(InstanceRuntime::query()->where('instance_id', $default->id)->exists())->toBeFalse()
             ->and($default->refresh()->only(['checkout_path', 'status']))->toBe(['checkout_path' => '/home/orbit/apps/tool/default', 'status' => InstanceState::Active])
             ->and($operation->refresh()->error_code)->toBe('instance.database_unreachable');
+        $this->assertDatabaseHas('instances', ['id' => $default->id, 'development_projection_pending' => true]);
         // The same command moves it again, at the address that is free again.
         expect(migrateStart($default)->id)->not->toBe($operation->id)
             ->and(InstanceRuntime::query()->where('instance_id', $default->id)->value('bridge_address'))->toBe('10.253.0.2');
@@ -806,6 +1024,7 @@ describe('the end of a move', function (): void {
             ->and($operation->refresh()->status->value)->toBe('failed')
             ->and($operation->error_code)->toBe($code)
             ->and($operation->result['error_message'])->toBe('Retirement refused without changing the source.');
+        $this->assertDatabaseHas('instances', ['id' => $default->id, 'development_projection_pending' => true]);
     })->with(['instance.migrate_retire_failed', 'instance.migrate_retirement_blocked', 'instance.migrate_unpushed_commits', 'instance.migrate_stashes_present']);
 
     it('records and exposes retained Git after retirement, including when a later retirement fails', function (bool $failed): void {
@@ -1008,6 +1227,122 @@ function migrationVpDev(Instance $instance, string $desired = 'running', bool $s
 }
 
 describe('Processes moving into the container', function (): void {
+    it('maps a host command name only in the projected migration copy', function (array $command, array $mapped, ?array $expectedExecutables = null): void {
+        $instance = migrateCheckout(containerDefaultProject(ProjectType::LaravelApp, '8.5'), containerDefaultNode());
+        $worker = migrationWorker($instance);
+        $config = $worker->runtime_config;
+        $config['command'] = $command;
+        $worker->update(['runtime_config' => $config]);
+        $operation = migrateStart($instance);
+        $unit = $operation->input['container']['processes'][0];
+        $executables = $expectedExecutables ?? ($mapped[0] === '/usr/bin/env' ? array_slice($mapped, 0, 2) : [$mapped[0]]);
+
+        expect($unit['content'])->toContain('"'.implode('" "', $mapped).'"')
+            ->and($operation->input['migrate']['processes'][0]['executables'])->toBe($executables)
+            ->and($worker->refresh()->runtime_config)->toBe($config)
+            ->and($worker->systemd_activation_hash)->toBe('old-host-hash');
+        // The vault re-renders the same translated public unit, while the host Process is still unchanged.
+        expect(app(ContainerProcesses::class)->environments($instance->fresh(), $operation->input['container']['processes'], migrate: true))->toContain('migration-process-secret');
+
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        expect($worker->refresh()->runtime_config['command'])->toBe($mapped);
+    })->with([
+        'versioned PHP' => [['/usr/bin/php8.5', 'artisan', 'queue:work'], ['/opt/orbit-runtime/current/php/8.5/bin/php', 'artisan', 'queue:work']],
+        'project PHP' => [['/usr/bin/php', 'artisan', 'queue:work'], ['/opt/orbit-runtime/current/php/8.5/bin/php', 'artisan', 'queue:work']],
+        'Vite plus' => [['/home/x/.vite-plus/bin/vp', 'dev'], ['/opt/orbit-runtime/current/bin/vp', 'dev']],
+        'env Vite plus' => [['/usr/bin/env', '/home/x/.vite-plus/bin/vp', 'dev'], ['/usr/bin/env', '/opt/orbit-runtime/current/bin/vp', 'dev']],
+        'env Node through PATH' => [['/usr/bin/env', 'node', 'worker.js'], ['/usr/bin/env', 'node', 'worker.js'], ['/usr/bin/env']],
+        'npm' => [['/usr/bin/npm', 'run', 'start'], ['/opt/orbit-runtime/current/bin/npm', 'run', 'start']],
+        'npx' => [['/usr/bin/npx', 'vite'], ['/opt/orbit-runtime/current/bin/npx', 'vite']],
+        'bun' => [['/usr/local/bin/bun', 'run', 'start'], ['/opt/orbit-runtime/current/bin/bun', 'run', 'start']],
+        'composer' => [['/usr/local/bin/composer', 'run', 'worker'], ['/opt/orbit-runtime/current/bin/composer', 'run', 'worker']],
+        'deno' => [['/usr/local/bin/deno', 'run', 'worker.ts'], ['/opt/orbit-runtime/current/bin/deno', 'run', 'worker.ts']],
+        'ripgrep' => [['/usr/bin/rg', 'needle'], ['/opt/orbit-runtime/current/bin/rg', 'needle']],
+        'Vite Node runtime' => [['/home/x/.vite-plus/js_runtime/node/24/bin/node', 'worker.js'], ['/opt/orbit-runtime/current/bin/node', 'worker.js']],
+        'env assignment' => [['/usr/bin/env', 'VAR=1', '/usr/bin/php8.5', 'artisan'], ['/usr/bin/env', 'VAR=1', '/opt/orbit-runtime/current/php/8.5/bin/php', 'artisan'], ['/usr/bin/env', '/opt/orbit-runtime/current/php/8.5/bin/php']],
+        'env unset' => [['/usr/bin/env', '-u', 'FOO', '/usr/bin/php8.5', 'artisan'], ['/usr/bin/env', '-u', 'FOO', '/opt/orbit-runtime/current/php/8.5/bin/php', 'artisan'], ['/usr/bin/env', '/opt/orbit-runtime/current/php/8.5/bin/php']],
+        'env long unset' => [['/usr/bin/env', '--unset=FOO', '/usr/bin/php8.5', 'artisan'], ['/usr/bin/env', '--unset=FOO', '/opt/orbit-runtime/current/php/8.5/bin/php', 'artisan'], ['/usr/bin/env', '/opt/orbit-runtime/current/php/8.5/bin/php']],
+        'env ignore and option end' => [['/usr/bin/env', '-i', '--', 'VAR=1', '/usr/bin/php8.5', 'artisan'], ['/usr/bin/env', '-i', '--', 'VAR=1', '/opt/orbit-runtime/current/php/8.5/bin/php', 'artisan'], ['/usr/bin/env', '/opt/orbit-runtime/current/php/8.5/bin/php']],
+        'env split string stays opaque' => [['/usr/bin/env', '-S', '/usr/bin/php8.5 artisan queue:work'], ['/usr/bin/env', '-S', '/usr/bin/php8.5 artisan queue:work'], ['/usr/bin/env']],
+        'env long split string stays opaque' => [['/usr/bin/env', '--split-string=/usr/bin/php8.5 artisan'], ['/usr/bin/env', '--split-string=/usr/bin/php8.5 artisan'], ['/usr/bin/env']],
+        'unknown env option stays opaque' => [['/usr/bin/env', '--chdir=/host', '/usr/bin/php8.5', 'artisan'], ['/usr/bin/env', '--chdir=/host', '/usr/bin/php8.5', 'artisan'], ['/usr/bin/env']],
+    ]);
+
+    it('refuses a Process PHP version absent from the runtime before any migration starts', function (array $command): void {
+        $instance = migrateCheckout(containerDefaultProject(ProjectType::LaravelApp, '8.5'), containerDefaultNode());
+        $worker = migrationWorker($instance);
+        $config = $worker->runtime_config;
+        $config['command'] = $command;
+        $worker->update(['runtime_config' => $config]);
+        try {
+            migrateStart($instance);
+            $this->fail('The unavailable PHP was admitted.');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe('instance.migrate_process_binary_unavailable');
+            expect($exception->getMessage())->toContain((string) $worker->id, $worker->name, '/usr/bin/php8.4');
+        }
+        expect($instance->runtime()->exists())->toBeFalse()
+            ->and(Operation::query()->where('kind', 'instance.migrate')->exists())->toBeFalse()
+            ->and($worker->refresh()->runtime_config)->toBe($config);
+    })->with([
+        'direct' => [['/usr/bin/php8.4', 'artisan']],
+        'env wrapper' => [['/usr/bin/env', '/usr/bin/php8.4', 'artisan']],
+    ]);
+
+    it('reports every unavailable Process PHP binary in one admission refusal', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(ProjectType::LaravelApp, '8.5'), containerDefaultNode());
+        foreach (['worker-a' => '/usr/bin/php8.4', 'worker-b' => '/usr/local/bin/php9.1'] as $name => $path) {
+            $worker = migrationWorker($instance, $name);
+            $worker->update(['runtime_config' => ['command' => [$path, 'artisan']]]);
+        }
+        try {
+            migrateStart($instance);
+            $this->fail('Unavailable PHP versions were admitted.');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe('instance.migrate_process_binary_unavailable');
+            expect($exception->getMessage())->toContain('worker-a', '/usr/bin/php8.4', 'worker-b', '/usr/local/bin/php9.1');
+        }
+        expect($instance->runtime()->exists())->toBeFalse();
+    });
+
+    it('preserves a custom executable with a runtime command basename for the container preflight', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $worker = migrationWorker($instance);
+        $worker->update(['runtime_config' => ['command' => ['/opt/custom/vp', 'dev']]]);
+        $operation = migrateStart($instance);
+        expect($operation->input['container']['processes'][0]['content'])->toContain('"/opt/custom/vp" "dev"')
+            ->and($operation->input['migrate']['processes'][0]['executables'])->toBe(['/opt/custom/vp'])
+            ->and($operation->input['migrate']['processes'][0]['translations'])->toBe([]);
+    });
+
+    it('records each projected Process executable translation and retains it in the operation receipt', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(ProjectType::LaravelApp, '8.5'), containerDefaultNode());
+        $php = migrationWorker($instance, 'php-worker');
+        $php->update(['runtime_config' => ['command' => ['/usr/bin/env', 'VAR=1', '/usr/bin/php8.5', 'artisan']]]);
+        $vite = migrationWorker($instance, 'vite-worker');
+        $vite->update(['runtime_config' => ['command' => ['/home/x/.vite-plus/bin/vp', 'dev']]]);
+        $operation = migrateStart($instance);
+        $translations = array_merge(...array_column($operation->input['migrate']['processes'], 'translations'));
+        expect($translations)->toBe([
+            ['process_id' => $php->id, 'process_name' => 'php-worker', 'from' => '/usr/bin/php8.5', 'to' => '/opt/orbit-runtime/current/php/8.5/bin/php'],
+            ['process_id' => $vite->id, 'process_name' => 'vite-worker', 'from' => '/home/x/.vite-plus/bin/vp', 'to' => '/opt/orbit-runtime/current/bin/vp'],
+        ]);
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40), 'process_translations' => $translations]);
+        expect($operation->refresh()->result['process_translations'])->toBe($translations);
+    });
+
+    it('sends an unknown absolute executable to the pre-quiesce container check without changing it', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $worker = migrationWorker($instance);
+        $config = $worker->runtime_config;
+        $config['command'] = ['/opt/custom/tool', 'worker'];
+        $worker->update(['runtime_config' => $config]);
+        $operation = migrateStart($instance);
+        expect($operation->input['migrate']['processes'][0]['executables'])->toBe(['/opt/custom/tool'])
+            ->and($operation->input['container']['processes'][0]['content'])->toContain('"/opt/custom/tool" "worker"')
+            ->and($worker->refresh()->runtime_config)->toBe($config);
+    });
+
     it('reads Process records once per unit, environment or source render', function (string $render): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
         migrationVpDev($instance);
@@ -1018,8 +1353,8 @@ describe('Processes moving into the container', function (): void {
         DB::enableQueryLog();
         try {
             $result = match ($render) {
-                'units' => $processes->units($instance),
-                'environments' => $processes->environments($instance, $operation->input['container']['processes']),
+                'units' => $processes->units($instance, migrate: true),
+                'environments' => $processes->environments($instance, $operation->input['container']['processes'], migrate: true),
                 'source' => $processes->source($instance),
             };
             $reads = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'from "processes"'));
@@ -1826,4 +2161,787 @@ it('returns the stored overdue migrate when the shared read allowance is empty',
     expect($stored->getAttributes())->toBe($before)
         ->and($operation->refresh()->getAttributes())->toBe($before)
         ->and($instance->runtime()->exists())->toBeTrue();
+});
+
+/** @param array<string,mixed> $attributes */
+function migrationSchedule(Instance $instance, array $attributes = [], ?ScheduleRuntimeAccount $account = null): Schedule
+{
+    $instance->project->update(['php_version' => '8.5']);
+    app()->instance(ScheduleRuntimeAccountResolver::class, new class($account) implements ScheduleRuntimeAccountResolver
+    {
+        public function __construct(private ?ScheduleRuntimeAccount $account) {}
+
+        public function resolve(Node $node, string $user): ScheduleRuntimeAccount
+        {
+            return $this->account ?? new ScheduleRuntimeAccount($user, $user, '/home/'.$user, '/bin/bash');
+        }
+    });
+
+    return Schedule::query()->create([
+        'target_type' => 'instance', 'target_id' => $instance->id, 'host_node_id' => $instance->node_id,
+        'name' => 'nightly', 'calendar' => '*-*-* 03:00:00', 'command' => 'php artisan schedule:run', 'timeout_seconds' => 900,
+        'desired_timer_state' => 'enabled', 'status' => 'active', 'trigger' => 'node',
+        'last_run_at' => '2026-11-08 03:00:00', 'last_run_status' => 'success', ...$attributes,
+    ]);
+}
+
+describe('migrate registered Schedule timers', function (): void {
+    beforeEach(function (): void {
+        $this->freezeTime();
+    });
+    it('keeps enabled and paused Schedule identity, calendar, timeout and history at cutover', function (string $desired): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance, ['command' => 'php '.$instance->checkout_path.'/artisan schedule:run', 'desired_timer_state' => $desired]);
+        $before = $schedule->refresh()->getAttributes();
+
+        $operation = migrateStart($instance);
+        $plan = $operation->input['migrate']['schedules'][0];
+
+        expect($plan)->toMatchArray(['id' => $schedule->id, 'name' => 'nightly', 'source_directory' => $instance->checkout_path,
+            'directory' => '/srv/workspace', 'user' => 'orbit', 'group' => 'orbit', 'home' => '/home/orbit', 'shell' => '/bin/bash',
+            'container_user' => 'orbit', 'calendar' => '*-*-* 03:00:00', 'timeout_seconds' => 900, 'desired' => $desired,
+            'mapped_command_hash' => hash('sha256', 'php /srv/workspace/artisan schedule:run')]);
+        expect($plan['source_command_paths'])->toBe([$instance->checkout_path.'/artisan']);
+        $script = "# X-Orbit-Schedule-ID={$schedule->id}\n# X-Orbit-Execution-Context=".json_encode([
+            'user' => 'orbit', 'group' => 'orbit', 'home' => '/home/orbit', 'working_directory' => $instance->checkout_path,
+            'shell' => '/bin/bash', 'login_shell' => true,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n".$schedule->command."\n";
+        expect($plan['source_script_hash'])->toBe(hash('sha256', $script));
+        expect(json_encode($operation->input, JSON_THROW_ON_ERROR))->not->toContain('php '.$instance->checkout_path.'/artisan');
+        expect($schedule->refresh()->command)->toBe($before['command']);
+
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+
+        expect($schedule->refresh()->command)->toBe('php /srv/workspace/artisan schedule:run');
+        expect(array_diff_assoc($schedule->getAttributes(), $before))->toBe(['command' => 'php /srv/workspace/artisan schedule:run']);
+    })->with(['enabled', 'disabled']);
+
+    it('keeps source Schedule intent after rollback', function (string $desired): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance, ['command' => 'php '.$instance->checkout_path.'/artisan schedule:run', 'desired_timer_state' => $desired]);
+        $before = $schedule->refresh()->getAttributes();
+        $operation = migrateStart($instance);
+
+        migrateEnd($operation, 'failed', ['ready' => false, 'moved' => false, 'restored' => true,
+            'failed_step' => 'files', 'error_code' => 'instance.migrate_files_failed']);
+
+        expect($schedule->refresh()->getAttributes())->toBe($before);
+        expect($instance->runtime()->exists())->toBeFalse();
+    })->with(['enabled', 'disabled']);
+
+    it('records a persistent timer fire during migration and replays it after admission reopens', function (bool $moved): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance, ['command' => 'php '.$instance->checkout_path.'/artisan schedule:run']);
+        $source = $instance->checkout_path;
+        $migration = migrateStart($instance);
+        $key = 'systemd-invocation-id';
+        $admit = fn (): Operation => app(OperationIdempotency::class)->under('schedule.run', $key, 'timer-fingerprint',
+            fn (): Operation => app(RunScheduleAction::class)->admit($schedule, $instance->node));
+
+        $fire = $admit();
+        expect($fire->status)->toBe(OperationStatus::Waiting)
+            ->and($fire->input)->toMatchArray(['id' => $schedule->id, 'deferred_instance_migration' => $migration->id]);
+        expect($admit()->id)->toBe($fire->id);
+        expect(Operation::query()->where('kind', 'schedule.run')->count())->toBe(1);
+        Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+
+        $this->travel(11)->minutes();
+        expect(app(ExpireOperationAction::class)->execute($fire)->status)->toBe(OperationStatus::Waiting);
+
+        migrateEnd($migration, $moved ? 'succeeded' : 'failed', $moved
+            ? ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]
+            : ['ready' => false, 'moved' => false, 'restored' => true, 'failed_step' => 'files', 'error_code' => 'instance.migrate_files_failed']);
+
+        $fire->refresh();
+        expect($fire->status)->toBe(OperationStatus::Queued)
+            ->and($fire->idempotency_key)->toBe($key)
+            ->and($fire->input['working_directory'])->toBe($moved ? '/srv/workspace' : $source)
+            ->and($fire->input['command_hash'])->toBe(hash('sha256', 'php '.($moved ? '/srv/workspace' : $source).'/artisan schedule:run'))
+            ->and(isset($fire->input['container']))->toBe($moved);
+        expect($fire->started_at?->toDateTimeString())->toBe(now()->toDateTimeString());
+        expect(InstanceMigration::running($instance))->toBeFalse();
+        Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+    })->with(['cutover' => true, 'rollback' => false]);
+
+    it('records the deferred fire failure if rollback leaves admission closed', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+
+        migrateEnd($migration, 'failed', ['ready' => false, 'moved' => false, 'restored' => false,
+            'failed_step' => 'restore', 'error_code' => 'instance.migrate_restore_failed']);
+
+        expect($fire->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($fire->error_code)->toBe('instance.lifecycle_busy')
+            ->and($schedule->refresh()->last_run_status->value)->toBe('error');
+        Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+    });
+
+    it('replays a deferred fire after a definite migration start refusal', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+
+        app(StartSwampRun::class)->refuse($migration, new ResourceOperationException('swamp.start_enqueue_failed', 'No run started.', 503));
+
+        expect($fire->refresh()->status)->toBe(OperationStatus::Queued)
+            ->and($fire->input['working_directory'])->toBe($instance->checkout_path);
+        Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+    });
+
+    it('settles an unstarted migration and releases its deferred fires on cancellation or expiry', function (string $terminal): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        expect($migration->status)->toBe(OperationStatus::Queued);
+        $this->travel(11)->minutes();
+
+        $ended = $terminal === 'cancelled' ? app(CancelOperationAction::class)->execute($migration)
+            : app(ExpireOperationAction::class)->execute($migration);
+
+        expect($ended->status)->toBe($terminal === 'cancelled' ? OperationStatus::Cancelled : OperationStatus::Failed)
+            ->and($ended->lock_key)->toBeNull();
+        expect($instance->runtime()->exists())->toBeFalse();
+        expect($fire->refresh()->status)->toBe(OperationStatus::Queued)
+            ->and($fire->input['working_directory'])->toBe($instance->checkout_path)
+            ->and(isset($fire->input['deferred_instance_migration']))->toBeFalse();
+        Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+        app(CancelOperationAction::class)->execute($fire);
+        expect(migrateStart($instance)->input['had_runtime_reservation'])->toBeFalse();
+    })->with(['cancelled', 'expired']);
+
+    it('keeps the reservation but settles fires when an uncertain migration expires', function (string $terminal): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        $migration->forceFill(['status' => OperationStatus::Running])->save();
+        $this->travel(11)->minutes();
+
+        $terminal === 'cancelled' ? app(CancelOperationAction::class)->execute($migration)
+            : app(ExpireOperationAction::class)->execute($migration);
+
+        expect($instance->runtime()->exists())->toBeTrue();
+        expect($fire->refresh()->status)->toBe($terminal === 'cancelled' ? OperationStatus::Waiting : OperationStatus::Failed);
+        Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+    })->with(['cancelled', 'expired']);
+
+    it('settles fires at expiry before later native receipts or recovered runs arrive', function (string $status, bool $recover): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        $run = '77eb3d91-e9b9-42f9-8c35-e1e5837042b2';
+        $migration->update(['status' => OperationStatus::Running, 'attempts' => 1, 'started_at' => now(),
+            'state' => [...$migration->state, ...($recover ? [] : ['swamp_run_id' => $run])]]);
+        if ($recover) {
+            $migration->update(['error_code' => 'swamp.start_uncertain']);
+            migrationTerminalReader($migration, $status);
+            app(SwampCommandStep::class)->recoverUnbound($migration);
+            expect($migration->refresh()->state['swamp_run_id'])->toBe($run);
+        }
+        $this->travel(2)->hours();
+        $expired = app(ExpireOperationAction::class)->execute($migration);
+        expect($expired->error_code)->toBe('operation.timed_out')
+            ->and($expired->lock_key)->toBeNull()
+            ->and($fire->refresh()->status)->toBe(OperationStatus::Failed);
+        $fireSequence = $fire->sequence;
+        migrationTerminalReader($expired, $status);
+        $reader = app(SwampCommandStep::class);
+        $selector = app(DirectOperation::class)->definition($migration->kind)['terminal_result'];
+
+        $ended = $reader->projectTerminal($expired, ['id' => $run, 'status' => $status], $selector);
+        $reader->projectTerminal($ended, ['id' => $run, 'status' => $status], $selector);
+
+        expect($ended->refresh()->status)->toBe(match ($status) {
+            'succeeded' => OperationStatus::Succeeded, 'interrupted' => OperationStatus::Interrupted, default => OperationStatus::Failed,
+        })
+            ->and($ended->error_code)->toBe(match ($status) {
+                'succeeded' => null, 'cancelled' => 'operation.timed_out', default => 'operation.native_failed',
+            })
+            ->and($ended->result['moved'])->toBe($status === 'succeeded')
+            ->and($ended->result['restored'])->toBe($status !== 'succeeded')
+            ->and($ended->lock_key)->toBeNull()
+            ->and($ended->state['native_timeout']['native_terminal_status'])->toBe($status);
+        expect($instance->runtime()->exists())->toBe($status === 'succeeded');
+        expect($fire->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($fire->error_code)->toBe('instance.lifecycle_busy')
+            ->and($fire->sequence)->toBe($fireSequence)
+            ->and($schedule->refresh()->last_run_status->value)->toBe('error');
+        Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+        app(SwampConnection::class)->release();
+        migrateVault();
+        if ($status !== 'succeeded') {
+            expect(migrateStart($instance)->input['had_runtime_reservation'])->toBeFalse();
+        }
+    })->with(['late success' => ['succeeded', false], 'late failure' => ['failed', false],
+        'late cancellation' => ['cancelled', false], 'crash interruption' => ['interrupted', false],
+        'recovered start' => ['interrupted', true]]);
+
+    it('needs no further observation to settle fires after an expired migration cancellation was confirmed', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        $run = '77eb3d91-e9b9-42f9-8c35-e1e5837042b2';
+        $migration->update(['status' => OperationStatus::Running, 'attempts' => 1, 'started_at' => now(),
+            'state' => [...$migration->state, 'swamp_run_id' => $run]]);
+        $this->travel(2)->hours();
+        $expired = app(ExpireOperationAction::class)->execute($migration);
+        $expired->update(['state' => [...$expired->state, 'native_cancel_confirmed_at' => now()->toISOString()]]);
+        $this->travel(20)->minutes();
+        $socket = migrationTerminalReader($expired, 'interrupted');
+
+        app()->call([new ReconcileSwampOperations, 'handle']);
+
+        expect($socket->frames)->toBe([]);
+        expect($expired->refresh()->error_code)->toBe('operation.timed_out')
+            ->and($expired->state['native_timeout'])->not->toHaveKey('native_terminal_status');
+        expect($fire->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($fire->error_code)->toBe('instance.lifecycle_busy');
+    });
+
+    it('already settled fires when no-run recovery follows an uncertain migration expiry', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        $migration->update(['status' => OperationStatus::Running, 'started_at' => now(), 'error_code' => 'swamp.start_uncertain']);
+        $this->travel(11)->minutes();
+        $expired = app(ExpireOperationAction::class)->execute($migration);
+        migrationTerminalReader($expired, 'interrupted', noRun: true);
+
+        app(SwampCommandStep::class)->recoverUnbound($expired);
+        app(SwampCommandStep::class)->recoverUnbound($expired->refresh());
+
+        expect($expired->refresh()->error_code)->toBe('operation.timed_out')
+            ->and($expired->lock_key)->toBeNull()
+            ->and($expired->state['native_timeout'])->toHaveKey('no_run_verified_at');
+        expect($instance->runtime()->exists())->toBeTrue();
+        expect($fire->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($fire->error_code)->toBe('instance.lifecycle_busy');
+        Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+    });
+
+    it('keeps deferred fire failures final after lockless stale timeout reconciliation', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        $migration->update(['status' => OperationStatus::Running, 'attempts' => 1, 'started_at' => now(),
+            'state' => [...$migration->state, 'swamp_run_id' => '77eb3d91-e9b9-42f9-8c35-e1e5837042b2']]);
+        $this->travel(2)->hours();
+        $expired = app(ExpireOperationAction::class)->execute($migration);
+        $this->travel(61)->minutes();
+
+        $socket = migrationTerminalReader($expired, 'running');
+        app()->call([new ReconcileSwampOperations, 'handle']);
+
+        expect($socket->frames)->toBe([]);
+        expect($expired->refresh()->error_code)->toBe('operation.timed_out')
+            ->and($expired->state['native_timeout'])->not->toHaveKey('native_terminal_status');
+        expect($instance->runtime()->exists())->toBeTrue();
+        expect($fire->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($fire->error_code)->toBe('instance.lifecycle_busy')
+            ->and($schedule->refresh()->last_run_status->value)->toBe('error');
+        Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+    });
+
+    it('replays deferred fires once through the shared reader after manual cancellation of a started migration', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        $run = '77eb3d91-e9b9-42f9-8c35-e1e5837042b2';
+        $migration->update(['status' => OperationStatus::Running, 'attempts' => 1, 'started_at' => now(),
+            'state' => [...$migration->state, 'swamp_run_id' => $run]]);
+        migrationTerminalReader($migration, 'cancelled');
+
+        $cancelled = app(CancelOperationAction::class)->execute($migration);
+        expect($cancelled->status)->toBe(OperationStatus::Running)
+            ->and($fire->refresh()->status)->toBe(OperationStatus::Waiting);
+        $reader = app(SwampCommandStep::class);
+        $selector = app(DirectOperation::class)->definition($migration->kind)['terminal_result'];
+        $ended = $reader->projectTerminal($cancelled, ['id' => $run, 'status' => 'cancelled'], $selector);
+        $reader->projectTerminal($ended, ['id' => $run, 'status' => 'cancelled'], $selector);
+
+        expect($ended->status)->toBe(OperationStatus::Cancelled);
+        expect($instance->runtime()->exists())->toBeFalse();
+        expect($fire->refresh()->status)->toBe(OperationStatus::Queued)
+            ->and($fire->input['working_directory'])->toBe($instance->checkout_path);
+        expect(Queue::pushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id))->toHaveCount(1);
+    });
+
+    it('settles each deferred fire exactly once across every migration terminal path', function (string $path, bool $queued): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        $run = '77eb3d91-e9b9-42f9-8c35-e1e5837042b2';
+        expect($fire->status)->toBe(OperationStatus::Waiting);
+
+        if (in_array($path, ['success', 'rollback', 'failure', 'cancel after start'], true)) {
+            migrateEnd($migration, match ($path) {
+                'success' => 'succeeded', 'cancel after start' => 'cancelled', default => 'failed',
+            }, $path === 'success' ? ['ready' => true, 'moved' => true, 'commit' => str_repeat('d', 40)]
+                : ['ready' => false, 'moved' => false, 'restored' => $path !== 'failure', 'error_code' => 'instance.migrate_files_failed']);
+        } elseif ($path === 'cancel before start') {
+            app(CancelOperationAction::class)->execute($migration);
+        } elseif ($path === 'cancel at start') {
+            $migration->update(['cancel_requested_at' => now()]);
+            app(StartSwampRun::class)->start($migration);
+        } elseif ($path === 'start refusal') {
+            app(StartSwampRun::class)->refuse($migration, new ResourceOperationException('swamp.start_enqueue_failed', 'No submission.', 503));
+        } elseif ($path === 'start worker failure') {
+            (new StartAdmittedSwampRun($migration->id))->failed(new RuntimeException('Worker stopped before submission.'));
+        } elseif (in_array($path, ['bound failed start', 'bound cancelled start'], true)) {
+            migrationTerminalReader($migration, 'failed', startEvent: $path === 'bound failed start' ? 'failed' : 'cancelled');
+            try {
+                app(StartSwampRun::class)->start($migration);
+                $this->fail('The native terminal start event must refuse dispatch.');
+            } catch (ResourceOperationException $error) {
+                expect($error->errorCode)->toBe('operation.native_dispatch_failed');
+            }
+            expect($migration->refresh()->state['swamp_run_id'])->toBe($run)
+                ->and($migration->error_code)->toBe('operation.native_dispatch_failed');
+        } elseif ($path === 'recovered terminal') {
+            $migration->update(['status' => OperationStatus::Running, 'started_at' => now(), 'error_code' => 'swamp.start_uncertain']);
+            migrationTerminalReader($migration, 'interrupted');
+            $reader = app(SwampCommandStep::class);
+            $reader->recoverUnbound($migration);
+            $reader->projectTerminal($migration->refresh(), ['id' => $run, 'status' => 'interrupted'],
+                app(DirectOperation::class)->definition($migration->kind)['terminal_result']);
+        } else {
+            if ($path !== 'expiry before start') {
+                $migration->update(['status' => OperationStatus::Running, 'attempts' => 1, 'started_at' => now(),
+                    'lock_key' => in_array($path, ['stale settlement', 'no-run recovery'], true) ? 'instance:'.$instance->id : null,
+                    'state' => [...$migration->state, ...($path === 'no-run recovery' ? [] : ['swamp_run_id' => $run])]]);
+            }
+            $this->travel(2)->hours();
+            $expired = app(ExpireOperationAction::class)->execute($migration);
+            $sequenceAtExpiry = $fire->refresh()->sequence;
+            expect($fire->status)->toBe($queued ? OperationStatus::Queued : OperationStatus::Failed);
+            if ($path === 'stale settlement') {
+                $this->travel(61)->minutes();
+                expect(app(ExpireOperationAction::class)->releaseStaleHolds())->toBe(1);
+            } elseif ($path === 'no-run recovery') {
+                migrationTerminalReader($expired, 'interrupted', noRun: true);
+                app(SwampCommandStep::class)->recoverUnbound($expired);
+                expect($expired->refresh()->state['native_timeout'])->toHaveKey('no_run_verified_at');
+            }
+            expect($fire->refresh()->sequence)->toBe($sequenceAtExpiry)
+                ->and($expired->refresh()->error_code)->toBe('operation.timed_out');
+        }
+
+        $migration->refresh();
+        $fire->refresh();
+        expect($migration->status->terminal())->toBeTrue();
+        expect($fire->status)->toBe($queued ? OperationStatus::Queued : OperationStatus::Failed);
+        if (! $queued) {
+            expect($fire->error_code)->toBe('instance.lifecycle_busy')
+                ->and($schedule->refresh()->last_run_status->value)->toBe('error');
+        }
+        $before = $fire->getAttributes();
+        $receipt = $migration->result;
+        app(OperationStore::class)->change($migration, ['result' => $receipt]);
+        app(OperationStore::class)->change($migration, ['status' => $migration->status]);
+        expect($fire->refresh()->getAttributes())->toBe($before)
+            ->and($migration->refresh()->result)->toBe($receipt);
+        expect(Queue::pushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id))->toHaveCount($queued ? 1 : 0);
+        if (! $queued) {
+            app(SwampConnection::class)->release();
+            migrateVault();
+            expect(migrateStart($instance)->input['had_runtime_reservation'])->toBeTrue();
+        }
+    })->with([
+        'success' => ['success', true], 'rollback' => ['rollback', true], 'failure' => ['failure', false],
+        'cancel before start' => ['cancel before start', true], 'cancel after start' => ['cancel after start', true],
+        'cancel at start' => ['cancel at start', true], 'expiry before start' => ['expiry before start', true],
+        'expiry after start' => ['expiry after start', false], 'bound failed start' => ['bound failed start', false],
+        'bound cancelled start' => ['bound cancelled start', false], 'start refusal' => ['start refusal', true],
+        'start worker failure' => ['start worker failure', true], 'stale settlement' => ['stale settlement', false],
+        'recovered terminal' => ['recovered terminal', true], 'no-run recovery' => ['no-run recovery', false],
+    ]);
+
+    it('reopens Schedule admission after real execution-copy preparation fails before submission', function (bool $retry): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['provisioning_step' => 'active']);
+        $schedule = migrationSchedule($instance);
+        $reserved = null;
+        if ($retry) {
+            migrateEnd(migrateStart($instance), 'failed', ['ready' => false, 'moved' => false, 'restored' => false,
+                'error_code' => 'instance.migrate_restore_failed']);
+            $reserved = $instance->runtime()->firstOrFail()->id;
+        }
+        $migration = migrateStart($instance);
+        $fire = app(RunScheduleAction::class)->admit($schedule, $instance->node);
+        $key = 'instance-migrate-processes-'.$migration->id;
+        SwampVaultExecutionCopy::forget('orbit-control-inputs', $key);
+        $socket = migrateVault(failKey: $key);
+
+        expect(containerRefusal(fn () => (new StartAdmittedSwampRun($migration->id))->handle(
+            app(StartSwampRun::class), app(ExpireOperationAction::class),
+        )))->toBe('swamp.vault_sync_unavailable');
+
+        expect($socket->sentTypes)->toContain('vault.put')->not->toContain('workflow.run');
+        expect(array_column($socket->puts, 'key'))->toContain($key);
+        expect($migration->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($migration->error_code)->toBe('swamp.vault_sync_unavailable')
+            ->and($migration->state['native_start_not_submitted'])->toBeTrue();
+        expect($instance->runtime()->exists())->toBe($retry)
+            ->and($instance->runtime()->first()?->id)->toBe($reserved);
+        expect($fire->refresh()->status)->toBe($retry ? OperationStatus::Failed : OperationStatus::Queued);
+        if ($retry) {
+            expect($fire->error_code)->toBe('instance.lifecycle_busy');
+            Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+        } else {
+            expect($fire->input['working_directory'])->toBe($instance->checkout_path);
+            Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $fire->id);
+            app(CancelOperationAction::class)->execute($fire);
+            expect(app(ScheduleOperationAdmission::class)->inputFor($schedule, 'run')['working_directory'])->toBe($instance->checkout_path);
+        }
+    })->with(['new reservation' => false, 'previous failed restore reservation' => true]);
+
+    it('records extensionless interpreter operands as paths for remote containment checks', function (string $command, string $path): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        migrationSchedule($instance, ['command' => $command]);
+
+        $plan = migrateStart($instance)->input['migrate']['schedules'][0];
+
+        expect($plan['source_command_paths'])->toBe([$instance->checkout_path.'/'.$path]);
+    })->with(['php worker' => ['php worker', 'worker'], 'node worker' => ['node worker', 'worker'],
+        'bun script path' => ['bun scripts/worker', 'scripts/worker']]);
+
+    it('refuses unsupported Schedule intent before reserving a runtime', function (string $change, string $code, string $reason): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $account = match ($change) {
+            'shell' => new ScheduleRuntimeAccount('orbit', 'orbit', '/home/orbit', '/bin/zsh'),
+            'group' => new ScheduleRuntimeAccount('orbit', 'work', '/home/orbit', '/bin/bash'),
+            'home' => new ScheduleRuntimeAccount('orbit', 'orbit', '/opt/orbit', '/bin/bash'),
+            default => null,
+        };
+        $schedule = migrationSchedule($instance, [], $account);
+        match ($change) {
+            'native' => $schedule->update(['trigger' => 'swamp']),
+            'failed' => $schedule->update(['status' => 'failed']),
+            'removing' => $schedule->update(['status' => 'removing']),
+            'other Node' => $schedule->update(['host_node_id' => containerDefaultNode('other', '10.44.0.8')->id]),
+            'user' => $instance->node->update(['user' => 'nick']),
+            'working directory' => $instance->update(['source_is_laravel' => true, 'root' => '../external/public']),
+            'external command' => $schedule->update(['command' => '/opt/private/run-scheduler']),
+            'sibling command' => $schedule->update(['command' => 'php '.$instance->checkout_path.'-other/artisan schedule:run']),
+            'traversal command' => $schedule->update(['command' => 'php '.$instance->checkout_path.'/../other/artisan schedule:run']),
+            'relative traversal' => $schedule->update(['command' => '../private/run-scheduler']),
+            'nested relative traversal' => $schedule->update(['command' => 'php scripts/../../private/run.php']),
+            'filesystem root' => $schedule->update(['command' => 'cd /; php script.php']),
+            'dynamic command' => $schedule->update(['command' => 'php "$APP_ROOT/artisan" schedule:run']),
+            'assignment prefix' => $schedule->update(['command' => 'X='.$instance->checkout_path.' host-only-tool']),
+            'ambiguous interpreter' => $schedule->update(['command' => 'php -d auto_prepend_file=worker main']),
+            'ambiguous bun' => $schedule->update(['command' => 'bun run worker']),
+            'unknown executable' => $schedule->update(['command' => 'my-host-only-command']),
+            'compound command' => $schedule->update(['command' => 'true && php artisan schedule:run']),
+            'pipeline' => $schedule->update(['command' => 'php artisan schedule:run | echo done']),
+            'shell invocation' => $schedule->update(['command' => 'bash -c "php artisan schedule:run"']),
+            'inline evaluation' => $schedule->update(['command' => 'php -r "exit(0)"']),
+            'inline node' => $schedule->update(['command' => 'node --eval=process.exit']),
+            'external flag' => $schedule->update(['command' => 'php artisan --file=/etc/private/config']),
+            'missing PHP' => $instance->project->update(['php_version' => null]),
+            'unavailable PHP' => $instance->project->update(['php_version' => '99.0']),
+            'literal path list' => $schedule->update(['command' => 'php artisan --config='.$instance->checkout_path.'/config:/etc/private']),
+            'inline PHP long' => $schedule->update(['command' => 'php --run=die']),
+            'shell', 'group', 'home' => null,
+        };
+
+        try {
+            migrateStart($instance);
+            $this->fail('The unsupported Schedule was admitted.');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe($code);
+            expect($exception->getMessage())->toContain($schedule->id, $schedule->name, $reason);
+        }
+
+        expect($instance->runtime()->exists())->toBeFalse();
+        expect(Operation::query()->count())->toBe(0);
+    })->with([
+        'native trigger' => ['native', 'schedule.container_trigger_unsupported', 'native workflow'],
+        'failed Schedule' => ['failed', 'schedule.container_state_unsupported', 'not active'],
+        'removing Schedule' => ['removing', 'schedule.container_state_unsupported', 'not active'],
+        'different host Node' => ['other Node', 'schedule.container_state_unsupported', 'this Node'],
+        'missing container user' => ['user', 'schedule.container_account_unsupported', 'user'],
+        'different group' => ['group', 'schedule.container_account_unsupported', 'group'],
+        'different home' => ['home', 'schedule.container_account_unsupported', 'home'],
+        'different shell' => ['shell', 'schedule.container_shell_unsupported', 'shell'],
+        'external working directory' => ['working directory', 'schedule.container_path_unsupported', 'working directory'],
+        'external executable' => ['external command', 'schedule.container_command_unsupported', 'absolute path'],
+        'checkout prefix sibling' => ['sibling command', 'schedule.container_command_unsupported', 'absolute path'],
+        'checkout traversal' => ['traversal command', 'schedule.container_command_unsupported', 'dot-segment'],
+        'relative traversal' => ['relative traversal', 'schedule.container_command_unsupported', 'dot-segment'],
+        'nested traversal' => ['nested relative traversal', 'schedule.container_command_unsupported', 'dot-segment'],
+        'filesystem root' => ['filesystem root', 'schedule.container_command_unsupported', 'absolute path'],
+        'shell expansion' => ['dynamic command', 'schedule.container_command_unsupported', 'shell expansion'],
+        'assignment prefix' => ['assignment prefix', 'schedule.container_command_unsupported', 'assignment prefix'],
+        'interpreter options' => ['ambiguous interpreter', 'schedule.container_command_unsupported', 'direct script operand'],
+        'bun subcommand' => ['ambiguous bun', 'schedule.container_command_unsupported', 'direct script operand'],
+        'unknown executable' => ['unknown executable', 'schedule.container_command_unsupported', 'bare executable'],
+        'compound invocation' => ['compound command', 'schedule.container_command_unsupported', 'one literal invocation'],
+        'pipeline' => ['pipeline', 'schedule.container_command_unsupported', 'one literal invocation'],
+        'shell invocation' => ['shell invocation', 'schedule.container_command_unsupported', 'bare executable'],
+        'inline evaluation' => ['inline evaluation', 'schedule.container_command_unsupported', 'one literal invocation'],
+        'inline node evaluation' => ['inline node', 'schedule.container_command_unsupported', 'inline evaluation'],
+        'external flag path' => ['external flag', 'schedule.container_command_unsupported', 'absolute path'],
+        'missing selected PHP' => ['missing PHP', 'schedule.container_command_unsupported', 'selected PHP'],
+        'unavailable selected PHP' => ['unavailable PHP', 'schedule.container_command_unsupported', 'selected PHP'],
+        'literal path list' => ['literal path list', 'schedule.container_command_unsupported', 'one literal workspace path'],
+        'inline PHP long option' => ['inline PHP long', 'schedule.container_command_unsupported', 'inline evaluation'],
+    ]);
+
+    it('carries literal workspace commands, quoted arguments, flags and null redirects', function (string $form): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $command = match ($form) {
+            'absolute' => $instance->checkout_path.'/bin/scheduler "nightly report" --config='.$instance->checkout_path.'/config/jobs.json > /dev/null 2>&1',
+            'relative' => 'bin/scheduler worker.php --config=config/jobs.json >> /dev/null',
+        };
+        migrationSchedule($instance, ['command' => $command]);
+        $plan = migrateStart($instance)->input['migrate']['schedules'][0];
+
+        expect($plan['source_command_paths'])->toBe(match ($form) {
+            'absolute' => [$instance->checkout_path.'/bin/scheduler', $instance->checkout_path.'/config/jobs.json'],
+            'relative' => [$instance->checkout_path.'/bin/scheduler', $instance->checkout_path.'/worker.php', $instance->checkout_path.'/config/jobs.json'],
+        });
+        expect($plan['mapped_command_hash'])->toBe(hash('sha256', str_replace($instance->checkout_path, '/srv/workspace', $command)));
+    })->with(['absolute', 'relative']);
+
+    it('refuses an unfinished Schedule run before downtime', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance);
+        Operation::query()->create(['kind' => 'schedule.run', 'target_type' => 'instance_schedules', 'target_id' => $instance->id,
+            'node_id' => $instance->node_id, 'status' => 'running', 'input' => ['id' => $schedule->id]]);
+
+        expect(containerRefusal(fn () => migrateStart($instance)))->toBe('schedule.container_state_unsupported');
+        expect($instance->runtime()->exists())->toBeFalse();
+        expect(Operation::query()->where('kind', 'instance.migrate')->exists())->toBeFalse();
+    });
+
+    it('refuses Schedule changes while migration owns the Instance', function (string $verb): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance);
+        migrateStart($instance);
+
+        expect(containerRefusal(fn () => app(ScheduleOperationAdmission::class)->inputFor($schedule, $verb)))->toBe('instance.lifecycle_busy');
+    })->with(['run', 'enable', 'destroy', 'create']);
+
+    it('refuses a new Schedule while migration owns its Instance', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        migrateStart($instance);
+
+        expect(containerRefusal(fn () => app(CreateScheduleAction::class)->admit(
+            new AddScheduleData(ScheduleTargetType::Instance, $instance->id,
+                'new-scheduler', '* * * * *', 'php artisan schedule:run'),
+        )))->toBe('instance.lifecycle_busy');
+        expect(Schedule::query()->exists())->toBeFalse();
+        expect(Operation::query()->where('kind', 'schedule.create')->exists())->toBeFalse();
+    });
+
+    it('names the Schedule when its source account is unavailable', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance);
+        app()->instance(ScheduleRuntimeAccountResolver::class, new class implements ScheduleRuntimeAccountResolver
+        {
+            public function resolve(Node $node, string $user): ScheduleRuntimeAccount
+            {
+                throw new ResourceOperationException('schedule.target_unavailable', 'No current account fact.');
+            }
+        });
+
+        try {
+            migrateStart($instance);
+            $this->fail('The unavailable account was admitted.');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode)->toBe('schedule.container_account_unsupported');
+            expect($error->getMessage())->toContain($schedule->id, $schedule->name, 'account is unavailable');
+        }
+        expect($instance->runtime()->exists())->toBeFalse();
+    });
+
+    it('runs a moved Schedule in its container while its host timer and journal retain their identity', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['source_is_laravel' => true, 'root' => 'apps/site/public']);
+        $schedule = migrationSchedule($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $instance->refresh()->update(['provisioning_step' => 'active']);
+        app()->instance(ScheduleRuntimeAccountResolver::class, new class implements ScheduleRuntimeAccountResolver
+        {
+            public function resolve(Node $node, string $user): ScheduleRuntimeAccount
+            {
+                throw new LogicException('A container Schedule must not read a host account fact.');
+            }
+        });
+
+        $admission = app(ScheduleOperationAdmission::class);
+        $input = $admission->inputFor($schedule->refresh(), 'run');
+        $destroy = $admission->inputFor($schedule, 'destroy');
+        $operation = new Operation;
+        $operation->forceFill(['id' => 123, 'kind' => 'schedule.run', 'status' => 'running', 'target_type' => 'instance_schedules',
+            'target_id' => $instance->id, 'node_id' => $instance->node_id, 'input' => $input]);
+        $native = app(ScheduleControlProjection::class)->input($operation);
+
+        expect($input)->toMatchArray(['working_directory' => '/srv/workspace/apps/site', 'user' => 'orbit', 'shell' => '/bin/bash',
+            'home' => '/home/orbit', 'group' => 'orbit', 'container' => ['project' => 'orbit-instances', 'name' => 'instance-'.$instance->id]]);
+        expect($destroy['working_directory'])->toBe('/');
+        expect($native['intent']['container'])->toBe($input['container']);
+        expect(containerRefusal(fn () => app(LogStreamTargetResolver::class)->forSchedule($schedule)))->toBe('schedule.target_unsupported');
+    });
+    it('records later runs on the same Schedule after migration', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance, ['desired_timer_state' => 'disabled']);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $instance->refresh()->update(['provisioning_step' => 'active']);
+        $input = app(ScheduleOperationAdmission::class)->inputFor($schedule->refresh(), 'run');
+        $operation = Operation::query()->create(['kind' => 'schedule.run', 'target_type' => 'instance_schedules', 'target_id' => $instance->id,
+            'node_id' => $instance->node_id, 'status' => 'running', 'input' => $input, 'state' => ['swamp_run_id' => 'schedule-run-1']]);
+
+        app(ScheduleControlProjection::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'schedule-run-1',
+            'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String()]);
+
+        expect($schedule->refresh()->last_run_status->value)->toBe('success');
+        expect($schedule->last_run_at?->toIso8601String())->toBe(now()->toIso8601String());
+        expect($schedule->desired_timer_state->value)->toBe('disabled');
+        expect($operation->refresh()->status->value)->toBe('succeeded');
+    });
+});
+
+/** A Schedule journal read's real event, history and sensitive-value protocol, without contacting Swamp. */
+function migrationScheduleLogSocket(?string $fault = null): object
+{
+    $socket = new class($fault) implements WebSocketClient
+    {
+        /** @var list<array<string,mixed>> */
+        public array $sent = [];
+
+        private string $request = '';
+
+        private const string Run = '123e4567-e89b-42d3-a456-426614174000';
+
+        public function __construct(private ?string $fault) {}
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
+
+        public function send(array $message): void
+        {
+            $this->sent[] = $message;
+            if ($message['type'] === 'workflow.run') {
+                $this->request = $message['payload']['inputs']['intent']['read']['request'];
+            }
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $message = end($this->sent);
+            $type = $message['type'];
+            if ($type === 'workflow.run') {
+                return [['id' => $message['id'], 'type' => 'event', 'event' => ['kind' => 'completed', 'run' => [
+                    'id' => self::Run, 'workflowName' => 'operation-process-container', 'status' => $this->fault === 'failed run' ? 'failed' : 'succeeded',
+                ]]]];
+            }
+            if ($type === 'workflow.history.get') {
+                $request = $this->fault === 'wrong request' ? self::Run : $this->request;
+                $keyRequest = $this->fault === 'wrong key' ? self::Run : $this->request;
+
+                return [['id' => $message['id'], 'type' => $type, 'payload' => ['data' => [
+                    'id' => self::Run, 'workflowName' => 'operation-process-container', 'status' => 'succeeded',
+                    'inputs' => ['kind' => 'schedule.inspect', 'intent' => ['read' => ['request' => $request]]],
+                    'jobs' => [['name' => 'process', 'steps' => [['name' => 'Read Process result', 'status' => 'succeeded',
+                        'outputs' => ['inspection' => ['vault' => 'orbit-control-inputs',
+                            'key' => 'nckrtl-process-command-assets-'.self::Run.'-inspection-inspection-'.$keyRequest.'-value']]]]]],
+                ]]]];
+            }
+            if ($type === 'vault.read-secret') {
+                return [['id' => $message['id'], 'type' => $type, 'payload' => ['data' => [
+                    'vaultName' => $message['payload']['vaultName'], 'secretKey' => $message['payload']['secretKey'], 'vaultType' => 'local_encryption',
+                    'value' => json_encode(['state' => 'active', 'output' => $this->fault === 'oversized' ? str_repeat('é', 2097153) : "old service output\nnew command schedule-secret-sentinel\n", 'truncated' => $this->fault === 'truncated'], JSON_THROW_ON_ERROR),
+                ]]]];
+            }
+
+            throw new LogicException('Unexpected journal request '.$type);
+        }
+
+        public function close(): void {}
+
+        public function isConnected(): bool
+        {
+            return true;
+        }
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token', 'swamp.read_token' => 'read-token']);
+
+    return $socket;
+}
+
+describe('migrated Schedule logs', function (): void {
+    it('reads retained and new command lines through a private request-bound journal read and redacts values', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $instance->refresh()->update(['provisioning_step' => 'active']);
+        $instance->environmentValues()->create(['env_key' => 'CUSTOM_SECRET', 'env_value' => 'schedule-secret-sentinel']);
+        $socket = migrationScheduleLogSocket();
+
+        $logs = app(ShowScheduleLogsAction::class)->execute($schedule->refresh(), 2);
+
+        expect($logs->output)->toBe("old service output\nnew command [REDACTED]\n");
+        expect($logs->truncated)->toBeFalse();
+        expect($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-process-container');
+        expect($socket->sent[0]['payload']['inputs']['intent']['schedule'])->toBe(['id' => $schedule->id]);
+        expect($socket->sent[0]['payload']['inputs']['intent']['read']['lines'])->toBe(2);
+        expect(array_column($socket->sent, 'type'))->toBe(['workflow.run', 'workflow.history.get', 'vault.read-secret']);
+        expect(json_encode($socket->sent, JSON_THROW_ON_ERROR))->not->toContain('schedule-secret-sentinel');
+    });
+
+    it('preserves the byte-bounded whole-entry truncation result from the Node', function (string $fault): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $instance->refresh()->update(['provisioning_step' => 'active']);
+        migrationScheduleLogSocket($fault);
+        if ($fault === 'oversized') {
+            expect(containerRefusal(fn () => app(ShowScheduleLogsAction::class)->execute($schedule->refresh(), 2)))->toBe('schedule.logs_failed');
+
+            return;
+        }
+
+        $logs = app(ShowScheduleLogsAction::class)->execute($schedule->refresh(), 2);
+
+        expect($logs->truncated)->toBeTrue()
+            ->and($logs->output)->toBe("old service output\nnew command schedule-secret-sentinel\n");
+    })->with(['truncated', 'oversized']);
+
+    it('refuses a failed or mismatched migrated Schedule journal read', function (string $fault, string $code): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $instance->refresh()->update(['provisioning_step' => 'active']);
+        $socket = migrationScheduleLogSocket($fault);
+
+        expect(containerRefusal(fn () => app(ShowScheduleLogsAction::class)->execute($schedule->refresh(), 2)))->toBe($code);
+        expect(array_column($socket->sent, 'type'))->not->toContain('vault.read-secret');
+    })->with([
+        'failed read' => ['failed run', 'schedule.logs_failed'],
+        'different request' => ['wrong request', 'swamp.terminal_result_unavailable'],
+        'different vault key' => ['wrong key', 'schedule.logs_failed'],
+    ]);
 });

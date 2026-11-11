@@ -71,7 +71,8 @@
                   if (ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z0-9_]+$'))
                   else 'process.' ~ process_action ~ '_failed'
                   if (ansible_run_tags | first) == 'process' and process_action in ['start', 'restart']
-                  else 'instance.container_' ~ (ansible_run_tags | first) ~ '_failed'} | to_json }}
+                  else 'instance.container_' ~ (ansible_run_tags | first) ~ '_failed'}
+                  | combine(migrate_process_failure | default({})) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           delegate_to: localhost

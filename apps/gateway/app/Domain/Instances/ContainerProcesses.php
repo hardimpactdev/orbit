@@ -11,6 +11,7 @@ use App\Domain\Processes\VpDevPreset;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
+use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Instance;
 use App\Models\Process;
 use App\Support\ValidatedData;
@@ -24,7 +25,7 @@ use Illuminate\Support\Collection as SupportCollection;
  */
 final readonly class ContainerProcesses
 {
-    public function __construct(private ProcessTargetResolver $targets, private SystemdProcessRenderer $systemd) {}
+    public function __construct(private ProcessTargetResolver $targets, private SystemdProcessRenderer $systemd, private RecipeImageBuilds $recipes) {}
 
     /**
      * The `processes` of the container intent, in id order. `environment` names the unit's own environment file, or null when its
@@ -32,21 +33,21 @@ final readonly class ContainerProcesses
      *
      * @return list<array{id:int,name:string,content:string,environment:?string,desired:string}>
      */
-    public function units(Instance $instance): array
+    public function units(Instance $instance, bool $migrate = false): array
     {
-        return $this->render($instance, $this->records([$instance->id]));
+        return $this->render($instance, $this->records([$instance->id]), $migrate);
     }
 
     /**
      * @param  Collection<int, Process>  $records
      * @return list<array{id:int,name:string,content:string,environment:?string,desired:string}>
      */
-    private function render(Instance $instance, Collection $records): array
+    private function render(Instance $instance, Collection $records, bool $migrate): array
     {
         $port = $this->vitePort($instance, $records);
         $units = [];
         foreach ($records as $process) {
-            $process = $this->placed($process, $instance, $port);
+            $process = $this->placed($process, $instance, $port, $migrate);
             $target = $this->targets->forInspection($process);
             if ($target->container === null || $process->runtime !== ProcessRuntime::Systemd) {
                 throw new ResourceOperationException('process.target_unsupported', "Process [{$process->id}:{$process->name}] must use systemd in an Instance container.", 409);
@@ -63,16 +64,16 @@ final readonly class ContainerProcesses
      * The vault copy's content: each admitted environment file and its values, but only while the records still render the admitted
      * units, so a value changed after admission never lands under an older unit.
      */
-    public function environments(Instance $instance, mixed $admitted): string
+    public function environments(Instance $instance, mixed $admitted, bool $migrate = false): string
     {
         $records = $this->records([$instance->id]);
-        if ($admitted !== $this->render($instance, $records)) {
+        if ($admitted !== $this->render($instance, $records, $migrate)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The container Processes changed after admission.', 403);
         }
         $port = $this->vitePort($instance, $records);
         $files = [];
         foreach ($records as $process) {
-            $process = $this->placed($process, $instance, $port);
+            $process = $this->placed($process, $instance, $port, $migrate);
             $target = $this->targets->forInspection($process);
             if ($this->hasEnvironment($process, $target)) {
                 $files[$this->systemd->environmentPath($process, $target)] = $this->systemd->environmentContent($process, $target);
@@ -86,7 +87,7 @@ final readonly class ContainerProcesses
      * Records the run's outcome on the admitted Processes: a passed run installed and started every one; a failed run leaves the
      * Processes it had not installed failed and the running ones as they were.
      */
-    public function complete(Instance $instance, mixed $admitted, bool $succeeded, ?string $errorCode): void
+    public function complete(Instance $instance, mixed $admitted, bool $succeeded, ?string $errorCode, bool $migrate = false): void
     {
         $port = $succeeded ? $this->vitePort($instance) : null;
         foreach (is_array($admitted) ? $admitted : [] as $raw) {
@@ -97,7 +98,7 @@ final readonly class ContainerProcesses
                 continue;
             }
             if ($succeeded) {
-                $placed = $this->placed($process, $instance, $port);
+                $placed = $this->placed($process, $instance, $port, $migrate);
                 $process->forceFill(['working_directory' => $placed->working_directory, 'runtime_config' => $placed->runtime_config,
                     'status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null,
                     'systemd_activation_hash' => hash('sha256', ValidatedData::string($unit['content'])), 'systemd_activation_pending' => false])->save();
@@ -108,7 +109,7 @@ final readonly class ContainerProcesses
     }
 
     /** Render a copy at its container placement; migration saves these paths only after cutover succeeds. */
-    private function placed(Process $process, Instance $instance, ?int $port): Process
+    private function placed(Process $process, Instance $instance, ?int $port, bool $migrate = false): Process
     {
         $placed = clone $process;
         $checkout = rtrim($instance->checkout_path, '/');
@@ -117,6 +118,8 @@ final readonly class ContainerProcesses
             $this->assertPreset($process, $instance, $port);
             $config['command'] = VpDevPreset::command($port);
             $config['environment_file'] ??= InstanceContainer::application($instance).'/.env';
+        } elseif ($migrate) {
+            $config['command'] = $this->migrateCommand($process, $instance);
         }
         array_walk_recursive($config, static function (mixed &$value) use ($checkout): void {
             if (is_string($value)) {
@@ -129,6 +132,81 @@ final readonly class ContainerProcesses
         }
 
         return $placed;
+    }
+
+    /** Map only the projected migration copy. The recipe owns command names and PHP versions; host records stay unchanged.
+     * @return list<string>
+     */
+    private function migrateCommand(Process $process, Instance $instance): array
+    {
+        $command = ValidatedData::stringList($process->runtime_config['command']);
+        $index = $this->commandIndex($command);
+        if ($index === null || ! $this->hostCommand($command[$index] ?? '')) {
+            return $command;
+        }
+        $path = $command[$index];
+        $name = basename($path);
+        $folders = $this->recipes->currentRecipe()->instances;
+        if (preg_match('/^php(?<version>[0-9]+[.][0-9]+)?$/', $name, $match) === 1) {
+            $version = $match['version'] ?? $instance->project->php_version;
+            if (! is_string($version) || ($folders->php[$version]->artifact ?? null) === null) {
+                throw new ResourceOperationException('instance.migrate_process_binary_unavailable',
+                    "Process [{$process->id}:{$process->name}] executable [{$path}] requires PHP [{$version}], which the container runtime does not ship.", 409);
+            }
+            array_splice($command, $index, 1, [InstanceHostIntent::RuntimeFolder.'/current/php/'.$version.'/bin/php']);
+        } else {
+            foreach ($folders->runtime ?? [] as $part) {
+                if (array_key_exists($name, $part->bin)) {
+                    array_splice($command, $index, 1, [InstanceHostIntent::RuntimeFolder.'/current/bin/'.$name]);
+                    break;
+                }
+            }
+        }
+
+        return $command;
+    }
+
+    /** Known host install locations, shared by every recipe command and versioned PHP name. */
+    private function hostCommand(string $path): bool
+    {
+        return preg_match('~^(?:/(?:usr/bin|usr/local/bin|bin)/[^/]+|/(?:home/[^/]+|root)/[.]vite-plus/(?:bin/[^/]+|js_runtime/node/[^/]+/bin/node))$~', $path) === 1;
+    }
+
+    /** The actual command after env options and assignments. Shell strings and unknown options stay opaque.
+     * @param  list<string>  $command
+     */
+    private function commandIndex(array $command): ?int
+    {
+        if (($command[0] ?? null) !== '/usr/bin/env') {
+            return $command === [] ? null : 0;
+        }
+        $options = true;
+        for ($index = 1; $index < count($command); $index++) {
+            $argument = $command[$index];
+            if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*=/', $argument) === 1) {
+                continue;
+            }
+            if ($options && $argument === '--') {
+                $options = false;
+
+                continue;
+            }
+            if ($options && ($argument === '-i' || str_starts_with($argument, '--unset='))) {
+                continue;
+            }
+            if ($options && $argument === '-u' && isset($command[$index + 1])) {
+                $index++;
+
+                continue;
+            }
+            if ($options && str_starts_with($argument, '-')) {
+                return null;
+            }
+
+            return $index;
+        }
+
+        return null;
     }
 
     /**
@@ -217,21 +295,44 @@ final readonly class ContainerProcesses
     }
 
     /** The host units that migration stops, restores on failure and retires after cutover.
-     * @return list<array{name:string,path:string,environment_directory:string,desired:string}>
+     * @return list<array{name:string,path:string,environment_directory:string,desired:string,executables:list<string>,translations:list<array{process_id:int,process_name:string,from:string,to:string}>}>
      */
     public function source(Instance $instance): array
     {
         $records = $this->records([$instance->id]);
         $port = $this->vitePort($instance, $records);
         $units = [];
+        $unavailable = [];
         foreach ($records as $process) {
-            if (array_key_exists('preset', $process->runtime_config)) {
-                $this->assertPreset($process, $instance, $port);
+            try {
+                $placed = $this->placed($process, $instance, $port, migrate: true);
+            } catch (ResourceOperationException $exception) {
+                if ($exception->errorCode !== 'instance.migrate_process_binary_unavailable') {
+                    throw $exception;
+                }
+                $unavailable[] = $exception->getMessage();
+
+                continue;
             }
+            $command = ValidatedData::stringList($placed->runtime_config['command']);
+            $original = ValidatedData::stringList($process->runtime_config['command']);
+            $index = $this->commandIndex($command);
+            $originalIndex = $this->commandIndex($original);
+            $executables = [$command[0]];
+            if ($index !== null && $index > 0 && str_starts_with($command[$index], '/')) {
+                $executables[] = $command[$index];
+            }
+            $translations = $index !== null && $originalIndex !== null && $command[$index] !== $original[$originalIndex]
+                ? [['process_id' => $process->id, 'process_name' => $process->name, 'from' => $original[$originalIndex], 'to' => $command[$index]]]
+                : [];
             $target = $this->targets->forInspection($process);
             $units[] = ['name' => $this->systemd->unitName($process), 'path' => $this->systemd->unitPath($process),
                 'environment_directory' => dirname($this->systemd->environmentPath($process, $target)),
-                'desired' => $process->desired_state->value];
+                'desired' => $process->desired_state->value, 'executables' => $executables, 'translations' => $translations];
+        }
+
+        if ($unavailable !== []) {
+            throw new ResourceOperationException('instance.migrate_process_binary_unavailable', implode("\n", $unavailable), 409);
         }
 
         return $units;

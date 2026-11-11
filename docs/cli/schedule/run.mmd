@@ -31,6 +31,14 @@ sequenceDiagram
   %%> Result:
   %%> - task #5140 recorded from the Schedule's template, with trigger `operator`
   %%> - the same intent a calendar fire gets: user, working directory, shell, timeout and command
+  GW-->>CLI: 202 Accepted<br/>task #5140
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  opt Instance migration holds admission
+    Note over GW: Wait for migration<br/>Then admit final context
+  end
   GW->>SW: Start run, full intent<br/>task-command-run
   %%> What it does:
   %%> - starts one root run of `task-command-run` on serve (Node 209), the workflow each calendar fire of `schedule-7f3c…` runs nested
@@ -41,11 +49,6 @@ sequenceDiagram
   %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
   %%> - the user, the working directory, the shell and the timeout
   %%> - the command's vault key name, never the command (R3)
-  GW-->>CLI: 202 Accepted<br/>task #5140
-  %%> What you get:
-  %%> - the task number, at once
-  %%> Next:
-  %%> - the CLI follows the task with `operation:show`
   SW->>N: Run the command<br/>@swamp/ssh exec · systemd-run
   %%> How:
   %%> - one `@swamp/ssh exec`: `sudo systemd-run --uid=<user> --wait --pipe --collect` with the admitted directory and timeout

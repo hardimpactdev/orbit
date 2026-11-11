@@ -1,0 +1,402 @@
+#!/usr/bin/env python3
+"""Plan, run and report the after-merge fixture receiver. Shared APIs live in ci-units."""
+import argparse
+from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
+from importlib.machinery import SourceFileLoader
+from importlib.util import module_from_spec, spec_from_loader
+import json
+import math
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+import tomllib
+import urllib.request
+
+ROOT = Path(__file__).resolve().parents[1]
+WORKFLOW = '.github/workflows/ci-full-set.yml'
+CEILING = 540
+DEADLINE = 2100
+WORKERS = 4
+
+
+def module(name, path):
+    loader = SourceFileLoader(name, str(path))
+    result = module_from_spec(spec_from_loader(name, loader))
+    loader.exec_module(result)
+    return result
+
+
+@lru_cache
+def api():
+    return module('full_set_units', ROOT / 'bin/ci-units')
+
+
+def save(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(data, indent=2) + '\n')
+    temporary.replace(path)
+
+
+def git(*args):
+    return subprocess.check_output(['git', '-C', str(ROOT), *args], text=True, timeout=60).strip()
+
+
+class GitHub:
+    """Small REST client; only report() uses write endpoints."""
+    def __init__(self):
+        self.repo = os.environ['GITHUB_REPOSITORY']
+        self.root = os.environ.get('GITHUB_API_URL', 'https://api.github.com') + '/repos/' + self.repo
+
+    def request(self, method, path, data=None):
+        request = urllib.request.Request(self.root + '/' + path, method=method,
+                                        data=json.dumps(data).encode() if data is not None else None,
+                                        headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                                                 'Accept': 'application/vnd.github+json',
+                                                 'Content-Type': 'application/json',
+                                                 'X-GitHub-Api-Version': '2022-11-28'})
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return json.load(response)
+
+    def pages(self, path, key=None):
+        page = 1
+        while True:
+            data = self.request('GET', f'{path}{"&" if "?" in path else "?"}per_page=100&page={page}')
+            rows = data[key] if key else data
+            yield from rows
+            if len(rows) < 100:
+                return
+            page += 1
+
+
+def covered_range(github, sha, run_id):
+    # Creation order is not completion order. Only published reports advance the watermark.
+    runs = sorted(github.pages('actions/workflows/ci-full-set.yml/runs?branch=main&status=completed', 'workflow_runs'),
+                  key=lambda run: run['updated_at'], reverse=True)
+    base = None
+    for run in runs:
+        if str(run['id']) == str(run_id) or run['conclusion'] not in ('success', 'failure', 'timed_out'):
+            continue
+        if subprocess.run(['git', '-C', str(ROOT), 'merge-base', '--is-ancestor', run['head_sha'], sha], timeout=60).returncode:
+            continue
+        artifacts = github.pages(f'actions/runs/{run["id"]}/artifacts', 'artifacts')
+        if any(a['name'] == 'full-set-report' and not a['expired'] for a in artifacts):
+            base = run['head_sha']
+            break
+    if base is None:
+        introduced = git('log', '--first-parent', '--diff-filter=A', '--format=%H', sha, '--', WORKFLOW).splitlines()
+        if not introduced:
+            raise ValueError('Cannot find the commit introducing ' + WORKFLOW)
+        parents = git('rev-list', '--parents', '-n', '1', introduced[-1]).split()
+        base = parents[1] if len(parents) > 1 else None
+    commits = git('rev-list', '--first-parent', f'{base}..{sha}' if base else sha).splitlines()
+    return {'base': base, 'sha': sha, 'commits': commits}
+
+
+def collect_current(file):
+    """Use the shared preload with a full-set import budget, without running bodies."""
+    fixture_api = api()
+    if file.endswith('.py'):
+        return fixture_api.collect(file)
+    with tempfile.TemporaryDirectory(prefix='full-set-collect-') as scratch:
+        output = Path(scratch) / 'cases.json'
+        subprocess.run(['deno', 'test', '--no-check', '-A', '--preload', str(ROOT / fixture_api.PRELOAD), str(ROOT / file)],
+                       cwd=fixture_api.gate.SWAMP, env={**os.environ, 'ORBIT_TEST_COLLECT': str(output)},
+                       check=True, stdout=subprocess.DEVNULL, timeout=CEILING)
+        cases = json.loads(output.read_text())
+    if not cases:
+        raise ValueError(file + ': fixture registered zero tests')
+    return {'cases': cases}
+
+
+def build_plan(config, inventory, collect, fixture_api, snapshot=None):
+    """Refresh populations; committed metadata is a cost hint, never an admission gate."""
+    budget = {**config['budget'], 'shard_seconds': 300, 'shard_workers': WORKERS,
+              'unit_ceiling_seconds': CEILING, 'shard_deadline_seconds': DEADLINE,
+              'slice_seconds': 294, 'pr_shards': 1}
+    fixtures = {f['file']: dict(f) for f in config.get('fixture', [])}
+    for file in fixture_api.fixture_steps():
+        fixtures.setdefault(file, {'file': file, 'cost': budget['default_cost'], 'inputs': []})
+    if snapshot:
+        snapshot({'budget': budget, 'fixtures': fixtures, 'shards': [{'name': 'planning', 'units': list(fixtures)}],
+                  'units': [{'unit': file, 'cases': [], 'status': 'NOT RUN'} for file in fixtures]})
+    after_merge_files = [file for file, fixture in fixtures.items() if fixture.get('after_merge')]
+    restored, collection_errors = [], {}
+
+    def population(file):
+        try:
+            return file, collect(file), None
+        except (ValueError, OSError, subprocess.SubprocessError) as error:
+            return file, None, str(error)
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        populations = list(pool.map(population, fixtures))
+    for file, current, error in populations:
+        fixture = fixtures[file]
+        old = inventory.get(file, {}).get('cases', [])
+        excluded = fixture.pop('after_merge_cases', [])
+        fixture.pop('after_merge', None)
+        fixture.setdefault('inputs', [])
+        fixture.setdefault('cost', budget['default_cost'])
+        if error:
+            # Execute all registrations without a slice or expected-name guard.
+            fixture.update(slices=False)
+            fixture.pop('case_costs', None)
+            collection_errors[file] = error
+            continue
+        names = current['cases']
+        if not names:
+            raise ValueError(file + ': collector returned no cases')
+        fixture.update(current)
+        restored += [{'file': file, 'case': name} for name in excluded if name in names]
+        if file.endswith('.py'):
+            continue  # Python runs as a file, with its current method names in the report.
+        old_weights = fixture.get('case_costs', {})
+        retained = [name for name in old if name not in excluded]
+        average = math.ceil(fixture['cost'] / max(1, len(retained)))
+        weights = {name: old_weights.get(name, config['budget']['unit_ceiling_seconds'] if name in excluded
+                                        else average if name in old else budget['default_cost']) for name in names}
+        fixture.update(case_costs=weights, cost=sum(weights.values()), slices=1)
+        # Reuse the shared stride slicer and cost calculation. Increase slicing until each
+        # unit fits the ceiling, or until an indivisible case has its own named unit.
+        for count in range(1, len(names) + 1):
+            fixture['slices'] = count
+            units = fixture_api.units_for(fixture, budget)
+            if max(cost for _, cost in units) <= 300 or len(units) == len(names):
+                break
+    units = [(name, cost, (0, 0, 0)) for f in fixtures.values() for name, cost in fixture_api.units_for(f, budget)]
+    # No PR capacity limit. Oversized indivisible cases execute and time out by name.
+    budget['shard_seconds'] = max(300, min(CEILING, max(cost for _, cost, _ in units)))
+    packing = [(name, min(cost, CEILING), priority) for name, cost, priority in units]
+    shards = None
+    while shards is None:
+        shards = fixture_api.pack(packing, budget)
+        if shards is None:
+            budget['pr_shards'] += 1
+    if len(shards) > 256:
+        raise ValueError(f'{len(shards)} shards exceeds GitHub matrix capacity; no fixtures were executed')
+    return {'budget': budget, 'fixtures': fixtures, 'shards': shards,
+            'units': [{'unit': name, 'declared_seconds': cost, 'status': 'NOT RUN',
+                       'cases': fixture_api.case_names(name, fixtures)} for name, cost, _ in units],
+            'after_merge_files': after_merge_files, 'restored_pr_exclusions': restored, 'collection_errors': collection_errors,
+            'files_total': len(fixtures), 'cases_total': sum(len(f.get('cases', [])) for f in fixtures.values())}
+
+
+def frankenphp_runtime(cache):
+    """Extract only FrankenPHP from the recipe's checksum-verified Instance archive."""
+    recipe = json.loads((ROOT / 'apps/gateway/resources/machine-software/recipe.json').read_text())
+    pin = recipe['instances']['php']['versions'][recipe['php']['ci']]
+    cache.mkdir(parents=True, exist_ok=True)
+    archive = cache / (pin['sha256'] + '.tar.gz')
+    module('full_set_php_download', ROOT / 'bin/php-build').download(pin['url'], archive, pin['sha256'])
+    binary = cache / ('frankenphp-' + pin['sha256'])
+    with tarfile.open(archive) as source:
+        member = source.getmember('bin/frankenphp')
+        if not member.isfile():
+            raise ValueError('Pinned FrankenPHP prerequisite is not a regular file')
+        with source.extractfile(member) as executable:
+            binary.write_bytes(executable.read())
+    binary.chmod(0o755)
+    return binary.resolve()
+
+
+def run_shard(plan, name, output):
+    deadline = time.monotonic() + DEADLINE
+    fixture_api = api()
+    shard = next(s for s in plan['shards'] if s['name'] == name)
+    # Initialize before runtime download, tool setup or fixture execution.
+    initial = [dict(u, seconds=0, reason='shard setup did not complete') for u in plan['units'] if u['unit'] in shard['units']]
+    save(output, initial)
+    signal.signal(signal.SIGTERM, lambda *_: fixture_api.CANCELLED.set())
+    signal.signal(signal.SIGINT, lambda *_: fixture_api.CANCELLED.set())
+    # Download/version/checksum policy is owned by the existing runtime helper. Bound
+    # setup with the same descendant-owning supervisor as fixtures.
+    for tool, variable, label in [('swamp', 'ORBIT_SWAMP_PROOF_BINARY', 'pinned Swamp proof runtime'),
+                                  ('frankenphp', 'ORBIT_FRANKENPHP', 'pinned FrankenPHP prerequisite')]:
+        receipt = output.with_suffix('.' + tool)
+        setup = fixture_api.gate.Step('shape', label,
+                                      [sys.executable, str(ROOT / 'bin/ci-full-set'), 'runtime', '--tool', tool, '--output', str(receipt)])
+        result = fixture_api.run_unit(setup, os.environ.copy(), min(CEILING, max(.001, deadline - time.monotonic())))
+        if result['status'] != 'passed':
+            for row in initial:
+                row['reason'] = label + ': ' + result['status']
+            save(output, initial)
+            return 1
+        os.environ[variable] = receipt.read_text()
+    budget = {**plan['budget'], 'shard_deadline_seconds': max(.001, deadline - time.monotonic())}
+    return fixture_api.run(shard['units'], budget, plan['fixtures'], output)
+
+
+def reconcile(plan, directory, shard_result):
+    problems, warnings = [], []
+    expected = {u['unit']: u for u in plan['units']}
+    if not expected or not plan['shards']:
+        problems.append({'unit': 'full-set plan', 'reason': 'missing or empty full-set-plan.json', 'files': []})
+    seen = set()
+    for shard in plan['shards']:
+        path = directory / f'full-set-times-{shard["name"]}.json'
+        if not path.exists():
+            problems.append({'unit': 'shard ' + shard['name'], 'reason': 'missing timing artifact; matrix result: ' + shard_result, 'files': sorted({u.split('#')[0] for u in shard['units']})})
+            continue
+        try:
+            rows = json.loads(path.read_text())
+            if not isinstance(rows, list):
+                raise ValueError('expected a result list')
+        except (ValueError, OSError) as error:
+            problems.append({'unit': 'shard ' + shard['name'], 'reason': 'invalid timing artifact: ' + str(error), 'files': sorted({u.split('#')[0] for u in shard['units']})})
+            continue
+        for row in rows:
+            unit = row.get('unit')
+            if unit not in shard['units'] or unit in seen:
+                problems.append({'unit': str(unit), 'reason': 'unexpected or duplicate unit result', 'files': []})
+                continue
+            seen.add(unit)
+            reason = row.get('reason')
+            if row.get('status') != 'passed':
+                reason = f"{row.get('status', 'missing status')} after {row.get('seconds', 0)}s; ceiling {CEILING}s" + (f'; {reason}' if reason else '')
+            else:
+                actual = row.get('cases', [])
+                names = [c['name'] for c in actual]
+                planned = expected[unit]['cases']
+                if (planned and names != planned) or not actual or any(c.get('status') != 'passed' for c in actual):
+                    reason = 'case results missing, changed, ignored or not passed: ' + json.dumps(actual)
+                elif row.get('seconds', 0) > CEILING:
+                    reason = f'OVER BUDGET: {row["seconds"]}s; ceiling {CEILING}s'
+            if reason:
+                failed_cases = [c for c in row.get('cases', []) if isinstance(c, dict) and c.get('status') != 'passed']
+                if failed_cases:
+                    reason += '; case outcomes: ' + json.dumps(failed_cases)
+                problems.append({'unit': unit, 'reason': reason, 'files': [unit.split('#')[0]]})
+            if row.get('seconds', 0) > .8 * CEILING:
+                warnings.append({'unit': unit, 'reason': f'{row["seconds"]}s exceeds 80% of {CEILING}s ceiling', 'files': [unit.split('#')[0]]})
+    for unit in expected.keys() - seen:
+        problems.append({'unit': unit, 'reason': 'missing unit result (NOT RUN); matrix result: ' + shard_result, 'files': [unit.split('#')[0]]})
+    if shard_result != 'success' and not problems:
+        problems.append({'unit': 'fixture jobs', 'reason': 'matrix result: ' + shard_result, 'files': []})
+    return problems, warnings
+
+
+def candidate_prs(github, commits):
+    candidates = {}
+    for commit in commits:
+        for pr in github.pages(f'commits/{commit}/pulls'):
+            if pr.get('merged_at') and pr['base']['ref'] == 'main' and pr['merge_commit_sha'] in commits:
+                candidates.setdefault(pr['number'], pr)
+    for number, pr in candidates.items():
+        pr['paths'] = [f['filename'] for f in github.pages(f'pulls/{number}/files')]
+    return candidates
+
+
+def report_payloads(plan, problems, warnings, candidates, link, selection):
+    status = {'state': 'failure' if problems else 'success', 'context': 'Main full set',
+              'description': f'{len(problems)} failures; {len(warnings)} budget warnings', 'target_url': link}
+    comments = {}
+    for item in [*problems, *warnings]:
+        matched = []
+        for number, pr in candidates.items():
+            if any(selection.matches(path, selection.input_rules([file, *plan['fixtures'][file].get('inputs', [])]))
+                   for file in item['files'] for path in pr['paths']):
+                matched.append(number)
+        recipients = matched or list(candidates)
+        attribution = ('Paths map to this unit; these are possible causes, not confirmed blame.' if matched
+                       else 'No input-path match; cause is uncertain among PRs in the covered range.')
+        line = (f'- `{item["unit"]}`: {item["reason"]}\n  {attribution} Candidates: '
+                + ', '.join(f'#{n}' for n in recipients))
+        for number in recipients:
+            comments.setdefault(number, []).append(line)
+    payloads = []
+    for number, lines in comments.items():
+        heading = (f'Main full set on `{plan["sha"]}`. [Run and named timing artifacts]({link}).\n\n'
+                   f'Covered range: `{plan["base"] or "repository root"}..{plan["sha"]}`.\n\n')
+        # Split long reports instead of losing named outcomes at GitHub's body limit.
+        body = heading
+        for line in lines:
+            if len(body) + len(line) > 55000:
+                payloads.append((number, {'body': body}))
+                body = heading
+            body += line + '\n'
+        payloads.append((number, {'body': body}))
+    return status, payloads
+
+
+def report(github, plan, directory, shard_result, link, output):
+    problems, warnings = reconcile(plan, directory, shard_result)
+    selection = module('full_set_selection', ROOT / 'bin/ci-build-plan')
+    attribution_error = None
+    try:
+        candidates = candidate_prs(github, plan['commits']) if problems or warnings else {}
+    except (OSError, ValueError) as error:
+        attribution_error = error
+        problems.append({'unit': 'PR attribution', 'reason': 'GitHub read failed: ' + str(error), 'files': []})
+        candidates = {}
+    status, comments = report_payloads(plan, problems, warnings, candidates, link, selection)
+    # Publish red/green before PR comments; a comment API failure still fails the job.
+    github.request('POST', 'statuses/' + plan['sha'], status)
+    if attribution_error:
+        raise RuntimeError('PR attribution failed; the covered range remains unreported') from attribution_error
+    for number, payload in comments:
+        github.request('POST', f'issues/{number}/comments', payload)
+    save(output, {'sha': plan['sha'], 'base': plan['base'], 'problems': problems, 'warnings': warnings,
+                  'status': status, 'commented_prs': [n for n, _ in comments],
+                  'planned_files': plan.get('files_total'), 'planned_cases': plan.get('cases_total'),
+                  'planned_units': len(plan['units']), 'after_merge_files': plan.get('after_merge_files', []),
+                  'restored_pr_exclusions': plan.get('restored_pr_exclusions', [])})
+    summary = f'Main full set: {status["state"]}\n\n' + '\n'.join(f'- {i["unit"]}: {i["reason"]}' for i in [*problems, *warnings])
+    print(summary)
+    if os.environ.get('GITHUB_STEP_SUMMARY'):
+        Path(os.environ['GITHUB_STEP_SUMMARY']).write_text(summary + '\n')
+    return bool(problems)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', choices=['plan', 'run', 'report', 'runtime'])
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--plan', type=Path)
+    parser.add_argument('--shard')
+    parser.add_argument('--tool', choices=['swamp', 'frankenphp'], default='swamp')
+    parser.add_argument('--results', type=Path)
+    parser.add_argument('--shard-result', default='failure')
+    args = parser.parse_args()
+    if args.command == 'runtime' and args.tool == 'frankenphp':
+        args.output.write_text(str(frankenphp_runtime(Path.home() / '.cache/orbit-full-set-frankenphp')))
+        return 0
+    if args.command == 'runtime':
+        runtime = module('full_set_runtime', ROOT / 'swamp/bin/validate-swamp-workflows.py')
+        binary, _version = runtime.pinned_runtime(Path.home() / '.cache/orbit-shape-runtime', ROOT / 'swamp')
+        args.output.write_text(str(binary))
+        return 0
+    if args.command == 'plan':
+        covered = covered_range(GitHub(), os.environ['GITHUB_SHA'], os.environ['GITHUB_RUN_ID'])
+        # A failed planner still leaves a range for the hosted reporter.
+        save(args.output, {**covered, 'shards': [], 'units': [], 'fixtures': {}})
+        fixture_api = api()
+        config = tomllib.loads((ROOT / '.github/ci/checks.toml').read_text())
+        inventory = json.loads(fixture_api.INVENTORY.read_text())
+        plan = {**covered, **build_plan(config, inventory, collect_current, fixture_api,
+                                                     lambda initial: save(args.output, {**covered, **initial}))}
+        save(args.output, plan)
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write('matrix=' + json.dumps({'include': [{'name': s['name']} for s in plan['shards']]}) + '\n')
+        print(f'{plan["files_total"]} files; {plan["cases_total"]} collected cases; {len(plan["units"])} units; '
+              f'{len(plan["shards"])} queued shards; {len(plan["restored_pr_exclusions"])} PR exclusions restored')
+        return 0
+    if args.command == 'run':
+        return run_shard(json.loads(args.plan.read_text()), args.shard, args.output)
+    github = GitHub()
+    link = f'{os.environ.get("GITHUB_SERVER_URL", "https://github.com")}/{github.repo}/actions/runs/{os.environ["GITHUB_RUN_ID"]}'
+    if args.plan.exists():
+        plan = json.loads(args.plan.read_text())
+    else:
+        plan = {**covered_range(github, os.environ['GITHUB_SHA'], os.environ['GITHUB_RUN_ID']), 'shards': [], 'units': [], 'fixtures': {}}
+    return report(github, plan, args.results, args.shard_result, link, args.output)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

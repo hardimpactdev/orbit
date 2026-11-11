@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@1";
+import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1";
 import { Inspection, storeInspection } from "./inspection.ts";
 
 Deno.test("inspection publishes journal bytes only through native sensitive output", async () => {
@@ -8,6 +8,7 @@ Deno.test("inspection publishes journal bytes only through native sensitive outp
     const value = JSON.stringify({
         state: "active",
         output: "private journal token",
+        truncated: true,
     });
     const writes: { spec: string; name: string; data: unknown }[] = [];
     try {
@@ -29,7 +30,7 @@ Deno.test("inspection publishes journal bytes only through native sensitive outp
             state: "active",
             inspection: {
                 vault: "orbit-control-inputs",
-                key: `nckrtl-process-command-assets-model-identity-inspection-inspection-${request}-value`,
+                key: `nckrtl-process-command-assets-model-identity-inspection-inspection-inspection-${request}-value`,
             },
         });
         assertEquals(
@@ -53,4 +54,11 @@ Deno.test("inspection publishes journal bytes only through native sensitive outp
     } finally {
         await Deno.remove(directory, { recursive: true });
     }
+});
+
+Deno.test("inspection rejects an output whose double JSON encoding exceeds the Gateway frame budget", () => {
+    const value = JSON.stringify({ state: "active", output: "\\".repeat(2_400_000), truncated: false });
+    assertThrows(() => Inspection.parse({ value }));
+    const bounded = JSON.stringify({ state: "active", output: "\\".repeat(2_000_000), truncated: true });
+    assertEquals(Inspection.parse({ value: bounded }).value, bounded);
 });

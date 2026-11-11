@@ -62,7 +62,8 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 if ($data['status'] === 'succeeded') {
                     // An active routed Instance needs its active Route, so the Route turns active first.
                     $route?->update(['status' => RouteStatus::Active, 'sites_published' => true, 'failed_step' => null, 'error_code' => null]);
-                    $instance->update(['status' => InstanceState::Active, 'provisioning_step' => 'active', 'first_setup_pending' => false, 'failed_step' => null, 'error_code' => null]);
+                    $instance->update(['status' => InstanceState::Active, 'provisioning_step' => 'active', 'first_setup_pending' => false, 'failed_step' => null, 'error_code' => null,
+                        ...($container === null ? [] : ['development_projection_pending' => false])]);
                     if ($server !== null) {
                         // A clone runs, and the Conn layer records its T3 server from the run's result.
                         $instance->runtime()->firstOrFail()->update(['power_state' => InstanceRuntimePowerState::Running]);

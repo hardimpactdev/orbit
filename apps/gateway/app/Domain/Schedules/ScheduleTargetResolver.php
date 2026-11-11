@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Schedules;
 
+use App\Domain\InstanceMigration\InstanceMigration;
+use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -98,6 +101,7 @@ final readonly class ScheduleTargetResolver
             $this->unavailable();
         }
 
+        InstanceMigration::assertSettled($instance);
         $target = $this->instance($instance, requireActive: false);
 
         if ($target->node->id !== $schedule->host_node_id) {
@@ -132,6 +136,9 @@ final readonly class ScheduleTargetResolver
     public function forRemoval(#[SensitiveParameter] Schedule $schedule): ScheduleTarget
     {
         $target = $this->forInspection($schedule);
+        if ($target->instance !== null) {
+            InstanceMigration::assertSettled($target->instance);
+        }
 
         if ($target->node->id !== $schedule->host_node_id) {
             $this->unavailable();
@@ -176,6 +183,9 @@ final readonly class ScheduleTargetResolver
         $instance->loadMissing('node');
         $this->assertNode($instance->node, $requireActive);
 
+        if ($requireActive) {
+            InstanceMigration::assertSettled($instance);
+        }
         if (
             $requireActive
             && ($instance->status !== InstanceState::Active
@@ -184,6 +194,18 @@ final readonly class ScheduleTargetResolver
             $this->unavailable();
         }
 
+        $runtime = $instance->runtime()->first();
+        if ($runtime !== null && ! InstanceMigration::pending($instance)) {
+            $user = $instance->node->user;
+            if (! in_array($user, ['orbit', 'agent'], true)) {
+                $this->unavailable();
+            }
+
+            return new ScheduleTarget(node: $instance->node, user: $user, group: $user, home: '/home/'.$user,
+                workingDirectory: $instance->source_is_laravel === true ? InstanceContainer::application($instance) : InstanceHostIntent::Workspace,
+                shell: '/bin/bash', loginShell: true, instance: $instance,
+                container: ['project' => $runtime->incus_project, 'name' => $runtime->container_name]);
+        }
         if (! $lookup) {
             [$user, $workingDirectory, $loginShell] = match (true) {
                 $instance->placedOnAppDev() => [$instance->node->user,

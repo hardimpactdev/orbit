@@ -661,7 +661,7 @@ function cli_binary_step_uses(array $job): array
 }
 
 describe('CLI binary workflow', function (): void {
-    it('builds CLI binaries through the parent CI for every pull request', function (): void {
+    it('builds CLI binaries through the parent CI for selected pull requests', function (): void {
         $workflow = cli_binary_workflow();
         $ci = Yaml::parseFile(cli_release_repo_root().'/.github/workflows/ci.yml');
         expect($workflow['on'])->not->toHaveKey('pull_request')
@@ -708,7 +708,7 @@ describe('CLI binary workflow', function (): void {
         $jobs = cli_binary_workflow()['jobs'];
 
         // A local action exists only after checkout, which under workflow_call checks out the release commit.
-        expect(array_slice(cli_binary_step_uses($jobs['build']), 0, 3))->toBe(['actions/checkout', './.github/actions/ci-scope', './.github/actions/php']);
+        expect(array_slice(cli_binary_step_uses($jobs['build']), 0, 2))->toBe(['actions/checkout', './.github/actions/php']);
 
         foreach ($jobs as $name => $job) {
             $runners = isset($job['strategy']) ? array_column($job['strategy']['matrix']['include'], 'runner') : [$job['runs-on']];
