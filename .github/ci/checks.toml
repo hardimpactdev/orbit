@@ -810,6 +810,8 @@ inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/tasks/instance-bridge-rules.yml",
+  "swamp/tests/fixtures/instance-bridge-curl.py",
   "swamp/ansible/instance_network.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",

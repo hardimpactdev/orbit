@@ -67,7 +67,7 @@ class BridgePolicy(unittest.TestCase):
             self.assertEqual(bridge.apply(root, None), 0)
 
     def interleave_writers(self, root, first, second, pause_at):
-        paused, resume, waiting, acquired = (threading.Event() for _ in range(4))
+        paused, resume, attempted = (threading.Event() for _ in range(3))
         failures = []
         original = getattr(bridge, pause_at)
         flock = bridge.fcntl.flock
@@ -81,17 +81,14 @@ class BridgePolicy(unittest.TestCase):
 
         def observe_lock(stream, operation):
             if threading.current_thread().name == 'second':
-                waiting.set()
-                flock(stream, operation)
-                acquired.set()
-            else:
-                flock(stream, operation)
+                attempted.set()
+            return flock(stream, operation)
 
         def run(action):
             try:
                 action()
             except BaseException as error:
-                failures.append(error)
+                failures.append((threading.current_thread().name, str(error)))
 
         threads = [threading.Thread(target=run, args=(action,), name=name)
                    for name, action in [('first', first), ('second', second)]]
@@ -99,21 +96,24 @@ class BridgePolicy(unittest.TestCase):
             threads[0].start()
             try:
                 self.assertTrue(paused.wait(5), 'First writer did not reach its record/ACL work')
-                # Prove the actual flock is held, rather than relying on scheduler timing.
                 with (root / 'writer.lock').open('a') as contender:
                     with self.assertRaises(BlockingIOError):
                         flock(contender, bridge.fcntl.LOCK_EX | bridge.fcntl.LOCK_NB)
                 threads[1].start()
-                self.assertTrue(waiting.wait(5), 'Second writer did not attempt the shared lock')
-                self.assertFalse(acquired.is_set(), 'Second writer entered while first owned the lock')
+                self.assertTrue(attempted.wait(5), 'Second writer did not attempt the shared lock')
+                threads[1].join(1)
+                self.assertFalse(threads[1].is_alive(), 'Busy writer waited for the holder')
+                self.assertEqual(failures, [('second', 'instance.bridge_busy')])
             finally:
                 resume.set()
                 for thread in threads:
                     if thread.ident is not None:
                         thread.join(5)
             self.assertFalse(any(thread.is_alive() for thread in threads), 'Writer did not release the shared lock')
-            self.assertEqual(failures, [])
-            self.assertTrue(acquired.is_set())
+            self.assertEqual(failures, [('second', 'instance.bridge_busy')])
+        # Only a new invocation may proceed after the holder releases; no queued
+        # writer survives to apply intent from the failed invocation.
+        second()
 
     def test_refresh_paused_after_read_cannot_resurrect_last_user_after_withdrawal(self):
         incus = Incus()
@@ -128,7 +128,7 @@ class BridgePolicy(unittest.TestCase):
             self.assertEqual(list((root / 'endpoints').glob('*.json')), [])
             self.assertEqual(incus.current['egress'], [])
 
-    def test_refresh_queued_behind_withdrawal_reads_records_only_after_the_lock(self):
+    def test_busy_refresh_must_be_reinvoked_and_then_reads_post_withdrawal_records(self):
         incus = Incus()
         with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'api', side_effect=incus.api):
             root = Path(directory)
@@ -141,7 +141,7 @@ class BridgePolicy(unittest.TestCase):
             self.assertEqual(list((root / 'endpoints').glob('*.json')), [])
             self.assertEqual(incus.current['egress'], [])
 
-    def test_admission_waits_for_withdrawal_compaction_then_records_new_ownership(self):
+    def test_busy_admission_must_be_reinvoked_after_withdrawal_compaction(self):
         incus = Incus()
         with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'api', side_effect=incus.api):
             root = Path(directory)
@@ -152,16 +152,30 @@ class BridgePolicy(unittest.TestCase):
             self.assertEqual(incus.current['egress'], [bridge.endpoint_rule('10.44.0.7', 3306, '10.253.0.0/24', 1800000000000003)])
             self.assertEqual(bridge.apply(root, None), 0)
 
-    def test_lock_wait_allows_a_refresh_longer_than_one_curl_request(self):
-        unit = (Path(__file__).parents[1] / 'ansible/tasks/instance-bridge-refresh.yml').read_text()
-        self.assertIn('TimeoutStartSec=' + str(bridge.LOCK_WAIT_SECONDS), unit)
-        self.assertGreaterEqual(bridge.LOCK_WAIT_SECONDS, 30)
-        with tempfile.TemporaryDirectory() as directory, \
-                patch.object(bridge.fcntl, 'flock', side_effect=[BlockingIOError, None]), \
-                patch.object(bridge.time, 'monotonic', side_effect=[0, 0, 7, 7, 7]), \
-                patch.object(bridge.time, 'sleep'):
-            with bridge.writer_lock(Path(directory)):
-                pass  # A seven-second refresh must not make concurrent create/migrate fail.
+    def test_every_busy_mode_acquires_once_and_mutates_no_records_acl_or_health(self):
+        incus = Incus()
+        with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'api', side_effect=incus.api):
+            root = Path(directory)
+            bridge.apply(root, intent(1, '10.44.0.7'), True)
+            before = {str(path): (path.read_bytes(), path.stat().st_ino, path.stat().st_mtime_ns)
+                      for path in root.rglob('*') if path.is_file()}
+            acl = copy.deepcopy(incus.current)
+            with (root / 'writer.lock').open('a') as holder:
+                bridge.fcntl.flock(holder, bridge.fcntl.LOCK_EX | bridge.fcntl.LOCK_NB)
+                for incoming, reconcile, withdraw in [(intent(2, '10.44.0.8'), False, False),
+                                                       (None, False, False), (intent(2), True, True)]:
+                    with self.subTest(incoming=incoming, withdraw=withdraw), \
+                            patch.object(bridge.fcntl, 'flock', wraps=bridge.fcntl.flock) as acquire, \
+                            patch.object(bridge, 'apply_locked') as apply, patch.object(bridge, 'state_file') as write:
+                        with self.assertRaisesRegex(bridge.PolicyError, '^instance.bridge_busy$'):
+                            bridge.apply(root, incoming, reconcile, withdraw)
+                        self.assertEqual(acquire.call_count, 1)
+                        self.assertEqual(acquire.call_args.args[1], bridge.fcntl.LOCK_EX | bridge.fcntl.LOCK_NB)
+                        apply.assert_not_called()
+                        write.assert_not_called()
+            self.assertEqual(incus.current, acl)
+            self.assertEqual({str(path): (path.read_bytes(), path.stat().st_ino, path.stat().st_mtime_ns)
+                              for path in root.rglob('*') if path.is_file()}, before)
 
     def test_reads_share_remaining_budget_and_curl_keeps_its_request_limit(self):
         for incoming, maximum in [(intent(1), 300), (None, 30)]:
@@ -213,7 +227,7 @@ class BridgePolicy(unittest.TestCase):
                     bridge.apply(root, intent(2, '10.44.0.7'), True)
             self.assertEqual(calls, [None, None])  # Exactly one bounded readback; no PUT.
             self.assertEqual(list((root / 'endpoints').glob('*.json')), [])
-            self.assertEqual(list(root.glob('.staged-*')), [])
+            self.assertEqual(list((root / '.staged').glob('*.json')), [])
             self.assertEqual(incus.current['egress'], [])
             bridge.apply(root, None)
             self.assertEqual(list((root / 'endpoints').glob('*.json')), [])
@@ -253,7 +267,7 @@ class BridgePolicy(unittest.TestCase):
                 self.assertEqual((puts, readbacks), (2, 1))
                 records = {json.loads(path.read_text())['host'] for path in (root / 'endpoints').glob('*.json')}
                 self.assertEqual(records, {'10.44.0.7', '10.44.0.8'} if delivered is True else {'10.44.0.7'})
-                self.assertEqual(list(root.glob('.staged-*')), [])
+                self.assertEqual(list((root / '.staged').glob('*.json')), [])
                 expected_error = None if delivered is True else 'instance.bridge_state_unresolved' if delivered is None else 'instance.bridge_command_timeout'
                 self.assertEqual(json.loads((root / 'health.json').read_text())['error_code'], expected_error)
                 with patch.object(bridge, 'api', side_effect=incus.api):
@@ -359,6 +373,20 @@ class BridgePolicy(unittest.TestCase):
                                        '--extra-vars', json.dumps(variables), str(playbook)],
                                       capture_output=True, text=True, env=env, timeout=30)
 
+            # Execute the shipped Ansible task under real contention. It must
+            # refuse before curl or any record/health write, with no delayed work.
+            before = {str(path): (path.read_bytes(), path.stat().st_ino, path.stat().st_mtime_ns)
+                      for path in state.rglob('*') if path.is_file()}
+            before_acl = acl.read_bytes()
+            with (state / 'writer.lock').open('a') as holder:
+                bridge.fcntl.flock(holder, bridge.fcntl.LOCK_EX | bridge.fcntl.LOCK_NB)
+                busy = withdraw(3, '10.44.0.3')
+                self.assertEqual(busy.returncode, 2, busy.stdout + busy.stderr)
+                self.assertIn('instance.bridge_busy', busy.stdout + busy.stderr)
+            self.assertEqual(acl.read_bytes(), before_acl)
+            self.assertEqual({str(path): (path.read_bytes(), path.stat().st_ino, path.stat().st_mtime_ns)
+                              for path in state.rglob('*') if path.is_file()}, before)
+
             (root / 'timeout-remove-b').touch()
             refused = withdraw(3, '10.44.0.3')
             self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
@@ -404,7 +432,7 @@ class BridgePolicy(unittest.TestCase):
             path = next((root / 'endpoints').glob('*.json'))
             row = json.loads(path.read_text())
             del row['translated']
-            bridge.write_file(path, row)
+            bridge.state_file(root, 'endpoint', row, host=row['host'], port=row['port'], capture=row['admitted_at'])
             before = copy.deepcopy(incus.current)
 
             with patch.object(bridge, 'api', side_effect=AssertionError('ACL touched before ownership was resolved')):
@@ -414,7 +442,7 @@ class BridgePolicy(unittest.TestCase):
             self.assertEqual(incus.current, before)
             self.assertTrue(path.exists())
 
-    def test_timed_out_waiter_exits_and_never_applies_its_intent_after_holder_releases(self):
+    def test_busy_caller_exits_and_never_applies_its_intent_after_holder_releases(self):
         incus = Incus()
         with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'api', side_effect=incus.api):
             root = Path(directory)
@@ -430,29 +458,60 @@ class BridgePolicy(unittest.TestCase):
                     errors.append(str(error))
 
             waiter = threading.Thread(target=admit_stale_intent)
-            with (root / 'writer.lock').open('a') as holder, patch.object(bridge, 'LOCK_WAIT_SECONDS', 0.05):
+            with (root / 'writer.lock').open('a') as holder:
                 bridge.fcntl.flock(holder, bridge.fcntl.LOCK_EX | bridge.fcntl.LOCK_NB)
                 waiter.start()
                 waiter.join(1)
-                timed_out_before_release = not waiter.is_alive()
+                refused_before_release = not waiter.is_alive()
             waiter.join(1)
-            self.assertTrue(timed_out_before_release, 'Waiter stayed alive beyond its acquisition deadline')
-            self.assertEqual(errors, ['instance.bridge_lock_timeout'])
+            self.assertTrue(refused_before_release, 'Busy caller waited for the holder')
+            self.assertEqual(errors, ['instance.bridge_busy'])
             self.assertEqual(incus.current, before)
             self.assertEqual({str(p): p.read_text() for p in root.rglob('*.json')}, files)
 
-    def test_acquisition_after_deadline_never_enters_the_mutation(self):
-        with tempfile.TemporaryDirectory() as directory, patch.object(bridge.time, 'monotonic', side_effect=[0, 0, 0, 30]), \
-                patch.object(bridge, 'apply_locked') as apply:
-            with self.assertRaisesRegex(bridge.PolicyError, 'instance.bridge_lock_timeout'):
-                bridge.apply(Path(directory), intent(1, '10.44.0.7'))
-            apply.assert_not_called()
+    def test_descriptor_custody_spans_acl_records_health_and_releases_on_every_exit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, incus = Path(directory), Incus()
+            observed = set()
+            original_state = bridge.state_file
 
-    def test_cli_reports_lock_timeout_without_a_second_error_handler_wait(self):
+            def assert_owned():
+                with (root / 'writer.lock').open('a') as contender:
+                    with self.assertRaises(BlockingIOError):
+                        bridge.fcntl.flock(contender, bridge.fcntl.LOCK_EX | bridge.fcntl.LOCK_NB)
+
+            def write(root, kind, *args, **kwargs):
+                assert_owned()
+                observed.add(kind)
+                return original_state(root, kind, *args, **kwargs)
+
+            def api(*args, **kwargs):
+                assert_owned()
+                observed.add('acl')
+                return incus.api(*args, **kwargs)
+
+            with patch.object(bridge, 'api', side_effect=api), patch.object(bridge, 'state_file', side_effect=write):
+                bridge.apply(root, intent(1, '10.44.0.7'), True)
+                self.assertEqual(observed, {'acl', 'staged', 'endpoint', 'config', 'health', 'pending'})
+                inode = (root / 'writer.lock').stat().st_ino
+                exits = [None, bridge.PolicyError('instance.container_endpoint_unresolved'), ValueError('bad'),
+                         OSError('bad'), bridge.subprocess.TimeoutExpired('curl', 5), KeyboardInterrupt('terminated')]
+                for error in exits:
+                    with self.subTest(error=error), patch.object(bridge, 'apply_locked', side_effect=error, return_value=0):
+                        if error is None:
+                            self.assertEqual(bridge.apply(root, intent(2)), 0)
+                        else:
+                            with self.assertRaises(type(error)):
+                                bridge.apply(root, intent(2))
+                        with (root / 'writer.lock').open('a') as contender:
+                            bridge.fcntl.flock(contender, bridge.fcntl.LOCK_EX | bridge.fcntl.LOCK_NB)
+                        self.assertEqual((root / 'writer.lock').stat().st_ino, inode)
+
+    def test_cli_reports_busy_without_a_second_acquire_or_health_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             output, errors = io.StringIO(), io.StringIO()
-            with (root / 'writer.lock').open('a') as holder, patch.object(bridge, 'LOCK_WAIT_SECONDS', 0.05), \
+            with (root / 'writer.lock').open('a') as holder, \
                     patch.object(bridge.sys, 'argv', ['instance_bridge.py', '--state-dir', directory, '--intent']), \
                     patch.object(bridge.sys, 'stdin', io.StringIO(json.dumps(intent(1, '10.44.0.7')))), \
                     patch.object(bridge, 'writer_lock', wraps=bridge.writer_lock) as lock, \
@@ -462,7 +521,7 @@ class BridgePolicy(unittest.TestCase):
                     bridge.main()
                 self.assertEqual(result.exception.code, 1)
                 self.assertEqual(lock.call_count, 1)
-            self.assertEqual(json.loads(output.getvalue()), {'error_code': 'instance.bridge_lock_timeout'})
+            self.assertEqual(json.loads(output.getvalue()), {'error_code': 'instance.bridge_busy'})
             self.assertEqual(list(root.rglob('*.json')), [])
 
     def test_nat_and_incus_timeouts_release_the_lock_and_record_named_failure(self):
@@ -566,7 +625,7 @@ class BridgePolicy(unittest.TestCase):
                 bridge.apply(root, {**intent, 'admitted_at': 1800000000000001}, True)
                 self.assertEqual([r['destination'] for r in current['egress']], ['172.17.0.9/32'])
             # A successful subset attach cannot clear the refresh unit's failure for another endpoint.
-            bridge.write_file(root / 'health.json', {'error_code': 'instance.container_endpoint_unresolved'})
+            bridge.state_file(root, 'health', {'error_code': 'instance.container_endpoint_unresolved'})
             with patch.object(bridge.subprocess, 'check_output', return_value=nat('172.17.0.9')):
                 bridge.apply(root, intent, False)
             self.assertEqual(json.loads((root / 'health.json').read_text())['error_code'], 'instance.container_endpoint_unresolved')

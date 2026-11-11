@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Keep Incus bridge endpoint rules in step with admitted intent and Docker DNAT.
 
-One attempt only. Ansible owns admission retries; the systemd timer serializes refreshes.
+One nonblocking attempt only; a busy writer refuses without applying intent.
 Every writer holds the same lock while reading and replacing records and ACL rules.
 The refresh only adds rules. Reconciliation removes endpoint rules or intent.
 """
@@ -18,9 +18,8 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-# instance-bridge-refresh.yml: TimeoutStartSec=30; wait for at least one full refresh.
+# instance-bridge-refresh.yml: TimeoutStartSec=30; no lock wait consumes this budget.
 REFRESH_BUDGET_SECONDS = 30
-LOCK_WAIT_SECONDS = REFRESH_BUDGET_SECONDS
 # Lifecycle workflow phases use `timeout 300 ansible-playbook`; reads share the remaining helper budget.
 LIFECYCLE_BUDGET_SECONDS = 300
 # Incus requests retain #3348's --max-time 5; this is not a global writer limit.
@@ -44,11 +43,11 @@ def resolve(endpoints, nat):
             continue
         matches = []
         for rule in rules:
-            def value(flag, rule=rule):
+            def nat_value(flag, rule=rule):
                 return rule[rule.index(flag) + 1] if flag in rule else ''
-            if (value('-d') in ('', '0.0.0.0/0', host + '/32') and value('-p') == 'tcp'
-                    and value('--dport') == str(port) and value('-j') == 'DNAT'):
-                target = value('--to-destination').split(':')
+            if (nat_value('-d') in ('', '0.0.0.0/0', host + '/32') and nat_value('-p') == 'tcp'
+                    and nat_value('--dport') == str(port) and nat_value('-j') == 'DNAT'):
+                target = nat_value('--to-destination').split(':')
                 if len(target) != 2 or not target[1].isdigit():
                     raise PolicyError('instance.container_endpoint_unresolved')
                 if not 1 <= int(target[1]) <= 65535:
@@ -62,7 +61,7 @@ def resolve(endpoints, nat):
 
 def admission(value):
     """Gateway epoch microseconds; one fixed representation in files and ACL descriptions."""
-    if type(value) is not int or re.fullmatch(r'[1-9][0-9]{15}', str(value)) is None:
+    if not isinstance(value, int) or re.fullmatch(r'[1-9][0-9]{15}', str(value)) is None:
         raise PolicyError('instance.container_bridge_write_failed')
     return value
 
@@ -141,7 +140,7 @@ def api(name, value=None, etag=None, deadline=None):
     return response['metadata'], tags[0] if tags else None
 
 
-def write_rules(name, resolved, config, reconcile, deadline=None, confirmed=None):
+def write_rules(name, resolved, config, reconcile, deadline=None, root=None, staged=None, retiring=None):
     capture = config['admitted_at'] if reconcile else None
     # Reserve one existing curl request for readback before releasing the writer lock.
     work_deadline = None if deadline is None else deadline - CURL_TIMEOUT_SECONDS
@@ -149,8 +148,8 @@ def write_rules(name, resolved, config, reconcile, deadline=None, confirmed=None
     attempting_put = False
     try:
         current, _ = api(name, deadline=work_deadline)
-        if confirmed is not None:
-            confirmed(current)
+        if root is not None:
+            changed += confirm_records(root, current, staged, retiring, resolved, config)
         changes = plan(current, resolved, config['cidr'], config.get('baseline', {}), capture)
         for action, direction, rule in changes:
             current, etag = api(name, deadline=work_deadline)
@@ -168,8 +167,8 @@ def write_rules(name, resolved, config, reconcile, deadline=None, confirmed=None
             api(name, updated, etag, deadline=work_deadline)
             attempting_put = False
             changed += 1
-            if confirmed is not None:
-                confirmed(updated)
+            if root is not None:
+                changed += confirm_records(root, updated, staged, retiring, resolved, config)
         return changed
     except (PolicyError, ValueError, OSError, subprocess.SubprocessError) as error:
         if not attempting_put and failure_code(error) != 'instance.bridge_command_timeout':
@@ -178,14 +177,28 @@ def write_rules(name, resolved, config, reconcile, deadline=None, confirmed=None
             current, _ = api(name, deadline=deadline)
         except (PolicyError, ValueError, OSError, subprocess.SubprocessError) as read_error:
             raise PolicyError('instance.bridge_state_unresolved') from read_error
-        if confirmed is not None:
-            confirmed(current)
+        if root is not None:
+            changed += confirm_records(root, current, staged, retiring, resolved, config)
         if not plan(current, resolved, config['cidr'], config.get('baseline', {}), capture):
             return changed + int(attempting_put)
         raise
 
 
-def write_file(path, value):
+def state_file(root, kind, value=None, host=None, port=None, capture=None, remove=False):
+    root = Path(root)
+    if kind in ('config', 'health', 'pending'):
+        path = root / {'config': 'config.json', 'health': 'health.json', 'pending': 'reconcile.pending'}[kind]
+    elif kind in ('endpoint', 'staged'):
+        host = str(ipaddress.IPv4Address(host))
+        if type(port) is not int or not 1 <= port <= 65535 or type(capture) is not int or capture < 0:
+            raise PolicyError('instance.container_bridge_write_failed')
+        directory = 'endpoints' if kind == 'endpoint' else '.staged'
+        path = root / directory / (host + '-' + str(port) + '-' + str(capture) + '.json')
+    else:
+        raise PolicyError('instance.container_bridge_write_failed')
+    if remove:
+        path.unlink(missing_ok=True)
+        return 1
     content = json.dumps(value, sort_keys=True) + '\n'
     if path.exists() and path.read_text() == content:
         return 0
@@ -201,21 +214,11 @@ def write_file(path, value):
 @contextmanager
 def writer_lock(root):
     root.mkdir(parents=True, exist_ok=True)
-    # Keep this inode for every mode: replacing or unlinking it would split ownership.
     with (root / 'writer.lock').open('a') as lock:
-        deadline = time.monotonic() + LOCK_WAIT_SECONDS
-        while True:
-            if time.monotonic() >= deadline:
-                raise PolicyError('instance.bridge_lock_timeout')
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                time.sleep(min(0.05, max(0, deadline - time.monotonic())))
-            else:
-                # A descheduled waiter must not apply old intent after its deadline.
-                if time.monotonic() >= deadline:
-                    raise PolicyError('instance.bridge_lock_timeout')
-                break
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise PolicyError('instance.bridge_busy') from None
         yield
 
 
@@ -243,10 +246,33 @@ def apply(root, incoming, reconcile=False, withdraw=False):
         try:
             return apply_locked(root, incoming, reconcile, withdraw, deadline)
         except (PolicyError, ValueError, OSError, subprocess.SubprocessError) as error:
-            # Record failure while still owning the lock; never wait again after failure.
             code = 'instance.bridge_state_unresolved' if unresolved_health(root) else failure_code(error)
-            write_file(root / 'health.json', {'error_code': code})
+            state_file(root, 'health', {'error_code': code})
             raise
+
+
+def confirm_records(root, current, staged, retiring, resolved, config):
+    """Apply only ACL-confirmed ownership changes before another rule is attempted."""
+    changed = 0
+    capture = config['admitted_at']
+    for endpoint in staged:
+        target = endpoint['translated']
+        wanted = endpoint_rule(target['host'], target['port'], config['cidr'], endpoint['admitted_at'])
+        if any(owned_endpoint(rule, config['cidr']) and same_endpoint(rule, wanted)
+               and rule_admission(rule) >= endpoint['admitted_at'] for rule in current.get('egress', [])):
+            changed += state_file(root, 'endpoint', endpoint, host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'])
+    for path, endpoint, target in retiring:
+        if not path.exists():
+            continue
+        wanted = endpoint_rule(target['host'], target['port'], config['cidr'], capture)
+        if ((target['host'], target['port']) not in resolved
+                and any(owned_endpoint(rule, config['cidr']) and same_endpoint(rule, wanted)
+                        for rule in current.get('egress', []))):
+            continue
+        # Keep truthful health across a crash or a later failed removal.
+        changed += state_file(root, 'pending', {'admitted_at': capture})
+        changed += state_file(root, 'endpoint', host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'], remove=True)
+    return changed
 
 
 def apply_locked(root, incoming, reconcile, withdraw, deadline):
@@ -286,7 +312,7 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
                 # A Docker record without a saved tuple cannot prove a partial removal. Fail before any ACL mutation.
                 host, port = resolve([previous], '')[0]
                 target = {'host': host, 'port': port}
-            retiring.append((path, target))
+            retiring.append((path, row, target))
     nat = subprocess.check_output(['iptables-save', '-t', 'nat'], text=True, timeout=remaining(deadline)) if not withdraw and any(row['docker'] for row in endpoints) else ''
     resolved = {}
     for endpoint in endpoints:  # Resolve the entire set before any file or ACL mutation.
@@ -303,62 +329,31 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
         endpoint['translated'] = {'host': host, 'port': port}
         resolved[(host, port)] = max(resolved.get((host, port), 0), endpoint['admitted_at'])
     changed = 0
-    # Readers never admit staging files, including any left behind by a killed writer.
-    with tempfile.TemporaryDirectory(prefix='.staged-', dir=root) as directory:
-        staged = []
+    # Stage outside the inventory. Only confirmed ACL tuples become refresh input.
+    staged = []
+    try:
         for endpoint in endpoints:
             remaining(deadline)
-            path = Path(directory) / (endpoint['host'] + '-' + str(endpoint['port']) + '-' + str(endpoint['admitted_at']) + '.json')
-            write_file(path, endpoint)
-            staged.append((path, endpoint))
-
-        def commit_confirmed(current):
-            nonlocal changed
-            for path, endpoint in staged:
-                if not path.exists():
-                    continue
-                target = endpoint['translated']
-                wanted = endpoint_rule(target['host'], target['port'], config['cidr'], endpoint['admitted_at'])
-                if not any(owned_endpoint(rule, config['cidr']) and same_endpoint(rule, wanted)
-                           and rule_admission(rule) >= endpoint['admitted_at'] for rule in current.get('egress', [])):
-                    continue
-                active = root / 'endpoints' / path.name
-                if active.exists() and active.read_text() == path.read_text():
-                    path.unlink()
-                else:
-                    active.parent.mkdir(parents=True, exist_ok=True)
-                    path.replace(active)
-                    changed += 1
-            for path, target in retiring:
-                if not path.exists():
-                    continue
-                wanted = endpoint_rule(target['host'], target['port'], config['cidr'], capture)
-                if ((target['host'], target['port']) not in resolved
-                        and any(owned_endpoint(rule, config['cidr']) and same_endpoint(rule, wanted)
-                                for rule in current.get('egress', []))):
-                    continue
-                # Persist incomplete convergence before changing refresh eligibility, including the crash window.
-                changed += write_file(root / 'reconcile.pending', {'admitted_at': capture})
-                path.unlink()
-                changed += 1
-
-        acl_changed = write_rules(config['network'] + '-egress', resolved, config, reconcile, deadline, commit_confirmed)
-        changed += acl_changed
+            state_file(root, 'staged', endpoint, host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'])
+            staged.append(endpoint)
+        changed += write_rules(config['network'] + '-egress', resolved, config, reconcile, deadline, root, staged, retiring)
+    finally:
+        for endpoint in staged:
+            state_file(root, 'staged', host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'], remove=True)
     if incoming is not None and reconcile:
         for path, endpoint in records:
             if endpoint['admitted_at'] < capture and path.exists():
-                path.unlink()
-                changed += 1
-        changed += write_file(root / 'config.json', {key: value for key, value in config.items() if key != 'endpoints'})
-        (root / 'reconcile.pending').unlink(missing_ok=True)
+                changed += state_file(root, 'endpoint', host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'], remove=True)
+        changed += state_file(root, 'config', {key: value for key, value in config.items() if key != 'endpoints'})
+        state_file(root, 'pending', remove=True)
     # Only a full refresh/converge proves Node-wide health; a successful attach checks its own subset.
     if incoming is None or reconcile:
         health = root / 'health.json'
         if not reconcile and (root / 'reconcile.pending').exists():
             if not health.exists() or json.loads(health.read_text()).get('error_code') is None:
-                changed += write_file(health, {'error_code': 'instance.bridge_state_unresolved'})
+                changed += state_file(root, 'health', {'error_code': 'instance.bridge_state_unresolved'})
         elif reconcile or not unresolved_health(root):
-            changed += write_file(health, {'error_code': None})
+            changed += state_file(root, 'health', {'error_code': None})
     return changed
 
 

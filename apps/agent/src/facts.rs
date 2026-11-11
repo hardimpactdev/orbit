@@ -133,7 +133,6 @@ fn bridge_health_data(body: &[u8]) -> Value {
                         "instance.container_endpoint_unresolved"
                             | "instance.container_bridge_write_failed"
                             | "instance.bridge_command_timeout"
-                            | "instance.bridge_lock_timeout"
                             | "instance.bridge_state_unresolved"
                     ) =>
                 {
@@ -1020,7 +1019,6 @@ mod tests {
             "instance.container_endpoint_unresolved",
             "instance.container_bridge_write_failed",
             "instance.bridge_command_timeout",
-            "instance.bridge_lock_timeout",
             "instance.bridge_state_unresolved",
         ] {
             let body = json!({"error_code": code, "private": "not reported"}).to_string();
@@ -1029,6 +1027,7 @@ mod tests {
         for body in [
             b"damaged".as_slice(),
             br#"{"error_code":"secret data"}"#.as_slice(),
+            br#"{"error_code":"instance.bridge_busy"}"#.as_slice(),
         ] {
             assert_eq!(
                 bridge_health_data(body),

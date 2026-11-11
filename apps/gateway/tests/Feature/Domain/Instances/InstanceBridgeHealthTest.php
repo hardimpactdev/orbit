@@ -24,7 +24,8 @@ it('surfaces a persistent bridge refresh failure from the observer host fact in 
     expect(Validator::make($data, NodeFactKind::Host->rules())->passes())->toBeTrue()
         ->and(Validator::make([...$data, 'instance_bridge' => null], NodeFactKind::Host->rules())->passes())->toBeTrue()
         ->and(Validator::make([...$data, 'instance_bridge' => []], NodeFactKind::Host->rules())->passes())->toBeFalse()
-        ->and(Validator::make([...$data, 'instance_bridge' => ['error_code' => 'private or unknown output']], NodeFactKind::Host->rules())->passes())->toBeFalse();
+        ->and(Validator::make([...$data, 'instance_bridge' => ['error_code' => 'private or unknown output']], NodeFactKind::Host->rules())->passes())->toBeFalse()
+        ->and(Validator::make([...$data, 'instance_bridge' => ['error_code' => 'instance.bridge_busy']], NodeFactKind::Host->rules())->passes())->toBeFalse();
     $validated = Validator::make($data, NodeFactKind::Host->rules())->validate();
     expect(app(RecordNodeFactAction::class)->execute($node, NodeFactKind::Host, '', CarbonImmutable::now(), $validated))->toBeTrue();
     $fact = NodeFact::query()->where('node_id', $node->id)->where('kind', NodeFactKind::Host)->firstOrFail();
@@ -42,6 +43,5 @@ it('surfaces a persistent bridge refresh failure from the observer host fact in 
     'bridge write failure' => ['instance.container_bridge_write_failed'],
     'unreadable health' => ['instance.container_bridge_health_unreadable'],
     'command timeout' => ['instance.bridge_command_timeout'],
-    'lock timeout' => ['instance.bridge_lock_timeout'],
     'ambiguous ACL state' => ['instance.bridge_state_unresolved'],
 ]);
