@@ -7,6 +7,8 @@ covers:
   - apps/gateway/app/Domain/Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php
   - apps/gateway/database/migrations/2027_02_04_000000_add_seed_commit_to_instance_runtimes.php
   - swamp/ansible/{instance-container.yml,tasks/instance-container-phase.yml}
+  - swamp/scripts/instance_clone{,_guest}.py
+  - apps/gateway/resources/instances/frankenphp.Caddyfile
   - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/notes/**}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress}.yml
 ---
@@ -174,6 +176,8 @@ The [environment notes](#environment-notes) tell the agent to bind to `0.0.0.0`,
 FrankenPHP serves the app, in classic mode, as an Orbit Process running as `orbit`. The runtime folder holds one static build per PHP version that Orbit supports, and each Instance uses the version that Orbit picks from its `composer.json`, as it does today. A monorepo uses its root Composer requirement without framework classification. Its Caddy listens on port 8080; the Node's Caddy terminates TLS for the Route and proxies to the container's bridge address.
 
 The container's `/etc/orbit/frankenphp.Caddyfile` trusts only the Node's bridge address (`10.253.0.1/32` on the first Node). When that connection sends `X-Forwarded-Proto: https`, it sets PHP's `HTTPS=on`, `REQUEST_SCHEME=https`, `SERVER_PORT=443` and `REMOTE_ADDR` to Caddy's resolved client IP. Other requests keep their native PHP values, even if they send forwarded headers. Stock Laravel needs no application changes: assets, redirects, signed URLs and session cookies follow the Route's HTTPS scheme. Create, clone and migrate install the same rendered configuration.
+
+The `vp-dev` preset sets its development origin from the HTTPS Route, including `/__orbit/vite`, and HMR uses that origin. PHP's scheme translation preserves these development URLs; it changes no Vite upstream or WebSocket routing.
 
 The command line runs a real PHP CLI: a static `php` from the same static build as the Instance's FrankenPHP, with the same PHP version and extensions. `frankenphp php-cli` behind a `php` shim does not fit yet. It refuses the `-d` options that Composer and test runners pass, and before PHP 8.6 it cannot run `php -i` or PHP without a script. Orbit runs PHP 8.5. The [static PHP build](/reference/compute-drivers#static-php-build) defines the build and its extension list, and the runtime folder's check compares both binaries with it. The shim can replace the CLI binary once FrankenPHP accepts `-d` and Orbit runs PHP 8.6.
 

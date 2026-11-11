@@ -145,3 +145,5 @@ A retirement preflight is an early warning, not a deletion barrier. Retain the w
 A migration overlay archive omits unchanged tracked symlinks: they arrive in the branch bundle. Use the checkout scan only for early refusal. Derive and apply rewrites inside the container from the exact copied tree after the bundle and overlay, mapping old-checkout targets without reading the host. This also keeps non-UTF-8 names out of Incus JSON arguments. Check dependency package links without entering installed package trees; never change source links.
 
 When resolving symlinks, retain directory requirements from raw targets ending in `/` or `/.` at every hop. Path normalization removes those suffixes and can turn an `ENOTDIR` target into a valid file link.
+
+FrankenPHP's `trusted_proxies` does not translate native PHP CGI variables. Match the real Node peer and forwarded HTTPS before setting scheme, port or client IP. Share one rendered Caddyfile between the Ansible Processes phase and the native clone guest, and test configuration drift without unit drift in both writers.

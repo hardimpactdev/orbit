@@ -19,6 +19,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use App\Support\ValidatedData;
+use RuntimeException;
 
 /**
  * The container of a development Instance (docs/reference/development-containers.md#lifecycle): its name, its address on the Node's
@@ -34,6 +35,8 @@ final readonly class InstanceContainer
     public const string Image = 'orbit-instance';
 
     public const string FrankenPhpUnit = 'orbit-frankenphp.service';
+
+    public const string FrankenPhpConfig = '/etc/orbit/frankenphp.Caddyfile';
 
     public const string T3Unit = 't3.service';
 
@@ -201,6 +204,7 @@ final readonly class InstanceContainer
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.self::path($project),
                 ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment)],
             'units' => $this->units($instance, $runtime, $application),
+            'web_config' => $this->webConfig($instance, $runtime),
             // `php` on every PATH in the container is the Project's static build, so `composer` runs for `agent` and `orbit` alike.
             'php' => $this->php($project),
             'clone' => $clone,
@@ -347,13 +351,12 @@ final readonly class InstanceContainer
     {
         $project = $instance->project;
         $version = $project->php_version;
-        if (! $project->type->isWebServing() || ! is_string($version)) {
+        if ($this->webConfig($instance, $runtime) === null) {
             return [];
         }
         $path = self::path($project);
         $php = InstanceHostIntent::RuntimeFolder.'/current/php/'.$version.'/bin';
-        $root = InstanceHostIntent::Workspace.'/'.trim($instance->root ?? $project->root ?? 'public', '/');
-        $listen = $runtime->bridge_address.':'.self::WebPort;
+        $config = self::FrankenPhpConfig;
 
         return [['name' => self::FrankenPhpUnit, 'content' => <<<UNIT
             # Managed by Orbit.
@@ -369,7 +372,7 @@ final readonly class InstanceContainer
             WorkingDirectory={$application}
             Environment=HOME=/home/orbit
             Environment=PATH={$path}
-            ExecStart={$php}/frankenphp php-server --listen {$listen} --root {$root}
+            ExecStart={$php}/frankenphp run --config {$config} --adapter caddyfile
             Restart=always
             RestartSec=2
 
@@ -377,6 +380,31 @@ final readonly class InstanceContainer
             WantedBy=multi-user.target
 
             UNIT]];
+    }
+
+    /**
+     * One server configuration for create, clone, deploy and migrate. FrankenPHP's native CGI variables describe the plain upstream
+     * connection, even with trusted_proxies; translate only HTTPS requests from the Node, leaving every other request untouched.
+     *
+     * @return array{path: string, content: string}|null
+     */
+    public function webConfig(Instance $instance, InstanceRuntime $runtime): ?array
+    {
+        $project = $instance->project;
+        if (! $project->type->isWebServing() || ! is_string($project->php_version)) {
+            return null;
+        }
+        $gateway = Ipv4Subnet::from(ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')))->usableRange()[0];
+        $template = file_get_contents(resource_path('instances/frankenphp.Caddyfile'));
+        if (! is_string($template)) {
+            throw new RuntimeException('The Instance FrankenPHP configuration is missing.');
+        }
+        $root = InstanceHostIntent::Workspace.'/'.trim($instance->root ?? $project->root ?? 'public', '/');
+
+        return ['path' => self::FrankenPhpConfig, 'content' => strtr($template, [
+            '__ORBIT_PROXY__' => $gateway, '__ORBIT_PORT__' => (string) self::WebPort,
+            '__ORBIT_ROOT__' => addcslashes($root, '\\"'),
+        ])];
     }
 
     /** The runtime folder's programs, behind the static PHP build of the Project's version. */
