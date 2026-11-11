@@ -82,15 +82,31 @@ const listings: Record<string, unknown> = {
   }],
 };
 
+const bootstrapPublicKey =
+  "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB bootstrap-fixture-1";
+const otherPublicKey =
+  "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC bootstrap-fixture-2";
+
 /** Runs the phase `tags` with `host` as its intent; returns the logged incus calls and whether the play passed. */
 function run(
   tags: string,
   host: Record<string, unknown>,
   failing = "",
   overrides: Record<string, unknown> = {},
+  authentication: {
+    authorizedKeys?: string | null;
+    cloudInitExit?: number;
+    repeat?: number;
+  } = {},
 ) {
   const folder = Deno.makeTempDirSync();
   Deno.mkdirSync(`${folder}/bin`);
+  const authorizedKeys = authentication.authorizedKeys === undefined
+    ? bootstrapPublicKey
+    : authentication.authorizedKeys;
+  if (authorizedKeys !== null) {
+    Deno.writeTextFileSync(`${folder}/authorized-keys`, authorizedKeys);
+  }
   for (const [call, answer] of Object.entries({ ...listings, ...overrides })) {
     Deno.writeTextFileSync(
       `${folder}/${encodeURIComponent(call)}`,
@@ -104,6 +120,13 @@ function run(
 echo "$*" >> "${folder}/log"
 case " $* " in *" init "*) cat > "${folder}/launch-config" ;; esac
 [ -n "$FAILING" ] && [ "$*" = "$FAILING" ] && exit 1
+case "$*" in
+  *"file pull "*"/home/orbit/.ssh/authorized_keys -")
+    [ -f "${folder}/authorized-keys" ] || exit 1
+    cat "${folder}/authorized-keys"
+    exit 0 ;;
+  *"cloud-init status --wait") exit "$CLOUD_INIT_EXIT" ;;
+esac
 file="${folder}/$(printf '%s' "$*" | jq -sRr @uri)"
 if [ -f "$file" ]; then cat "$file"; exit 0; fi
 case "$*" in *" list "*"--format json"*|*" list --format json") echo "[]" ;; *"get "*) echo allow ;; esac
@@ -111,33 +134,43 @@ exit 0
 `,
   );
   Deno.chmodSync(`${folder}/bin/incus`, 0o755);
-  Deno.writeTextFileSync(`${folder}/intent.json`, JSON.stringify({ host }));
-  const done = new Deno.Command("ansible-playbook", {
-    args: [
-      "-i",
-      "localhost,",
-      "-e",
-      `@${folder}/intent.json`,
-      "-e",
-      `run_dir=${folder}`,
-      "-e",
-      "ansible_connection=local",
-      "-e",
-      "ansible_become=false",
-      "-e",
-      "ansible_python_interpreter={{ ansible_playbook_python }}",
-      "--tags",
-      tags,
-      playbook,
-    ],
-    env: {
-      PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
-      FAILING: failing,
-      ANSIBLE_HOME: `${folder}/home`,
-      ANSIBLE_LOCAL_TEMP: `${folder}/tmp`,
-      ANSIBLE_NOCOLOR: "1",
-    },
-  }).outputSync();
+  Deno.writeTextFileSync(
+    `${folder}/intent.json`,
+    JSON.stringify({
+      host,
+      converge: { boot: { authorized_key: bootstrapPublicKey } },
+    }),
+  );
+  const execute = () =>
+    new Deno.Command("ansible-playbook", {
+      args: [
+        "-i",
+        "localhost,",
+        "-e",
+        `@${folder}/intent.json`,
+        "-e",
+        `run_dir=${folder}`,
+        "-e",
+        "ansible_connection=local",
+        "-e",
+        "ansible_become=false",
+        "-e",
+        "ansible_python_interpreter={{ ansible_playbook_python }}",
+        "--tags",
+        tags,
+        playbook,
+      ],
+      env: {
+        PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
+        FAILING: failing,
+        CLOUD_INIT_EXIT: String(authentication.cloudInitExit ?? 0),
+        ANSIBLE_HOME: `${folder}/home`,
+        ANSIBLE_LOCAL_TEMP: `${folder}/tmp`,
+        ANSIBLE_NOCOLOR: "1",
+        ANSIBLE_STDOUT_CALLBACK: "default",
+      },
+    }).outputSync();
+  const runs = Array.from({ length: authentication.repeat ?? 1 }, execute);
   const log = (() => {
     try {
       return Deno.readTextFileSync(`${folder}/log`).trim().split("\n");
@@ -151,12 +184,19 @@ exit 0
   } catch (error) {
     if (!(error instanceof Deno.errors.NotFound)) throw error;
   }
+  const authorizationAfter = authorizedKeys === null
+    ? null
+    : Deno.readTextFileSync(`${folder}/authorized-keys`);
   Deno.removeSync(folder, { recursive: true });
   return {
     log,
     initStdin,
-    passed: done.success,
-    output: new TextDecoder().decode(done.stdout),
+    authorizationAfter,
+    passed: runs.every((done) => done.success),
+    output: runs.map((done) =>
+      new TextDecoder().decode(done.stdout) +
+      new TextDecoder().decode(done.stderr)
+    ).join("\n"),
   };
 }
 
@@ -181,6 +221,91 @@ const host = {
 };
 const deletes = (log: string[]) =>
   log.filter((call) => / delete /.test(` ${call} `));
+
+const bootstrapHost = {
+  ...host,
+  current: "beast-base/proved",
+  base: { vm: "beast-base", club_key: "/home/orbit/.swamp-club-key" },
+};
+const readBase = "--project orbit-tasks list --format json -- ^beast-base$";
+const promotedBase = {
+  [readBase]: [{
+    name: "beast-base",
+    status: "Running",
+    config: {
+      "raw.qemu.conf": '[boot-opts]\nmenu = "on"\nsplash-time = "0"\n',
+    },
+    devices: { "topology-seed": {} },
+  }],
+};
+
+for (const cloudInitExit of [0, 2]) {
+  for (
+    const [name, authorizedKeys, error] of [
+      ["absent", null, "task_vm.bootstrap_key_missing"],
+      ["empty", "", "task_vm.bootstrap_key_missing"],
+      ["wrong", otherPublicKey, "task_vm.bootstrap_key_mismatch"],
+      ["malformed", "not an SSH public key", "task_vm.bootstrap_key_mismatch"],
+    ] as const
+  ) {
+    Deno.test({
+      name:
+        `base-start refuses ${name} authorization after cloud-init ${cloudInitExit}`,
+      ignore: !hasAnsible,
+      fn() {
+        const result = run("base-start", bootstrapHost, "", promotedBase, {
+          authorizedKeys,
+          cloudInitExit,
+        });
+        assertEquals(result.passed, false);
+        assertStringIncludes(result.output, error);
+        assertEquals(result.authorizationAfter, authorizedKeys);
+        assert(!result.log.some((call) => call.includes("/dev/stdin")));
+        assert(!result.output.includes(bootstrapPublicKey.split(" ")[1]));
+        assert(!result.output.includes(otherPublicKey.split(" ")[1]));
+      },
+    });
+  }
+  Deno.test({
+    name:
+      `base-start accepts the admitted fingerprint after cloud-init ${cloudInitExit}`,
+    ignore: !hasAnsible,
+    fn() {
+      // Comments, authorized_keys options and another key do not change the admitted fingerprint.
+      const authorizedKeys =
+        `${otherPublicKey}\nno-agent-forwarding ${bootstrapPublicKey} extra-comment\n`;
+      const result = run("base-start", bootstrapHost, "", promotedBase, {
+        authorizedKeys,
+        cloudInitExit,
+        repeat: 2,
+      });
+      assert(result.passed, result.output);
+      assertEquals(result.authorizationAfter, authorizedKeys);
+      assertEquals(
+        result.log.filter((call) => call.includes("file pull")).length,
+        2,
+      );
+      const cloudInit = result.log.findIndex((call) =>
+        call.endsWith("cloud-init status --wait")
+      );
+      const authorization = result.log.findIndex((call) =>
+        call.includes("file pull")
+      );
+      assert(authorization > cloudInit);
+      assert(
+        result.log.findIndex((call) => call.includes("/dev/stdin")) >
+          authorization,
+      );
+      assert(
+        !result.log.some((call) =>
+          call.includes(" start ") || call.includes(" init ")
+        ),
+      );
+      assert(!result.output.includes(bootstrapPublicKey.split(" ")[1]));
+      assert(!result.output.includes(otherPublicKey.split(" ")[1]));
+    },
+  });
+}
 
 Deno.test({
   name:
