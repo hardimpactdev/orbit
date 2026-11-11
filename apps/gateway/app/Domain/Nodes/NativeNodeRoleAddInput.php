@@ -177,6 +177,9 @@ final readonly class NativeNodeRoleAddInput
             $intent['playbook'] = 'operation-node-role-add-local-dns.yml';
         }
 
+        // Every admission builds this plan in its transaction, before dispatch can start machine work.
+        app(GatewayPrivateDnsState::class)->claim($node->id, $runtime['intent']);
+
         return ['intent' => $intent, 'execution_secrets' => $runtime['execution_secrets'], 'participant_node_ids' => [SwampNode::id(), $node->id]];
     }
 

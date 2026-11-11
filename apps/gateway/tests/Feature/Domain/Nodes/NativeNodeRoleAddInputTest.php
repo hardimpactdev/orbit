@@ -32,7 +32,7 @@ it('retains dedicated status pools when the same Node also publishes shared PHP 
     $user = 'orbit-app-'.$project->id;
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'environment' => 'production', 'status' => 'active', 'checkout_path' => '/home/'.$user.'/releases/initial', 'production_user' => $user, 'production_home' => '/home/'.$user, 'root' => 'public', 'selected_php_version' => '8.5']);
     $instance->update(ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5')->attributes());
-    $snapshot = ['prerequisites' => ['releases' => []], 'certificates' => ['leaves' => [], 'withdrawals' => []],
+    $snapshot = ['gateway_dns' => null, 'prerequisites' => ['releases' => []], 'certificates' => ['leaves' => [], 'withdrawals' => []],
         'metrics_fleet' => ['metrics_node_id' => $metrics->id, 'runtime_files' => ['/etc/orbit/metrics/prometheus.yml' => 'public config'],
             'fleet' => [['node_id' => $node->id, 'worker' => false, 'selected' => true]]]];
 
@@ -59,7 +59,7 @@ it('names the package cache of the task VM for a Node of a nested fleet and for 
     $user = 'orbit-app-'.$project->id;
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'environment' => 'production', 'status' => 'active', 'checkout_path' => '/home/'.$user.'/releases/initial', 'production_user' => $user, 'production_home' => '/home/'.$user, 'root' => 'public', 'selected_php_version' => '8.5']);
     $instance->update(ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5')->attributes());
-    $snapshot = ['prerequisites' => ['releases' => []], 'certificates' => ['leaves' => [], 'withdrawals' => []],
+    $snapshot = ['gateway_dns' => null, 'prerequisites' => ['releases' => []], 'certificates' => ['leaves' => [], 'withdrawals' => []],
         'metrics_fleet' => ['metrics_node_id' => $metrics->id, 'runtime_files' => ['/etc/orbit/metrics/prometheus.yml' => 'public config'],
             'fleet' => [['node_id' => $node->id, 'worker' => false, 'selected' => true]]]];
 

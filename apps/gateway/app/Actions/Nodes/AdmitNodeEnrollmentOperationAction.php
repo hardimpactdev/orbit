@@ -6,7 +6,6 @@ namespace App\Actions\Nodes;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Nodes\ProvisionNodeData;
-use App\Domain\Nodes\GatewayPrivateDnsState;
 use App\Domain\Nodes\NativeNodeEnrollmentInput;
 use App\Domain\Nodes\NodeEnrollmentPolicy;
 use App\Domain\Nodes\NodeProvisioningLock;
@@ -74,10 +73,6 @@ final readonly class AdmitNodeEnrollmentOperationAction
             ['name' => $node->name], 'operator', $requestId);
         if ($operation->wasRecentlyCreated) {
             $native = $this->native->capture($node, $operation, $spec, $data);
-            foreach (RouteExecutionProof::objects(ValidatedData::object($native['intent'])['roles']) as $role) {
-                $plan = ValidatedData::object($role['intent']);
-                app(GatewayPrivateDnsState::class)->claim($node->id, ValidatedData::object($plan['runtime']));
-            }
             $leaves = [];
             foreach ($native['role_snapshots'] as $snapshot) {
                 $certificates = ValidatedData::object($snapshot['certificates']);

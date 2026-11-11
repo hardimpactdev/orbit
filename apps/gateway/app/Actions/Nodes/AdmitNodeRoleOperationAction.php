@@ -8,7 +8,6 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageProcessGuard;
-use App\Domain\Nodes\GatewayPrivateDnsState;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NativeNodeRoleAddInput;
 use App\Domain\Nodes\NativeNodeRoleRelocateInput;
@@ -111,7 +110,6 @@ final readonly class AdmitNodeRoleOperationAction
             $runtime = ValidatedData::object($snapshot['runtime'] ?? []);
             $clickhouse = ValidatedData::object($runtime['clickhouse'] ?? []);
             $nativeInput = app(NativeNodeRoleAddInput::class)->capture($node, $assignment, $snapshot, $beforePublications, $operation);
-            app(GatewayPrivateDnsState::class)->claim($node->id, ValidatedData::object(ValidatedData::object($nativeInput['intent'])['runtime']));
             $this->store->change($operation, ['input' => [...$operation->input, '_role' => $snapshot,
                 'native_role' => $nativeInput['intent'], 'execution_secrets' => $nativeInput['execution_secrets'],
                 'participant_node_ids' => array_values(array_unique([$node->id,

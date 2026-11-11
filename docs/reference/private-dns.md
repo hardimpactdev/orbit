@@ -89,9 +89,13 @@ With no separate VPN assignment, the Gateway role installs the shared private-DN
 
 Only a local DNS installation or withdrawal selects an additional wrapper playbook. Every existing Ansible file used by a Gateway with a separate VPN resolver stays unchanged. Shipping the additional files in the manifest has no host effect.
 
-Admission records local listener ownership before dispatch, in the same transaction as the operation. This conservative claim means the listener is owned or may be owned: a crash before installation, during installation or after a later machine task fails cannot hide cleanup duties. Withdrawal tolerates absent or partially installed resources. Node and role convergence share the same Node hold, so withdrawal cannot overtake a pending local installation and erase its ownership claim.
+Admission records local listener ownership before dispatch, in the same transaction as the operation. This conservative claim means the listener is owned or may be owned: a crash before installation, during installation or after a later machine task fails cannot hide cleanup duties. Withdrawal tolerates absent or partially installed resources.
 
 When a separate VPN resolver joins later, an owned Gateway switches resolver routing first, then disables and removes its local listener units, release and catalog. The ownership record is cleared only after withdrawal succeeds. A failed withdrawal keeps the record for retry. A Gateway with no local ownership claim receives no withdrawal input. Role removal also uses this record, including when a VPN joined before the next converge; a colocated VPN keeps the shared listener.
+
+Adding a VPN role to a no-VPN fleet while a Gateway role converge is queued can leave an untracked listener. This race is out of scope: no flow does this today. Local DNS exists only in fleets without a VPN assignment, such as the nested CI fleet. The worst case is an untracked listener on a disposable task-VM Gateway.
+
+Closing this race needs one exclusion across role add, role converge, Node converge, role removal and rekey, which would change production locking. Revisit it for the first real fleet without a VPN Node.
 
 Check mode skips listener activation and live readiness probes. It does not prove an unapplied listener or a loaded catalog.
 
