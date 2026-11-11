@@ -90,7 +90,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         $server = $moved && ($container['clone'] ?? null) !== null
             ? app(DevelopmentInstanceCreateProjection::class)->server(ValidatedData::object(ValidatedData::object($container['clone'])['t3']), $result) : null;
 
-        return DB::transaction(function () use ($operation, $data, $result, $moved, $server): Operation {
+        return DB::transaction(function () use ($operation, $data, $result, $moved, $server, $run): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if ($operation->status->terminal() && ! self::unsettled($operation)) {
                 return $operation;
@@ -169,11 +169,11 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                 }
             }
 
-            if (is_array($data['native_run'] ?? null)) {
+            if ($run !== []) {
                 $progress = ValidatedData::object($operation->state['native_progress'] ?? []);
                 $operation->update(['state' => [...($operation->state ?? []), 'native_progress' => [
                     'run' => $data['run_id'], 'seq' => $progress['seq'] ?? 0,
-                    'steps' => $this->steps($data['native_run']), 'active' => [],
+                    'steps' => $this->steps($run), 'active' => [],
                 ]]]);
             }
 
@@ -208,8 +208,11 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
     {
         $steps = [];
         foreach (is_array($run['jobs'] ?? null) ? $run['jobs'] : [] as $job) {
-            foreach (is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
-                if (is_array($step) && is_string($job['name'] ?? null) && is_string($step['name'] ?? null)) {
+            if (! is_array($job) || ! is_string($job['name'] ?? null)) {
+                continue;
+            }
+            foreach (is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
+                if (is_array($step) && is_string($step['name'] ?? null)) {
                     $steps[] = ['job' => $job['name'], 'name' => $step['name'], 'status' => $step['status'] ?? 'unknown',
                         'started_at' => $step['startedAt'] ?? null, 'finished_at' => $step['completedAt'] ?? null];
                 }

@@ -4,8 +4,7 @@ description: "ADR 0250, partly built: every Instance runs in an Incus container 
 covers:
   - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress}.php
-  - apps/gateway/app/Domain/Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php
-  - apps/gateway/app/Domain/InstanceMigration/**
+  - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_04_{000000_add_seed_commit_to_instance_runtimes,000002_add_operation_owner_to_instance_runtimes}.php
   - swamp/ansible/{instance-container.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network}.py}
