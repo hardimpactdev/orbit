@@ -270,6 +270,7 @@ jobs:
         type: succeeded
     guard: ${{ steps["Inspect the PR"].outputs.merged }}
   - name: Plan exact contents
+    writes: true
     labels:
       role: swamp
     queueTimeout: 30
@@ -351,6 +352,7 @@ jobs:
       type: succeeded
   steps:
   - name: Plan registry reads
+    writes: true
     labels:
       role: swamp
     queueTimeout: 30
@@ -397,6 +399,7 @@ jobs:
       type: succeeded
   steps:
   - name: Check the dependency diff
+    writes: true
     labels:
       role: swamp
     queueTimeout: 30

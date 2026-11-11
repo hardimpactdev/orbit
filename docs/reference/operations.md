@@ -626,6 +626,16 @@ root-of-trust endpoints are the only Gateway HTTP primitives for new Swamp steps
 
 On Swamp, use the shared `directOperation` template with family-owned read, action and projection functions. The action may be a local Node step or a fixed Gateway primitive while that family migrates. Native DAGs, placement, behavior locks, cancellation and recover/resume own execution. Mutating external steps declare `writes: true`. No Gateway claims, heartbeats, child waits, receipts or local retry loop belong in the template.
 
+Swamp runs a step that has not written again when its worker is lost, and fails a step that has. A step that changes an external system without writing Swamp data is invisible to the scheduler until it declares `writes: true`. Without the key the second run of a step fails it (`destination path already exists`) or leaves a second token.
+
+A step that cannot run twice must declare it: a `git clone`, a `git worktree add`, a mint, a one-shot API call that is not safe to repeat, an account change, the deletion of a VM. A token revoke stays re-runnable: a second `DELETE installation/token` answers 401, and the revoke steps tolerate it.
+
+Swamp defines the key and what it does. Our rule is the test `swamp/tests/writes_declared_test.ts`. It audits every behavior or model-method step, custom behaviors included, unless its exact type and method appear in `nativeDataMethods` in `swamp/tests/writes-reviewed.json`.
+
+That list holds the methods that only read, or that write only Swamp data, each with its reason. A custom method that writes files, changes a network service or runs a process cannot enter it. Workflow calls, assertions and manual approvals are not audited; child workflows have their own leaf audit.
+
+Every audited step declares `writes: true` or has a step entry in the same file: read-only, idempotent or unreviewed. A check that runs over SSH leaves transport files on the worker, so it is idempotent rather than read-only. The unreviewed count is pinned, so a rise shows in the diff. The audit joins shell continuation lines before checking commands. Commands built from step outputs and effects inside playbooks still need a manual check.
+
 `instance.transfer_discard` uses only `operation-instance-lifecycle-direct`; it has no executor claim/run registration or polled discovery entry. `instance:rename` starts no Operation: the Gateway records the branch from the Node agent's checkout report.
 
 Prove each kind end to end on a dev or canary target. Its takeover PR changes the writer and deletes the replaced Gateway path and execution tests together. Rollback is a revert PR. Admitted Operations retain their writer. Scoped workflow grants and token custody require review before activation; extending one family's run grant to another workflow is not implicit.

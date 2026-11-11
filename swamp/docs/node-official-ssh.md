@@ -8,6 +8,8 @@ Use registry package `@swamp/ssh@2026.10.23.1`, model version `2026.10.20.1`. Th
 
 Use one placement selector per scope: `labels: {role: swamp}`, which only the swamp role's workers on Node 209 carry. A step can inherit its job's placement. Never add a token `target`. Keep the affected Node in the admitted intent and select its host explicitly. Use the family's stable executing model name for `behaviorName`; the name below is an example, not a deployed administrative model. Stored models put the map under `globalArguments`. Workflow overrides put the **complete** `name`, `transport` and `hosts` map under `task.globalArgs`; `step.globalArgs` is invalid and existing model globals alone do not satisfy native validation of a dynamic model reference.
 
+The writes audit also covers custom behavior and model methods. The reviewed native-data list is `nativeDataMethods` in `swamp/tests/writes-reviewed.json`; see [the writes rule](../../docs/reference/operations.md).
+
 ```yaml
 id: 3b938de9-c4c5-48ca-99cd-8191572f4a0a
 name: light-box-example

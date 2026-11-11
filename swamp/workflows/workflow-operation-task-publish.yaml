@@ -618,6 +618,7 @@ jobs:
         type: succeeded
     guard: ${{ inputs.intent.pull_request == null }}
   - name: Plan the PR
+    writes: true
     labels:
       role: swamp
     queueTimeout: 30

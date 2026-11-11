@@ -21,4 +21,6 @@ The rollout publishes the Node agent on each Node in turn. Each Node runs the `f
 
 The fleet reboot reboots the managed Linux Nodes that need a reboot for their security fixes, one at a time, each night, after it drained their work. Each pass is one `fleet.reboot` Operation. [Fleet reboot](/reference/gateway-recovery#fleet-reboot) explains the order, the drain, the checks and the alerts.
 
+After a CI host reboots, Orbit asks GitHub to rerun jobs lost during the drain. It does not repeat that request if execution is lost while the request is in flight.
+
 <div className="flow-at" data-chart="fleet/reboot"></div>
