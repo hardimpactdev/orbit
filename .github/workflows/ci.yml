@@ -801,8 +801,10 @@ jobs:
     name: Start the CLI release
     # Start after Required checks passes on main, independently of the slow-check policy.
     # The CI-completion trigger is safe: release runs serialize by commit and skip an existing complete release.
+    # always() plus the explicit result: without a status function, GitHub's implicit success() also looks at Required's
+    # own needs, so an unselected test job (skipped by its job-level if) would skip the release although Required passed.
     needs: required
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: always() && needs.required.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
     permissions:
       actions: write
