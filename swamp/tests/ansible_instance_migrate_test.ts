@@ -86,6 +86,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   );
   Deno.chmodSync(`${folder}/bin/incus`, 0o755);
   Deno.copyFileSync(new URL("instance_migrate_links.py", root), `${folder}/instance_migrate_links.py`);
+  Deno.copyFileSync(new URL("instance_migrate_claim.py", root), `${folder}/instance_migrate_claim.py`);
   for (const name of ["instance-migrate-claim.yml", "instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-link-result.yml"]) {
     const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => transform(structuredClone(task)));
     Deno.writeTextFileSync(`${folder}/tasks/${name}`, stringify(tasks));
@@ -195,6 +196,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     identity_file: "/dev/null",
     target: { host: "127.0.0.1", user: "orbit", port: 22, host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] },
   };
+  const write = (extra: Record<string, unknown> = {}) => Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({ ssh_execution, container, migrate, migration_operation_id: id, restore_claim_owner: `restore:${id}`, ...extra }));
   write();
   Deno.writeTextFileSync(migrate.awake.path, "");
   const rootfs = `${folder}/containers/instance-${id}`;
@@ -218,7 +220,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
       Deno.writeTextFileSync(file, stringify(tasks));
     },
     run(phase: string, rawContainer = false, runId = folder.slice(folder.lastIndexOf("/") + 1)) {
-      const playbook = !rawContainer && ["container", "quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
+      const playbook = !rawContainer && ["container", "quiesce", "files", "retire", "restore-check", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
       const done = new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
           "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/${playbook}`],
@@ -1349,3 +1351,139 @@ for (const phase of ["quiesce", "workspace", "files", "processes", "seed"]) {
   });
 }
 
+Deno.test({
+  name: "a new restore-only run after a lost worker uses the frozen quiesce checkpoint and restores host ownership",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const host = migrationProcesses(f, "running");
+      const before = host();
+      f.build();
+      const processes = f.run("processes");
+      assert(processes.ok, processes.output);
+      assert(!exists(f.migrate.awake.path));
+      // The worker and its run folder are gone. A new admission has only the frozen intent and native quiesce evidence.
+      Deno.removeSync(`${f.folder}/run/quiesced`);
+      f.write({ restore_only: true, restore_quiesced: true });
+      const restored = f.run("restore");
+      assert(restored.ok, restored.output);
+      assertEquals(host(), before);
+      assertEquals(f.state().containers, {});
+      assertEquals(f.state()["network-acls"], [{ name: "orbitinst0-egress", egress: [], ingress: [] }]);
+      assertEquals(f.ufw(), []);
+      assert(!exists(f.container.mirror));
+      assert(exists(f.migrate.awake.path));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "restore-only refuses a Node retirement checkpoint before deleting the serving container or touching host Processes",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const host = migrationProcesses(f, "running");
+      f.build();
+      Deno.writeTextFileSync(`${f.container.mirror}/orbit-migrate-retirement-started`, "true");
+      f.write({ restore_only: true, restore_quiesced: true });
+      const before = f.state();
+      const hostBefore = host();
+      for (const phase of ["restore-check", "restore"]) {
+        const refused = f.run(phase);
+        assert(!refused.ok, refused.output);
+        assert(refused.output.includes("instance.migrate_restore_unsafe"), refused.output);
+      }
+      assertEquals(f.state(), before);
+      assertEquals(host(), hostBefore);
+      assert(exists(f.rootfs));
+      assert(!exists(f.migrate.awake.path));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "restore claims the original move before effects and resumed retirement refuses without changing the Node",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.build();
+      f.write({ restore_only: true, restore_quiesced: true });
+      const checked = f.run("restore-check");
+      assert(checked.ok, checked.output);
+      // Crash after the claim, before effects: a new restore run keeps the original recovery owner.
+      const path = `${f.container.mirror}.migrate-${f.container.instance_id}.claim`;
+      const claim = Deno.readTextFileSync(path);
+      const again = f.run("restore-check", false, "second-restore-run");
+      assert(again.ok, again.output);
+      assertEquals(Deno.readTextFileSync(path), claim);
+      f.write();
+      const before = f.state();
+      const denied = f.run("retire");
+      assert(!denied.ok, denied.output);
+      assert(denied.output.includes("instance.migrate_superseded"), denied.output);
+      assertEquals(f.state(), before);
+      assert(exists(f.checkout));
+      assert(!exists(`${f.container.mirror}/orbit-migrate-retirement-started`));
+      assert(!exists(f.migrate.awake.path));
+      assertEquals(Deno.readTextFileSync(path), claim);
+      f.write({ restore_only: true, restore_quiesced: true });
+      const restored = f.run("restore");
+      assert(restored.ok, restored.output);
+      assertEquals(Deno.readTextFileSync(path), claim);
+      assert(!exists(f.container.mirror));
+      // The permanent claim remains after restore removes the mirror.
+      f.write();
+      const resumed = f.run("retire");
+      assert(!resumed.ok, resumed.output);
+      assert(exists(f.checkout));
+      assertEquals(Deno.readTextFileSync(path), claim);
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "a retirement claim survives a crash before effects and refuses restore, while its same owner may rerun",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.build();
+      // Use the shipped shared claim tasks, ending immediately after the claim to model a stopped worker.
+      const source = Deno.readTextFileSync(`${f.folder}/tasks/instance-migrate-phase.yml`);
+      const playbook = Deno.readTextFileSync(`${f.folder}/instance-migrate.yml`);
+      const plays = parse(playbook) as Task[];
+      for (const play of plays) for (const task of (play.tasks ?? []) as Task[]) delete task.always;
+      Deno.writeTextFileSync(`${f.folder}/instance-migrate.yml`, stringify(plays));
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-migrate-phase.yml`, source.slice(0, source.indexOf("- name: Check all planned retirements")));
+      const first = f.run("retire");
+      assert(first.ok, first.output);
+      const path = `${f.container.mirror}.migrate-${f.container.instance_id}.claim`;
+      const claim = Deno.readTextFileSync(path);
+      const again = f.run("retire");
+      assert(again.ok, again.output);
+      assertEquals(Deno.readTextFileSync(path), claim);
+      assert(!exists(`${f.container.mirror}/orbit-migrate-retirement-started`));
+      assert(!exists(f.migrate.awake.path));
+      f.write({ restore_only: true, restore_quiesced: true });
+      const denied = f.run("restore-check");
+      assert(!denied.ok, denied.output);
+      assert(denied.output.includes("instance.migrate_restore_unsafe"), denied.output);
+      assertEquals(Deno.readTextFileSync(path), claim);
+      assert(exists(f.checkout));
+      assert(exists(f.rootfs));
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-migrate-phase.yml`, source);
+      Deno.writeTextFileSync(`${f.folder}/instance-migrate.yml`, playbook);
+      f.write();
+      const continued = f.run("retire");
+      assert(continued.ok, continued.output);
+      assertEquals(Deno.readTextFileSync(path), claim);
+    } finally { f.cleanup(); }
+  },
+});

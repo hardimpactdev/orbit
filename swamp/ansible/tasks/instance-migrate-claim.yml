@@ -1,0 +1,21 @@
+---
+# The path is beside the mirror, so restoring and deleting the mirror cannot remove the fence.
+- name: Claim the original move before restore or retirement effects
+  ansible.builtin.command:
+    argv:
+      - python3
+      - '-'
+      - '{{ container.mirror }}.migrate-{{ intent.migration_operation_id }}.claim'
+      - '{{ "retire" if phase == "retire" else "restore" }}'
+      - '{{ run_id if phase == "retire" else intent.restore_claim_owner }}'
+    stdin: '{{ lookup("ansible.builtin.file", playbook_dir ~ "/instance_migrate_claim.py") }}'
+    expand_argument_vars: false
+  register: migrate_claim
+  changed_when: migrate_claim.rc == 0 and (migrate_claim.stdout | from_json).changed
+  failed_when: false
+
+- name: Refuse the losing side of the original move
+  ansible.builtin.assert:
+    that: migrate_claim.rc == 0
+    fail_msg: '{{ "instance.migrate_superseded" if phase == "retire" else "instance.migrate_restore_unsafe" }}'
+    quiet: true

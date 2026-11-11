@@ -46,6 +46,11 @@ export function migrateResult(
     server: string | null,
     written: WrittenFailure | null,
 ) {
+    if (intent.restore_only === true) {
+        const restored = phases.restore === "succeeded" && ["succeeded", "skipped"].includes(phases.restore_route);
+        return { ready: restored, stdout: JSON.stringify({ instance_id: intent.instance_id, moved: false, restored, ready: restored,
+            ...(restored ? {} : { failed_step: phases.restore_route === "failed" ? "restore_route" : "restore", error_code: written?.error_code && CODE.test(written.error_code) ? written.error_code : "instance.migrate_restore_failed" }) }) };
+    }
     const clone = (intent.container as { clone?: unknown } | null)?.clone ?? null;
     const routed = intent.route_mutations != null;
     const commit = workspace?.status === "succeeded" ? COMMIT.exec(String(workspace.outputs?.stdout ?? ""))?.[1] ?? null : null;

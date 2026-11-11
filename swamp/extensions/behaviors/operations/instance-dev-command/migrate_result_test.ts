@@ -156,3 +156,18 @@ for (const stopped of ["failed", "cancelled", "interrupted"]) {
     }
 }
 
+Deno.test("a restore-only run reports restored without requiring any skipped forward phase", () => {
+    const phases = Object.fromEntries(Object.keys(moved).map((key) => [key, "skipped"])) as typeof moved;
+    phases.restore = "succeeded";
+    assertEquals(result({ ...defaultIntent, restore_only: true }, phases, null, null, null), {
+        instance_id: 53, moved: false, restored: true, ready: true,
+    });
+    phases.restore_route = "failed";
+    assertEquals(result({ ...defaultIntent, restore_only: true }, phases, null, null, null), {
+        instance_id: 53, moved: false, restored: false, ready: false, failed_step: "restore_route", error_code: "instance.migrate_restore_failed",
+    });
+});
+
+Deno.test("an interrupted Route restore never claims the host was restored", () => {
+    assertEquals(result(defaultIntent, { ...moved, processes: "interrupted", retire: "skipped", restore: "succeeded", restore_route: "interrupted" }, workspace, null, null).restored, false);
+});
