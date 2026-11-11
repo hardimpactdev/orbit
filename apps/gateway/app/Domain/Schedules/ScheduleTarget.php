@@ -20,6 +20,8 @@ final readonly class ScheduleTarget
         public ?string $shell,
         public bool $loginShell,
         public ?Instance $instance,
+        /** @var array{project:string,name:string}|null */
+        public ?array $container = null,
     ) {}
 
     public function isProduction(): bool

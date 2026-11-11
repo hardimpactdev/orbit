@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 
@@ -12,6 +13,7 @@ final readonly class ContainerInstanceDestroy
 {
     public function assertAvailable(Instance $instance, bool $force): void
     {
+        InstanceMigration::assertSettled($instance);
         $runtime = $instance->runtime()->first();
         if ($runtime === null) {
             return;

@@ -10,6 +10,7 @@ use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\InstanceMigration\InstanceMigrationRoute;
+use App\Domain\InstanceMigration\MigrateSchedules;
 use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceContainer;
@@ -81,6 +82,7 @@ final readonly class StartInstanceMigrateAction
                 throw new ResourceOperationException('instance.lifecycle_busy', 'An Instance Process has an unfinished operation or runtime cleanup.', 409);
             }
             $sourceProcesses = app(ContainerProcesses::class)->source($instance);
+            $sourceSchedules = app(MigrateSchedules::class)->plans($instance);
             $this->assertPhp($instance->project);
             $route = $this->route($instance);
             $databases = $this->databases($instance);
@@ -120,7 +122,7 @@ final readonly class StartInstanceMigrateAction
                         'node_addresses' => array_values(array_filter([$node->wireguard_ip, $node->lan_ip, $node->public_ssh_host])),
                         'proxy_policy' => ['private_v4' => InstanceEgress::PrivateV4, 'private_domains' => app(PeerDnsPolicy::class)->domains()],
                     ],
-                    'databases' => $reach, 'processes' => $sourceProcesses, 'firewall_prefix' => InstanceContainer::firewallPrefix($instance),
+                    'databases' => $reach, 'processes' => $sourceProcesses, 'schedules' => $sourceSchedules, 'firewall_prefix' => InstanceContainer::firewallPrefix($instance),
                     'retire' => $this->retire($instance, $default),
                 ],
                 'container' => $container,

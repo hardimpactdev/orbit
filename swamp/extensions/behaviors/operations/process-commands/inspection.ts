@@ -5,7 +5,12 @@ export const InspectionArgs = z.object({
     request: z.string().uuid(),
 }).strict();
 export const Inspection = z.object({
-    value: z.string().max(8 * 1024 * 1024).meta({
+    // The inspection JSON is itself a string in a vault.read-secret response.
+    // Leave 16 KiB for that response's envelope under the Gateway's 8 MiB frame bound.
+    value: z.string().refine(
+        (value) => new TextEncoder().encode(JSON.stringify(value)).length <= 8 * 1024 * 1024 - 16 * 1024,
+        "The serialized inspection exceeds the Gateway transport budget.",
+    ).meta({
         sensitive: true,
         vaultName: "orbit-control-inputs",
     }),
@@ -33,7 +38,7 @@ export async function storeInspection(
 ) {
     const input = InspectionArgs.parse(args);
     const value = await Deno.readTextFile(input.directory + "/result.json");
-    const observed = z.object({ state: z.string().max(32), output: z.string() }).strict().parse(
+    const observed = z.object({ state: z.string().max(32), output: z.string(), truncated: z.boolean().optional() }).strict().parse(
         JSON.parse(value),
     );
     const spec = "inspection";

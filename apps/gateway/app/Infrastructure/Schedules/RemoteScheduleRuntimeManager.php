@@ -46,6 +46,9 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
         }
 
         $target = $this->targets->forSchedule($schedule);
+        if ($target->container !== null) {
+            return app(ContainerScheduleInspection::class)->read($schedule, $target, $lines);
+        }
         $logs = $this->call($target, 'schedule.logs', ['id' => $schedule->id, 'lines' => $lines, 'max_bytes' => self::MAX_LOG_BYTES], 'logs', ScheduleErrorCode::LogsFailed, 'Schedule logs could not be read.');
 
         return new ScheduleLogsData(StoredValue::string($logs['output'] ?? null), ($logs['truncated'] ?? false) === true);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
+use App\Domain\InstanceMigration\DeferredMigrationScheduleRuns;
 use App\Domain\Tasks\TaskVmAdmission;
 use App\Models\Operation;
 use Carbon\CarbonImmutable;
@@ -102,10 +103,10 @@ final class OperationRunBudgets
         return $seconds;
     }
 
-    /** A Route write that waits for a held Node has no deadline; its budget counts from its start (docs/reference/routes.md#coordinate-publication). */
+    /** A held Route write or a deferred Schedule fire starts its budget when admission reopens. */
     public static function deadline(Operation $operation): ?CarbonImmutable
     {
-        if (RoutePublicationHolds::waitsForNodes($operation)) {
+        if (RoutePublicationHolds::waitsForNodes($operation) || DeferredMigrationScheduleRuns::waiting($operation)) {
             return null;
         }
         if ($operation->status === OperationStatus::Waiting && isset($operation->input['capacity_request'])) {

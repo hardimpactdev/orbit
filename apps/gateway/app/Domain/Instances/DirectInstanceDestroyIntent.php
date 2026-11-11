@@ -52,7 +52,7 @@ final readonly class DirectInstanceDestroyIntent
      */
     private function recordIntent(array $input): array
     {
-        app(ContainerInstanceDestroy::class)->assertAvailable(Instance::query()->findOrFail(ValidatedData::integer($input['instance_id'])), $input['force'] === true);
+        app(ContainerInstanceDestroy::class)->assertAvailable(Instance::query()->lockForUpdate()->findOrFail(ValidatedData::integer($input['instance_id'])), $input['force'] === true);
         $members = InstanceLifecycleInput::members($input);
         if (Operation::query()->whereIn('kind', ['instance.destroy'])
             ->where('target_type', 'instance')->whereIn('target_id', array_column($members, 'instance_id'))

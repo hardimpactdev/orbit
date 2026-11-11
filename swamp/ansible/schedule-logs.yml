@@ -1,0 +1,43 @@
+---
+# The same host journal holds retained unit output and later container command output tagged by UUID.
+- name: Pin the Node and address it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh_execution.target }}"
+    address_identity: "{{ intent.ssh_execution.identity_file }}"
+    address_group: schedule_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Read the Schedule journal
+  hosts: schedule_node
+  gather_facts: false
+  become: true
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+  tasks:
+    - name: Read retained unit entries and command entries
+      orbit_schedule_journal:
+        schedule_id: "{{ intent.schedule.id }}"
+        lines: "{{ intent.read.lines | int }}"
+      register: schedule_journal
+      changed_when: false
+      no_log: true
+    - name: Keep the bounded read private
+      ansible.builtin.copy:
+        content: "{{ {'state': 'active', 'output': schedule_journal.output, 'truncated': schedule_journal.truncated} | to_json(ensure_ascii=false) }}"
+        dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      no_log: true
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"

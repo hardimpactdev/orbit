@@ -1,0 +1,14 @@
+{# Render the shared Schedule contract; never invent a second service/timer format. #}
+{%- set templates = lookup('ansible.builtin.file', playbook_dir ~ '/../extensions/behaviors/operations/processes-schedules/unit-templates.json') | from_json -%}
+{%- macro render(text, directory, direct=false, mapped=false) -%}
+  {%- set context = {'user': schedule.user, 'group': schedule.group, 'home': schedule.home, 'working_directory': directory, 'shell': schedule.shell, 'login_shell': schedule.login_shell} -%}
+  {%- set values = {'id': schedule.id, 'command_hash': schedule.mapped_command_hash if mapped else schedule.command_hash, 'user': schedule.user, 'group': schedule.group, 'context': context | to_json(separators=(',', ':'), ensure_ascii=false), 'home': schedule.home | replace('\\', '\\\\') | replace('"', '\\"') | replace('%', '%%'), 'shell': schedule.shell | replace('\\', '\\\\') | replace('"', '\\"') | replace('%', '%%'), 'working_directory': directory | replace('%', '%%'), 'calendar': schedule.calendar | replace('%', '%%'), 'timeout_seconds': schedule.timeout_seconds | string, 'login_shell': ' --login' if schedule.login_shell else ''} -%}
+  {%- set output = namespace(text=text) -%}
+  {%- for key, value in values.items() -%}
+    {%- set escaped = value | replace('$', '$$') if direct and key in ['home', 'shell'] else value -%}
+    {%- if direct and key == 'working_directory' -%}{%- set escaped = escaped | replace('\\', '\\\\') -%}{%- endif -%}
+    {%- set output.text = output.text | replace('{{' ~ key ~ '}}', escaped) -%}
+  {%- endfor -%}
+  {{- output.text -}}
+{%- endmacro -%}
+{{ {'service': render(templates.service, '/', mapped=true), 'timer': render(templates.timer, schedule.source_directory), 'callback': render(templates.callback, schedule.source_directory), 'source_services': [render(templates.service, schedule.source_directory), render(templates.agentService, schedule.source_directory), render(templates.directService, schedule.source_directory, direct=true)]} | to_json }}

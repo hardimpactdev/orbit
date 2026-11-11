@@ -700,6 +700,23 @@ final readonly class SwampCommandStep
             'captures' => ['inspection' => ['job' => 'process', 'step' => 'Read Process result', 'field' => 'inspection']]]);
     }
 
+    /** The request-bound vault reference for one succeeded migrated Schedule journal read.
+     * @return array<string,mixed>
+     */
+    public function scheduleInspection(string $runId, string $request): array
+    {
+        $run = $this->history($runId);
+        $inputs = ValidatedData::object($run['inputs'] ?? []);
+        $read = ValidatedData::object(ValidatedData::object($inputs['intent'] ?? [])['read'] ?? []);
+        if (($run['id'] ?? null) !== $runId || ($run['workflowName'] ?? null) !== 'operation-process-container'
+            || ($run['status'] ?? null) !== 'succeeded' || ($inputs['kind'] ?? null) !== 'schedule.inspect' || ($read['request'] ?? null) !== $request) {
+            throw $this->unavailable();
+        }
+
+        return $this->terminalOutput($run, ['job' => 'process', 'step' => 'Read Process result', 'native' => true,
+            'captures' => ['inspection' => ['job' => 'process', 'step' => 'Read Process result', 'field' => 'inspection']]]);
+    }
+
     /** One request following a native terminal event. Receiving its response is not status polling.
      * @return array<string,mixed>
      */

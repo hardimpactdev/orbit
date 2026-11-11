@@ -495,7 +495,9 @@ The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/c
 - **Route.** Orbit points the Route at FrankenPHP in the container.
 - **Retirement.** Orbit moves the whole old checkout to retention and records its path and time. It deletes no Git metadata. The default's checkout stays until its last worktree has moved.
 
-A failed move leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) has the steps.
+Registered Schedule timers keep their UUID, calendar, timeout and enabled or paused state. Their commands enter the container. [Schedule migration](/reference/schedules#checkout-migration) defines refusals, rollback and retained logs.
+
+A failed move before cutover leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) has the steps.
 
 #### Migration symlinks
 
