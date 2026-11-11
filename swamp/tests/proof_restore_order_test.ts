@@ -239,6 +239,7 @@ for (const role of ["gateway", "app-dev"]) {
                 `#!/bin/sh
 case "$1" in
 is-system-running)
+  [ "$2" = --wait ] || { echo starting; exit 1; }
   echo waiting-for-boot >&2
   IFS= read -r state || exit 1
   printf '%s\n' "$state"
