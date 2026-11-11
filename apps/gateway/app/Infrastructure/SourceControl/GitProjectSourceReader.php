@@ -9,6 +9,7 @@ use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
+use App\Domain\SourceControl\GitCommitSha;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -17,7 +18,7 @@ use Illuminate\Support\Str;
 use SensitiveParameter;
 
 /**
- * Fetches the branch head without blobs into a scratch repository, then reads only the named files, with the Project's
+ * Fetches a branch head or an exact commit without blobs into a scratch repository, then reads only the named files, with the Project's
  * read credential in the environment ([credentialed Git](/reference/instance-setup#credentialed-git)).
  */
 final readonly class GitProjectSourceReader implements ProjectSourceReader
@@ -26,7 +27,7 @@ final readonly class GitProjectSourceReader implements ProjectSourceReader
 
     public function __construct(private ProcessRunner $processes, private RepositoryReadAccess $access) {}
 
-    public function read(#[SensitiveParameter] string $repositoryUrl, ProjectSourceAccess $access, string $branch, array $paths): array
+    public function read(#[SensitiveParameter] string $repositoryUrl, ProjectSourceAccess $access, string $branch, array $paths, ?string $commit = null): array
     {
         $directory = storage_path('framework/project-source-'.Str::uuid());
         $environment = $this->access->for($repositoryUrl, $access)->variables;
@@ -37,7 +38,7 @@ final readonly class GitProjectSourceReader implements ProjectSourceReader
             $this->git($directory, $environment, ['config', 'extensions.partialClone', 'origin']);
             $this->git($directory, $environment, ['config', 'remote.origin.promisor', 'true']);
             $this->git($directory, $environment, ['fetch', '--quiet', '--depth=1', '--filter=blob:none', '--no-tags', 'origin',
-                'refs/heads/'.GitBranchName::validate($branch)]);
+                $commit === null ? 'refs/heads/'.GitBranchName::validate($branch) : GitCommitSha::validate($commit)]);
             $files = [];
             foreach ($paths as $path) {
                 $entry = $this->git($directory, $environment, ['ls-tree', '-z', 'FETCH_HEAD', '--', $path])->stdout;
@@ -80,6 +81,6 @@ final readonly class GitProjectSourceReader implements ProjectSourceReader
 
     private function unavailable(): ResourceOperationException
     {
-        return new ResourceOperationException('project.source_unavailable', 'The Gateway could not read the Project source from its default branch.', 502);
+        return new ResourceOperationException('project.source_unavailable', 'The Gateway could not read the Project source at the requested revision.', 502);
     }
 }

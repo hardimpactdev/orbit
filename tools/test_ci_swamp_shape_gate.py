@@ -56,7 +56,7 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(names[0], 'ansible collections')
         self.assertIn('ansible-lint', names)
         self.assertEqual(names[-4:], ['check-swamp-shape', 'check-swamp-base-policy', 'lint-behavior-names', 'frozen agent commands'])
-        # Eight named suites plus the file commands, with two balanced Instance-host groups.
+        # Every test file owns a command, including the separate ACL fixtures.
         self.assertEqual(len([name for name in names if name.startswith('deno test')]), len(list(gate['expanded_unit_tests']())) + len(gate['deno_test_files']()))
         self.assertTrue(any('tests/ansible_instance_host_create_test.ts' in name for name in names))
         for step in steps('shape')[-4:-1]:
@@ -241,7 +241,7 @@ class ShardPartitionTest(unittest.TestCase):
                 self.assertEqual(planned, Counter({path: 1 for path in discovered}))
                 self.assertEqual(planned['tests/new/nested_test.ts'], 1)
                 self.assertEqual({s.unit for s in units if s.argv[0] not in ('deno', 'python3')}, {'ruff', 'ansible-lint'})
-                self.assertEqual(len([s for s in tests if 'ansible_instance_host_' in s.unit]), 13)
+                self.assertEqual(len([s for s in tests if 'ansible_instance_host_' in s.unit]), 14)
                 self.assertTrue(all(len([arg for arg in s.argv if arg in discovered]) == 1 for s in tests))
                 control = gate['select_steps'](full, control_only=True)
                 self.assertEqual([s.name for s in control if s.name != 'ansible collections'],

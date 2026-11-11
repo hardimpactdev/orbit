@@ -119,6 +119,8 @@ Each fact also names its `scope`, the path it read. On beast the apt fact is abo
 
 [`tool:scan`](/reference/tools#discover-installed-packages) lists these facts, and [`tool:adopt`](/reference/tools#adopt-a-tool) records a Tool from them. Neither reads the Node. A manager without a fact is "not observed yet".
 
+On an Instance host, the `host` fact includes `instance_bridge.error_code` from `/var/lib/orbit/instance-bridge/health.json`. The observer reads only a known public error code; absent state means the host has no refresh policy. Unreadable or malformed state reports `instance.container_bridge_health_unreadable`. Doctor reports a failure as `node.instance_bridge_unhealthy`. The [Instance host role](/reference/development-containers#prepare-a-node) owns the file and refresh timer.
+
 ### Environment key names
 
 The watch list's `environments` names the `.env` of each Instance on the Node. For each, the agent sends an `env_keys` fact:

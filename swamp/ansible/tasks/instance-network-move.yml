@@ -1,0 +1,10 @@
+---
+- name: Read effective NICs before replacing the common ACL reference
+  ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances?all-projects=true&recursion=1"] }
+  register: instance_move_containers
+  changed_when: false
+
+- name: Move each container's local bridge NICs
+  ansible.builtin.include_tasks: instance-network-move-nic.yml
+  loop: "{{ instance_move_containers.stdout | from_json }}"
+  loop_control: { loop_var: move_container, label: "{{ move_container.name }}" }

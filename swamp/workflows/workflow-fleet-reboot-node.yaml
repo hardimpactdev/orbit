@@ -84,6 +84,7 @@ jobs:
         purpose: ci_rerun
     # Rerun: after the check, re-run once the jobs that a runner accepted just before the drain froze and stopped it.
   - name: 'rerun'
+    writes: true
     labels: {role: swamp}
     dependsOn: [{step: 'mint', condition: {type: succeeded}}]
     guard: '${{ !inputs.ci }}'

@@ -190,10 +190,24 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Migrate, condition: {type: succeeded}}]
     task: {type: assert, expr: 'steps["Migrate"].outputs.stdout.trim().endsWith("migrate-exit=0")', severity: high, message: The migration failed; the release record shows its output.}
+    # This DB-only guard leaves the old workers running while protected Operations finish. Force never skips it.
+  - name: Wait for active Operations
+    labels: {role: swamp}
+    dependsOn: [{step: Check the migration, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-idle-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 660
+        argv: [/usr/bin/timeout, '630', php8.5, '/home/orbit/releases/${{ inputs.intent.id }}/apps/gateway/artisan', gateway:release:wait-idle, --no-interaction]
   - name: Load Swamp on Node 209
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Check the migration, condition: {type: succeeded}}]
+    dependsOn: [{step: Wait for active Operations, condition: {type: succeeded}}]
     task:
       type: workflow
       workflowIdOrName: operation-gateway-swamp-load
@@ -209,32 +223,11 @@ jobs:
             grants/orbit-serve.yaml: '${{ steps["Build the release"].outputs.stdout.split("---\n")[1] }}'
           ssh: ${{ inputs.intent.swamp_ssh }}
         execution_secrets: {}
-    # Serve now holds the new commit's workflows and playbooks, so the refresh of every task VM host starts on them while the release goes on
-    # to switch. The release's own artisan admits the runs, so each intent holds the new commit's recipe, pins and checkout. Best effort: the
-    # release never fails for it (docs/cli/task/vm-image-refresh.mmd).
-  - name: Admit VM refreshes
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: Load Swamp on Node 209, condition: {type: succeeded}}]
-    allowFailure: true
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "gateway-release-refresh-" + string(inputs.node_id) }}'
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        timeoutSec: 300
-        argv: [/usr/bin/timeout, '270', /bin/sh, -c, 'cd "/home/orbit/releases/$1/apps/gateway" && php8.5 artisan task-vms:refresh-images --commit="$2" --no-interaction', sh, '${{ inputs.intent.id }}', '${{ inputs.intent.sha }}']
-    # Serve now holds the new commit's definitions, so the switch and handoff run from the release they install. The hand-over waits for the
-    # admission above to end, however it ends: the switch restarts the services it runs on.
+    # The child runs the new commit's handoff, including refresh admission after the new Horizon starts.
   - name: Hand over the release
     labels: {role: swamp}
     writes: true
-    dependsOn:
-    - {step: Load Swamp on Node 209, condition: {type: succeeded}}
-    - {step: Admit VM refreshes, condition: {type: always}}
+    dependsOn: [{step: Load Swamp on Node 209, condition: {type: succeeded}}]
     task:
       type: workflow
       workflowIdOrName: gateway-release-activate

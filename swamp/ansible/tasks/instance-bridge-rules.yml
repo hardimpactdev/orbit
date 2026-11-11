@@ -1,0 +1,41 @@
+---
+- name: Create the endpoint policy program folder
+  tags: [always]
+  ansible.builtin.file: {path: /usr/local/libexec, state: directory, owner: root, group: root, mode: '0755'}
+
+- name: Install the shared endpoint resolver and exact-rule writer
+  tags: [always]
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/instance_bridge.py"
+    dest: /usr/local/libexec/orbit-instance-bridge
+    owner: root
+    group: root
+    mode: '0755'
+
+# One attempt resolves all mappings before writing. The helper never retries; Ansible owns this bounded retry.
+- name: Apply admitted bridge endpoint intent
+  tags: [always]
+  ansible.builtin.command:
+    argv: >-
+      {{ ['python3', '/usr/local/libexec/orbit-instance-bridge', '--state-dir', '/var/lib/orbit/instance-bridge', '--intent']
+         + (['--reconcile'] if bridge_reconcile else []) }}
+    stdin: >-
+      {{ {'network': bridge_network, 'cidr': bridge_cidr, 'endpoints': bridge_endpoints,
+          'admitted_at': bridge_admitted_at | int, 'baseline': bridge_baseline | default({})} | to_json }}
+  register: bridge_rule_write
+  failed_when: false
+  changed_when: bridge_rule_write.rc == 0 and (bridge_rule_write.stdout | from_json).changed > 0
+  until: >-
+    bridge_rule_write.rc == 0 or
+    ('412' not in bridge_rule_write.stderr and 'ETag' not in bridge_rule_write.stderr
+     and 'precondition' not in bridge_rule_write.stderr | lower
+     and 'Unknown or missing host side veth device' not in bridge_rule_write.stderr)
+  retries: 4
+  delay: 1
+
+- name: Refuse an unresolved bridge endpoint
+  tags: [always]
+  ansible.builtin.assert:
+    that: bridge_rule_write.rc == 0
+    fail_msg: "{{ (bridge_rule_write.stdout | from_json).error_code | default('instance.container_bridge_write_failed') }}"
+    quiet: true

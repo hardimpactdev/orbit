@@ -16,7 +16,7 @@ covers:
 
 An [Instance container](/reference/development-containers#processes) runs FrankenPHP and development workers as `orbit-*` units inside the container. A shared runtime folder update restarts those units in each running container. The [clone copy](/reference/development-containers#lifecycle) supplies its complete root disk device, including when the seed inherited it from the Node's profile.
 
-Preparing an `app-dev` Node for [Instance containers](/reference/development-containers#prepare-a-node) keeps its existing checkout Instances. Each checkout moves only through [`instance:migrate`](/cli/instance/migrate), after the container host is ready.
+Preparing an `app-dev` Node for [Instance containers](/reference/development-containers#prepare-a-node) keeps its existing checkout Instances. Each checkout moves only through [`instance:migrate`](/cli/instance/migrate), after the container host is ready. The role installs the profile's default-reject NIC policy, checks every effective NIC on the Instance bridge, then passes bridge egress to those NIC policies. Its read-only end check repeats the audit, including stopped containers. One converge applies this to an existing host without restarting its containers.
 
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 
@@ -421,7 +421,7 @@ Both phases write the module file as root, mode `0644`. A file that already hold
 
 ### Update policy
 
-Every managed Linux Node gets the same update policy ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)). The Gateway renders it once, in `NodeUpdatePolicy`, and the same two phases as the kernel policy apply it. The Node installs Ubuntu security fixes itself; the nightly [fleet reboot](/reference/gateway-recovery#fleet-reboot) reboots it when a fix needs that.
+Every managed Linux Node gets the same update policy ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)). The Gateway renders it once, in `NodeUpdatePolicy`, and the same two phases as the kernel policy apply it. The Node installs Ubuntu security fixes itself; the nightly [fleet reboot](/reference/gateway-recovery#fleet-reboot) reboots it when a fix needs that, unless the operator has set its reboot hold. The hold preserves the due observation and overdue alerts.
 
 | File | Content |
 | --- | --- |
@@ -961,4 +961,4 @@ Proof preparation installs the tested checkout's frozen observer pin on every ne
 
 The `ai-router-model-forwarder.yml` playbook, including its numeric packet-counter checks, is documented in [AI router](/reference/ai-router#container-model-forwarder).
 
-The container playbook preserves agent settings outside Orbit's managed JSON keys and Git workspace trust, and applies the [per-Instance limits](/reference/development-containers#inside-a-container).
+The container playbook preserves agent settings outside Orbit's managed JSON keys and Git workspace trust, and applies the [per-Instance limits](/reference/development-containers#inside-a-container). It writes the shared [container PHP settings](/reference/php-runtime#container-php): the memory limit and PHP Data Bridge.

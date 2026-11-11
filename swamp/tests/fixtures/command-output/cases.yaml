@@ -625,7 +625,46 @@ contexts:
       stdout: "worktree /srv/tool/default\u0000HEAD 32d5894464a2464ffa2db8b28fd457a27d3e7870\u0000branch refs/heads/main\u0000\u0000worktree /srv/tool/detached\ncheckout\u0000HEAD 32d5894464a2464ffa2db8b28fd457a27d3e7870\u0000detached\u0000\u0000worktree /srv/tool/feature space\u0000HEAD 32d5894464a2464ffa2db8b28fd457a27d3e7870\u0000branch refs/heads/feature\u0000\u0000"
     retirement_checkout:
       stdout: "/srv/tool/detached\ncheckout"
+  instance-nic-local:
+    instances: {network: orbitinst0}
+    # A sanitized entry from `incus query /1.0/instances?all-projects=true&recursion=1`.
+    move_container:
+      name: instance-7
+      project: orbit-instances
+      devices:
+        eth0: &local_nic
+          type: nic
+          network: orbitinst0
+          security.acls: 'instance-7, orbitinst0-egress,orbitinst0-egress-extra'
+      expanded_devices: {eth0: *local_nic}
+    item: {key: eth0, value: *local_nic}
+  instance-nic-inherited:
+    instances: {network: orbitinst0}
+    move_container:
+      name: instance-8
+      project: orbit-instances
+      devices: {}
+      expanded_devices:
+        inherited: &inherited_nic
+          type: nic
+          parent: orbitinst0
+          security.acls: ' orbitinst0-egress , instance-8 '
+    item: {key: inherited, value: *inherited_nic}
 cases:
+- file: tasks/instance-network-move-nic.yml
+  task: Replace the bridge union ACL on an effective NIC without opening it
+  field: ansible.builtin.command.argv
+  context: instance-nic-local
+  expected: [incus, --project, orbit-instances, config, device, set, instance-7, eth0,
+    'security.acls=instance-7,orbitinst0-proxy,orbitinst0-egress-extra',
+    security.acls.default.egress.action=reject, security.acls.default.ingress.action=reject]
+- file: tasks/instance-network-move-nic.yml
+  task: Replace the bridge union ACL on an effective NIC without opening it
+  field: ansible.builtin.command.argv
+  context: instance-nic-inherited
+  expected: [incus, --project, orbit-instances, config, device, override, instance-8, inherited,
+    'security.acls=orbitinst0-proxy,instance-8',
+    security.acls.default.egress.action=reject, security.acls.default.ingress.action=reject]
 - file: tasks/instance-migrate-retirement-check.yml
   task: Name the blocking worktrees and files
   field: ansible.builtin.set_fact.retirement_other_worktrees

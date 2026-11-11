@@ -111,7 +111,7 @@ describe('instance:deploy', function (): void {
                 'failed_step' => $fails ? 'process_restart' : null,
                 'error_code' => $fails ? 'process.restart_failed' : null,
                 'started_at' => '2026-10-15T10:00:01+00:00', 'poll_after_seconds' => null,
-                'result' => ['deployment_id' => 5, 'release' => 'r2', 'selected_release' => 'r2', 'commit' => null],
+                'result' => ['deployment_id' => 5, 'release' => 'r2', 'selected_release' => 'r2', 'commit' => null, 'warnings' => 1],
             ]),
         ], $seen);
 
@@ -119,7 +119,8 @@ describe('instance:deploy', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe($fails ? 1 : 0)
-            ->and($output)->toContain($fails ? 'Deployment failed.' : 'Deployment succeeded.');
+            ->and($output)->toContain($fails ? 'Deployment failed.' : 'Deployment succeeded.')
+            ->not->toContain('Warning:');
         if ($fails) {
             expect($output)->toContain('process.restart_failed')->not->toContain('Deployment succeeded.');
         }

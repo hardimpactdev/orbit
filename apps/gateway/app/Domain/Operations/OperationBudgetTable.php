@@ -39,7 +39,8 @@ final class OperationBudgetTable
         // No native run yet. Basis: the legacy runner's last 47 verified releases (p95 117 s, longest 125 s) plus the
         // Horizon drain, which waits for running jobs up to the longest supervisor timeout + 30 s (1,730 s); x 1.5 = 2,783 s,
         // rounded up to five minutes. An expiry pauses releases. Replace with the 14-day p95 after the first success.
-        'gateway.release' => 3000,
+        // The pre-load busy guard adds up to 600 s to the existing 3,000 s release allowance.
+        'gateway.release' => 3600,
         // The proof the CLI follows closes when its last run ends: the two-hour admission wait, the longest run of a shard
         // (ProofBatchPlan::MaxShardSeconds) and five minutes.
         'proof.run' => 14700,

@@ -25,7 +25,7 @@ class RunnerPolicyTest(unittest.TestCase):
         self.assertIn('runs-on: ubuntu-26.04', job('swamp-shape.yml', 'tests'))
 
     def test_light_jobs_and_validation_stay_hosted(self):
-        for workflow, names in [('ci.yml', ['docs', 'web', 'api-reference', 'gateway-tests']),
+        for workflow, names in [('ci.yml', ['docs', 'web', 'api-reference', 'gateway-tests', 'cli-tests']),
                                 ('swamp-shape.yml', ['validate', 'tests', 'shape-plan', 'shape-control', 'shape'])]:
             for name in names:
                 with self.subTest(job=name):

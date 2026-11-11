@@ -20,6 +20,7 @@ orbit instance:create <project> <node> <name> [--root=PATH] [--domain=HOST] [--b
 | `--domain=HOST` | generated | Route domain. Without it, Orbit generates one from the active Cluster TLD, then the Node TLD. |
 | `--branch=BRANCH` | see [branch selection](#branch-selection) | Source branch. |
 | `--database-server=SLUG` | none | Create the Instance's database on this [Database server](/reference/database-servers) before setup. See [database on a server](/domains/applications#database-on-a-server). |
+| `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the result as JSON. |
 
 In a terminal, an omitted project and node are chosen from interactive lists, with the Nodes limited to active `app-dev` Nodes, and an omitted name is asked for with the default `default`. A noninteractive or `--json` call that omits one is refused with `input.invalid`, naming the input, and sends no request.

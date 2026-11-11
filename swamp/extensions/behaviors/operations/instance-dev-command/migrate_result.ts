@@ -52,8 +52,8 @@ export function migrateResult(
     const done = (name: keyof Phases): [string, boolean, boolean] => [name, phases[name] === "succeeded", phases[name] === "failed"];
     // [phase, finished, failed], in the order the run takes them.
     const outcomes: [string, boolean, boolean][] = [
-        done("quiesce"),
         done("container"),
+        done("quiesce"),
         ["workspace", commit !== null, phases.workspace === "failed"],
         done("files"),
         ...(clone === null ? [] : [done("agent")]),
@@ -76,7 +76,7 @@ export function migrateResult(
         ready: failed === undefined,
         moved,
         restored: !moved && phases.restore === "succeeded" && phases.restore_route !== "failed",
-        ...(failed?.[0] === "quiesce" && refusal !== null && written?.preflight_refused === true ? { preflight_refused: true } : {}),
+        ...(failed?.[0] === "container" && refusal !== null && written?.preflight_refused === true ? { preflight_refused: true } : {}),
         ...(commit ? { commit } : {}),
         ...(moved && written?.retained_git_path && written?.retained_git_at ? { retained_git_path: written.retained_git_path, retained_git_at: written.retained_git_at } : {}),
         ...(moved && server ? { t3: JSON.parse(server) } : {}),

@@ -331,11 +331,12 @@ function node_response_gateway_data(array $overrides = []): array
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
         'lan_ip' => '10.0.0.3',
+        'reboot_hold' => false,
         'roles' => ['app-dev'],
     ], $overrides);
 }
 
-/** @return array<string, int|string|list<string>|null> */
+/** @return array<string, int|string|bool|list<string>|null> */
 function node_response_public_data(): array
 {
     return [
@@ -351,6 +352,7 @@ function node_response_public_data(): array
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
         'lan_ip' => '10.0.0.3',
+        'reboot_hold' => false,
         'wireguard_public_key' => null,
         'dns_server_override' => null,
         'ssh_host_fingerprint' => null,

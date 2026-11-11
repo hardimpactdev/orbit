@@ -77,6 +77,7 @@ jobs:
           ORBIT_FILES: ${{ "/home/orbit/.cache/orbit-inspect/" + run.id }}
     # Policy paths decide which blobs count; sources whose SHAs equal the last inspection keep their packages.
   - name: 'Select the changed sources'
+    writes: true
     labels: {role: swamp}
     dependsOn: [{step: 'Read the manifest SHAs', condition: {type: succeeded}}]
     task:
@@ -115,6 +116,7 @@ jobs:
           ORBIT_FILES: ${{ "/home/orbit/.cache/orbit-inspect/" + run.id }}
     # The lockfiles become the installed package list; the run directory goes when the step ends.
   - name: 'List the packages'
+    writes: true
     labels: {role: swamp}
     dependsOn: [{step: 'Read the changed files', condition: {type: succeeded}}]
     task:

@@ -1,0 +1,796 @@
+{
+ "maxUnreviewed": 218,
+ "nativeDataMethods": {
+  "@nckrtl/analytics-runtime#observe": "Compares supplied container observations and writes only Swamp metadata.",
+  "@nckrtl/analytics-runtime#plan": "Builds runtime intents and argv as Swamp metadata without executing them.",
+  "@nckrtl/artifact-fetch-policy#classify": "Classifies a supplied exit code and writes only the Swamp decision.",
+  "@nckrtl/caddy-public-input#prepare": "Validates and hashes supplied public Caddy text into a Swamp resource.",
+  "@nckrtl/conn-pairing#issue": "Reads the existing pairing reply and stores native sensitive fields; it issues no request.",
+  "@nckrtl/conn-revocation-plan#replies": "Reads saved revoke replies and writes only Swamp completion metadata.",
+  "@nckrtl/conn-revocation-plan#select": "Reads saved inventory and writes only the Swamp session selection.",
+  "@nckrtl/dependency-merge-data#inspect": "Reads saved PR metadata and writes only Swamp inspection data.",
+  "@nckrtl/dependency-merge-data#merged": "Reads saved PR and merge replies and writes only the Swamp receipt.",
+  "@nckrtl/development-deploy#cleanup": "Builds cleanup argv as Swamp data without running or deleting anything.",
+  "@nckrtl/firewall-plan#check": "Checks supplied UFW output and writes only the Swamp result.",
+  "@nckrtl/firewall-plan#plan": "Builds UFW argv from supplied output without executing it.",
+  "@nckrtl/instance-dev-command#create_result": "Combines supplied phase outcomes into a Swamp receipt.",
+  "@nckrtl/instance-dev-command#migrate_result": "Reads saved migration failure files and writes only the Swamp receipt.",
+  "@nckrtl/instance-route-workload#prepared": "Checks supplied workload outcomes and writes only Swamp readiness.",
+  "@nckrtl/instance-route-workload#verifyPool": "Compares supplied pool digests and writes only Swamp readiness.",
+  "@nckrtl/instance-source-command#branchAvailable": "Checks supplied worktree text and writes only Swamp branch availability.",
+  "@nckrtl/instance-source-command#cloneCandidate": "Checks supplied Git observations and writes only Swamp candidate metadata.",
+  "@nckrtl/instance-source-command#cloneResult": "Combines supplied clone observations into a Swamp receipt.",
+  "@nckrtl/instance-source-command#decode": "Decodes supplied JSON into a Swamp resource.",
+  "@nckrtl/instance-source-command#origin": "Compares supplied repository identities and writes only Swamp readiness.",
+  "@nckrtl/instance-source-command#provisioningResult": "Classifies supplied profile text and writes only Swamp provisioning metadata.",
+  "@nckrtl/instance-source-command#select": "Selects a branch from supplied refs without running Git.",
+  "@nckrtl/instance-t3#register": "Reads saved T3 replies and stores native sensitive sessions; it makes no T3 request.",
+  "@nckrtl/instance-vp-requirements#capture": "Selects requirements from supplied manifests and writes only Swamp metadata.",
+  "@nckrtl/instance-vp-requirements#cli": "Checks a supplied CLI version and writes only Swamp readiness.",
+  "@nckrtl/instance-vp-requirements#links": "Selects workspace paths from supplied lock text and writes only Swamp metadata.",
+  "@nckrtl/instance-vp-requirements#result": "Checks supplied installation outcomes and writes only Swamp readiness.",
+  "@nckrtl/instance-vp-requirements#verify": "Checks supplied inventory versions and writes only Swamp readiness.",
+  "@nckrtl/network-command#decideDns": "Compares supplied DNS observations and writes only the Swamp drift decision.",
+  "@nckrtl/network-command#key": "Validates supplied public keys and writes only Swamp key metadata.",
+  "@nckrtl/network-command#networkResult": "Checks supplied network observations and writes only the Swamp receipt.",
+  "@nckrtl/node-enrollment-plan#bind": "Binds supplied host observations into Swamp intent data without contacting Nodes.",
+  "@nckrtl/node-role-command#account": "Decodes supplied passwd and group lines into Swamp account metadata.",
+  "@nckrtl/node-role-converge-command#cli_native_result": "Shapes supplied CLI outcomes into a Swamp receipt.",
+  "@nckrtl/node-role-converge-command#cli_plan": "Selects publication from supplied CLI observations without executing it.",
+  "@nckrtl/node-tool-setup-assets#plan": "Builds manager resources and argv as Swamp data without fetching or executing them.",
+  "@nckrtl/node-worker-assets#credential_report": "Classifies supplied credential lists and certificate dates into Swamp alerts.",
+  "@nckrtl/orbit-deps#plan": "Reads Packagist and npm catalogs over HTTP GET and writes only the Swamp upgrade plan.",
+  "@nckrtl/orbit-gateway#prune_dependency_results": "Deletes only native Swamp data versions through the data repository API.",
+  "@nckrtl/orbit-gateway#refresh": "Reconciles supplied findings and native Swamp indexes without contacting the Gateway.",
+  "@nckrtl/php-monitor-command#prepare": "Selects a pool from supplied runtime observations and writes only Swamp metadata.",
+  "@nckrtl/process-command-assets#lifecycle": "Validates supplied Process intent and renders argv as Swamp data without executing it.",
+  "@nckrtl/project-maintenance-input#evidence": "Combines supplied GitHub observations and Swamp indexes into Swamp evidence.",
+  "@nckrtl/project-maintenance-input#routine": "Selects a routine request from supplied groups and writes only Swamp metadata.",
+  "@nckrtl/project-maintenance-input#schedule": "Reads source-owned project configuration and writes only the Swamp schedule result.",
+  "@nckrtl/project-maintenance-inspect#registries": "Reads registry releases and advisory queries, including the read-only npm bulk POST, into Swamp facts.",
+  "@nckrtl/project-maintenance-inspect#updates": "Selects updates from Swamp facts and writes only Swamp request metadata.",
+  "@nckrtl/route-mutation-command#dns": "Merges supplied DNS text into Swamp data without writing configuration files.",
+  "@nckrtl/route-mutation-command#lanApplied": "Checks supplied firewall outcomes and writes only Swamp readiness.",
+  "@nckrtl/route-mutation-command#lanChanges": "Selects firewall rule names from supplied observations as Swamp data.",
+  "@nckrtl/route-mutation-command#lanResult": "Checks supplied firewall outcomes and writes only the Swamp receipt.",
+  "@nckrtl/route-mutation-command#result": "Checks supplied Route contributions and writes only Swamp completion data.",
+  "@nckrtl/route-publication-command#caddy": "Composes and hashes supplied Caddy text into Swamp data without writing files.",
+  "@nckrtl/route-publication-command#php": "Composes supplied PHP pool text into Swamp data without writing files.",
+  "@nckrtl/route-publication-command#phpPlan": "Selects PHP versions from supplied configuration text into Swamp data.",
+  "@nckrtl/route-update-result#firewall": "Stores the supplied firewall readiness as Swamp data.",
+  "@nckrtl/route-update-result#phase": "Maps supplied child outcomes into Swamp phase data.",
+  "@nckrtl/schedule-run-assets#lifecycle": "Renders service and timer text into Swamp data without writing unit files.",
+  "@nckrtl/task-check-data#candidate": "Compares supplied commit identities and writes only Swamp candidate data.",
+  "@nckrtl/task-check-data#ci": "Classifies supplied exact-SHA CI observations into Swamp data.",
+  "@nckrtl/task-check-data#collect": "Collects supplied terminal observations into a Swamp resource.",
+  "@nckrtl/task-check-data#finish": "Combines supplied check and push observations into Swamp completion data.",
+  "@nckrtl/task-check-data#imported": "Compares supplied bundle identities and writes only Swamp verification data.",
+  "@nckrtl/task-check-data#minted": "Checks supplied credential descriptors and writes only Swamp verification data.",
+  "@nckrtl/task-check-data#observed": "Compares supplied CI and snapshot observations into Swamp data.",
+  "@nckrtl/task-check-data#pending": "Stores the pending check and its tags only in Swamp data.",
+  "@nckrtl/task-check-data#prepare": "Builds check argv as Swamp data without running commands.",
+  "@nckrtl/task-check-data#settle": "Updates check evidence and tags only in Swamp data.",
+  "@nckrtl/task-check-data#setup": "Summarizes supplied setup outcomes into Swamp data.",
+  "@nckrtl/task-check-data#snapshot": "Decodes supplied Git object identities into Swamp data.",
+  "@nckrtl/task-maintenance-input#age": "Checks supplied release dates and writes only Swamp verification data.",
+  "@nckrtl/task-maintenance-input#expo": "Checks supplied Expo catalog data and writes only Swamp verification data.",
+  "@nckrtl/task-maintenance-input#inspect": "Decodes supplied manifests and builds audit argv without executing it.",
+  "@nckrtl/task-maintenance-input#plan": "Builds proposed manifests and update argv as Swamp data without applying them.",
+  "@nckrtl/task-maintenance-input#read": "Selects configured maintenance paths from supplied intent as Swamp data.",
+  "@nckrtl/task-maintenance-input#release": "Reads public registry release catalogs over HTTP GET into Swamp data.",
+  "@nckrtl/task-maintenance-input#restore": "Builds restored manifest text and sync argv without writing files or executing it.",
+  "@nckrtl/task-maintenance-input#result": "Combines supplied checkout observations into a Swamp result.",
+  "@nckrtl/task-maintenance-input#synchronized": "Compares supplied lock versions and writes only Swamp verification data.",
+  "@nckrtl/task-maintenance-input#verify": "Compares supplied locks and audit reports and writes only Swamp verification data.",
+  "@nckrtl/task-provision-data#revoke": "Summarizes supplied token revoke outcomes; it performs no revoke request.",
+  "@nckrtl/task-publication-data#imported": "Compares supplied bundle identities and writes only Swamp verification data.",
+  "@nckrtl/task-publication-data#pushed": "Reads saved push replies and writes only the Swamp outcome.",
+  "@nckrtl/task-publication-data#verify": "Compares supplied workspace observations and writes only Swamp verification data.",
+  "@nckrtl/task-publication-data#written": "Reads the saved PR response and writes only Swamp publication metadata.",
+  "@nckrtl/task-repository-program#gate": "Checks supplied executable and snapshot observations and writes only Swamp data.",
+  "@nckrtl/task-repository-program#prepare": "Builds program argv as Swamp data without executing it.",
+  "@nckrtl/task-turn-data#checked": "Decodes a supplied check result and writes only Swamp candidate data.",
+  "@nckrtl/task-turn-data#difference": "Reads and redacts saved diff files into Swamp data without deleting them.",
+  "@nckrtl/task-turn-data#outcome": "Decodes a supplied turn receipt into Swamp outcome data.",
+  "@nckrtl/task-turn-data#prepare": "Builds prompt and Pi request JSON as Swamp data without sending it.",
+  "@nckrtl/task-turn-data#receipt": "Reads and redacts the saved receipt into Swamp data without deleting it.",
+  "@nckrtl/task-turn-data#result": "Combines supplied turn observations into a Swamp terminal result.",
+  "@nckrtl/task-turn-data#reviewPrompt": "Binds supplied review evidence into prompt data without sending it.",
+  "@nckrtl/task-turn-data#round": "Classifies a supplied review receipt into Swamp verdict data.",
+  "@nckrtl/task-turn-data#settle": "Combines supplied review and fix receipts into Swamp state.",
+  "@nckrtl/task-turn-data#snapshot": "Validates supplied Git identities and writes only Swamp snapshot data.",
+  "@nckrtl/task-turn-data#terminal": "Reads and redacts saved Pi events into Swamp data without deleting them.",
+  "@nckrtl/task-vm-lifecycle-input#observe": "Decodes supplied provider JSON into Swamp observations.",
+  "@nckrtl/task-vm-lifecycle-input#read": "Builds provider argv as Swamp data without executing it.",
+  "@nckrtl/task-vm-lifecycle-input#result": "Checks supplied provider observations and writes only the Swamp receipt.",
+  "@nckrtl/task-vm-workspace-input#read": "Serializes supplied workspace intent into Swamp data.",
+  "@nckrtl/task-vm-workspace-input#result": "Decodes supplied workspace observations into Swamp data.",
+  "@nckrtl/tool-remove-command#assets": "Builds removal argv as Swamp data without executing it.",
+  "@nckrtl/tool-remove-command#decide": "Checks supplied package observations and writes only the Swamp removal decision.",
+  "@nckrtl/tool-write-command#assets": "Builds package argv as Swamp data without executing it.",
+  "@nckrtl/tool-write-command#decide": "Checks supplied package observations and writes only the Swamp write decision.",
+  "@nckrtl/tool-write-command#manager_assets": "Builds manager version argv as Swamp data without executing it.",
+  "@nckrtl/tool-write-command#observe": "Decodes supplied package state and writes only Swamp observations.",
+  "@nckrtl/vault-sync-plan#account": "Reads saved CLI account data and writes only Swamp public metadata.",
+  "@nckrtl/vault-sync-plan#inventory": "Reads saved CLI inventory and writes only Swamp public metadata.",
+  "@nckrtl/vault-sync-plan#organization": "Reads saved organizations and writes only Swamp selection metadata.",
+  "@nckrtl/vault-sync-plan#plan": "Builds a cipher change plan from supplied inventory as Swamp data.",
+  "@nckrtl/vault-sync-plan#prepare": "Validates supplied configuration and stores only native sensitive fields.",
+  "@nckrtl/vault-sync-plan#probe": "Reads the saved probe identity and writes only Swamp metadata.",
+  "@nckrtl/vault-sync-plan#result": "Combines supplied cipher receipts into Swamp ledger data.",
+  "@nckrtl/vault-sync-plan#session": "Reads the saved CLI session into a native sensitive field.",
+  "@nckrtl/vault-sync-plan#setup": "Validates supplied account metadata and writes only the Swamp setup receipt.",
+  "@nckrtl/vault-sync-plan#writeReceipt": "Reads a saved cipher response and writes only the Swamp public receipt."
+ },
+ "steps": {
+  "cluster-router-prepare": {
+   "account_command": "read-only",
+   "account_group": "read-only",
+   "packages_release": "read-only"
+  },
+  "cluster-router-probe": {
+   "probe": "unreviewed"
+  },
+  "dependency-upgrade": {
+   "fetch": "read-only",
+   "head": "read-only",
+   "scan": "read-only"
+  },
+  "fleet-release-node": {
+   "observer_check": "read-only",
+   "observer_read": "read-only"
+  },
+  "gateway-bootstrap": {
+   "Read the hub address": "read-only",
+   "Read the machine": "unreviewed",
+   "Read the workers": "unreviewed",
+   "Render the control plan": "unreviewed",
+   "Render the environment": "read-only",
+   "Render the plan": "unreviewed"
+  },
+  "gateway-release-activate": {
+   "Verify the Gateway": "unreviewed"
+  },
+  "horizon-new-dawn-detect": {
+   "enrolled": "read-only"
+  },
+  "instance-clone-candidate": {
+   "candidate-branch": "unreviewed",
+   "candidate-commit": "unreviewed",
+   "candidate-origin": "read-only",
+   "candidate-status": "unreviewed",
+   "candidate-submodules": "unreviewed"
+  },
+  "instance-clone-check": {
+   "commit": "unreviewed",
+   "environment": "read-only",
+   "preview": "read-only"
+  },
+  "instance-clone-database-cleanup": {
+   "candidate": "unreviewed",
+   "local": "unreviewed",
+   "target": "unreviewed"
+  },
+  "instance-clone-database-install": {
+   "copy": "idempotent"
+  },
+  "instance-clone-database-snapshot": {
+   "copy": "idempotent",
+   "digest": "unreviewed"
+  },
+  "instance-clone-environment": {
+   "clone-vp-cli": "unreviewed",
+   "clone-vp-home": "unreviewed",
+   "clone-vp-install": "unreviewed",
+   "clone-vp-inventory": "unreviewed",
+   "clone-vp-read-node_version": "unreviewed",
+   "clone-vp-read-npm_lock": "unreviewed",
+   "clone-vp-read-nvmrc": "unreviewed",
+   "clone-vp-read-package": "unreviewed",
+   "clone-vp-read-pnpm_lock": "unreviewed",
+   "clone-vp-read-workspace": "unreviewed",
+   "clone-vp-store": "unreviewed"
+  },
+  "instance-clone-source": {
+   "source-checkout": "idempotent",
+   "source-commit": "unreviewed",
+   "source-environment-link": "idempotent",
+   "source-git-directory": "unreviewed",
+   "source-init": "idempotent",
+   "source-origin-configure": "unreviewed",
+   "source-origin-read": "unreviewed",
+   "source-profile-read": "unreviewed",
+   "source-refs": "unreviewed",
+   "source-worktrees": "unreviewed"
+  },
+  "instance-route-workload": {
+   "links": "idempotent",
+   "runtime-identity": "read-only",
+   "runtime-pool": "idempotent",
+   "runtime-reload": "unreviewed",
+   "runtime-validate": "unreviewed"
+  },
+  "metrics-configuration": {
+   "validate": "unreviewed"
+  },
+  "metrics-containers": {
+   "grafana_login": "unreviewed",
+   "prometheus_ready": "read-only"
+  },
+  "metrics-prometheus-publish": {
+   "targets": "unreviewed"
+  },
+  "metrics-publication": {
+   "answers": "read-only"
+  },
+  "node-artifact-fetch": {
+   "Check pinned artifact": "idempotent",
+   "Verify artifact checksum": "read-only"
+  },
+  "node-caddy-package": {
+   "Prove the Caddy floor": "read-only",
+   "Read the Caddy version": "read-only"
+  },
+  "node-caddy-sites": {
+   "Validate the Caddyfile": "unreviewed"
+  },
+  "node-cli-install": {
+   "cli_candidate": "unreviewed",
+   "cli_self_update": "unreviewed",
+   "cli_version": "unreviewed"
+  },
+  "node-network-hub": {
+   "Check the hub service": "idempotent",
+   "Read the peers again": "read-only"
+  },
+  "node-network-peer": {
+   "Read the DNS policy": "unreviewed",
+   "Read the DNS policy again": "unreviewed"
+  },
+  "node-php-runtime": {
+   "Find PHP-FPM": "read-only",
+   "Test PHP-FPM": "unreviewed"
+  },
+  "node-private-dns": {
+   "Check the loaded catalog": "read-only",
+   "Query the listener": "unreviewed",
+   "Test dnsmasq": "unreviewed",
+   "Test the release": "unreviewed"
+  },
+  "node-role-certificate-publish": {
+   "Sign the CSR": "idempotent"
+  },
+  "node-role-remove": {
+   "Check removed containers": "idempotent",
+   "Check removed directories": "idempotent",
+   "Check removed files": "idempotent",
+   "Read CI guests": "read-only"
+  },
+  "node-route-residue": {
+   "Test the PHP pools": "unreviewed"
+  },
+  "operation-analytics-enable-direct": {
+   "Probe the tracking host": "read-only"
+  },
+  "operation-analytics-update-direct": {
+   "health": "read-only",
+   "inspect": "unreviewed",
+   "reinspect": "unreviewed",
+   "result": "read-only",
+   "status": "read-only"
+  },
+  "operation-cluster-router": {
+   "Probe the workloads": "unreviewed"
+  },
+  "operation-database-connection-update": {
+   "Check the index fits": "unreviewed"
+  },
+  "operation-database-create": {
+   "Check the owner login": "unreviewed"
+  },
+  "operation-database-destroy": {
+   "Check they are gone": "unreviewed"
+  },
+  "operation-database-read": {
+   "Run the read": "unreviewed",
+   "Run the read on 209": "read-only"
+  },
+  "operation-database-server-close": {
+   "Check default access": "unreviewed",
+   "List default clients": "unreviewed"
+  },
+  "operation-database-server-create": {
+   "Check the admin login": "unreviewed",
+   "Wait until healthy": "unreviewed"
+  },
+  "operation-database-server-destroy": {
+   "Check it is gone": "unreviewed"
+  },
+  "operation-database-user-create": {
+   "Check logical WAL": "unreviewed",
+   "Check the user": "unreviewed"
+  },
+  "operation-dependency-merge": {
+   "Read changed files": "unreviewed",
+   "Read exact contents": "unreviewed",
+   "Read head check runs": "unreviewed",
+   "Read head workflow runs": "unreviewed",
+   "Read registry records": "unreviewed",
+   "Read repository settings": "unreviewed",
+   "Read the PR": "unreviewed",
+   "Read workflow definitions": "unreviewed"
+  },
+  "operation-firewall-direct": {
+   "Read the result": "read-only",
+   "Read the rules": "read-only"
+  },
+  "operation-fleet-peer-dns": {
+   "Check resolution": "read-only"
+  },
+  "operation-gateway-release": {
+   "Wait for active Operations": "read-only"
+  },
+  "operation-gateway-swamp-load": {
+   "Check the Ansible collections": "read-only"
+  },
+  "operation-instance-create": {
+   "clone-server-database-check": "read-only",
+   "server-database-check": "unreviewed"
+  },
+  "operation-instance-deploy-direct": {
+   "Check PHP runtime": "idempotent",
+   "Check Process state": "idempotent",
+   "Check the checkout lock": "unreviewed",
+   "Check the container": "idempotent",
+   "Check the local branch": "unreviewed",
+   "Check tracked changes": "unreviewed",
+   "Count commits after it": "unreviewed",
+   "Find releases in use": "read-only",
+   "List target directories": "unreviewed",
+   "List untracked entries": "unreviewed",
+   "Read Schedule group": "read-only",
+   "Read Schedule timers": "idempotent",
+   "Read Vite manager CLI": "idempotent",
+   "Read Vite manager home": "read-only",
+   "Read container state": "read-only",
+   "Read current back": "read-only",
+   "Read deployed commit": "unreviewed",
+   "Read first-parent chain": "unreviewed",
+   "Read local PHP tuning": "idempotent",
+   "Read the branch ancestor": "unreviewed",
+   "Read the checkout branch": "unreviewed",
+   "Read the checkout commit": "unreviewed",
+   "Read the container result": "read-only",
+   "Read the key names": "read-only",
+   "Read the local branch": "unreviewed",
+   "Read the release commit": "unreviewed",
+   "Resolve the commit": "unreviewed",
+   "Test PHP configuration": "unreviewed",
+   "dev-vp-home": "read-only",
+   "dev-vp-inventory": "unreviewed",
+   "dev-vp-read-node_version": "unreviewed",
+   "dev-vp-read-npm_lock": "unreviewed",
+   "dev-vp-read-nvmrc": "unreviewed",
+   "dev-vp-read-package": "unreviewed",
+   "dev-vp-read-pnpm_lock": "unreviewed",
+   "dev-vp-read-workspace": "unreviewed",
+   "dev-vp-store": "unreviewed"
+  },
+  "operation-instance-destroy": {
+   "Check it is gone": "read-only",
+   "Check work is pushed": "idempotent",
+   "Read container removal": "read-only"
+  },
+  "operation-instance-rollback": {
+   "Read current back": "read-only"
+  },
+  "operation-instance-transfer": {
+   "Check the destination": "read-only",
+   "Copy it to the destination": "idempotent",
+   "Copy the archive to 209": "idempotent",
+   "Drop the worktree config": "unreviewed",
+   "Make it standalone": "unreviewed",
+   "Remove the 209 archive": "unreviewed",
+   "Remove the copied archive": "unreviewed",
+   "Remove the source archive": "unreviewed"
+  },
+  "operation-metrics-credentials-reset": {
+   "Check the pending one": "read-only",
+   "Confirm the new login": "unreviewed"
+  },
+  "operation-metrics-disable": {
+   "Check it is gone": "read-only"
+  },
+  "operation-metrics-exporter-enable": {
+   "Check the endpoints": "read-only"
+  },
+  "operation-node-add": {
+   "Check the Node state": "read-only",
+   "Inspect the Mac tunnel": "read-only",
+   "Read WireGuard public key": "read-only",
+   "Read the bootstrap account": "read-only",
+   "Read the host key": "idempotent",
+   "Read the platform": "read-only",
+   "Verify managed access": "read-only"
+  },
+  "operation-node-agent-rekey": {
+   "Check the Node agent": "read-only",
+   "Check the new key": "read-only"
+  },
+  "operation-node-remove": {
+   "Check removed directories": "idempotent",
+   "Check removed files": "idempotent",
+   "Log in to departing Node": "unreviewed"
+  },
+  "operation-node-role-add": {
+   "Check the role": "read-only",
+   "Read the OS release": "read-only",
+   "Wait for Analytics": "read-only"
+  },
+  "operation-node-role-relocate": {
+   "Check Reverb": "read-only"
+  },
+  "operation-node-ssh-access-converge": {
+   "Log in with Swamp identity": "unreviewed"
+  },
+  "operation-node-update": {
+   "Check owner and mode": "read-only"
+  },
+  "operation-php-monitor": {
+   "apply-pool": "unreviewed",
+   "probe": "unreviewed",
+   "reload": "idempotent",
+   "result": "read-only",
+   "validate": "unreviewed"
+  },
+  "operation-process-control": {
+   "Check the container": "idempotent",
+   "Check the listener": "unreviewed",
+   "Check the unit": "idempotent"
+  },
+  "operation-process-create": {
+   "Check required mounts": "read-only",
+   "Check the account": "read-only",
+   "Check the container": "idempotent",
+   "Check the listener": "unreviewed",
+   "Check the unit": "idempotent"
+  },
+  "operation-process-destroy": {
+   "Check container removal": "idempotent",
+   "Check the unit": "idempotent",
+   "Check unit removal": "idempotent"
+  },
+  "operation-process-install-instance-definitions": {
+   "result": "read-only"
+  },
+  "operation-process-start": {
+   "Check the container": "idempotent",
+   "Check the listener": "unreviewed",
+   "Check the unit": "idempotent"
+  },
+  "operation-process-stop": {
+   "Check the container": "idempotent",
+   "Check the unit": "idempotent"
+  },
+  "operation-process-vite": {
+   "directory": "idempotent",
+   "environment": "idempotent",
+   "suspend": "unreviewed"
+  },
+  "operation-proof-run": {
+   "Read the workspace commit": "unreviewed",
+   "Report": "read-only"
+  },
+  "operation-route-caddy": {
+   "Check the Caddyfile": "idempotent",
+   "Check the connection": "read-only",
+   "Validate the Caddyfile": "unreviewed"
+  },
+  "operation-route-caddy-delta": {
+   "apply-config": "unreviewed",
+   "read-current": "read-only",
+   "reload": "idempotent",
+   "result": "read-only",
+   "validate": "read-only"
+  },
+  "operation-route-create": {
+   "Probe the site over TLS": "unreviewed"
+  },
+  "operation-route-php-delta": {
+   "apply-pool": "unreviewed",
+   "read-account": "unreviewed",
+   "read-current": "unreviewed",
+   "reload": "idempotent",
+   "result": "read-only",
+   "validate": "unreviewed"
+  },
+  "operation-route-removal": {
+   "Check each Node answers": "read-only"
+  },
+  "operation-route-target-set": {
+   "Probe each new target": "unreviewed"
+  },
+  "operation-route-update": {
+   "Probe the site over TLS": "unreviewed"
+  },
+  "operation-schedule-control": {
+   "check_timer": "idempotent"
+  },
+  "operation-schedule-create": {
+   "check_files": "idempotent",
+   "check_timer": "idempotent"
+  },
+  "operation-schedule-destroy": {
+   "check_files": "idempotent",
+   "check_timer": "idempotent",
+   "idle": "read-only"
+  },
+  "operation-task-idle-save": {
+   "Read the saved commit": "read-only"
+  },
+  "operation-task-maintenance": {
+   "snapshot-tracked": "unreviewed",
+   "snapshot-untracked": "unreviewed"
+  },
+  "operation-task-pr-ready": {
+   "Read the PR": "read-only",
+   "Read the PR result": "read-only"
+  },
+  "operation-task-prep": {
+   "Plan the cases 0": "unreviewed",
+   "Plan the cases 1": "unreviewed",
+   "Plan the cases 2": "unreviewed"
+  },
+  "operation-task-prep-fix": {
+   "Plan the cases 0": "unreviewed",
+   "Plan the cases 1": "unreviewed"
+  },
+  "operation-task-provision": {
+   "Reach the VM by WireGuard": "read-only",
+   "Read the readiness": "read-only"
+  },
+  "operation-task-publish": {
+   "Copy the bundle": "idempotent",
+   "Read bundle contents": "read-only",
+   "Read open PRs": "unreviewed",
+   "Read workspace HEAD": "unreviewed"
+  },
+  "operation-task-review-round": {
+   "Read the PR": "read-only"
+  },
+  "operation-task-script": {
+   "cleanup-index": "unreviewed",
+   "cleanup-local": "unreviewed",
+   "inspect": "unreviewed",
+   "output-copy": "idempotent",
+   "output-local": "unreviewed",
+   "snapshot-after-add": "unreviewed",
+   "snapshot-after-head": "unreviewed",
+   "snapshot-after-index": "unreviewed",
+   "snapshot-after-tree": "unreviewed",
+   "snapshot-before-add": "unreviewed",
+   "snapshot-before-head": "unreviewed",
+   "snapshot-before-index": "unreviewed",
+   "snapshot-before-tree": "unreviewed"
+  },
+  "operation-task-sync": {
+   "Clean up the VM directory": "unreviewed",
+   "Clean up the scratch": "unreviewed",
+   "Copy the bundle": "idempotent",
+   "Fetch the refs": "idempotent",
+   "Prepare the VM directory": "unreviewed",
+   "Read the refs": "unreviewed"
+  },
+  "operation-task-turn": {
+   "delete_local_artifacts": "unreviewed",
+   "difference_counts_copy": "idempotent",
+   "difference_patch_copy": "idempotent",
+   "observe": "unreviewed",
+   "prepare_local": "unreviewed",
+   "receipt_copy": "idempotent",
+   "receipt_exists": "read-only",
+   "restore_head": "unreviewed",
+   "restore_tree": "unreviewed",
+   "snapshot_after_head": "unreviewed",
+   "snapshot_before_head": "unreviewed"
+  },
+  "operation-task-vm-hub-converge": {
+   "Check the new ruleset": "unreviewed"
+  },
+  "operation-task-vm-resume": {
+   "Read the guest state": "unreviewed",
+   "Wait for the guest agent": "read-only"
+  },
+  "operation-tool-manager-setup": {
+   "Check Composer manifest": "idempotent",
+   "Check pinned APT packages": "idempotent",
+   "Check the Tool Manager": "unreviewed",
+   "Read DEB identities": "read-only",
+   "Read manager version": "unreviewed",
+   "Read pinned APT state": "idempotent",
+   "Read the account home": "read-only",
+   "Verify SHA512 artifacts": "read-only"
+  },
+  "operation-tool-remove-209": {
+   "Check apt absence": "idempotent",
+   "Check it is gone": "unreviewed",
+   "Plan the removal": "unreviewed",
+   "Read installed package": "unreviewed",
+   "Read macOS version": "unreviewed",
+   "Read manager version": "unreviewed"
+  },
+  "operation-tool-write-209": {
+   "Check apt package": "idempotent",
+   "Check the candidate": "unreviewed",
+   "Check the package": "unreviewed",
+   "Read installed package": "unreviewed",
+   "Read macOS version": "unreviewed",
+   "Read manager version": "unreviewed",
+   "Read the key fingerprint": "read-only"
+  },
+  "operation-vault-sync": {
+   "Read private inventory": "unreviewed",
+   "Read private trash": "unreviewed"
+  },
+  "project-dependency-evidence": {
+   "pr-${{ self._index }}": "read-only"
+  },
+  "project-maintenance-inspect": {
+   "Read the changed files": "unreviewed",
+   "Read the manifest SHAs": "unreviewed"
+  },
+  "proof-fleet-restore": {
+   "Read the container state": "read-only",
+   "Wait for cloud-init": "read-only"
+  },
+  "proof-fleet-verify": {
+   "Check the main verdicts": "read-only",
+   "Name replay cases": "read-only",
+   "Read runner capabilities": "read-only",
+   "Read the nested checkout": "read-only",
+   "Read the runner plan": "read-only",
+   "Read the token age": "read-only",
+   "Select replay cases": "read-only",
+   "plan": "unreviewed",
+   "report": "read-only"
+  },
+  "proof-fleet-verify-batch": {
+   "report": "read-only"
+  },
+  "route-certificate-publish": {
+   "Read the account": "read-only",
+   "Sign the CSR": "idempotent"
+  },
+  "route-certificate-remove": {
+   "Read the account": "read-only"
+  },
+  "route-create-csr": {
+   "sign": "idempotent"
+  },
+  "route-create-ingress": {
+   "caddy-validate": "unreviewed"
+  },
+  "route-create-sign": {
+   "sign": "idempotent"
+  },
+  "route-dns-grace": {
+   "wait-private-dns-ttl": "read-only"
+  },
+  "route-dns-publish": {
+   "catalog": "unreviewed",
+   "catalog-directory": "unreviewed",
+   "listener": "unreviewed",
+   "read-catalog": "read-only",
+   "read-records": "read-only",
+   "records": "unreviewed",
+   "restart-backend": "unreviewed",
+   "result": "read-only",
+   "validate": "unreviewed"
+  },
+  "route-lan-apply": {
+   "apply": "idempotent",
+   "observe-after": "read-only",
+   "observe-before": "read-only"
+  },
+  "route-remove-check": {
+   "caddyfile": "idempotent",
+   "certificates": "idempotent",
+   "ingress": "idempotent",
+   "lan": "idempotent"
+  },
+  "swamp-credential-monitor": {
+   "access": "read-only",
+   "certificate": "read-only",
+   "club": "read-only",
+   "enrollment": "read-only"
+  },
+  "swamp-datastore-watch": {
+   "measure": "unreviewed"
+  },
+  "task-check-ci": {
+   "cleanup_remote-${{ self.check.attributes.inputs.operation_id }}": "unreviewed",
+   "prepare_remote-${{ self.check.attributes.inputs.operation_id }}": "unreviewed",
+   "read-${{ self.check.attributes.inputs.operation_id }}": "read-only",
+   "revoke_read-${{ self.check.attributes.inputs.operation_id }}": "idempotent",
+   "snapshot-${{ self.check.attributes.inputs.operation_id }}-add": "unreviewed",
+   "snapshot-${{ self.check.attributes.inputs.operation_id }}-head": "unreviewed",
+   "snapshot-${{ self.check.attributes.inputs.operation_id }}-index": "unreviewed",
+   "snapshot-${{ self.check.attributes.inputs.operation_id }}-tree": "unreviewed"
+  },
+  "task-check-commit": {
+   "commit_read": "unreviewed"
+  },
+  "task-check-deliverables": {
+   "base_archive-${{ self._index }}": "unreviewed",
+   "base_directory-${{ self._index }}": "unreviewed",
+   "diff": "unreviewed"
+  },
+  "task-check-prepare": {
+   "original": "unreviewed",
+   "output_local": "unreviewed",
+   "prepare_remote": "unreviewed"
+  },
+  "task-check-push": {
+   "cleanup_local": "unreviewed",
+   "cleanup_remote": "unreviewed",
+   "copy_bundle": "idempotent",
+   "import": "unreviewed",
+   "prepare_local": "unreviewed",
+   "revoke_unused_read": "idempotent",
+   "revoke_write": "idempotent"
+  },
+  "task-check-snapshot-after": {
+   "changed": "unreviewed",
+   "output_copy": "idempotent",
+   "snapshot-after-add": "unreviewed",
+   "snapshot-after-head": "unreviewed",
+   "snapshot-after-index": "unreviewed",
+   "snapshot-after-tree": "unreviewed"
+  },
+  "task-check-snapshot-before": {
+   "snapshot-before-add": "unreviewed",
+   "snapshot-before-head": "unreviewed",
+   "snapshot-before-index": "unreviewed",
+   "snapshot-before-tree": "unreviewed"
+  },
+  "task-dependency-auth-remove": {
+   "Remove": "unreviewed"
+  },
+  "task-dependency-auth-write": {
+   "Clear": "unreviewed",
+   "Write composer": "unreviewed",
+   "Write npm": "unreviewed"
+  },
+  "task-maintenance-path": {
+   "audit-after": "unreviewed",
+   "audit-before": "unreviewed",
+   "expo-catalog": "read-only",
+   "expo-cleanup": "unreviewed",
+   "expo-fetch": "unreviewed",
+   "node-modules": "read-only",
+   "read-after-${{ self._index }}": "read-only",
+   "read-before-${{ self._index }}": "read-only",
+   "read-restored-${{ self._index }}": "read-only"
+  },
+  "task-nested-apply": {
+   "Check the services": "read-only",
+   "Check the state": "read-only"
+  },
+  "task-nested-ready": {
+   "Wait for Doctor": "read-only"
+  },
+  "task-vm-image-ansible": {
+   "Read the guest address": "read-only",
+   "Read the guest host key": "unreviewed"
+  },
+  "task-vm-provider-power": {
+   "incus-after": "unreviewed",
+   "incus-before": "unreviewed"
+  },
+  "task-vm-workspace": {
+   "account": "read-only",
+   "directory": "unreviewed",
+   "observe": "unreviewed"
+  }
+ }
+}

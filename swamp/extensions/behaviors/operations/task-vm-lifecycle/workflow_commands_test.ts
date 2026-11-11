@@ -1,6 +1,10 @@
 /** Task VM workflow commands run directly against local fakes: the Incus start wait, known_hosts edits and the Pi probes. */
 import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1.0.19";
-import { ROOT, trackedStep } from "../../../../bin/gate-test-support.ts";
+import { ROOT, type Step, trackedStep } from "../../../../bin/gate-test-support.ts";
+
+Deno.test("the VM action cannot repeat a deletion after a lost dispatch", () => {
+    assertEquals((trackedStep("task-vm-provider-power", "incus-action") as Step).writes, true);
+});
 
 const decoder = new TextDecoder();
 async function run(

@@ -16,6 +16,7 @@ orbit instance:destroy <instance> [--yes] [--force] [--json]
 | --- | --- | --- |
 | `--yes` | prompt | Confirm the removal without prompting. Required without a terminal and with `--json`. `--force` does not supply consent. |
 | `--force` | off | Delete dirty or unpublished development source after the identity checks pass, and accept a checkout together with its registered linked worktrees. |
+| `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the final task as JSON. |
 
 ```bash

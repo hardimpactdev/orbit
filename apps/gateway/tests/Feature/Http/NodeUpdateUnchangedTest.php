@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Models\Node;
+use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Testing\TestResponse;
 
@@ -53,3 +54,26 @@ it('reports no skip when any value of the request changes', function (array $sec
     'other container places' => [['task_vms' => [...UnchangedHost, 'containers' => [...UnchangedHost['containers'], 'task_places' => 2]]]],
     'other VM places' => [['task_vms' => [...UnchangedHost, 'ci_places' => 3]]],
 ]);
+
+it('stores and clears a reboot hold through node update and shows it in every Node read', function (): void {
+    $node = unchangedNode();
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    $this->getJson("/api/v1/nodes/{$node->id}")->assertOk()->assertJsonPath('data.reboot_hold', false);
+    foreach ([true, false] as $hold) {
+        unchangedPatch($node, ['reboot_hold' => $hold])->assertOk()->assertJsonPath('data.reboot_hold', $hold);
+        expect($node->fresh()->reboot_hold)->toBe($hold);
+        $this->getJson("/api/v1/nodes/{$node->id}")->assertOk()->assertJsonPath('data.reboot_hold', $hold);
+        $this->getJson('/api/v1/nodes')->assertOk()->assertJsonPath('data.0.reboot_hold', $hold);
+        $stored = $node->refresh()->updated_at;
+        $this->travel(5)->minutes();
+        unchangedPatch($node, ['reboot_hold' => $hold])->assertOk()->assertJsonPath('meta.skipped', 'node.unchanged');
+        expect($node->refresh()->updated_at)->toEqual($stored);
+    }
+    expect(Operation::query()->count())->toBe(0);
+});
+
+it('rejects a reboot hold that is not a JSON boolean without changing the Node', function (mixed $hold): void {
+    $node = unchangedNode();
+    unchangedPatch($node, ['name' => 'changed', 'reboot_hold' => $hold])->assertUnprocessable();
+    expect($node->refresh()->name)->toBe('enrolled')->and($node->reboot_hold)->toBeFalse();
+})->with(['string' => ['true'], 'number' => [1], 'null' => [null], 'object' => [(object) []]]);

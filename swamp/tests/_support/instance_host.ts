@@ -82,6 +82,8 @@ function transform(task: Task, folder: string): Task {
 }
 
 const replacements = (folder: string): [string, string][] => [
+    ["/usr/local/libexec", `${folder}/libexec`],
+    ["/var/lib/orbit/instance-bridge", `${folder}/bridge-policy`],
     ["/etc/modprobe.d/orbit-instances-zfs.conf", `${folder}/arc.conf`],
     ["/etc/systemd/system/", `${folder}/systemd/`],
     ["/sys/module/zfs/parameters/zfs_arc_max", `${folder}/arc`],
@@ -99,9 +101,16 @@ const replacements = (folder: string): [string, string][] => [
 
 function writeTasks(folder: string) {
     Deno.mkdirSync(`${folder}/tasks`, { recursive: true });
+    Deno.copyFileSync(new URL("instance_bridge.py", root), `${folder}/instance_bridge.py`);
     for (
         const name of [
             "instance-host.yml",
+            "instance-network-check.yml",
+            "instance-network-nic-check.yml", "instance-network-device-check.yml",
+            "instance-network-move.yml",
+            "instance-network-move-nic.yml",
+            "instance-bridge-rules.yml",
+            "instance-bridge-refresh.yml",
             "instance-egress.yml",
             "instance-folder.yml",
             "instance-vite-plus-home.yml",
@@ -362,7 +371,8 @@ export async function fixture(
         ss: 'printf "LISTEN 0 256 10.253.0.1:3128 0.0.0.0:*\\n"',
         // The pinned artifacts come from the fixture folder, by the URL's file name.
         curl:
-            `out=; for a; do case "$prev" in --output) out=$a;; esac; prev=$a; done
+            `for a; do if [ "$a" = --unix-socket ]; then exec '${Deno.execPath()}' run -A '${new URL("../fixtures/instance-bridge-curl.ts", import.meta.url).pathname}' "$@"; fi; done
+out=; for a; do case "$prev" in --output) out=$a;; esac; prev=$a; done
 cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
     };
     for (const [name, body] of Object.entries(scripts)) {
@@ -388,6 +398,8 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
         network: "orbitinst0",
         pool: "orbit-instances",
         cidr: "10.253.0.0/24",
+        bridge_admitted_at: 1800000000000000,
+        bridge_endpoints: [] as {host: string; port: number; docker: boolean}[],
         address: "10.253.0.1/24",
         build_address: "10.253.0.254",
         dhcp_range: "10.253.0.2-10.253.0.253",

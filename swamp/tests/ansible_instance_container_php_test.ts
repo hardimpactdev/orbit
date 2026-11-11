@@ -39,7 +39,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "container PHP reads the shared 1G memory limit and start repairs it without rerun changes",
+  name: "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -49,24 +49,33 @@ Deno.test({
       Deno.writeTextFileSync(`${f.folder}/empty.ini`, "");
       const created = f.run("container");
       assert(created.ok, created.output);
-      const memoryLimit = () => {
+      const bridge = "/opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php";
+      const setting = (name: string) => {
         const result = new Deno.Command("php", {
-          args: ["-r", 'echo ini_get("memory_limit");'], clearEnv: true,
+          args: ["-r", `echo ini_get("${name}");`], clearEnv: true,
           env: { PATH: Deno.env.get("PATH")!, PHPRC: `${f.folder}/empty.ini`, PHP_INI_SCAN_DIR: `${rootfs}/etc/orbit/php/conf.d` },
         }).outputSync();
         assert(result.success, new TextDecoder().decode(result.stderr));
         return new TextDecoder().decode(result.stdout);
       };
-      assertEquals(memoryLimit(), "1G");
+      assertEquals(setting("memory_limit"), "1G");
+      assertEquals(setting("auto_prepend_file"), bridge);
       assertEquals(f.state().files["/etc/orbit/php/conf.d/99-orbit-runtime.ini"], { uid: "0", gid: "0", mode: "0644" });
 
+      // A running unit read the old settings at its start, so a repair restarts the running Orbit units; a rerun does not.
+      const tryRestarts = () =>
+        (f.state().systemctl ?? []).filter((call: string[]) => call[0] === "try-restart").map((call: string[]) => call.join(" "));
+      const before = tryRestarts().length;
       Deno.writeTextFileSync(settings, "memory_limit = 128M\n");
       const repaired = f.run("start");
       assert(repaired.ok, repaired.output);
-      assertEquals(memoryLimit(), "1G");
+      assertEquals(setting("memory_limit"), "1G");
+      assertEquals(setting("auto_prepend_file"), bridge);
+      assertEquals(tryRestarts().slice(before), ["try-restart orbit-*.service"]);
       const again = f.run("start");
       assert(again.ok, again.output);
       assertEquals(again.changed, 0, again.output);
+      assertEquals(tryRestarts().length, before + 1);
     } finally {
       f.cleanup();
     }

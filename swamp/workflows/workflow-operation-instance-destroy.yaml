@@ -47,6 +47,7 @@ jobs:
     role: swamp
   steps:
   - name: Prepare container removal
+    writes: true
     labels: &id004
       role: swamp
     guard: ${{ !("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) }}

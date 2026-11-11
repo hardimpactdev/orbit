@@ -458,6 +458,7 @@ function list_node_payload(): array
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
         'lan_ip' => '10.0.0.3',
+        'reboot_hold' => false,
         'wireguard_public_key' => 'app-dev-public-key',
         'dns_server_override' => '10.0.0.2',
         'ssh_host_fingerprint' => 'SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo',
@@ -473,7 +474,7 @@ function list_node_payload(): array
 }
 
 /**
- * @return array<string, int|string|list<string>|null|array{
+ * @return array<string, int|string|bool|list<string>|null|array{
  *     can_access: list<array{id: int, name: string}>,
  *     accessible_by: list<array{id: int, name: string}>
  * }>
@@ -508,6 +509,7 @@ function show_node_payload(): array
  *     cluster_id: int,
  *     wireguard_ip: string,
  *     lan_ip: string,
+ *     reboot_hold: bool,
  *     wireguard_public_key: string,
  *     dns_server_override: string,
  *     ssh_host_fingerprint: string,
@@ -536,6 +538,7 @@ function show_node_expected_json_payload(): array
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
         'lan_ip' => '10.0.0.3',
+        'reboot_hold' => false,
         'wireguard_public_key' => 'app-dev-public-key',
         'dns_server_override' => '10.0.0.2',
         'ssh_host_fingerprint' => 'SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo',
@@ -564,3 +567,18 @@ function request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
 }
+
+it('shows reboot holds in human and JSON Node list and detail reads', function (bool $hold): void {
+    $payload = [...list_node_payload(), 'reboot_hold' => $hold];
+    MockClient::global([
+        ListNodesRequest::class => MockResponse::make(['data' => [$payload], 'meta' => ['request_id' => request_id()]]),
+        ShowNodeRequest::class => MockResponse::make(['data' => $payload, 'meta' => ['request_id' => request_id()]]),
+    ]);
+    foreach (['node:list' => [], 'node:show' => ['node' => '2']] as $command => $arguments) {
+        expect(Artisan::call($command, [...$arguments, '--json' => true]))->toBe(0);
+        $result = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect(($result['nodes'][0] ?? $result)['reboot_hold'])->toBe($hold);
+        expect(Artisan::call($command, $arguments))->toBe(0);
+        expect(strtolower(Artisan::output()))->toContain('reboot hold', $hold ? 'yes' : 'no');
+    }
+})->with([true, false]);

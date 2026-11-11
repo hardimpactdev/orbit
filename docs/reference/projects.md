@@ -77,7 +77,7 @@ The type belongs to the Project, so every Instance of one repository behaves the
 
 `.` means the repository root. A Route cannot target an Instance whose root is `.`. Set a relative web root first. A `laravel-package` Project does not need an `artisan` file.
 
-A `monorepo` gets its PHP version from the root `composer.json` using the same supported-version selection as other PHP Projects. It stays non-Laravel and needs no framework entry point. A repository without a root `composer.json` gets no PHP version. Updating `source_access`, even to its current value, refreshes these source facts.
+A `monorepo` gets its PHP version from the root `composer.json` using the same supported-version selection as other PHP Projects. It stays non-Laravel and needs no framework entry point. A repository without a root `composer.json` gets no PHP version. Updating `source_access`, even to its current value, refreshes these source facts. A development default in a container also refreshes them when it deploys; [Container source facts](/reference/deployments#container-source-facts) defines the commit and failure rules.
 
 A `symfony-app` serves like a `laravel-app`: one Route, a PHP-FPM pool, and the PHP version from `composer.json`. Orbit runs no Laravel step for it. It writes no `APP_URL` and patches no Laravel configuration cache. See [Symfony applications](/domains/applications#symfony-applications).
 

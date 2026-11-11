@@ -20,6 +20,7 @@ use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
@@ -49,6 +50,7 @@ use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use App\Support\ValidatedData;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -298,7 +300,7 @@ describe('the PHP version of a web-serving Project', function (): void {
             /** @param array<string, mixed>|null $composer */
             public function __construct(private ?array $composer) {}
 
-            public function read(string $repositoryUrl, ProjectSourceAccess $access, string $branch, array $paths): array
+            public function read(string $repositoryUrl, ProjectSourceAccess $access, string $branch, array $paths, ?string $commit = null): array
             {
                 $files = array_fill_keys($paths, null);
                 if ($this->composer !== null) {
@@ -317,7 +319,7 @@ describe('the PHP version of a web-serving Project', function (): void {
         $project = containerDefaultProject(ProjectType::LaravelApp);
         app()->instance(ProjectSourceReader::class, new class implements ProjectSourceReader
         {
-            public function read(string $repositoryUrl, ProjectSourceAccess $access, string $branch, array $paths): array
+            public function read(string $repositoryUrl, ProjectSourceAccess $access, string $branch, array $paths, ?string $commit = null): array
             {
                 throw new RuntimeException('Migration must not infer the PHP version.');
             }
@@ -627,7 +629,7 @@ describe('the end of a move', function (): void {
         $default = migrateCheckout(containerDefaultProject(), $node);
         $operation = migrateStart($default);
 
-        migrateEnd($operation, 'failed', ['ready' => false, 'moved' => false, 'restored' => true, 'failed_step' => 'files', 'error_code' => 'instance.database_unreachable']);
+        migrateEnd($operation, 'failed', ['ready' => false, 'moved' => false, 'restored' => true, 'failed_step' => 'container', 'error_code' => 'instance.database_unreachable']);
 
         expect(InstanceRuntime::query()->where('instance_id', $default->id)->exists())->toBeFalse()
             ->and($default->refresh()->only(['checkout_path', 'status']))->toBe(['checkout_path' => '/home/orbit/apps/tool/default', 'status' => InstanceState::Active])
@@ -1214,4 +1216,48 @@ describe('Processes moving into the container', function (): void {
         expect(containerRefusal(fn () => migrateStart($instance)))->toBe('process.target_unsupported')
             ->and($instance->runtime()->exists())->toBeFalse();
     });
+});
+
+it('captures the Node endpoint union from the same attached targets as each NIC, deduplicates it and excludes other Nodes', function (): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject();
+    $first = migrateCheckout($project, $node);
+    $second = migrateCheckout($project, $node, 'second');
+    $otherNode = containerDefaultNode('other-host', '10.44.0.99');
+    $other = migrateCheckout($project, $otherNode, 'other');
+    $containers = app(InstanceContainer::class);
+    foreach ([$first, $second, $other] as $instance) {
+        $containers->reserve($instance, $instance->node);
+    }
+    $sql = migrateDatabaseServer($node, 'union-sql', DatabaseDriver::Pgsql, 5432);
+    migrateServerDatabase($first, $sql);
+    migrateServerDatabase($second, $sql);
+    migrateServerDatabase($second, migrateDatabaseServer($node, 'union-cache', DatabaseDriver::Redis, 6379), 'REDIS');
+    migrateServerDatabase($other, migrateDatabaseServer($otherNode, 'other-sql', DatabaseDriver::Pgsql, 5434));
+    $want = [['host' => '10.44.0.7', 'port' => 5432, 'docker' => true], ['host' => '10.44.0.7', 'port' => 6379, 'docker' => true]];
+
+    expect($containers->nodeEndpoints($node))->toBe($want)
+        ->and(app(InstanceHostIntent::class)->for($node)['bridge_endpoints'])->toBe($want);
+
+    foreach ([fn (): array => app(InstanceHostIntent::class)->for($node), fn (): array => $containers->intent($first, $first->runtime)] as $capture) {
+        $this->travelTo(now()->setTimestamp(1800000000)->microsecond(123456));
+        $readTargets = false;
+        DB::listen(function (QueryExecuted $query) use (&$readTargets): void {
+            if (! $readTargets && str_contains($query->sql, 'database_connection_targets')) {
+                $readTargets = true;
+                $this->travel(1)->seconds();
+            }
+        });
+
+        $captured = $capture();
+
+        expect($readTargets)->toBeTrue()
+            ->and($captured['bridge_admitted_at'])->toBe(1800000000123456)
+            ->and(now()->format('Uu'))->toBe('1800000001123456');
+    }
+
+    DatabaseConnectionTarget::query()->where('instance_id', $first->id)->delete();
+    expect($containers->nodeEndpoints($node))->toBe($want);
+    DatabaseConnectionTarget::query()->where('instance_id', $second->id)->delete();
+    expect($containers->nodeEndpoints($node))->toBe([]);
 });

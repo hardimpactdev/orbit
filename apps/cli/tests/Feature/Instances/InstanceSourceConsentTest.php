@@ -15,13 +15,15 @@ use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Symfony\Component\Process\Process;
 use Tests\Support\CommandFixture;
 
-function instance_source_reply(string $class, array $data): array
+function instance_source_reply(string $class, array $data, int $status = 200): array
 {
-    return ['class' => $class, 'body' => ['data' => $data,
+    return ['class' => $class, 'status' => $status, 'body' => ['data' => $data,
         'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']]];
 }
 
@@ -36,7 +38,7 @@ function instance_source_consent_case(string $family): array
             'prompt' => 'Remove Instance [source] (#11) and delete its owned development source, Route and runtime?',
             'reads' => 1, 'option' => '--yes', 'code' => 'input.confirmation_required',
             'replies' => [instance_source_reply(ShowInstanceRequest::class, $instance),
-                instance_source_reply(DestroyInstanceRequest::class, ['id' => 11, 'name' => 'source', 'force' => false, 'status' => 'completed', 'total' => 1, 'completed' => 1, 'remaining' => 0])],
+                instance_source_reply(DestroyInstanceRequest::class, instance_operation_payload('instance.destroy', overrides: ['target_id' => 11]), 202)],
             'mutation' => DestroyInstanceRequest::class, 'body' => [],
         ],
         'step' => [
@@ -52,7 +54,7 @@ function instance_source_consent_case(string $family): array
             'reads' => 2, 'option' => '--force', 'code' => 'instance.confirmation_required',
             'replies' => [instance_source_reply(ShowInstanceRequest::class, $instance),
                 instance_source_reply(ShowNodeRequest::class, ['id' => 8, 'name' => 'destination']),
-                instance_source_reply(TransferInstanceRequest::class, [...$instance, 'node_id' => 8, 'domain' => 'source.test', 'transfer' => ['id' => 11, 'cleanup_completed' => true]])],
+                instance_source_reply(TransferInstanceRequest::class, instance_operation_payload('instance.transfer', ['instance_id' => 11, 'transfer_id' => '31', 'node_id' => 8, 'cutover' => true, 'restored' => false], ['target_id' => 11]), 202)],
             'mutation' => TransferInstanceRequest::class, 'body' => ['node_id' => 8],
         ],
         'register' => [
@@ -60,10 +62,17 @@ function instance_source_consent_case(string $family): array
             'prompt' => 'Transfer source [/work/source] to Orbit ownership, allowing relocation and later removal?',
             'reads' => 0, 'option' => '--yes', 'code' => 'input.confirmation_required',
             'registration_facts' => ['path' => '/work/source', 'repositoryUrl' => 'git@github.com:acme/source.git'],
-            'replies' => [instance_source_reply(RegisterInstanceRequest::class, ['project' => ['id' => 3, 'slug' => 'source'], 'instance' => $instance, 'instances' => [$instance], 'status' => 'completed', 'source_count' => 1, 'completed_count' => 1])],
+            'replies' => [instance_source_reply(RegisterInstanceRequest::class, $instance, 201)],
             'mutation' => RegisterInstanceRequest::class, 'body' => ['source_path' => '/work/source'],
         ],
     };
+
+    $case['follow_reads'] = in_array($family, ['remove', 'transfer'], true) ? 1 : 0;
+    if ($case['follow_reads'] > 0) {
+        $operation = $case['replies'][$case['reads']]['body']['data'];
+        $case['replies'][] = ['class' => ShowRealtimeRequest::class, 'status' => 503, 'body' => []];
+        $case['replies'][] = instance_source_reply(ShowOperationRequest::class, $operation);
+    }
 
     return $case;
 }
@@ -120,9 +129,9 @@ it('requires default-No native consent and restores the terminal before returnin
     expect($result['status'])->toBe($accepted ? 0 : 1)->and($result['prompt_seen'])->toBeTrue()
         ->and($result['keys_remaining'])->toBe(0)->and($result['restored'])->toBeTrue()
         ->and($result['output'])->toContain($case['prompt'])->not->toContain("\e[")
-        ->and($result['requests'])->toHaveCount($case['reads'] + ($accepted ? 1 : 0));
+        ->and($result['requests'])->toHaveCount($case['reads'] + ($accepted ? 1 + $case['follow_reads'] : 0));
     if ($accepted) {
-        $request = $result['requests'][array_key_last($result['requests'])];
+        $request = $result['requests'][$case['reads']];
         expect($request['class'])->toBe($case['mutation'])->and($request['body'])->toBe($case['body']);
     } else {
         expect($result['output'])->toContain('cancelled.');
@@ -148,7 +157,7 @@ it('names the original source when confirming a transfer retry after cutover', f
         ->and($result['prompt_seen'])->toBeTrue()
         ->and($result['restored'])->toBeTrue()
         ->and($result['output'])->toContain($case['prompt'])
-        ->and($result['requests'])->toHaveCount($accepted ? 3 : 2);
+        ->and($result['requests'])->toHaveCount($accepted ? 4 : 2);
     if ($accepted) {
         expect($result['requests'][2]['class'])->toBe(TransferInstanceRequest::class)
             ->and($result['requests'][2]['body'])->toBe(['node_id' => 8]);
@@ -190,7 +199,7 @@ it('keeps JSON and noninteractive mode separate from explicit consent', function
     $result = run_instance_source_consent($case, [], pty: false);
     expect($result['status'])->toBe($consent ? 0 : 1)->and($result['stderr'])->toBe('')
         ->and($result['output'])->not->toContain("\e[")
-        ->and($result['requests'])->toHaveCount($consent ? 1 : $case['reads']);
+        ->and($result['requests'])->toHaveCount($consent ? 1 + ($case['follow_reads'] > 0 ? 1 + ($json ? 1 : 0) : 0) : $case['reads']);
     if ($json) {
         $payload = json_decode($result['output'], true, flags: JSON_THROW_ON_ERROR);
         if (! $consent) {

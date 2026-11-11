@@ -36,7 +36,7 @@ use Throwable;
  * One `fleet.reboot` pass visits every managed Linux Node, one at a time, in risk order: the rollout's groups, then the
  * control path (the `vpn` hub, the Gateway, the Node that serves `swamp.orbit`), then the `swamp` Node itself. Swamp reads
  * `/var/run/reboot-required` on each Node, so a Node that is not due ends `not_due` at once. A task host with running task
- * work is left out at admission and reported `deferred`; the pass never cuts a turn or a check.
+ * work, or a Node on operator hold, is read and reported `deferred`; the pass never cuts its work.
  */
 final readonly class FleetReboot
 {
@@ -148,6 +148,7 @@ final readonly class FleetReboot
     }
 
     /**
+     * Freezes operator hold ahead of task-busy deferral in the existing defer field; Swamp reads every deferred Node.
      * What Swamp needs to drain, reboot and check one Node.
      *
      * @return array<string, mixed>
@@ -158,15 +159,17 @@ final readonly class FleetReboot
         $roles = $this->roles($node);
         $settings = is_array($node->settings) ? $node->settings : [];
         $tasks = is_array($settings['task_vms'] ?? null) ? $settings['task_vms'] : null;
+        $taskProject = is_string($tasks['project'] ?? null) && $tasks['project'] !== '' ? $tasks['project'] : null;
         $gateway = in_array(RoleName::Gateway->value, $roles, true) ? self::gatewayUnits($node) : null;
 
         return ['node_id' => $node->id, 'name' => $node->name, 'group' => $this->group($node),
             'host' => $ssh['target']['host'], 'user' => $ssh['target']['user'], 'port' => $ssh['target']['port'],
             'host_keys' => $ssh['target']['host_keys'], 'identity_file' => $ssh['identity_file'],
             'kind' => in_array(RoleName::Swamp->value, $roles, true) ? 'swamp' : (in_array(RoleName::Gateway->value, $roles, true) ? 'gateway' : 'node'),
-            'task_project' => is_string($tasks['project'] ?? null) && $tasks['project'] !== '' ? $tasks['project'] : null,
+            'task_project' => $taskProject,
             'ci_project' => in_array(RoleName::CiRunner->value, $roles, true) ? 'orbit-ci' : null,
-            'gateway' => $gateway, 'services' => self::services($node, $roles, $gateway), 'defer' => null];
+            'gateway' => $gateway, 'services' => self::services($node, $roles, $gateway),
+            'defer' => $node->reboot_hold ? 'operator_hold' : ($taskProject !== null ? $this->busy($node) : null)];
     }
 
     /**

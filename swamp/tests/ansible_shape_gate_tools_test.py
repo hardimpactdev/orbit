@@ -103,7 +103,7 @@ class ShapeGateToolsTest(unittest.TestCase):
         self.assertIn('tests/ansible_instance_host_create_test.ts', planned)
         self.assertTrue(all(step.parallel for step in commands))
         instance = [step for step in commands if any('ansible_instance_host' in arg for arg in step.argv)]
-        self.assertEqual(len(instance), 13)
+        self.assertEqual(len(instance), 14)
         self.assertTrue(all(len(step.argv[3:]) == 1 for step in instance))
         self.assertTrue(all(step.fixture_seconds == 660 for step in instance))
         self.assertTrue(all('--parallel' not in step.argv for step in instance))
@@ -111,7 +111,7 @@ class ShapeGateToolsTest(unittest.TestCase):
     def test_each_instance_command_receives_one_deadline_at_launch(self):
         steps = self.gate.plan('HEAD', self.system, self.system, self.system / 'collections')
         commands = [step for step in steps if step.fixture_seconds is not None]
-        self.assertEqual(len(commands), 13)
+        self.assertEqual(len(commands), 14)
         for step in commands:
             with mock.patch.object(self.gate.time, 'time', return_value=1_000_000.125), \
                     mock.patch.object(self.gate.subprocess, 'run') as run:

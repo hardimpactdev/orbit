@@ -25,6 +25,8 @@ Loading Node...
 │
 ├  LAN                    10.0.0.3
 │
+├  Reboot hold            no
+│
 ├  WireGuard public key   app-dev-public-key
 │
 ├  DNS server override    10.0.0.2
