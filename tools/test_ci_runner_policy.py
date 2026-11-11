@@ -1,10 +1,9 @@
-"""Keep expensive jobs on the managed pool without sending fork code to it."""
+"""Pin hosted jobs and the bounded managed shape-shard pool."""
 import re
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-POOL = "${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('[\"self-hosted\",\"orbit-shard\"]') || 'ubuntu-26.04' }}"
 
 
 def job(workflow, name):
@@ -26,7 +25,7 @@ class RunnerPolicyTest(unittest.TestCase):
         self.assertIn('runs-on: ubuntu-26.04', job('swamp-shape.yml', 'tests'))
 
     def test_light_jobs_and_validation_stay_hosted(self):
-        for workflow, names in [('ci.yml', ['docs', 'web', 'api-reference']),
+        for workflow, names in [('ci.yml', ['docs', 'web', 'api-reference', 'gateway-tests']),
                                 ('swamp-shape.yml', ['validate', 'tests', 'shape-plan', 'shape-control', 'shape'])]:
             for name in names:
                 with self.subTest(job=name):

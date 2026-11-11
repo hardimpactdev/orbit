@@ -63,6 +63,16 @@ class PlanTest(unittest.TestCase):
             self.assertEqual(step.argv[step.argv.index('--base') + 1], BASE)
         self.assertIn('/reports/shape.json', steps('shape')[-4].argv)
 
+    def test_migrate_links_is_discovered_run_once_and_linted(self):
+        path = 'tests/ansible_instance_migrate_links_test.py'
+        self.assertIn(path, gate['ansible_test_files']())
+        planned = steps('shape')
+        commands = [step.argv for step in planned if step.unit == path]
+        self.assertEqual(commands, [['python3', '-I', path]])
+        ruff = next(step for step in planned if step.name == 'ruff')
+        self.assertIn('ansible/instance_migrate_links.py', ruff.argv)
+        self.assertEqual(ruff.argv.count(path), 1)
+
     def test_the_validation_group_needs_credentials_where_ci_does(self):
         needs = {step.name: step.needs for step in steps('validate')}
         self.assertEqual(needs['validate-swamp-workflows'], ('credentials',))

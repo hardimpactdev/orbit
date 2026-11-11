@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
@@ -122,7 +123,8 @@ final readonly class InstanceContainer
             throw new ResourceOperationException('instance.host_unavailable', 'The Node\'s Instance bridge has no free address.', 409);
         }
         $port = null;
-        if ($source instanceof Instance) {
+        // Every Instance but the default runs T3: a clone, and a checkout Instance that moved into a container.
+        if ($instance->name !== 'default') {
             $ports = array_map(ValidatedData::integer(...), InstanceRuntime::query()->where('node_id', $node->id)->whereNotNull('t3_port')->pluck('t3_port')->all());
             $port = array_values(array_diff(range(self::T3PortFirst, self::T3PortLast), $ports))[0]
                 ?? throw new ResourceOperationException('instance.host_unavailable', 'The Node has no free T3 port.', 409);
@@ -167,7 +169,7 @@ final readonly class InstanceContainer
         $gateway = Ipv4Subnet::from(ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')))->usableRange()[0];
         $environment = InstanceImage::environment($gateway);
         $access = $database === null ? null : $this->databaseAccess($instance, $runtime, $database);
-        $clone = $runtime->clone_source_instance_id === null ? null : $this->clone($instance, $runtime, $gateway, $url);
+        $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url);
 
         return [
             'instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
@@ -182,6 +184,8 @@ final readonly class InstanceContainer
                     'destination_port' => (string) $access['port'], 'state' => 'enabled']],
                 'ingress' => [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
                     'destination_port' => (string) self::WebPort, 'state' => 'enabled'],
+                    ...(($vitePort = app(ContainerProcesses::class)->vitePort($instance)) === null ? [] : [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
+                        'destination_port' => (string) $vitePort, 'state' => 'enabled']]),
                     ...($clone === null ? [] : [['action' => 'allow', 'protocol' => 'tcp', 'destination_port' => (string) InstanceHostIntent::T3Port, 'state' => 'enabled']]),
                     // An agent's development servers: only the Node's Caddy reaches them, and it serves them only on a private Route.
                     ...($this->servesDevPorts($instance, $runtime) ? [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
@@ -230,17 +234,18 @@ final readonly class InstanceContainer
     }
 
     /**
-     * A clone's part of the intent: the default's container and seed snapshot it copies, T3's published port, and the files the
-     * agent and T3 need. The model key is not here: it comes through the vault.
+     * The part of the intent of an Instance with T3: T3's published port and the files the agent and T3 need, and for a clone the
+     * default's container and seed snapshot it copies. A checkout Instance that moved in copies none. The model key is not here: it
+     * comes through the vault.
      *
      * @return array<string, mixed>
      */
     private function clone(Instance $instance, InstanceRuntime $runtime, string $gateway, ?string $url): array
     {
-        $source = InstanceRuntime::query()->where('instance_id', $runtime->clone_source_instance_id)->firstOrFail();
+        $source = $runtime->clone_source_instance_id === null ? null
+            : InstanceRuntime::query()->where('instance_id', $runtime->clone_source_instance_id)->firstOrFail();
         $node = Node::query()->findOrFail($runtime->node_id);
         $project = $instance->project;
-        $seed = ValidatedData::string($source->seed_commit);
         $agent = InstanceHostIntent::AgentUid;
         $workspace = InstanceHostIntent::Workspace;
         $note = InstanceHostIntent::AgentFolder.'/current/notes/'.InstanceNotes::for($project->type).'.md';
@@ -249,17 +254,20 @@ final readonly class InstanceContainer
             ."wire_api = \"responses\"\nsupports_websockets = false\n\n[projects.\"{$workspace}\"]\ntrust_level = \"trusted\"\n";
 
         return [
-            'source' => $source->container_name, 'snapshot' => 'seed-'.$seed, 'seed_commit' => $seed,
             // The default's mirror on the Node holds the seed's commit: a new branch starts there, without the network.
-            'source_mirror' => self::mirror(Instance::query()->findOrFail($source->instance_id)),
+            ...($source === null ? [] : ['source' => $source->container_name, 'snapshot' => 'seed-'.ValidatedData::string($source->seed_commit),
+                'seed_commit' => ValidatedData::string($source->seed_commit), 'source_mirror' => self::mirror(Instance::query()->findOrFail($source->instance_id))]),
             't3' => ['port' => $runtime->t3_port, 'listen' => ValidatedData::string($node->wireguard_ip), 'device' => self::T3Device,
+                'title' => $project->name ?: $project->slug,
                 'unit' => self::T3Unit, 'internal_port' => InstanceHostIntent::T3Port, 'ready_seconds' => 30,
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
                 't3' => InstanceHostIntent::AgentFolder.'/current/agent/bin/t3', 'project_mark' => '/home/agent/.config/orbit/t3-project'],
             'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600'],
             'files' => [
                 ['path' => self::InstanceFile, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => "# Managed by Orbit.\n"
-                    ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\nORBIT_URL=".($url ?? '')."\n"
+                    ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\n"
+                    ."ORBIT_PROJECT_ID={$project->id}\nORBIT_PROJECT_NAME=".InstanceEnvironmentRenderer::quote(str_replace(["\r", "\n"], ' ', $project->name))."\n"
+                    ."ORBIT_NODE={$node->name}\nORBIT_URL=".($url ?? '')."\n"
                     .($this->servesDevPorts($instance, $runtime) ? 'ORBIT_DEV_PORTS='.InstanceDevPorts::First.'-'.InstanceDevPorts::Last."\n"
                         .'ORBIT_DEV_PORTS_TAKEN='.implode(',', app(InstanceDevPorts::class)->excluded($node))."\n" : '')],
                 ['path' => '/home/agent/.codex/config.toml', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => $codex],
@@ -292,9 +300,11 @@ final readonly class InstanceContainer
      * The way to the Instance's database server: the server's address and port. A server on the Instance's own Node is reached on the
      * Node; one on another Node through the Node's WireGuard address, as the bridge's NAT sends it.
      *
+     * `$name` ends the rule's comment, so an Instance with more than one server keeps a rule for each.
+     *
      * @return array{host: string, port: int, rule: array<string, string>}
      */
-    private function databaseAccess(Instance $instance, InstanceRuntime $runtime, DatabaseConnection $database): array
+    public function databaseAccess(Instance $instance, InstanceRuntime $runtime, DatabaseConnection $database, string $name = 'database'): array
     {
         $host = $database->host;
         $port = $database->port;
@@ -303,7 +313,7 @@ final readonly class InstanceContainer
         }
         $local = $database->server?->node_id === $runtime->node_id;
         $rule = ['rule' => 'allow', 'interface_in' => InstanceHostIntent::Network, 'from_ip' => $runtime->bridge_address,
-            'to_ip' => $host, 'to_port' => (string) $port, 'proto' => 'tcp', 'comment' => self::firewallPrefix($instance).'database',
+            'to_ip' => $host, 'to_port' => (string) $port, 'proto' => 'tcp', 'comment' => self::firewallPrefix($instance).$name,
             ...($local ? [] : ['route' => 'yes', 'interface_out' => self::WireGuardInterface])];
 
         return ['host' => $host, 'port' => $port, 'rule' => $rule];
@@ -311,7 +321,7 @@ final readonly class InstanceContainer
 
     /**
      * Whether an agent's development servers answer through the Instance's Route (docs/reference/development-containers.md#agent-development-servers):
-     * a clone that runs T3, with its own private Route. The default runs no agent. A public Route never serves them: the servers run as
+     * an Instance that runs T3, with its own private Route. The default runs no agent. A public Route never serves them: the servers run as
      * `agent`, and the split of the two users keeps a public URL away from `agent`'s files. `$route` is the Route a caller renders;
      * without it, the Instance's own Route.
      */
@@ -319,7 +329,7 @@ final readonly class InstanceContainer
     {
         $route ??= $instance->routes()->whereNull('web_root')->orderBy('routes.id')->first();
 
-        return $runtime->clone_source_instance_id !== null && $route instanceof Route && $route->publication !== RoutePublication::Public;
+        return $runtime->t3_port !== null && $route instanceof Route && $route->publication !== RoutePublication::Public;
     }
 
     /** Every UFW rule of a container Instance carries this comment prefix. */

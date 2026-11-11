@@ -16,7 +16,7 @@ sequenceDiagram
   CLI->>GW: Revoke own pairings<br/>POST …/env-beast/pairings/revoke
   %%> Command:
   %%> - `POST /api/v1/conn/environments/env-beast/pairings/revoke`
-  %%> - syntax: the MCP tool `conn-pairing-revoke` with `environment` and an optional `node_id`
+  %%> - syntax: the MCP tool `conn-pairing-revoke` with `environment`, optional `node_id` and optional `pairing_id`
   %%> Input:
   %%> - the T3 server, and the Node whose pairings go; without `node_id` it is the caller
   %%> Not included:
@@ -27,7 +27,7 @@ sequenceDiagram
     %%> - `node_id` selects Node 4 instead of the caller
     %%> - the caller remains the owner of the revocation Operation
   end
-  opt pairing_id (API)
+  opt pairing_id (API / MCP)
     Note over GW: Target one pairing<br/>includes revoked
     %%> Input:
     %%> - pairing_id must belong to the selected Node and environment
@@ -64,7 +64,7 @@ sequenceDiagram
   Note over SW: Select the sessions
   %%> What it does:
   %%> - typed data matches Conn one-time-token sessions by exact label; mcp-client sessions by exact Node IP and issue window
-  %%> - the current admin is preserved; a delivered pairing with no matching session refuses with conn.revocation_unmatched
+  %%> - the current admin is preserved; an empty selection or a delivered pairing with no matching session refuses with conn.revocation_unmatched
   %%> - an invalid or failed list refuses before any revoke
   SW->>T3: Revoke the sessions
   %%> How:
@@ -73,7 +73,7 @@ sequenceDiagram
   Note over SW: Read session revocations
   %%> What it does:
   %%> - typed data reads private replies and keeps valid completions and the revoked count
-  %%> - zero actual revocations for a delivered pairing fail with conn.revocation_unmatched and block link revocation
+  %%> - zero actual session revocations fail with conn.revocation_unmatched and block link revocation
   SW->>T3: Revoke unused links
   %%> How:
   %%> - one bounded curl request per captured link; a failed session phase blocks these calls
@@ -109,7 +109,7 @@ sequenceDiagram
     %%> Result:
     %%> - unmatched failures keep every pairing row unchanged; other failures mark only pairings whose sessions and links completed; task #5171 fails
     %%> Retry:
-    %%> - safe: run it again; it lists the sessions again and skips those already gone
+    %%> - use pairing_id to retry a revoked row whose session still lives; an empty retry fails with conn.revocation_unmatched
   end
   loop wait with progress until terminal
     CLI->>GW: Read Operation #5171<br/>GET conn/operations/5171

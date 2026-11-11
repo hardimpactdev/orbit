@@ -24,7 +24,7 @@ use Throwable;
 final class RoutePublicationHolds
 {
     /** @var list<string> */
-    private const array Kinds = ['instance.create', 'instance.destroy', 'instance.clone', 'instance.transfer',
+    private const array Kinds = ['instance.create', 'instance.destroy', 'instance.clone', 'instance.transfer', 'instance.migrate',
         'route.create', 'route.update', 'route.destroy', 'route.target_set'];
 
     /** A timed-out write that Swamp never confirmed stopped gives its Nodes back after this long. */

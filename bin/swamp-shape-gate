@@ -153,7 +153,7 @@ def plan(base, reports, cache, collections):
                     fixture_seconds=INSTANCE_HOST_BUDGET_SECONDS if arguments[-1].startswith('tests/ansible_instance_host_') else None)
 
     steps += [Step('shape', test, ['python3', '-I', test], env=ansible_env, parallel=True) for test in ansible_test_files()]
-    steps.append(Step('shape', 'ruff', ['ruff', 'check', 'ansible/build_vars.py', 'ansible/library/orbit_artifact.py', 'tests/_support/fixture_supervisor.py',
+    steps.append(Step('shape', 'ruff', ['ruff', 'check', 'ansible/build_vars.py', 'ansible/instance_migrate_links.py', 'ansible/library/orbit_artifact.py', 'tests/_support/fixture_supervisor.py',
                                         *ansible_test_files()], parallel=True))
     steps += [deno_step(arguments) for arguments in (*expanded_unit_tests(), *deno_files)]
     steps[1:] = ordered(steps[1:])

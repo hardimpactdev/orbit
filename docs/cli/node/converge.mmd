@@ -66,6 +66,7 @@ sequenceDiagram
     GW->>SW: Start run, full intent<br/>operation-node-converge
     %%> Inputs:
     %%> - target, scope, recorded roles, Tools, network and vault key names; playbooks read release pins
+    %%> - the Gateway includes a CLI plan only for a Node with a recorded `ci-runner` assignment that is not being removed; scope flags do not change that decision
     %%> - reserve the Node and its recorded hub until the Operation settles
     GW-->>CLI: 202 Accepted<br/>Operation ID
     %%> Result:
@@ -75,7 +76,9 @@ sequenceDiagram
     %%> - writes private inventory, vars and known_hosts from schema-validated inputs
     SW->>N: Install Orbit's layer<br/>Ansible phase: agent
     %%> What it does:
-    %%> - applies the agent, CLI, Orbit-owned files and units, and the kernel policy (SCTP blocked, non-local bind); restarts only changed services
+    %%> - applies the agent, Orbit-owned files and units, and the kernel policy (SCTP blocked, non-local bind); restarts only changed services
+    %%> - with a CLI plan: requires and installs its pinned release and root profile
+    %%> - without a CLI plan: needs no CLI release or probe; removes the managed `/usr/local/bin/orbit` link, regular `orbit-0.N.0` binaries and root profile at `/root/.orbit/config.json` in this phase, under the Node update lock; preserves unrelated executables, backups and directories
     SW->>N: Install pinned software<br/>Ansible phase: software
     %%> What it does:
     %%> - reads recipe.json and holds its selected packages at their pins
@@ -112,6 +115,7 @@ sequenceDiagram
     SW->>N: Check the Node<br/>Ansible phase: check
     %%> What it does:
     %%> - checks the selected software, units and role configuration, plus the recorded tunnel; on a target hub, every recorded peer on its interface, with no handshake wait
+    %%> - checks the pinned CLI only when the Gateway supplied a CLI plan; otherwise checks that the managed CLI files are absent
     %%> - all seven phases run in order, idempotently; an empty scope item needs no mutation
     opt phases completed or failed
       %% path: cleanup

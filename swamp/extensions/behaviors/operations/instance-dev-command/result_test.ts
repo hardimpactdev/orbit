@@ -245,4 +245,28 @@ Deno.test("a clone finishes only with its registered T3 server, which the receip
     // A registration without its receipt is no registration, and a failed create carries no server.
     assertEquals(failure({ server: null }), ["register", "instance.create_register_failed"]);
     assertEquals(create({ agent: "failed" }).t3, undefined);
+    const databaseFailure = JSON.parse(createResult({ ...intent, container: { clone: {} }, server_database: { id: 1 } }, {
+        ...phases, database: "failed", container,
+    }).stdout);
+    assertEquals([databaseFailure.ready, databaseFailure.failed_step], [false, "database"]);
+});
+
+Deno.test("readiness records only timestamps from the T3 checks and the Route TLS probe", () => {
+    const result = JSON.parse(createResult(intent, {
+        ...phases,
+        t3_observation: JSON.stringify({ ready_at: "2026-11-10T20:00:01Z", private_reply: "never copy" }),
+        sessions_observation: JSON.stringify({ checked_at: "2026-11-10T20:00:02Z", token: "never copy" }),
+        route_observation: {
+            "Sign certificate": { finishedAt: "2026-11-10T20:00:09Z" },
+            "Probe the site over TLS-0": { target: { finishedAt: "2026-11-10T20:00:03Z", stdout: "never copy" } },
+            "Probe the site over TLS-1": { target: { finishedAt: "2026-11-10T20:00:04Z" } },
+        },
+    }).stdout);
+    assertEquals(result.readiness, {
+        t3_answers_at: "2026-11-10T20:00:01.000Z",
+        sessions_checked_at: "2026-11-10T20:00:02.000Z",
+        route_ready_at: "2026-11-10T20:00:04.000Z",
+    });
+    assertEquals(JSON.stringify(result).includes("never copy"), false);
+    assertEquals(JSON.parse(createResult(intent, { ...phases, t3_observation: "broken" }).stdout).readiness.t3_answers_at, null);
 });
