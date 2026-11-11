@@ -85,11 +85,13 @@ def configuration(path=TABLE):
         file, cost = fixture['file'], fixture['cost']
         if not (ROOT / file).is_file() or type(cost) is not int or cost <= 0:
             raise ValueError(f'Invalid fixture file or cost: {file}')
+        if not sliceable(fixture) and cost > budget['shard_seconds'] and not fixture.get('after_merge'):
+            raise ValueError(f'{file}: unsliceable cost exceeds shard_seconds; set after_merge with a reason')
         if file in inventory:
             fixture.update(inventory[file])
             if fixture['source_sha256'] != hashlib.sha256((ROOT / file).read_bytes()).hexdigest():
                 raise ValueError(f'{file}: stale fixture case inventory/cost; collect registrations and review its cost before execution')
-        elif sliceable(fixture):
+        else:
             raise ValueError(f'{file}: missing fixture case inventory/cost; collect registrations before execution')
         excluded = fixture.get('after_merge_cases', [])
         if not isinstance(excluded, list) or any(not isinstance(name, str) or name not in fixture.get('cases', []) for name in excluded):
@@ -104,8 +106,6 @@ def configuration(path=TABLE):
             raise ValueError(f'{file}: slices must be a positive count or a boolean')
         if fixture.get('after_merge') and not fixture.get('reason', '').strip():
             raise ValueError(f'{file}: after_merge needs a reason')
-        if not sliceable(fixture) and cost > budget['shard_seconds'] and not fixture.get('after_merge'):
-            raise ValueError(f'{file}: unsliceable cost exceeds shard_seconds; set after_merge with a reason')
     for file in config['fixtures']['default']:
         if file not in fixtures or fixtures[file].get('after_merge'):
             raise ValueError(f'Invalid default fixture: {file}')
@@ -252,6 +252,12 @@ def unit_step(unit, fixtures, steps, collections):
         step.env['ORBIT_TEST_SLICE'] = part
     if step.argv[0] == 'deno':
         step.argv[2:2] = ['--preload', str(ROOT / PRELOAD)]
+        # The preload reads its control environment and writes case receipts,
+        # including in fixture commands that originally needed only read/run.
+        if '-A' not in step.argv:
+            for permission in ('--allow-env', '--allow-write'):
+                if permission not in step.argv:
+                    step.argv.insert(4, permission)
         step.env['ORBIT_TEST_SKIP'] = json.dumps(fixtures[file].get('after_merge_cases', []))
         step.env['ORBIT_TEST_CASES'] = json.dumps(fixtures[file].get('cases'))
     if any(file.removeprefix('swamp/') in group for group in gate.INSTANCE_HOST_TEST_GROUPS):
@@ -383,8 +389,9 @@ def run(units, budget, fixtures, times):
                 result = future.result()
                 index = units.index(result['unit'])
                 # Keep the planned names even when the process never reached registration.
-                if not result.get('cases') and result['status'] == 'passed' and result['unit'].endswith('.py'):
-                    result['cases'] = [{'name': row['name'], 'status': 'passed', 'seconds': None} for row in results[index]['cases']]
+                if not result.get('cases') and result['unit'].endswith('.py') and result['status'] in ('passed', 'FAILED'):
+                    outcome = 'passed' if result['status'] == 'passed' else 'UNKNOWN (see unittest output)'
+                    result['cases'] = [{'name': row['name'], 'status': outcome, 'seconds': None} for row in results[index]['cases']]
                 result['cases'] = result.get('cases') or results[index]['cases']
                 for row in result['cases']:
                     if row['status'] == 'running':

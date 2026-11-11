@@ -137,9 +137,12 @@ class TableTest(unittest.TestCase):
             path = Path(scratch) / 'checks.toml'
             source = (ROOT / '.github/ci/checks.toml').read_text()
             path.write_text(source)
-            new_file = 'swamp/tests/_support/fixture_supervisor.py'
+            new_file = 'swamp/tests/ansible_schedule_logs_test.ts'
             with patch.object(units, 'fixture_steps', return_value={**units.fixture_steps(), new_file: object()}):
                 self.assertEqual(units.configuration(path)[1][new_file]['cost'], BUDGET['default_cost'])
+            with patch.object(units, 'fixture_steps', return_value={**units.fixture_steps(), 'swamp/tests/_support/fixture_supervisor.py': object()}):
+                with self.assertRaisesRegex(ValueError, 'missing fixture case inventory/cost'):
+                    units.configuration(path)
             steps = {**units.fixture_steps(), 'swamp/tests/new_fixture.ts': object()}
             # The fallback must work for real new fixture files, and refuse paths that do not exist.
             with patch.object(units, 'fixture_steps', return_value=steps):
@@ -373,6 +376,23 @@ class PopulationTest(unittest.TestCase):
         self.assertEqual(receipt['cases'][0]['status'], 'passed')
         self.assertGreaterEqual(receipt['cases'][0]['seconds'], 0)
         self.assertGreaterEqual(receipt['startup_seconds'], 0)
+
+    @unittest.skipUnless(shutil.which('deno'), 'needs Deno')
+    def test_restricted_deno_commands_can_collect_and_write_case_receipts(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            file = Path(scratch) / 'restricted_test.ts'
+            file.write_text('Deno.test("restricted", () => {});')
+            name = 'swamp/restricted.ts'
+            fixtures = {name: fixture(name, cases=['restricted'])}
+            original = units.gate.Step('shape', name, ['deno', 'test', '--no-check', '--allow-read', '--allow-run', str(file)])
+            step = units.unit_step(name, fixtures, {name: original}, Path('/collections'))
+            self.assertIn('--allow-read', step.argv)
+            self.assertIn('--allow-run', step.argv)
+            with contextlib.redirect_stdout(io.StringIO()):
+                result = units.run_unit(step, os.environ.copy(), 10)
+            self.assertEqual(result['status'], 'passed')
+            self.assertEqual(result['cases'][0]['name'], 'restricted')
+            self.assertEqual(result['cases'][0]['status'], 'passed')
 
     def test_source_change_invalidates_cost_before_a_fixture_can_be_deferred(self):
         with tempfile.TemporaryDirectory() as scratch:

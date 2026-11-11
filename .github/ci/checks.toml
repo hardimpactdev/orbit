@@ -1,6 +1,6 @@
 # Fixture input closure includes local imports, copied scripts and Ansible includes.
 # Costs start with shape-full.log; hosted ci-unit-times artifacts own later measurements.
-# Primary case costs use completed hosted evidence from runs 43000765953, 43002948719 and 43005032403.
+# Primary case costs use completed hosted evidence from runs 43000765953, 43002948719, 43005032403 and 43010311414.
 # Unmeasured primary cases use their file's largest completed retained case; they remain estimates.
 # The inventory binds these declarations to exact registered names. Startup is budgeted separately.
 [budget]
@@ -142,7 +142,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 1712
+cost = 1511
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
@@ -166,30 +166,29 @@ inputs = [
 ]
 
 [fixture.case_costs]
-  "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 114 # completed, run 43002948719
-  "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses" = 141 # completed, run 43002948719
-  "a start points php at the Project's PHP version, and removes the link of a Project without PHP" = 51 # completed, run 43002948719
-  "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes" = 62 # completed, run 43002948719
-  "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer" = 80 # completed, run 43000765953
-  "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing" = 66 # completed, run 43000765953
-  "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file" = 141 # UNMEASURED estimate
-  "a Process's start, stop and restart change its unit in the container; a read returns its state and journal" = 141 # UNMEASURED estimate
-  "a clone runs its own Process units: the default's units and folders from the seed go, and its own start" = 141 # UNMEASURED estimate
-  "a clone's first boot starts no unit of the default and the clone has its own machine-id" = 109 # completed, run 43002948719
-  "the workspace stays writable for its group before and after the deploy steps, whoever installed last" = 69 # completed, run 43002948719
-  "the agent phase trusts only its workspace and preserves other Git settings on reruns" = 48 # completed, run 43002948719
-  "the agent can commit with its default identity and keeps each configured identity value" = 63 # completed, run 43002948719
-  "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes" = 37 # completed, run 43002948719
-  "start refuses a NIC with missing ACL before starting the container" = 30 # completed, run 43002948719
-  "start refuses a NIC with permissive default before starting the container" = 30 # completed, run 43002948719
-  "start refuses a NIC with bridge union ACL before starting the container" = 30 # completed, run 43002948719
-  "start refuses an unguarded extra bridge NIC beside guarded eth0" = 30 # completed, run 43002948719
-  "first attach adds an exact bridge endpoint, retries ETag conflicts and repeats without changes" = 35 # completed, run 43002948719
-  "a copied seed with an unguarded extra local NIC refuses before the clone starts" = 61 # completed, run 43002948719
-  "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read" = 72 # completed, run 43002948719
-  "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish" = 68 # completed, run 43002948719
-  "a thirty-second Process stop succeeds and inspection keeps its existing unbounded state read" = 93 # completed, run 43002948719
-
+  "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 114 # completed body 84.962s, run 43010311414; larger completed history retained
+  "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses" = 141 # completed body 86.635s, run 43010311414; larger completed history retained
+  "a start points php at the Project's PHP version, and removes the link of a Project without PHP" = 51 # completed body 36.925s, run 43010311414; larger completed history retained
+  "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes" = 62 # completed body 40.608s, run 43010311414; larger completed history retained
+  "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer" = 80 # completed body 63.478s, run 43010311414; larger completed history retained
+  "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing" = 66 # completed body 41.857s, run 43010311414; larger completed history retained
+  "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file" = 78 # completed body 77.701s, run 43010311414; larger completed history retained
+  "a Process's start, stop and restart change its unit in the container; a read returns its state and journal" = 73 # completed body 72.036s, run 43010311414; larger completed history retained
+  "a clone runs its own Process units: the default's units and folders from the seed go, and its own start" = 71 # completed body 70.786s, run 43010311414; larger completed history retained
+  "a clone's first boot starts no unit of the default and the clone has its own machine-id" = 109 # completed body 76.463s, run 43010311414; larger completed history retained
+  "the workspace stays writable for its group before and after the deploy steps, whoever installed last" = 69 # completed body 44.079s, run 43010311414; larger completed history retained
+  "the agent phase trusts only its workspace and preserves other Git settings on reruns" = 48 # completed body 34.351s, run 43010311414; larger completed history retained
+  "the agent can commit with its default identity and keeps each configured identity value" = 63 # completed body 40.456s, run 43010311414; larger completed history retained
+  "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes" = 37 # completed body 26.532s, run 43010311414; larger completed history retained
+  "start refuses a NIC with missing ACL before starting the container" = 30 # completed body 26.920s, run 43010311414; larger completed history retained
+  "start refuses a NIC with permissive default before starting the container" = 30 # completed body 26.712s, run 43010311414; larger completed history retained
+  "start refuses a NIC with bridge union ACL before starting the container" = 30 # completed body 26.388s, run 43010311414; larger completed history retained
+  "start refuses an unguarded extra bridge NIC beside guarded eth0" = 30 # completed body 26.910s, run 43010311414; larger completed history retained
+  "first attach adds an exact bridge endpoint, retries ETag conflicts and repeats without changes" = 35 # completed body 26.541s, run 43010311414; larger completed history retained
+  "a copied seed with an unguarded extra local NIC refuses before the clone starts" = 61 # completed body 41.636s, run 43010311414; larger completed history retained
+  "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read" = 72 # completed body 51.951s, run 43010311414; larger completed history retained
+  "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish" = 68 # completed body 46.788s, run 43010311414; larger completed history retained
+  "a thirty-second Process stop succeeds and inspection keeps its existing unbounded state read" = 93 # completed body 78.064s, run 43010311414; larger completed history retained
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_test.ts"
@@ -226,16 +225,15 @@ inputs = [
 ]
 
 [fixture.case_costs]
-  "a stuck Instance host playbook throws with its last task and kills a descendant holding stdout" = 3 # completed, run 43000765953
-  "a late playbook gets only the shared command budget left, then no new playbook starts" = 2 # completed, run 43000765953
-  "the shared command budget stays exhausted across Deno test file isolates" = 3 # completed, run 43000765953
-  "an ordinary playbook refusal preserves its exit status, including 124" = 1 # completed, run 43005032403
-  "deadline reaps a detached stdout holder forked before leader exit" = 3 # completed, run 43000765953
-  "deadline reaps a detached stdout holder forked during TERM" = 3 # completed, run 43000765953
-  "a real Ansible deadline kills a stalled command after its worker detaches" = 7 # completed, run 43000765953
-  "a task VM host keeps the ZFS ARC its task side sets: the Instance side writes no cap" = 88 # completed, run 43000765953
-  "an Instance bridge range that another interface of the Node holds refuses before any change" = 3 # completed, run 43000765953
-
+  "a stuck Instance host playbook throws with its last task and kills a descendant holding stdout" = 3 # completed body 2.153s, run 43010311414; larger completed history retained
+  "a late playbook gets only the shared command budget left, then no new playbook starts" = 2 # UNMEASURED estimate; observed maximum body cost
+  "the shared command budget stays exhausted across Deno test file isolates" = 3 # UNMEASURED estimate; observed maximum body cost
+  "an ordinary playbook refusal preserves its exit status, including 124" = 1 # completed body 0.130s, run 43010311414; larger completed history retained
+  "deadline reaps a detached stdout holder forked before leader exit" = 3 # UNMEASURED estimate; observed maximum body cost
+  "deadline reaps a detached stdout holder forked during TERM" = 3 # UNMEASURED estimate; observed maximum body cost
+  "a real Ansible deadline kills a stalled command after its worker detaches" = 7 # UNMEASURED estimate; observed maximum body cost
+  "a task VM host keeps the ZFS ARC its task side sets: the Instance side writes no cap" = 88 # completed body 67.161s, run 43010311414; larger completed history retained
+  "an Instance bridge range that another interface of the Node holds refuses before any change" = 3 # UNMEASURED estimate; observed maximum body cost
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_image_test.ts"
@@ -272,12 +270,11 @@ inputs = [
 ]
 
 [fixture.case_costs]
-  "a Node without its Instance pool is refused before anything changes" = 3 # completed, run 43000765953
-  "a directory pool skips the clone probe: a copy there is a full copy" = 81 # completed, run 43000765953
-  "an image that keeps a sudo path is never published" = 84 # completed, run 43005032403
-  "orbit-instance-build refuses an inherited unguarded profile NIC before starting" = 69 # completed, run 43000765953
-  "orbit-clone-probe-copy refuses an inherited unguarded profile NIC before starting" = 56 # completed, run 43000765953
-
+  "a Node without its Instance pool is refused before anything changes" = 3 # completed body 1.403s, run 43010311414; larger completed history retained
+  "a directory pool skips the clone probe: a copy there is a full copy" = 81 # completed body 62.340s, run 43010311414; larger completed history retained
+  "an image that keeps a sudo path is never published" = 84 # completed body 64.008s, run 43010311414; larger completed history retained
+  "orbit-instance-build refuses an inherited unguarded profile NIC before starting" = 69 # completed body 45.934s, run 43010311414; larger completed history retained
+  "orbit-clone-probe-copy refuses an inherited unguarded profile NIC before starting" = 56 # completed body 41.131s, run 43010311414; larger completed history retained
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_runtime_test.ts"
@@ -315,16 +312,15 @@ inputs = [
 ]
 
 [fixture.case_costs]
-  "the runtime installs the recipe's Deno ZIP and exposes its executable through current/bin" = 90 # completed, run 43000765953
-  "a static PHP build is installed as php/<version> with no link in bin, and a build whose extensions differ is refused" = 115 # completed, run 43000765953
-
+  "the runtime installs the recipe's Deno ZIP and exposes its executable through current/bin" = 90 # completed body 65.337s, run 43010311414; larger completed history retained
+  "a static PHP build is installed as php/<version> with no link in bin, and a build whose extensions differ is refused" = 115 # completed body 85.653s, run 43010311414; larger completed history retained
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_updates_test.ts"
 # 159.349s, hosted four-worker run 43000765953 (completed unit).
 # 168.762s, hosted four-worker run 43000765953 (completed unit).
 after_merge_cases = ["a project that lists disk paths loses the list, so a container with the idmapped folders starts", "an old folder version that a process still maps stays; a restart that failed runs again on the next converge"]
-cost = 216
+cost = 222
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (111s); these are estimates, not completed measurements.
 slices = 2
@@ -355,15 +351,15 @@ inputs = [
 ]
 
 [fixture.case_costs]
-  "a new runtime version installs beside the old one, flips current, restarts each running container's Processes and drops the old" = 111 # completed, run 43000765953
-  "a Squid configuration that does not parse never replaces the live one, and the run fails" = 105 # completed, run 43000765953
-
+  "a new runtime version installs beside the old one, flips current, restarts each running container's Processes and drops the old" = 117 # completed body 116.727s, run 43010311414; larger completed history retained
+  "a Squid configuration that does not parse never replaces the live one, and the run fails" = 105 # completed body 97.442s, run 43010311414; larger completed history retained
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_acl_test.ts"
-cost = 30
+cost = 131
 # 180.026s, hosted four-worker run 43002948719 (unit cutoff; case unfinished).
 after_merge_cases = ["bridge remains reject after late unsafe attachments, and profile NICs use only the proxy ACL"]
+slices = 1
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "bin/swamp-shape-gate",
@@ -389,6 +385,9 @@ inputs = [
   "swamp/tests/fixtures/instance-bridge-curl.ts",
   "swamp/tests/fixtures/task-vm-host-incus.ts",
 ]
+
+[fixture.case_costs]
+  "host reconciles the endpoint union without wiping other rules and moves existing NICs without an open gate" = 131 # CENSORED lower bound 130.934s, run 43010311414; not a completed measurement
 
 [[fixture]]
 file = "swamp/bin/check-swamp-base-policy_test.ts"
@@ -829,8 +828,7 @@ inputs = [
 ]
 
 [fixture.case_costs]
-  "migrated container cleanup keeps retained Git while removing its container, volume, ACL, rules and mirror; a retry changes nothing" = 12 # completed, run 43000765953
-
+  "migrated container cleanup keeps retained Git while removing its container, volume, ACL, rules and mirror; a retry changes nothing" = 12 # CENSORED lower bound 6.893s, run 43010311414; not a completed measurement
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_egress_test.py"
@@ -1042,7 +1040,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_fleet_build_test.ts"
-cost = 70
+cost = 677
+slices = 16
 inputs = [
   "apps/gateway/tests/Fixtures/production-gateway-converge-main.json",
   "bin/swamp-shape-gate",
@@ -1062,6 +1061,24 @@ inputs = [
   "swamp/tests/_support/task_vm_stock_roles.ts",
   "swamp/tests/_support/task_vm_stock_systemd.py",
 ]
+
+[fixture.case_costs]
+  "a blank seed gets the network, then the containers, the Gateway bootstrap and the nested Orbit steps in order, then the operator join" = 36 # completed body 35.708s, run 43010311414; larger completed history retained
+  "a half-made fleet starts from nothing: its containers go first" = 17 # completed body 16.154s, run 43010311414; larger completed history retained
+  "a fleet whose build stopped after its containers existed has no operator stamp: all three go and the build runs whole" = 37 # completed body 36.842s, run 43010311414; larger completed history retained
+  "a build removes the operator stamp first, so a build that stops leaves the fleet incomplete" = 36 # completed body 35.292s, run 43010311414; larger completed history retained
+  "a complete fleet creates nothing, restarts nothing and changes nothing" = 8 # completed body 7.327s, run 43010311414; larger completed history retained
+  "a from-stock refresh with no Gateway release metadata reaches all nested roles after private DNS lets the websocket dependency listen" = 79 # completed body 78.644s, run 43010311414; larger completed history retained; assertion FAILED
+  "local Gateway DNS fails with a named error before activation when dig is missing" = 2 # completed body 1.642s, run 43010311414; larger completed history retained
+  "local Gateway DNS fails with a named error before activation when dig is missing in check mode" = 2 # completed body 1.890s, run 43010311414; larger completed history retained
+  "an already-running local listener is reused with zero changes and peer-managed Gateway DNS is preserved" = 68 # completed body 67.121s, run 43010311414; larger completed history retained
+  "production Gateway vars from main create no listener or catalog and change no resolver" = 5 # completed body 4.012s, run 43010311414; larger completed history retained
+  "local Gateway DNS check mode skips activation and readiness without retries or mutation" = 29 # CENSORED lower bound 28.766s, run 43010311414; not a completed measurement
+  "a recorded local listener is disabled and its stale catalog removed after routing to a separate VPN" = 42 # CENSORED lower bound 41.562s, run 43010311414; not a completed measurement
+  "fresh local Gateway DNS check mode plans resources without requiring an installed release" = 79 # UNMEASURED estimate; observed maximum body cost
+  "withdrawal retains the listener when resolver policy still names its local address" = 79 # UNMEASURED estimate; observed maximum body cost
+  "conservative DNS ownership can withdraw after later-failure" = 79 # UNMEASURED estimate; observed maximum body cost
+  "conservative DNS ownership can withdraw after not-started" = 79 # UNMEASURED estimate; observed maximum body cost
 
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_fleet_wait_test.py"
