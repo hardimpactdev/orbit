@@ -81,7 +81,7 @@ final readonly class MigratedProcessDefinitions
     {
         DB::transaction(function (): void {
             $instances = Instance::query()->where('name', 'default')->where('status', 'active')
-                ->whereHas('runtime', static fn ($query) => $query->whereNotNull('seed_commit')->where('power_state', 'running'))
+                ->whereHas('runtime', static fn ($query) => $query->where('power_state', 'running'))
                 ->whereHas('node', static fn ($query) => $query->where('status', 'active')
                     ->whereHas('roles', static fn ($query) => $query->where('role', 'app-dev')->where('status', 'active')))
                 ->whereDoesntHave('node.roles', static fn ($query) => $query->where('role', 'app-prod'))
@@ -102,6 +102,10 @@ final readonly class MigratedProcessDefinitions
                 $records = $instance->processes()->whereNull('source_definition_id')->where('status', '!=', LifecycleStatus::Removing->value)->lockForUpdate()->get();
                 foreach ($records as $process) {
                     try {
+                        if ($runtime !== null && $runtime->seed_commit === null) {
+                            throw new ResourceOperationException('instance.migrate_process_definition_unproven',
+                                "Instance [{$instance->id}:{$instance->name}] runtime has no seed commit to prove its migrated Processes.", 409);
+                        }
                         $settled = $runtime !== null && $operation->status->terminal()
                             && ($result['moved'] ?? null) === true && ($result['restored'] ?? false) !== true
                             && (($result['ready'] ?? false) === true || ($result['failed_step'] ?? null) === 'retire')

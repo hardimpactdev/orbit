@@ -3340,6 +3340,31 @@ describe('migrated development Process definitions', function (): void {
         expect(Activity::query()->where('command', 'instance:migrate:repair')->count())->toBe(0);
     });
 
+    it('records every migrated direct Process when the runtime seed commit is missing', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $first = migrationWorker($instance, 'first');
+        $last = migrationWorker($instance, 'last');
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        Process::query()->whereIn('id', [$first->id, $last->id])->update(['source_definition_id' => null]);
+        ProcessDefinition::query()->delete();
+        $instance->runtime()->update(['seed_commit' => null]);
+        $migration = require database_path('migrations/2027_02_06_000000_capture_migrated_process_definitions.php');
+
+        $migration->up();
+
+        expect(ProcessDefinition::query()->count())->toBe(0);
+        expect($first->refresh()->source_definition_id)->toBeNull();
+        expect($last->refresh()->source_definition_id)->toBeNull();
+        $findings = Activity::query()->where('command', 'instance:migrate:repair')->orderBy('id')->get();
+        expect($findings)->toHaveCount(2);
+        foreach ([$first, $last] as $index => $process) {
+            expect($findings[$index]->properties->toArray())->toBe([
+                'instance_id' => $instance->id, 'process_id' => $process->id, 'process_name' => $process->name,
+                'reason' => "Instance [{$instance->id}:{$instance->name}] runtime has no seed commit to prove its migrated Processes.",
+            ]);
+        }
+    });
+
     it('does nothing on a fresh empty repair', function (): void {
         app(MigratedProcessDefinitions::class)->repair();
         app(MigratedProcessDefinitions::class)->repair();
