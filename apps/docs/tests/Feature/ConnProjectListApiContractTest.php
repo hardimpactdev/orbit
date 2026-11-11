@@ -9,6 +9,8 @@ describe('the generated reachable Conn Project directory', function (): void {
         $data = $operation['responses']['200']['content']['application/json']['schema']['properties']['data'];
 
         expect($operation['operationId'])->toBe('conn-project-list')
+            ->and(collect($operation['parameters'])->firstWhere('name', 'include_unavailable'))->toMatchArray(['in' => 'query', 'required' => false, 'schema' => ['type' => 'boolean']])
+            ->and($operation['responses'])->toHaveKey('422')
             ->and($data['items']['$ref'])->toBe('#/components/schemas/ConnProject');
         $properties = $spec['components']['schemas']['ConnProject']['properties'];
         expect(array_keys($properties))->toBe(['id', 'slug', 'name', 'node_id', 'node_name', 'instance_domain_suffix', 'cloneable', 'cloneable_reason', 'checks'])
@@ -36,6 +38,9 @@ describe('the generated reachable Conn Project directory', function (): void {
             ->and($tool['path'])->toBe('/api/v1/conn/projects')
             ->and($tool['extension'])->toBe('conn')
             ->and($tool['starts_operation'])->toBeFalse()
+            ->and($tool['query_inputs'])->toBe(['include_unavailable'])
+            ->and($tool['input_schema']['properties']['include_unavailable']['type'])->toBe('boolean')
+            ->and($tool['input_schema']['required'] ?? [])->not->toContain('include_unavailable')
             ->and($tool['description'])->toContain('project:list', 'instance_domain_suffix', 'cloneable_reason', 'host bridge', 'shared-folder', 'create is the guard');
     });
 });
