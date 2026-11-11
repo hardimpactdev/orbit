@@ -1530,7 +1530,7 @@ describe('Processes moving into the container', function (): void {
 
         $operation = migrateStart($instance);
 
-        expect($operation->input['container']['processes'][0]['content'])->toContain("EnvironmentFile=-/srv/workspace/.env\n", '"ORBIT_DEV_SERVER_PORT=5195"');
+        expect($operation->input['container']['processes'][0]['content'])->not->toContain("EnvironmentFile=-/srv/workspace/.env\n")->toContain('"ORBIT_DEV_SERVER_PORT=5195"');
         migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
         expect($preset->refresh()->runtime_config['environment_file'])->toBe('/srv/workspace/.env');
     })->with(['missing' => true, 'null' => false]);
@@ -3090,7 +3090,7 @@ describe('migrated development Process definitions', function (): void {
         foreach ([$instance->refresh(), $clone] as $target) {
             app(InstantiateProjectRuntimeDefinitionsAction::class)->refreshForContainer($target);
             $units = app(ContainerProcesses::class)->units($target);
-            expect($units[0]['content'])->toContain('EnvironmentFile=-/srv/workspace/.env');
+            expect(str_contains($units[0]['content'], 'EnvironmentFile=-/srv/workspace/.env'))->toBe(! $preset);
             expect($units[0]['content'])->toContain($preset ? '--port='.$target->vite_port : '"/opt/orbit-runtime/current/bin/node" "changed-worker.js"');
             if (! $preset) {
                 expect($units[0]['content'])->toContain('RequiresMountsFor=/srv/workspace/storage');

@@ -497,7 +497,7 @@ it('captures every attached server target once, including remote Redis, in the c
             'from_ip' => '10.253.0.2', 'to_ip' => '10.44.0.3', 'to_port' => '6379', 'proto' => 'tcp']);
 });
 
-it('resolves stock Laravel template references to the clone values in its file and dev Process environment', function (): void {
+it('keeps stock Laravel references live for the clone and lets its dev Process load them', function (): void {
     $node = containerDefaultNode();
     $default = seededDefault($node);
     $project = $default->project;
@@ -540,7 +540,8 @@ ENV;
         'ESCAPED' => '${APP_NAME}', 'SINGLE' => '${APP_NAME}',
     ]);
     expect($run['intent']['container']['processes'][0]['content'])
-        ->toContain('EnvironmentFile=-/srv/workspace/.env');
+        ->not->toContain('EnvironmentFile=-/srv/workspace/.env');
+    expect($file)->toContain('VITE_APP_NAME="${APP_NAME}"', 'VITE_APP_URL="${APP_URL}"');
     expect($file)->toBe(collect($vault->puts)->firstWhere('key', 'instance-create-environment-input-'.$operation->id)['value']);
 });
 
@@ -555,10 +556,13 @@ it('keeps an undefined template reference literal in the file inherited by Proce
     expect(Dotenv::parse($contents)['VITE_UNDEFINED'])->toBe('${NOT_DEFINED}');
 });
 
-it('leaves circular references outside the allow-list unchanged', function (): void {
-    $template = ['FIRST' => '${SECOND}', 'SECOND' => '${FIRST}'];
+it('keeps circular whole-value references live without an Orbit resolver', function (): void {
+    $default = seededDefault(containerDefaultNode());
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('c', 40), 'fixture', 'FIRST=${SECOND}'."\n".'SECOND=${FIRST}');
+    $operation = containerCreate($default->project, $default->node, 'circular');
+    $contents = app(DevelopmentCreateEnvironment::class)->content(Instance::query()->findOrFail($operation->target_id));
 
-    expect(app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($template, $template))->toBe($template);
+    expect($contents)->toContain('FIRST="${SECOND}"', 'SECOND="${FIRST}"');
 });
 
 it('keeps old persisted secret references literal without refreshing their source metadata', function (): void {
@@ -581,7 +585,7 @@ ENV);
     expect(Dotenv::parse($contents)['VITE_LITERAL'])->toBe('${DB_PASSWORD}');
 });
 
-it('leaves Process port and origin references outside the allow-list exactly as before', function (): void {
+it('leaves Process port and origin reference expansion to dotenv', function (): void {
     $node = containerDefaultNode();
     $default = seededDefault($node);
     app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('b', 40), 'fixture', <<<'ENV'
@@ -600,11 +604,11 @@ ENV);
     expect($clone->vite_port)->toBe(5173);
     expect(Dotenv::parse($contents))->toMatchArray([
         'ORBIT_DEV_SERVER_PORT' => '9999', 'ORBIT_DEV_SERVER_ORIGIN' => 'https://default.test',
-        'PORT_COPY' => '${ORBIT_DEV_SERVER_PORT}', 'ORIGIN_COPY' => '${ORBIT_DEV_SERVER_ORIGIN}',
+        'PORT_COPY' => '9999', 'ORIGIN_COPY' => 'https://default.test',
     ]);
 });
 
-it('matches main rendering byte for byte for awkward values and non-listed references', function (): void {
+it('matches main rendering byte for byte for awkward values without live provenance', function (): void {
     // Expected bytes were captured from the renderer at main 1720d2e6fe4f76cb5b87edb6ea12ef30fd7ea271.
     $node = containerDefaultNode();
     $default = seededDefault($node);
@@ -613,26 +617,19 @@ it('matches main rendering byte for byte for awkward values and non-listed refer
     $instance = Instance::query()->create(['project_id' => $default->project_id, 'node_id' => $node->id, 'name' => 'awkward',
         'checkout_path' => '/workspace/awkward', 'root' => '.', 'status' => 'reserved']);
 
+    $template = $default->project->environmentTemplate()->sole();
+    $template->update(['entries' => array_map(static function (array $entry): array {
+        unset($entry['reference']);
+
+        return $entry;
+    }, $template->entries)]);
     app(DevelopmentCreateEnvironment::class)->admit($instance, $default->project);
     $contents = app(DevelopmentCreateEnvironment::class)->content($instance);
 
     expect($contents)->toBe(file_get_contents(__DIR__.'/../../../Fixtures/instance-environment-awkward.rendered'));
 });
 
-it('keeps existing rendering when an allowed replacement needs incompatible escaping', function (string $name): void {
-    $values = ['APP_NAME' => $name, 'VITE_APP_NAME' => '${APP_NAME}'];
-
-    expect(app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($values, ['VITE_APP_NAME' => '${APP_NAME}'], ['VITE_APP_NAME' => 'APP_NAME']))
-        ->toBe($values);
-})->with(["first\nsecond", "first\rsecond", 'C:\\Shop', 'Acme $ale "Shop"', 'price$5', '${DB_PASSWORD}']);
-
-it('keeps an undefined allow-listed reference literal', function (): void {
-    $values = ['VITE_APP_URL' => '${APP_URL}'];
-
-    expect(app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($values, $values, ['VITE_APP_URL' => 'APP_URL']))->toBe($values);
-});
-
-it('records provenance only for captured live whole-value allowed references', function (): void {
+it('records provenance only for captured live whole-value references', function (): void {
     $node = containerDefaultNode();
     $default = seededDefault($node);
     $instanceBefore = $default->fresh()->getAttributes();
@@ -693,10 +690,10 @@ ENV);
     expect($default->fresh()->getAttributes())->toBe($defaultBefore);
     expect(app(InstanceEnvironmentStore::class)->values($default))->toBe($environmentBefore);
     expect(app(DevelopmentCreateEnvironment::class)->content($default))->toBe($fileBefore);
-    expect(app(DevelopmentCreateEnvironment::class)->content($oldInstance))->toBe($oldFile);
+    expect(app(InstanceEnvironmentStore::class)->values($oldInstance)['VITE_APP_NAME'])->toBe('${APP_NAME}');
 });
 
-it('uses the source key writer for a captured whole-value name without rescanning data', function (string $name): void {
+it('leaves complex names as data while keeping their reference live', function (string $name): void {
     $node = containerDefaultNode();
     $default = seededDefault($node);
     app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('7', 40), 'fixture',
@@ -706,9 +703,9 @@ it('uses the source key writer for a captured whole-value name without rescannin
     $contents = app(DevelopmentCreateEnvironment::class)->content(Instance::query()->findOrFail($operation->target_id));
 
     expect($contents)->toContain('APP_NAME='.InstanceEnvironmentRenderer::quote($name)."\n",
-        'VITE_APP_NAME='.InstanceEnvironmentRenderer::quote($name)."\n");
+        'VITE_APP_NAME="${APP_NAME}"'."\n");
     expect(Dotenv::parse($contents)['VITE_APP_NAME'])->toBe($name);
-})->with(['Acme Shop', 'Acme # Shop']);
+})->with(['Acme Shop', 'Acme # Shop', 'Acme $ale', 'C:\Shop', '${DB_PASSWORD}', "first\nsecond"]);
 
 it('gives the clone PHP runtime its own Vite SSR origin instead of the default port', function (): void {
     $node = containerDefaultNode();
