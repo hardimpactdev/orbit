@@ -97,6 +97,8 @@ final readonly class NativeNodeRoleRemovalInput
         $unitsForFleet = [];
         $containers = [];
         $units = [];
+        $files = [];
+        $directories = [];
         $runtime = $plan['runtime'];
         if (is_array($runtime)) {
             if ($assignment->role === RoleName::Analytics) {
@@ -112,10 +114,11 @@ final readonly class NativeNodeRoleRemovalInput
             if (app(GatewayPrivateDnsState::class)->owned($node->id)
                 && ! $node->roles()->where('role', RoleName::Vpn)->exists()) {
                 $units = [...$units, 'orbit-private-dns.socket', 'orbit-private-dns.service'];
+                $files = [...$files, ['ssh' => $ssh, 'path' => '/var/lib/orbit/private-dns/catalog.json'],
+                    ['ssh' => $ssh, 'path' => '/var/lib/orbit/private-dns/catalog.json.loaded']];
+                $directories[] = ['ssh' => $ssh, 'path' => '/var/lib/orbit/private-dns/releases'];
             }
         }
-        $files = [];
-        $directories = [];
         $reloads = $units === [] ? [] : [['ssh' => $ssh, 'input' => []]];
         if ($assignment->role === RoleName::Metrics) {
             $catalog = app(NodeFirewallRuleCatalog::class);

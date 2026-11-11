@@ -153,6 +153,10 @@ it('withdraws the Gateway listener only when no colocated VPN needs it', functio
     $units = array_column(array_column($plan['stop_units'], 'input'), 'unit');
     expect($units)->toBe(($vpn || ! $owned) ? ['orbit-gateway-dns.service'] : ['orbit-gateway-dns.service', 'orbit-private-dns.socket', 'orbit-private-dns.service']);
     expect(array_column(array_column($plan['remove_units'], 'input'), 'unit'))->toBe($units);
+    $ownedFiles = array_values(array_filter(array_column($plan['files'], 'path'), static fn (string $path): bool => str_starts_with($path, '/var/lib/orbit/private-dns/')));
+    $ownedDirectories = array_values(array_filter(array_column($plan['directories'], 'path'), static fn (string $path): bool => str_starts_with($path, '/var/lib/orbit/private-dns/')));
+    expect($ownedFiles)->toBe(($vpn || ! $owned) ? [] : ['/var/lib/orbit/private-dns/catalog.json', '/var/lib/orbit/private-dns/catalog.json.loaded']);
+    expect($ownedDirectories)->toBe(($vpn || ! $owned) ? [] : ['/var/lib/orbit/private-dns/releases']);
     NodeRoleRemovalProjection::recordCleanup(['node_id' => $node->id, 'role' => 'gateway']);
     expect(app(GatewayPrivateDnsState::class)->owned($node->id))->toBeFalse();
 })->with(['Gateway-only' => [false, false, true], 'Gateway and VPN' => [true, false, true],

@@ -13,6 +13,7 @@ use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\NodeNetworkReservation;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -37,10 +38,11 @@ final readonly class StartNodeConvergeAction
         }
 
         return app(NodeNetworkReservation::class)->hold($node, function (?Node $hub) use ($node, $base, $roles, $selected, $requestId): Operation {
+            // Share the role-converge hold: a withdrawal must not overtake a pending local DNS installation.
             $operation = $this->operations->execute('node.converge', 'node', $node->id, $node->id,
                 ['_converge' => ['network' => ['hub_id' => $hub?->id]],
                     'participant_node_ids' => array_values(array_unique([$node->id, $hub->id ?? $node->id]))],
-                'operator', $requestId, lockKey: 'node-converge:node:'.$node->id);
+                'operator', $requestId, lockKey: OperationStore::lockKey('node', $node->id));
             if ($operation->wasRecentlyCreated) {
                 // The one write before the capture: a build-list app-dev Node gets its Instance bridge here, never in the capture.
                 if (in_array(RoleName::AppDev->value, $selected, true)) {

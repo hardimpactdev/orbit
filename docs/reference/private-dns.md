@@ -83,11 +83,13 @@ The Gateway machine can be a hub or a managed peer. When it also holds `vpn`, it
 
 The Gateway uses the fleet VPN resolver when any separate Node holds a `vpn` role assignment, including a failed or removing Node or assignment. Its runtime, recipe and Ansible inputs stay unchanged: it installs no local listener or catalog and uses the existing resolver selection for that fleet state. A working production Gateway must not change because a stock fleet needs DNS bootstrap.
 
-When no separate VPN holder exists, the Gateway role installs the shared private-DNS listener and a catalog rendered from the Gateway database before routing the private VPN domain to its own WireGuard address. The Gateway decides this from desired fleet state and passes the listener into the converge input; host probes do not select the policy. It proves that `gateway.orbit` answers and the listener loaded the catalog before applying resolver routing.
+Local DNS becomes eligible only after the last separate `vpn` assignment row is gone. Failed and removing rows still suppress it. The current APIs forbid removing the VPN role or its Node, so production has no supported path into local DNS.
+
+With no separate VPN assignment, the Gateway role installs the shared private-DNS listener and a catalog rendered from the Gateway database before routing the private VPN domain to its own WireGuard address. The Gateway decides this from desired fleet state and passes the listener into the converge input; host probes do not select the policy. It proves that `gateway.orbit` answers and the listener loaded the catalog before applying resolver routing.
 
 Only a local DNS installation or withdrawal selects an additional wrapper playbook. Every existing Ansible file used by a Gateway with a separate VPN resolver stays unchanged. Shipping the additional files in the manifest has no host effect.
 
-Admission records local listener ownership before dispatch, in the same transaction as the operation. This conservative claim means the listener is owned or may be owned: a crash before installation, during installation or after a later machine task fails cannot hide cleanup duties. Withdrawal tolerates absent or partially installed resources.
+Admission records local listener ownership before dispatch, in the same transaction as the operation. This conservative claim means the listener is owned or may be owned: a crash before installation, during installation or after a later machine task fails cannot hide cleanup duties. Withdrawal tolerates absent or partially installed resources. Node and role convergence share the same Node hold, so withdrawal cannot overtake a pending local installation and erase its ownership claim.
 
 When a separate VPN resolver joins later, an owned Gateway switches resolver routing first, then disables and removes its local listener units, release and catalog. The ownership record is cleared only after withdrawal succeeds. A failed withdrawal keeps the record for retry. A Gateway with no local ownership claim receives no withdrawal input. Role removal also uses this record, including when a VPN joined before the next converge; a colocated VPN keeps the shared listener.
 
@@ -109,7 +111,7 @@ If Orbit VPN DNS is unreachable, a private-name lookup on the Gateway machine ta
 
 A listener or resolver-policy failure fails the Gateway role phase. Resolver routing starts only after the local listener answers `gateway.orbit` and confirms its catalog. `orbit doctor --family=role` reports `role.private_dns_route_mismatch` until the route matches. Run `orbit node:role:add <gateway-node> gateway --converge` to retry.
 
-Removing the `gateway` role removes its resolver unit and reverts the `orbit` link. When local ownership is recorded, it also disables and removes the local listener units unless a colocated `vpn` role still needs them. When that step fails, the role stays `failed` with `failed_step=remove:gateway-private-dns-resolver`, and running the removal again finishes it. `--offline` removal changes nothing on the machine and lists the drop-in under `retained_on_node`. [Relocating the gateway role](/solutions/relocate-gateway-role) adds the route on the target and removes it from the source.
+Removing the `gateway` role removes its resolver unit and reverts the `orbit` link. When local ownership is recorded, it also disables and removes the local listener units, catalog, catalog confirmation file and releases unless a colocated `vpn` role still needs them. When that step fails, the role stays `failed` with `failed_step=remove:gateway-private-dns-resolver`, and running the removal again finishes it. `--offline` removal changes nothing on the machine and lists the drop-in under `retained_on_node`. [Relocating the gateway role](/solutions/relocate-gateway-role) adds the route on the target and removes it from the source.
 
 ## The listener
 
