@@ -19,6 +19,8 @@ default = ["swamp/tests/ansible_inputs_test.py"]
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_migrate_test.ts"
+after_merge = true
+reason = "92 retained cases need 6350 declared seconds including startup: 12 hosted shards, above the six-shard PR limit (runs 43010311414 and 43013527963; 23 case costs remain estimates). All migration cases run after merge until their work is reduced or selection is narrowed."
 cost = 5798
 # 159.019s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was"]
@@ -192,6 +194,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_test.ts"
+after_merge = true
+reason = "The build-list case has no completed individual measurement; its conservative 186-second declaration exceeds the 150-second lane. This file stays after-merge-only pending an isolated hosted measurement; its other cases are also deferred and named."
 cost = 293
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (88s); these are estimates, not completed measurements.
@@ -355,6 +359,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_acl_test.ts"
+after_merge = true
+reason = "The remaining endpoint-union case measured 170.117 body seconds / 172.873 unit seconds in run 43011901748; with startup its 177-second declaration exceeds the 150-second lane. Both ACL cases run after merge."
 cost = 171
 # 180.026s, hosted four-worker run 43002948719 (unit cutoff; case unfinished).
 after_merge_cases = ["bridge remains reject after late unsafe attachments, and profile NICs use only the proxy ACL"]

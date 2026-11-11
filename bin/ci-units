@@ -87,12 +87,11 @@ def configuration(path=TABLE):
             raise ValueError(f'Invalid fixture file or cost: {file}')
         if not sliceable(fixture) and cost > budget['shard_seconds'] and not fixture.get('after_merge'):
             raise ValueError(f'{file}: unsliceable cost exceeds shard_seconds; set after_merge with a reason')
+        # Inventory describes measured populations, not a repository-wide source lock.
+        # Selected Deno units compare registrations before executing any test body.
+        # New files use the declared default cost and the same runtime deadlines.
         if file in inventory:
             fixture.update(inventory[file])
-            if fixture['source_sha256'] != hashlib.sha256((ROOT / file).read_bytes()).hexdigest():
-                raise ValueError(f'{file}: stale fixture case inventory/cost; collect registrations and review its cost before execution')
-        else:
-            raise ValueError(f'{file}: missing fixture case inventory/cost; collect registrations before execution')
         excluded = fixture.get('after_merge_cases', [])
         if not isinstance(excluded, list) or any(not isinstance(name, str) or name not in fixture.get('cases', []) for name in excluded):
             raise ValueError(f'{file}: every after_merge_cases name must be registered')

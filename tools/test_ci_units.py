@@ -141,8 +141,9 @@ class TableTest(unittest.TestCase):
             with patch.object(units, 'fixture_steps', return_value={**units.fixture_steps(), new_file: object()}):
                 self.assertEqual(units.configuration(path)[1][new_file]['cost'], BUDGET['default_cost'])
             with patch.object(units, 'fixture_steps', return_value={**units.fixture_steps(), 'swamp/tests/_support/fixture_supervisor.py': object()}):
-                with self.assertRaisesRegex(ValueError, 'missing fixture case inventory/cost'):
-                    units.configuration(path)
+                fresh = units.configuration(path)[1]['swamp/tests/_support/fixture_supervisor.py']
+                self.assertEqual(fresh['cost'], BUDGET['default_cost'])
+                self.assertNotIn('cases', fresh)
             steps = {**units.fixture_steps(), 'swamp/tests/new_fixture.ts': object()}
             # The fallback must work for real new fixture files, and refuse paths that do not exist.
             with patch.object(units, 'fixture_steps', return_value=steps):
@@ -394,7 +395,7 @@ class PopulationTest(unittest.TestCase):
             self.assertEqual(result['cases'][0]['name'], 'restricted')
             self.assertEqual(result['cases'][0]['status'], 'passed')
 
-    def test_source_change_invalidates_cost_before_a_fixture_can_be_deferred(self):
+    def test_fixture_hashes_do_not_gate_docs_or_unrelated_inputs(self):
         with tempfile.TemporaryDirectory() as scratch:
             inventory = json.loads(units.INVENTORY.read_text())
             file = 'swamp/tests/ansible_instance_migrate_test.ts'
@@ -402,8 +403,15 @@ class PopulationTest(unittest.TestCase):
             path = Path(scratch) / 'inventory.json'
             path.write_text(json.dumps(inventory))
             with patch.object(units, 'INVENTORY', path):
-                with self.assertRaisesRegex(ValueError, file + ': stale fixture case inventory/cost'):
-                    units.configuration()
+                budget, fixtures, defaults = units.configuration()
+                self.assertEqual(units.plan(['docs/mission.md'], budget, fixtures, defaults)['shards'], [])
+                selected = units.plan(['swamp/tests/ansible_instance_container_test.ts'], budget, fixtures, defaults)
+                self.assertIn('swamp/tests/ansible_instance_container_test.ts', {u.split('#')[0] for u in names(selected)})
+                self.assertNotIn('capacity', selected)
+                migration = units.plan([file], budget, fixtures, defaults)
+                self.assertTrue(migration['deferred'])
+                self.assertNotIn('capacity', migration)
+                self.assertIn('12 hosted shards', units.plan_summary(migration, fixtures))
 
     def test_named_case_costs_and_startup_replace_the_equal_share_estimate(self):
         f = fixture('swamp/cases.ts', 140, cases=['large', 'small'], slices=2,
