@@ -15,12 +15,9 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
-use App\Domain\Operations\DirectOperationTimeoutSettlement;
-use App\Domain\Operations\DirectOperationUnstartedTerminal;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -37,29 +34,23 @@ use Illuminate\Support\Facades\DB;
  * the Instance's runtime: its checkout path becomes the workspace, the runtime runs, and a non-default Instance's T3 server is
  * recorded. A move that failed and restored drops the reserved runtime row, so the Instance is the checkout Instance it was.
  */
-final readonly class InstanceMigrateProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeoutSettlement, DirectOperationUnstartedTerminal
+final readonly class InstanceMigrateProjection implements DirectOperationProjection
 {
     public function __construct(private DirectOperation $direct) {}
 
-    public function refused(Operation $operation): void
+    /** The one settlement rule, called by OperationStore in the first terminal transition's transaction. */
+    public function terminal(Operation $operation, Operation $before): void
     {
-        $this->unstartedTerminal($operation);
-    }
-
-    public function unstartedTerminal(Operation $operation): void
-    {
-        Instance::query()->lockForUpdate()->findOrFail($operation->target_id);
-        // A queued start that never reached Swamp owns no Node effects. A retry keeps an earlier failed restore's reservation.
-        if (($operation->input['had_runtime_reservation'] ?? false) !== true) {
-            Instance::query()->findOrFail($operation->target_id)->runtime()->where('operation_id', $operation->id)->delete();
+        $instance = Instance::query()->lockForUpdate()->findOrFail($operation->target_id);
+        $unstarted = ! isset($before->state['swamp_run_id']) && $before->attempts === 0
+            && ! ($before->status === OperationStatus::Running && isset($before->state['swamp_start']));
+        // StartSwampRun leaves an uncertain submission running; only these failures prove no native submission.
+        $refused = ! isset($operation->state['swamp_run_id']) && in_array($operation->error_code, [
+            'swamp.start_refused', 'swamp.start_unavailable', 'swamp.start_enqueue_failed', 'swamp.start_job_failed',
+        ], true);
+        if (($unstarted || $refused) && ($operation->input['had_runtime_reservation'] ?? false) !== true) {
+            $instance->runtime()->delete();
         }
-        app(DeferredMigrationScheduleRuns::class)->release($operation);
-    }
-
-    public function timeoutSettled(Operation $operation): void
-    {
-        Instance::query()->lockForUpdate()->findOrFail($operation->target_id);
-        // Timeout settlement proves no runtime result. Keep the reservation; closed admission explicitly fails the fires.
         app(DeferredMigrationScheduleRuns::class)->release($operation);
     }
 
@@ -229,12 +220,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                 ]]]);
             }
 
-            $projected = $this->direct->project($operation, $data, $result);
-            if ($projected->status->terminal()) {
-                app(DeferredMigrationScheduleRuns::class)->release($projected);
-            }
-
-            return $projected;
+            return $this->direct->project($operation, $data, $result);
         });
     }
 

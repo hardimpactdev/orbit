@@ -17,14 +17,6 @@ use LogicException;
 /** Fixed family declarations and intent/result projection. Swamp owns execution. */
 final readonly class DirectOperation
 {
-    /** A running start request may have reached Swamp even before its reply binds the run. */
-    public static function unstarted(Operation $operation): bool
-    {
-        return in_array($operation->status, [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting], true)
-            && ! isset($operation->state['swamp_run_id']) && $operation->attempts === 0
-            && ! ($operation->status === OperationStatus::Running && isset($operation->state['swamp_start']));
-    }
-
     /** @var array<string, array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string},rows:string}, projection: class-string<DirectOperationProjection>, child_projection?: class-string<DirectOperationChildProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}> */
     private array $definitions;
 
