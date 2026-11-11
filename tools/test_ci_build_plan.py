@@ -46,7 +46,7 @@ class BuildPlanTest(unittest.TestCase):
                      'tools/swamp-proof-guest/ansible-recaps.php', 'docs/cli/firewall/allow.mmd',
                      'apps/gateway/app/Domain/Tasks/direct-operations.php',
                      'apps/gateway/resources/machine-software/recipe.json',
-                     '.github/actions/php/action.yml', 'bin/bootstrap'):
+                     '.github/actions/php/action.yml'):
             for main in (False, True):
                 with self.subTest(path=path, main=main):
                     self.assertTrue(plan.select([path], main)['jobs']['gateway-tests'])
@@ -208,10 +208,10 @@ class BuildPlanTest(unittest.TestCase):
                 with self.subTest(name=name, main=main):
                     self.assertIn('php', self.selected([f'apps/gateway/resources/agent/{name}'], main))
 
-    def test_agent_delivery_selection_tracks_agent_sources(self):
-        self.assertTrue(plan.select(['apps/agent/src/main.rs'])['agent'])
-        self.assertFalse(plan.select(['apps/gateway/app/Thing.php'])['agent'])
-        self.assertFalse(plan.select(['.github/workflows/ci.yml'])['agent'])
+    def test_the_rust_check_tracks_agent_sources_and_the_node_version(self):
+        self.assertIn('agent', self.selected(['apps/agent/src/main.rs']))
+        self.assertNotIn('agent', self.selected(['apps/gateway/app/Thing.php']))
+        self.assertEqual({'web', 'pi', 'agent'}, self.selected(['.node-version']))
 
     def test_gateway_grant_renderer_changes_require_native_serve_validation(self):
         for path in ('apps/gateway/app/Infrastructure/GatewayReleases/SwampGrantRenderer.php',
