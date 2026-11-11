@@ -20,6 +20,8 @@ The Gateway owns the environment configuration of every Instance. It stores each
 
 `ORBIT_TASK_VMS_ENABLED`, `ORBIT_TASK_VMS_DEV_CLUSTER_ID`, `ORBIT_TASK_VMS_WIREGUARD_RANGE`, `ORBIT_TASK_VMS_PI_ARTIFACT_PATH`, `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`, `ORBIT_TASK_VMS_PI_MODELS`, `ORBIT_TASK_VMS_MEDIUM_PROJECTS`, `ORBIT_TASK_VMS_LARGE_PROJECTS` configure [task VMs](/reference/compute-drivers#configure-task-vms) in the Gateway's own environment. They are not Instance keys. Task VMs are off by default, the reserved WireGuard range defaults to `10.44.0.128/25`, and the other values are unset. `ORBIT_TASK_VMS_PI_MODELS`, `ORBIT_TASK_VMS_MEDIUM_PROJECTS`, and `ORBIT_TASK_VMS_LARGE_PROJECTS` are JSON lists. For groups without a declared topology, `large_projects` takes precedence over `medium_projects`. The Gateway validates these values once, when it first uses them.
 
+For its container Process observations, the Node agent fixes `INCUS_CONF` to `/var/empty`. Its read uses the local Incus socket and no user configuration. This is internal process environment, not an Instance setting.
+
 Incus hosts are configured through [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list or the `app-dev` role. `ORBIT_TASK_VMS_INCUS_HOSTS` is read only by the [deployment migration](/reference/node-settings#migrate-the-environment-host-list). Keep its current JSON list until migration copies it into the existing host Nodes, verify their settings, and then remove the variable.
 
 

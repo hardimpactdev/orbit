@@ -145,6 +145,11 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         config.gateway_url.clone(),
         watch_facts_rx.clone(),
     ));
+    let (instance_units_tx, mut instance_units_rx) = watch::channel(HashMap::new());
+    tokio::spawn(orbit_agent::instance_units::watch_units(
+        watch_facts_rx.clone(),
+        instance_units_tx,
+    ));
     tokio::spawn(report_facts(
         client.clone(),
         config.gateway_url.clone(),
@@ -169,7 +174,8 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut sequence = Sequencer::default();
     let mut docker_units = HashMap::new();
     let mut docker_available = false;
-    let mut systemd = systemd_snapshot(&manager).await?;
+    let mut instance_units = instance_units_rx.borrow().clone();
+    let mut systemd = systemd_snapshot(&manager, &instance_units).await?;
     let mut heartbeat = tokio::time::interval(Duration::from_secs(5));
     let mut systemd_poll = tokio::time::interval(Duration::from_secs(30));
     reconnect_loop(&mut shutdown_rx, async |shutdown_rx, joined_at| {
@@ -209,6 +215,8 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
                 &mut docker_available,
                 &mut docker_rx,
                 &mut systemd_rx,
+                &mut instance_units,
+                &mut instance_units_rx,
                 &workspaces,
                 &mut workspace_rx,
                 &mut heartbeat,
@@ -294,6 +302,8 @@ async fn connected_session(
     docker_available: &mut bool,
     docker_rx: &mut mpsc::UnboundedReceiver<DockerUpdate>,
     systemd_rx: &mut mpsc::UnboundedReceiver<()>,
+    instance_units: &mut HashMap<String, Unit>,
+    instance_units_rx: &mut watch::Receiver<HashMap<String, Unit>>,
     workspaces: &SharedWorkspaces,
     workspace_rx: &mut mpsc::UnboundedReceiver<WorkspaceUpdate>,
     heartbeat: &mut Interval,
@@ -310,7 +320,8 @@ async fn connected_session(
     // The caller starts the backoff again only when this session stays joined long enough.
     *joined_at = Some(Instant::now());
     // Re-read both runtimes for every successful join.
-    *systemd = match systemd_snapshot(manager).await {
+    *instance_units = instance_units_rx.borrow().clone();
+    *systemd = match systemd_snapshot(manager, instance_units).await {
         Ok(units) => units,
         Err(error) => {
             eprintln!("orbit-agent: systemd D-Bus watcher failed: {error}");
@@ -371,15 +382,20 @@ async fn connected_session(
                 let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"},workspaces).await?;
                 snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);
             },
+            Ok(())=instance_units_rx.changed()=>{
+                *instance_units=instance_units_rx.borrow().clone();
+                let fresh=systemd_snapshot(manager, instance_units).await?;
+                if let Some(deadline)=queue_changes(&mut pending,diff_units(systemd,&fresh)){debounce.as_mut().reset(deadline);} *systemd=fresh;
+            },
             signal=systemd_rx.recv()=>match signal {
                 Some(())=>{
-                    let fresh=match systemd_snapshot(manager).await{Ok(units)=>units,Err(error)=>{eprintln!("orbit-agent: systemd D-Bus watcher failed: {error}");std::process::exit(1)}};
+                    let fresh=match systemd_snapshot(manager, instance_units).await{Ok(units)=>units,Err(error)=>{eprintln!("orbit-agent: systemd D-Bus watcher failed: {error}");std::process::exit(1)}};
                     if let Some(deadline)=queue_changes(&mut pending,diff_units(systemd,&fresh)){debounce.as_mut().reset(deadline);} *systemd=fresh;
                 },
                 None=>{eprintln!("orbit-agent: systemd D-Bus signal watcher stopped");std::process::exit(1)},
             },
             _=systemd_poll.tick()=>{
-                let fresh=match systemd_snapshot(manager).await{Ok(units)=>units,Err(error)=>{eprintln!("orbit-agent: systemd D-Bus safety poll failed: {error}");std::process::exit(1)}};
+                let fresh=match systemd_snapshot(manager, instance_units).await{Ok(units)=>units,Err(error)=>{eprintln!("orbit-agent: systemd D-Bus safety poll failed: {error}");std::process::exit(1)}};
                 if let Some(deadline)=queue_changes(&mut pending,diff_units(systemd,&fresh)){debounce.as_mut().reset(deadline);} *systemd=fresh;
             },
             update=docker_rx.recv()=>match update {
@@ -545,7 +561,9 @@ fn diff_units(old: &HashMap<String, Unit>, new: &HashMap<String, Unit>) -> Vec<U
     for (name, unit) in old {
         if !new.contains_key(name) {
             let mut inactive = unit.clone();
-            inactive.runtime_status = if unit.runtime == "systemd" {
+            inactive.runtime_status = if unit.runtime == "incus" {
+                "unknown"
+            } else if unit.runtime == "systemd" {
                 "inactive"
             } else {
                 "exited"
@@ -608,6 +626,7 @@ async fn watch_systemd_events(
 
 async fn systemd_snapshot(
     manager: &Proxy<'_>,
+    instance_units: &HashMap<String, Unit>,
 ) -> Result<HashMap<String, Unit>, Box<dyn Error + Send + Sync>> {
     type Row = (
         String,
@@ -622,7 +641,7 @@ async fn systemd_snapshot(
         OwnedObjectPath,
     );
     let rows: Vec<Row> = manager.call("ListUnits", &()).await?;
-    Ok(rows
+    let mut units: HashMap<String, Unit> = rows
         .into_iter()
         .filter_map(|(unit_name, _, _, active, _, _, _, _, _, _)| {
             process_unit_name(&unit_name).map(|name| {
@@ -634,7 +653,9 @@ async fn systemd_snapshot(
                 (name, unit)
             })
         })
-        .collect())
+        .collect();
+    units.extend(instance_units.clone());
+    Ok(units)
 }
 /// Every `orbit-process-*` container with its state.
 async fn docker_process_units(docker: &Docker) -> Result<Vec<Unit>, bollard::errors::Error> {
@@ -1236,6 +1257,19 @@ mod protocol_tests {
         tokio::join!(client, verify);
         server.await.unwrap();
         runnable.abort();
+    }
+
+    #[test]
+    fn removed_instance_units_report_unknown_instead_of_a_host_state() {
+        let unit = Unit {
+            name: "orbit-process-9-worker".into(),
+            runtime: "incus".into(),
+            runtime_status: "active".into(),
+        };
+        let old = HashMap::from([(unit.name.clone(), unit)]);
+        let changes = diff_units(&old, &HashMap::new());
+        assert_eq!(changes[0].runtime_status, "unknown");
+        assert_eq!(changes[0].runtime, "incus");
     }
 
     #[tokio::test(start_paused = true)]

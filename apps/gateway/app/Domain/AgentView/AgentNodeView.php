@@ -48,16 +48,16 @@ final readonly class AgentNodeView
      *
      * In a fresh view a systemd unit the agent does not list is `inactive`, and a container it
      * does not list is `exited`. The view does not answer for Docker while the agent reports
-     * Docker as absent.
+     * Docker as absent. A container unit requires an explicit `incus` observation; a host unit or absence cannot answer.
      */
-    public function status(ProcessRuntime $runtime, string $name): ?string
+    public function status(ProcessRuntime $runtime, string $name, bool $inContainer = false): ?string
     {
         if (! $this->answers($runtime)) {
             return null;
         }
 
-        return $this->units[$runtime->value.':'.$name]
-            ?? ($runtime === ProcessRuntime::Systemd ? 'inactive' : 'exited');
+        return $this->units[($inContainer ? 'incus' : $runtime->value).':'.$name]
+            ?? ($inContainer ? null : ($runtime === ProcessRuntime::Systemd ? 'inactive' : 'exited'));
     }
 
     /**

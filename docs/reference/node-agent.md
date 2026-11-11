@@ -44,16 +44,19 @@ In disposable proof fleets, each batch installs the tested checkout's frozen pin
 
 ## What it observes
 
-The agent watches two sources and reports each Orbit Process unit or container by its full name, such as `orbit-process-42-web`.
+The agent watches three sources and reports each Orbit Process unit or container by its full name, such as `orbit-process-42-web`.
 
 | Source | What it watches | Reported `runtime_state` |
 | --- | --- | --- |
 | systemd over D-Bus | Units named `orbit-process-*.service` | The unit's `ActiveState`, such as `active`, `inactive`, or `failed`. A missing unit reads as `inactive`. |
+| Instance containers in the watch list | Fixed, read-only `incus exec … systemctl show` for their Process units | The unit's `ActiveState`; `unknown` when the container cannot be read. |
 | The Docker socket `/run/docker.sock` | Containers named `orbit-process-*` | The container state, such as `running`, `exited`, or `restarting`. A missing container reads as `exited`. |
+
+Container observations use source `incus` in the same Reverb snapshots and updates. A host observation of the same name cannot answer for them. The Process API runtime stays `systemd`.
 
 The values use the same words as the `runtime_state` field of the Process API. The agent does not know which Process owns a name. The Gateway matches the name to a Process, so a candidate container such as `orbit-process-42-web-candidate` never matches. The Process presence report carries no CPU or memory metrics; the agent sends them as facts.
 
-Without Docker, the agent watches systemd only and reports Docker as `absent`. It checks for the socket every 10 seconds and sends a new snapshot when it appears. When the Docker event stream ends, the agent reconnects and sends a new snapshot. It merges changes to one unit that arrive within 250 milliseconds and sends only the latest state. It sends a heartbeat every 5 seconds and a complete snapshot at least every 60 seconds.
+Without Docker, the agent still watches host and listed container systemd units and reports Docker as `absent`. It checks for the socket every 10 seconds and sends a new snapshot when it appears. When the Docker event stream ends, the agent reconnects and sends a new snapshot. It merges changes to one unit that arrive within 250 milliseconds and sends only the latest state. It sends a heartbeat every 5 seconds and a complete snapshot at least every 60 seconds.
 
 ## Facts
 
@@ -243,6 +246,8 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
   "meta": { "request_id": "..." }
 }
 ```
+
+`instance_containers` lists each container with Process units on this Node: its `project`, `name` and `units` (full service names). The observer reads only these units, every 10 seconds and when the list changes, with at most four container reads at once and a five-second deadline per read. It publishes an explicit `unknown` on a failed read, so a host unit or an earlier container state cannot answer instead.
 
 `services` are the services of the Node's roles and the units of its systemd Processes, which the agent reports as [facts](#facts). A named unit is read even when systemd has unloaded it. `awake_markers` are the awake markers of its hibernating Processes, all below `/dev/shm/orbit/hibernation/`.
 
@@ -600,7 +605,7 @@ The view lives in its own file cache store in `ORBIT_HOME/cache/agent-view`, wha
 | One per Node with open log streams | Each stream's ID, source, `lines`, opening Node, and lease end | Until its last lease ends |
 | One for the subscriber | Whether realtime is configured, whether the socket is connected, the number of joined channels, and the time of the last write | 30 seconds after its last write |
 
-The subscriber accepts an event only when Reverb's `user_id` is `agent.{id}`. It applies a snapshot once every part has arrived, and starts over when the agent's `sequence` restarts. It removes a Node's entry when `agent.{id}` leaves the channel. It keeps a unit only when the name has the form `orbit-process-{id}-{name}`, the runtime is `systemd` or `docker`, and the state is a short lowercase word.
+The subscriber accepts an event only when Reverb's `user_id` is `agent.{id}`. It applies a snapshot once every part has arrived, and starts over when the agent's `sequence` restarts. It removes a Node's entry when `agent.{id}` leaves the channel. It keeps a unit only when the name has the form `orbit-process-{id}-{name}`, the observation source is `systemd`, `docker` or `incus`, and the state is a short lowercase word.
 
 ### Liveness
 

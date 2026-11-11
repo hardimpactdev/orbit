@@ -124,6 +124,7 @@ pub fn parse_watch_list(body: &Value) -> Result<Vec<WatchEntry>, &'static str> {
 /// with each Project's application directory below a checkout.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct WatchFacts {
+    pub instance_containers: Vec<crate::instance_units::Target>,
     pub services: Vec<String>,
     pub apps_root: Option<String>,
     pub applications: BTreeMap<String, String>,
@@ -521,6 +522,7 @@ async fn fetch_watch_list(
         .await?;
     let (apps_root, applications) = parse_watch_apps(&body);
     let facts = WatchFacts {
+        instance_containers: crate::instance_units::parse_watch(&body),
         services: parse_watch_services(&body)?,
         apps_root,
         applications,

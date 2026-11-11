@@ -12,7 +12,7 @@ use App\Models\Instance;
  *
  * The caller has already checked that Reverb stamped the event with `agent.{id}`. This class
  * checks the payload: sequence order, snapshot parts, and the shape of every unit. It keeps a unit
- * only when its name is an Orbit Process name, its runtime is `systemd` or `docker`, and its status
+ * only when its name is an Orbit Process name, its source is `systemd`, `docker` or `incus`, and its status
  * is a short lowercase word, and it keeps at most `MaxUnits` units. It keeps at most `MaxWorkspaces`
  * task workspaces, each with a positive Instance id, full commit ids, and non-negative counts.
  */
@@ -373,7 +373,7 @@ final class AgentChannelState
 
         if (
             ! is_string($name) || strlen($name) > 200 || preg_match(self::UNIT_NAME, $name) !== 1
-            || ! in_array($runtime, ['systemd', 'docker'], strict: true)
+            || ! in_array($runtime, ['systemd', 'docker', 'incus'], strict: true)
             || ! is_string($status) || preg_match(self::UNIT_STATUS, $status) !== 1
         ) {
             return null;

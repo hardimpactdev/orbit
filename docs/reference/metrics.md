@@ -134,13 +134,13 @@ The Node exporter enables its systemd collector for `orbit-node-worker.service`.
 
 ## Process runtime status
 
-A Process list reads each Process's status from the Gateway's [view of the Node agents](/reference/node-agent#gateway-view) first. For a Process whose Node has no fresh view, it reads Prometheus in one query.
+A Process list reads each Process's status from the Gateway's [view of the Node agents](/reference/node-agent#gateway-view) first. For a Node or checkout Process whose Node has no fresh view, it reads Prometheus in one query. A container Process uses only its explicitly reported [container observation](/reference/development-containers#processes); without one it shows `unknown`.
 
 In Prometheus, a systemd Process takes its state from `node_systemd_unit_state`. A missing unit is `inactive`. cAdvisor reports only running containers, so a Docker Process with a series is `running` and one without is `exited`. The Gateway caches this answer for 10 seconds.
 
 These statuses describe sampled runtime state, not health. A systemd Process can appear `active` between crashes. [Doctor](/cli/doctor/doctor#what-each-family-checks) reports `process.crash_loop` from the unit's auto-restart sub-state or an increasing restart count when the Process is desired running; the [Processes reference](/reference/processes-and-schedules#process-runtime-state) owns that rule. Doctor does not need the Metrics role to inspect this evidence on the Node.
 
-After the Gateway starts, stops, or restarts a Process, it reads the new status from the Node and broadcasts `process.status`. Lists show that status for 30 seconds, ahead of the view and Prometheus. When Prometheus cannot answer, the list asks each remaining Node over SSH and does not cache the answer.
+After the Gateway starts, stops, or restarts a Process, it reads the new status from the Node and broadcasts `process.status`. Lists of Node and checkout Processes show that status for 30 seconds, ahead of the view and Prometheus. When Prometheus cannot answer, the list asks each remaining Node over SSH and does not cache the answer.
 
 ## Grafana access
 

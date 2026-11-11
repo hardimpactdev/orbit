@@ -306,7 +306,7 @@ The Project's development Process definitions run as `orbit-*` units in the cont
 
 - Their environment values reach the container through the vault, never the intent.
 - `process:start`, `stop`, `restart` and `logs` act in the container through `incus exec`.
-- The status observation reads the units in the container.
+- The Node agent observes the units in the container and reports through its existing Reverb stream. Process lists start no status Operation.
 - A deployment restarts the Processes whose code changed and installs a changed definition.
 
 It reuses the Process classes from `task-4193` that the reuse table names. Tests: Pest for the records and the target; Ansible fixture tests for the units.
@@ -710,7 +710,7 @@ The unpushed branch `task-4193` (bundle `~/apps/orbit-container-plan/.backup/pro
 | --- | --- | --- |
 | `InstanceRuntime` and the migration `add_development_runtime_ownership` | PR 2 | Drop the Project VM columns and the state volume. `InstanceRuntimeKind` and `instances.runtime_kind` are dropped: a runtime row marks a container Instance |
 | `ContainerCreateInput`, `ContainerCreateProjection`, `ContainerDestroyInput`, `ContainerDestroyProjection` | PR 5, PR 6 | Drop the source hold, receipts and compensation admission |
-| `ContainerProcessTarget`, `ContainerProcessDefinitions`, `ContainerProcessInspection`, `ContainerProcessObservation`, `RefreshContainerProcessStatus` | PR 4b | The target is an Incus project and container on the Node, not a VM; the directory is `/srv/workspace` |
+| `ContainerProcessTarget`, `ContainerProcessDefinitions`, `ContainerProcessInspection`, `ContainerProcessObservation` | PR 4b | The target is an Incus project and container on the Node, not a VM; the directory is `/srv/workspace` |
 | `swamp/ansible/tasks/process-systemd.yml`, `swamp/ansible/process-container.yml`, `swamp/ansible/process-guest.yml`, `swamp/ansible/tasks/process-container-target.yml` and their tests | PR 4b | Remove the VM checks; units get `User=orbit` |
 | `swamp/ansible/tasks/container-feature-branch.yml` | PR 5 | The branch comes from the Node |
 | `swamp/ansible/library/orbit_postgres_copy.py`, `swamp/ansible/postgres-copy.yml` with `swamp/ansible/tasks/postgres-copy.yml`, `PostgresCopyDatabase`, `PostgresDatabaseCopyInput`, the PostgreSQL copy in `DatabaseStatements`, and `ansible_postgres_copy_test.py` | PR 5 | The dump path across servers; the database family adds the template copy on one server |

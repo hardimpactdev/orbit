@@ -9,7 +9,6 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Infrastructure\Metrics\GrafanaPrometheusClient;
-use App\Jobs\Operations\RefreshContainerProcessStatus;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Process;
@@ -73,7 +72,7 @@ final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRunti
         }
 
         $observed = Cache::many($processes->map(static fn (Process $process): string => self::OBSERVED_KEY.$process->id)->all());
-        $containers = $this->containerStatuses($processes, $observed);
+        $containers = $this->containerStatuses($processes);
         $processes = $processes->reject(static fn (Process $process): bool => array_key_exists((int) $process->id, $containers));
         if ($processes->isEmpty()) {
             return $containers;
@@ -100,28 +99,27 @@ final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRunti
     }
 
     /**
-     * The Processes of Instance containers, whose units neither Prometheus nor the Node agent sees: a state a start, stop or restart
-     * observed, else the last read of the unit, else `unknown` while a new read runs. At most four reads start per call.
+     * Container Processes use only explicit, fresh agent observations of their container units. Host metrics,
+     * missing host units and control results cannot supply their live state; a list never starts an inspection.
      *
      * @param  Collection<int, Process>  $processes
-     * @param  array<string, mixed>  $observed
      * @return array<int, string>
      */
-    private function containerStatuses(Collection $processes, array $observed): array
+    private function containerStatuses(Collection $processes): array
     {
         $owners = $processes->filter(static fn (Process $process): bool => Instance::isMorphType($process->owner_type))->pluck('owner_id')->unique()->all();
         $containers = $owners === [] ? [] : InstanceRuntime::query()->whereIn('instance_id', $owners)->pluck('instance_id')->all();
         $statuses = [];
-        $reads = 0;
+        if ($containers === []) {
+            return [];
+        }
+        $viewed = $this->agents->statuses($processes->filter(static fn (Process $process): bool => Instance::isMorphType($process->owner_type)
+            && in_array($process->owner_id, $containers, true)), inContainer: true);
         foreach ($processes as $process) {
             if (! Instance::isMorphType($process->owner_type) || ! in_array($process->owner_id, $containers, true)) {
                 continue;
             }
-            $recent = $observed[self::OBSERVED_KEY.$process->id] ?? Cache::get(ContainerProcessObservation::key($process->id));
-            $statuses[(int) $process->id] = is_string($recent) ? $recent : 'unknown';
-            if (! is_string($recent) && $reads < 4 && RefreshContainerProcessStatus::enqueue($process->id)) {
-                $reads++;
-            }
+            $statuses[(int) $process->id] = $viewed[(int) $process->id] ?? 'unknown';
         }
 
         return $statuses;

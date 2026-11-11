@@ -27,14 +27,14 @@ final readonly class AgentProcessView
 
     public function __construct(private AgentStateView $view) {}
 
-    public function status(Process $process): ?string
+    public function status(Process $process, bool $inContainer = false): ?string
     {
         $name = self::unitName($process);
         $nodeId = $this->nodeId($process);
 
         return $name === null || $nodeId === null
             ? null
-            : $this->view->node($nodeId)->status($process->runtime, $name);
+            : $this->view->node($nodeId)->status($process->runtime, $name, $inContainer);
     }
 
     /** Whether the Process runs no program, or null when the view cannot say. */
@@ -54,7 +54,7 @@ final readonly class AgentProcessView
      * @param  Collection<int, Process>  $processes
      * @return array<int, string>
      */
-    public function statuses(Collection $processes): array
+    public function statuses(Collection $processes, bool $inContainer = false): array
     {
         $instanceNodes = $this->instanceNodes($processes);
         $views = [];
@@ -69,7 +69,7 @@ final readonly class AgentProcessView
             }
 
             $views[$nodeId] ??= $this->view->node($nodeId);
-            $status = $views[$nodeId]->status($process->runtime, $name);
+            $status = $views[$nodeId]->status($process->runtime, $name, $inContainer);
 
             if ($status !== null) {
                 $statuses[(int) $process->id] = $status;

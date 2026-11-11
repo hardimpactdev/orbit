@@ -266,9 +266,11 @@ The agent publishes Pusher client events. The Reverb app accepts client events f
 | `docker` | `available` or `absent`. |
 | `part`, `parts` | The part number, from 1, and the number of parts. Each message stays under Reverb's 10,000-byte limit. Parts arrive in order, and a subscriber applies the list once it has every part. |
 | `units` | Every `orbit-process-*` unit and container the agent sees. |
-| `unit` | `{ name, runtime, runtime_status }`, such as `{ "name": "orbit-process-42-web", "runtime": "docker", "runtime_status": "exited" }`. `name` has no `.service` suffix. `runtime` is `systemd` or `docker`. |
+| `unit` | `{ name, runtime, runtime_status }`, such as `{ "name": "orbit-process-42-web", "runtime": "docker", "runtime_status": "exited" }`. `name` has no `.service` suffix. `runtime` is `systemd`, `docker` or `incus`. |
 | `workspaces` | Every watched task checkout the agent could read. |
 | `workspace` | `{ instance_id, base, start, branch, head, dirty, commits, diff }`. [Task workspaces](/reference/node-agent#task-workspaces) defines each field. |
+
+Source `incus` identifies an observation from inside an Instance container. The Process API still reports runtime `systemd`. A host observation of the same unit name cannot answer for a container Process.
 
 A complete snapshot replaces what a subscriber knows about the Node's units. A Process whose unit is missing reads as `inactive` for systemd and `exited` for Docker. A complete `client-workspaces` list replaces the Node's workspaces in the same way.
 

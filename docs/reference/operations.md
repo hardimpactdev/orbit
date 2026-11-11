@@ -26,6 +26,8 @@ Production deployments include a `process_restart` step after PHP refresh. It re
 
 Native terminal projection reads Swamp history and any private result material outside the state transaction. Result writes lock and recheck the admitted run, and each family commits its domain state with its result. Remote cleanup runs after that commit.
 
+A Process list reads the [Node agent observations](/reference/development-containers#processes) of container Processes. It starts no status Operation.
+
 ## Instance failure alerts
 
 Every `instance.create` or `instance.deploy` Operation that enters `failed` or `interrupted` sends an immediate notification after the state transaction commits. This includes failures before source resolution and automatic deployments. A terminal replay does not send another notification. Cancelled and successful Operations do not alert.

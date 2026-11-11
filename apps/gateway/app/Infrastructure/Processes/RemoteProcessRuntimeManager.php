@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use App\Domain\AgentView\AgentProcessView;
 use App\Domain\AppDev\ViteProcessLifecycle;
 use App\Domain\Logs\LogReadLimit;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -139,7 +140,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
     {
         $target = $this->targets->forInspection($process);
         if ($target->container !== null) {
-            return app(ContainerProcessInspection::class)->read($process, $target, 'status', 1)['state'];
+            return app(AgentProcessView::class)->status($process, inContainer: true) ?? 'unknown';
         }
         $status = $this->call($process, 'process.status', $this->artifact($process), 'status', 'process.status_failed');
 

@@ -5,8 +5,12 @@ declare(strict_types=1);
 use App\Actions\Doctor\Intent\RuntimeDoctorIntent;
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
+use App\Actions\NodeFacts\AgentWatchListAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Data\Instances\CreateInstanceData;
+use App\Domain\AgentView\AgentNodeView;
+use App\Domain\AgentView\AgentStateView;
+use App\Domain\AgentView\AgentViewFreshness;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\ContainerProcesses;
@@ -21,10 +25,9 @@ use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\AgentChannelState;
 use App\Infrastructure\Processes\ContainerProcessInspection;
-use App\Infrastructure\Processes\ContainerProcessObservation;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
-use App\Jobs\Operations\RefreshContainerProcessStatus;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -34,7 +37,6 @@ use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
@@ -210,27 +212,51 @@ describe('the Process target of a container Instance', function (): void {
             ->and($intent['read'])->toBe(['action' => 'logs', 'lines' => 100, 'request' => 'req']);
     });
 
-    it('lists its status from the last read of the unit, and starts a read when it has none', function (): void {
-        $statuses = app(ProcessRuntimeStatusIndex::class)->statuses(collect([$this->process]));
+    it('lists container runtime status from the agent without starting an Operation', function (string $status): void {
+        $state = new AgentChannelState;
+        $state->apply('client-snapshot', ['sequence' => 1, 'part' => 1, 'parts' => 1, 'docker' => 'absent',
+            'units' => [['runtime' => 'incus', 'name' => "orbit-process-{$this->process->id}-worker", 'runtime_status' => $status]]], microtime(true));
+        $view = Mockery::mock(AgentStateView::class);
+        $view->shouldReceive('node')->with($this->instance->node_id)->andReturn(new AgentNodeView(
+            $this->instance->node_id, AgentViewFreshness::Fresh,
+            $state->units,
+        ));
+        app()->instance(AgentStateView::class, $view);
+        Queue::fake();
+        $before = Operation::query()->count();
 
-        expect($statuses)->toBe([$this->process->id => 'unknown']);
-        Queue::assertPushed(RefreshContainerProcessStatus::class, fn (RefreshContainerProcessStatus $job): bool => $job->processId === $this->process->id);
+        expect(app(ProcessRuntimeStatusIndex::class)->statuses(collect([$this->process])))->toBe([$this->process->id => $status])
+            ->and(app(RemoteProcessRuntimeManager::class)->status($this->process))->toBe($status)
+            ->and(Operation::query()->count())->toBe($before);
+        Queue::assertNothingPushed();
+    })->with(['active', 'failed', 'inactive', 'unknown']);
 
-        ContainerProcessObservation::remember($this->process->id, 'active');
-        expect(app(ProcessRuntimeStatusIndex::class)->statuses(collect([$this->process])))->toBe([$this->process->id => 'active']);
+    it('shows unknown without an explicit fresh container observation', function (bool $fresh, bool $hostReport): void {
+        $units = $hostReport ? ["systemd:orbit-process-{$this->process->id}-worker" => 'active'] : [];
+        $view = Mockery::mock(AgentStateView::class);
+        $view->shouldReceive('node')->andReturn(new AgentNodeView(
+            $this->instance->node_id, $fresh ? AgentViewFreshness::Fresh : AgentViewFreshness::Missing,
+            $units,
+        ));
+        app()->instance(AgentStateView::class, $view);
+        app(ProcessRuntimeStatusIndex::class)->remember($this->process, 'active');
+        Queue::fake();
+
+        expect(app(ProcessRuntimeStatusIndex::class)->statuses(collect([$this->process])))->toBe([$this->process->id => 'unknown']);
+        Queue::assertNothingPushed();
+    })->with([[true, false], [true, true], [false, false]]);
+
+    it('lists container Process units in the Node watch list', function (): void {
+        $node = Node::query()->findOrFail($this->instance->node_id);
+        $watch = app(AgentWatchListAction::class)->execute($node);
+
+        expect($watch['instance_containers'])->toBe([[
+            'project' => 'orbit-instances', 'name' => 'instance-'.$this->instance->id,
+            'units' => ["orbit-process-{$this->process->id}-worker.service"],
+        ]]);
+        expect($watch['services'])->not->toContain("orbit-process-{$this->process->id}-worker.service");
     });
 
-    it('keeps the state a process.inspect read reports', function (): void {
-        $operation = Operation::query()->create(['kind' => 'process.inspect', 'target_type' => 'process', 'target_id' => $this->process->id,
-            'node_id' => $this->instance->node_id, 'status' => 'running', 'input' => ['process_id' => $this->process->id, 'intent' => []],
-            'state' => ['swamp_run_id' => 'run-2']]);
-
-        app(ContainerProcessObservation::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'run-2',
-            'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['state' => 'failed']]);
-
-        expect(Cache::get(ContainerProcessObservation::key($this->process->id)))->toBe('failed')
-            ->and($operation->refresh()->status->value)->toBe('succeeded');
-    });
 });
 
 describe('a deployment of a container default', function (): void {

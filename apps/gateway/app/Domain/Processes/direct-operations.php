@@ -9,8 +9,7 @@ use App\Infrastructure\Processes\ContainerProcessObservation;
 $control = ['workflow' => 'operation-process-control', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'runtime', 'step' => 'Verify the state', 'native' => true], 'projection' => ProcessControlProjection::class];
 
 return [
-    // The status read of a container Process: its unit's state, which lists show until the next read
-    // (docs/reference/development-containers.md#processes). Its journal lines stay in the vault.
+    // The bounded container log read uses this workflow and vault grant; live status comes from the Node agent.
     'process.inspect' => ['workflow' => 'operation-process-container', 'workflow_inputs' => true,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^nckrtl-process-command-assets-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-inspection-inspection-inspection-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-value$']],
         'terminal_result' => ['job' => 'process', 'step' => 'Read Process result', 'native' => true,

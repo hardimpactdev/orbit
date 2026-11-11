@@ -537,7 +537,11 @@ A clone records its own Processes from the same definitions, with its own ids, u
 
 A deployment first records the Project's new definitions and changes the records of changed ones. Then it writes the changed units and new environment files, removes the former ones, and restarts the changed units. Its new seed stops every running unit and starts it again, so each running Process, such as a queue worker, runs the new commit. A container ignores a Process's restart-on-deploy setting. A definition the Project removed keeps its record and unit until a later part of the runtime removes them.
 
-`process:start`, `process:stop` and `process:restart` run `operation-process-container` as a child of their own workflow: Ansible on the Node changes the unit through `incus exec` and checks its state. `process:logs` runs the same workflow and waits for it; the journal lines go only to the vault, and the Gateway reads and redacts them. A Process list answers from the state of the last read: neither Prometheus nor the Node agent sees a container's units, so a Process without a state from the last 30 seconds shows `unknown` while the operation `process.inspect` reads it ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/process/inspect.mmd)). A change to a Process of a stopped container fails; the container's next deployment starts it.
+`process:start`, `process:stop` and `process:restart` run `operation-process-container` as a child of their own workflow: Ansible on the Node changes the unit through `incus exec` and checks its state. `process:logs` runs the same workflow and waits for it; the journal lines go only to the vault, and the Gateway reads and redacts them.
+
+A Process list reads the Node agent's observations of the units inside the container, through the same Reverb view as Node Processes. The agent reads the listed container units every 10 seconds with fixed, read-only `incus exec … systemctl show` arguments. A missing, failed or stale observation shows `unknown`; a list starts no Operation and never reads the host unit.
+
+A change to a Process of a stopped container fails; the container's next deployment starts it.
 
 One-shot log reads keep each complete journal line in time order and drop a final line cut by the byte limit.
 
