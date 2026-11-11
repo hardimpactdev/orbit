@@ -3422,7 +3422,7 @@ describe('migrated development Process definitions', function (): void {
 
     it('records a changed or conflicting historical Process and captures its proven sibling', function (string $change): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
-        $first = migrationWorker($instance, 'first');
+        $first = migrationVpDev($instance);
         $last = migrationWorker($instance, 'last');
         $operation = migrateStart($instance);
         migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
@@ -3447,6 +3447,7 @@ describe('migrated development Process definitions', function (): void {
         expect($finding->properties['process_id'])->toBe($last->id);
         expect($finding->properties['reason'])->toContain(match ($change) {
             'production definition collision' => 'conflicts with Project',
+            'command changed after activation' => 'current unit content differs from the admitted unit.',
             'malformed command' => 'Validated list values must be strings.',
             'unavailable PHP' => 'the container runtime does not ship',
             default => "is not proven by the migrated default's activation",

@@ -120,10 +120,13 @@ final readonly class MigratedProcessDefinitions
                         $admitted = ValidatedData::object($operation->input['container'] ?? [])['processes'] ?? [];
                         $unit = collect(is_array($admitted) ? $admitted : [])->firstWhere('id', $process->id);
                         if (! is_array($unit) || ! is_string($unit['content'] ?? null) || $process->status !== LifecycleStatus::Active
-                            || $process->systemd_activation_hash !== hash('sha256', $unit['content'])
-                            || $this->processes->unit($instance, $process, migrate: true)['content'] !== $unit['content']) {
+                            || $process->systemd_activation_hash !== hash('sha256', $unit['content'])) {
                             throw new ResourceOperationException('instance.migrate_process_definition_unproven',
                                 "Process [{$process->id}:{$process->name}] is not proven by the migrated default's activation.", 409);
+                        }
+                        if ($this->processes->unit($instance, $process, migrate: true)['content'] !== $unit['content']) {
+                            throw new ResourceOperationException('instance.migrate_process_definition_unproven',
+                                "Process [{$process->id}:{$process->name}] current unit content differs from the admitted unit.", 409);
                         }
                         $this->capture($instance, [$process->id], historical: true);
                     } catch (ResourceOperationException|InvalidArgumentException|TypeError|ValueError $exception) {
