@@ -158,8 +158,14 @@ def inventory_changes(base, head):
 def registry_changes(base, head):
     """Scope table edits to fixture entries; shared execution policy affects all."""
     def read(revision):
+        path = '.github/ci/checks.toml'
+        # Match changed_inputs: revisions belong to the caller's repository.
+        present = subprocess.check_output(['git', 'ls-tree', '--name-only', revision, '--', path],
+                                          text=True, timeout=60).strip()
+        if not present:
+            return {}
         return tomllib.loads(subprocess.check_output(
-            ['git', 'show', f'{revision}:.github/ci/checks.toml'], cwd=ROOT, text=True, timeout=60))
+            ['git', 'show', f'{revision}:{path}'], text=True, timeout=60))
     before, after = read(base), read(head)
     old = {entry['file']: entry for entry in before.get('fixture', [])}
     new = {entry['file']: entry for entry in after.get('fixture', [])}

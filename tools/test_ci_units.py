@@ -212,13 +212,13 @@ class RegistrySelectionTest(unittest.TestCase):
 
     def changes(self, text):
         head = self.commit(text)
-        with patch.object(units, 'ROOT', self.root):
+        with contextlib.chdir(self.root), patch.object(units, 'ROOT', self.root):
             return units.registry_changes(self.base, head)
 
     def test_fixture_cost_edit_selects_only_its_file_through_cli(self):
         head = self.commit(self.initial.replace('cost = 40', 'cost = 45'))
         fixtures = {file: fixture(file) for file in ('swamp/process.ts', 'swamp/egress.py')}
-        with patch.object(units, 'ROOT', self.root), \
+        with contextlib.chdir(self.root), patch.object(units, 'ROOT', self.root), \
              patch.object(units, 'configuration', return_value=(BUDGET, fixtures, [])), \
              patch.object(units.gate, 'resolve_base', return_value=self.base), \
              patch.object(units.selection, 'changed_inputs', return_value=(self.base, ['.github/ci/checks.toml'])), \
@@ -244,6 +244,16 @@ class RegistrySelectionTest(unittest.TestCase):
                                     registry_changed=changed, shared_registry=shared)
                 self.assertCountEqual(names(result), fixtures)
 
+    def test_first_table_addition_compares_against_empty_registry(self):
+        self.table.unlink()
+        self.git('add', '-u')
+        self.git('commit', '-qm', 'before table')
+        before = self.git('rev-parse', 'HEAD')
+        after = self.commit(self.initial)
+        with contextlib.chdir(self.root):
+            self.assertEqual(units.registry_changes(before, after),
+                             (['swamp/egress.py', 'swamp/process.ts'], True))
+
     def test_added_and_removed_entries_do_not_select_unchanged_files(self):
         changed, shared = self.changes(self.initial.replace('swamp/process.ts', 'swamp/new.ts'))
         self.assertEqual(changed, ['swamp/new.ts', 'swamp/process.ts'])
@@ -254,7 +264,7 @@ class RegistrySelectionTest(unittest.TestCase):
         topic = self.commit(self.initial.replace('cost = 40', 'cost = 45'))
         self.git('checkout', '-qb', 'base', self.base)
         main = self.commit(self.initial.replace('cost = 117', 'cost = 118'))
-        with patch.object(units, 'ROOT', self.root):
+        with contextlib.chdir(self.root), patch.object(units, 'ROOT', self.root):
             self.assertEqual(units.registry_changes(self.git('merge-base', main, topic), topic),
                              (['swamp/process.ts'], False))
 
