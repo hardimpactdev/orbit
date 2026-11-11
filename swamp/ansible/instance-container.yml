@@ -5,6 +5,7 @@
 #   create of the default: `container`, `workspace`, `processes`, `seed`, and `stop` after a failure.
 #   create of a clone: `clone`, `workspace`, `agent`, `processes`, `t3`, `register`, and `stop` after a failure.
 #   deploy: `start`, `fetch`, `checkout`, `processes`, `seed`, `check`.
+#   detach: `access`, subtract only the selected endpoint, without probes, environment or runtime changes.
 #   process: `process`, for one Process's start, stop, restart, status or logs (ORBIT_PROCESS_ACTION).
 # The Project's deploy commands are not here: Swamp runs each one in the container from its vault copy, as `orbit`.
 # Git runs on the Node with a read token in a 0600 file; the container gets the branch as a bundle and never a token. The intent is
@@ -50,7 +51,9 @@
         - name: Write the result
           tags: [always]
           ansible.builtin.copy:
-            content: "{{ (process_result if process_result is defined else {'commit': container_commit | default(none)}) | to_json }}"
+            content: >-
+              {{ ({'detached': true, 'target_id': intent.target_id} if ansible_run_tags | first == 'access'
+                  else (process_result if process_result is defined else {'commit': container_commit | default(none)})) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           no_log: true

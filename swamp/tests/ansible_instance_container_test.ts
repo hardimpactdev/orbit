@@ -19,11 +19,13 @@ function transform(task: Task): Task {
     if (Array.isArray(task[part])) task[part] = (task[part] as Task[]).map(transform);
   }
   if (task["community.general.ufw"]) {
+    const removing = (task["community.general.ufw"] as Record<string, unknown> | undefined)?.delete === true;
     delete task["community.general.ufw"];
     task["ansible.builtin.lineinfile"] = {
       path: "{{ lookup('ansible.builtin.env', 'HOST_FIXTURE') }}/ufw",
       line: "{{ item | to_json }}",
       create: true,
+      state: removing ? "absent" : "present",
       mode: "0600",
     };
   }
@@ -57,7 +59,7 @@ function fixture() {
   Deno.writeTextFileSync(`${folder}/nat.txt`, "");
   Deno.writeTextFileSync(`${folder}/bin/iptables-save`, `#!/bin/sh\ncat '${folder}/nat.txt'\n`);
   Deno.chmodSync(`${folder}/bin/iptables-save`, 0o755);
-  for (const shared of ["instance-network-nic-check.yml", "instance-bridge-rules.yml"]) {
+  for (const shared of ["instance-network-nic-check.yml", "instance-bridge-rules.yml", "instance-container-access.yml"]) {
     Deno.writeTextFileSync(`${folder}/tasks/${shared}`, stringify((parse(Deno.readTextFileSync(new URL(`tasks/${shared}`, root))) as Task[]).map(transform)).replaceAll("/usr/local/libexec", `${folder}/libexec`).replaceAll("/var/lib/orbit/instance-bridge", `${folder}/bridge-policy`));
   }
   Deno.mkdirSync(`${folder}/home`);
@@ -98,10 +100,16 @@ function fixture() {
     bridge_cidr: "10.253.0.0/24",
     bridge_admitted_at: 1800000000000000,
     bridge_endpoints: [] as {host: string; port: number; docker: boolean}[],
+    firewall: [] as Record<string, string>[],
+    withdrawal: {
+      host: "10.253.0.1", port: 1025, instance_shared: false, node_shared: false,
+      nic_rule: { action: "allow", destination: "10.253.0.1/32", protocol: "tcp", destination_port: "1025", state: "enabled" },
+      firewall: { rule: "allow", interface_in: "orbitinst0", from_ip: "10.253.0.2", to_ip: "10.253.0.1", to_port: "1025", proto: "tcp", comment: "orbit:instance-7-node-service-1025" },
+    },
     acl: "instance-7",
     acl_rules: {
       description: "Orbit Instance 7",
-      egress: [],
+      egress: [] as Record<string, string>[],
       ingress: [{ action: "allow", source: "10.253.0.1/32", protocol: "tcp", destination_port: "8080", state: "enabled" }],
     },
     mirror: `${folder}/mirror/7.git`,
@@ -127,7 +135,7 @@ function fixture() {
   };
   const control = { process_id: 41, name: "orbit-process-41-worker.service" };
   const write = () =>
-    Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({ ssh_execution, container, control }));
+    Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({ ssh_execution, container, control, target_id: 4 }));
   write();
   return {
     folder,
@@ -1143,5 +1151,132 @@ Deno.test({
     } finally {
       f.cleanup();
     }
+  },
+});
+
+
+Deno.test({
+  name: "withdrawal removes only selected access while stopped unrelated publications and newer admissions survive",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = fixture();
+    try {
+      f.container.acl_rules.egress.push(f.container.withdrawal.nic_rule,
+        { action: "allow", destination: "10.44.0.8/32", protocol: "tcp", destination_port: "3306", state: "enabled" });
+      f.container.firewall = [f.container.withdrawal.firewall];
+      f.container.bridge_endpoints = [{host: "10.253.0.1", port: 1025, docker: true}, {host: "10.44.0.8", port: 3306, docker: true}];
+      Deno.writeTextFileSync(`${f.folder}/nat.txt`, "-A DOCKER ! -i docker0 -p tcp -d 10.253.0.1/32 --dport 1025 -j DNAT --to-destination 172.17.0.4:1025\n-A DOCKER ! -i docker0 -p tcp -d 10.44.0.8/32 --dport 3306 -j DNAT --to-destination 172.17.0.5:3306\n");
+      f.write();
+      const admitted = f.run("container");
+      assert(admitted.ok, admitted.output);
+      // Both Docker publications stopped. A later admission already owns a different persisted tuple.
+      const newer = {host: "10.44.0.9", port: 5432, docker: true, admitted_at: f.container.bridge_admitted_at + 100,
+        translated: {host: "172.17.0.6", port: 5432}};
+      Deno.writeTextFileSync(`${f.folder}/nat.txt`, Deno.readTextFileSync(`${f.folder}/nat.txt`) + "-A DOCKER ! -i docker0 -p tcp -d 10.44.0.9/32 --dport 5432 -j DNAT --to-destination 172.17.0.6:5432\n");
+      const admission = new Deno.Command("python3", {
+        args: [`${f.folder}/instance_bridge.py`, "--state-dir", `${f.folder}/bridge-policy`, "--intent"],
+        env: {HOST_FIXTURE: f.folder, PATH: `${f.folder}/bin:${Deno.env.get("PATH")}`}, stdin: "piped", stdout: "piped", stderr: "piped",
+      }).spawn();
+      const input = admission.stdin.getWriter();
+      await input.write(new TextEncoder().encode(JSON.stringify({network: "orbitinst0", cidr: "10.253.0.0/24",
+        admitted_at: newer.admitted_at, endpoints: [{host: newer.host, port: newer.port, docker: true}]})));
+      await input.close();
+      const admissionResult = await admission.output();
+      assert(admissionResult.success, new TextDecoder().decode(admissionResult.stderr));
+      Deno.writeTextFileSync(`${f.folder}/nat.txt`, "");
+      Deno.writeTextFileSync(`${f.folder}/bin/iptables-save`, "#!/bin/sh\necho 'withdrawal must not resolve NAT' >&2\nexit 1\n");
+      f.container.bridge_admitted_at += 1;
+      f.write();
+      const result = f.run("access");
+      assert(result.ok, result.output);
+      assertEquals(f.result(), {detached: true, target_id: 4});
+      const state = f.state();
+      const own = state["network-acls"].find((row: {name: string}) => row.name === "instance-7");
+      assertEquals(own.egress.map((row: {destination: string}) => row.destination), ["10.44.0.8/32"]);
+      assertEquals(own.ingress, f.container.acl_rules.ingress);
+      const bridge = state["network-acls"].find((row: {name: string}) => row.name === "orbitinst0-egress");
+      assert(!bridge.egress.some((row: {destination: string}) => row.destination === "172.17.0.4/32"));
+      assert(bridge.egress.some((row: {destination: string}) => row.destination === "172.17.0.5/32"));
+      assert(bridge.egress.some((row: {destination: string}) => row.destination === "172.17.0.6/32"));
+      assertEquals(Deno.readTextFileSync(`${f.folder}/ufw`), "");
+      const again = f.run("access");
+      assert(again.ok, again.output);
+      assertEquals(again.changed, 0);
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "withdrawal retains a shared service without resolving its stopped publication or withdrawing other grants",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.acl_rules.egress.push(f.container.withdrawal.nic_rule);
+      f.container.firewall = [f.container.withdrawal.firewall];
+      f.container.bridge_endpoints = [{host: "10.253.0.1", port: 1025, docker: true}];
+      Deno.writeTextFileSync(`${f.folder}/nat.txt`, "-A DOCKER ! -i docker0 -p tcp -d 10.253.0.1/32 --dport 1025 -j DNAT --to-destination 172.17.0.4:1025\n");
+      f.write();
+      const admitted = f.run("container");
+      assert(admitted.ok, admitted.output);
+      f.container.withdrawal.instance_shared = true;
+      f.container.withdrawal.node_shared = true;
+      f.container.bridge_admitted_at += 1;
+      f.write();
+      Deno.writeTextFileSync(`${f.folder}/nat.txt`, "");
+      const before = f.state()["network-acls"];
+      const ufw = Deno.readTextFileSync(`${f.folder}/ufw`);
+      const result = f.run("access");
+      assert(result.ok, result.output);
+      assertEquals(result.changed, 0);
+      assertEquals(f.state()["network-acls"], before);
+      assertEquals(Deno.readTextFileSync(`${f.folder}/ufw`), ufw);
+      // Another Instance still owns the endpoint: remove this NIC/UFW access, keeping the shared bridge rule.
+      f.container.withdrawal.instance_shared = false;
+      f.write();
+      const unshared = f.run("access");
+      assert(unshared.ok, unshared.output);
+      assertEquals(f.state()["network-acls"].find((row: {name: string}) => row.name === "instance-7").egress, []);
+      assertEquals(f.state()["network-acls"].find((row: {name: string}) => row.name === "orbitinst0-egress"),
+        before.find((row: {name: string}) => row.name === "orbitinst0-egress"));
+      assertEquals(Deno.readTextFileSync(`${f.folder}/ufw`), "");
+    } finally { f.cleanup(); }
+  },
+});
+
+
+Deno.test({
+  name: "withdrawal failure reports its code after per-Instance withdrawal and an idempotent retry finishes cleanup",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.acl_rules.egress.push(f.container.withdrawal.nic_rule);
+      f.container.firewall = [f.container.withdrawal.firewall];
+      f.container.bridge_endpoints = [{host: "10.253.0.1", port: 1025, docker: true}];
+      Deno.writeTextFileSync(`${f.folder}/nat.txt`, "-A DOCKER ! -i docker0 -p tcp -d 10.253.0.1/32 --dport 1025 -j DNAT --to-destination 172.17.0.4:1025\n");
+      f.write();
+      const admitted = f.run("container");
+      assert(admitted.ok, admitted.output);
+      const state = f.state();
+      state.etagConflicts = 100;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      f.container.bridge_admitted_at += 1;
+      f.write();
+      const failed = f.run("access");
+      assert(!failed.ok, failed.output);
+      assertEquals(f.result().error_code, "instance.container_bridge_write_failed");
+      const partial = f.state();
+      assertEquals(partial["network-acls"].find((row: {name: string}) => row.name === "instance-7").egress, []);
+      assertEquals(Deno.readTextFileSync(`${f.folder}/ufw`), "");
+      assert(partial["network-acls"].find((row: {name: string}) => row.name === "orbitinst0-egress").egress.length > 0);
+      partial.etagConflicts = 0;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(partial));
+      Deno.writeTextFileSync(`${f.folder}/nat.txt`, "");
+      const retried = f.run("access");
+      assert(retried.ok, retried.output);
+      assertEquals(f.result(), {detached: true, target_id: 4});
+      assertEquals(f.state()["network-acls"].find((row: {name: string}) => row.name === "orbitinst0-egress").egress, []);
+    } finally { f.cleanup(); }
   },
 });

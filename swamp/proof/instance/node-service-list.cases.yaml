@@ -1,0 +1,30 @@
+# The runner has no Instance/attachment fixture. These runnable cases exercise local deterministic refusals only.
+# request: none compares Operation creation, not HTTP traffic; scoped HTTP isolation and empty reads have Gateway/CLI tests.
+command: instance:node-service:list
+chart: instance/node-service-list
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+
+uncovered:
+  recorded-and-empty: "Needs a disposable Instance/attachment fixture and parsed JSON assertions for the exact ordered eight-field records, another Instance's exclusion, empty targets, request ID and no credential bytes. Targeted Gateway, SDK and CLI tests cover these contracts; no fleet execution is claimed."
+  authority: "Needs the disposable Instance fixture on app-dev and a denied caller to assert node_access.required before reading scoped attachments, plus Gateway-authority success."
+  no-node-contact: "Needs an outbound-call audit and attachment/environment/Process baselines to prove the read contacts no Node and mutates no records."
+
+cases:
+  - id: missing-instance
+    batch: fresh-fleet
+    covers: [local-invalid]
+    summary: Omitted Instance in JSON mode refuses deterministically without starting an Operation.
+    act:
+      - cli: {run: ["instance:node-service:list"], forms: [json], expect: {exit: 1, code: instance.id_invalid, request: none}}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+  - id: invalid-instance
+    batch: fresh-fleet
+    covers: [local-invalid]
+    summary: A nonnumeric supplied Instance refuses in both output modes.
+    act:
+      - cli: {run: ["instance:node-service:list", invalid-instance], forms: [json, human], expect: {exit: 1, code: instance.id_invalid, request: none}}
+    expect:
+      - unchanged: {since: act, what: [operations]}

@@ -1,6 +1,6 @@
 sequenceDiagram
-  %% Record-only detach: the Gateway action and shared admission guards.
-  %% status: draft
+  %% Subtractive cleanup precedes record deletion. No provisioning, listener probes or environment writes.
+  %% status: migrated
   %% command: instance:node-service:detach
   %% kind: instance.node_service_detach
   autonumber
@@ -8,9 +8,14 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   participant CALL as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant SW as Swamp<br/>Control Node
+  participant N as Instance Node<br/>Ansible
   Note over CALL: Resolve input and consent
   %%> When:
   %%> - Omitted Instance and attachment IDs use registry choices. The attachment GET is scoped to the selected Instance and completes before consent.
+  %% path: local-invalid
   alt local input refused
     CALL--xCALL: Refused or cancelled<br/>No delete request
     %%> On failure:
@@ -37,7 +42,7 @@ sequenceDiagram
       alt lifecycle busy
         GW--xCALL: Lifecycle busy<br/>No changes or new receipt
         %%> On failure:
-        %%> - instance.lifecycle_busy (409): the Instance is not active, migration is running or a detach is already running.
+        %%> - instance.lifecycle_busy (409): the Instance is not active, migration is running or another detach on this Node is running.
       else failed move retains runtime
         GW--xCALL: Runtime cleanup required<br/>No changes or new receipt
         %%> On failure:
@@ -50,16 +55,56 @@ sequenceDiagram
         GW--xCALL: Target busy<br/>No changes or new receipt
         %%> On failure:
         %%> - operation.target_busy (409): the Instance's Operation lock is held.
+      else withdrawal transport unavailable
+        GW--xCALL: Transport unavailable<br/>No changes or new receipt
+        %%> On failure:
+        %%> - For a container, swamp.ssh_target_unavailable or swamp.ssh_identity_unavailable (503), or swamp.node_missing (409), refuses missing pinned execution identity before admission.
       else target admitted
-        Note over GW: Remove attachment<br/>Record succeeded Operation
-        %%> When:
-        %%> - The Instance uses its checkout or has completed migration successfully.
-        alt transaction fails
-          GW--xCALL: Transaction failed<br/>Both writes roll back
+        alt checkout has no container runtime
+          Note over GW: Remove attachment<br/>Record succeeded Operation
+          alt transaction fails
+            GW--xCALL: Transaction failed<br/>Both writes roll back
+            %%> On failure:
+            %%> - The attachment remains and no new receipt is persisted, including no failed receipt.
+          else transaction commits
+            GW-->>CALL: Completed Operation
+          end
+        else container runtime exists
+          Note over GW: Capture withdrawal<br/>Record queued Operation
+          %%> Why:
+          %%> - The record retains the Process dependency until confirmed withdrawal, including on a migrated default.
+          %%> - No service validation or listener probe is needed to revoke access.
+          GW->>SW: Start withdrawal<br/>Native workflow
+          GW-->>CALL: 202 Accepted<br/>CLI follows Operation
+          SW->>SW: input
+          %%> Why:
+          %%> - The phase needs the pinned Node identity, selected tuple and shared ownership decisions.
+          SW->>N: Revoke container access
+          %%> When:
+          %%> - timeout 300; Ansible tags access; no container start, stop, environment write or reach probe.
+          %%> - Subtract the exact NIC grant and input rule only when no remaining attachment on this Instance uses that tuple.
+          %%> - For the last Node user, retain every other persisted bridge tuple and call W's shared writer in withdrawal mode; newer admissions survive.
           %%> On failure:
-          %%> - The attachment remains and no new receipt is persisted, including no failed receipt.
-        else transaction commits
-          GW-->>CALL: Completed Operation
+          %%> - instance.node_service_runtime_missing refuses a missing container. instance.bridge_busy or a named bridge failure retains the record; already withdrawn access stays withdrawn.
+          SW->>SW: Read access result
+          %%> Why:
+          %%> - Capture the phase's public result from the run file, including the failure code after a failed phase.
+          SW->>SW: cleanup
+          %%> When:
+          %%> - After the phase and result read have completed, also on failure; remove the private run folder.
+          SW-->>GW: Native terminal history<br/>Bound run and selected target
+          alt run or withdrawal proof failed
+            Note over GW: Retain attachment<br/>Record terminal failure
+            GW--xCALL: Failed Operation<br/>Read code and retry detach
+            %%> On failure:
+            %%> - A new key starts an idempotent withdrawal attempt; replaying the failed key returns its original receipt.
+            %%> - Partial withdrawal never authorizes record deletion. A late conflicting terminal cannot delete it.
+          else withdrawal and run succeeded
+            Note over GW: Delete attachment<br/>Commit success
+            %%> When:
+            %%> - Bound run identity, succeeded access phase and matching target result are required. Receipt and deletion share one transaction.
+            GW-->>CALL: Completed Operation<br/>detached true
+          end
         end
       end
     end

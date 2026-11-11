@@ -1,8 +1,16 @@
 ---
 # One phase of instance-container.yml, `phase`, on the Node. Containers live in `container.project`; `incus` gets no stray input.
 # Work in the container runs through `incus exec` from the Node: root for units and snapshots, `orbit` for the workspace.
+- name: Withdraw the selected attachment's access
+  tags: [access]
+  when: phase == 'access'
+  ansible.builtin.include_tasks:
+    file: instance-container-access.yml
+    apply: {tags: [access]}
+
 - name: Name the container commands
   tags: [always]
+  when: phase != 'access'
   ansible.builtin.set_fact:
     incus_project: [incus, --project, "{{ container.project }}"]
     resource_args: >-

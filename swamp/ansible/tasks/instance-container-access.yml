@@ -1,0 +1,86 @@
+---
+# Subtractive only. Read the current ACL instead of rebuilding it, preserving unrelated grants and ingress.
+- name: Read the admitted container
+  ansible.builtin.command:
+    argv: [incus, query, --, "/1.0/instances/{{ container.name }}?project={{ container.project }}"]
+  changed_when: false
+  failed_when: false
+  register: access_container
+
+- name: Refuse withdrawal without the admitted container
+  ansible.builtin.assert:
+    that: access_container.rc == 0
+    fail_msg: instance.node_service_runtime_missing
+    quiet: true
+
+- name: Read the container's current ACL
+  ansible.builtin.command:
+    argv: [incus, query, --, "/1.0/network-acls/{{ container.acl }}?project=default"]
+  changed_when: false
+  register: access_acl
+
+- name: Name the remaining per-Instance grants
+  ansible.builtin.set_fact:
+    access_rules: "{{ access_acl.stdout | from_json }}"
+    access_egress: >-
+      {{ (access_acl.stdout | from_json).egress if container.withdrawal.instance_shared
+         else (access_acl.stdout | from_json).egress | reject('equalto', container.withdrawal.nic_rule) | list }}
+
+- name: Withdraw only the selected per-Instance grant
+  when: access_egress != access_rules.egress
+  ansible.builtin.command:
+    argv: [incus, network, acl, edit, "{{ container.acl }}", --project, default]
+    stdin: "{{ {'description': access_rules.description, 'ingress': access_rules.ingress, 'egress': access_egress} | to_json }}"
+  changed_when: true
+
+- name: Withdraw only the selected per-Instance input rule
+  when: not container.withdrawal.instance_shared
+  community.general.ufw:
+    rule: "{{ item.rule }}"
+    interface_in: "{{ item.interface_in }}"
+    from_ip: "{{ item.from_ip }}"
+    to_ip: "{{ item.to_ip }}"
+    to_port: "{{ item.to_port }}"
+    proto: "{{ item.proto }}"
+    comment: "{{ item.comment }}"
+    delete: true
+  loop: "{{ [container.withdrawal.firewall] }}"
+  loop_control: {label: "{{ item.comment }}"}
+
+# Retain exact persisted tuples, including stopped Docker publications. The shared writer re-reads ownership under its lock
+# and retains admissions newer than the captured intent. This phase never resolves or admits a new endpoint.
+- name: Read persisted bridge endpoint ownership
+  when: not container.withdrawal.node_shared
+  ansible.builtin.find:
+    paths: /var/lib/orbit/instance-bridge/endpoints
+    patterns: '*.json'
+    file_type: file
+  register: access_records
+
+- name: Read each persisted endpoint
+  when: not container.withdrawal.node_shared
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  loop: "{{ access_records.files | default([]) }}"
+  loop_control: {label: "{{ item.path }}"}
+  register: access_endpoint_files
+
+- name: Retain every other persisted endpoint
+  when: not container.withdrawal.node_shared
+  ansible.builtin.set_fact:
+    access_endpoints: >-
+      {{ access_endpoint_files.results | default([]) | map(attribute='content') | map('b64decode') | map('from_json')
+         | rejectattr('host', 'equalto', container.withdrawal.host) | list
+         + (access_endpoint_files.results | default([]) | map(attribute='content') | map('b64decode') | map('from_json')
+            | selectattr('host', 'equalto', container.withdrawal.host) | rejectattr('port', 'equalto', container.withdrawal.port) | list) }}
+
+- name: Withdraw the last user's bridge endpoint through the shared writer
+  when: not container.withdrawal.node_shared
+  ansible.builtin.include_tasks: instance-bridge-rules.yml
+  vars:
+    bridge_network: "{{ container.network }}"
+    bridge_cidr: "{{ container.bridge_cidr }}"
+    bridge_endpoints: "{{ access_endpoints }}"
+    bridge_admitted_at: "{{ container.bridge_admitted_at }}"
+    bridge_reconcile: true
+    bridge_withdraw: true

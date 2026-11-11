@@ -198,3 +198,17 @@ swamp/extensions/behaviors/operations/firewall/native_fixture.ts  skip
 **/*.md                                          skip
 **/*.mdx                                         skip
 **/*.mmd                                         skip
+
+# Scoped Node service attachment read; local refusals run without an Instance fixture.
+swamp/proof/instance/node-service-list.cases.yaml          instance:node-service:list
+apps/cli/app/Commands/Instances/ListInstanceNodeServiceTargetsCommand.php instance:node-service:list
+apps/gateway/app/Data/Instances/InstanceNodeServiceTargetRecordData.php instance:node-service:list
+packages/php-sdk/src/Requests/Instances/ListInstanceNodeServiceTargetsRequest.php instance:node-service:list
+
+# Subtractive container cleanup; executable phase fixtures cover effects, while fleet cases state remaining live obligations.
+swamp/proof/instance/node-service-detach.cases.yaml        instance:node-service:detach
+apps/cli/app/Commands/Instances/DetachInstanceNodeServiceTargetCommand.php instance:node-service:detach
+apps/gateway/app/Actions/Instances/DetachInstanceNodeServiceTargetAction.php instance:node-service:detach
+apps/gateway/app/Domain/Instances/InstanceNodeServiceDetachProjection.php instance:node-service:detach
+swamp/workflows/workflow-operation-instance-node-service-detach.yaml instance:node-service:detach
+swamp/ansible/tasks/instance-container-access.yml          instance:node-service:detach

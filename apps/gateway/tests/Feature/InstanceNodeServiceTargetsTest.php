@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\InstanceNodeServiceDetachProjection;
 use App\Domain\Instances\InstanceNodeServiceTargets;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\ProcessRemovalGuard;
@@ -16,16 +17,20 @@ use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\InstanceNodeServiceTarget;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process as OrbitProcess;
 use App\Models\Project;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Request as HttpRequest;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Mcp\Request as McpRequest;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -231,13 +236,15 @@ describe('Node service attachment records', function (): void {
         $instance->runtime()->create(['node_id' => $node->id, 'incus_project' => 'orbit-instances',
             'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2',
             'runtime_version' => 'v1', 'agent_version' => 'v1', 'power_state' => 'running']);
+        SwampNodeFixture::ensure();
+        $node->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-key'])->save();
         $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
         $uri = "/api/v1/instances/{$instance->id}/node-service-targets";
 
         $this->postJson($uri, $input)->assertUnprocessable()->assertJsonPath('error.code', 'instance.node_service_runtime_unsupported');
-        $this->deleteJson($uri.'/'.$target->id)->assertAccepted()->assertJsonPath('data.status', 'succeeded');
+        $this->deleteJson($uri.'/'.$target->id)->assertAccepted()->assertJsonPath('data.status', 'queued');
 
-        $this->assertModelMissing($target);
+        $this->assertModelExists($target);
     });
 
     it('retains the record when an unfinished failed migration still has a runtime', function (string $status): void {
@@ -287,7 +294,7 @@ describe('Node service attachment records', function (): void {
         $this->assertDatabaseCount('instance_node_service_targets', 0);
         $spec = json_decode(file_get_contents(base_path('../../docs/openapi.json')), true, flags: JSON_THROW_ON_ERROR);
         expect($spec['paths']['/api/v1/instances/{instance}/node-service-targets/{target}']['delete']['description'])
-            ->toContain('after a successful migration', 'no network, environment or runtime change');
+            ->toContain('retains the record until withdrawal succeeds', 'no environment or Process runtime change');
         expect($spec['paths']['/api/v1/instances/{instance}/node-service-targets']['post']['responses']['200']['content']['application/json']['schema']['properties']['data'])
             ->toBe(['$ref' => '#/components/schemas/InstanceNodeServiceTarget']);
         expect($spec['paths']['/api/v1/instances/{instance}/node-service-targets/{target}']['delete']['responses']['202']['content']['application/json']['schema']['properties']['data'])
@@ -471,3 +478,135 @@ it('refuses an owner-driven Node Process on attach and when revalidating a store
     Process::assertNothingRan();
     Queue::assertNothingPushed();
 })->with(['database', 'registered service']);
+
+/** @return array<string, mixed> */
+function nodeServiceWithdrawalResult(Operation $operation, string $status = 'succeeded', ?string $code = null): array
+{
+    return ['run_id' => 'withdrawal-run', 'status' => $status, 'error_code' => $code,
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['steps' => ['Revoke container access' => ['status' => $status]],
+            'access' => json_encode($status === 'succeeded' ? ['target_id' => $operation->input['target_id'], 'detached' => true]
+                : ['error_code' => $code], JSON_THROW_ON_ERROR)]];
+}
+
+function nodeServiceWithdrawalRuntime(Instance $instance): InstanceRuntime
+{
+    SwampNodeFixture::ensure();
+    $instance->node->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key'])->save();
+
+    return $instance->runtime()->create(['node_id' => $instance->node_id, 'incus_project' => 'orbit-instances',
+        'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.'.($instance->id + 1),
+        'runtime_version' => 'fixture', 'agent_version' => 'fixture', 'power_state' => 'running']);
+}
+
+it('withdraws a stopped service before deleting its container attachment and preserves shared records and environment', function (): void {
+    [$instance, $node, $input] = nodeServiceAttachmentFixture();
+    $uri = "/api/v1/instances/{$instance->id}/node-service-targets";
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    $target = $this->postJson($uri, $input)->assertOk()->json('data.id');
+    $shared = $this->postJson($uri, [...$input, 'host_env_key' => 'OTHER_HOST', 'port_env_key' => 'OTHER_PORT'])->assertOk()->json('data.id');
+    nodeServiceWithdrawalRuntime($instance);
+    $process = OrbitProcess::query()->findOrFail($input['process_id']);
+    $process->update(['desired_state' => 'stopped']);
+    $before = $process->getRawOriginal();
+    $id = $this->deleteJson($uri.'/'.$target)->assertAccepted()->assertJsonPath('data.status', 'queued')->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    expect($operation->input['container']['withdrawal'])->toMatchArray(['host' => '10.253.0.1', 'port' => 1025,
+        'instance_shared' => true, 'node_shared' => true]);
+    $this->assertDatabaseHas('instance_node_service_targets', ['id' => $target]);
+    $this->deleteJson($uri.'/'.$shared)->assertConflict()->assertJsonPath('error.code', 'instance.lifecycle_busy');
+    $operation->update(['status' => 'running', 'state' => ['swamp_run_id' => 'withdrawal-run']]);
+    app(InstanceNodeServiceDetachProjection::class)->apply($operation, nodeServiceWithdrawalResult($operation));
+    $this->assertDatabaseMissing('instance_node_service_targets', ['id' => $target]);
+    $this->assertDatabaseHas('instance_node_service_targets', ['id' => $shared]);
+    $this->assertDatabaseCount('instance_environment_values', 0);
+    expect($process->refresh()->getRawOriginal())->toBe($before);
+    Http::assertNothingSent();
+    Process::assertNothingRan();
+});
+
+it('retains a failed withdrawal for a new keyed retry and deletes only after the retry succeeds', function (string $failure): void {
+    [$instance, $node, $input] = nodeServiceAttachmentFixture();
+    $target = $instance->nodeServiceTargets()->create(['node_id' => $node->id, ...$input]);
+    nodeServiceWithdrawalRuntime($instance);
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    $uri = "/api/v1/instances/{$instance->id}/node-service-targets/{$target->id}";
+    $id = $this->deleteJson($uri, [], ['Idempotency-Key' => 'withdrawal-first'])->assertAccepted()->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    expect($operation->input['container']['withdrawal'])->toMatchArray(['instance_shared' => false, 'node_shared' => false]);
+    $operation->update(['status' => 'running', 'state' => ['swamp_run_id' => 'withdrawal-run']]);
+    $projection = app(InstanceNodeServiceDetachProjection::class);
+    $projection->apply($operation, nodeServiceWithdrawalResult($operation, 'failed', $failure));
+    $this->assertDatabaseHas('instance_node_service_targets', ['id' => $target->id]);
+    $this->deleteJson($uri, [], ['Idempotency-Key' => 'withdrawal-first'])->assertAccepted()
+        ->assertJsonPath('data.status', 'failed')->assertJsonPath('data.error_code', $failure);
+    $id = $this->deleteJson($uri, [], ['Idempotency-Key' => 'withdrawal-retry'])->assertAccepted()->assertJsonPath('data.status', 'queued')->json('data.id');
+    $retry = Operation::query()->findOrFail($id);
+    $retry->update(['status' => 'running', 'state' => ['swamp_run_id' => 'withdrawal-run']]);
+    $projection->apply($retry, nodeServiceWithdrawalResult($retry));
+    $projection->apply($retry, nodeServiceWithdrawalResult($retry));
+    $this->assertDatabaseMissing('instance_node_service_targets', ['id' => $target->id]);
+})->with(['instance.bridge_busy', 'instance.bridge_state_unresolved', 'instance.container_access_failed']);
+
+it('does not delete the record on invalid proof or a late success after a failed terminal', function (bool $late): void {
+    [$instance, $node, $input] = nodeServiceAttachmentFixture();
+    $target = $instance->nodeServiceTargets()->create(['node_id' => $node->id, ...$input]);
+    nodeServiceWithdrawalRuntime($instance);
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    $id = $this->deleteJson("/api/v1/instances/{$instance->id}/node-service-targets/{$target->id}")->assertAccepted()->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    $operation->update(['status' => 'running', 'state' => ['swamp_run_id' => 'withdrawal-run']]);
+    $projection = app(InstanceNodeServiceDetachProjection::class);
+    $result = nodeServiceWithdrawalResult($operation);
+    if ($late) {
+        $projection->apply($operation, nodeServiceWithdrawalResult($operation, 'failed', 'operation.timed_out'));
+    } else {
+        $result['result']['access'] = json_encode(['target_id' => $target->id + 1, 'detached' => true]);
+    }
+    expect(fn () => $projection->apply($operation, $result))->toThrow(ResourceOperationException::class);
+    $this->assertDatabaseHas('instance_node_service_targets', ['id' => $target->id]);
+})->with([false, true]);
+
+it('serializes Node withdrawals and preserves a different Instances shared service and a new checkout admission', function (): void {
+    [$instance, $node, $input] = nodeServiceAttachmentFixture();
+    $target = $instance->nodeServiceTargets()->create(['node_id' => $node->id, ...$input]);
+    nodeServiceWithdrawalRuntime($instance);
+    $other = Instance::query()->create(['project_id' => $instance->project_id, 'node_id' => $node->id, 'name' => 'other',
+        'checkout_path' => '/home/orbit/apps/app/other', 'status' => InstanceState::Active]);
+    $shared = $other->nodeServiceTargets()->create(['node_id' => $node->id, ...$input]);
+    nodeServiceWithdrawalRuntime($other);
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    $id = $this->deleteJson("/api/v1/instances/{$instance->id}/node-service-targets/{$target->id}")->assertAccepted()->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    expect($operation->input['container']['withdrawal'])->toMatchArray(['instance_shared' => false, 'node_shared' => true]);
+    $this->deleteJson("/api/v1/instances/{$other->id}/node-service-targets/{$shared->id}")->assertConflict()
+        ->assertJsonPath('error.code', 'instance.lifecycle_busy');
+    $new = Instance::query()->create(['project_id' => $instance->project_id, 'node_id' => $node->id, 'name' => 'new',
+        'checkout_path' => '/home/orbit/apps/app/new', 'status' => InstanceState::Active]);
+    $admitted = $this->postJson("/api/v1/instances/{$new->id}/node-service-targets", $input)->assertOk()->json('data.id');
+    $operation->update(['status' => 'running', 'state' => ['swamp_run_id' => 'withdrawal-run']]);
+    app(InstanceNodeServiceDetachProjection::class)->apply($operation, nodeServiceWithdrawalResult($operation));
+    $this->assertDatabaseMissing('instance_node_service_targets', ['id' => $target->id]);
+    $this->assertDatabaseHas('instance_node_service_targets', ['id' => $shared->id]);
+    $this->assertDatabaseHas('instance_node_service_targets', ['id' => $admitted]);
+    expect(Operation::query()->where('kind', 'instance.node_service_detach')->count())->toBe(1);
+});
+
+it('rolls back terminal success if attachment deletion cannot commit', function (): void {
+    [$instance, $node, $input] = nodeServiceAttachmentFixture();
+    $target = $instance->nodeServiceTargets()->create(['node_id' => $node->id, ...$input]);
+    nodeServiceWithdrawalRuntime($instance);
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    $id = $this->deleteJson("/api/v1/instances/{$instance->id}/node-service-targets/{$target->id}")->assertAccepted()->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    $operation->update(['status' => 'running', 'state' => ['swamp_run_id' => 'withdrawal-run']]);
+    DB::statement("CREATE TRIGGER refuse_attachment_delete BEFORE DELETE ON instance_node_service_targets BEGIN SELECT RAISE(ABORT, 'fixture delete failure'); END");
+    try {
+        expect(fn () => app(InstanceNodeServiceDetachProjection::class)->apply($operation, nodeServiceWithdrawalResult($operation)))
+            ->toThrow(QueryException::class);
+        expect($operation->refresh()->status->value)->toBe('running');
+        $this->assertDatabaseHas('instance_node_service_targets', ['id' => $target->id]);
+    } finally {
+        DB::statement('DROP TRIGGER refuse_attachment_delete');
+    }
+});

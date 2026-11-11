@@ -144,12 +144,12 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 1511
+cost = 1563
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (141s); these are estimates, not completed measurements.
-slices = 23
+slices = 26
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -168,6 +168,9 @@ inputs = [
 ]
 
 [fixture.case_costs]
+  "withdrawal removes only selected access while stopped unrelated publications and newer admissions survive" = 16 # isolated local body 15s; hosted estimate
+  "withdrawal retains a shared service without resolving its stopped publication or withdrawing other grants" = 13 # isolated local body 12s; hosted estimate
+  "withdrawal failure reports its code after per-Instance withdrawal and an idempotent retry finishes cleanup" = 23 # isolated local body 22s; hosted estimate
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 114 # completed body 84.962s, run 43010311414; larger completed history retained
   "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses" = 141 # completed body 86.635s, run 43010311414; larger completed history retained
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP" = 51 # completed body 36.925s, run 43010311414; larger completed history retained

@@ -11,11 +11,16 @@ use App\Domain\Instances\Environment\NativeInstanceEnvironmentImportProjection;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentProjection;
 use App\Domain\Instances\InstanceCloneProjection;
 use App\Domain\Instances\InstanceGitHubReadTokens;
+use App\Domain\Instances\InstanceNodeServiceDetachProjection;
 use App\Domain\Instances\InstanceRegisterResult;
 use App\Domain\Instances\NativeInstanceTransferProjection;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
 
 return [
+    'instance.node_service_detach' => ['workflow' => 'operation-instance-node-service-detach', 'workflow_inputs' => true,
+        'projection' => InstanceNodeServiceDetachProjection::class,
+        'terminal_result' => ['job' => 'detach', 'step' => 'Read access result', 'native' => true,
+            'captures' => ['access' => ['job' => 'detach', 'step' => 'Read access result', 'field' => 'stdout', 'artifact' => 'output']]]],
     'instance.transfer' => ['workflow' => 'operation-instance-transfer', 'workflow_inputs' => true,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$'],

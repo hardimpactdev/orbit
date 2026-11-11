@@ -42,6 +42,7 @@ use App\Domain\Instances\InstanceAttachedTargets;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstanceNodeServiceDetachProjection;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Logs\LogStreamTargetResolver;
@@ -3861,6 +3862,24 @@ function migrateNodeServiceThroughApi(Instance $instance): void
         'commit' => str_repeat('d', 40), ...($instance->name === 'default' ? [] : ['t3' => migrateServer($instance)])]);
 }
 
+function migrateDetachNodeServiceThroughApi(string $path): Operation
+{
+    $id = test()->deleteJson($path)->assertAccepted()->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    if ($operation->status->terminal()) {
+        expect($operation->status->value)->toBe('succeeded');
+
+        return $operation;
+    }
+    test()->assertDatabaseHas('instance_node_service_targets', ['id' => $operation->input['target_id']]);
+    $operation->update(['status' => 'running', 'state' => ['swamp_run_id' => 'withdrawal-run']]);
+
+    return app(InstanceNodeServiceDetachProjection::class)->apply($operation, ['status' => 'succeeded',
+        'run_id' => 'withdrawal-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['steps' => ['Revoke container access' => ['status' => 'succeeded']],
+            'access' => json_encode(['detached' => true, 'target_id' => $operation->input['target_id']], JSON_THROW_ON_ERROR)]]);
+}
+
 it('releases a migrated default Node service record for Process cleanup without changing shared attachments', function (string $cleanup): void {
     $node = containerDefaultNode();
     $node->accessibleNodes()->attach($node);
@@ -3886,8 +3905,8 @@ it('releases a migrated default Node service record for Process cleanup without 
     Queue::fake();
     Illuminate\Support\Facades\Process::preventStrayProcesses();
 
-    $this->deleteJson($uri.'/'.$target)->assertAccepted()->assertJsonPath('data.status', 'succeeded')
-        ->assertJsonPath('data.result.detached', true);
+    $detach = migrateDetachNodeServiceThroughApi(...);
+    $detach($uri.'/'.$target);
 
     $this->assertDatabaseMissing('instance_node_service_targets', ['id' => $target]);
     $this->assertDatabaseHas('instance_node_service_targets', ['id' => $shared, 'instance_id' => $sibling->id]);
@@ -3897,13 +3916,13 @@ it('releases a migrated default Node service record for Process cleanup without 
     expect(app(InstanceEnvironmentStore::class)->values($instance))->toBe($environmentBefore);
     $this->deleteJson('/api/v1/processes/'.$process->id)->assertConflict()
         ->assertJsonPath('error.code', 'process.required_by_instance_node_service');
-    $this->deleteJson($uri.'/'.$other)->assertAccepted();
+    $detach($uri.'/'.$other);
     $this->deleteJson('/api/v1/processes/'.$process->id)->assertConflict()
         ->assertJsonPath('error.code', 'process.required_by_instance_node_service');
-    $this->deleteJson("/api/v1/instances/{$sibling->id}/node-service-targets/{$shared}")->assertAccepted();
+    $detach("/api/v1/instances/{$sibling->id}/node-service-targets/{$shared}");
     Http::assertNothingSent();
     Illuminate\Support\Facades\Process::assertNothingRan();
-    Queue::assertNothingPushed();
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
 
     if ($cleanup === 'ownership') {
         app(AiRouterState::class)->enable($node->id, 'cache', 'https://router.example.com', 'fixture-key', 'fixture-read', 'fixture-control');
@@ -3935,7 +3954,7 @@ it('retains default destruction boundaries after attaching and migrating a Node 
     expect($instance->runtime()->firstOrFail()->getRawOriginal())->toEqual($runtimeBefore);
     expect($process->refresh()->getRawOriginal())->toEqual($processBefore);
     $this->assertDatabaseHas('instance_node_service_targets', ['id' => $target]);
-    $this->deleteJson("/api/v1/instances/{$instance->id}/node-service-targets/{$target}")->assertAccepted()->assertJsonPath('data.status', 'succeeded');
+    migrateDetachNodeServiceThroughApi("/api/v1/instances/{$instance->id}/node-service-targets/{$target}");
     $this->assertDatabaseMissing('instance_node_service_targets', ['id' => $target]);
 })->with([false, true]);
 

@@ -20,6 +20,7 @@ gateway.release
 instance.clone
 instance.deploy
 instance.destroy
+instance.node_service_detach
 instance.env_import
 instance.register
 instance.rollback

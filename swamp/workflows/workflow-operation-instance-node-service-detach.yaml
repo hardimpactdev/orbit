@@ -1,0 +1,76 @@
+id: 09cc9687-5362-41b2-8594-4d788c248b0f
+name: operation-instance-node-service-detach
+description: Revoke one attached Node service through the shared container access phase without stopping the Instance.
+vaults: []
+queueTimeout: 30
+labels: {role: swamp}
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: instance.node_service_detach}
+    intent: {type: object}
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+  - name: detach
+    steps:
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ansible-input
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      - name: Revoke container access
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "insd-access-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags access "$ORBIT_ANSIBLE/instance-container.yml"
+            env: &phase
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
+              ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+      - name: Read access result
+        labels: {role: swamp}
+        dependsOn:
+          - {step: input, condition: {type: succeeded}}
+          - {step: Revoke container access, condition: {type: completed}}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "insd-result-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 10 cat "$ORBIT_RUN/result.json"
+            env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
+      - name: cleanup
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: Revoke container access, condition: {type: completed}}
+          - {step: Read access result, condition: {type: completed}}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "insd-cleanup-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 30 rm -rf -- "$ORBIT_RUN"
+            env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}

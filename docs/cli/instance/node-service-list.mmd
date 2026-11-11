@@ -1,0 +1,37 @@
+sequenceDiagram
+  %% status: draft
+  %% command: instance:node-service:list
+  %% kind: instance.node_service_list
+  autonumber
+  %% lane CALL icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=reads tone=blue
+  participant CALL as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  opt omitted Instance in human terminal
+    CALL->>GW: Read Instance registry
+    GW-->>CALL: Available Instances
+    Note over CALL: Select Instance
+    %%> On failure:
+    %%> - An empty list returns instance.id_invalid. Cancelled selection returns input.cancelled; no attachment read is sent.
+  end
+  %% path: local-invalid
+  alt invalid ID or omitted JSON or noninteractive ID
+    CALL--xCALL: Invalid Instance ID<br/>No request
+  else Instance selected
+    CALL->>GW: instance:node-service<br/>list INSTANCE
+    %%> Command:
+    %%> - orbit instance:node-service:list INSTANCE [--json]
+    %%> - syntax: instance:node-service:list
+    %%> On failure:
+    %%> - peer.identity_unknown or node_access.required returns 403 before reading attachments.
+    alt peer or Node authority refused
+      GW--xCALL: Peer or access refused<br/>403, no mutation
+    else numeric Instance missing
+      GW--xCALL: http.404<br/>No mutation
+    else Instance authorized
+      Note over GW: Read scoped records
+      %%> Why:
+      %%> - Attachment IDs and key names are recorded state. No credentials, environment values or Node contact are needed.
+      GW-->>CALL: Records or empty array<br/>Request ID, no Operation
+    end
+  end

@@ -1,0 +1,39 @@
+# Only local refusals are runnable with the current fleet runner. The container access phase has isolated executable tests.
+# Live cleanup remains a Containers-owned proof; no live lifecycle action is part of this author lane.
+command: instance:node-service:detach
+chart: instance/node-service-detach
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+
+uncovered:
+  migrated-default: "On a disposable migrated default, detach one attached service; verify NIC/UFW withdrawal precedes deletion, the terminal receipt succeeds and Process removal or ownership admission becomes possible only after the final attachment. Default Instance destruction remains unsupported."
+  shared-and-newer: "Use two container Instances sharing a stopped service and an unrelated stopped Docker database. Detach one consumer, preserve the other and every unrelated/newer bridge admission, then detach the last consumer. The isolated Ansible cases cover the writer/phase contract; live delivery is not proven."
+  failed-retry: "Inject bridge busy or partial withdrawal failure; verify the failed receipt retains the attachment and Process dependency. Retry with a new key; finish without a listener probe, environment write or Process change."
+  destroy-nondefault: "Destroy a migrated nondefault with force; verify only its attachment references disappear and the shared Process and another Instance's references remain. Gateway public-flow regression covers the projection; live destruction is not claimed."
+
+cases:
+  - id: missing-instance
+    batch: fresh-fleet
+    covers: [local-invalid]
+    summary: JSON omission refuses without a request or an Operation.
+    act:
+      - cli: {run: ["instance:node-service:detach", --yes], forms: [json], expect: {exit: 1, code: instance.id_invalid, request: none}}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+  - id: invalid-target
+    batch: fresh-fleet
+    covers: [local-invalid]
+    summary: A signed target ID refuses before a read, consent or deletion.
+    act:
+      - cli: {run: ["instance:node-service:detach", "1", "+4", --yes], forms: [json, human], expect: {exit: 1, code: instance.node_service_target_id_invalid, request: none}}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+  - id: missing-consent
+    batch: fresh-fleet
+    covers: [local-invalid]
+    summary: JSON requires explicit consent even with both numeric IDs supplied.
+    act:
+      - cli: {run: ["instance:node-service:detach", "1", "4"], forms: [json], expect: {exit: 1, code: instance.node_service_confirmation_required, request: none}}
+    expect:
+      - unchanged: {since: act, what: [operations]}

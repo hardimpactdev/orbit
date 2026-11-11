@@ -71,6 +71,7 @@ additionalFiles:
   - ansible/instance-container-destroy.yml
   - ansible/instance-container.yml
   - ansible/tasks/instance-container-phase.yml
+  - ansible/tasks/instance-container-access.yml
   - ansible/tasks/instance-container-handlers.yml
   - ansible/tasks/instance-container-process.yml
   - ansible/route-create-site.yml

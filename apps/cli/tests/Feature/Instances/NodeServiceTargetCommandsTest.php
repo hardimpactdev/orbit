@@ -12,7 +12,9 @@ use Orbit\Sdk\Requests\Instances\DetachInstanceNodeServiceTargetRequest;
 use Orbit\Sdk\Requests\Instances\ListInstanceNodeServiceTargetsRequest;
 use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Process\Process;
@@ -321,7 +323,7 @@ it('requires terminal detach consent and never sends on decline or cancellation'
     $result = nodeServiceTerminal($this->orbitHome.'/detach-terminal', ['instance:node-service:detach', '12', '4'], $keys, $replies);
 
     expect($result['status'])->toBe($consent ? 0 : 1)
-        ->and($result['output'])->toContain('Network access, environment and Process stay unchanged.')
+        ->and($result['output'])->toContain('Withdraw its container access', 'keep environment and Process.')
         ->and($result['trace'])->toHaveCount($consent ? 1 : 0);
     if ($consent) {
         expect($result['trace'][0]['method'])->toBe('DELETE')
@@ -353,7 +355,7 @@ it('selects an omitted detach target from the Instance registry before consent',
         ->and($result['trace'][0]['method'])->toBe('GET')
         ->and($result['trace'][0]['url'])->toEndWith('/api/v1/instances/12/node-service-targets');
     if ($consent) {
-        expect($result['output'])->toContain("Delete Node service target record [{$id}] from Instance [12]?")
+        expect($result['output'])->toContain("Detach Node service target [{$id}] from Instance [12]?")
             ->and($result['trace'][1]['method'])->toBe('DELETE')
             ->and($result['trace'][1]['url'])->toEndWith("/api/v1/instances/12/node-service-targets/{$id}");
     } else {
@@ -376,7 +378,7 @@ it('refuses an empty or denied detach registry before confirmation or deletion',
     expect($result['status'])->toBe(1)->and($result['trace'])->toHaveCount(1)
         ->and($result['trace'][0]['method'])->toBe('GET')
         ->and($result['output'])->toContain('Code: '.($denied ? 'node_access.required' : 'instance.node_service_target_id_invalid'))
-        ->not->toContain('Delete Node service target record');
+        ->not->toContain('Detach Node service target [');
 })->with([false, true]);
 
 it('rejects a signed or spaced supplied target before reads or consent and accepts its correction', function (string $id): void {
@@ -384,7 +386,7 @@ it('rejects a signed or spaced supplied target before reads or consent and accep
 
     expect($result['status'])->toBe(1)->and($result['trace'])->toBe([])
         ->and($result['output'])->toContain('Code: instance.node_service_target_id_invalid')
-        ->not->toContain('Delete Node service target record');
+        ->not->toContain('Detach Node service target [');
     $replies = [['class' => DetachInstanceNodeServiceTargetRequest::class, 'status' => 202,
         'body' => ['data' => ['id' => 41, 'kind' => 'instance.node_service_detach', 'target_type' => 'instance', 'target_id' => 12,
             'status' => 'succeeded', 'sequence' => 2, 'result' => ['id' => 4, 'detached' => true]]]]];
@@ -393,3 +395,53 @@ it('rejects a signed or spaced supplied target before reads or consent and accep
         ->and($corrected['trace'][0]['method'])->toBe('DELETE')
         ->and($corrected['trace'][0]['url'])->toEndWith('/api/v1/instances/12/node-service-targets/4');
 })->with(['+4', ' 4 ']);
+
+it('waits for an asynchronous withdrawal and returns its terminal receipt instead of claiming admission is success', function (bool $succeeds, bool $json): void {
+    $requestId = '11111111-1111-4111-8111-111111111111';
+    $base = ['id' => 41, 'kind' => 'instance.node_service_detach', 'target_type' => 'instance', 'target_id' => 12,
+        'node_id' => 9, 'sequence' => 1, 'status' => 'queued', 'result' => []];
+    $final = [...$base, 'sequence' => 3, 'status' => $succeeds ? 'succeeded' : 'failed',
+        'result' => $succeeds ? ['id' => 4, 'detached' => true] : ['error_code' => 'instance.bridge_busy'],
+        'error_code' => $succeeds ? null : 'instance.bridge_busy'];
+    $mock = MockClient::global([
+        DetachInstanceNodeServiceTargetRequest::class => MockResponse::make(['data' => $base, 'meta' => ['request_id' => $requestId]], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final, 'meta' => ['request_id' => $requestId]]),
+    ]);
+    $exit = Artisan::call('instance:node-service:detach', ['instance' => '12', 'target' => '4', '--yes' => true,
+        '--json' => $json, '--no-interaction' => true]);
+    $output = Artisan::output();
+    expect($exit)->toBe($succeeds ? 0 : 1);
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toMatchArray(['status' => $final['status'],
+            'result' => $final['result'], 'request_id' => $requestId]);
+    } else {
+        expect($output)->toContain($succeeds ? 'detached after access withdrawal' : 'attachment remains for retry', $requestId);
+        if (! $succeeds) {
+            expect($output)->toContain('instance.bridge_busy')->not->toContain('Node service target detached.');
+        }
+    }
+    $mock->assertSentCount($json ? 2 : 1, ShowOperationRequest::class);
+    $mock->assertSentCount(1, DetachInstanceNodeServiceTargetRequest::class);
+})->with([[true, false], [true, true], [false, false], [false, true]]);
+
+it('settles asynchronous detach in a real mocked terminal with the truthful terminal outcome', function (bool $succeeds): void {
+    $base = ['id' => 41, 'kind' => 'instance.node_service_detach', 'target_type' => 'instance', 'target_id' => 12,
+        'node_id' => 9, 'sequence' => 1, 'status' => 'queued', 'result' => []];
+    $final = [...$base, 'sequence' => 2, 'status' => $succeeds ? 'succeeded' : 'failed',
+        'result' => $succeeds ? ['id' => 4, 'detached' => true] : ['error_code' => 'instance.bridge_busy'],
+        'error_code' => $succeeds ? null : 'instance.bridge_busy'];
+    $result = nodeServiceTerminal($this->orbitHome.'/detach-async', ['instance:node-service:detach', '12', '4', '--yes'], [], [
+        ['class' => DetachInstanceNodeServiceTargetRequest::class, 'status' => 202, 'body' => ['data' => $base]],
+        ['class' => ShowRealtimeRequest::class, 'status' => 503, 'body' => []],
+        ['class' => ShowOperationRequest::class, 'status' => 200, 'body' => ['data' => $final]],
+    ]);
+    expect($result['status'])->toBe($succeeds ? 0 : 1)
+        ->and($result['trace'])->toHaveCount(3)
+        ->and($result['trace'][0]['method'])->toBe('DELETE')
+        ->and($result['trace'][2]['url'])->toEndWith('/api/v1/operations/41');
+    expect($result['output'])->toContain($succeeds ? 'detached after access withdrawal' : 'attachment remains for retry');
+    if (! $succeeds) {
+        expect($result['output'])->toContain('instance.bridge_busy')->not->toContain('Node service target detached.');
+    }
+})->with([false, true]);
