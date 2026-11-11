@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Instances;
 
 use App\Data\Instances\CreateInstanceData;
+use App\Domain\Instances\InstanceName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\SourceControl\GitBranchName;
@@ -27,12 +28,7 @@ final class StoreInstanceRequest extends FormRequest
         return [
             'project_id' => ['required', 'integer', Rule::exists(new Project()->getTable(), 'id')],
             'node_id' => ['required', 'integer', Rule::exists(new Node()->getTable(), 'id')],
-            'name' => [
-                'required',
-                'string',
-                'max:63',
-                'regex:/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/',
-            ],
+            'name' => InstanceName::rules(),
             'root' => ['sometimes', 'string', 'max:255'],
             'domain' => ['sometimes', 'string', 'max:253'],
             'branch' => ['sometimes', 'string', 'max:255'],

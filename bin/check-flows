@@ -114,5 +114,15 @@ for (const kind of list(readFileSync(`${dir}/flows-migrated.txt`, 'utf8'))) {
   const names = stepNames(yaml[0], kind)
   if ([...labels].sort().join('\n') !== [...names].sort().join('\n')) fail(`${kind}: chart steps [${labels.join(', ')}] differ from workflow steps [${names.join(', ')}]`)
 }
+// Conn maps these stable clone phases to stage detail (docs/reference/conn.md#threads-in-an-orbit-project).
+const cloneStages = ['clone-container', 'clone-workspace', 'clone-t3', 'clone-register']
+const cloneWorkflow = workflows.find((yaml) => /^name: operation-instance-create$/m.test(yaml)) ?? ''
+const cloneChart = readFileSync(`${dir}/instance/container/create.mmd`, 'utf8')
+const workflowStages = stepNames(cloneWorkflow, 'instance.create').filter((name) => cloneStages.includes(name))
+const chartStages = [...cloneChart.matchAll(/^\s*\w+->>\w+: [^\n]*<br\/>native (clone-[a-z0-9-]+)(?=$|[ \t])/gm)]
+  .map((m) => m[1]).filter((name) => cloneStages.includes(name))
+if ([workflowStages, chartStages].some((names) => names.join('\n') !== cloneStages.join('\n'))) {
+  fail(`Conn clone stage contract: expected [${cloneStages.join(', ')}] in workflow and chart order; got workflow [${workflowStages.join(', ')}], chart [${chartStages.join(', ')}]`)
+}
 console.log(bad ? `${bad} problem(s)` : `all flows ok; ${pending.length} kinds pending`)
 process.exitCode = bad ? 1 : 0

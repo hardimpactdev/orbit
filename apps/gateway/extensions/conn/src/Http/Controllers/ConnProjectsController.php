@@ -16,8 +16,10 @@ use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Orbit\Extensions\Conn\Actions\CheckConnInstanceNameAction;
 use Orbit\Extensions\Conn\Data\ConnProjectData;
 use Orbit\Extensions\Conn\Domain\ConnThreadProjects;
+use Orbit\Extensions\Conn\Http\Requests\CheckConnInstanceNameRequest;
 use Orbit\Extensions\Conn\Http\Requests\CreateConnInstanceRequest;
 
 /** Threads in an Orbit Project (/reference/conn#threads-in-an-orbit-project): the Projects a device reaches, and the clone a thread starts in. */
@@ -32,6 +34,14 @@ final class ConnProjectsController extends Controller
                 ->all(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
+    }
+
+    public function checkInstanceName(CheckConnInstanceNameRequest $request, Project $project, CheckConnInstanceNameAction $action): JsonResponse
+    {
+        $data = $action->execute($project, $request->default(), $request->name());
+
+        return response()->json(['data' => $data->toArray(),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
     }
 
     /** The same `instance.create` as instance:create, on the Node of the Project's default; the device follows it with Conn Operation show. */

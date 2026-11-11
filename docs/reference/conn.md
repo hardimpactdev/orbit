@@ -189,6 +189,19 @@ The response contains at most 100 matches, after filtering: the Project's defaul
 
 For a GitHub source, `pull_request` is the newest OPEN pull request whose head is that branch in the Project's repository, ordered by creation time descending, then number descending; closed requests are ignored. One repository listing reads up to five pages of 100 open requests, with a ten-second listing budget and at most five seconds per request. If GitHub fails, returns malformed data, or has more than 500 open requests, all entries keep `pull_request: null` and `meta.pull_requests_unavailable` is `true`. Otherwise that marker is `false`. A non-GitHub source still lists readable branches with null pull requests and a false marker.
 
+`GET /projects/{id}/instances/check?name=fix-login-k3j9` checks a proposed clone name without reserving it. It uses the same Project access and ready-default requirements as create. The MCP tool is `conn-instance-name-check`.
+
+- It answers 200 with `{name, available, reason, domain}`. An available name has `reason: null`.
+- `invalid` means the name is not a lowercase DNS label of 1–63 characters, with no leading or trailing hyphen. An empty string is invalid.
+- `default` means the name is `default` or the Project's default-branch alias.
+- `taken` means any Instance of the Project holds the name, on any Node and in any state, including the caller's own Instance.
+- `domain` previews `<name>.<project-slug>.<effective-tld>`. The default's placement selects the active Cluster TLD before the Node TLD.
+
+The domain is null for an invalid name, a non-web Project, or no usable domain.
+- Missing or non-string `name`, or an unknown query field, fails with `validation.failed` (422). Access is checked before the name.
+
+The check creates no records, including Activity rows. A later create can still refuse with `instance.name_taken`; create keeps its same-caller resume rule.
+
 `POST /projects/{id}/instances` with `{"name"}` creates the thread's clone:
 
 - It admits `instance.create` on the default's Node, as `instance:create PROJECT NODE NAME` does.
@@ -201,6 +214,10 @@ For a GitHub source, `pull_request` is the newest OPEN pull request whose head i
 - An `Idempotency-Key` is bound to the calling Node.
 
 Conn follows that Operation with `GET /operations/{id}`. Conn Operation show also shows an `instance.create` that the caller started, here or with `instance:create`. Conn Operation cancel does not cancel it.
+
+Operation show returns the same recorded `steps` as core Operation show, in recorded order: `name`, `job`, `status`, `started_at` and `finished_at`. Steps contain no command output, secrets or environment values. Both endpoints accept `after_sequence` but currently return all recorded steps.
+
+Conn maps these stable container-clone step names to stage detail, in this order: `clone-container`, `clone-workspace`, `clone-t3`, `clone-register`. Other steps can occur between them. Renaming or removing any of these four names is a breaking change for Conn.
 
 A server of an Instance names its `instance_id` and the container's `power_state`, `running` or `stopped`. Other servers have `null` for both. Conn shows a `stopped` server as asleep.
 
@@ -226,6 +243,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `PUT /profiles/{id}/settings` | `{"version": 3, "settings": {"workspaces": [...]}}`; any of `workspaces`, `appearance`, `devices` | settings |
 | `PATCH /profiles/{id}/settings` | `{"sections": {"appearance": {"version": 2, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}` | settings |
 | `GET /projects` | — | list of project |
+| `GET /projects/{id}/instances/check` | `name` query string | name, available, reason, domain |
 | `POST /projects/{id}/instances` | `{"name": "fix-login-k3j9"}` | Operation (202) |
 | `GET /environments` | — | list of environment |
 | `POST /environments` | `{"environment_id", "label", "url", "admin_session"}` | environment |

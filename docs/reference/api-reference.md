@@ -25,7 +25,7 @@ The Node show response adds only `access` to `NodeData`; the Project show respon
 
 The `fleet` group holds rollout admission, CLI convergence, peer DNS and the fleet reboot. It has no rollout or reboot status or resume operation; a rollout is a `fleet.rollout` Operation and a reboot pass a `fleet.reboot` Operation.
 
-Optional lists keep their declared item schema. The Operation `steps` list references `OperationStep`, which exposes only native step names, jobs, statuses and timestamps. [Operations](/reference/operations#the-record) defines when that field is present.
+Optional lists keep their declared item schema. The Operation `steps` list references `OperationStep`, which exposes only native step names, jobs, statuses and timestamps. [Operations](/reference/operations#the-record) defines when that field is present. Conn Operation show uses this same step schema; its API and MCP descriptions state that `after_sequence` is accepted but currently does not filter steps. See the [Conn step contract](/reference/conn#threads-in-an-orbit-project).
 
 Run the generator from the repository root:
 
@@ -133,6 +133,8 @@ The generator resolves class constants in `Rule::in` and preserves integer enum 
 
 A form-request rule `present` marks that property required, as `required` does.
 
+Instance create requests share `InstanceName::rules()`; the generator reads that validator to preserve their name format in OpenAPI and MCP.
+
 Requests that inspect raw JSON also declare their body fields in `rules()`. The generated bodies include the Instance branch and shared paths, deploy-step fields, database connection patches, and Node settings. A keyed array rule such as `array:path` publishes a closed JSON object, and nullable objects and members keep their null type. The generator resolves the shared database rules' regex constants and translates their whole-string anchors for JSON Schema, so invalid connection fields remain invalid in OpenAPI and MCP. The raw JSON checks still enforce object shape and the domain rules at runtime.
 
 Database creation publishes three body variants: registration, SQL server creation, and Valkey ACL creation. The SQL server variant includes optional `locale` with the builtin PostgreSQL values from `DatabaseConnectionFieldRules::onServer()`. Registration and Valkey omit it. The runtime also checks the named server's driver.
@@ -143,7 +145,7 @@ The installed [Process update](/reference/processes-and-schedules#update-in-plac
 
 The two Conn settings writes, `conn:profile:settings:update` and `conn:profile:settings:patch`, build their rules from the sections a request holds, so the parser cannot read them. The script writes their bodies by hand in `conn_settings_body` and states the same limits as the rules in the [Conn layer](/reference/conn#profiles). Change both together. Each Conn description in the script also says which node access the operation needs; [Access](/reference/conn#access) defines it.
 
-`conn:instance:create` answers 202 with the `instance.create` Operation of a thread's clone, and the script names its 403 and 409 refusals by hand. `conn:project:list` and `conn:instance:create` follow [Threads in an Orbit Project](/reference/conn#threads-in-an-orbit-project).
+`conn:instance:create` answers 202 with the `instance.create` Operation of a thread's clone, and the script names its 403 and 409 refusals by hand. `conn:instance:name:check` publishes a required string query parameter and a typed availability response. Unavailable names answer 200; malformed query fields answer 422. It uses the same 403 and ready-default 409 refusals as create. `conn:project:list`, `conn:instance:name:check` and `conn:instance:create` follow [Threads in an Orbit Project](/reference/conn#threads-in-an-orbit-project).
 
 The Project development deploy step operations publish typed step responses from the SDK response fields. Create publishes HTTP 201 for a new step and HTTP 422 for a duplicate name, including an exact retry; it has no HTTP 200 retry response. Their generated write schemas include the name pattern, timeout bounds and default, and `required: true` default on create. The [development deploy contract](/reference/deployments#development-deploy-steps) owns the list limits and refusal rules.
 
