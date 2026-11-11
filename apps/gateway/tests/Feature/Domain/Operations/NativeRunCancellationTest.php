@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
+use App\Data\Operations\OperationData;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\NativeRunCancellation;
@@ -345,7 +346,7 @@ it('frees the target of a run that nothing proves ended, one hour after the expi
 
     expect($operation->refresh()->lock_key)->toBeNull()
         ->and($operation->state['native_timeout']['native_terminal_status'])->toBe('unproven')
-        ->and($operation->state['admission_hold_key'])->toBe(OperationStore::lockKey('task_group', $operation->target_id));
+        ->and($operation->state)->not->toHaveKey('admission_hold_key');
 });
 
 it('expires an unbound Operation at its admission deadline', function (): void {
@@ -462,7 +463,7 @@ it('settles current work and forwards cancel before slow lost runs, then rotates
     expect($checked)->toContain(array_keys($lost)[1])->not->toContain(array_keys($lost)[0]);
 });
 
-it('keeps a superseded non-migrate receipt without applying its family domain projection', function (): void {
+it('keeps a late non-migrate receipt without applying its family domain projection', function (): void {
     Queue::fake();
     $old = runningScript();
     app(ExpireOperationAction::class)->execute($old);
@@ -487,12 +488,13 @@ it('keeps a superseded non-migrate receipt without applying its family domain pr
     $settled = app(SwampCommandStep::class)->projectTerminal($old, ['id' => RUN], $direct->definition($old->kind)['terminal_result']);
 
     expect($settled->status)->toBe(OperationStatus::Failed)
-        ->and($settled->result['superseded_by'])->toBe($new->id)
-        ->and($settled->state['projection_superseded_by'])->toBe($new->id)
+        ->and($settled->result)->toBe(['late_settlement' => true, 'native_status' => 'failed'])
+        ->and($new->refresh()->status)->toBe(OperationStatus::Queued)
+        ->and($settled->state)->not->toHaveKey('projection_superseded_by')
         ->and($settled->state['native_timeout']['native_terminal_status'])->toBe('failed');
 });
 
-it('serializes a retry admission attempted during late domain projection on the same durable row', function (): void {
+it('records a late receipt and permits retry admission without invoking family projection', function (): void {
     Queue::fake();
     $old = runningScript();
     app(ExpireOperationAction::class)->execute($old);
@@ -522,23 +524,14 @@ it('serializes a retry admission attempted during late domain projection on the 
         public function apply(Operation $operation, array $data): Operation
         {
             $this->attempted = true;
-            DB::setDefaultConnection('late_admit');
-            try {
-                expect(fn () => app(OperationStore::class)->create($operation->kind, $operation->target_type,
-                    $operation->target_id, $operation->node_id, $operation->input, null, null))
-                    ->toThrow(PDOException::class, 'database is locked');
-            } finally {
-                DB::setDefaultConnection('late_settle');
-            }
-
-            return app(DirectOperation::class)->project($operation, $data, $data['result']);
+            throw new LogicException('A late family projector must not run.');
         }
     });
     reconcileSocket($old, 'failed');
     try {
         $settled = app(SwampCommandStep::class)->projectTerminal(Operation::query()->findOrFail($old->id), ['id' => RUN], $definition['terminal_result']);
-        expect($attempted)->toBeTrue()->and($settled->status)->toBe(OperationStatus::Failed);
-        // Once settlement releases the transaction, the same admission succeeds and becomes the new owner.
+        expect($attempted)->toBeFalse()->and($settled->status)->toBe(OperationStatus::Failed);
+        // Settlement releases its transaction; a retry can take the same target.
         $retry = app(OperationStore::class)->create($old->kind, $old->target_type, $old->target_id, $old->node_id, $old->input, null, null);
         expect($retry->id)->toBeGreaterThan($old->id)
             ->and($settled->refresh()->result)->not->toHaveKey('superseded_by');
@@ -569,7 +562,7 @@ it('bounds a native cancel connection and reply by the remaining pass time', fun
     SwampRequestDeadline::during(now()->addMilliseconds(250), fn () => (new CancelSwampRun($socket))->execute($operation));
 });
 
-it('transfers only the exact admission hold after release, preserving independent scopes of the same target', function (): void {
+it('admits independent scopes and retries without changing a released historical receipt', function (): void {
     Queue::fake();
     $template = runningScript();
     $store = app(OperationStore::class);
@@ -583,8 +576,8 @@ it('transfers only the exact admission hold after release, preserving independen
     expect($old->refresh()->state)->not->toHaveKey('projection_superseded_by');
     $retry = $store->create('tasks.script', $old->target_type, $old->target_id, $old->node_id, $old->input, null, null, 'manager:first');
 
-    expect($old->refresh()->state['projection_superseded_by'])->toBe($retry->id)
-        ->and($old->state['admission_hold_key'])->toBe('manager:first')
+    expect($old->refresh()->state)->not->toHaveKey('projection_superseded_by')->not->toHaveKey('admission_hold_key')
+        ->and($retry->lock_key)->toBe('manager:first')
         ->and($independent->refresh()->state)->not->toHaveKey('projection_superseded_by');
 });
 
@@ -602,3 +595,47 @@ it('stops a terminal read before contacting Swamp when the pass deadline ended a
     expect($settled->status)->toBe(OperationStatus::Failed)
         ->and(array_column($socket->frames, 'type'))->toContain('workflow.history.get');
 });
+
+it('keeps generic late causality and safe steps without consulting a family end check', function (string $native, bool $userCancel, bool $expired, int $exit, ?string $nativeCode, string $status, ?string $code): void {
+    Queue::fake();
+    $operation = runningScript(minutes: $expired ? 20 : 1);
+    if ($userCancel) {
+        $operation->update(['cancel_requested_at' => now()]);
+    }
+    if ($expired) {
+        app(ExpireOperationAction::class)->execute($operation);
+    }
+    $operation->refresh()->update(['state' => [...$operation->state, 'native_cancel_confirmed_at' => now()->toISOString()]]);
+    reconcileSocket($operation, $native, onHistory: function () use ($operation, $native, $exit, $nativeCode): array {
+        $history = ['id' => RUN, 'workflowName' => 'operation-task-script', 'status' => $native,
+            'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.script'],
+            'startedAt' => now()->subMinutes(3)->toISOString(), 'completedAt' => now()->toISOString()];
+        $history['jobs'] = [['name' => 'script', 'steps' => [[
+            'name' => 'Execute the program', 'status' => $native === 'succeeded' ? 'succeeded' : 'failed',
+            'startedAt' => now()->subMinute()->toISOString(), 'completedAt' => now()->toISOString(),
+            'error' => $nativeCode ?? ($exit === -1 ? 'Command exited with code -1' : 'Command failed'),
+            'outputs' => ['exitCode' => $exit, 'stdout' => 'RAW-OUTPUT', 'stderr' => 'RAW-ERROR'],
+        ]]]];
+
+        return $history;
+    });
+    // The absent family end-check and captures are immaterial to this generic receipt.
+    $settled = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => RUN],
+        app(DirectOperation::class)->definition($operation->kind)['terminal_result']);
+
+    expect($settled->status->value)->toBe($status)->and($settled->error_code)->toBe($code)
+        ->and($settled->result)->toBe(['late_settlement' => true, 'native_status' => $native])
+        ->and($settled->state['native_progress']['steps'][0]['exit_code'])->toBe($exit)
+        ->and(OperationData::summary($settled)->toArray()['steps'][0]['exit_code'])->toBe($exit)
+        ->and(json_encode(OperationData::summary($settled)->toArray(), JSON_THROW_ON_ERROR))
+        ->not->toContain('RAW-OUTPUT')->not->toContain('RAW-ERROR');
+})->with([
+    'success after expiry' => ['succeeded', false, true, 0, null, 'failed', 'operation.timed_out'],
+    'success after user cancel' => ['succeeded', true, false, 0, null, 'cancelled', null],
+    'deadline abort' => ['cancelled', false, true, -1, null, 'failed', 'operation.timed_out'],
+    'user abort' => ['cancelled', true, false, -1, null, 'cancelled', null],
+    'pre-deadline user abort' => ['cancelled', true, true, -1, null, 'cancelled', null],
+    'independent failure' => ['failed', false, true, 42, 'tasks.script_failed', 'failed', 'tasks.script_failed'],
+    'independent timeout' => ['failed', false, true, 124, 'tasks.script_failed', 'failed', 'tasks.script_failed'],
+    'failure before cancellation' => ['cancelled', false, true, 42, 'tasks.script_failed', 'failed', 'tasks.script_failed'],
+]);

@@ -7,7 +7,7 @@
       - '-'
       - '{{ container.mirror }}.migrate-{{ intent.migration_operation_id }}.claim'
       - '{{ "retire" if phase == "retire" else "restore" }}'
-      - '{{ run_id if phase == "retire" else (intent.restore_operation_id | string) }}'
+      - '{{ run_id if phase == "retire" else intent.restore_claim_owner }}'
     stdin: '{{ lookup("ansible.builtin.file", playbook_dir ~ "/instance_migrate_claim.py") }}'
     expand_argument_vars: false
   register: migrate_claim

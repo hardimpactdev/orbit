@@ -45,7 +45,7 @@ sequenceDiagram
   alt restore only
     SW->>N: Prove host ownership<br/>Ansible · tags restore-check
     %%> - after the read-only check, atomically claim restore ownership for the original move before either Route restoration or container removal
-    %%> - retirement takes the same permanent claim before any retirement effect; the losing side refuses, including after native resume; the same owner may rerun
+    %%> - retirement takes the same permanent claim before any retirement effect; the losing side refuses, including after native resume; every restore retry uses a stable identity from the original migrate Operation; retirement keeps its root run identity
     SW->>N: Restore the Route<br/>child route-mutation-restore
     SW->>N: Restore the checkout<br/>Ansible · tags restore
     %%> - checks the Node's retirement checkpoint and host checkout before deleting any container

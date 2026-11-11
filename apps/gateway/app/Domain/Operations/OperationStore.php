@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
-use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use Illuminate\Database\Eloquent\Builder;
@@ -45,26 +44,14 @@ final readonly class OperationStore
         $definition = $gatewayJob ? [] : (app(DirectOperation::class)->definition($kind) ?? throw new LogicException('The admitted direct Operation declaration is unavailable.'));
         $fields = array_values(array_unique([...array_keys($definition['private_material'] ?? []), ...array_keys($definition['secret_outputs'] ?? [])]));
         app(DirectOperationPrivateBindings::class)->assertAdmission($input, $fields, $nodeId);
-        $admissionKey = $lockKey ?? self::lockKey($targetType, $targetId);
         try {
-            $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $definition, $lockKey, $admissionKey): Operation {
+            $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $definition, $lockKey): Operation {
                 $operation = Operation::query()->create([
                     'kind' => $kind, 'idempotency_key' => $this->idempotency->key, 'idempotency_fingerprint' => $this->idempotency->fingerprint,
                     'target_type' => $targetType, 'target_id' => $targetId, 'node_id' => $nodeId, 'lock_key' => $lockKey,
-                    'input' => $input, 'state' => ['admission_hold_key' => $admissionKey], 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0,
+                    'input' => $input, 'state' => [], 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0,
                     'triggered_by' => $triggeredBy, 'request_id' => $requestId,
                 ]);
-                foreach (self::forTarget($targetType, $targetId)->whereKeyNot($operation->id)
-                    ->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')->lockForUpdate()->get() as $previous) {
-                    $previousKey = $previous->state['admission_hold_key'] ?? $previous->lock_key;
-                    // A released historical row may have no recoverable key. It cannot prove disjoint ownership.
-                    if (is_string($previousKey) && $previousKey !== $admissionKey) {
-                        continue;
-                    }
-                    if (ExpireOperationAction::expiredUnsettled($previous) && ! isset($previous->state['projection_superseded_by'])) {
-                        $previous->update(['state' => [...($previous->state ?? []), 'projection_superseded_by' => $operation->id]]);
-                    }
-                }
                 if (isset($definition['workflow'])) {
                     $operation->forceFill(['state' => [...($operation->state ?? []), 'swamp_start' => [
                         'key' => 'operation:'.$operation->id, 'workflow' => $definition['workflow'],
