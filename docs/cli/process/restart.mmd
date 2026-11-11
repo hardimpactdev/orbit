@@ -61,6 +61,7 @@ sequenceDiagram
     SW->>N: Act in the container<br/>Ansible · tags process
     %%> What it does:
     %%> - the Process is an `orbit` unit in its Instance container; the child run `operation-process-container` changes it through `incus exec` on the Node and checks its state
+    %%> - systemd changes use nonblocking jobs; each state read has a 5-second command bound, with 10 retries at 1-second intervals
     %%> - a stopped container fails the change; its next deployment starts it
   end
   opt Vite dev Process

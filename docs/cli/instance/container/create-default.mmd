@@ -53,6 +53,7 @@ sequenceDiagram
   %%> What it does:
   %%> - FrankenPHP starts as the `orbit` unit `orbit-frankenphp.service` on port 8080 of the bridge address
   %%> - writes the shared FrankenPHP Caddyfile: only the Node's bridge peer with `X-Forwarded-Proto: https` sets PHP's HTTPS scheme, port and resolved client IP; other requests keep native values
+  %%> - starts use nonblocking systemd jobs, then a bounded readiness check for each running unit; container Process units order after `network.target`
   %%> - the Project's development Processes start as `orbit-process-<id>-<name>.service` units, as `orbit`; each environment file comes from the vault, root only
   %%> - a Process whose desired state is stopped is installed, not started
   opt web-serving Project
