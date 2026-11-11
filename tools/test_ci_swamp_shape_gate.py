@@ -315,6 +315,8 @@ class OwnershipAndDeadlineTest(unittest.TestCase):
                              '      - name: Run Operations unit tests\n        if: false #'),
             WORKFLOW.replace('--only validate --strict', '--only shape --strict'),
             WORKFLOW.replace('          job: swamp-tests', '          job: swamp-shape'),
+            WORKFLOW.replace('        if: inputs.changed-only\n        id: scope', '        if: false\n        id: scope'),
+            WORKFLOW.replace("enabled: ${{ github.event_name != 'schedule' }}", 'enabled: false'),
         ]
         with tempfile.TemporaryDirectory() as directory:
             workflow = Path(directory) / 'workflow.yml'

@@ -93,12 +93,14 @@ def external_owners(steps):
             continue
         block = re.search(r'^  ' + job + r':\n(.*?)(?=^  [\w-]+:|\Z)', source, re.M | re.S)
         step = re.search(r'      - name: ' + re.escape(label) + r'\n(.*?)(?=      - |\Z)', block[1] if block else '', re.S)
+        scope_step = re.search(r'      - uses: \./\.github/actions/ci-scope\n(.*?)(?=      - |\Z)', block[1] if block else '', re.S)
+        scope_lines = [line.strip() for line in scope_step[1].splitlines() if line.strip() and not line.lstrip().startswith('#')] if scope_step else []
+        expected_scope = (['if: inputs.changed-only', 'id: scope', 'with:', 'job: swamp-tests'] if job == 'tests'
+                          else ['id: scope', 'with:', 'job: swamp-validate', "enabled: ${{ github.event_name != 'schedule' }}"])
         if (not step or condition != step[1].splitlines()[0].strip()
                 or [line for line in step[1].splitlines() if line.startswith('        run:')] != ['        run: ' + command]
                 or re.search(r'^    if:', block[1], re.M)
-                or '      - uses: ./.github/actions/ci-scope' not in block[1].splitlines()
-                or '        id: scope' not in block[1].splitlines()
-                or '          job: swamp-' + selection not in block[1].splitlines()
+                or scope_lines != expected_scope
                 or not scope(['swamp/' + file])['swamp_checks'][selection]):
             raise ValueError('test file without a shard owner: ' + file + ' (external CI owner does not select file)')
         owners[file] = {'job': job, 'step': matches[0].name if job == 'validate' else label}
