@@ -7,6 +7,7 @@ namespace App\Infrastructure\Swamp;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationChildProjection;
+use App\Domain\Operations\NativeTerminalNeedsSettlement;
 use App\Domain\Operations\OperationResultFields;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
@@ -141,21 +142,31 @@ final readonly class SwampCommandStep
 
             return app(ExpireOperationAction::class)->execute($operation);
         }
-        $genericLate = $operation->kind !== 'instance.migrate'
-            && (ExpireOperationAction::expiredUnsettled($operation) || isset($operation->state['native_cancel_confirmed_at']));
-        $result = $genericLate ? [] : ($run['status'] === 'cancelled' && $direct->projection($operation) instanceof DirectOperationChildProjection
-            ? [] : $this->terminalOutput($run, $selector));
+        $data = [
+            'run_id' => $runId, 'native_status' => $run['status'], 'status' => $run['status'],
+            'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'], 'error_code' => null, 'result' => [],
+            'failure' => app(NativeStepFailure::class)->fromRun($run, $operation), 'step_outcomes' => $this->recordedSteps($run),
+        ];
+        $lateReceipts = [
+            $this->lateReceipt($run, $data, deadline: true),
+            $this->lateReceipt($run, $data, deadline: false),
+        ];
+        $receipt = $direct->settleNativeTerminal($operation, $data, $lateReceipts);
+        if ($receipt !== null) {
+            $this->fillStepTimes($receipt, $runId, $run);
+
+            return $receipt->refresh();
+        }
+        $result = $run['status'] === 'cancelled' && $direct->projection($operation) instanceof DirectOperationChildProjection
+            ? [] : $this->terminalOutput($run, $selector);
         $operation->refresh();
         $direct->assertRun($operation, $runId);
-        if (($operation->status->terminal() && ! ExpireOperationAction::expiredUnsettled($operation)) || isset($operation->state['swamp_scheduled_result'])) {
-            return $operation;
-        }
         $status = $run['status'];
         $code = $result['error_code'] ?? null;
         if ($status === 'cancelled') {
             if (is_string($code) && ! NativeRunResult::cancelledFailure($run)) {
                 $status = 'failed';
-            } elseif (ExpireOperationAction::deadlineCancellation($operation)) {
+            } elseif ($operation->kind === 'instance.migrate' && ExpireOperationAction::deadlineCancellation($operation)) {
                 $result = [...$result, 'error_code' => 'operation.timed_out'];
                 $code = 'operation.timed_out';
             } else {
@@ -167,37 +178,22 @@ final readonly class SwampCommandStep
             $result = ['error_code' => 'operation.native_failed'];
             $code = 'operation.native_failed';
         }
-        $data = [
-            'run_id' => $runId, 'native_status' => $run['status'], 'status' => $status, 'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
-            'error_code' => $code ?? (in_array($status, ['failed', 'interrupted'], true) ? 'operation.native_failed' : null),
-            'result' => $result, 'failure' => app(NativeStepFailure::class)->fromRun($run, $operation),
-            'step_outcomes' => $this->recordedSteps($run),
-        ];
-
-        $lateReceipts = [
-            $this->lateSettlement($run, $data, deadline: true),
-            $this->lateSettlement($run, $data, deadline: false),
-        ];
-        $receipt = DB::transaction(function () use ($operation, $direct, $data, $lateReceipts, $runId, $run): Operation|array {
-            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-            $direct->assertRun($current, $runId);
-            if (($current->status->terminal() && ! ExpireOperationAction::expiredUnsettled($current)) || isset($current->state['swamp_scheduled_result'])) {
-                return $current;
+        $data = [...$data, 'status' => $status,
+            'error_code' => $code ?? (in_array($status, ['failed', 'interrupted'], true) ? 'operation.native_failed' : null), 'result' => $result];
+        while (true) {
+            try {
+                $projected = $direct->projection($operation)->apply($operation, $data);
+                break;
+            } catch (NativeTerminalNeedsSettlement) {
+                // The exception has unwound the family's entire write transaction, including its domain effects.
+                $projected = $direct->settleNativeTerminal($operation, $data, $lateReceipts);
+                if ($projected !== null) {
+                    break;
+                }
+                // An in-budget native finish reopens a provisional expiry and applies its normal family effects.
+                $operation->refresh();
             }
-            if ($current->kind === 'instance.migrate'
-                || (! ExpireOperationAction::expiredUnsettled($current) && ! isset($current->state['native_cancel_confirmed_at']))) {
-                return [$current, $data];
-            }
-            $lateData = $lateReceipts[ExpireOperationAction::deadlineCancellation($current) ? 0 : 1];
-            $current = app(ExpireOperationAction::class)->reopen($current, $runId, $run['status']);
-            // Only safe generic diagnostics belong to a receipt whose family effects were not applied.
-            $current->update(['state' => [...($current->state ?? []), 'native_failure' => null,
-                'native_progress' => ['run' => $runId, 'seq' => ValidatedData::object($current->state['native_progress'] ?? [])['seq'] ?? 0,
-                    'steps' => $lateData['step_outcomes'], 'active' => []]]]);
-
-            return $direct->project($current, $lateData, ValidatedData::object($lateData['result']));
-        });
-        $projected = $receipt instanceof Operation ? $receipt : $direct->projection($receipt[0])->apply($receipt[0], $receipt[1]);
+        }
         $this->fillStepTimes($projected, $runId, $run);
 
         return $projected->refresh();
@@ -208,18 +204,18 @@ final readonly class SwampCommandStep
      * @param  array<string,mixed>  $data
      * @return array<string,mixed>
      */
-    private function lateSettlement(array $run, array $data, bool $deadline): array
+    private function lateReceipt(array $run, array $data, bool $deadline): array
     {
         $nativeStatus = ValidatedData::string($run['status']);
         $nativeCode = $this->nativeFailureCode($run);
         $independent = in_array($nativeStatus, ['failed', 'interrupted'], true)
-            || ($nativeStatus === 'cancelled' && ! NativeRunResult::cancelledFailure($run) && $nativeCode !== null);
+            || ($nativeStatus === 'cancelled' && NativeRunResult::independentFailure($run));
         $status = match (true) {
             $nativeStatus === 'interrupted' => 'interrupted',
             $independent, $deadline => 'failed',
             default => 'cancelled',
         };
-        $code = $independent ? ($nativeCode ?? $data['error_code'] ?? 'operation.native_failed') : ($deadline ? 'operation.timed_out' : null);
+        $code = $independent ? ($nativeCode ?? 'operation.native_failed') : ($deadline ? 'operation.timed_out' : null);
         $detail = $nativeStatus === 'succeeded' && $deadline
             ? 'The native run succeeded after the Gateway deadline. Its effects were not recorded. Run the command again.'
             : 'The native run ended after the Gateway deadline or confirmed cancellation. Its effects were not recorded.';

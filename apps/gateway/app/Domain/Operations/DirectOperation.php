@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
+use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\GitHub\NativeGitHubTokenIssuer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -315,16 +316,84 @@ final readonly class DirectOperation
         });
     }
 
+    /**
+     * Recheck the durable cause in the transaction that writes the receipt. All native/private reads precede this call.
+     * A null result leaves the exact terminal eligible for its family projection, with a provisional expiry reopened.
+     *
+     * @param  array<string,mixed>  $data
+     * @param  array<int,array<string,mixed>>  $receipts
+     */
+    public function settleNativeTerminal(Operation $operation, array $data, array $receipts): ?Operation
+    {
+        return DB::transaction(function () use ($operation, $data, $receipts): ?Operation {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            $runId = ValidatedData::string($data['run_id']);
+            $this->assertRun($current, $runId);
+            if (($current->status->terminal() && ! ExpireOperationAction::expiredUnsettled($current)) || isset($current->state['swamp_scheduled_result'])) {
+                return $current;
+            }
+            if ($current->kind === 'instance.migrate') {
+                return null;
+            }
+            $settlement = $this->lateSettlement($current, $data);
+            if ($settlement === null) {
+                app(ExpireOperationAction::class)->reopen($current, $runId, ValidatedData::string($data['native_status']));
+
+                return null;
+            }
+            $late = $receipts[$settlement['deadline'] ? 0 : 1];
+            $current = app(ExpireOperationAction::class)->reopen($current, $runId, ValidatedData::string($data['native_status']));
+            $state = $current->state ?? [];
+            if ($settlement['timeout'] !== null) {
+                // A terminal can arrive before the sweep. Persist its deadline cause without timing out family records.
+                $state['native_timeout'] = $settlement['timeout'];
+            }
+            $current->update(['state' => [...$state, 'native_failure' => null,
+                'native_progress' => ['run' => $runId, 'seq' => ValidatedData::object($state['native_progress'] ?? [])['seq'] ?? 0,
+                    'steps' => $late['step_outcomes'], 'active' => []]]]);
+
+            return $this->record($current, $late, ValidatedData::object($late['result']), receiptOnly: true);
+        });
+    }
+
+    /** The single eligibility decision, called only with the Operation row locked in the committing transaction.
+     * Null means normal projection; otherwise select the generic cause and any missing deadline audit.
+     *
+     * @param  array<string,mixed>  $data
+     * @return array{deadline:bool,timeout:?array<string,mixed>}|null
+     */
+    private function lateSettlement(Operation $operation, array $data): ?array
+    {
+        if ($operation->kind === 'instance.migrate' || ! isset($data['native_status'])) {
+            return null;
+        }
+        $timeout = ValidatedData::object($operation->state['native_timeout'] ?? []);
+        $deadline = is_string($timeout['deadline'] ?? null) ? Carbon::parse($timeout['deadline']) : OperationRunBudgets::deadline($operation);
+        $afterDeadline = $deadline !== null && Carbon::parse(ValidatedData::string($data['finished_at']))->greaterThan($deadline);
+        if (! $afterDeadline && ! isset($operation->state['native_cancel_confirmed_at'])) {
+            return null;
+        }
+
+        return ['deadline' => $timeout !== [] ? ExpireOperationAction::deadlineCancellation($operation) : ($afterDeadline && $operation->cancel_requested_at === null),
+            'timeout' => $timeout === [] && $afterDeadline ? ['budget_seconds' => OperationRunBudgets::seconds($operation), 'deadline' => $deadline->toISOString(),
+                'cancel_requested_before_deadline' => $operation->cancel_requested_at !== null,
+                'native_terminal_status' => $data['native_status'], 'native_terminal_observed_at' => now()->toISOString()] : null];
+    }
+
     /** @param array<string,mixed> $data
      * @param  array<string,mixed>  $result
      */
-    private function record(Operation $operation, array $data, array $result): Operation
+    private function record(Operation $operation, array $data, array $result, bool $receiptOnly = false): Operation
     {
         $operation->refresh();
         if (! self::owns($operation)) {
             throw new ResourceOperationException('operation.direct_invalid', 'A declared direct Swamp intent is required.', 422);
         }
         $this->assertRun($operation, ValidatedData::string($data['run_id']));
+        if (! $receiptOnly && $operation->kind !== 'instance.migrate' && isset($data['native_status'])
+            && ($this->lateSettlement($operation, $data) !== null || ExpireOperationAction::expiredUnsettled($operation))) {
+            throw new NativeTerminalNeedsSettlement;
+        }
         $status = OperationStatus::from(ValidatedData::string($data['status'] ?? 'running'));
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
         // Families see native cancellation for their cleanup; a deadline-triggered cancel remains an Operation failure.

@@ -27,6 +27,7 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Processes\ProcessOperationAdmission;
@@ -1880,3 +1881,51 @@ it('review an already settled pre-fix timeout keeps a stale runtime but permits 
         ->and($instance->runtime()->firstOrFail()->id)->toBe($runtime->id)
         ->and($runtime->refresh()->operation_id)->toBe($retry->id);
 });
+
+it('arbitrates native completion against the admitted deadline before the expiry sweep', function (int $offset, bool $expireDuringRead): void {
+    $node = containerDefaultNode();
+    $store = app(OperationStore::class);
+    $input = ['manager' => 'apt', 'package' => 'jq', 'node_id' => $node->id];
+    $old = $store->create('tool.install', 'node_tools', $node->id, $node->id, $input, null, null, 'manager:apt');
+    $root = '0c69f6e8-bc50-4819-bcab-f3972557d2cc';
+    $old->update(['status' => 'running', 'attempts' => 1, 'started_at' => now()->subHours(2),
+        'state' => [...$old->state, 'swamp_run_id' => $root]]);
+    expect(OperationRunBudgets::deadline($old)->isPast())->toBeTrue();
+    $history = ['id' => $root, 'workflowName' => 'operation-tool-write-209', 'status' => 'succeeded',
+        'inputs' => ['operation_id' => $old->id, 'node_id' => $node->id, 'kind' => 'tool.install'],
+        'startedAt' => now()->subHours(2)->toISOString(), 'completedAt' => OperationRunBudgets::deadline($old)->addSeconds($offset)->toISOString(),
+        'jobs' => [['name' => 'tools', 'steps' => [
+            ['name' => 'Apply the package', 'status' => 'succeeded', 'outputs' => ['stdout' => 'RAW-MANAGER-OUTPUT-REVIEW', 'exitCode' => 0]],
+            ['name' => 'Choose package action', 'status' => 'succeeded', 'outputs' => ['ready' => true, 'installed_version' => '1.7']],
+            ['name' => 'Decode package state', 'status' => 'succeeded', 'outputs' => ['installed_version' => '1.7']],
+            ['name' => 'Assert package state', 'status' => 'succeeded', 'outputs' => ['exitCode' => 0]],
+        ]]]];
+    $frame = [];
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('connect', 'close')->andReturnNull();
+    $socket->shouldReceive('isConnected')->andReturnTrue();
+    $socket->shouldReceive('send')->andReturnUsing(function (array $message) use (&$frame): void {
+        $frame = $message;
+    });
+    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame, $history, $old, $expireDuringRead): array {
+        if ($expireDuringRead && $frame['type'] === 'workflow.history.get') {
+            app(ExpireOperationAction::class)->execute(Operation::query()->findOrFail($old->id));
+            expect(ExpireOperationAction::expiredUnsettled($old->fresh()))->toBeTrue();
+        }
+
+        return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => $frame['type'] === 'workflow.history.get' ? $history : ['results' => []]]]];
+    });
+    app(SwampConnection::class)->release();
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'read-token']);
+    try {
+        $settled = app(SwampCommandStep::class)->projectTerminal($old, ['id' => $root], app(DirectOperation::class)->definition('tool.install')['terminal_result'], atDeadline: true);
+        expect([$settled->status->value, $settled->error_code, $settled->result, ToolManagerRecord::query()->where('node_id', $node->id)->exists()])->toBe($offset > 0
+            ? ['failed', 'operation.timed_out', ['late_settlement' => true, 'native_status' => 'succeeded'], false]
+            : ['succeeded', null, ['installed_version' => '1.7', 'outcome' => 'unchanged'], false]);
+        expect($settled->state['native_timeout']['native_terminal_status'])->toBe('succeeded');
+        expect(json_encode($settled->result, JSON_THROW_ON_ERROR))->not->toContain('RAW-MANAGER-OUTPUT-REVIEW');
+    } finally {
+        app(SwampConnection::class)->release();
+    }
+})->with(['late before sweep' => [1, false], 'late after sweep' => [1, true], 'in budget after sweep' => [-1, true], 'at deadline after sweep' => [0, true]]);

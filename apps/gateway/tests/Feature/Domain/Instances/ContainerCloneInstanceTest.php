@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\ExpireOperationAction;
+use App\Actions\Operations\ReadOperationAction;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Extensions\ExtensionStore;
@@ -12,12 +14,18 @@ use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationRunBudgets;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Infrastructure\Swamp\NativeStepFailure;
+use App\Infrastructure\Swamp\SwampConnection;
+use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
@@ -31,6 +39,7 @@ use App\Models\ProjectDevelopmentDeployStep;
 use App\Support\ValidatedData;
 use Dotenv\Dotenv;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Orbit\Extensions\Conn\Domain\ConnInstanceLifecycle;
@@ -491,3 +500,113 @@ it('captures every attached server target once, including remote Redis, in the c
         ->and($intent['firewall'][1])->toMatchArray(['route' => 'yes', 'interface_in' => 'orbitinst0', 'interface_out' => 'orbit',
             'from_ip' => '10.253.0.2', 'to_ip' => '10.44.0.3', 'to_port' => '6379', 'proto' => 'tcp']);
 });
+
+it('rechecks cancellation and provisional expiry across non-migrate private reads', function (string $boundary): void {
+    $beforeRead = $boundary === 'confirmed before private read';
+    $expiry = str_starts_with($boundary, 'expiry');
+    $expired = false;
+    $transactionLevel = DB::transactionLevel();
+    $node = containerDefaultNode();
+    $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
+    $root = '0c69f6e8-bc50-4819-bcab-f3972557d2cc';
+    $operation->update(['status' => 'running', 'attempts' => 1, 'started_at' => now()->subHours(2),
+        'state' => ['swamp_run_id' => $root, 'native_cancel_requested_at' => now()->toISOString()], 'cancel_requested_at' => now()]);
+    $seconds = OperationRunBudgets::seconds($operation);
+    $operation->update(['started_at' => now()->subSeconds($seconds + 1),
+        'cancel_requested_at' => now()->subSeconds(4),
+        'state' => [...$operation->state, 'native_cancel_requested_at' => now()->subSeconds(4)->toISOString()]]);
+    if ($expiry) {
+        $operation->update(['cancel_requested_at' => null]);
+    }
+    $result = cloneSucceeded($operation)['result'];
+    $history = ['id' => $root, 'workflowName' => 'operation-instance-create', 'status' => 'succeeded',
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $node->id, 'kind' => 'instance.create'],
+        'startedAt' => $operation->started_at->toISOString(), 'completedAt' => OperationRunBudgets::deadline($operation)->subSecond()->toISOString(),
+        'jobs' => [['name' => 'create', 'steps' => [['name' => 'finish', 'status' => 'succeeded',
+            'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]]]]]];
+    $frame = [];
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('connect', 'close')->andReturnNull();
+    $socket->shouldReceive('isConnected')->andReturnTrue();
+    $socket->shouldReceive('send')->andReturnUsing(function (array $message) use (&$frame): void {
+        $frame = $message;
+    });
+    $confirmed = $beforeRead;
+    if ($beforeRead) {
+        $operation->update(['state' => [...$operation->state, 'native_cancel_confirmed_at' => now()->toISOString()]]);
+    }
+    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame, &$confirmed, &$expired, $history, $operation, $expiry, $boundary, $transactionLevel): array {
+        $reply = $frame;
+        expect(DB::transactionLevel())->toBe($transactionLevel);
+        if (! $expired && $boundary === 'expiry during history read' && $frame['type'] === 'workflow.history.get') {
+            app(ExpireOperationAction::class)->execute(Operation::query()->findOrFail($operation->id));
+            $expired = true;
+        }
+        if ($frame['type'] === 'vault.read-secret') {
+            // The cancellation request is already in flight. Its reply is persisted while this remote vault read waits.
+            $other = Operation::query()->findOrFail($operation->id);
+            $cancelSocket = new class implements WebSocketClient
+            {
+                private array $sent = [];
+
+                public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
+
+                public function close(): void {}
+
+                public function isConnected(): bool
+                {
+                    return true;
+                }
+
+                public function send(array $message): void
+                {
+                    $this->sent = $message;
+                }
+
+                public function receive(float $timeoutSeconds): array
+                {
+                    return [['id' => $this->sent['id'], 'type' => 'workflow.cancel', 'payload' => ['data' => [
+                        'runId' => $this->sent['payload']['runId'], 'status' => 'cancellation_requested']]]];
+                }
+            };
+            if ($expiry) {
+                if (! $expired) {
+                    app(ExpireOperationAction::class)->execute($other);
+                    $expired = true;
+                }
+            } else {
+                (new ReflectionMethod(ReconcileSwampOperations::class, 'forwardCancel'))->invoke(
+                    new ReconcileSwampOperations, $other,
+                    new CancelSwampRun($cancelSocket), app(OperationStore::class));
+                $confirmed = true;
+            }
+            $value = ['vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['secretKey'],
+                'vaultType' => 'local_encryption', 'value' => 'gateway-session-value'];
+        } else {
+            $value = $frame['type'] === 'workflow.history.get' ? $history : ['results' => []];
+        }
+
+        return [['id' => $reply['id'], 'type' => $reply['type'], 'payload' => ['data' => $value]]];
+    });
+    app(SwampConnection::class)->release();
+    app()->instance(WebSocketClient::class, $socket);
+    app()->forgetInstance(SwampVaultExecutionCopy::class);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'read-token', 'swamp.run_token' => 'run-token']);
+    try {
+        $settled = app(ReadOperationAction::class)->execute($operation);
+        expect($confirmed)->toBe(! $expiry);
+        if ($expiry) {
+            expect($expired)->toBeTrue()
+                ->and($settled->state['native_timeout']['native_terminal_status'])->toBe('succeeded')
+                ->and($settled->cancel_requested_at)->toBeNull();
+        }
+        expect([
+            $settled->status->value,
+            $settled->result,
+            ConnEnvironment::query()->where('instance_id', $operation->target_id)->exists(),
+            Instance::query()->findOrFail($operation->target_id)->status === InstanceState::Active,
+        ])->toBe($expiry ? ['succeeded', $result, true, true] : ['cancelled', ['late_settlement' => true, 'native_status' => 'succeeded'], false, false]);
+    } finally {
+        app(SwampConnection::class)->release();
+    }
+})->with(['confirmed before private read', 'confirmed during private read', 'expiry during history read', 'expiry during private read']);
