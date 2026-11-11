@@ -9,22 +9,30 @@ if (Deno.args[0] === "--daemon") {
 }
 const settings = JSON.parse(Deno.readTextFileSync(`${folder}/state.json`));
 const configRemote = Deno.env.get("INCUS_REMOTE") ?? "";
-const remote = settings.default_remote && configRemote !== "local";
-const file = `${folder}/${remote ? "remote-state" : "state"}.json`;
-const state = JSON.parse(Deno.readTextFileSync(file));
-state.profiles ??= {};
-state.instances ??= [];
 const args = [...Deno.args];
-Deno.writeTextFileSync(`${folder}/calls`, JSON.stringify(args) + "\n", {
-  append: true,
-});
-Deno.writeTextFileSync(`${folder}/targets`, JSON.stringify({
-  args, remote: Boolean(remote), configRemote, socket: Deno.env.get("INCUS_SOCKET") ?? "",
-}) + "\n", { append: true });
 const projectIndex = args.indexOf("--project");
 const project = projectIndex >= 0 ? args[projectIndex + 1]
   : (args[0] === "query" ? new URLSearchParams(args.at(-1)?.split("?")[1]).get("project") : null) ?? "default";
 if (projectIndex >= 0) args.splice(projectIndex, 2);
+// Incus parses explicit image targets before applying the environment's default remote/socket.
+const targetIndex = args[0] === "image"
+  ? (args[1] === "alias" ? 3
+    : ["set-property", "unset-property", "delete", "show", "info", "list"].includes(args[1]) ? 2 : -1) : -1;
+const target = targetIndex >= 0 ? args[targetIndex] : undefined;
+const explicitRemote = target?.includes(":") ? target.split(":", 1)[0] : undefined;
+const remote = explicitRemote !== undefined ? explicitRemote !== "local"
+  : settings.default_remote && configRemote !== "local";
+const file = `${folder}/${remote ? "remote-state" : "state"}.json`;
+const state = JSON.parse(Deno.readTextFileSync(file));
+state.profiles ??= {};
+state.instances ??= [];
+Deno.writeTextFileSync(`${folder}/calls`, JSON.stringify(Deno.args) + "\n", {
+  append: true,
+});
+Deno.writeTextFileSync(`${folder}/targets`, JSON.stringify({
+  args: Deno.args, remote: Boolean(remote), configRemote, socket: Deno.env.get("INCUS_SOCKET") ?? "",
+}) + "\n", { append: true });
+if (explicitRemote !== undefined) args[targetIndex] = target!.slice(explicitRemote.length + 1);
 const [family, action, name] = args;
 const owned = (image: {project?: string; fingerprint: string}) => image.project === undefined || image.project === project;
 const archive = (fingerprint: string) => `${folder}/images/${fingerprint}`;

@@ -2,8 +2,9 @@
 # The Instance image (docs/reference/development-containers.md#inside-a-container). Its alias is a digest of the whole definition the
 # Gateway sends, so a host builds each definition once. A build container from the stock image installs the OS packages, sets up the
 # users, the workspace and the firewall, and is published under the alias; the stable alias `orbit-instance` then names it, and the
-# images it replaced go. The build container reaches the internet as every container does, through the egress proxy that the profile
-# names for `incus exec` (tasks/instance-egress.yml), and it takes the bridge's last address, which no Instance gets.
+# images it replaced remain for separately authorized operator cleanup. The build container reaches the internet as every container
+# does, through the egress proxy that the profile names for `incus exec` (tasks/instance-egress.yml), and it takes the bridge's last
+# address, which no Instance gets.
 - name: Read the Instance images
   environment: &image_local
     INCUS_REMOTE: local

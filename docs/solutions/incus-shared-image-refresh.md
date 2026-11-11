@@ -31,7 +31,7 @@ This is an explicit operator procedure, outside ordinary convergence. It does no
 
 Drain existing host-image writers and prevent new admissions throughout adoption and the following convergence. F69 alone does not reserve a standalone operator action. Save the block below as a local Python file and supply the approved values in this order: Node, socket, project, stock alias, fingerprint, retention alias, absolute snapshot filename. The snapshot must not exist. No supplied value is inferred from a live alias.
 
-The recipe verifies all inputs before writing. It snapshots the image metadata and aliases, creates the approved retention alias without replacement, and makes exactly one native property update on the full fingerprint. Incus's native `image set-property` merges that property into the existing writable metadata and uses its ETag. A failure stops; it does not retry or perform rollback automatically.
+The recipe verifies all inputs before writing. Project and alias names must match `[A-Za-z0-9][A-Za-z0-9_.-]*`; remote prefixes and slashes are refused. The fingerprint must be exactly 64 lowercase hexadecimal characters. The recipe snapshots the image metadata and aliases, creates the approved retention alias without replacement, and makes exactly one native property update on the full fingerprint. Incus's native `image set-property` merges that property into the existing writable metadata and uses its ETag. A failure stops; it does not retry or perform rollback automatically.
 
 ### Adoption recipe
 
@@ -55,8 +55,10 @@ def require(condition, resource):
     if not condition:
         raise SystemExit(f'Refused {resource}; see {recipe}')
 
-require(re.fullmatch('[0-9a-f]{64}', fingerprint), 'approved full fingerprint')
-require(all([node, project, alias, retention]), 'approved Node/project/aliases')
+for field, value in [('retention', retention), ('alias', alias), ('project', project)]:
+    require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]*', value), f'{field} {json.dumps(value)}')
+require(re.fullmatch('[0-9a-f]{64}', fingerprint), f'fingerprint {json.dumps(fingerprint)}')
+require(node, 'approved Node')
 require(retention not in [alias, 'orbit-stock-candidate', 'orbit-stock-retiring'], retention)
 require(Path(socket).is_absolute() and Path(socket).is_socket(), socket)
 require(Path(snapshot).is_absolute(), snapshot)
@@ -111,7 +113,9 @@ A refusal names the resource that needs inspection; it grants no cleanup authori
 
 The pinned Incus 7.0.2 source shows [image publication and creation-time properties](https://github.com/lxc/incus/blob/v7.0.2/cmd/incusd/images.go#L466-L568), [non-atomic refresh across projects](https://github.com/lxc/incus/blob/v7.0.2/cmd/incusd/images.go#L2126-L2166), [transactional alias replacement](https://github.com/lxc/incus/blob/v7.0.2/cmd/incusd/images.go#L4141-L4166), and [ZFS origin retention](https://github.com/lxc/incus/blob/v7.0.2/internal/server/storage/drivers/driver_zfs_volumes.go#L1705-L1729).
 
-The client selects the static local target with `INCUS_REMOTE=local` ([configuration precedence](https://github.com/lxc/incus/blob/v7.0.2/shared/cliconfig/file.go#L152-L186), [local target](https://github.com/lxc/incus/blob/v7.0.2/shared/cliconfig/default.go#L7-L13)); `INCUS_SOCKET` then binds it to the verified socket ([Unix connection](https://github.com/lxc/incus/blob/v7.0.2/client/connection.go#L161-L214)).
+The client selects the static local target with `INCUS_REMOTE=local` ([configuration precedence](https://github.com/lxc/incus/blob/v7.0.2/shared/cliconfig/file.go#L152-L186), [local target](https://github.com/lxc/incus/blob/v7.0.2/shared/cliconfig/default.go#L7-L13)); `INCUS_SOCKET` then binds it to the verified socket ([Unix connection](https://github.com/lxc/incus/blob/v7.0.2/client/connection.go#L161-L214)). These settings do not override an explicit remote prefix. The adoption recipe refuses such inputs before any request or snapshot.
+
+Check mode does not prove refusals: the stock module skips in check mode. A refusal precedes any change to the conflicting resource. It does not precede every host change. For example, the prior-probe check runs after stock reconciliation and firewall tasks. An approved fingerprint that matches the selected alias can still be wrong. The recipe cannot tell it from an intended approval.
 
 Fixtures prove the emitted requests, same-invocation cleanup, refusal paths and unchanged repeats. They cannot prove real archive deletion, fingerprint isolation after an upstream refresh or ZFS clone survival. Those claims need a separately authorized live proof. This change starts no live refresh.
 

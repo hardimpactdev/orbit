@@ -807,7 +807,7 @@
     ]
   },
   "swamp/tests/ansible_task_container_host_prepare_test.ts": {
-    "source_sha256": "052d163d2e8e6289815ac39ea8b23be50272e848d4478e66a63622db7e02bc6b",
+    "source_sha256": "e945c4caef36728af235d06e490e7472da77b6a86814f2aca85f2d7888a78ced",
     "cases": [
       "a container host gets its kernel side, bridge, project and clone check beside the VM side, then changes nothing",
       "the container bridge gets DHCP and DNS input rules under its own catalog names",
@@ -833,6 +833,23 @@
       "stock daemon identity refuses cli_server_pid mismatch before mutation",
       "stock image commands use the approved local socket despite a same-PID default remote",
       "the explicit fingerprint adoption recipe snapshots and retains legacy stock before one property set and ordinary convergence",
+      "the image fixture routes explicit remote prefixes ahead of the local environment",
+      "the adoption recipe refuses nonlocal retention \"other:retain-stock\" before snapshot or changes",
+      "the adoption recipe refuses nonlocal alias \"other:stock\" before snapshot or changes",
+      "the adoption recipe refuses nonlocal project \"other:project\" before snapshot or changes",
+      "the adoption recipe refuses nonlocal fingerprint \"other:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" before snapshot or changes",
+      "the adoption recipe refuses nonlocal retention \"stock/retain\" before snapshot or changes",
+      "the adoption recipe refuses nonlocal alias \"stock/alias\" before snapshot or changes",
+      "the adoption recipe refuses nonlocal project \"stock/project\" before snapshot or changes",
+      "the adoption recipe refuses nonlocal retention \"--retain\" before snapshot or changes",
+      "the adoption recipe refuses nonlocal alias \"-stock\" before snapshot or changes",
+      "the adoption recipe refuses nonlocal project \"-project\" before snapshot or changes",
+      "the adoption recipe refuses nonlocal retention \"retain stock\" before snapshot or changes",
+      "the adoption recipe refuses nonlocal alias \"stock\\n\" before snapshot or changes",
+      "the adoption recipe refuses nonlocal project \"\" before snapshot or changes",
+      "the adoption recipe refuses nonlocal fingerprint \"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\" before snapshot or changes",
+      "the adoption recipe refuses nonlocal fingerprint \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" before snapshot or changes",
+      "the adoption recipe refuses nonlocal fingerprint \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" before snapshot or changes",
       "the adoption recipe refuses mismatched approval tuples or existing metadata without mutation",
       "the adoption recipe refuses interrupted resources and preserves every unrelated alias",
       "explicit adoption can restore its saved metadata before or after replacement while retaining both images"

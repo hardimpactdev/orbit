@@ -1157,6 +1157,81 @@ Deno.test({
 
 Deno.test({
     name:
+        "the image fixture routes explicit remote prefixes ahead of the local environment",
+    ignore: !hasAnsible,
+    fn() {
+        const f = fixture({ stockOnly: true });
+        try {
+            const old = { ...healthy(f), properties: {} };
+            stockState(f, { images: [old] });
+            const local = f.state();
+            Deno.writeTextFileSync(`${f.folder}/remote-state.json`, JSON.stringify(local));
+            const result = new Deno.Command(`${f.folder}/bin/incus`, {
+                args: ["--project", stockProject, "image", "alias", "create", "other:retain-stock", old.fingerprint],
+                env: { HOST_FIXTURE: f.folder, INCUS_REMOTE: "local", INCUS_SOCKET: `${f.folder}/unix.socket` },
+            }).outputSync();
+            assert(result.success, new TextDecoder().decode(result.stderr));
+            assertEquals(f.state(), local);
+            const remote = JSON.parse(f.read("remote-state.json"));
+            assertEquals(remote.images, [{ ...old, aliases: [...old.aliases, { name: "retain-stock" }] }]);
+            assertEquals(JSON.parse(f.read("targets")).remote, true);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+for (const [input, value] of [
+    ["retention", "other:retain-stock"],
+    ["alias", "other:stock"],
+    ["project", "other:project"],
+    ["fingerprint", `other:${"b".repeat(64)}`],
+    ["retention", "stock/retain"],
+    ["alias", "stock/alias"],
+    ["project", "stock/project"],
+    ["retention", "--retain"],
+    ["alias", "-stock"],
+    ["project", "-project"],
+    ["retention", "retain stock"],
+    ["alias", "stock\n"],
+    ["project", ""],
+    ["fingerprint", "B".repeat(64)],
+    ["fingerprint", "b".repeat(63)],
+    ["fingerprint", "b".repeat(65)],
+] as const) {
+    Deno.test({
+        name: `the adoption recipe refuses nonlocal ${input} ${JSON.stringify(value)} before snapshot or changes`,
+        ignore: !hasAnsible,
+        fn() {
+            const f = fixture({ stockOnly: true });
+            try {
+                const old = {
+                    ...healthy(f),
+                    project: input === "project" ? value : stockProject,
+                    aliases: [{ name: input === "alias" ? value : stockAlias }],
+                    properties: {},
+                };
+                stockState(f, { images: [old] });
+                const local = f.state();
+                Deno.writeTextFileSync(`${f.folder}/remote-state.json`, JSON.stringify(local));
+                const result = adopt(f, { [input]: value });
+                assertEquals({
+                    snapshot: f.has("before.json"),
+                    local: f.state(),
+                    remote: JSON.parse(f.read("remote-state.json")),
+                }, { snapshot: false, local, remote: local }, result.output);
+                assert(!result.ok, result.output);
+                assertStringIncludes(result.output, `Refused ${input} ${JSON.stringify(value)}`);
+                assert(!f.has("calls"), "invalid inputs must refuse before any Incus command");
+            } finally {
+                f.cleanup();
+            }
+        },
+    });
+}
+
+Deno.test({
+    name:
         "the adoption recipe refuses mismatched approval tuples or existing metadata without mutation",
     ignore: !hasAnsible,
     fn() {
