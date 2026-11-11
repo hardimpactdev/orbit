@@ -38,19 +38,19 @@ jobs:
           inputs:
             intent: '${{ inputs.intent }}'
             path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
-      # Stop the Instance: the checkout is on the recorded branch, a container that an earlier failed move left goes, and the
-      # awake marker goes, so the Route shows the wake page while the checkout moves.
-      - name: quiesce
+      # Preflight, prepare the container with the shared create tasks, and probe every attached target before downtime.
+      # The Node's mirror fetches from the checkout itself, so this phase gets no token.
+      - name: container
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: input, condition: {type: succeeded}}]
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "im-quiesce-" + string(inputs.node_id) }}'
+          behaviorName: '${{ "im-container-" + string(inputs.node_id) }}'
           methodName: execute
           inputs:
-            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags quiesce "$ORBIT_ANSIBLE/instance-migrate.yml"
+            run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags container "$ORBIT_ANSIBLE/instance-migrate.yml"
             env: &phase
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_RUN_ID: '${{ run.id }}'
@@ -59,26 +59,25 @@ jobs:
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
               ANSIBLE_FORCE_COLOR: '0'
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-      # Launch the container: from the image, with its address, its ACL and the way to its database server, started. The Node's
-      # mirror fetches the branch from the checkout itself (`container.repository` is its path), so the step gets no token.
-      - name: container
+      # Only after every target probe passed, stop the host writers and remove the awake marker.
+      - name: quiesce
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: quiesce, condition: {type: succeeded}}]
+        dependsOn: [{step: container, condition: {type: succeeded}}]
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "im-container-" + string(inputs.node_id) }}'
+          behaviorName: '${{ "im-quiesce-" + string(inputs.node_id) }}'
           methodName: execute
           inputs:
-            run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags container "$ORBIT_ANSIBLE/instance-container.yml"
+            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags quiesce "$ORBIT_ANSIBLE/instance-migrate.yml"
             env: *phase
       # Build the workspace: the branch in as a bundle, checked out in a standalone repository in /srv/workspace. The step gets no
       # .env, so the one this phase writes is empty: the next phase brings the checkout's own.
       - name: workspace
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: container, condition: {type: succeeded}}]
+        dependsOn: [{step: quiesce, condition: {type: succeeded}}]
         task:
           type: behavior
           behaviorType: command/shell
@@ -88,7 +87,7 @@ jobs:
             run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags workspace "$ORBIT_ANSIBLE/instance-container.yml"
             env: *phase
       # Copy the files: every file that differs from the commit, every untracked and every ignored file, .env among them; the
-      # T3 proxy device of a non-default Instance; and the check that the container reaches its database server.
+      # T3 proxy device of a non-default Instance.
       - name: files
         labels: {role: swamp}
         writes: true

@@ -84,7 +84,7 @@ Deno.test({
                         },
                         "instance-8": { status: "Running" },
                     },
-                    "network-acls": [{ name: "instance-7" }, {
+                    "network-acls": [{name: "orbitinst0-egress", egress: [{action: "allow", source: "10.253.0.0/24", destination: "10.44.0.7/32", protocol: "tcp", destination_port: "3306", state: "enabled"}]}, { name: "instance-7" }, {
                         name: "instance-8",
                     }],
                 }),
@@ -148,7 +148,9 @@ Deno.test({
                 Deno.readTextFileSync(`${folder}/state.json`),
             );
             assertEquals(Object.keys(state.containers), ["instance-8"]);
-            assertEquals(state["network-acls"], [{ name: "instance-8" }]);
+            assertEquals(state["network-acls"].filter((acl: {name: string}) => acl.name !== "orbitinst0-egress"), [{ name: "instance-8" }]);
+            // A concurrent destroy never withdraws another Instance's bridge endpoint. Host reconcile owns removal.
+            assertEquals(state["network-acls"].find((acl: {name: string}) => acl.name === "orbitinst0-egress").egress[0].destination, "10.44.0.7/32");
             assertEquals(
                 Deno.readTextFileSync(`${folder}/ufw`),
                 "[ 2] 3801 ALLOW IN # orbit:instance-8-t3\n",

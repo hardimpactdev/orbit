@@ -77,6 +77,7 @@ final readonly class InstanceHostIntent
     /** @return array<string, mixed>|null */
     public function for(Node $node): ?array
     {
+        $admittedAt = (int) now()->format('Uu');
         if (! $this->applies($node)) {
             return null;
         }
@@ -106,10 +107,12 @@ final readonly class InstanceHostIntent
             // DHCP never hands out the gateway's neighbour range end, so the build address stays free.
             'dhcp_range' => long2ip((int) ip2long($gateway) + 1).'-'.long2ip((int) ip2long($last) - 1),
             'stock' => self::StockAlias,
-            // The bridge ACL lets containers reach only the model forwarder (docs/reference/ai-router.md#container-model-forwarder) and
+            // The common NIC ACL lets containers reach only the model forwarder (docs/reference/ai-router.md#container-model-forwarder) and
             // the egress proxy, their one way out (docs/reference/development-containers.md#egress-and-dns).
             'forwarder_port' => self::ModelForwarderPort,
             'ingress' => self::ingress($gateway),
+            'bridge_admitted_at' => $admittedAt,
+            'bridge_endpoints' => app(InstanceContainer::class)->nodeEndpoints($node),
             'egress' => InstanceEgress::for(self::Network, $gateway, $cidr, $this->privateDns->domains()),
             'ids' => (self::Containers + 1) * self::IdMapSize + $taskIds,
             // A task VM host sizes the ARC for its task side, or keeps the Node's own (task-vm-host-prepare.yml): the Instance side
@@ -137,7 +140,7 @@ final readonly class InstanceHostIntent
      * So the bridge admits what a container's ACL may admit (InstanceContainer::intent), and no more: the Node's own connections,
      * which leave from the bridge address, to FrankenPHP's port and the development ports, and T3's port from any source. A proxy
      * device in NAT mode keeps the address of T3's client, a WireGuard peer; the Node's route rules decide which peers pass. The NIC
-     * currently combines this common ACL with its own as a union, so defaults also inherit this ingress (F10, docs/reference/development-containers.md#network).
+     * combines its proxy ACL, which keeps this same ingress, with its own as a union, so defaults also inherit it (F10, docs/reference/development-containers.md#network).
      *
      * @return list<array<string, string>>
      */

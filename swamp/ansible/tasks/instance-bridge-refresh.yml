@@ -1,0 +1,44 @@
+---
+# A timer recovers missed Docker events and a late DNAT install without an event-reader daemon. systemd serializes the oneshot.
+- name: Install the bridge endpoint refresh unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/orbit-instance-bridge-refresh.service
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Refresh Orbit Instance bridge endpoints from admitted intent
+      After=docker.service incus.service
+      Requires=incus.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/bin/python3 /usr/local/libexec/orbit-instance-bridge
+      TimeoutStartSec=30
+
+- name: Install the bridge endpoint refresh timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/orbit-instance-bridge-refresh.timer
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Check Orbit Instance bridge endpoints every 15 seconds
+
+      [Timer]
+      OnBootSec=15s
+      OnUnitInactiveSec=15s
+      AccuracySec=1s
+      Unit=orbit-instance-bridge-refresh.service
+
+      [Install]
+      WantedBy=timers.target
+
+- name: Enable bridge endpoint refreshes
+  ansible.builtin.systemd_service:
+    name: orbit-instance-bridge-refresh.timer
+    enabled: true
+    state: started
+    daemon_reload: true

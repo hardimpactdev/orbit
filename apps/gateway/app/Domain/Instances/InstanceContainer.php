@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
+use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
@@ -13,6 +15,7 @@ use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -162,13 +165,14 @@ final readonly class InstanceContainer
      */
     public function intent(Instance $instance, InstanceRuntime $runtime, ?DatabaseConnection $database = null, string $branch = '', ?string $url = null): array
     {
+        $admittedAt = (int) now()->format('Uu');
         $instance->loadMissing(['project', 'node']);
         $project = $instance->project;
         $workspace = InstanceHostIntent::Workspace;
         $application = self::application($instance);
         $gateway = Ipv4Subnet::from(ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')))->usableRange()[0];
         $environment = InstanceImage::environment($gateway);
-        $access = $database === null ? null : $this->databaseAccess($instance, $runtime, $database);
+        $access = $this->databaseAccesses($instance, $runtime, $database);
         $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url);
 
         return [
@@ -177,11 +181,14 @@ final readonly class InstanceContainer
             'root_disk_pool' => InstanceHostIntent::Pool, 'root_disk_size' => '40GiB',
             'image' => self::Image, 'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
             'acl' => $runtime->container_name,
-            // The bridge ACL keeps the ways to the model forwarder and the egress proxy; this one lets only the Node's Caddy reach
-            // FrankenPHP, a clone's T3 clients reach T3, and the container reach its own database server.
+            'bridge_cidr' => ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')),
+            'bridge_admitted_at' => $admittedAt,
+            'bridge_endpoints' => array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port'], 'docker' => $target['docker']], $access),
+            // The common NIC ACL keeps the ways to the model forwarder and egress proxy; this one lets the Node's Caddy reach
+            // FrankenPHP, a clone's T3 clients reach T3, and the container reach each attached target.
             'acl_rules' => ['description' => 'Orbit Instance '.$instance->id,
-                'egress' => $access === null ? [] : [['action' => 'allow', 'destination' => $access['host'].'/32', 'protocol' => 'tcp',
-                    'destination_port' => (string) $access['port'], 'state' => 'enabled']],
+                'egress' => array_map(static fn (array $target): array => ['action' => 'allow', 'destination' => $target['host'].'/32', 'protocol' => 'tcp',
+                    'destination_port' => (string) $target['port'], 'state' => 'enabled'], $access),
                 'ingress' => [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
                     'destination_port' => (string) self::WebPort, 'state' => 'enabled'],
                     ...(($vitePort = app(ContainerProcesses::class)->vitePort($instance)) === null ? [] : [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
@@ -191,7 +198,7 @@ final readonly class InstanceContainer
                     ...($this->servesDevPorts($instance, $runtime) ? [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
                         'destination_port' => InstanceDevPorts::First.'-'.InstanceDevPorts::Last, 'state' => 'enabled']] : [])]],
             // UFW on the Node, under one comment prefix per Instance, so its removal takes them all.
-            'firewall' => [...($clone === null ? [] : $this->t3Firewall($instance, $runtime)), ...($access === null ? [] : [$access['rule']])],
+            'firewall' => [...($clone === null ? [] : $this->t3Firewall($instance, $runtime)), ...array_column($access, 'rule')],
             'mirror' => self::mirror($instance), 'repository' => $project->repository_url,
             'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])),
             'branch' => $branch !== '' ? $branch : ValidatedData::string($project->default_branch), 'commit' => null,
@@ -297,14 +304,56 @@ final readonly class InstanceContainer
     }
 
     /**
+     * All attached server targets, regardless of driver or prefix. The primary create database may not have its target yet.
+     * SQLite stays in the workspace. A repeated attachment of the same endpoint needs only one network path.
+     *
+     * @return list<array{host: string, port: int, docker: bool, rule: array<string, string>}>
+     */
+    private function databaseAccesses(Instance $instance, InstanceRuntime $runtime, ?DatabaseConnection $primary): array
+    {
+        $connections = $primary === null ? [] : [$primary->id => $primary];
+        foreach (DatabaseConnectionTarget::query()->with('databaseConnection.server')->where('instance_id', $instance->id)
+            ->orderByRaw("prefix = 'DB' desc")->orderBy('id')->get() as $target) {
+            $connection = $target->databaseConnection;
+            if ($connection->driver !== DatabaseDriver::Sqlite) {
+                $connections[$connection->id] = $connection;
+            }
+        }
+        $paths = [];
+        foreach ($connections as $connection) {
+            $access = $this->databaseAccess($instance, $runtime, $connection, $paths === [] ? 'database' : 'database-'.$connection->id);
+            $paths[$access['host'].':'.$access['port']] ??= $access;
+        }
+
+        return array_values($paths);
+    }
+
+    /** The Node's target union, using the same endpoint source as each container's NIC policy.
+     *
+     * @return list<array{host: string, port: int, docker: bool}>
+     */
+    public function nodeEndpoints(Node $node): array
+    {
+        $endpoints = [];
+        foreach (InstanceRuntime::query()->where('node_id', $node->id)->with('instance')->orderBy('id')->get() as $runtime) {
+            foreach ($this->databaseAccesses($runtime->instance, $runtime, null) as $access) {
+                $endpoints[$access['host'].':'.$access['port']] = ['host' => $access['host'], 'port' => $access['port'], 'docker' => $access['docker']];
+            }
+        }
+        ksort($endpoints);
+
+        return array_values($endpoints);
+    }
+
+    /**
      * The way to the Instance's database server: the server's address and port. A server on the Instance's own Node is reached on the
      * Node; one on another Node through the Node's WireGuard address, as the bridge's NAT sends it.
      *
      * `$name` ends the rule's comment, so an Instance with more than one server keeps a rule for each.
      *
-     * @return array{host: string, port: int, rule: array<string, string>}
+     * @return array{host: string, port: int, docker: bool, rule: array<string, string>}
      */
-    public function databaseAccess(Instance $instance, InstanceRuntime $runtime, DatabaseConnection $database, string $name = 'database'): array
+    private function databaseAccess(Instance $instance, InstanceRuntime $runtime, DatabaseConnection $database, string $name = 'database'): array
     {
         $host = $database->host;
         $port = $database->port;
@@ -316,7 +365,7 @@ final readonly class InstanceContainer
             'to_ip' => $host, 'to_port' => (string) $port, 'proto' => 'tcp', 'comment' => self::firewallPrefix($instance).$name,
             ...($local ? [] : ['route' => 'yes', 'interface_out' => self::WireGuardInterface])];
 
-        return ['host' => $host, 'port' => $port, 'rule' => $rule];
+        return ['host' => $host, 'port' => $port, 'docker' => $local && $database->server->process?->runtime === ProcessRuntime::Docker, 'rule' => $rule];
     }
 
     /**

@@ -122,6 +122,14 @@ final readonly class FactDoctor
             }
             $check->observed($node->id, 'node.disk_low');
         });
+        $check->read($node->id, ['node.instance_bridge_unhealthy'], function () use ($check, $node): void {
+            $bridge = $check->fact(NodeFactKind::Host)['instance_bridge'] ?? null;
+            if (is_array($bridge) && is_string($bridge['error_code'] ?? null)) {
+                $check->issue('node.instance_bridge_unhealthy', $node->id, $node->name,
+                    'Instance bridge endpoint refresh failed: '.$bridge['error_code'], 'healthy', $bridge['error_code']);
+            }
+            $check->observed($node->id, 'node.instance_bridge_unhealthy');
+        });
         $agent = $check->agent;
         $check->read($node->id, ['node.agent_missing', 'node.agent_inactive', 'node.agent_view_stale'], function () use ($check, $node, $agent): void {
             match ($agent->state) {

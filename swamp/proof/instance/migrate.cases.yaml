@@ -4,6 +4,8 @@
 # the Pest, Deno and Ansible fixture tests cover the move, and the live check on a build-list Node proves it.
 # Retirement fixture coverage (ansible_instance_migrate_test.ts): dirty tracked/staged/deleted/renamed files and non-ignored
 # untracked files refuse before downtime; ignored files pass; linked and detached worktrees refuse and name their paths.
+# Target probes run in the container phase before quiesce; an unreachable SQL or Redis target leaves the awake marker,
+# checkout and host Process states untouched. Restore deletes the failed container and its exact target rules only.
 # Process fixtures stop and disable host units before copying, install private Process environments in the container,
 # retire host files after cutover and restore recorded desired states only after removing a failed container.
 # Preset fixture coverage: running/stopped vp-dev uses the same Process phases; rollback restores the host only after

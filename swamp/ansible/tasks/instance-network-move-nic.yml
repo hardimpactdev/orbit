@@ -1,0 +1,17 @@
+---
+# A single update replaces the ACL reference and retains both reject defaults. A failed update leaves the old gate intact.
+- name: Replace the bridge union ACL on an effective NIC without opening it
+  when: >-
+    item.value.get('type', '') == 'nic'
+    and (item.value.get('network', '') == instances.network or item.value.get('parent', '') == instances.network)
+    and instances.network ~ '-egress' in item.value.get('security.acls', '').split(',') | map('trim') | list
+  ansible.builtin.command:
+    argv: >-
+      {{ ['incus', '--project', move_container.project, 'config', 'device',
+          ('set' if item.key in (move_container.devices | default({})) else 'override'), move_container.name, item.key,
+          'security.acls=' ~ (item.value['security.acls'].split(',') | map('trim')
+            | map('regex_replace', '^' ~ instances.network ~ '-egress$', instances.network ~ '-proxy') | join(',')),
+          'security.acls.default.egress.action=reject', 'security.acls.default.ingress.action=reject'] }}
+  loop: "{{ move_container.expanded_devices | dict2items }}"
+  loop_control: { label: "{{ move_container.name }}/{{ item.key }}" }
+  changed_when: true

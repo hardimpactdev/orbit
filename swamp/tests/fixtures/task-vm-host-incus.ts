@@ -95,6 +95,13 @@ if (family === "query") {
         environment: { server_version: state.server_version ?? "7.0.1" },
       }),
     );
+  } else if (resource === "instances" && !item) {
+    console.log(JSON.stringify(state.instances.map((row: { project: string; devices?: Record<string, Record<string, string>> }) => {
+      const devices = structuredClone(state.profiles[row.project]?.devices ?? {});
+      // Incus replaces a whole device of the same name; it does not inherit missing local properties.
+      for (const [name, device] of Object.entries(row.devices ?? {})) devices[name] = device;
+      return { ...row, expanded_devices: devices };
+    })));
   } else if (resource === "profiles") {
     const owner = new URLSearchParams(query).get("project") ?? "default";
     console.log(JSON.stringify(state.profiles[owner]));
@@ -129,6 +136,13 @@ if (family === "query") {
 } else if (family === "project" && action === "unset") {
   const row = state.projects.find((r: { name: string }) => r.name === name);
   for (const key of args.slice(3)) delete row.config[key];
+} else if (family === "config" && action === "device" && ["set", "override"].includes(name)) {
+  const row = instance(args[3]);
+  const device = args[4];
+  row.devices ??= {};
+  const before = row.devices[device] ?? state.profiles[project].devices[device];
+  row.devices[device] = {...before, ...Object.fromEntries(args.slice(5).map(pair))};
+  if (!row.devices[device]["security.acls"] || row.devices[device]["security.acls.default.egress.action"] !== "reject") fail("NIC move opened its gate");
 } else if (family === "network" && action === "acl") {
   if (name === "create") {
     state["network-acls"].push({ name: args[3], config: {} });

@@ -377,6 +377,9 @@ Deno.test({
                     name: "eth0",
                     network: "orbitinst0",
                     "security.port_isolation": "true",
+                    "security.acls": "orbitinst0-proxy",
+                    "security.acls.default.egress.action": "reject",
+                    "security.acls.default.ingress.action": "reject",
                 },
                 "orbit-runtime": {
                     type: "disk",
@@ -411,7 +414,7 @@ Deno.test({
             const acls = Object.fromEntries(
                 state["network-acls"].map((a: { name: string }) => [a.name, a]),
             );
-            // The bridge reaches only the model forwarder and the egress proxy on its own address. The build container has no ACL and no
+            // The common NIC ACL reaches only the model forwarder and the egress proxy. The profile protects a build container with no own ACL and no
             // route of its own: it goes out through the proxy, as every container does.
             assertEquals(acls["orbitinst0-egress"].egress, [{
                 action: "allow",

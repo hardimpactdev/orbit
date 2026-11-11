@@ -8,7 +8,8 @@ covers:
   - apps/gateway/database/migrations/2027_02_04_000000_add_seed_commit_to_instance_runtimes.php
   - swamp/ansible/{instance-container.yml,tasks/instance-container-phase.yml}
   - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/notes/**}
-  - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress}.yml
+  - swamp/ansible/instance_bridge.py
+  - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-device-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh}.yml
 ---
 
 # Instance containers
@@ -57,7 +58,7 @@ The converge sets up the network side next:
 
 - **Profile.** The default profile sets the [proxy settings](#egress-and-dns) as `environment.*` keys, so every `incus exec` that keeps its environment has them.
 - **Bridge.** `orbitinst0` has NAT and no IPv6. DHCP leaves the last address free for the image build.
-- **Bridge ACL.** A container reaches only two ports of the bridge address: the model forwarder at 8319 and the egress proxy at 3128. Each Instance's own paths come with its create flow.
+- **Egress ACL.** Bridge and NIC egress defaults stay reject. The bridge admits the Node’s target union. Each NIC admits only its own targets and the proxies. A packet must pass both [ACLs](#network).
 - **Input rules.** The Node admits DHCP from the bridge under `orbit:instances-dhcp`, and the egress proxy under `orbit:instances-egress`. It admits no DNS from the bridge.
 
 The converge then installs what the containers run:
@@ -66,7 +67,23 @@ The converge then installs what the containers run:
 - **Image.** The converge builds the [container image](#inside-a-container) once per definition and names it with the stable alias `orbit-instance`.
 - **Folders.** It installs both [shared folders](#shared-folders).
 
-The converge creates no Instance.
+The bridge keeps default egress reject throughout convergence. Its `orbitinst0-egress` ACL admits the two proxies and one exact host/port per distinct attached target on the Node, with the bridge subnet as source. For a local Docker publication, the bridge rule names its exact live DNAT destination; the NIC still names its published address. Missing or ambiguous DNAT mappings refuse with `instance.container_endpoint_unresolved` before the migration probe or downtime.
+
+The profile and NICs use `orbitinst0-proxy`, which admits only the proxies and the existing ingress paths, plus each Instance's own target ACL. Convergence replaces an old common NIC reference in one device update, retaining its reject defaults. It audits every effective NIC on this bridge in every Incus project, including stopped containers. An unsafe NIC fails the role; the bridge stays rejecting.
+
+Create, clone and migrate add their endpoint rules before probing. These lifecycle steps only add rules. Destroy, restore and detach leave them in place, so a concurrent removal cannot revoke another Instance's path. Host convergence removes owned endpoint rules absent from its captured Gateway intent only when their admission predates that capture.
+
+Until then, an unguarded NIC can reach current and old translated endpoint tuples. Reuse of an old Docker address can expose a different service at that exact tuple. This permission lasts until host convergence removes it. Guarded NICs still require their own exact allow. ACL writes reread after an ETag conflict or a transient disappearing host-side veth, with at most five attempts and a one-second delay; exhaustion fails the phase.
+
+The host persists immutable Gateway endpoint records, named by published tuple and admission time. Readers deduplicate each tuple by its latest admission. Only host convergence compacts or removes records. A systemd oneshot refreshes resolved endpoint rules at boot after Docker and Incus, then every 15 seconds. It only adds rules, so a failed resolution never removes a working path.
+
+Gateway admission times are captured before reading targets. Owned ACL rules carry the same time in a strictly parsed description. Reattaching a tuple advances its rule’s stamp. Convergence preserves records and rules admitted at or after its capture, including admissions that arrive while it runs. Conditional ETag writes recheck this fence before deletion. An unknown description is never removed.
+
+The timer recovers missed Docker events and DNAT rules installed after a start event. systemd prevents overlapping refresh runs. An unchanged run writes nothing and sends no Incus write request. A Docker re-address heals after the next successful refresh; a host converge also removes the obsolete resolved tuple.
+
+Refresh errors stay in the journal and `/var/lib/orbit/instance-bridge/health.json`. The agent reads only its named public error code into its `host` fact, on the existing 60-second observation interval. Doctor reports `node.instance_bridge_unhealthy`, including that error code, and clears it after a healthy observation. The host role checks the enabled, running timer and healthy state file at its end.
+
+The converge creates no Instance. Each existing `app-dev` Node needs one converge of its Instance host role. It reconciles the attached-target union and moves existing NICs to the proxy ACL. Running containers keep working, with no restart.
 
 A task VM host on the build list, such as Beast, gets the container branch beside its task side. The two sides share nothing they change: the Instance side has its own project `orbit-instances`, bridge `orbitinst0`, pool `orbit-instances` and `orbit:instances-*` input rules, and touches no task VM, task container or CI place. The task side keeps the ZFS ARC: on a task VM host the Instance side writes no cap. Only a task VM's own Node gets no branch.
 
@@ -223,7 +240,7 @@ A container holds only a placeholder key, in `/home/agent/.config/orbit/model.en
 
 ## Network
 
-A container reaches only what this table lists. Everything else is dropped at its bridge.
+A container reaches only what this table lists. Everything else is dropped by its NIC ACL. The bridge independently rejects everything except the proxies and the Node’s attached-target union. Its ingress policy stays unchanged.
 
 | Path | How |
 | --- | --- |
@@ -236,6 +253,10 @@ A container reaches only what this table lists. Everything else is dropped at it
 | Internet | The [egress proxy](#egress-and-dns) at port 3128 of the bridge's gateway address: every public host and port, over HTTP and `CONNECT` |
 | DNS | None. The proxy resolves every name |
 | Everything else | Dropped, including the Gateway, WireGuard peers and other Nodes' private services |
+
+The NIC filters the published target address before Docker's DNAT. The bridge forwarding hook sees the translated tuple, so its exact allow uses the current DNAT destination for a local Docker target. An unguarded NIC can reach that exact private service tuple, but no other Docker-private service.
+
+For a target on another Node, Orbit also adds the exact route allowance from the container's address through WireGuard; Incus masquerades the bridge source to the Node's address. A profile-only NIC can reach the two proxies, but no attached target. Before starting, Orbit checks every effective NIC on the Instance bridge. A missing ACL, a missing default egress reject, a reference to the bridge union ACL, or an unexpected extra NIC refuses with `instance.container_network_unsafe`.
 
 **F10, current ingress limit.** The bridge admits TCP 1024–65535 from its gateway address and TCP 3773 from any source. The NIC combines that common ACL with its own ACL as a union: a live scratch default admitted the Node on 8080, 3773 and 5173, although its own ACL named only 8080.
 
@@ -261,7 +282,7 @@ What it serves:
 - **Nothing kept.** It keeps no cache and no files. It sends no `Via` or `X-Forwarded-For` header.
 - **No cache manager.** It refuses requests for its own cache manager, so a container cannot read what other containers fetch.
 - **Who.** Every container on the bridge uses it, `orbit` and `agent` alike, and so does the image build container.
-- **Admission.** Only the bridge reaches the port. The bridge ACL and the Node's rule `orbit:instances-egress` admit it there. The proxy's table resets a connection to the port from anywhere else.
+- **Admission.** Only the bridge reaches the port. The common NIC ACL and the Node's rule `orbit:instances-egress` admit it there. The proxy's table resets a connection to the port from anywhere else.
 - **Health.** The converge ends by checking that the proxy and its table run. Otherwise it fails with `instance.host_unavailable`.
 
 Readiness inspects the listening socket at the bridge address and port 3128, with 30 retries at a one-second delay, because the proxy's table rejects host TCP probes over `lo`; the image build still uses the proxy from its container on the bridge.
@@ -486,7 +507,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | Branch | The mirror fetches the recorded branch from the checkout itself. A retained checkout can carry commits that were never pushed; retirement refuses them. The move needs no token |
 | Files | One archive of the paths of `git diff HEAD` and `git ls-files --others`, extracted as `orbit`. Tracked files that the checkout deleted are removed |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace`, and the Gateway rewrites its stored values the same way |
-| Database server | The container's ACL and the Node's firewall rule to the port of each server the Instance uses. The move checks each port from inside, else `instance.database_unreachable` |
+| Database server | The NIC ACL and the Node's firewall rule to every attached target. The container phase checks every port from inside before quiesce, else `instance.database_unreachable`, with zero downtime |
 | SQLite | The file moves with the files. The Gateway drops the connection record of a SQLite file inside the checkout |
 | Route | The same Route, domain and certificate. One publication replaces the checkout's site and PHP-FPM pool with the container's site |
 
@@ -501,9 +522,11 @@ The end of the move and its failure:
 | Old checkout | Leaves its live path. Its files and Git metadata stay in retention; worktree entries are not pruned |
 | Last worktree | The default's old checkout is a retirement candidate. Any other registered worktree blocks retirement, including a path in the same batch |
 | Failed removal | The container stays the Instance. The run fails with `instance.migrate_retire_failed` (or the retirement refusal code for a new blocker), and the source or retained checkout stays on the Node |
-| Failure | The Route's restore side runs when the run had started to move it. Then the container, its ACL, its firewall rules and its mirror go |
+| Failure | Restore puts back a moved Route, then removes the container, its ACL, firewall rules and mirror |
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
 | After a failed restore | The site stays the checkout's, and a deployment refuses with `instance.lifecycle_busy` until the move has run again |
+
+Restore changes host Process states and the awake marker only when quiesce began. A target probe failure leaves both untouched.
 
 The database is not cloned. An Instance's database name, owner and connection come from its Project and its name. So a second database for the same Instance has no name to take, and a clone would end with a drop of the old one. Leaving it in place cannot lose data. A clone of a moved default still copies the default's database with the template copy of [Clone the database](#clone-the-database): the default's connection record is the one it had.
 
@@ -826,6 +849,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |
 | `process.target_unavailable` | 503 | `process:logs` could not read a container Process's journal through Swamp |
+| `instance.container_endpoint_unresolved` | 502 | A local Docker endpoint has no unique exact DNAT mapping; the phase refuses before probing or downtime |
+| `instance.container_network_unsafe` | 502 | The container NIC has no effective ACL or lacks its default egress reject. Orbit refuses to start it |
 | `instance.container_<phase>_failed` | 502 | A phase of a container default's create or deployment failed without a refusal, such as `instance.container_start_failed` |
 
 ## Why it works this way
