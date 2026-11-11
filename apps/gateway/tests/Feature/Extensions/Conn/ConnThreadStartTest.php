@@ -321,7 +321,7 @@ describe('the Instance name check', function (): void {
     it('treats a pending create as taken even for the caller who can resume it', function (): void {
         $default = threadDefault($this->beast, 'tool');
         threadCreate($this->phone, $default->project, 'occupied');
-        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5', 'root' => 'public']);
+        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5']);
         $this->beast->update(['tld' => 'test']);
         $laptop = threadNode('laptop', '10.44.0.78');
         $laptop->accessibleNodes()->attach($this->beast->id);
@@ -353,7 +353,7 @@ describe('the Instance name check', function (): void {
 
     it('answers invalid for each name format failure', function (string $name): void {
         $default = threadDefault($this->beast, 'tool');
-        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5', 'root' => 'public']);
+        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5']);
         $this->beast->update(['tld' => 'test']);
 
         threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?".http_build_query(['name' => $name]))
@@ -364,7 +364,7 @@ describe('the Instance name check', function (): void {
 
     it('previews the Node TLD without creating a Route', function (): void {
         $default = threadDefault($this->beast, 'tool');
-        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5', 'root' => 'public']);
+        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5']);
         $this->beast->update(['tld' => 'node.test']);
 
         threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=fix")
@@ -387,7 +387,7 @@ describe('the Instance name check', function (): void {
 
     it('answers a null domain without a usable TLD', function (?string $tld): void {
         $default = threadDefault($this->beast, 'tool');
-        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5', 'root' => 'public']);
+        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5']);
         $this->beast->update(['tld' => $tld]);
 
         threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=fix")
