@@ -126,16 +126,14 @@ function fixture() {
     },
   };
   const control = { process_id: 41, name: "orbit-process-41-worker.service" };
-  const read = { action: "status", lines: 50, request: "6f1c4c1e-8a7d-4f11-9d0e-3b5a2c1d0e9f" };
   const write = () =>
-    Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({ ssh_execution, container, control, read }));
+    Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({ ssh_execution, container, control }));
   write();
   return {
     folder,
     source,
     container,
     write,
-    read,
     run(phase: string, extra: Record<string, string> = {}) {
       const done = new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
@@ -625,7 +623,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a Process's start, stop and restart change its unit in the container; a read returns its state and journal",
+  name: "a Process's start, stop and restart change its unit in the container",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -655,22 +653,6 @@ Deno.test({
       assert(calls().join("\n").includes(`enable -- ${worker.name}\nrestart --no-block -- ${worker.name}`));
 
       assert(calls().slice(checksBeforeRestart).includes(`show --property=ActiveState --property=Job -- ${worker.name}`));
-
-      const state = f.state();
-      state.journal = { [worker.name]: ["2026-11-10T08:00:00+00:00 worker[7]: first", "2026-11-10T08:00:01+00:00 worker[7]: second"] };
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-      const logs = f.run("process", { ORBIT_PROCESS_ACTION: "logs" });
-      assert(logs.ok, logs.output);
-      // Newest first, as the Node agent reads a journal; the lines stay out of the run's output.
-      assertEquals(f.result(), { state: "active", output: "2026-11-10T08:00:01+00:00 worker[7]: second\n2026-11-10T08:00:00+00:00 worker[7]: first\n" });
-      assert(!logs.output.includes("worker[7]"), logs.output);
-
-      state.journal[worker.name] = ["2026-11-10T08:00:00+00:00 worker[7]: only"];
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-      const single = f.run("process", { ORBIT_PROCESS_ACTION: "logs" });
-      assert(single.ok, single.output);
-      assertEquals(f.result(), { state: "active", output: "2026-11-10T08:00:00+00:00 worker[7]: only\n" });
-      assert(!single.output.includes("worker[7]"), single.output);
 
       // A unit that does not come up fails the start with the shared code.
       const failing = f.state();
@@ -1140,7 +1122,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a thirty-second Process stop succeeds and inspection keeps its existing unbounded state read",
+  name: "a thirty-second Process stop succeeds",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1158,12 +1140,6 @@ Deno.test({
       assert(stopped.ok, stopped.output);
       assertEquals(f.result(), { state: "inactive", output: "" });
       assertEquals(f.state().slowStopCompleted, true);
-      const inspecting = f.state();
-      inspecting.inspectionSeconds = 6;
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(inspecting));
-      const inspected = f.run("process", { ORBIT_PROCESS_ACTION: "status" });
-      assert(inspected.ok, inspected.output);
-      assertEquals(f.result(), { state: "inactive", output: "" });
     } finally {
       f.cleanup();
     }

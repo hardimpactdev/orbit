@@ -4,103 +4,130 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
-use App\Domain\Operations\DirectOperation;
-use App\Domain\Processes\ProcessTarget;
+use App\Domain\InstanceMigration\InstanceMigration;
+use App\Domain\Instances\InstanceContainer;
+use App\Domain\Logs\LogReadLimit;
+use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentView\WebSocketClient;
-use App\Infrastructure\AgentView\WebSocketEndpoint;
-use App\Infrastructure\Swamp\SwampCommandStep;
-use App\Infrastructure\Swamp\SwampSshExecutionInput;
-use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Process;
-use App\Support\ValidatedData;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\File;
 use Throwable;
 
-/**
- * Reads a container Process's state or newest journal lines (docs/reference/development-containers.md#processes). The Node agent cannot
- * reach a container's units, so `process:logs` runs `operation-process-container` and waits for it. The journal lines go only to the
- * vault; the run publishes the unit's state and the vault key, which this read checks against its own request id.
- */
+/** The journal and unit-state read exception in docs/reference/node-agent.md#commands. */
 final readonly class ContainerProcessInspection
 {
-    public function __construct(private WebSocketClient $socket) {}
+    public function __construct(private SshExecutor $ssh, private SshKeyProvider $keys, private KnownHostsStore $hosts) {}
 
-    /** @return array{state:string,output:string} */
-    public function read(Process $process, ProcessTarget $target, string $action, int $lines): array
+    public function logs(Instance $instance, Process $process, int $lines): string
     {
-        if ($target->container === null || ! in_array($action, ['status', 'logs'], true) || $lines < 1 || $lines > 1000) {
-            $this->unavailable();
-        }
-        $request = (string) Str::uuid();
-        $id = bin2hex(random_bytes(16));
-        $address = config('swamp.address');
-        $ca = config('swamp.ca_path');
-        $token = config('swamp.run_token');
-        if (! is_string($address) || $address === '' || ! is_string($ca) || $ca === '' || ! is_string($token) || $token === '') {
+        if ($lines < 1 || $lines > 1000) {
             $this->unavailable();
         }
         try {
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 10);
-            $this->socket->send(['type' => 'workflow.run', 'id' => $id, 'payload' => [
-                'workflowIdOrName' => 'operation-process-container', 'inputs' => [
-                    'operation_id' => 0, 'node_id' => $target->node->id, 'kind' => 'process.inspect',
-                    'intent' => self::intent($process, $target, $action, $lines, $request),
-                    'execution_secrets' => (object) [],
-                ],
-            ]]);
-            $deadline = microtime(true) + 120;
-            while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
-                foreach ($this->socket->receive(min(1.0, $remaining)) as $message) {
-                    if (($message['id'] ?? null) !== $id) {
-                        continue;
-                    }
-                    if (($message['type'] ?? null) === 'error') {
-                        $this->unavailable();
-                    }
-                    $event = $message['event'] ?? null;
-                    $run = is_array($event) ? ($event['run'] ?? null) : null;
-                    if (($message['type'] ?? null) !== 'event' || ! is_array($event) || isset($event['parentRunId'])
-                        || ! in_array($event['kind'] ?? null, ['completed', 'cancelled'], true) || ! is_array($run)) {
-                        continue;
-                    }
-                    if (($run['workflowName'] ?? null) !== 'operation-process-container' || ($run['status'] ?? null) !== 'succeeded'
-                        || ! is_string($run['id'] ?? null) || ! Str::isUuid($run['id'])) {
-                        $this->unavailable();
-                    }
-                    $this->socket->close();
-                    $reference = ValidatedData::object(app(SwampCommandStep::class)->processInspection($run['id'], $request)['inspection']);
-                    $key = ValidatedData::string($reference['key']);
-                    $pattern = ValidatedData::string(app(DirectOperation::class)->definition('process.inspect')['execution_copies'][0]['key_pattern'] ?? null);
-                    if (($reference['vault'] ?? null) !== 'orbit-control-inputs'
-                        || preg_match('~'.$pattern.'~D', $key) !== 1 || ! str_ends_with($key, '-'.$request.'-value')) {
-                        $this->unavailable();
-                    }
-                    $value = ValidatedData::object(json_decode(app(SwampVaultExecutionCopy::class)->readSecret('orbit-control-inputs', $key), true, flags: JSON_THROW_ON_ERROR));
-
-                    return ['state' => ValidatedData::string($value['state']), 'output' => ValidatedData::string($value['output'])];
-                }
+            $pair = $this->pair($instance, $process);
+            $result = $this->execute($instance->node, ['logs', (string) $lines, ...$pair], LogReadLimit::Bytes);
+            if (! $result->succeeded()) {
+                $this->unavailable();
             }
-            $this->unavailable();
+
+            return LogReadLimit::journalInTimeOrder($result->stdout);
         } catch (ResourceOperationException $error) {
             throw $error;
         } catch (Throwable) {
             $this->unavailable();
-        } finally {
-            $this->socket->close();
         }
     }
 
     /**
-     * The read's intent: the Process's unit, its container, the Node's SSH execution and the read itself.
+     * One SSH call per Node. Only resolved resource records enter this reader, never command names or caller-supplied targets.
      *
-     * @return array<string,mixed>
+     * @param  list<array{instance: Instance, process: Process}>  $pairs
+     * @return array<int, array{runtime_status: string, observed_at: ?string, runtime_error_code: ?string}>
      */
-    public static function intent(Process $process, ProcessTarget $target, string $action, int $lines, string $request): array
+    public function states(array $pairs): array
     {
-        return ['control' => ['process_id' => $process->id, 'name' => app(SystemdProcessRenderer::class)->unitName($process)],
-            'container' => $target->container, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target->node),
-            'read' => ['action' => $action, 'lines' => $lines, 'request' => $request]];
+        $groups = [];
+        $observations = [];
+        foreach ($pairs as ['instance' => $instance, 'process' => $process]) {
+            try {
+                $arguments = $this->pair($instance, $process);
+                $groups[$instance->node_id][] = [$instance, $process, $arguments];
+            } catch (Throwable $error) {
+                $observations[$process->id] = self::observation('unknown', $error instanceof ResourceOperationException ? $error->errorCode : 'process.target_unavailable', null);
+            }
+        }
+        foreach ($groups as $group) {
+            try {
+                $arguments = ['states'];
+                foreach ($group as [, , $pair]) {
+                    array_push($arguments, ...$pair);
+                }
+                $result = $this->execute($group[0][0]->node, $arguments, count($group) * 256);
+                $states = $result->succeeded() ? json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR) : null;
+                if (! is_array($states) || ! array_is_list($states) || count($states) !== count($group)) {
+                    $this->unavailable();
+                }
+            } catch (Throwable) {
+                $states = array_fill(0, count($group), 'unknown');
+            }
+            $at = now()->toISOString();
+            foreach ($group as $index => [, $process]) {
+                $state = $states[$index] ?? null;
+                if (! is_string($state) || ! in_array($state, ['active', 'inactive', 'failed', 'activating', 'deactivating', 'reloading', 'maintenance', 'refreshing'], true)) {
+                    $state = 'unknown';
+                }
+                $observations[$process->id] = self::observation($state, $state === 'unknown' ? 'process.target_unavailable' : null, $at);
+            }
+        }
+
+        return $observations;
+    }
+
+    /** @return list<string> */
+    private function pair(Instance $instance, Process $process): array
+    {
+        InstanceMigration::assertSettled($instance);
+        $runtime = $instance->runtime;
+        if ($instance->id < 1 || ! Instance::isMorphType($process->owner_type) || $process->owner_id !== $instance->id
+            || $process->runtime !== ProcessRuntime::Systemd || $instance->node->status !== LifecycleStatus::Active
+            || $runtime === null || $runtime->incus_project !== 'orbit-instances'
+            || $runtime->container_name !== InstanceContainer::name($instance)) {
+            $this->unavailable();
+        }
+
+        return [InstanceContainer::name($instance), app(SystemdProcessRenderer::class)->unitName($process)];
+    }
+
+    /** @param list<string> $arguments */
+    private function execute(Node $node, array $arguments, int $bytes): CommandResult
+    {
+        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
+            $this->unavailable();
+        }
+
+        return $this->ssh->execute(new SshConnection(
+            host: $node->wireguard_ip, user: $node->user, port: 22,
+            identityFile: $this->keys->privateKeyPath(), knownHostsFile: $this->hosts->path(),
+            connectTimeout: 2, commandTimeout: 4,
+        ), new RemoteCommand(
+            ['timeout', '3', 'python3', '-', ...$arguments],
+            input: File::get(resource_path('processes/container-process-read.py')),
+            maxOutputBytes: $bytes, timeout: 4,
+        ));
+    }
+
+    /** @return array{runtime_status: string, observed_at: ?string, runtime_error_code: ?string} */
+    private static function observation(string $state, ?string $reason, ?string $at): array
+    {
+        return ['runtime_status' => $state, 'observed_at' => $at, 'runtime_error_code' => $reason];
     }
 
     private function unavailable(): never

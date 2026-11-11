@@ -553,7 +553,7 @@ A clone records its own Processes from the same definitions, with its own ids, u
 
 A deployment first records the Project's new definitions and changes the records of changed ones. Then it writes the changed units and new environment files, removes the former ones, and restarts the changed units. Its new seed stops every running unit and starts it again, so each running Process, such as a queue worker, runs the new commit. A container ignores a Process's restart-on-deploy setting. A definition the Project removed keeps its record and unit until a later part of the runtime removes them.
 
-`process:start`, `process:stop` and `process:restart` run `operation-process-container` as a child of their own workflow: Ansible on the Node changes the unit through `incus exec` and checks its state. `process:logs` runs the same workflow and waits for it; the journal lines go only to the vault, and the Gateway reads and redacts them. A Process list keeps the last completed inspection's state and time while a new inspection is queued. A failed inspection replaces the state with `unknown` and its reason. [Process runtime status](/reference/metrics#process-runtime-status) defines the observation fields and refresh window. A change to a Process of a stopped container fails; the container's next deployment starts it.
+`process:start`, `process:stop` and `process:restart` run `operation-process-container` as a child of their own workflow: Ansible on the Node changes the unit through `incus exec` and checks its state. Journal tails and unit states use bounded direct reads through the Node’s existing SSH account. A Process list reads all container Process states on each Node in one call. The Gateway redacts journal lines before returning them and stores no raw lines in history. [Process runtime status](/reference/metrics#process-runtime-status) defines the observation fields. A change to a Process of a stopped container fails; the container’s next deployment starts it.
 
 One-shot log reads keep each complete journal line in time order and drop a final line cut by the byte limit.
 
@@ -1027,7 +1027,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.host_unavailable` | 409 | A container default cannot be placed: the Node has no bridge, the bridge is full, or the runtime folder lacks the Project's PHP build |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |
-| `process.target_unavailable` | 503 | `process:logs` could not read a container Process's journal through Swamp |
+| `process.target_unavailable` | 503 | The direct container Process journal read failed |
 | `instance.bridge_busy` | 502 | Another shared endpoint writer owns the lock; this invocation applied no intent or health change |
 | `instance.bridge_command_timeout` | 502 | A Docker/NAT read exhausted the helper’s remaining budget, or an Incus request timed out |
 | `instance.bridge_state_unresolved` | 502 | A bounded ACL readback could not determine the result after a timeout or ambiguous write; retry convergence |
