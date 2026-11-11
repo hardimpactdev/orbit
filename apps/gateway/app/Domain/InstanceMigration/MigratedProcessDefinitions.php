@@ -119,6 +119,12 @@ final readonly class MigratedProcessDefinitions
                                     "Process [{$process->id}:{$process->name}] current unit content differs from the admitted unit.", 409);
                             }
                             $this->capture($instance, [$process->id], historical: true);
+                            $finding = Activity::query()->where('request_id', $this->findingId($instance->id, $process->id))->first();
+                            if ($finding !== null) {
+                                $finding->update(['description' => 'instance.migrate_process_definition_captured',
+                                    'properties' => [...($finding->properties?->all() ?? []),
+                                        'reason' => 'Captured by a later historical repair.', 'skip_reason' => $finding->properties?->get('reason')]]);
+                            }
                         });
                     } catch (Throwable $exception) {
                         $this->recordSkip($instanceId, (int) $row->id, (string) $row->name, $exception);
@@ -172,7 +178,7 @@ final readonly class MigratedProcessDefinitions
         $reason = $exception instanceof ResourceOperationException
             ? $exception->getMessage() : $exception::class.': Stored data could not be proved.';
         Activity::query()->updateOrCreate([
-            'request_id' => (string) Uuid::uuid5(Uuid::NAMESPACE_URL, "orbit:2027_02_06_capture_migrated_process_definitions:{$instanceId}:{$processId}"),
+            'request_id' => $this->findingId($instanceId, $processId),
         ], [
             'log_name' => 'instances', 'description' => 'instance.migrate_process_definition_skipped',
             'subject_type' => Instance::MorphAlias, 'subject_id' => $instanceId,
@@ -181,6 +187,11 @@ final readonly class MigratedProcessDefinitions
                 'process_name' => mb_convert_encoding($name, 'UTF-8', 'UTF-8'),
                 'reason' => mb_strcut(mb_convert_encoding($reason, 'UTF-8', 'UTF-8'), 0, 512, 'UTF-8')],
         ]);
+    }
+
+    private function findingId(int $instanceId, int $processId): string
+    {
+        return (string) Uuid::uuid5(Uuid::NAMESPACE_URL, "orbit:2027_02_06_capture_migrated_process_definitions:{$instanceId}:{$processId}");
     }
 
     /** @return array<string,mixed> */

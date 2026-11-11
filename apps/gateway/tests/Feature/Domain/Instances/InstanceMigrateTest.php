@@ -3500,6 +3500,36 @@ describe('migrated development Process definitions', function (): void {
         expect($finding->refresh()->properties['reason'])->toBe("Process [{$process->id}:{$process->name}] current unit content differs from the admitted unit.");
     });
 
+    it('resolves an earlier historical skip when a later repair captures the Process', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $process = migrationWorker($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $activation = $process->refresh()->systemd_activation_hash;
+        $process->forceFill(['source_definition_id' => null, 'systemd_activation_hash' => null])->save();
+        ProcessDefinition::query()->delete();
+        app(MigratedProcessDefinitions::class)->repair();
+        $finding = Activity::query()->where('command', 'instance:migrate:repair')->sole();
+        expect($finding->description)->toBe('instance.migrate_process_definition_skipped');
+        $skipReason = $finding->properties['reason'];
+        $process->forceFill(['systemd_activation_hash' => $activation])->save();
+
+        app(MigratedProcessDefinitions::class)->repair();
+        app(MigratedProcessDefinitions::class)->repair();
+
+        expect($process->refresh()->source_definition_id)->toBe(ProcessDefinition::query()->sole()->id);
+        expect(Activity::query()->where('command', 'instance:migrate:repair')->sole()->id)->toBe($finding->id);
+        expect($finding->refresh()->description)->toBe('instance.migrate_process_definition_captured');
+        expect($finding->properties->toArray())->toBe([
+            'instance_id' => $instance->id, 'process_id' => $process->id, 'process_name' => $process->name,
+            'reason' => 'Captured by a later historical repair.', 'skip_reason' => $skipReason,
+        ]);
+        $instance->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+        $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip])->getJson("/api/v1/activities/{$finding->id}")
+            ->assertOk()
+            ->assertJsonPath('data.properties.reason', 'Captured by a later historical repair.')
+            ->assertJsonPath('data.properties.skip_reason', $skipReason);
+    });
+
     it('surfaces a database infrastructure failure instead of reporting a skipped row', function (): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
         $process = migrationWorker($instance);
