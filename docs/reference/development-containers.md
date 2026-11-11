@@ -8,8 +8,7 @@ covers:
   - apps/gateway/database/migrations/2027_02_04_000000_add_seed_commit_to_instance_runtimes.php
   - swamp/ansible/{instance-container.yml,tasks/instance-container-phase.yml}
   - swamp/scripts/instance_clone{,_guest}.py
-  - apps/gateway/resources/instances/frankenphp.Caddyfile
-  - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/notes/**}
+  - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/{notes/**,frankenphp.Caddyfile}}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress}.yml
 ---
 
