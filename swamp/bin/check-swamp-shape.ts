@@ -2267,6 +2267,13 @@ export async function toolFindings(
                         source,
                         phase_seconds: phases.get(file)?.seconds ?? 0,
                         phase_ssh: phases.get(file)?.ssh ?? false,
+                        // A bridge importer can live outside the writer's package.
+                        // Keep provider/polling provenance on its sibling inventory.
+                        bridge_sources: Object.fromEntries(
+                            [...sources].filter(([path]) =>
+                                path.endsWith(".py")
+                            ),
+                        ),
                         sources: Object.fromEntries(
                             [...sources].filter(([path]) =>
                                 path.endsWith(".py") &&
