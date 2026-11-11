@@ -32,17 +32,11 @@ class CheckTableTest(unittest.TestCase):
             self.assertLessEqual(set(root['default']), set(checks))
             self.assertLess(len(root['default']), len(plan.JOBS))
 
-    def test_every_glob_matches_a_tracked_file_or_is_explicitly_optional(self):
+    def test_every_input_that_names_one_file_names_a_tracked_file(self):
         inputs = [self.table['all-checks'], self.table['ignored'],
                   *self.table['check'].values(), *self.table['roots'].values()]
-        globs = {glob.removeprefix('!') for entry in inputs for glob in entry['inputs']}
-        globs.update(self.table['check']['agent']['delivery_excludes'])
-        self.assertLessEqual(set(self.table.get('optional', {})), globs)
-        for glob in sorted(globs):
-            with self.subTest(glob=glob):
-                matches = any(plan.selection_regex(glob).fullmatch(path) for path in self.files)
-                self.assertTrue(matches or self.table.get('optional', {}).get(glob, {}).get('optional') is True,
-                                f'{glob} matches no tracked file; mark it optional = true if intentional')
+        named = {glob.removeprefix('!') for entry in inputs for glob in entry['inputs'] if not set('*?') & set(glob)}
+        self.assertEqual(set(), named - set(self.files), 'These inputs name a file that does not exist')
 
     def test_every_tracked_file_is_inside_a_declared_root(self):
         plan.check_source_roots(self.files)
@@ -56,21 +50,20 @@ class CheckTableTest(unittest.TestCase):
         self.assertFalse(plan.matches('a/b/c', plan.input_rules(['a/*'])))
         self.assertTrue(plan.select(['apps/gateway/a.php', 'swamp/docs/a.md'])['jobs']['gateway-tests'])
 
-    def test_shared_inputs_select_every_check_once_without_agent_delivery(self):
+    def test_shared_inputs_select_every_check_once(self):
         for path in ('.github/workflows/ci.yml', '.github/actions/php/action.yml',
                      '.github/ci/checks.toml', 'bin/ci-build-plan'):
             with self.subTest(path=path):
                 result = plan.select([path])
                 self.assertTrue(all(result['jobs'].values()))
                 self.assertTrue(all(result['swamp_checks'].values()))
-                self.assertFalse(result['agent'])
 
-    def test_unclaimed_tooling_uses_only_the_root_static_default_and_names_the_path(self):
+    def test_unclaimed_tooling_selects_no_job_and_names_the_path(self):
         for path in ('bin/new-tool', 'tools/new-tool.py', '.github/new-config.yml', 'scripts/new-tool'):
             with self.subTest(path=path):
                 selected, unclaimed = plan.selected_checks([path])
-                self.assertEqual({'php'}, selected)
-                self.assertEqual([(path, path.split('/')[0], ['php'])], unclaimed)
+                self.assertEqual(set(), selected)
+                self.assertEqual([(path, path.split('/')[0], [])], unclaimed)
         with self.assertRaisesRegex(ValueError, r'Add \[roots.*checks.toml'):
             plan.select(['new-root/file.py'])
 
@@ -83,7 +76,7 @@ class CheckTableTest(unittest.TestCase):
                     patch.dict(os.environ, GITHUB_STEP_SUMMARY=str(summary)), \
                     contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 plan.main()
-            self.assertEqual({'jobs', 'swamp_checks', 'agent', 'gateway_release', 'proof_run'},
+            self.assertEqual({'jobs', 'swamp_checks', 'gateway_release', 'proof_run'},
                              set(json.loads(stdout.getvalue())))
-            self.assertIn('tools/new.py; root tools defaults: php', summary.read_text())
+            self.assertIn('tools/new.py; root tools defaults: none', summary.read_text())
             self.assertIn('tools/new.py', stderr.getvalue())

@@ -175,15 +175,11 @@ def select(paths, main=False, selection=None):
     jobs = {name: name in selected for name in JOBS}
     swamp_checks = {name: 'swamp-' + name in selected for name in SWAMP_CHECKS}
     jobs['swamp'] = any(swamp_checks.values())
-    table, checks, _ = check_table()
-    delivery_excludes = input_rules(
-        table['all-checks']['inputs'] + table['check']['agent']['delivery_excludes'])
-    agent = any(matches(path, checks['agent']) and not matches(path, delivery_excludes) for path in paths)
     jobs['web'] |= main
     swamp_only = bool(paths) and all(path.startswith('swamp/') for path in paths)
     if selection is None and (ROOT / SELECTION).is_file():
         selection = (ROOT / SELECTION).read_text()
-    return {'jobs': jobs, 'swamp_checks': swamp_checks, 'agent': agent, 'gateway_release': main or not swamp_only,
+    return {'jobs': jobs, 'swamp_checks': swamp_checks, 'gateway_release': main or not swamp_only,
             'proof_run': proof_run(paths, selection)}
 
 

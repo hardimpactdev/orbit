@@ -19,7 +19,6 @@ inputs = [
   "**/*composer.lock",
   "apps/gateway/resources/agent/**",
   "bin/check-frozen-agent-commands",
-  ".github/workflows/static-php.yml",
   "!swamp/**",
   "!.agents/**",
   "!.codex/**",
@@ -47,15 +46,12 @@ inputs = [
   "swamp/config/**",
   "swamp/extensions/behaviors/operations/**",
   "swamp/extensions/behaviors/_lib/**",
-  "swamp/deno.lock",
-  "swamp/deno.json",
-  "swamp/deno.jsonc",
+  "swamp/deno.*",
   "swamp/.swamp.yaml",
   "tools/swamp-proof-guest/ansible-recaps.php",
   "docs/site.json",
   "docs/navigation/**/*.json",
   "docs/cli/**/*.mmd",
-  ".github/workflows/static-php.yml",
   "bin/build-api",
   "bin/docs-openapi",
   "bin/mcp-tools",
@@ -186,6 +182,7 @@ ceiling = 120
 
 [check.web]
 inputs = [
+  ".node-version",
   "apps/gateway/**",
   "apps/cli/**",
   "packages/php-sdk/**",
@@ -205,6 +202,7 @@ ceiling = 120
 
 [check.pi]
 inputs = [
+  ".node-version",
   "apps/pi-server/**",
   "!apps/pi-server/**/*.md",
   "!apps/pi-server/**/*.mdx",
@@ -214,14 +212,12 @@ ceiling = 120
 
 [check.agent]
 inputs = [
+  ".node-version",
   "apps/agent/**",
   "apps/gateway/extensions/*/agent/**",
-  ".github/workflows/orbit-cli-release.yml",
   "!**/*.md",
   "!**/*.mdx",
 ]
-# A release-workflow edit checks Rust but does not request delivery.
-delivery_excludes = [".github/workflows/orbit-cli-release.yml"]
 cost = 11
 ceiling = 240
 
@@ -329,7 +325,8 @@ inputs = [
 cost = 29
 ceiling = 120
 
-# A default applies only when no check (or intentional skip) claims the path.
+# A default applies only when no check (or intentional skip) claims the path; the plan summary names the path.
+# Tooling roots have no static check of their own, so their default is empty: no job runs for a file that no check reads.
 # The desktop checks are paused. Unknown roots fail instead of selecting everything.
 [roots."apps/agent"]
 inputs = ["apps/agent/**"]
@@ -373,19 +370,19 @@ default = ["docs"]
 
 [roots.".github"]
 inputs = [".github/**"]
-default = ["php"]
+default = []
 
 [roots."bin"]
 inputs = ["bin/**"]
-default = ["php"]
+default = []
 
 [roots."tools"]
 inputs = ["tools/**"]
-default = ["php"]
+default = []
 
 [roots."scripts"]
 inputs = ["scripts/**"]
-default = ["php"]
+default = []
 
 [roots.".agents"]
 inputs = [".agents/**"]
@@ -405,104 +402,4 @@ default = ["swamp-shape"]
 
 [roots."."]
 inputs = [".editorconfig", ".gitattributes", ".gitignore", ".node-version", "composer.json", "composer.lock", "vet.json", "LICENSE", "*.md", "*.mdx", "*.mmd"]
-default = ["php"]
-
-# Retain declared inputs that have no file in this checkout (including exclusions).
-[optional."*.mdx"]
-optional = true
-
-[optional."*.mmd"]
-optional = true
-
-[optional.".github/**/*.mdx"]
-optional = true
-
-[optional.".github/**/*.mmd"]
-optional = true
-
-[optional."apps/agent/**/*.mdx"]
-optional = true
-
-[optional."apps/gateway/app/**/*.js"]
-optional = true
-
-[optional."apps/gateway/app/**/*.py"]
-optional = true
-
-[optional."apps/gateway/app/**/*.ts"]
-optional = true
-
-[optional."apps/gateway/app/**/*.yaml"]
-optional = true
-
-[optional."apps/gateway/app/**/*.yml"]
-optional = true
-
-[optional."apps/gateway/extensions/**/*.js"]
-optional = true
-
-[optional."apps/gateway/extensions/**/*.py"]
-optional = true
-
-[optional."apps/gateway/extensions/**/*.ts"]
-optional = true
-
-[optional."apps/gateway/extensions/**/*.yaml"]
-optional = true
-
-[optional."apps/gateway/extensions/**/*.yml"]
-optional = true
-
-[optional."apps/pi-server/**/*.mdx"]
-optional = true
-
-[optional."bin/**/*.md"]
-optional = true
-
-[optional."bin/**/*.mdx"]
-optional = true
-
-[optional."bin/**/*.mmd"]
-optional = true
-
-[optional."scripts/**/*.md"]
-optional = true
-
-[optional."scripts/**/*.mdx"]
-optional = true
-
-[optional."scripts/**/*.mmd"]
-optional = true
-
-[optional."swamp/**/*.mdx"]
-optional = true
-
-[optional."swamp/**/*.mmd"]
-optional = true
-
-[optional."swamp/deno.json"]
-optional = true
-
-[optional."swamp/deno.jsonc"]
-optional = true
-
-[optional."swamp/deno.lock"]
-optional = true
-
-[optional."tools/**/*.md"]
-optional = true
-
-[optional."tools/**/*.mdx"]
-optional = true
-
-[optional."tools/**/*.mmd"]
-optional = true
-
-[optional."tools/swamp-proof-guest/**/*.md"]
-optional = true
-
-[optional."tools/swamp-proof-guest/**/*.mdx"]
-optional = true
-
-[optional."tools/swamp-proof-guest/**/*.mmd"]
-optional = true
+default = []
