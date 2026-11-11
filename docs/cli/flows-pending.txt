@@ -1,3 +1,4 @@
+instance.node_service_detach
 node.worker_known_hosts
 process.install_instance_definitions
 tasks.maintenance_finish
